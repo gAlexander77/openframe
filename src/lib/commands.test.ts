@@ -52,3 +52,14 @@ describe("command registry", () => {
     ]);
   });
 });
+
+describe("add_captions", () => {
+  it("puts captions on one track and replaces them on request", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_captions", { captions: [{ start: 0, end: 1.2, text: "Hello" }, { start: 1.2, end: 2, text: "world" }] });
+    const track = () => describeProject(p).tracks.find((t) => t.name === "Captions")!;
+    expect(track().clips.map((c) => c.text)).toEqual(["Hello", "world"]);
+    p = runCommand(p, "add_captions", { captions: [{ start: 0, end: 1, text: "Again" }], replace: true });
+    expect(track().clips.map((c) => c.text)).toEqual(["Again"]);
+  });
+});

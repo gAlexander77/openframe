@@ -20,6 +20,7 @@ import {
 import * as ops from "./project/ops";
 import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
 import { upsertKey } from "./keyframes";
+import type { Caption } from "./captions";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -390,6 +391,24 @@ export const COMMANDS: Command[] = [
     input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["at"]),
     run: (p, a) => ops.addMarker(p, createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined)),
   },
+  {
+    name: "add_captions",
+    description: "Add captions (subtitles) as caption text clips on a Captions track. Times are timeline seconds. replace=true removes existing captions first. Captions export as SRT/VTT and restyle together.",
+    input: S.obj(
+      {
+        captions: {
+          type: "array",
+          description: "The captions, in order",
+          items: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), text: S.str("Words shown") }, ["start", "end", "text"]),
+        },
+        style: TEXT_STYLE_SCHEMA,
+        y: S.num("Vertical offset from center as a canvas fraction; 0.36 sits near the bottom"),
+        replace: S.bool("Remove existing captions first"),
+      },
+      ["captions"],
+    ),
+    run: (p, a) => addCaptions(p, a.captions as Caption[], { ...((a.style ?? {}) as Partial<TextStyle>) }, a.y === undefined ? undefined : Number(a.y), a.replace === true),
+  },
 ];
 
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
@@ -437,3 +456,30 @@ export function describeProject(p: Project) {
 
 /** Frame <-> second helpers re-exported for automation callers. */
 export const toFrame = (p: Project, seconds: number) => frameAt(seconds, p.fps);
+
+/** The look CapCut's auto captions start with: bold white, black outline,
+ * low on the frame, narrower than titles so lines wrap early. */
+export const CAPTION_STYLE: Partial<TextStyle> = { size: 64, bold: true, color: "#ffffff", stroke: { color: "#000000", width: 6 }, maxWidth: 0.84, lineHeight: 1.15 };
+
+/** Place captions on one Captions track (created on top if needed). */
+export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyle> = {}, y = 0.36, replace = false): Project {
+  if (replace) {
+    p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !(c.type === "text" && c.caption)) })) };
+    p = ops.pruneEmptyTracks(p);
+  }
+  let track = p.tracks.find((t) => t.kind === "video" && t.clips.length > 0 && t.clips.every((c) => c.type === "text" && c.caption));
+  if (!track) {
+    track = createTrack("video", "Captions");
+    p = ops.addTrack(p, track, 0);
+  }
+  let lastEnd = 0;
+  for (const cap of [...caps].sort((a, b) => a.start - b.start)) {
+    const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
+    const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
+    lastEnd = end;
+    let clip: Clip = { ...createTextClip(cap.text, start, end - start, { ...CAPTION_STYLE, ...style }), caption: true };
+    clip = { ...clip, transform: { ...clip.transform, y } } as Clip;
+    p = ops.addClip(p, track.id, clip);
+  }
+  return p;
+}
