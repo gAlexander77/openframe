@@ -176,6 +176,10 @@ A narrative log of each build round with its intent, for archaeology that
 - **Leaving a text field fires too late to end an edit**: the click that
   moved focus already ran; end the session in the capture phase.
   Playwright hides the caret in screenshots unless `caret: "initial"`.
+- **A conflict resolver must handle CRLF files**: a regex written for
+  `
+` matched nothing in the CRLF `.gitignore`, reported "no markers left",
+  and the markers were committed. After any merge, `git grep -n "^<<<<<<< "`.
 - **Test the release build, not just dev**: the CSP only bites there, and
   the origin changes from `http://localhost:1420` to
   `http://tauri.localhost`, which local servers' CORS lists may refuse.

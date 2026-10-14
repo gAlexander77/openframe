@@ -80,6 +80,10 @@ Git reported a clean working tree before this pass. The markers were left
 untouched to respect the documentation-only scope. Have the owning agent
 resolve them, retaining both intended ignore rules, before release work.
 
+**Resolved 2026-10-14** by the owning agent (Claude Code): both rules kept
+(`scratch/` and `scripts/ui-review/shots/**/*.png`). The cause was a merge
+helper that assumed LF endings; see [[History]].
+
 ## Documentation entry points
 
 The root README explains the AI experiment and current repository status.
