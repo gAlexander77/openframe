@@ -108,16 +108,55 @@ export function toggleCopilot(open = !state.open) {
   if (open && !state.models.length) void discoverModels();
 }
 
-// The image tool needs a vision model and a richer message format; the
-// copilot works from describe_project instead.
-const TOOLS = toFunctionTools(listTools().filter((t) => t.name !== "preview_frame"));
+// A small local model loses its way among all 30 tools (the first live run
+// with a 9B model called freeze, marker and transition tools instead of
+// adding a title). The copilot gets the everyday edits; external agents
+// still see everything over MCP.
+const COPILOT_TOOLS = new Set([
+  "describe_project", "add_text", "add_media_clip", "add_color_clip", "split", "delete_clips", "move_clip",
+  "trim_clip", "set_speed", "set_param", "set_transition", "add_effect", "set_filter", "set_animation", "undo",
+]);
+const TOOLS = toFunctionTools(listTools().filter((t) => COPILOT_TOOLS.has(t.name)));
+
+/** The timeline as it is right now, so the model starts with the ids
+ * instead of spending a step (or getting lost) looking them up. */
+function contextMessage(): ChatMessage {
+  return { role: "system", content: `Current timeline (times in seconds):\n${JSON.stringify(window.videoEditor.describe())}` };
+}
+
+type OllamaMessage = { role: string; content: string; tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[]; tool_name?: string };
 
 async function chat(messages: ChatMessage[]): Promise<ChatMessage> {
   const p = provider();
+  const withContext = [messages[0], contextMessage(), ...messages.slice(1)];
+  if (p.id === "ollama") {
+    // Ollama's native API can switch reasoning off, which makes small models
+    // far quicker and more decisive with tools.
+    const body = {
+      model: state.model,
+      stream: false,
+      think: false,
+      options: { temperature: 0.1 },
+      tools: TOOLS,
+      messages: withContext.map((m): OllamaMessage => ({
+        role: m.role,
+        content: m.content,
+        ...(m.tool_calls ? { tool_calls: m.tool_calls.map((t) => ({ function: { name: t.function.name, arguments: JSON.parse(t.function.arguments || "{}") } })) } : {}),
+      })),
+    };
+    const r = await fetch(`${p.base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(`Ollama answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const m = ((await r.json()) as { message: OllamaMessage }).message;
+    return {
+      role: "assistant",
+      content: m.content ?? "",
+      tool_calls: m.tool_calls?.map((t, i) => ({ id: `call_${Date.now()}_${i}`, type: "function", function: { name: t.function.name, arguments: JSON.stringify(t.function.arguments ?? {}) } })),
+    };
+  }
   const r = await fetch(`${p.base}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: state.model, messages, tools: TOOLS, temperature: 0.2, stream: false }),
+    body: JSON.stringify({ model: state.model, messages: withContext, tools: TOOLS, temperature: 0.1, stream: false }),
   });
   if (!r.ok) throw new Error(`${p.label} answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
   const j = (await r.json()) as { choices: { message: ChatMessage }[] };
