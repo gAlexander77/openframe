@@ -12,6 +12,7 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Sticker,
   Type,
   Upload,
   WandSparkles,
@@ -24,12 +25,14 @@ import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
+import { StickersTab } from "./StickersTab";
 import "./library.css";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
   { id: "audio", label: "Audio", icon: Music },
   { id: "text", label: "Text", icon: Type },
+  { id: "stickers", label: "Stickers", icon: Sticker },
   { id: "effects", label: "Effects", icon: Sparkles },
   { id: "transitions", label: "Transitions", icon: Blend },
   { id: "captions", label: "Captions", icon: Captions },
@@ -60,6 +63,7 @@ export function LibraryPanel() {
         {tab === "media" && <MediaTab kind="visual" />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
+        {tab === "stickers" && <StickersTab />}
         {tab === "effects" && <EffectsTab />}
         {tab === "transitions" && <TransitionsTab />}
         {tab === "filters" && <FiltersTab />}
@@ -94,7 +98,8 @@ function MediaTab({ kind }: { kind: "visual" | "audio" }) {
   const [q, setQ] = useState("");
   useThumbs();
   const used = useMemo(() => new Set(tracks.flatMap((t) => t.clips.map((c) => ("assetId" in c ? c.assetId : "")))), [tracks]);
-  const list = assets.filter((a) => (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
+  // Stickers live in their own tab, as in CapCut, not among imported media.
+  const list = assets.filter((a) => !a.sticker && (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="lib-content">

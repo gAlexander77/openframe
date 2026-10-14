@@ -10,6 +10,7 @@ import { edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition } from "../state/apply";
 import { registerDropZone, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
+import { addSticker } from "../state/stickers";
 import { store, useEditor } from "../state/store";
 import { ClipView, type ClipZone } from "./ClipView";
 import { MenuList, type MenuItem } from "./Menu";
@@ -424,6 +425,7 @@ export function Timeline() {
             const fits = track && (track.kind === "audio") === (p.asset.kind === "audio") && !track.locked;
             addToTimeline(p.asset, frame, fits ? track.id : undefined);
           } else if (p.kind === "text") addTextPreset(p.preset, frame);
+          else if (p.kind === "sticker") void addSticker(p.id, frame);
           else if (p.kind === "effect") applyEffect(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
           else if (p.kind === "filter") applyFilter(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
           else if (p.kind === "adjustment") addAdjustmentLayer(frame);

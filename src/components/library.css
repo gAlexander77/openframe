@@ -144,3 +144,17 @@
 .cap-progress-text { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
 .cap-bar { height: 5px; border-radius: 5px; background: var(--bg-3); overflow: hidden; }
 .cap-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 250ms ease-out; }
+
+/* ---- stickers ------------------------------------------------------------- */
+/* Groups wrapped in sections: each heading is its section's first, so the
+   gap between groups has to come from the section, not :first-of-type. */
+.lib-section + .lib-section > .lib-group { margin-top: 18px; }
+.sticker-motion { flex: none; width: auto; height: 28px; padding: 0 6px; }
+.card-thumb.sticker-thumb img {
+  inset: 13%; width: 74%; height: 74%; object-fit: contain;
+  transition: transform var(--t-med) var(--ease-spring);
+  animation: fade-in var(--t-med) ease-out;
+}
+.card:hover .sticker-thumb img { transform: scale(1.12) rotate(-5deg); }
+.card:active .sticker-thumb img { transform: scale(0.94); }
+.thumb-wait { width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--bg-3); opacity: 0.6; }

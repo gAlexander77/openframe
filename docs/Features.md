@@ -72,6 +72,21 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   breaks; caption list editing; apply style to all; SRT/VTT import and
   export.
 
+## Stickers
+
+- **A local sticker library**: about 150 stickers in ten categories with
+  search — emoji drawn from the system's color emoji font, and original
+  graphics drawn in code (curved and scribble arrows, marker circles,
+  underlines, highlighter, bubbles, comic bursts, subscribe/like/follow
+  style badges, stars, hearts, checks). Nothing is downloaded.
+- Click + or drag onto the timeline: the sticker lands above everything
+  at that time at about a third of the frame, with a pop-in and a gentle
+  loop (the tab's motion menu; per viewer). It is an ordinary image clip,
+  so transform, blend, masks and animations all apply
+  ([[ADR-025 Stickers and templates are ordinary clips]]).
+- Rendered once to a PNG asset per project; adding the same sticker again
+  reuses it, and stickers stay out of the Media tab.
+
 ## Keyboard
 
 - CapCut's in-app shortcut list, Premiere's where CapCut has none

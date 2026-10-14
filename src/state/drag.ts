@@ -9,6 +9,7 @@ import type { Asset } from "../lib/project/types";
 export type DragPayload =
   | { kind: "asset"; asset: Asset }
   | { kind: "text"; preset: string; label: string }
+  | { kind: "sticker"; id: string; label: string }
   | { kind: "effect"; type: string; label: string }
   | { kind: "transition"; type: string; label: string }
   | { kind: "filter"; type: string; label: string }
