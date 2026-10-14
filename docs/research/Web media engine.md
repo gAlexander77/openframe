@@ -685,6 +685,9 @@ function audibleMediaTime(): number {
 - Otherwise drop the first 1024 samples of the mix.
 - Verify with a beep test (a click at t=0 in both video and audio) on Chrome, Safari and FFmpeg-based players.
 
+> [!warning] Measured 2026-10-13: the delay depends on the encoder
+> Against a PCM export of the same timeline, decoded with ffmpeg: Edge 155's **Media Foundation AAC encoder adds 0 samples** (a 1024 shift would make sound 21.3 ms early), while `@mediabunny/aac-encoder` (libavcodec WASM) adds **exactly 1024**. So measure it per device: encode a click, decode it back, shift by the distance it moved ([[ADR-016 AAC encoder delay is measured, not assumed]]). The negative-timestamp route works in mediabunny 1.61.4: `new AudioBufferSource(cfg, { startTimestamp: -delay / 48000 })` makes the MP4 muxer write an edit list. Opus in WebM/MKV measured 0 (its pre-skip is in the header).
+
 ### 4.7 Waveform peaks
 
 - Compute in a worker, from `AudioSampleSink.samples()` in one linear pass. `copyTo(f32, { planeIndex: c, format: 'f32-planar' })`.
@@ -1084,6 +1087,8 @@ Nothing else branches on platform ([[Conventions]]).
     - **Fix:** one GL context, an FBO pool, and a scene graph that rebuilds GL objects on restore. Ship a "safe graphics" launch mode for Linux.
 23. **Wall-clock export and throttling.** `captureStream()`, MediaRecorder and rAF-driven export drop or duplicate frames. Background tabs and minimized windows throttle rAF and timers (Clipchamp, Remotion).
     - **Fix:** a deterministic `for (n…) { render(n); await add() }` loop in a worker, not tied to rAF. Show a "keep the app open" notice on the web.
+    - **Measured** (Edge 155, main-thread loop, 1800 frames at 1080p): visible 5.7 s, background tab 5.8 s, minimized 7.5 s. Hidden pages get a lower priority, not a stall, because nothing waits on rAF or timers ([[ADR-014 Export is a deterministic frame loop]]).
+    - **Testing it:** pages that Playwright launches *or* attaches to over CDP report `visibilityState: "visible"` even in a background tab or a minimized window, and its default launch flags disable background throttling. Measure hidden behavior with a hand-launched browser driven over raw CDP (a WebSocket and `Runtime.evaluate`).
 24. **Fonts and text in workers.** If fonts aren't loaded in the worker, the first frames export in a fallback font. Rasterizing small and scaling up blurs.
     - **Fix:** `self.fonts.add(face)` and `await face.load()` before rendering. Rasterize at output resolution, cache the textures, and bundle the fonts.
 25. **Tauri plumbing.**

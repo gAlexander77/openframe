@@ -7,6 +7,7 @@ import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import type { ActionId } from "./lib/keymap";
 import { run } from "./state/actions";
+import { renderToUrl, stillToUrl } from "./state/export";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -41,6 +42,10 @@ export const automation = {
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */
   pixels: () => player.pixels(),
   platform: () => platform.kind,
+  /** Export to memory: { url (Blob URL), size, fileName, frames, ... }. */
+  render: renderToUrl,
+  /** The current frame (or `frame`) as a PNG Blob URL. */
+  still: stillToUrl,
 };
 
 declare global {

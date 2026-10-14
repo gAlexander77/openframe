@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ExportDialog } from "./components/ExportDialog";
 import { Home } from "./components/Home";
 import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
@@ -121,6 +122,7 @@ export default function App() {
       )}
       <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
       <DragGhost />
+      <ExportDialog />
       <Toasts />
     </div>
   );

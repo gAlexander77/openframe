@@ -32,3 +32,7 @@ fixtures/media/
 
 # Screenshots the drive scripts write beside themselves
 scripts/drive/shots/
+
+# Local scratch: drive outputs (exported files), throwaway runners and their
+# node_modules
+scratch/

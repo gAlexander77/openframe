@@ -15,7 +15,7 @@ Pure core (src/lib)                 project types/ops/defaults, commands,
    │                                math, timeline geometry, time, keymap
 Engine (src/engine)                 media (mediabunny inputs), cursor, player,
    │                                compositor + shaders (WebGL2), text,
-   │                                audio scheduling, thumbnails/peaks
+   │                                audio scheduling, thumbnails/peaks, export
 Platform (src/platform)             web (OPFS, File System Access) | desktop
                                     (Tauri commands, media: protocol)
 Rust (src-tauri)                    files, projects, export writes, FFmpeg
@@ -44,6 +44,11 @@ Playback is the same loop driven by `requestAnimationFrame`, with the frame
 derived from the audible audio clock; audio is scheduled separately by
 `scheduleAudio`, which export reuses with an `OfflineAudioContext`.
 
+Export (`src/engine/export.ts`) runs steps 3-5 once per output frame on a
+private canvas, awaiting every source and the encoder instead of following
+a clock, so no frame is ever dropped
+([[ADR-014 Export is a deterministic frame loop]]).
+
 ## Module table
 
 | Module | Owns |
@@ -52,13 +57,16 @@ derived from the audible audio clock; audio is scheduled separately by
 | `lib/project/ops.ts` | Every edit: place, split, trims, speed, freeze, detach, settle |
 | `lib/commands.ts` | Named commands + JSON Schemas; `describeProject` |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
+| `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play |
 | `engine/player.ts` | Preview loop, transport, shuttle |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
+| `engine/export.ts` | The export loop, codec choice, audio windows |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
+| `state/export.ts` | The export job: dialog state, `render()` for automation |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |
