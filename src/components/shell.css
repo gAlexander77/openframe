@@ -111,3 +111,36 @@
 }
 .window-controls button:hover { background: var(--bg-2); color: var(--text-1); }
 .window-controls button.close:hover { background: #c42b1c; color: #fff; }
+
+/* ---- drag ghost and toasts ---------------------------------------------------- */
+.drag-ghost {
+  position: fixed; left: 0; top: 0; z-index: 300;
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px;
+  padding: 5px 10px; border-radius: 6px;
+  background: var(--accent); color: var(--accent-ink);
+  font-size: var(--fs-xs); font-weight: 600;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  pointer-events: none; white-space: nowrap; overflow: hidden;
+  animation: pop-in var(--t-fast) var(--ease-out);
+}
+.drag-ghost span { overflow: hidden; text-overflow: ellipsis; }
+
+.toasts {
+  position: fixed; top: 52px; left: 50%; z-index: 400;
+  display: grid; gap: 6px; justify-items: center;
+  transform: translateX(-50%); pointer-events: none;
+}
+.toast {
+  display: inline-flex; align-items: center; gap: 10px;
+  max-width: 560px; padding: 8px 10px 8px 14px; border-radius: 999px;
+  background: #2b2b2b; color: var(--text-1); font-size: var(--fs-sm);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(255 255 255 / 6%);
+  pointer-events: auto;
+  animation: toast-in var(--t-slow) var(--ease-spring);
+}
+@keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+.toast-error { box-shadow: 0 10px 30px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(240 90 90 / 55%); }
+.toast-x { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); }
+.toast-x:hover { background: var(--bg-3); color: var(--text-1); }
+.toast-bar { width: 120px; height: 4px; border-radius: 4px; background: var(--bg-3); overflow: hidden; }
+.toast-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 200ms linear; }

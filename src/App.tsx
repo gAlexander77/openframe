@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
+import { LibraryPanel } from "./components/LibraryPanel";
+import { DragGhost, Toasts } from "./components/Overlays";
+import { PlayerPanel } from "./components/Player";
 import { Splitter } from "./components/Splitter";
+import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
 import { onKeyDown } from "./state/actions";
 import "./components/shell.css";
@@ -11,9 +15,9 @@ interface Layout {
   top: number;
 }
 
-// CapCut's default proportions at 1600x940: library and inspector ~22% each,
-// timeline ~42% of the height.
-const DEFAULT_LAYOUT: Layout = { left: 360, right: 340, top: 500 };
+// CapCut's proportions (research §1.2): library ~36%, player ~40%, inspector
+// ~24% of the width; the top row ~58% of the height.
+const DEFAULT_LAYOUT: Layout = { left: 470, right: 360, top: 520 };
 
 function loadLayout(): Layout {
   try {
@@ -55,15 +59,17 @@ export default function App() {
           className="top-row"
           style={{ gridTemplateColumns: `${layout.left}px var(--gap) minmax(320px, 1fr) var(--gap) ${layout.right}px` }}
         >
-          <section className="panel library-panel" aria-label="Library" />
+          <LibraryPanel />
           <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />
-          <section className="panel player-panel" aria-label="Player" />
+          <PlayerPanel />
           <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => setLayout((l) => ({ ...l, right: DEFAULT_LAYOUT.right }))} />
           <section className="panel inspector-panel" aria-label="Inspector" />
         </div>
         <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => setLayout((l) => ({ ...l, top: DEFAULT_LAYOUT.top }))} />
-        <section className="panel timeline-panel" aria-label="Timeline" />
+        <Timeline />
       </div>
+      <DragGhost />
+      <Toasts />
     </div>
   );
 }

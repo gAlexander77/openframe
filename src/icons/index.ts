@@ -3,6 +3,8 @@
 // Lucide supplies the drawings; re-exporting here keeps the set countable and
 // lets a custom-drawn icon replace one without touching its callers.
 export {
+  ArrowLeftToLine,
+  ArrowRightToLine,
   AudioLines,
   Blend,
   Bookmark,
@@ -14,6 +16,7 @@ export {
   ChevronRight,
   Clapperboard,
   Copy,
+  Crosshair,
   Crop,
   Diamond,
   Download,
@@ -44,6 +47,7 @@ export {
   Redo2,
   Repeat,
   RotateCw,
+  ScanLine,
   Scissors,
   Search,
   Settings,

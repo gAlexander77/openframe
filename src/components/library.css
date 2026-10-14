@@ -3,15 +3,15 @@
 /* CapCut: a row of icon-over-label tabs, active one in cyan; it scrolls
    sideways when the panel is narrow. */
 .lib-tabs {
-  display: flex; gap: 2px;
-  padding: 6px 6px 0;
+  display: flex; gap: 0;
+  padding: 6px 4px 0;
   border-bottom: 1px solid var(--line);
   overflow-x: auto; scrollbar-width: none;
 }
 .lib-tabs::-webkit-scrollbar { display: none; }
 .lib-tab {
   display: grid; justify-items: center; gap: 3px;
-  min-width: 52px; padding: 5px 6px 7px;
+  flex: 1 0 auto; min-width: 46px; padding: 5px 4px 7px;
   border: 0; border-radius: var(--radius) var(--radius) 0 0;
   background: transparent; color: var(--text-2);
   font-size: var(--fs-xs); white-space: nowrap;
