@@ -46,6 +46,15 @@ describe("planFrame", () => {
     expect(item.kind === "layer" && item.layer.adjust.temperature).toBe(17.5);
   });
 
+  it("carries a clip's grade to its layer, and leaves ungraded clips without one", () => {
+    let p = twoClips();
+    p = { ...p, tracks: [{ ...p.tracks[0], clips: p.tracks[0].clips.map((c) => (c.id === "a" && "adjust" in c ? { ...c, adjust: { ...c.adjust, hsl: { red: { hue: 0, saturation: -50, lightness: 0 } } } } : c)) }] };
+    const a = planFrame(p, 0)[0];
+    const b = planFrame(p, 70)[0];
+    expect(a.kind === "layer" && a.layer.grade?.hsl?.[1]).toBe(-0.5);
+    expect(b.kind === "layer" && b.layer.grade).toBeUndefined();
+  });
+
   it("lists adjustment layers in stack order", () => {
     let p = twoClips();
     const fx = createTrack("video", "FX");
