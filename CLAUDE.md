@@ -83,10 +83,12 @@ inspector, timeline. Full map: `docs/Architecture.md`.
 - `npm run tauri dev` runs the desktop app (Rust + the same Vite).
 - `node scripts/make-fixtures.mjs` regenerates test media in
   `fixtures/media/` (gitignored); `scripts/drive/*.js` are Playwright drives
-  (`async (page) => ({ ok, details })`), run via the Playwright MCP tool's
-  `filename` parameter or with `playwright-core` and the system Edge
-  (`chromium.launch({ channel: "msedge" })`). The app opens on the home
-  screen: click `.create-card` before touching the editor.
+  (`async (page) => ({ ok, details })`). Run one headless with
+  `node scripts/drive/run.mjs scripts/drive/<name>.js` (once:
+  `npm i --prefix scratch playwright-core`), or through the Playwright MCP
+  tool's `filename` parameter. Browsers run headless: the owner uses this
+  machine while agents work. The app opens on the home screen: click
+  `.create-card` before touching the editor.
 - Parallel agents: one Vite port each (1420 is main's), at most one dev
   server and one browser per agent — the machine runs out of memory with
   five agents each holding both.

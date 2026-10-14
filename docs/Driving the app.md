@@ -8,9 +8,12 @@ the unit pass".
 
 **Which harness:**
 
-- **The web build** (`npm run dev`, :1420) through the Playwright MCP tools:
-  engine and UI logic with no IPC. `scripts/drive/*.js` run there through
-  `browser_run_code_unsafe`.
+- **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.
+  Run a drive headless with `node scripts/drive/run.mjs scripts/drive/<name>.js
+  [--size 1600x950]` (once: `npm i --prefix scratch playwright-core`); it
+  prints PASS/FAIL, the failed checks, and writes the full result to
+  `scratch/`. The Playwright MCP tool's `browser_run_code_unsafe` runs the
+  same files.
 - **This page**: the desktop app over WebView2's debug port. Anything that
   crosses IPC: the `media:` protocol, projects, exports, FFmpeg proxies,
   OS drops.
