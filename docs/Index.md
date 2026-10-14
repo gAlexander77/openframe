@@ -26,6 +26,7 @@ of the documentation and how agents use it as shared working memory.
 - [[AI development]] — the Claude Code/Codex experiment, documentation purpose,
   evidence and continuity across agent sessions
 - [[Next agent handoff]] — current owner direction and safe pickup order
+- [[Web capability log]] — dated browser checks and limits, separately from desktop
 - [[Release preparation]] — GPL license, dependency inventory and remaining
   tasks before a separately authorized public release
 - [Contributing](../CONTRIBUTING.md) — how users, developers and AI agents can help
