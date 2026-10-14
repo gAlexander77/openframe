@@ -22,6 +22,7 @@ function host(): McpHost & { project: Project } {
     redo: () => ({}),
     seek: () => ({}),
     frame: async () => "iVBOR",
+    removeBackground: async (clipId: string) => ({ clipId, cached: false }),
   };
   return h;
 }
@@ -38,6 +39,7 @@ describe("MCP", () => {
     const names = listTools().map((t) => t.name);
     expect(names).toContain("add_media_clip");
     expect(names).toContain("preview_frame");
+    expect(names).toContain("remove_background");
     expect(new Set(names).size).toBe(names.length);
     expect(listTools().every((t) => t.inputSchema.type === "object")).toBe(true);
   });

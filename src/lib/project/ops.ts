@@ -13,6 +13,7 @@ import type {
   Asset,
   AudioClip,
   Clip,
+  Cutout,
   Id,
   Keyframe,
   Marker,
@@ -532,6 +533,15 @@ export function setTransition(p: Project, clipId: Id, tr: Transition | null): Pr
     if (!tr) return omit(c, ["transitionOut"]);
     const max = Math.min(c.duration, next!.duration);
     return { ...c, transitionOut: { ...tr, duration: Math.max(2, Math.min(tr.duration, max)) } } as Clip;
+  });
+}
+
+/** Attach, change or remove a video clip's background removal (the
+ * matte reference; the matte file itself stays where it is). */
+export function setCutout(p: Project, clipId: Id, cutout: Cutout | undefined): Project {
+  return updateClip(p, clipId, (c) => {
+    if (c.type !== "video") return c;
+    return cutout ? { ...c, cutout } : omit(c, ["cutout"]);
   });
 }
 

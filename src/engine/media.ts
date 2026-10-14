@@ -94,8 +94,11 @@ async function openInput(source: Source): Promise<MediaFile> {
 const files = new Map<string, Promise<MediaFile>>();
 
 /** The open media for an asset, preferring its proxy when it has one. */
-export function mediaFor(asset: Asset): Promise<MediaFile> {
-  const src = asset.proxy ?? asset.src;
+export const mediaFor = (asset: Asset): Promise<MediaFile> => mediaForSrc(asset.proxy ?? asset.src);
+
+/** The open media at a platform location (an asset's file, or a
+ * background matte, which is stored like media). */
+export function mediaForSrc(src: string): Promise<MediaFile> {
   let m = files.get(src);
   if (!m) {
     m = platform.sourceFor(src).then(openInput);

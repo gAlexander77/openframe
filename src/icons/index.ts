@@ -25,6 +25,7 @@ export {
   Diamond,
   Download,
   Drum,
+  Eraser,
   Eye,
   EyeOff,
   FilePlus2,

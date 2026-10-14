@@ -162,9 +162,11 @@ uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
 uniform int u_rotation;    // container rotation: 0, 1, 2, 3 quarter turns clockwise
 out vec2 v_uv;             // source texture uv
 out vec2 v_local;          // 0..1 across the visible layer, top-left origin
+out vec2 v_disp;           // display-space uv of the whole source (the matte's space)
 void main() {
   v_local = a_pos;
   vec2 d = mix(u_crop.xy, u_crop.zw, a_pos);   // display-space uv
+  v_disp = d;
   if (u_rotation == 1) v_uv = vec2(d.y, 1.0 - d.x);
   else if (u_rotation == 2) v_uv = vec2(1.0 - d.x, 1.0 - d.y);
   else if (u_rotation == 3) v_uv = vec2(1.0 - d.y, d.x);
@@ -177,7 +179,11 @@ export const LAYER_FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 in vec2 v_local;
+in vec2 v_disp;
 uniform sampler2D u_tex;
+// remove background: a grayscale matte video, luma = alpha (ADR-033)
+uniform bool u_matteOn;
+uniform sampler2D u_matte;
 uniform bool u_solid;
 uniform vec4 u_color;
 uniform vec2 u_texel;
@@ -235,6 +241,9 @@ void main() {
     float spill = (1.0 - smoothstep(0.0, u_keySimilarity * 0.4 + 0.25, d)) * u_keySpill;
     c = mix(c, vec3(luma(c)), spill);
   }
+  // The matte went through a lossy codec and back (16..235 luma): the
+  // outer 2% are codec noise, so flat areas land on exactly 0 and 1.
+  if (u_matteOn) a *= clamp((texture(u_matte, v_disp).r - 0.02) / 0.96, 0.0, 1.0);
   c = adjustColor(c, v_local);
   a *= u_opacity * maskAlpha(v_local);
   outColor = vec4(c * a, a);

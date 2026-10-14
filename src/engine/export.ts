@@ -50,7 +50,7 @@ import { planFrame } from "../lib/render/plan";
 import { formatTimecode, type Rational } from "../lib/time";
 import { scheduleAudio } from "./audio";
 import { Compositor } from "./compositor";
-import { CursorPool, resolveSources, sourceImages } from "./player";
+import { CursorPool, resolveSources, sourceImages, type Resolved } from "./player";
 
 export interface ExportProgress {
   phase: "preparing" | "rendering" | "finalizing";
@@ -475,13 +475,19 @@ export async function exportProject(
 
 /** Any clip whose pixels could not be produced fails the export, rather
  * than exporting black where the preview showed a picture. */
-function assertSources(p: Project, items: ReturnType<typeof planFrame>, resolved: Map<string, unknown>, f: number) {
+function assertSources(p: Project, items: ReturnType<typeof planFrame>, resolved: Resolved, f: number) {
   for (const item of items) {
     const layers = item.kind === "layer" ? [item.layer] : item.kind === "transition" ? [item.from, item.to] : [];
     for (const l of layers) {
-      if ((l.source.kind === "video" || l.source.kind === "image") && !resolved.has(l.clipId)) {
-        const name = getAsset(p, l.source.assetId)?.name ?? "a clip";
+      if (l.source.kind !== "video" && l.source.kind !== "image") continue;
+      const name = getAsset(p, l.source.assetId)?.name ?? "a clip";
+      if (!resolved.has(l.clipId)) {
         throw new ExportError(`Couldn't read ${name} at ${formatTimecode(f, p.fps)}. Check that the file is still available.`);
+      }
+      // Exporting the clip with its background back would not be what the
+      // preview promised.
+      if (l.matte && !resolved.get(l.clipId)!.matte) {
+        throw new ExportError(`The removed background of ${name} is missing. Turn Remove background off and on again to make it again.`);
       }
     }
   }

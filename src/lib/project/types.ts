@@ -302,6 +302,23 @@ export interface Visual {
 
 export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
 
+/** CapCut's Remove background (ADR-032, ADR-033): a matte a segmentation
+ * model made once on this machine, multiplied into the clip's alpha. The
+ * matte is a file beside the media, not data in the project, and can be
+ * made again from the asset at any time. */
+export interface Cutout {
+  /** Off keeps the matte, so turning it back on is instant. */
+  enabled: boolean;
+  /** The matte: a grayscale video (luma = alpha) stored like imported
+   * media, an app-data path on desktop or an OPFS key on the web. */
+  src: string;
+  /** Source seconds the matte covers; its time 0 is `from`. */
+  from: number;
+  to: number;
+  /** The model that made it (a Hugging Face id). */
+  model: string;
+}
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -343,7 +360,7 @@ export interface TextStyle {
   maxWidth: number;
 }
 
-export type VideoClip = ClipBase & Visual & Sound & Timed & { type: "video" };
+export type VideoClip = ClipBase & Visual & Sound & Timed & { type: "video"; cutout?: Cutout };
 export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id };
 export type TextClip = ClipBase &

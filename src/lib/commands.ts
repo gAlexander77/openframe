@@ -623,6 +623,19 @@ export const COMMANDS: Command[] = [
       }),
   },
   {
+    name: "set_background_removal",
+    description:
+      "Turn Remove background on or off for video clips that already have a background matte (the person stays, everything behind them becomes see-through, so lower tracks show). The remove_background tool (window.videoEditor.ai.removeBackground) makes the matte on this machine; turning it off keeps the matte, so turning it back on is instant.",
+    input: S.obj({ clip_ids: S.ids("Video clips"), enabled: S.bool("On or off") }, ["clip_ids", "enabled"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const c = clipOrThrow(q, id).clip;
+        if (c.type !== "video") throw new CommandError(`clip ${id} is a ${c.type} clip; Remove background works on video clips`);
+        if (!c.cutout) throw new CommandError(`clip ${id} has no background matte yet; make one with the remove_background tool (window.videoEditor.ai.removeBackground)`);
+        return ops.setCutout(q, id, { ...c.cutout, enabled: a.enabled === true });
+      }, p),
+  },
+  {
     name: "apply_lut",
     description: "Apply a .cube LUT to a visual or adjustment clip, mixed in at intensity 0..1 (default 1). lut_id is from the project's luts (describeProject lists them; files are imported with window.videoEditor.importLuts or by dropping a .cube on the app). lut_id 'none' removes it. Animate with add_keyframe on adjust.lut.intensity.",
     input: S.obj({ clip_id: S.str("Visual or adjustment clip id"), lut_id: S.str("LUT id, or 'none'"), intensity: S.num("0..1", { minimum: 0, maximum: 1 }) }, ["clip_id", "lut_id"]),
@@ -702,6 +715,7 @@ export function describeProject(p: Project) {
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
+        ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
       })),
     })),
     markers: p.markers.map((m) => ({ at: s(m.frame), label: m.label })),

@@ -5,9 +5,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Film, Gauge, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
+import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
-import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
+import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, removeBackground, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
 
@@ -19,6 +19,7 @@ const RUN: Record<ToolId, () => Promise<unknown>> = {
   beats: () => markBeats(),
   loudness: () => normalizeLoudness(),
   ducking: () => duckUnderSpeech(),
+  cutout: () => removeBackground(),
 };
 
 export function AiToolsTab() {
@@ -35,6 +36,7 @@ export function AiToolsTab() {
         <ToolCard tool="beats" icon={Drum} title="Beat markers" blurb="Drop a marker on the beat of a music track." action="Mark" settings={<BeatSettings />} />
         <ToolCard tool="loudness" icon={Gauge} title="Normalize loudness" blurb="Even out the volume of the selected clips." action="Normalize" settings={<LoudnessSettings />} />
         <ToolCard tool="ducking" icon={Volume1} title="Auto ducking" blurb="Lower the selected music while people talk." action="Duck" settings={<DuckSettings />} />
+        <ToolCard tool="cutout" icon={Eraser} title="Remove background" blurb="Keep the person, drop everything behind them." action="Remove" />
         <LinkCard icon={Captions} title="Auto captions" blurb="Turn speech into captions, on your computer." action="Open Captions" onClick={() => store.set({ leftTab: "captions" })} />
         <LinkCard icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16 or 1:1." soon />
       </div>
@@ -72,7 +74,7 @@ function TargetBanner() {
   );
 }
 
-function ToolCard(props: { tool: ToolId; icon: Icon; title: string; blurb: string; action: string; settings: ReactNode }) {
+function ToolCard(props: { tool: ToolId; icon: Icon; title: string; blurb: string; action: string; settings?: ReactNode }) {
   const { tool } = props;
   const job = useAi((s) => s.jobs[tool]);
   const result = useAi((s) => s.results[tool]);
@@ -93,12 +95,14 @@ function ToolCard(props: { tool: ToolId; icon: Icon; title: string; blurb: strin
           <h3>{props.title}</h3>
           <p>{props.blurb}</p>
         </div>
-        <button className={`icon-btn ai-gear${open ? " on" : ""}`} aria-label={`${props.title} settings`} aria-expanded={open} onClick={() => setOpen(!open)}>
-          <SlidersHorizontal />
-        </button>
+        {props.settings && (
+          <button className={`icon-btn ai-gear${open ? " on" : ""}`} aria-label={`${props.title} settings`} aria-expanded={open} onClick={() => setOpen(!open)}>
+            <SlidersHorizontal />
+          </button>
+        )}
       </div>
       {open && (
-        <Popover title={`${props.title} settings`} onClose={() => setOpen(false)} onReset={() => aiStore.resetSettings(tool)}>
+        <Popover title={`${props.title} settings`} onClose={() => setOpen(false)} onReset={() => aiStore.resetSettings(tool as keyof AiSettings)}>
           {props.settings}
         </Popover>
       )}
@@ -242,7 +246,7 @@ function Segmented<T extends string | number>(props: { label: string; value: T; 
 const seconds = (v: number) => `${v.toFixed(2)} s`;
 const percent = (v: number) => `${Math.round(v * 100)}`;
 
-function useSettings<T extends ToolId>(tool: T): [AiSettings[T], (patch: Partial<AiSettings[T]>) => void] {
+function useSettings<T extends keyof AiSettings>(tool: T): [AiSettings[T], (patch: Partial<AiSettings[T]>) => void] {
   const s = useAi((st) => st.settings[tool]);
   return [s, (patch) => aiStore.setSettings(tool, patch)];
 }

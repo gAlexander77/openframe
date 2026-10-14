@@ -10,7 +10,7 @@ import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
-import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
+import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, removeBackground, removeSilences, splitScenes } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
@@ -65,8 +65,10 @@ export const automation = {
   /** Local analysis without editing; times are source seconds (ADR-017).
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
-  /** The AI tools: analyze, then apply as one undoable edit. */
-  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech },
+  /** The AI tools: analyze, then apply as one undoable edit.
+   * removeBackground(clipId?) makes the clip's matte and turns it on; the
+   * set_background_removal command toggles it afterwards. */
+  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, removeBackground },
 };
 
 declare global {
@@ -104,6 +106,7 @@ const mcpHost: McpHost = {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     return { playhead: seconds };
   },
+  removeBackground: (clipId) => removeBackground(clipId),
   frame: async (seconds, maxWidth) => {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     await new Promise((r) => setTimeout(r, 20));

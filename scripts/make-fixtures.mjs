@@ -7,7 +7,7 @@
 //   node scripts/make-fixtures.mjs
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const out = join(import.meta.dirname, "..", "fixtures", "media");
@@ -114,6 +114,24 @@ const jobs = {
   // tone every 3 s), for removing silences from a video with its sound.
   "talk-gaps.mp4": () =>
     ff("-f", "lavfi", "-i", burn(640, 360, 30), "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*300*t)*lt(mod(t,3),1.6)':s=48000:d=12", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-shortest", join(out, "talk-gaps.mp4")),
+  // Remove background (scripts/drive/bg-removal.js) needs a real person:
+  // the segmentation model is trained on portraits. The photo is CC0
+  // ("Siva Vaidhyanathan.jpg", Wikimedia Commons, by Siva Vaidhyanathan,
+  // https://commons.wikimedia.org/wiki/File:Siva_Vaidhyanathan.jpg), a man
+  // in a checked jacket against yellow foliage and a white column. It is
+  // scaled to 1215x810 and a 960x540 window pans across it one pixel a
+  // frame (x = 255 - n, y = 135), so the drive knows where every point of
+  // the photo is on every frame: face and jacket must stay, foliage and
+  // column must go.
+  "person-pan.mp4": async () => {
+    const photo = join(out, "_cc0-portrait.jpg");
+    if (!existsSync(photo)) {
+      const res = await fetch("https://upload.wikimedia.org/wikipedia/commons/f/fb/Siva_Vaidhyanathan.jpg", { headers: { "User-Agent": "video-editor-fixtures/0.1" } });
+      if (!res.ok) throw new Error(`download failed (${res.status})`);
+      writeFileSync(photo, Buffer.from(await res.arrayBuffer()));
+    }
+    ff("-loop", "1", "-framerate", "30", "-i", photo, "-vf", "scale=1215:810,crop=960:540:'255-n':135,format=yuv420p", "-frames:v", "180", "-c:v", "libx264", "-g", "30", "-crf", "18", join(out, "person-pan.mp4"));
+  },
 };
 
 const only = process.argv.slice(2);
@@ -121,7 +139,7 @@ for (const [name, make] of Object.entries(jobs)) {
   if (only.length && !only.some((o) => name.includes(o))) continue;
   process.stdout.write(`${name} ... `);
   try {
-    make();
+    await make();
     console.log("ok");
   } catch (e) {
     console.log(`FAILED (${e.message.split("\n")[0]})`);

@@ -59,6 +59,9 @@ export interface Layer {
   effects: ResolvedEffect[];
   mask?: Mask;
   chromaKey?: ChromaKey;
+  /** Remove background: the matte video and the time in it that matches
+   * the source frame (ADR-033). */
+  matte?: { src: string; time: number };
   /** Extra blur from an animation, canvas pixels at 1080p. */
   blur: number;
   /** Seconds since the clip started, for time-driven effects. */
@@ -181,6 +184,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
 
   const anim = animationAt(clip, r);
   const { adjust, tone } = resolveAdjust(clip, r);
+  const cut = clip.type === "video" && clip.cutout?.enabled ? clip.cutout : undefined;
   return {
     clipId: clip.id,
     source,
@@ -199,6 +203,9 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     effects: resolveEffects(clip, r),
     mask: clip.mask,
     chromaKey: clip.chromaKey?.enabled ? clip.chromaKey : undefined,
+    // Matte frames carry their source frame's timestamp minus `from`, so
+    // the same lookup (quarter frame past the edge) lands on the same frame.
+    matte: cut && source.kind === "video" ? { src: cut.src, time: source.time - cut.from } : undefined,
     blur: anim.blur,
     time: framesToSeconds(r, p.fps),
   };
@@ -210,7 +217,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
 export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer | null {
   const fill = clip.canvas;
   if (!fill) return null;
-  const base: Layer = { ...layer, clipId: `${clip.id}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, effects: [], blur: 0 };
+  const base: Layer = { ...layer, clipId: `${clip.id}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0 };
   if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
   if (clip.type !== "video" && clip.type !== "image") return null;
   const a = getAsset(p, clip.assetId);

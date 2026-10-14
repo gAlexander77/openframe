@@ -45,6 +45,9 @@ export interface SourceImage {
   /** Stable key for sources that do not change between frames (images,
    * text). Unkeyed sources (video frames) re-upload every draw. */
   key?: string;
+  /** Remove background: this frame's matte (luma = alpha), covering the
+   * whole source in display orientation (ADR-033). */
+  matte?: TexImageSource;
 }
 
 type Program = { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -88,6 +91,7 @@ export class Compositor {
   /** Textures for sources, by key (stable sources) or by slot. */
   private sourceTextures = new Map<string, WebGLTexture>();
   private slotTextures: WebGLTexture[] = [];
+  private matteTextures: WebGLTexture[] = [];
   /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
    * when a grade part is off so no sampler is ever left without one. */
   private curveTextures = new Map<string, WebGLTexture>();
@@ -435,6 +439,15 @@ export class Compositor {
       const th = src.rotation % 2 ? src.width : src.height;
       gl.uniform2f(u("u_texel"), 1 / tw, 1 / th);
     }
+    // Unit 4: the matte (units 1..3 are the grade's tables).
+    gl.uniform1i(u("u_matteOn"), src?.matte ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE4);
+    if (src?.matte) {
+      gl.bindTexture(gl.TEXTURE_2D, (this.matteTextures[slot] ??= this.makeTexture()));
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src.matte);
+    } else gl.bindTexture(gl.TEXTURE_2D, this.blank());
+    gl.uniform1i(u("u_matte"), 4);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(u("u_sharpen"), layer.adjust.sharpen / 100);
     gl.uniform1f(u("u_opacity"), layer.opacity);
     const key = layer.chromaKey;
@@ -627,7 +640,7 @@ export class Compositor {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
     if (this.blank2d) gl.deleteTexture(this.blank2d);
     if (this.blank3d) gl.deleteTexture(this.blank3d);
@@ -643,6 +656,7 @@ export class Compositor {
     this.targets = [];
     this.sourceTextures.clear();
     this.slotTextures = [];
+    this.matteTextures = [];
     this.programs.clear();
     this.width = this.height = 0;
   }

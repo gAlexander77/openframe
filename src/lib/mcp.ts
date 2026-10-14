@@ -38,6 +38,9 @@ export interface McpHost {
   seek(seconds: number): unknown;
   /** PNG of the frame at `seconds`, base64 without the data: prefix. */
   frame(seconds: number, maxWidth: number): Promise<string>;
+  /** Make a video clip's background matte on this machine and turn it on
+   * (one undoable edit); resolves when processing is done. */
+  removeBackground(clipId: string): Promise<unknown>;
 }
 
 interface AppTool {
@@ -92,6 +95,13 @@ export const APP_TOOLS: AppTool[] = [
     description: "See the composited picture at a time: returns a PNG image of the frame exactly as it would export.",
     inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" }, max_width: { type: "integer", minimum: 64, maximum: 1920, description: "Image width, default 640" } }, ["at"]),
     call: async (h, a) => ({ content: [{ type: "image", data: await h.frame(Number(a.at), Number(a.max_width ?? 640)), mimeType: "image/png" }] }),
+  },
+  {
+    name: "remove_background",
+    description:
+      "Remove the background of a video clip of a person (CapCut's Remove background): a segmentation model on this machine makes a matte for every frame (seconds to minutes; the first run downloads the model), then the person plays over whatever is on the tracks below. One undoable edit; set_background_removal turns it off and on again instantly.",
+    inputSchema: obj({ clip_id: { type: "string", description: "Video clip id" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.removeBackground(String(a.clip_id))),
   },
 ];
 

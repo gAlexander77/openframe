@@ -20,7 +20,7 @@ import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } fr
 import { Compositor, type SourceImage } from "./compositor";
 import { VideoCursor } from "./cursor";
 import { loadPlanLuts } from "./luts";
-import { imageFor, mediaFor } from "./media";
+import { imageFor, mediaFor, mediaForSrc, type MediaFile } from "./media";
 import { rasterizeText } from "./text";
 
 interface CursorEntry {
@@ -28,8 +28,9 @@ interface CursorEntry {
   used: number;
 }
 
-/** Resolved pixels for one plan, ready for a synchronous compositor pass. */
-type Resolved = Map<Id, { sample?: VideoSample; bitmap?: ImageBitmap; key?: string }>;
+/** Resolved pixels for one plan, ready for a synchronous compositor pass.
+ * `matte` is the clip's background matte frame (Remove background). */
+export type Resolved = Map<Id, { sample?: VideoSample; matte?: VideoSample; bitmap?: ImageBitmap; key?: string }>;
 
 const layersOf = (plan: PlanItem[]): Layer[] =>
   plan.flatMap((i) => (i.kind === "layer" ? [i.layer] : i.kind === "transition" ? [i.from, i.to] : []));
@@ -39,14 +40,23 @@ export class CursorPool {
   private map = new Map<Id, CursorEntry>();
 
   get(p: Project, clipId: Id, assetId: Id): Promise<VideoCursor | null> {
-    let e = this.map.get(clipId);
+    const asset = getAsset(p, assetId);
+    return this.open(clipId, () => (asset ? mediaFor(asset) : null));
+  }
+
+  /** The cursor over a clip's background matte; a new matte file (made
+   * again) gets a new cursor. */
+  matte(clipId: Id, src: string): Promise<VideoCursor | null> {
+    return this.open(`${clipId}#matte:${src}`, () => mediaForSrc(src));
+  }
+
+  private open(key: string, media: () => Promise<MediaFile> | null): Promise<VideoCursor | null> {
+    let e = this.map.get(key);
     if (!e) {
-      const asset = getAsset(p, assetId);
-      const cursor = asset
-        ? mediaFor(asset).then((m) => (m.videoSink && m.keySink ? new VideoCursor(m.videoSink, m.keySink, m.videoStart) : null))
-        : Promise.resolve(null);
+      const m = media();
+      const cursor = m ? m.then((f) => (f.videoSink && f.keySink ? new VideoCursor(f.videoSink, f.keySink, f.videoStart) : null)) : Promise.resolve(null);
       e = { cursor: cursor.catch(() => null), used: 0 };
-      this.map.set(clipId, e);
+      this.map.set(key, e);
     }
     e.used = performance.now();
     return e.cursor;
@@ -78,9 +88,12 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
     ...layersOf(plan).map(async (l) => {
       const src = l.source;
       if (src.kind === "video") {
-        const cursor = await pool.get(p, l.clipId, src.assetId);
-        const sample = cursor ? await cursor.frameAt(src.time) : null;
-        if (sample) out.set(l.clipId, { sample });
+        const m = l.matte;
+        const [sample, matte] = await Promise.all([
+          pool.get(p, l.clipId, src.assetId).then((c) => c?.frameAt(src.time) ?? null),
+          m ? pool.matte(l.clipId, m.src).then((c) => c?.frameAt(m.time) ?? null) : null,
+        ]);
+        if (sample) out.set(l.clipId, { sample, matte: matte ?? undefined });
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
@@ -107,7 +120,7 @@ export function sourceImages(resolved: Resolved, width: number, height: number) 
     // canvas from mediabunny already has rotation applied.
     const raw = typeof VideoFrame !== "undefined" && image instanceof VideoFrame;
     const turns = raw ? (((s.rotation / 90) % 4) as 0 | 1 | 2 | 3) : 0;
-    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns };
+    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns, matte: r.matte?.toCanvasImageSource() };
   };
 }
 

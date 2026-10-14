@@ -1,11 +1,14 @@
 import { useState } from "react";
-import { Eye, EyeOff, Plus, Sparkles, Trash2 } from "../../icons";
+import { Eye, EyeOff, Loader2, Plus, Sparkles, Trash2, X } from "../../icons";
 import { fromDb, toDb } from "../../lib/audio";
+import { MATTE_MODELS } from "../../engine/cutout";
+import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "../../lib/catalog";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM, uid } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
 import type { Animation, BlendMode, CanvasFill, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
+import { aiStore, setBackgroundRemoval, useAi } from "../../state/ai";
 import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
@@ -125,7 +128,8 @@ const BLENDS: [BlendMode, string][] = [
 ];
 
 function VideoTab({ clip }: { clip: Clip }) {
-  const [sub, setSub] = useState<"basic" | "mask" | "key">("basic");
+  // CapCut's order: Basic / Remove BG / Mask (research §3.0, §3.3).
+  const [sub, setSub] = useState<"basic" | "removebg" | "mask">("basic");
   if (!("transform" in clip)) return null;
   return (
     <>
@@ -135,8 +139,8 @@ function VideoTab({ clip }: { clip: Clip }) {
           onChange={setSub}
           options={[
             { value: "basic", label: "Basic" },
+            { value: "removebg", label: "Remove BG" },
             { value: "mask", label: "Mask" },
-            { value: "key", label: "Chroma key" },
           ]}
         />
       </div>
@@ -170,9 +174,61 @@ function VideoTab({ clip }: { clip: Clip }) {
           </Section>
         </>
       )}
+      {sub === "removebg" && (
+        <>
+          <AutoRemovalSection clip={clip} />
+          <ChromaSection clip={clip} />
+        </>
+      )}
       {sub === "mask" && <MaskSection clip={clip} />}
-      {sub === "key" && <ChromaSection clip={clip} />}
     </>
+  );
+}
+
+/** CapCut's Auto removal: a switch that makes the background matte once
+ * (with progress, cancelable) and then just turns it on and off. */
+function AutoRemovalSection({ clip }: { clip: Clip }) {
+  const job = useAi((s) => (s.jobs.cutout?.clipId === clip.id ? s.jobs.cutout : undefined));
+  const fps = useEditor((s) => s.project.fps);
+  const video = clip.type === "video" ? clip : null;
+  const cut = video?.cutout;
+  const on = !!cut?.enabled;
+  // A clip trimmed longer than its matte: the new frames need processing.
+  const short = on && video && !covers(cut!, ...clipWindow(video, fps));
+  const toggle = (v: boolean) => (job ? aiStore.cancel("cutout") : void setBackgroundRemoval(clip.id, v).catch(() => {}));
+  return (
+    <Section title="Auto removal" extra={video && <Toggle label="Remove background" on={on || !!job} onChange={toggle} />}>
+      {job ? (
+        <div className="cutout-progress" role="progressbar" aria-label="Removing the background" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+          <span className="cutout-bar">
+            <span style={{ transform: `scaleX(${job.progress})` }} />
+          </span>
+          <span className="cutout-pct num">
+            <Loader2 size={13} className="spin" /> {Math.round(job.progress * 100)}%
+          </span>
+          <button className="icon-btn small" aria-label="Cancel" data-tip="Cancel" onClick={() => aiStore.cancel("cutout")}>
+            <X size={13} />
+          </button>
+        </div>
+      ) : !video ? (
+        <p className="insp-hint">Works on video clips.</p>
+      ) : short ? (
+        <>
+          <p className="insp-hint">Part of this clip was added after its background was removed.</p>
+          <div className="insp-actions">
+            <button className="btn" onClick={() => void setBackgroundRemoval(clip.id, true).catch(() => {})}>
+              Update
+            </button>
+          </div>
+        </>
+      ) : on ? (
+        <p className="insp-hint">The person stays and everything behind them shows the tracks below. Made on this computer.</p>
+      ) : (
+        <p className="insp-hint">
+          Finds the person in every frame and removes everything behind them. Runs on this computer; the first time downloads the model ({MATTE_MODELS.quality.size}).
+        </p>
+      )}
+    </Section>
   );
 }
 

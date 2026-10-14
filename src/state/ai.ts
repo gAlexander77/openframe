@@ -9,21 +9,24 @@
 
 import { useSyncExternalStore } from "react";
 import { decodeMono, frameScores, measureLoudness } from "../engine/analyze";
+import { makeMatte, matteModel } from "../engine/cutout";
 import { detectBeats } from "../lib/analysis/beats";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { runCommand } from "../lib/commands";
+import { clipWindow, covers } from "../lib/matte";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Id, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Cutout, Id, VideoClip } from "../lib/project/types";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
+import { platform } from "../platform";
 import { edit } from "./actions";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 
-export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking";
+export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking" | "cutout";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -104,10 +107,10 @@ export const aiStore = {
       listeners.delete(l);
     };
   },
-  setSettings<T extends ToolId>(tool: T, patch: Partial<AiSettings[T]>) {
+  setSettings<T extends keyof AiSettings>(tool: T, patch: Partial<AiSettings[T]>) {
     set({ settings: { ...state.settings, [tool]: { ...state.settings[tool], ...patch } } });
   },
-  resetSettings(tool: ToolId) {
+  resetSettings(tool: keyof AiSettings) {
     set({ settings: { ...state.settings, [tool]: DEFAULT_AI_SETTINGS[tool] } });
   },
   cancel(tool: ToolId) {
@@ -130,13 +133,14 @@ export const NEEDS: Record<ToolId, string> = {
   beats: "a music or video clip with sound",
   loudness: "video or audio clips with sound",
   ducking: "a music clip with speech under it",
+  cutout: "a video clip of a person",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
 function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | null {
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
-  if (tool === "scenes") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS.scenes}`;
+  if (tool === "scenes" || tool === "cutout") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
   if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
@@ -186,14 +190,15 @@ function windowOf(clip: MediaClip): [number, number] {
 // ---- running a job ---------------------------------------------------------------
 
 /** Run `work` as `tool`'s job: one at a time per tool, with a progress
- * toast and the card's progress, cancelable, errors shown as toasts. */
-async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
+ * toast and the card's progress, cancelable, errors shown as toasts. A
+ * stage of the work can retitle the toast. */
+async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number, label?: string) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
   if (state.jobs[tool]) throw new Error("Already running");
   const abort = new AbortController();
   const tid = toast(label, "progress");
   updateToast(tid, { progress: 0 });
-  const progress = (x: number) => {
-    updateToast(tid, { progress: x });
+  const progress = (x: number, text?: string) => {
+    updateToast(tid, { progress: x, ...(text ? { text } : {}) });
     const j = state.jobs[tool];
     if (j) set({ jobs: { ...state.jobs, [tool]: { ...j, progress: x } } });
   };
@@ -504,4 +509,83 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> =
   });
   finish("ducking", `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
   return { voices: voices.length, dips, keys: keys.length };
+}
+
+// ---- remove background -----------------------------------------------------------
+
+/** Mattes made this session, so undoing past one and turning Remove
+ * background on again does not process the clip again. */
+const madeMattes: (Cutout & { asset: string })[] = [];
+
+/** An existing matte of this asset that covers [from, to]: on any clip of
+ * the project, or made earlier this session. */
+function findMatte(asset: Asset, from: number, to: number): Cutout | undefined {
+  const p = store.get().project;
+  const onClips = p.tracks.flatMap((t) => t.clips).flatMap((c) => (c.type === "video" && c.assetId === asset.id && c.cutout ? [c.cutout] : []));
+  const key = asset.proxy ?? asset.src;
+  const m = [...onClips, ...madeMattes.filter((x) => x.asset === key)].find((x) => covers(x, from, to));
+  return m && { enabled: true, src: m.src, from: m.from, to: m.to, model: m.model };
+}
+
+export interface CutoutResult {
+  clipId: Id;
+  /** True when an existing matte was reused (instant). */
+  cached: boolean;
+  frames?: number;
+  /** Frames processed per second. */
+  fps?: number;
+  /** Wall-clock seconds, the model download included. */
+  seconds?: number;
+  model: string;
+  device?: string;
+  matte: string;
+}
+
+/**
+ * CapCut's Remove background: make the clip's background matte on this
+ * machine (once; progress and cancel like the other tools) and turn it
+ * on, as one undoable edit. A clip whose matte already exists, or whose
+ * asset has one covering it, turns on instantly.
+ */
+export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+  const { clip, asset } = resolve("cutout", clipId);
+  const fps = store.get().project.fps;
+  const [from, to] = clipWindow(clip as VideoClip, fps, asset.fps);
+  const own = (clip as VideoClip).cutout;
+  const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
+  if (ready) {
+    edit("Remove background", (p) => ops.setCutout(p, clip.id, ready));
+    finish("cutout", "Background removed");
+    return { clipId: clip.id, cached: true, model: ready.model, matte: ready.src };
+  }
+  const model = await matteModel();
+  const started = performance.now();
+  const made = await job("cutout", clip, `Removing the background of ${asset.name}`, async (progress, signal) => {
+    const m = await makeMatte(
+      asset,
+      from,
+      to,
+      (s) => (s.stage === "downloading" ? progress(0, `Downloading the background model (${model.size})`) : progress(s.progress, `Removing the background of ${asset.name}`)),
+      signal,
+    );
+    // Stored like imported media: OPFS on the web, app data on desktop.
+    const [file] = await platform.adoptFiles([new File([m.bytes as Uint8Array<ArrayBuffer>], `matte-${asset.name.replace(/\.[^.]+$/, "")}.mp4`, { type: "video/mp4" })]);
+    return { ...m, src: file.src };
+  });
+  const cutout: Cutout = { enabled: true, src: made.src, from: made.from, to: made.to, model: made.model };
+  madeMattes.push({ ...cutout, asset: asset.proxy ?? asset.src });
+  const c = stillThere(clip.id);
+  edit("Remove background", (p) => ops.setCutout(p, c.id, cutout));
+  const seconds = (performance.now() - started) / 1000;
+  finish("cutout", `Background removed · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`);
+  return { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src };
+}
+
+/** The inspector's switch: on makes or reuses the matte, off keeps it. */
+export async function setBackgroundRemoval(clipId: Id, on: boolean): Promise<void> {
+  if (on) {
+    await removeBackground(clipId);
+    return;
+  }
+  edit("Remove background off", (p) => runCommand(p, "set_background_removal", { clip_ids: [clipId], enabled: false }));
 }
