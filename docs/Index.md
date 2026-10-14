@@ -54,3 +54,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   and MCP surface
 - [[ADR-007 Auto captions run Whisper on the user's machine]] — no upload,
   no limit; the timeline mix at 16 kHz, cut at quiet points
+- [[ADR-008 MCP is a handler over the command registry]] — one pure
+  JSON-RPC handler; transports only forward; agents see their own frames

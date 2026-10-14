@@ -10,6 +10,10 @@ import { run } from "./state/actions";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
+import { APP_NAME } from "./lib/brand";
+import { catalogNames, EFFECTS } from "./lib/catalog";
+import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
+import { secondsToFrames } from "./lib/time";
 
 export const automation = {
   /** Every command with its JSON Schema, for tool listing. */
@@ -46,3 +50,51 @@ declare global {
 }
 
 window.videoEditor = automation;
+
+// ---- MCP ------------------------------------------------------------------------
+// The live host behind src/lib/mcp.ts. Transports (desktop HTTP/stdio bridge,
+// a browser extension, tests) post JSON-RPC to window.videoEditor.mcp.
+
+const mcpHost: McpHost = {
+  name: APP_NAME,
+  version: __APP_VERSION__,
+  exec: (name, args) => automation.exec(name, args),
+  describe: () => automation.describe(),
+  projectJson: () => store.get().project,
+  catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
+  importMedia: async (files) => {
+    const assets = await automation.import(files.map((f) => ({ name: f.name ?? f.src.split(/[\\/]/).pop()!, src: f.src })));
+    return assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, duration: a.duration, width: a.width, height: a.height }));
+  },
+  undo: () => {
+    store.undo();
+    return automation.describe();
+  },
+  redo: () => {
+    store.redo();
+    return automation.describe();
+  },
+  seek: (seconds) => {
+    store.seek(secondsToFrames(seconds, store.get().project.fps));
+    return { playhead: seconds };
+  },
+  frame: async (seconds, maxWidth) => {
+    store.seek(secondsToFrames(seconds, store.get().project.fps));
+    await new Promise((r) => setTimeout(r, 20));
+    await player.idle();
+    const px = player.pixels();
+    if (!px) throw new Error("the viewer is not showing (open a project first)");
+    const src = new OffscreenCanvas(px.width, px.height);
+    src.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0);
+    const k = Math.min(1, maxWidth / px.width);
+    const out = new OffscreenCanvas(Math.round(px.width * k), Math.round(px.height * k));
+    out.getContext("2d")!.drawImage(src, 0, 0, out.width, out.height);
+    const bytes = new Uint8Array(await (await out.convertToBlob({ type: "image/png" })).arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+  },
+};
+
+/** One MCP message in, one response out (null for notifications). */
+(automation as typeof automation & { mcp: (req: JsonRpcRequest) => Promise<JsonRpcResponse | null> }).mcp = (req) => handleMcp(req, mcpHost);
