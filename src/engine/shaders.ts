@@ -409,10 +409,12 @@ void main() {
     vec4 dip = u_type == 1 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(1.0);
     outColor = p < 0.5 ? mix(A(uv), dip, p * 2.0) : mix(dip, B(uv), p * 2.0 - 1.0); return;
   }
-  if (u_type == 3) { outColor = mix(A(uv), B(uv), smoothstep(e - soft, e + soft, 1.0 - uv.x)); return; }  // wipe left
-  if (u_type == 4) { outColor = mix(A(uv), B(uv), smoothstep(e - soft, e + soft, uv.x)); return; }        // wipe right
-  if (u_type == 5) { outColor = mix(A(uv), B(uv), smoothstep(e - soft, e + soft, uv.y)); return; }        // wipe up
-  if (u_type == 6) { outColor = mix(A(uv), B(uv), smoothstep(e - soft, e + soft, 1.0 - uv.y)); return; }  // wipe down
+  // Wipes: B covers the part of the frame the edge has passed (distance from
+  // the entry side below e). uv.y is 0 at the bottom of the picture.
+  if (u_type == 3) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.x)); return; }  // wipe left
+  if (u_type == 4) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.x)); return; }        // wipe right
+  if (u_type == 5) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.y)); return; }        // wipe up
+  if (u_type == 6) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.y)); return; }  // wipe down
   if (u_type == 7) {                                                                     // circle open
     float r = length((uv - 0.5) * vec2(u_res.x / u_res.y, 1.0));
     outColor = mix(B(uv), A(uv), smoothstep(e * 1.0 - soft, e * 1.0 + soft, r)); return;
