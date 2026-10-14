@@ -20,8 +20,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   the timeline (which also places them).
 - Formats the platform decodes: MP4/MOV/MKV/WebM with H.264, HEVC (where
   the OS has it), VP8/9, AV1; MP3, WAV, AAC/M4A, FLAC, Ogg/Opus; PNG, JPEG,
-  WebP, GIF, AVIF. Files the webview cannot decode are refused with the
-  codec named (the desktop app proxies them with FFmpeg — in progress).
+  WebP, GIF, AVIF. On desktop, what the webview cannot decode (ProRes,
+  DNxHR, MPEG-2...) gets an FFmpeg proxy when FFmpeg is installed; the web
+  build refuses it with the codec named.
 - Background filmstrips and waveforms, two files at a time.
 - Phone footage rotation honored.
 
@@ -38,8 +39,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
-- Pro trim operations exist as ops and commands (roll, slip, slide,
-  ripple trim) — their dedicated UI tools are planned.
+- Pro trim tools: ripple (T), roll (R), slip (Y) and slide (U), with
+  readouts of what moves while dragging.
 
 ## Viewer
 
@@ -52,6 +53,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Playback on the audio clock with output-latency compensation; J/K/L
   shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
+- **Canvas** fill behind letterboxed clips: blur or color (CapCut's
+  Canvas).
 
 ## Inspector
 
@@ -72,6 +75,22 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   breaks; caption list editing; apply style to all; SRT/VTT import and
   export.
 
+## AI tools (all on this machine)
+
+- **Remove silences**, **Split scenes**, **Beat markers** and **Normalize
+  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) in the
+  library's AI tools tab, one undo step each ([[AI tools]]).
+- **Copilot**: ask for an edit in words; a model on this computer (Ollama
+  or LM Studio) applies it with the editing commands, undoable as a whole.
+
+## Export
+
+- CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
+  the device can encode, 480p to 4K, quality levels or a bitrate, frame
+  rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+- Frame-exact and sample-synced (the export drive reads the framecode
+  back); a canceled export never leaves a partial file.
+
 ## Keyboard
 
 - CapCut's in-app shortcut list, Premiere's where CapCut has none
@@ -80,6 +99,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Automation
 
-- `window.videoEditor`: the command registry with JSON Schemas, actions,
-  seek, import, and the viewer's pixels — the surface for drives, the
-  planned MCP server and the headless renderer.
+Three doors, one engine ([[Automation]]):
+
+- **Headless render**: `video-editor --render project.json --out file`,
+  JSON-line progress, exit codes.
+- **MCP for agents** (opt-in, token-locked, local only): every editing
+  command plus `preview_frame` so an agent can look at its work; HTTP or
+  `--mcp-stdio`.
+- `window.videoEditor` in the page: commands, actions, import, render,
+  pixels and the AI tools — what the drives use.

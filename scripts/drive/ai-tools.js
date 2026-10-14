@@ -13,6 +13,8 @@ async (page, base = "http://localhost:1420") => {
   const fresh = async () => {
     await page.goto(base);
     await page.waitForFunction(() => !!window.videoEditor);
+    // The app opens on the home screen; the panels exist only in a project.
+    if (await page.locator(".create-card").count()) await page.locator(".create-card").click();
     await page.evaluate(() => {
       window.__place = async (name) => {
         const ve = window.videoEditor;
@@ -118,6 +120,28 @@ async (page, base = "http://localhost:1420") => {
     d.truthCount = truth.length;
     d.ok = Math.abs(d.bpm - 128) <= 2 && d.count >= truth.length - 1 && d.count <= truth.length && d.maxErrorMs <= 34 && d.markers === d.count && d.againMarkers === 0 && d.label === "Beat";
     delete d.beats;
+  }
+
+  // 4b. Loudness: each clip measured as ffmpeg's ebur128 measures it (mono
+  //     as dual mono, since it plays on both speakers), then set to the
+  //     target, held back where the peak would clip, in one undo step.
+  //     Reference: ffmpeg -af ebur128=peak=sample[:dualmono=true].
+  await fresh();
+  details.loudness = await run(async () => {
+    const ve = window.videoEditor;
+    const a = await window.__place("speech-test.wav");
+    const b = await window.__place("music-stereo.m4a");
+    const r = await ve.ai.normalizeLoudness([a.clip.id, b.clip.id], { target: -10 });
+    const vol = (id) => ve.describe().tracks.flatMap((t) => t.clips).find((c) => c.id === id).volume;
+    const db = (g) => +(20 * Math.log10(g)).toFixed(2);
+    return { measured: r.map((x) => x.lufs), limitedBy: r.map((x) => x.limitedBy), gainDb: [db(vol(a.clip.id)), db(vol(b.clip.id))], undoLabel: ve.state().undoLabel };
+  });
+  {
+    const d = details.loudness;
+    // ffmpeg reads -14.2 LUFS (speech, dual mono, peak -3.5 dBFS) and -14.6
+    // (stereo music, peak -7.7). To reach -10 the speech would need +4.2 dB
+    // and peak at +0.7, so it is held at the -1 dBFS ceiling: +2.5 dB.
+    d.ok = near(d.measured, [-14.2, -14.6], 0.15) && near(d.gainDb, [2.5, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && d.undoLabel === "Normalize loudness of 2 clips";
   }
 
   // 5. Through the UI once: the AI tools tab, settings popover (Escape must

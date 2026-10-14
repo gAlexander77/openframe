@@ -8,8 +8,9 @@
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
 import { useSyncExternalStore } from "react";
-import { decodeMono, frameScores } from "../engine/analyze";
+import { decodeMono, frameScores, measureLoudness } from "../engine/analyze";
 import { detectBeats } from "../lib/analysis/beats";
+import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { runCommand } from "../lib/commands";
@@ -21,7 +22,7 @@ import { edit } from "./actions";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 
-export type ToolId = "silences" | "scenes" | "beats";
+export type ToolId = "silences" | "scenes" | "beats" | "loudness";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -45,16 +46,24 @@ export interface BeatSettings {
   every: 1 | 2 | 4;
 }
 
+export interface LoudnessSettings {
+  /** Integrated loudness to reach, LUFS. */
+  target: number;
+}
+
 export interface AiSettings {
   silences: SilenceSettings;
   scenes: SceneSettings;
   beats: BeatSettings;
+  loudness: LoudnessSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
   silences: { sensitivity: 0.5, minSilence: 0.4, padding: 0.1 },
   scenes: { sensitivity: 0.5, minScene: 0.5, detector: "adaptive", output: "split" },
   beats: { every: 1 },
+  // YouTube, TikTok, Spotify and most social players normalize to about -14.
+  loudness: { target: -14 },
 };
 
 export interface AiJob {
@@ -110,6 +119,7 @@ export const NEEDS: Record<ToolId, string> = {
   silences: "a video or audio clip with sound",
   scenes: "a video clip",
   beats: "a music or video clip with sound",
+  loudness: "video or audio clips with sound",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
@@ -117,6 +127,9 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
   if (tool === "scenes") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS.scenes}`;
+  // ponytail: one static gain per clip; keyframed volume would need every
+  // key scaled, so those clips are left to the user.
+  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
   return asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
 }
 
@@ -363,4 +376,47 @@ function timelineTimes(clip: MediaClip, times: number[]): number[] {
     .map((t) => frameOfSource(clip, t, fps))
     .filter((f) => f >= clip.start && f < clip.start + clip.duration)
     .map((f) => +framesToSeconds(f, fps).toFixed(6));
+}
+
+// ---- loudness --------------------------------------------------------------------
+
+export interface LoudnessResult extends Normalization {
+  clipId: Id;
+  /** Measured integrated loudness of the source, LUFS. */
+  lufs: number;
+}
+
+/**
+ * Bring every selected clip with sound (or `clipIds`) to the target
+ * loudness by setting its volume, as one undoable edit (CapCut's
+ * "Normalize loudness", measured per ITU-R BS.1770).
+ */
+export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> = {}): Promise<LoudnessResult[]> {
+  const target = opts.target ?? state.settings.loudness.target;
+  const ids = clipIds ?? store.get().selection;
+  const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
+  if (!targets.length) throw new Error(ids.length ? String(targetFor("loudness", ids[0])) : `Select ${NEEDS.loudness} on the timeline`);
+  const label = targets.length === 1 ? `Measuring the loudness of ${targets[0].asset.name}` : `Measuring the loudness of ${plural(targets.length, "clip")}`;
+  const measured = await job("loudness", targets[0].clip, label, async (progress, signal) => {
+    const out: { clipId: Id; lufs: number; peak: number }[] = [];
+    for (const [i, { clip, asset }] of targets.entries()) {
+      const [from, to] = windowOf(clip);
+      const r = await measureLoudness(asset, from, to, (x) => progress((i + x) / targets.length), signal);
+      out.push({ clipId: clip.id, ...r });
+    }
+    return out;
+  });
+  const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.peak) }));
+  const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
+  if (!live.length) {
+    finish("loudness", "Only silence, so nothing changed");
+    return results;
+  }
+  edit(live.length === 1 ? "Normalize loudness" : `Normalize loudness of ${plural(live.length, "clip")}`, (p) =>
+    live.reduce((q, r) => runCommand(q, "set_param", { clip_ids: [r.clipId], path: "volume", value: r.gain }), p),
+  );
+  const held = live.filter((r) => r.limitedBy).length;
+  const one = live.length === 1 ? ` from ${live[0].lufs.toFixed(1)}` : "";
+  finish("loudness", `${plural(live.length, "clip")} set to ${target} LUFS${one}${held ? ` · ${held} held back to avoid clipping` : ""}`);
+  return results;
 }

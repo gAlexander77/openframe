@@ -42,6 +42,9 @@ const jobs = {
     ff("-f", "lavfi", "-i", burn(1920, 1080, 24), "-f", "lavfi", "-i", tone(220, 3), "-t", "3", "-c:v", "prores_ks", "-profile:v", "2", "-c:a", "pcm_s16le", "-shortest", join(out, "prores-422.mov")),
   "music-30s.mp3": () =>
     ff("-f", "lavfi", "-i", "aevalsrc='0.4*sin(2*PI*(220+110*floor(mod(t,4)))*t)*(0.6+0.4*sin(2*PI*2*t))':s=48000:d=30", "-c:a", "libmp3lame", "-b:a", "192k", join(out, "music-30s.mp3")),
+  // Stereo with the right channel 8 dB down: loudness must sum channels.
+  "music-stereo.m4a": () =>
+    ff("-f", "lavfi", "-i", "aevalsrc='0.4*sin(2*PI*(220+110*floor(mod(t,4)))*t)*(0.6+0.4*sin(2*PI*2*t))|0.16*sin(2*PI*(220+110*floor(mod(t,4)))*t)*(0.6+0.4*sin(2*PI*2*t))':s=48000:d=12", "-c:a", "aac", "-b:a", "160k", join(out, "music-stereo.m4a")),
   "voice-8s.wav": () =>
     ff("-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*180*t)*gt(sin(2*PI*0.5*t),0)':s=48000:d=8", "-c:a", "pcm_s16le", join(out, "voice-8s.wav")),
   "speech-gaps.m4a": () =>

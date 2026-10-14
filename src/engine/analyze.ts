@@ -10,6 +10,7 @@
 
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
 import { mediaOrigin } from "./media";
+import { LoudnessMeter } from "../lib/analysis/loudness";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
 import type { Asset } from "../lib/project/types";
 import { platform } from "../platform";
@@ -88,6 +89,45 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
       else sum[k] = prev;
     }
     return sum;
+  } finally {
+    input.dispose();
+  }
+}
+
+/**
+ * Integrated loudness (LUFS) and sample peak of an asset's source seconds
+ * [from, to), streamed through a BS.1770 meter at the source's own rate
+ * and channel count, so nothing is held in memory but the meter.
+ */
+export async function measureLoudness(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal): Promise<{ lufs: number; peak: number }> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
+    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    let meter: LoudnessMeter | null = null;
+    let planes: Float32Array[] = [];
+    const report = throttle(onProgress);
+    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+      try {
+        signal?.throwIfAborted();
+        const rate = sample.sampleRate;
+        const channels = sample.numberOfChannels;
+        meter ??= new LoudnessMeter(rate, channels);
+        // Only the part of this chunk inside [from, to).
+        const start = sample.timestamp - t0;
+        const skip = Math.max(0, Math.round((from - start) * rate));
+        const frames = Math.min(sample.numberOfFrames, Math.round((to - start) * rate)) - skip;
+        if (frames <= 0) continue;
+        if (planes.length !== channels || planes[0].length < sample.numberOfFrames) planes = Array.from({ length: channels }, () => new Float32Array(sample.numberOfFrames));
+        for (let ch = 0; ch < channels; ch++) sample.copyTo(planes[ch], { planeIndex: ch, format: "f32-planar" });
+        meter.push(skip ? planes.map((p) => p.subarray(skip)) : planes, frames);
+        report((start - from) / (to - from));
+      } finally {
+        sample.close();
+      }
+    }
+    return { lufs: meter?.integrated() ?? -Infinity, peak: meter?.peak ?? 0 };
   } finally {
     input.dispose();
   }

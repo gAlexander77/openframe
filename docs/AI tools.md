@@ -1,14 +1,14 @@
 ---
-tags: [ai, analysis, silence, scenes, beats]
+tags: [ai, analysis, silence, scenes, beats, loudness]
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-14
 status: living
 ---
 
 # AI tools
 
-The first local "AI" tools: **Remove silences**, **Split scenes** and **Beat
-markers**. None of them is a neural network. Each one is a small piece of
+The first local "AI" tools: **Remove silences**, **Split scenes**, **Beat
+markers** and **Normalize loudness**. None of them is a neural network. Each one is a small piece of
 classic signal processing that runs on the user's machine, in the webview,
 with no model download, no key and no network. Choices and sources are in
 [[AI and automation]] §2.3, §2.5 and §2.6; this note is what we actually
@@ -161,6 +161,38 @@ and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 Markers sit on the timeline, not on the clip, so they stay put if the
 music clip moves.
 
+## Normalize loudness
+
+`src/lib/analysis/loudness.ts`, CapCut's "Normalize loudness" measured the
+broadcast way (ITU-R BS.1770 / EBU R128, [[AI and automation]] §2.10).
+
+1. **Measure.** The clip's source window streams through a meter at the
+   source's own rate and channels (nothing is held but one number per
+   100 ms): K-weighting (a +4 dB shelf above ~1.7 kHz and a 38 Hz
+   high-pass, coefficients computed for any rate as libebur128 does; at
+   48 kHz they equal the standard's table), mean square per 100 ms,
+   400 ms blocks overlapping 75%, an absolute gate at −70 LUFS and a
+   relative gate 10 LU under the mean. Channels are summed; **mono counts
+   twice** because it plays on both speakers — the same reading as
+   `ffmpeg -af ebur128=dualmono=true`.
+2. **Set the volume.** `target − measured` dB, held back so the sample
+   peak stays under −1 dBFS, and within the inspector's −60…+12 dB. All
+   selected clips in one undo step ("Normalize loudness of 2 clips").
+
+| Option | Default | UI |
+|---|---|---|
+| target | −14 LUFS | Social −14, Podcast −16, Broadcast −23 |
+| peak ceiling | −1 dBFS (sample peak) | — |
+
+Measured: the fixtures read −14.17 and −14.63 LUFS where ffmpeg's
+`ebur128` reads −14.2 and −14.6; a stereo clip normalized to −16 and
+exported measures −16.0 LUFS in ffmpeg.
+
+**Gaps.** Sample peak, not true peak (inter-sample peaks can pass the
+ceiling by a fraction of a dB); surround weights (1.41 on the rear pair,
+no LFE) need the channel layout; clips with volume keyframes are skipped;
+track volume is not taken into account.
+
 ## In the app and for agents
 
 - **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).
@@ -178,6 +210,8 @@ music clip moves.
   editing ([[ADR-017 Analysis edits take source seconds]]);
   `window.videoEditor.ai.removeSilences | splitScenes | markBeats` analyze
   and apply. Omitting `clipId` uses the selected clip.
+  `ai.normalizeLoudness(clipIds?, { target })` takes a list and returns
+  each clip's measured LUFS, gain and whether the peak held it back.
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

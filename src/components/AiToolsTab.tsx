@@ -5,9 +5,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Film, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
+import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Film, Gauge, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
-import { aiStore, markBeats, NEEDS, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
+import { aiStore, markBeats, NEEDS, normalizeLoudness, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
 
@@ -17,6 +17,7 @@ const RUN: Record<ToolId, () => Promise<unknown>> = {
   silences: () => removeSilences(),
   scenes: () => splitScenes(),
   beats: () => markBeats(),
+  loudness: () => normalizeLoudness(),
 };
 
 export function AiToolsTab() {
@@ -31,6 +32,7 @@ export function AiToolsTab() {
         <ToolCard tool="silences" icon={AudioWaveform} title="Remove silences" blurb="Cut the pauses out of speech and close the gaps." action="Remove" settings={<SilenceSettings />} />
         <ToolCard tool="scenes" icon={Clapperboard} title="Split scenes" blurb="Find every shot change in a video." action={scenesOut === "markers" ? "Mark" : "Split"} settings={<SceneSettings />} />
         <ToolCard tool="beats" icon={Drum} title="Beat markers" blurb="Drop a marker on the beat of a music track." action="Mark" settings={<BeatSettings />} />
+        <ToolCard tool="loudness" icon={Gauge} title="Normalize loudness" blurb="Even out the volume of the selected clips." action="Normalize" settings={<LoudnessSettings />} />
         <LinkCard icon={Captions} title="Auto captions" blurb="Turn speech into captions, on your computer." action="Open Captions" onClick={() => store.set({ leftTab: "captions" })} />
         <LinkCard icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16 or 1:1." soon />
       </div>
@@ -269,4 +271,20 @@ function SceneSettings() {
 function BeatSettings() {
   const [s, set] = useSettings("beats");
   return <Segmented label="Marker on" value={s.every} options={[[1, "Every beat"], [2, "Every 2"], [4, "Every 4"]]} onChange={(v) => set({ every: v })} />;
+}
+
+function LoudnessSettings() {
+  const [s, set] = useSettings("loudness");
+  return (
+    <Segmented
+      label={`Target · ${String(s.target).replace("-", "−")} LUFS`}
+      value={s.target}
+      options={[
+        [-14, "Social"],
+        [-16, "Podcast"],
+        [-23, "Broadcast"],
+      ]}
+      onChange={(v) => set({ target: v })}
+    />
+  );
 }

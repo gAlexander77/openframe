@@ -503,6 +503,7 @@ export function describeProject(p: Project) {
         ...("assetId" in c ? { asset: c.assetId } : {}),
         ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speed } : {}),
         ...(c.type === "text" ? { text: c.text } : {}),
+        ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type) } : {}),
       })),
