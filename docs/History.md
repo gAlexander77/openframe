@@ -86,6 +86,12 @@ A narrative log of each build round with its intent, for archaeology that
   Copilot driving it with a model on this machine (Ollama / LM Studio).
 - **Canvas fill** — CapCut's blurred or colored fill behind letterboxed
   clips.
+- **Agents from outside** — "Allow AI agents" opens a token-locked MCP
+  server on `127.0.0.1:47280` plus a `--mcp-stdio` bridge
+  ([[ADR-009 Agents reach the app over local MCP, opt-in]]), and
+  `video-editor --render project.json --out file` renders headless with
+  the export dialog's own engine ([[ADR-029 Headless rendering reuses the app]],
+  [[Automation]]).
 
 ### Lessons paid for in this round
 
@@ -110,3 +116,13 @@ A narrative log of each build round with its intent, for archaeology that
 - **Memory** — five agents each running Vite and a browser left about 5 GB
   free and Claude Code reaped dev servers; size parallel rounds to the
   machine.
+- **A windows-subsystem exe has no console**: run from a terminal, its
+  `println!` goes nowhere unless it calls `AttachConsole(ATTACH_PARENT_PROCESS)`;
+  pipes from a parent process work regardless. Inherited pipes also make a
+  release build usable as an MCP stdio server without a second binary.
+- **Number ADRs before agents fork**: the headless ADR was first written
+  as 020, which the color agent already held; reserve ranges per agent
+  and take the next free number on main.
+- **WebView2 prints `Failed to unregister class Chrome_WidgetWin_0`** on
+  stderr when the app exits from a command; it is harmless — judge a
+  headless run by its exit code and JSON lines.
