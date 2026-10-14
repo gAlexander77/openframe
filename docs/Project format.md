@@ -70,7 +70,12 @@ Any numeric parameter can hold keyframes by path:
 ```
 
 `ease` shapes the curve leaving that keyframe: `linear`, `hold`, `easeIn`,
-`easeOut`, `easeInOut`, or a CSS-style bezier `[x1, y1, x2, y2]`.
+`easeOut`, `easeInOut`, or a CSS-style bezier `[x1, y1, x2, y2]`. A missing
+`ease` is linear. The editor's other presets (Smooth, Fast in, Overshoot,
+Anticipate) and hand-dragged curves are stored as beziers, so anything that
+evaluates CSS `cubic-bezier()` reproduces them. A path never holds two keys
+on one frame. Commands: `add_keyframe`, `move_keyframe`,
+`set_keyframe_ease`, `remove_keyframes`.
 
 ## Catalog names
 

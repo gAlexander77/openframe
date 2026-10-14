@@ -63,3 +63,47 @@ describe("add_captions", () => {
     expect(track().clips.map((c) => c.text)).toEqual(["Again"]);
   });
 });
+
+describe("keyframe commands", () => {
+  // 25 fps: 0.4 s = 10 frames. The clip starts at 1 s (frame 25).
+  const animated = () => {
+    let p = runCommand(withAsset(), "add_color_clip", { color: "#f00", start: 1, duration: 4 });
+    const id = describeProject(p).tracks.flatMap((t) => t.clips)[0].id;
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "transform.x", at: 1, value: -0.3 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "transform.x", at: 2, value: 0.3 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "opacity", at: 2, value: 1 });
+    const keys = (q: Project) => q.tracks.flatMap((t) => t.clips).find((c) => c.id === id)!.keyframes;
+    return { p, id, keys };
+  };
+
+  it("move_keyframe retimes in seconds and can set the value", () => {
+    const { p, id, keys } = animated();
+    const q = runCommand(p, "move_keyframe", { clip_id: id, path: "transform.x", at: 2, to: 3, value: 0.5 });
+    expect(keys(q)!["transform.x"]).toEqual([{ f: 0, v: -0.3 }, { f: 50, v: 0.5 }]);
+    // past the clip's end it stops on the last frame
+    const r = runCommand(p, "move_keyframe", { clip_id: id, path: "transform.x", at: 2, to: 60 });
+    expect(keys(r)!["transform.x"][1].f).toBe(99);
+    expect(() => runCommand(p, "move_keyframe", { clip_id: id, path: "transform.x", at: 1.5, to: 2 })).toThrow(/no transform.x keyframe/);
+    expect(() => runCommand(p, "move_keyframe", { clip_id: id, path: "transform.x", at: 2 })).toThrow(/give to, value/);
+  });
+
+  it("set_keyframe_ease takes a preset or a bezier, per path or per time", () => {
+    const { p, id, keys } = animated();
+    const q = runCommand(p, "set_keyframe_ease", { clip_id: id, at: 2, ease: "overshoot" });
+    expect(keys(q)!["transform.x"][1].ease).toEqual([0.34, 1.56, 0.64, 1]);
+    expect(keys(q)!.opacity[0].ease).toEqual([0.34, 1.56, 0.64, 1]);
+    const r = runCommand(p, "set_keyframe_ease", { clip_id: id, path: "transform.x", bezier: [0.2, 0, 0.8, 1] });
+    expect(keys(r)!["transform.x"].map((k) => k.ease)).toEqual([[0.2, 0, 0.8, 1], [0.2, 0, 0.8, 1]]);
+    expect(keys(r)!.opacity[0].ease).toBeUndefined();
+    expect(() => runCommand(p, "set_keyframe_ease", { clip_id: id, bezier: [2, 0, 0.5, 1] })).toThrow(/x1 and x2 in 0..1/);
+    expect(() => runCommand(p, "set_keyframe_ease", { clip_id: id, ease: "wobbly" })).toThrow(/must be one of/);
+  });
+
+  it("remove_keyframes by time, by path, or all", () => {
+    const { p, id, keys } = animated();
+    expect(keys(runCommand(p, "remove_keyframes", { clip_id: id, at: [2] }))).toEqual({ "transform.x": [{ f: 0, v: -0.3 }] });
+    expect(Object.keys(keys(runCommand(p, "remove_keyframes", { clip_id: id, path: "transform.x" }))!)).toEqual(["opacity"]);
+    expect(keys(runCommand(p, "remove_keyframes", { clip_id: id }))).toBeUndefined();
+    expect(() => runCommand(p, "remove_keyframes", { clip_id: id, at: [4] })).toThrow(/no matching keyframes/);
+  });
+});
