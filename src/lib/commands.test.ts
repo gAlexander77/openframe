@@ -52,3 +52,52 @@ describe("command registry", () => {
     ]);
   });
 });
+
+describe("analysis commands", () => {
+  const talk = () => runCommand(withAsset(), "add_media_clip", { asset_id: "a1", start: 0, in: 2, duration: 10 });
+  const mainClips = (p: Project) => describeProject(p).tracks.find((t) => t.main)!.clips;
+
+  it("describeProject reports each media clip's source window", () => {
+    expect(mainClips(talk())[0]).toMatchObject({ start: 0, end: 10, in: 2, out: 12, speed: 1 });
+  });
+
+  it("cut_ranges removes source seconds and ripples", () => {
+    let p = talk();
+    const id = mainClips(p)[0].id;
+    p = runCommand(p, "cut_ranges", { clip_id: id, ranges: [{ start: 4, end: 5 }, { start: 9, end: 10.6 }] });
+    expect(mainClips(p).map((c) => [c.start, c.end, c.in, c.out])).toEqual([
+      [0, 2, 2, 4],
+      [2, 6, 5, 9],
+      [6, 7.4, 10.6, 12],
+    ]);
+    expect(() => runCommand(p, "cut_ranges", { clip_id: id, ranges: [{ start: 1 }] })).toThrow(/ranges\[0\]\.end is required/);
+  });
+
+  it("cut_ranges refuses clips with no source", () => {
+    const p = runCommand(withAsset(), "add_text", { text: "Hi", start: 0, duration: 2 });
+    const id = describeProject(p).tracks.flatMap((t) => t.clips)[0].id;
+    expect(() => runCommand(p, "cut_ranges", { clip_id: id, ranges: [] })).toThrow(/no source/);
+  });
+
+  it("split_at_times splits at source seconds", () => {
+    let p = talk();
+    p = runCommand(p, "split_at_times", { clip_id: mainClips(p)[0].id, times: [7, 4, 30] });
+    expect(mainClips(p).map((c) => [c.start, c.end])).toEqual([
+      [0, 2],
+      [2, 5],
+      [5, 10],
+    ]);
+  });
+
+  it("add_markers adds many at timeline seconds without duplicating", () => {
+    let p = talk();
+    p = runCommand(p, "add_markers", { times: [1, 0.4, 1.0001], label: "Beat", color: "#f5c543" }); // 25 fps
+    expect(describeProject(p).markers).toEqual([
+      { at: 0.4, label: "Beat" },
+      { at: 1, label: "Beat" },
+    ]);
+    const again = runCommand(p, "add_markers", { times: [0.4, 1], label: "Beat" });
+    expect(again).toBe(p);
+    expect(runCommand(p, "add_markers", { times: [1], label: "Scene" }).markers.length).toBe(3);
+  });
+});
