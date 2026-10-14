@@ -7,8 +7,10 @@
   border-bottom: 1px solid var(--line);
   overflow-x: auto; scrollbar-width: none;
 }
+/* 6px sides: a video clip with sound and a transition has six tabs, and
+   at 10px the sixth (Transition) fell off the default 360px panel */
 .insp-tabs button {
-  height: 28px; padding: 0 10px; border: 0; border-radius: var(--radius);
+  height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius);
   background: transparent; color: var(--text-2); font-size: var(--fs-md); white-space: nowrap;
   transition: color var(--t-fast), background var(--t-fast);
 }
