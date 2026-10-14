@@ -21,11 +21,19 @@ async (page) => {
   // The viewer exists only in the editor: open a fresh project.
   if (await page.locator(".create-card").count()) await page.locator(".create-card").click();
   await page.waitForSelector("canvas");
+  // A real key press gives the page user activation, so the AudioContext
+  // may start (evaluate() alone is not a gesture).
+  await page.keyboard.press("Shift");
   return await page.evaluate(async (base) => {
     const ve = window.videoEditor;
-    const ops = await import("/src/lib/project/ops.ts");
-    const { scheduleAudio, audioContext } = await import("/src/engine/audio.ts");
-    const { CursorPool } = await import("/src/engine/player.ts");
+    // Import the module instances the app itself loaded: after a hot update
+    // Vite serves them as /src/x.ts?t=..., and a plain import would get a
+    // second copy with its own state.
+    const loaded = performance.getEntriesByType("resource").map((e) => e.name);
+    const mod = (path) => import(loaded.find((n) => new URL(n).pathname === path) ?? path);
+    const ops = await mod("/src/lib/project/ops.ts");
+    const { scheduleAudio, audioContext } = await mod("/src/engine/audio.ts");
+    const { CursorPool, player } = await mod("/src/engine/player.ts");
     const names = ["framecode-30.mp4", "flash-beep-30.mp4", "h264-1080p30.mp4", "h264-720p60-longgop.mp4"];
     const [code, flash, tone, longgop] = await ve.import(names.map((name) => ({ name, src: `${base}/fixtures/media/${name}` })));
     const details = {};
@@ -289,6 +297,24 @@ async (page) => {
     const within = (got, want, tol) => Math.abs(got - want) <= want * tol;
     check("pitch kept / changed at constant speed", Object.values(pitch).every((v) => within(v.hz, v.want, 0.01)), pitch);
     check("pitch through a bullet ramp: kept stays 440 Hz, changed follows the rate", ramp.kept.every((v) => within(v.hz, 440, 0.02)) && ramp.changed.every((v) => within(v.hz, v.want, 0.05)), ramp);
+
+    // ---- real playback: the app's own player, frames drawn vs dropped -------------
+    {
+      const play = async () => {
+        ve.seek(0);
+        await ve.rendered();
+        ve.action("playPause");
+        await new Promise((r) => setTimeout(r, 3000));
+        ve.action("playPause");
+        return { ...player.drawn };
+      };
+      id = place(tone, { duration: 10 });
+      ve.exec("set_speed_curve", { clip_id: id, preset: "hero" });
+      const ramp = await play();
+      ve.exec("set_reverse", { clip_id: id, reverse: true });
+      const reversed = await play();
+      check("1080p ramp and reversed ramp play in real time", [ramp, reversed].every((d) => d.frame > 60 && d.dropped <= 3), { ramp, reversed });
+    }
 
     // ---- audio cost: offline render speed of each path (8 s of timeline) ----------
     const audioCost = {};

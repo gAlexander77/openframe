@@ -60,7 +60,7 @@ constant speed keep the cheap `playbackRate` path.
 | Reversed 1080p playback, 4 s | 0 dropped frames, the same as forward |
 | Sound vs time map, beep-and-flash fixture (`scripts/drive/speed.js`) | WSOLA within 15 ms, varispeed within 0.1 ms, the live AudioContext within 5 ms |
 | Pitch, 440 Hz tone | Kept: 440 Hz at 0.5x and 2x, and through a ramp. Changed: 220 / 880 Hz, following the ramp |
-| Offline render speed | 47–98× real time (WSOLA is the slowest), so preview needs no approximation |
+| Offline render speed | 39–102× real time across runs (WSOLA is the slowest), so preview needs no approximation |
 
 ## Consequences
 
