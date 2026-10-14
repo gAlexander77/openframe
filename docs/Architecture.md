@@ -56,7 +56,7 @@ derived from the audible audio clock; audio is scheduled separately by
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
 | `engine/player.ts` | Preview loop, transport, shuttle |
-| `engine/audio.ts` | Web Audio scheduling and the audible clock |
+| `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
