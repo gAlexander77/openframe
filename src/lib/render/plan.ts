@@ -199,6 +199,30 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
   };
 }
 
+/** The fill drawn behind a clip that does not cover the canvas: the clip
+ * itself scaled up to cover and blurred, or a solid color. Untransformed,
+ * like CapCut's, so the fill stays still while the clip animates. */
+export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer | null {
+  const fill = clip.canvas;
+  if (!fill) return null;
+  const base: Layer = { ...layer, clipId: `${clip.id}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, effects: [], blur: 0 };
+  if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
+  if (clip.type !== "video" && clip.type !== "image") return null;
+  const a = getAsset(p, clip.assetId);
+  if (!a?.width || !a.height) return null;
+  // Scale that turns "fit" into "cover" for this source in this canvas.
+  const fit = Math.min(p.width / a.width, p.height / a.height);
+  const cover = Math.max(p.width / a.width, p.height / a.height);
+  return {
+    ...base,
+    // Keep the clip's own source (and so its decode cursor's frame).
+    clipId: clip.id,
+    scale: (cover / fit) * 1.04,
+    crop: { left: 0, top: 0, right: 0, bottom: 0 },
+    effects: [{ type: "blur", params: { amount: fill.amount } }],
+  };
+}
+
 /** Transition window around a cut: `half` frames before, the rest after. */
 export function transitionWindow(cut: number, duration: number) {
   const before = Math.floor(duration / 2);
@@ -248,7 +272,11 @@ export function planFrame(p: Project, f: number): PlanItem[] {
       });
     } else if (clip.type !== "audio") {
       const layer = layerAt(p, clip, f);
-      if (layer && layer.opacity > 0) items.push({ kind: "layer", layer });
+      if (layer && layer.opacity > 0) {
+        const fill = "canvas" in clip && clip.canvas ? canvasLayer(p, clip, layer) : null;
+        if (fill) items.push({ kind: "layer", layer: fill });
+        items.push({ kind: "layer", layer });
+      }
     }
   }
   return items;

@@ -244,7 +244,13 @@ export interface Visual {
   /** Transition into the next clip on the same track, which must be
    * adjacent. The left clip owns it. */
   transitionOut?: Transition;
+  /** CapCut's "Canvas": what fills the frame around a clip that does not
+   * cover it (a 16:9 shot in a 9:16 project). Blur draws the clip itself
+   * scaled to cover and blurred; color draws a solid. */
+  canvas?: CanvasFill;
 }
+
+export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
 
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */

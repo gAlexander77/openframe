@@ -86,3 +86,18 @@ describe("source time", () => {
     expect(t).toBeLessThan(59 / 30 + 0.5 / 30);
   });
 });
+
+describe("canvas fill", () => {
+  it("draws a covering blurred copy, then the clip", () => {
+    let p = createProject({ width: 1080, height: 1920, fps: { num: 30, den: 1 } });
+    p = { ...p, assets: [{ id: "a", kind: "video", name: "v", src: "v", duration: 10, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    const clip = { ...clipForAsset(p.assets[0], 0, p.fps), id: "v", canvas: { type: "blur" as const, amount: 60 } };
+    p = addClip(p, p.tracks[0].id, clip);
+    const items = planFrame(p, 0);
+    expect(items).toHaveLength(2);
+    const fill = items[0].kind === "layer" ? items[0].layer : null;
+    // 16:9 into 9:16: cover/fit = (1920/1080) / (1080/1920) = 3.16
+    expect(fill!.scale).toBeCloseTo(3.16 * 1.04, 1);
+    expect(fill!.effects[0]).toEqual({ type: "blur", params: { amount: 60 } });
+  });
+});
