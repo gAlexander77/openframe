@@ -27,6 +27,13 @@ projects never enter ([[Tauri desktop media]] §1).
   `blobFor` assembles stills from ranges.
 - Projects store absolute paths in `asset.src`. Ids live for one process,
   so `sourceFor` re-registers a path lazily the first time it is read.
+- The built app's **CSP** (`tauri.conf.json`) allows exactly what the page
+  loads: `connect-src` for `ipc:` and `media:` in both URL forms (without
+  `ipc:` Tauri silently falls back to slower `postMessage`), `worker-src
+  blob:` for mediabunny's workers, `img-src blob: data:` for thumbnails.
+  Script hashes stay; Tauri's style nonce is off so `'unsafe-inline'`
+  styles keep working. Add `'wasm-unsafe-eval'` with the first WASM.
+  `tauri dev` loads Vite directly, so the CSP only applies to builds.
 
 ## Consequences
 
