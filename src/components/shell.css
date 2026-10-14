@@ -86,6 +86,10 @@
 .menu-item:hover, .menu-item:focus-visible { background: var(--accent-soft); outline: none; }
 .menu-item:disabled { color: var(--text-3); pointer-events: none; }
 .menu-check { display: grid; place-items: center; color: var(--accent); }
+/* One line per item: a long undo name ("Undo Add <file>") wrapped and
+   spilled over the next row. The menu caps its width so it ellipsizes. */
+.menu { max-width: 340px; }
+.menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-hint { color: var(--text-3); font-size: var(--fs-xs); }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
