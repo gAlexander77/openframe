@@ -4,6 +4,7 @@ mod files;
 mod mcp;
 mod media;
 mod project;
+mod render;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -16,7 +17,39 @@ pub fn run_mcp_stdio_bridge() {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // `--render project.json --out file`: render headless, then exit (ADR-029).
+    let args: Vec<String> = std::env::args().collect();
+    let job = match render::parse_args(&args) {
+        Ok(Some(a)) => {
+            render::attach_console();
+            match render::load_job(a) {
+                Ok(job) => Some(job),
+                Err(e) => {
+                    eprintln!("{}", serde_json::json!({ "event": "error", "message": e }));
+                    std::process::exit(2);
+                }
+            }
+        }
+        Ok(None) => None,
+        Err(e) => {
+            render::attach_console();
+            eprintln!("{}", serde_json::json!({ "event": "error", "message": e }));
+            std::process::exit(2);
+        }
+    };
+    let headless = job.is_some();
     tauri::Builder::default()
+        .manage(render::Render {
+            job: std::sync::Mutex::new(job),
+        })
+        .setup(move |app| {
+            if headless {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(media::Media::default()))
         .manage(export::Exports::default())
@@ -49,6 +82,10 @@ pub fn run() {
             ffmpeg::ffmpeg_cancel,
             mcp::mcp_enable,
             mcp::mcp_reply,
+            render::render_job,
+            render::render_open_out,
+            render::render_progress,
+            render::render_done,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the application")

@@ -7,9 +7,11 @@ import App from "./App";
 import "./automation";
 import { restoreAgents } from "./components/AgentsSection";
 import { installTooltips } from "./components/tooltip";
+import { runHeadlessIfAsked } from "./state/headless";
 
 installTooltips();
 void restoreAgents();
+void runHeadlessIfAsked();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

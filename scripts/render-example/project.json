@@ -1,0 +1,18 @@
+{
+  "name": "Headless render example",
+  "width": 1280, "height": 720, "fps": 30,
+  "assets": [
+    { "id": "v", "src": "../../fixtures/media/framecode-30.mp4", "duration": 10, "width": 640, "height": 360, "fps": 30, "hasVideo": true, "hasAudio": false },
+    { "id": "s", "kind": "audio", "src": "../../fixtures/media/speech-test.wav", "duration": 6.4, "hasVideo": false, "hasAudio": true }
+  ],
+  "tracks": [
+    { "kind": "video", "clips": [
+      { "type": "text", "text": "Rendered without a window", "start": 15, "duration": 90, "transform": { "y": 0.32 }, "animIn": { "type": "rise", "duration": 12 } }
+    ]},
+    { "kind": "video", "main": true, "clips": [
+      { "type": "video", "assetId": "v", "start": 0, "duration": 90, "in": 0, "transitionOut": { "type": "dissolve", "duration": 12 } },
+      { "type": "video", "assetId": "v", "start": 90, "duration": 90, "in": 5 }
+    ]},
+    { "kind": "audio", "clips": [ { "type": "audio", "assetId": "s", "start": 0, "duration": 180, "in": 0 } ] }
+  ]
+}

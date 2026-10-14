@@ -59,6 +59,15 @@ export interface Platform {
     enable(on: boolean): Promise<AgentEndpoint | null>;
   };
 
+  /** Desktop only: the job when the app was started with --render (ADR-029). */
+  headless?: {
+    job(): Promise<RenderJob | null>;
+    /** The job's output file, opened for positional writes. */
+    output(): Promise<WritableStream<StreamTargetChunk>>;
+    report(line: string): Promise<void>;
+    finish(ok: boolean, line: string): Promise<void>;
+  };
+
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;
   saveProject(project: Project, summary: ProjectSummary): Promise<void>;
@@ -77,4 +86,13 @@ export interface AgentEndpoint {
   token: string;
   /** Command line for clients that launch MCP servers as processes. */
   stdio: string;
+}
+
+export interface RenderJob {
+  /** Project JSON with media paths already absolute. */
+  project: string;
+  out: string;
+  format: string | null;
+  resolution: string | null;
+  quality: string | null;
 }

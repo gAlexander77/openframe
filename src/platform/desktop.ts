@@ -6,7 +6,7 @@ import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
-import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary } from "./types";
+import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
 
 const MEDIA_EXTENSIONS = {
   video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mts", "m2ts", "ts", "mxf", "3gp", "ogv"],
@@ -95,6 +95,12 @@ async function listenForAgents() {
 }
 
 export const desktop: Platform = {
+  headless: {
+    job: () => invoke<RenderJob | null>("render_job"),
+    output: async () => writeJob(await invoke<number>("render_open_out")),
+    report: (line) => invoke<void>("render_progress", { line }),
+    finish: (ok, line) => invoke<void>("render_done", { ok, line }),
+  },
   agents: {
     async enable(on) {
       if (on) await listenForAgents();

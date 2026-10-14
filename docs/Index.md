@@ -18,6 +18,7 @@ working on the app, and coding agents that need the reasoning behind it.
 - [[Features]] — everything the app does today, with the intent behind each
 - [[Roadmap]] — what is in flight and next, in priority order
 - [[Project format]] — the open JSON schema agents and pipelines write
+- [[Automation]] — headless render, MCP for agents, Copilot: the three doors
 - [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
 - [[Driving the app]] — the web build through Playwright, the desktop app over
   WebView2's debug port; native dialogs, OS drops, the drive scripts
@@ -73,3 +74,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-017 Analysis edits take source seconds]]
 - [[ADR-018 Local analysis is our own signal processing in the webview]]
 - [[ADR-019 Smart edits compile to commands, one undo step]]
+- [[ADR-029 Headless rendering reuses the app]] — `--render project.json
+  --out file`, JSON-line progress, exit codes
