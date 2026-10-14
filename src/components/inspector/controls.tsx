@@ -133,7 +133,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
   const next = keys.find((k) => k.f > rel);
   return (
     <span className="insp-keys">
-      <button className="key-nav" disabled={!prev} aria-label="Previous keyframe" onClick={() => prev && store.seek(clip.start + prev.f)}>
+      <button className="key-nav" disabled={!prev} aria-label="Previous keyframe" data-tip="Previous keyframe" onClick={() => prev && store.seek(clip.start + prev.f)}>
         <ChevronLeft size={11} />
       </button>
       <button
@@ -144,7 +144,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
       >
         <Diamond size={11} fill={on ? "currentColor" : "none"} />
       </button>
-      <button className="key-nav" disabled={!next} aria-label="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
+      <button className="key-nav" disabled={!next} aria-label="Next keyframe" data-tip="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
         <ChevronRight size={11} />
       </button>
     </span>

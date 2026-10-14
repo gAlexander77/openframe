@@ -145,6 +145,7 @@ function MediaCard({ asset, used }: { asset: Asset; used: boolean }) {
         <button
           className="card-add"
           aria-label={`Add ${asset.name} to the timeline`}
+          data-tip="Add to timeline"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => addToTimeline(asset)}
         >
@@ -163,7 +164,7 @@ function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => 
     <div className={`card ${props.className ?? ""}`} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
       <div className="card-thumb">
         {props.preview}
-        <button className="card-add" aria-label={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
+        <button className="card-add" aria-label={`Add ${props.label}`} data-tip={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
           <Plus size={14} strokeWidth={2.4} />
         </button>
       </div>

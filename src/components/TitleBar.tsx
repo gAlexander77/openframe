@@ -128,7 +128,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
           <button
             className="btn primary export-btn"
             onClick={() => run("export")}
-            data-tip={exportChord ? chordText(exportChord, isMac) : undefined}
+            data-tip={exportChord ? `Export (${chordText(exportChord, isMac)})` : "Export"}
           >
             <Download size={15} /> Export
           </button>
