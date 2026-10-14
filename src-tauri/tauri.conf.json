@@ -29,7 +29,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "worker-src": "'self' blob:",
-        "connect-src": "'self' ipc: http://ipc.localhost media: http://media.localhost",
+        "connect-src": "'self' ipc: http://ipc.localhost media: http://media.localhost https://huggingface.co https://*.huggingface.co https://*.hf.co",
         "img-src": "'self' blob: data:",
         "style-src": "'self' 'unsafe-inline'"
       },

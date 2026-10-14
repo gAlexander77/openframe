@@ -3,6 +3,7 @@ mod ffmpeg;
 mod files;
 mod mcp;
 mod media;
+mod models;
 mod project;
 mod render;
 
@@ -82,6 +83,7 @@ pub fn run() {
             ffmpeg::ffmpeg_cancel,
             mcp::mcp_enable,
             mcp::mcp_reply,
+            models::model_request,
             render::render_job,
             render::render_open_out,
             render::render_progress,

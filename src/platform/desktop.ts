@@ -95,6 +95,10 @@ async function listenForAgents() {
 }
 
 export const desktop: Platform = {
+  async fetchModel(url, init = {}) {
+    const [status, body] = await invoke<[number, string]>("model_request", { url, method: init.method ?? "GET", body: init.body ?? null });
+    return new Response(body, { status, headers: { "Content-Type": "application/json" } });
+  },
   headless: {
     job: () => invoke<RenderJob | null>("render_job"),
     output: async () => writeJob(await invoke<number>("render_open_out")),

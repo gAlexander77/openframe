@@ -7,7 +7,9 @@
 import { useSyncExternalStore } from "react";
 import { COPILOT_SYSTEM, runTurn, toFunctionTools, type ChatMessage, type Step } from "../lib/copilot";
 import { listTools } from "../lib/mcp";
+import { platform } from "../platform";
 import { store } from "./store";
+
 
 export interface Provider {
   id: string;
@@ -74,17 +76,22 @@ export function useCopilot(): CopilotState {
 const provider = () => PROVIDERS.find((p) => p.id === state.provider) ?? PROVIDERS[0];
 
 /** Models the local server offers; on Ollama only those that can call tools. */
+// The desktop app reaches the model servers through Rust (their CORS
+// refuses its origin); the web build fetches them directly.
+const localFetch = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) =>
+  platform.fetchModel ? platform.fetchModel(url, init) : fetch(url, init);
+
 export async function discoverModels() {
   set({ status: "connecting" });
   const p = provider();
   try {
     let models: string[];
     if (p.id === "ollama") {
-      const r = await fetch(`${p.base}/api/tags`);
+      const r = await localFetch(`${p.base}/api/tags`);
       const j = (await r.json()) as { models: { name: string; capabilities?: string[] }[] };
       models = j.models.filter((m) => !m.capabilities || m.capabilities.includes("tools")).map((m) => m.name);
     } else {
-      const r = await fetch(`${p.base}/v1/models`);
+      const r = await localFetch(`${p.base}/v1/models`);
       const j = (await r.json()) as { data: { id: string }[] };
       models = j.data.map((m) => m.id).filter((id) => !/embed/i.test(id));
     }
@@ -144,7 +151,7 @@ async function chat(messages: ChatMessage[]): Promise<ChatMessage> {
         ...(m.tool_calls ? { tool_calls: m.tool_calls.map((t) => ({ function: { name: t.function.name, arguments: JSON.parse(t.function.arguments || "{}") } })) } : {}),
       })),
     };
-    const r = await fetch(`${p.base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await localFetch(`${p.base}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(`Ollama answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
     const m = ((await r.json()) as { message: OllamaMessage }).message;
     return {
@@ -153,7 +160,7 @@ async function chat(messages: ChatMessage[]): Promise<ChatMessage> {
       tool_calls: m.tool_calls?.map((t, i) => ({ id: `call_${Date.now()}_${i}`, type: "function", function: { name: t.function.name, arguments: JSON.stringify(t.function.arguments ?? {}) } })),
     };
   }
-  const r = await fetch(`${p.base}/v1/chat/completions`, {
+  const r = await localFetch(`${p.base}/v1/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: state.model, messages: withContext, tools: TOOLS, temperature: 0.1, stream: false }),

@@ -119,6 +119,13 @@ A narrative log of each build round with its intent, for archaeology that
   port: a ProRes 422 file imports by path, gets an FFmpeg proxy and shows
   the right frame; the project autosaves, survives a restart, reopens from
   the home screen and plays from the cached proxy without re-encoding.
+- **Release build checked** — the shipped CSP blocked Copilot's local
+  model server; then Ollama's CORS refused the release origin
+  (`http://tauri.localhost`), which dev never shows because its
+  `localhost:1420` origin is allowed. Copilot's calls now go through Rust
+  (`model_request`, the two model ports only). In the release exe: ProRes
+  through its proxy, auto captions word for word, and a Copilot title in
+  11 s, with no CSP violations.
 - **Agents from outside** — "Allow AI agents" opens a token-locked MCP
   server on `127.0.0.1:47280` plus a `--mcp-stdio` bridge
   ([[ADR-009 Agents reach the app over local MCP, opt-in]]), and
@@ -156,6 +163,9 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **Test the release build, not just dev**: the CSP only bites there, and
+  the origin changes from `http://localhost:1420` to
+  `http://tauri.localhost`, which local servers' CORS lists may refuse.
 - **Fit the viewer to the content box**, not the panel; `:first-of-type`
   counts per parent; disabled buttons never get hover.
 - **Centered WSOLA grains make slow-motion sound early** (90 ms at 0.1x):

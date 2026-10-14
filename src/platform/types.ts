@@ -59,6 +59,10 @@ export interface Platform {
     enable(on: boolean): Promise<AgentEndpoint | null>;
   };
 
+  /** fetch for the local model servers (Ollama, LM Studio). The desktop
+   * webview's origin is refused by Ollama's CORS, so Rust makes the call. */
+  fetchModel?(url: string, init?: { method?: string; body?: string }): Promise<Response>;
+
   /** Desktop only: the job when the app was started with --render (ADR-029). */
   headless?: {
     job(): Promise<RenderJob | null>;
