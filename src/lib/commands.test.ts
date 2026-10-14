@@ -112,3 +112,10 @@ describe("analysis commands", () => {
     expect(runCommand(p, "add_markers", { times: [1], label: "Scene" }).markers.length).toBe(3);
   });
 });
+
+it("names the valid catalog entries when a model invents one", () => {
+  const p = runCommand(runCommand(withAsset(), "add_media_clip", { asset_id: "a1", start: 0, duration: 4 }), "split", { at: 2 });
+  const id = describeProject(p).tracks[0].clips[0].id;
+  expect(() => runCommand(p, "set_transition", { clip_id: id, type: "crossDissolve" })).toThrow(/must be one of dissolve, dipBlack/);
+  expect(() => runCommand(p, "set_transition", { clip_id: id, type: "dissolve" })).not.toThrow();
+});

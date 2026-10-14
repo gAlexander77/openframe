@@ -19,6 +19,7 @@ import {
 } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
+import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "./catalog";
 import { upsertKey } from "./keyframes";
 import type { Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
@@ -317,7 +318,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_transition",
     description: "Put a transition on the cut after a clip (the next clip must touch it). type 'none' removes it.",
-    input: S.obj({ clip_id: S.str("The clip before the cut"), type: S.str("Transition name from list_catalog"), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "type"]),
+    input: S.obj({ clip_id: S.str("The clip before the cut"), type: S.str("Transition", { enum: [...Object.keys(TRANSITIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "type"]),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (a.type === "none") return ops.setTransition(p, clip.id, null);
@@ -327,7 +328,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_effect",
     description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults.",
-    input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Effect name from list_catalog"), params: { type: "object", description: "Effect parameters" } }, ["clip_id", "type"]),
+    input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Effect", { enum: Object.keys(EFFECTS) }), params: { type: "object", description: "Effect parameters" } }, ["clip_id", "type"]),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!("effects" in clip)) throw new CommandError(`${clip.type} clips take no video effects`);
@@ -338,7 +339,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_filter",
     description: "Apply a color look (filter) to a visual or adjustment clip at an intensity 0..1. type 'none' removes it.",
-    input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Filter name from list_catalog"), intensity: S.num("0..1", { minimum: 0, maximum: 1 }) }, ["clip_id", "type"]),
+    input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Filter (look)", { enum: [...Object.keys(FILTERS), "none"] }), intensity: S.num("0..1", { minimum: 0, maximum: 1 }) }, ["clip_id", "type"]),
     run: (p, a) =>
       ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (!("adjust" in c)) throw new CommandError(`${c.type} clips take no filter`);
@@ -362,7 +363,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_animation",
     description: "Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.",
-    input: S.obj({ clip_id: S.str("Clip id"), slot: S.str("Which animation", { enum: ["in", "out", "loop"] }), type: S.str("Animation name from list_catalog"), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "slot", "type"]),
+    input: S.obj({ clip_id: S.str("Clip id"), slot: S.str("Which animation", { enum: ["in", "out", "loop"] }), type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "slot", "type"]),
     run: (p, a) => {
       const key = a.slot === "in" ? "animIn" : a.slot === "out" ? "animOut" : "animLoop";
       return ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
