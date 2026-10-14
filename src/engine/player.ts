@@ -219,7 +219,11 @@ export class Player {
     if (!comp) return;
     const s = store.get();
     const p = s.project;
-    const plan = planFrame(p, f);
+    // At the end of the timeline (one past the last frame) hold the last
+    // frame, as CapCut does: playback stops there and adding a clip parks
+    // the playhead there, and a black viewer reads as a failed import.
+    const end = projectDuration(p);
+    const plan = planFrame(p, end > 0 ? Math.min(f, end - 1) : f);
     const resolved = await resolveSources(p, plan, this.pool);
     if (comp !== this.compositor) return;
     // Above 1080p, play back at half resolution and show full on pause, as
