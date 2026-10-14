@@ -1,0 +1,124 @@
+/* The Adjust tab's grade panels: HSL, Curves, Color wheel, LUT. */
+
+/* five sub-tabs share the row evenly so they fit the narrowest inspector */
+.adjust-sub .segmented { display: flex; width: 100%; }
+.adjust-sub .segmented button { flex: 1 1 auto; min-width: 0; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.grade-pane { animation: rise-in var(--t-med) var(--ease-out); }
+.grade-foot { display: flex; justify-content: flex-end; padding: 6px 12px; }
+.edited-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.insp-hint.warn { color: var(--warn); }
+
+/* ---- HSL ---------------------------------------------------------------------- */
+.hsl-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; justify-items: center; padding: 14px 12px 10px; }
+.hsl-swatch {
+  position: relative; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 50%; background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 30%);
+  transition: transform var(--t-fast) var(--ease-spring), box-shadow var(--t-fast);
+}
+.hsl-swatch:hover { transform: scale(1.12); }
+.hsl-swatch.on { box-shadow: inset 0 0 0 1px rgb(0 0 0 / 30%), 0 0 0 2px var(--bg-1), 0 0 0 3.5px var(--text-1); }
+.hsl-swatch.edited::after {
+  content: ""; position: absolute; left: 50%; bottom: -8px;
+  width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent);
+  animation: pop-in var(--t-med) var(--ease-spring);
+}
+
+/* ---- curves --------------------------------------------------------------------- */
+.curve-channels { display: flex; gap: 4px; padding: 12px 12px 2px; }
+.curve-ch {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 26px; padding: 0 4px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-inset); color: var(--text-2); font-size: var(--fs-xs);
+  transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
+}
+.curve-ch:hover { color: var(--text-1); }
+.curve-ch.on { border-color: var(--ch); color: var(--text-1); background: color-mix(in srgb, var(--ch) 12%, var(--bg-inset)); }
+.curve-ch-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--ch); }
+.curve-graph {
+  position: relative; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 4px auto 0;
+  border-radius: var(--radius-sm); background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: crosshair; touch-action: none;
+}
+.curve-graph.dragging { cursor: grabbing; }
+/* the channel's ramp along the input axis */
+.curve-graph::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -7px; height: 3px; border-radius: 2px;
+  background: linear-gradient(90deg, #000, var(--ch));
+}
+.curve-canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.curve-pt {
+  position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; padding: 0;
+  border: 2px solid var(--ch); border-radius: 50%; background: var(--bg-1);
+  cursor: grab; outline-offset: 2px;
+  transition: transform var(--t-fast) var(--ease-spring), background var(--t-fast);
+  animation: pop-in var(--t-fast) var(--ease-out);
+}
+.curve-pt:hover, .curve-pt:focus-visible { transform: scale(1.3); }
+.curve-pt.drag { background: var(--ch); transform: scale(1.35); cursor: grabbing; }
+.curve-foot { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-top: 14px; }
+.curve-foot .insp-hint { margin: 0; text-align: right; }
+.curve-readout { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; }
+.curve-readout.warn { color: var(--danger); }
+
+/* ---- wheels ---------------------------------------------------------------------- */
+.wheel-wrap { container-type: inline-size; }
+.wheel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
+@container (max-width: 300px) { .wheel-grid { grid-template-columns: 1fr; } }
+.wheel-card {
+  display: grid; gap: 7px; min-width: 0; padding: 8px 8px 6px;
+  border-radius: var(--radius); background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: box-shadow var(--t-med);
+}
+.wheel-card.edited { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.wheel-head { display: flex; align-items: center; gap: 2px; min-height: 22px; }
+.wheel-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); }
+.wheel-tone { flex: 1; margin-left: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wheel-face {
+  position: relative; justify-self: center; width: 100%; max-width: 124px; aspect-ratio: 1;
+  border-radius: 50%; cursor: crosshair; touch-action: none;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 3px #222, 0 0 0 4px var(--line-strong);
+  transition: box-shadow var(--t-fast);
+}
+.wheel-face:hover { box-shadow: inset 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 3px #222, 0 0 0 4px #5a5a5a; }
+.wheel-face.active { box-shadow: inset 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 3px #222, 0 0 0 4px var(--accent); }
+.wheel-cross { position: absolute; inset: 0; pointer-events: none; }
+.wheel-cross::before, .wheel-cross::after { content: ""; position: absolute; background: rgb(0 0 0 / 22%); }
+.wheel-cross::before { left: 50%; top: 8%; bottom: 8%; width: 1px; }
+.wheel-cross::after { top: 50%; left: 8%; right: 8%; height: 1px; }
+.wheel-puck {
+  position: absolute; width: 14px; height: 14px; margin: 0; padding: 0;
+  border: 2px solid #fff; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 65%);
+  cursor: grab; outline-offset: 2px;
+  transition: transform var(--t-fast) var(--ease-spring);
+}
+.wheel-puck:hover, .wheel-puck:focus-visible { transform: translate(-50%, -50%) scale(1.2); }
+.wheel-face.active .wheel-puck { transform: translate(-50%, -50%) scale(1.25); cursor: grabbing; }
+.wheel-values { display: flex; justify-content: space-between; gap: 2px; font-size: 10px; color: var(--text-3); }
+.wv-r { color: #ff8a84; }
+.wv-g { color: #6fdc8f; }
+.wv-b { color: #7ab6ff; }
+.wheel-lum { display: grid; grid-template-columns: minmax(0, 1fr) 34px auto; align-items: center; gap: 4px; }
+.wheel-num { width: 100%; height: 22px; padding: 0 4px; text-align: right; font-size: var(--fs-xs); background: var(--bg-0); }
+.wheel-hint { margin: 0; padding: 0 12px; }
+
+/* ---- LUT --------------------------------------------------------------------------- */
+.lut-import {
+  display: flex; align-items: center; gap: 10px; width: 100%; margin-bottom: 8px; padding: 10px 12px;
+  border: 1px dashed var(--line-strong); border-radius: var(--radius);
+  background: var(--bg-inset); color: var(--text-1); text-align: left;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.lut-import:hover { border-color: var(--accent); background: var(--accent-soft); }
+.lut-import:disabled { opacity: 0.6; }
+.lut-import > svg { flex: none; color: var(--accent); }
+.lut-import span { display: grid; gap: 1px; min-width: 0; }
+.lut-import strong { font-size: var(--fs-sm); font-weight: 600; }
+.lut-import small { font-size: var(--fs-xs); color: var(--text-3); }
+.lut-info { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: var(--fs-xs); color: var(--text-2); }
+.lut-info svg { color: var(--accent); }

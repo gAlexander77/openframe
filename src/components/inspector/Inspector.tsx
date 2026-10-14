@@ -10,6 +10,10 @@ import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
+import { CurvesPanel } from "./CurvesPanel";
+import { HslPanel } from "./HslPanel";
+import { LutPanel } from "./LutPanel";
+import { WheelsPanel } from "./WheelsPanel";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "captions" | "transition";
@@ -104,9 +108,9 @@ function TransformSection({ clip }: { clip: Clip }) {
   );
 }
 
-function stripKeys(c: Clip, prefix: string) {
+function stripKeys(c: Clip, prefix: string, keep?: RegExp) {
   if (!c.keyframes) return undefined;
-  const k = Object.fromEntries(Object.entries(c.keyframes).filter(([p]) => !p.startsWith(prefix)));
+  const k = Object.fromEntries(Object.entries(c.keyframes).filter(([p]) => !p.startsWith(prefix) || keep?.test(p)));
   return Object.keys(k).length ? k : undefined;
 }
 
@@ -383,7 +387,45 @@ const TEMP_TRACK = "linear-gradient(90deg, #3a7bd5, #9a9a9a, #e0b13a)";
 const TINT_TRACK = "linear-gradient(90deg, #3fae54, #9a9a9a, #c94fc0)";
 const SAT_TRACK = "linear-gradient(90deg, #8a8a8a, #e0453a)";
 
+type AdjustSub = "basic" | "hsl" | "curves" | "wheels" | "lut";
+/** Kept across clips, like CapCut keeps the open sub-tab. */
+let lastAdjustSub: AdjustSub = "basic";
+const GRADE_PATH = /^adjust\.(hsl|curves|wheels|lut)\./;
+
 function AdjustTab({ clip }: { clip: Clip }) {
+  const [sub, setSubState] = useState<AdjustSub>(lastAdjustSub);
+  const setSub = (s: AdjustSub) => {
+    lastAdjustSub = s;
+    setSubState(s);
+  };
+  if (!("adjust" in clip)) return null;
+  return (
+    <>
+      <div className="insp-sub adjust-sub">
+        <Segmented
+          value={sub}
+          onChange={setSub}
+          options={[
+            { value: "basic", label: "Basic" },
+            { value: "hsl", label: "HSL" },
+            { value: "curves", label: "Curves" },
+            { value: "wheels", label: "Color wheel" },
+            { value: "lut", label: "LUT" },
+          ]}
+        />
+      </div>
+      <div className="grade-pane" key={sub}>
+        {sub === "basic" && <AdjustBasic clip={clip} />}
+        {sub === "hsl" && <HslPanel clip={clip} />}
+        {sub === "curves" && <CurvesPanel clip={clip} />}
+        {sub === "wheels" && <WheelsPanel clip={clip} />}
+        {sub === "lut" && <LutPanel clip={clip} />}
+      </div>
+    </>
+  );
+}
+
+function AdjustBasic({ clip }: { clip: Clip }) {
   if (!("adjust" in clip)) return null;
   const a = (path: keyof typeof DEFAULT_ADJUST, label: string, min = -100, track?: string) => (
     <SliderRow key={path} clip={clip} path={`adjust.${path}`} label={label} min={min} max={100} reset={0} track={track} />
@@ -391,7 +433,8 @@ function AdjustTab({ clip }: { clip: Clip }) {
   return (
     <>
       <FilterSection clip={clip} />
-      <Section title="Color" onReset={() => patchClip(clip.id, "Reset color", (c) => ({ ...c, adjust: { ...DEFAULT_ADJUST }, keyframes: stripKeys(c, "adjust.") }) as Clip)}>
+      {/* Resets the sliders only; the grade's HSL, curves, wheels and LUT stay. */}
+      <Section title="Color" onReset={() => patchClip(clip.id, "Reset color", (c) => ({ ...c, adjust: { ...(c as { adjust: object }).adjust, ...DEFAULT_ADJUST }, keyframes: stripKeys(c, "adjust.", GRADE_PATH) }) as Clip)}>
         <h5 className="insp-group">Color</h5>
         {a("temperature", "Temp", -100, TEMP_TRACK)}
         {a("tint", "Tint", -100, TINT_TRACK)}

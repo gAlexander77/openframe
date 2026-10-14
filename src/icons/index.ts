@@ -3,6 +3,7 @@
 // Lucide supplies the drawings; re-exporting here keeps the set countable and
 // lets a custom-drawn icon replace one without touching its callers.
 export {
+  Activity,
   ArrowLeftToLine,
   ArrowRightToLine,
   AudioLines,
@@ -23,6 +24,7 @@ export {
   Eye,
   EyeOff,
   FilePlus2,
+  FileUp,
   Film,
   FlipHorizontal2,
   FolderOpen,
