@@ -12,6 +12,8 @@
 //
 // Preview and export share this class; only the canvas and size differ.
 
+import { bakeCurves } from "../lib/curves";
+import type { GradeParams } from "../lib/grade";
 import type { BlendMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import {
@@ -70,6 +72,10 @@ export class Compositor {
   /** Textures for sources, by key (stable sources) or by slot. */
   private sourceTextures = new Map<string, WebGLTexture>();
   private slotTextures: WebGLTexture[] = [];
+  /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
+   * when a grade part is off so no sampler is ever left without one. */
+  private curveTextures = new Map<string, WebGLTexture>();
+  private blank2d: WebGLTexture | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
     const gl = canvas.getContext("webgl2", {
@@ -190,7 +196,7 @@ export class Compositor {
 
   // ---- color uniforms ------------------------------------------------------------
 
-  private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number) {
+  private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number, grade: GradeParams | undefined) {
     const gl = this.gl;
     const k = (v: number) => v / 100;
     gl.uniform1f(u("u_exposure"), k(adjust.exposure));
@@ -212,6 +218,53 @@ export class Compositor {
     gl.uniform3fv(u("u_toneHighlights"), tone?.highlights ?? [0.5, 0.5, 0.5]);
     gl.uniform1f(u("u_toneAmount"), tone?.amount ?? 0);
     gl.uniform1f(u("u_time"), time);
+    this.setGradeUniforms(u, grade);
+  }
+
+  /** The grade's uniforms and tables (texture units 1..3; unit 0 is the
+   * pass's own input). */
+  private setGradeUniforms(u: (n: string) => WebGLUniformLocation | null, g: GradeParams | undefined) {
+    const gl = this.gl;
+    gl.uniform1i(u("u_curvesOn"), g?.curves ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, g?.curves ? this.curveTexture(g.curves) : this.blank());
+    gl.uniform1i(u("u_curves"), 1);
+    const w = g?.wheels;
+    gl.uniform1i(u("u_wheelsOn"), w ? 1 : 0);
+    if (w) {
+      gl.uniform3fv(u("u_lift"), w.lift);
+      gl.uniform3fv(u("u_gamma"), w.gamma);
+      gl.uniform3fv(u("u_gain"), w.gain);
+      gl.uniform3fv(u("u_offset"), w.offset);
+    }
+    gl.uniform1i(u("u_hslOn"), g?.hsl ? 1 : 0);
+    if (g?.hsl) gl.uniform3fv(u("u_hsl"), g.hsl);
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  private blank(): WebGLTexture {
+    if (this.blank2d) return this.blank2d;
+    const gl = this.gl;
+    this.blank2d = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    return this.blank2d;
+  }
+
+  private curveTexture(c: NonNullable<GradeParams["curves"]>): WebGLTexture {
+    const key = JSON.stringify(c);
+    const hit = this.curveTextures.get(key);
+    if (hit) return hit;
+    const gl = this.gl;
+    const tex = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, bakeCurves(c));
+    this.curveTextures.set(key, tex);
+    // A curve drag bakes a table per pointer move; keep only recent ones.
+    if (this.curveTextures.size > 64) {
+      const [oldKey, oldTex] = this.curveTextures.entries().next().value!;
+      gl.deleteTexture(oldTex);
+      this.curveTextures.delete(oldKey);
+    }
+    return tex;
   }
 
   // ---- passes -------------------------------------------------------------------
@@ -321,7 +374,7 @@ export class Compositor {
       gl.uniform1f(u("u_maskFeather"), mask.feather);
       gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
     }
-    this.setColorUniforms(u, layer.adjust, layer.tone, layer.time);
+    this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
     gl.disable(gl.BLEND);
     this.draw();
   }
@@ -417,7 +470,7 @@ export class Compositor {
         this.bindTarget(L1);
         const u = this.use(this.program("adjust", FULLSCREEN_VS, ADJUST_FS));
         this.bindTex(0, accum.tex, u("u_tex"));
-        this.setColorUniforms(u, item.adjust, item.tone, item.time);
+        this.setColorUniforms(u, item.adjust, item.tone, item.time, item.grade);
         this.draw();
         const graded = item.effects.length ? this.applyEffects(item.effects, L1, item.time, [T1, T2]) : L1;
         this.bindTarget(spare);
@@ -473,7 +526,10 @@ export class Compositor {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures]) gl.deleteTexture(tex);
+    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    if (this.blank2d) gl.deleteTexture(this.blank2d);
+    this.blank2d = null;
+    this.curveTextures.clear();
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.targets = [];
     this.sourceTextures.clear();

@@ -200,7 +200,7 @@ export function gradeRgb(rgb: Rgb, g: GradeParams, lut?: Lut, curveTable?: Uint8
     c = c.map((v, i) => v + (o[i] - v) * g.lut!.intensity) as Rgb;
   }
   if (curveTable) c = applyCurves(curveTable, c.map(clamp01) as Rgb);
-  if (g.wheels) c = applyWheels(c, g.wheels);
+  if (g.wheels) c = applyWheels(c.map(clamp01) as Rgb, g.wheels);
   if (g.hsl) c = applyHsl(c.map(clamp01) as Rgb, g.hsl);
   return c.map(clamp01) as Rgb;
 }

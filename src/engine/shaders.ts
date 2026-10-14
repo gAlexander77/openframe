@@ -23,6 +23,11 @@ uniform float u_hue, u_fade, u_vignette, u_grain;
 uniform vec3 u_toneShadows, u_toneHighlights;
 uniform float u_toneAmount;
 uniform float u_time;
+// the grade (ADR-020), mirrored from src/lib/grade.ts and curves.ts
+uniform bool u_curvesOn, u_wheelsOn, u_hslOn;
+uniform sampler2D u_curves;              // 256x1: R, G, B curves, luma in A
+uniform vec3 u_lift, u_gamma, u_gain, u_offset;
+uniform vec3 u_hsl[8];                   // hue, saturation, lightness per band, -1..1
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -40,6 +45,58 @@ vec3 hueRotate(vec3 c, float a) {
   float h = atan(yiq.z, yiq.y) + a;
   float chroma = length(yiq.yz);
   return toRGB * vec3(yiq.x, chroma * cos(h), chroma * sin(h));
+}
+
+vec3 applyCurves(vec3 c) {
+  const float k = 255.0 / 256.0, o = 0.5 / 256.0;
+  c = vec3(texture(u_curves, vec2(c.r * k + o, 0.5)).a, texture(u_curves, vec2(c.g * k + o, 0.5)).a, texture(u_curves, vec2(c.b * k + o, 0.5)).a);
+  return vec3(texture(u_curves, vec2(c.r * k + o, 0.5)).r, texture(u_curves, vec2(c.g * k + o, 0.5)).g, texture(u_curves, vec2(c.b * k + o, 0.5)).b);
+}
+
+vec3 applyWheels(vec3 c) {
+  c = c + u_lift * 0.5 * (1.0 - c);
+  c = c * (1.0 + u_gain);
+  c = sign(c) * pow(abs(c), exp2(-u_gamma));
+  return c + u_offset * 0.5;
+}
+
+vec3 rgb2hsl(vec3 c) {
+  float mx = max(max(c.r, c.g), c.b), mn = min(min(c.r, c.g), c.b);
+  float l = (mx + mn) * 0.5, d = mx - mn;
+  if (d < 1e-6) return vec3(0.0, 0.0, l);
+  float s = d / max(1.0 - abs(2.0 * l - 1.0), 1e-6);
+  float h = mx == c.r ? mod((c.g - c.b) / d, 6.0) : mx == c.g ? (c.b - c.r) / d + 2.0 : (c.r - c.g) / d + 4.0;
+  return vec3(h / 6.0, s, l);
+}
+
+vec3 hsl2rgb(vec3 h) {
+  vec3 k = clamp(abs(mod(h.x * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return h.z + h.y * (1.0 - abs(2.0 * h.z - 1.0)) * (k - 0.5);
+}
+
+const float HSL_CENTERS[9] = float[9](0.0, 30.0, 60.0, 120.0, 180.0, 240.0, 280.0, 320.0, 360.0);
+
+vec3 applyHsl(vec3 c) {
+  float m = smoothstep(0.0, 0.15, max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b));
+  if (m <= 0.0) return c;
+  vec3 hsl = rgb2hsl(c);
+  float h = hsl.x * 360.0;
+  int a = 0;
+  for (int k = 1; k < 8; k++) if (h >= HSL_CENTERS[k]) a = k;
+  float t = smoothstep(0.0, 1.0, (h - HSL_CENTERS[a]) / (HSL_CENTERS[a + 1] - HSL_CENTERS[a]));
+  vec3 adj = mix(u_hsl[a], u_hsl[a == 7 ? 0 : a + 1], t) * m;
+  hsl.x = fract(hsl.x + adj.x * (30.0 / 360.0));
+  hsl.y = clamp(hsl.y * (1.0 + adj.y), 0.0, 1.0);
+  hsl.z = adj.z >= 0.0 ? hsl.z + (1.0 - hsl.z) * adj.z * 0.5 : hsl.z * (1.0 + adj.z * 0.5);
+  return hsl2rgb(hsl);
+}
+
+/** LUT, curves, wheels, HSL: Lumetri's order after the Basic sliders. */
+vec3 grade(vec3 c) {
+  if (u_curvesOn) c = applyCurves(clamp(c, 0.0, 1.0));
+  if (u_wheelsOn) c = applyWheels(clamp(c, 0.0, 1.0));
+  if (u_hslOn) c = applyHsl(clamp(c, 0.0, 1.0));
+  return c;
 }
 
 vec3 adjustColor(vec3 c, vec2 local) {
@@ -66,6 +123,7 @@ vec3 adjustColor(vec3 c, vec2 local) {
     vec3 toned = c + (u_toneShadows - 0.5) * (1.0 - t) * 0.6 + (u_toneHighlights - 0.5) * t * 0.6;
     c = mix(c, toned, u_toneAmount);
   }
+  c = grade(c);
   c = mix(c, vec3(0.12) + c * 0.82, u_fade);
   if (u_vignette > 0.0) {
     float d = distance(local, vec2(0.5)) * 1.41421;
