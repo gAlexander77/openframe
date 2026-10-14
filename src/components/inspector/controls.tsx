@@ -102,7 +102,9 @@ export function SliderRow(p: SliderProps) {
           className="field num"
           value={text ?? shown.toFixed(digits)}
           onChange={(e) => setText(e.target.value)}
-          onBlur={(e) => commit(e.target.value)}
+          // Only what the user typed is an edit: committing on every blur
+          // recorded undo steps for tabbing past, and keyed the playhead.
+          onBlur={(e) => text !== null && commit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             if (e.key === "Escape") setText(null);
@@ -194,7 +196,7 @@ export function ColorInput(props: { value: string; onChange: (v: string) => void
         className="field num"
         defaultValue={hex}
         key={hex}
-        onBlur={(e) => /^#[0-9a-f]{6}$/i.test(e.target.value) && props.onChange(e.target.value)}
+        onBlur={(e) => /^#[0-9a-f]{6}$/i.test(e.target.value) && e.target.value.toLowerCase() !== hex.toLowerCase() && props.onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         aria-label={`${props.label} hex`}
       />
