@@ -4,12 +4,13 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
-import { buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
+import { ACTION_LABELS, buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
 import { createMarker, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
 import { store } from "./store";
+import { toast } from "./toast";
 
 type Handler = () => void;
 const handlers: Partial<Record<ActionId, Handler>> = {};
@@ -18,8 +19,13 @@ export function provide(map: Partial<Record<ActionId, Handler>>) {
   Object.assign(handlers, map);
 }
 
+/** Run an action. One that no module provides yet (export, until the export
+ * round lands) says so rather than doing nothing: a silent primary button
+ * reads as a crash. */
 export function run(id: ActionId) {
-  handlers[id]?.();
+  const handler = handlers[id];
+  if (handler) handler();
+  else toast(`${ACTION_LABELS[id]} isn't available yet`);
 }
 
 export const keymap = DEFAULT_KEYMAP;
@@ -235,7 +241,7 @@ export function onKeyDown(e: KeyboardEvent) {
   const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   if (typing && e.key !== "Escape") return;
   const id = index.get(chordOf(e, isMac));
-  if (!id || !handlers[id]) return;
+  if (!id) return;
   e.preventDefault();
   run(id);
 }
