@@ -37,14 +37,16 @@ function selectedClips(p: Project) {
   return p.tracks.flatMap((t) => t.clips.filter((c) => sel.has(c.id)).map((c) => ({ c, t })));
 }
 
-function afterEdit(p: Project): Project {
-  return store.get().magnet ? ops.compactTrack(p, ops.mainTrack(p).id) : p;
-}
+/** The magnet and linkage as currently toggled. */
+export const settleOptions = () => ({ magnet: store.get().magnet, linkage: store.get().linkage });
 
-const edit = (label: string, fn: (p: Project) => Project) => store.edit(label, (p) => {
-  const next = fn(p);
-  return next === p ? p : afterEdit(next);
-});
+/** An undoable edit that then applies the magnet and linkage, so every path
+ * into the timeline (menus, keys, drags, library) behaves the same. */
+export const edit = (label: string, fn: (p: Project) => Project) =>
+  store.edit(label, (p) => {
+    const next = fn(p);
+    return next === p ? p : ops.settle(p, next, settleOptions());
+  });
 
 /** Frames to move per arrow press when nothing is playing. */
 function stepBy(n: number) {

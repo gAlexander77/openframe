@@ -575,3 +575,47 @@ export function editPoints(p: Project, exclude: Set<Id> = new Set()): number[] {
   for (const m of p.markers) pts.add(m.frame);
   return [...pts].sort((a, b) => a - b);
 }
+
+// ---- magnet and linkage -------------------------------------------------------
+
+export interface SettleOptions {
+  /** Pack the main track end to end (CapCut's main track magnet). */
+  magnet: boolean;
+  /** Overlay clips that start on a main-track clip move with it when it
+   * moves (CapCut's linkage), so titles stay on their shots through ripples. */
+  linkage: boolean;
+}
+
+/**
+ * Apply the magnet and linkage after an edit turned `before` into `after`.
+ * Linkage looks at where each main-track clip was and where it is now, and
+ * shifts overlay clips that started inside its old span by the same amount,
+ * unless the edit moved that overlay itself or the new spot is occupied.
+ */
+export function settle(before: Project, after: Project, o: SettleOptions): Project {
+  let p = o.magnet ? compactTrack(after, mainTrack(after).id) : after;
+  if (!o.linkage) return p;
+  const oldMain = mainTrack(before);
+  const newMain = mainTrack(p);
+  const moves: { from: number; to: number; delta: number }[] = [];
+  for (const c of oldMain.clips) {
+    const now = newMain.clips.find((x) => x.id === c.id);
+    if (now && now.start !== c.start) moves.push({ from: c.start, to: c.start + c.duration, delta: now.start - c.start });
+  }
+  if (!moves.length) return p;
+  const oldPos = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c.start] as const)));
+  for (const t of p.tracks) {
+    if (t.main || t.locked) continue;
+    for (const c of t.clips) {
+      const was = oldPos.get(c.id);
+      if (was === undefined || was !== c.start) continue; // new or moved by the edit itself
+      const m = moves.find((x) => was >= x.from && was < x.to);
+      if (!m) continue;
+      const track = findTrack(p, t.id)!;
+      const start = c.start + m.delta;
+      if (start < 0 || !rangeFree(track, start, c.duration, c.id)) continue;
+      p = withTrack(p, t.id, (tr) => setClips(tr, tr.clips.map((x) => (x.id === c.id ? ({ ...x, start } as Clip) : x))));
+    }
+  }
+  return p;
+}

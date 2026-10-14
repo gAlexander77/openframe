@@ -16,6 +16,7 @@ import {
   splitAt,
   splitClip,
   trimClip,
+  settle,
 } from "./ops";
 import type { Asset, Clip, Project, VideoClip } from "./types";
 
@@ -210,5 +211,19 @@ describe("params", () => {
     );
     const q = setTransition(p, "c1", { type: "dissolve", duration: 30 });
     expect((findClip(q, "c1")!.clip as VideoClip).transitionOut).toEqual({ type: "dissolve", duration: 10 });
+  });
+});
+
+describe("settle", () => {
+  it("magnet packs the main track; linkage carries titles with their shot", () => {
+    let p = project([0, 30, 0], [30, 30, 0], [60, 30, 0]);
+    const overlay = createTrack("video", "Titles");
+    p = { ...p, tracks: [{ ...overlay, clips: [{ ...createTextClip("on c3", 70, 10), id: "t" }] }, ...p.tracks] };
+    const after = deleteClips(p, ["c2"]);
+    const settled = settle(p, after, { magnet: true, linkage: true });
+    expect(clips(settled, 1).map((c) => c[0])).toEqual([0, 30]);
+    expect(findClip(settled, "t")!.clip.start).toBe(40);
+    const unlinked = settle(p, after, { magnet: true, linkage: false });
+    expect(findClip(unlinked, "t")!.clip.start).toBe(70);
   });
 });

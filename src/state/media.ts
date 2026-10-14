@@ -8,6 +8,7 @@ import * as ops from "../lib/project/ops";
 import type { Asset, Clip, Id, Project } from "../lib/project/types";
 import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
+import { edit } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -86,7 +87,7 @@ function adoptSettings(p: Project, a: Asset): Project {
  */
 export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
   let id = "";
-  store.edit(`Add ${asset.name}`, (p0) => {
+  edit(`Add ${asset.name}`, (p0) => {
     let p = adoptSettings(p0, asset);
     const s = store.get();
     let start = at ?? s.playhead;
