@@ -4,7 +4,7 @@ import { createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
 import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
-import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
+import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition } from "../state/apply";
@@ -263,7 +263,7 @@ export function Timeline() {
         const fps = s.project.fps;
         const text =
           g.kind === "slip" && "in" in c
-            ? `In ${formatTimecode(secondsToFrames(c.in, fps), fps)}  ·  Out ${formatTimecode(secondsToFrames(c.in + framesToSeconds(c.duration, fps) * c.speed, fps), fps)}`
+            ? `In ${formatTimecode(secondsToFrames(ops.sourceRange(c, fps)[0], fps), fps)}  ·  Out ${formatTimecode(secondsToFrames(ops.sourceRange(c, fps)[1], fps), fps)}`
             : `${d >= 0 ? "+" : ""}${d} frames`;
         setReadout({ x: e.clientX, y: e.clientY, text });
       }
