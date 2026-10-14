@@ -106,7 +106,62 @@ anyway). Dissolves and fades are not cuts to this detector; PySceneDetect's
 ThresholdDetector (fades to black) and TransNetV2 (MIT, gradual
 transitions) are the upgrades listed in [[AI and automation]] §2.5.
 
-### Credits: PySceneDetect
+## Beat markers
+
+`src/lib/analysis/beats.ts`. The audio is decoded to mono at 22.05 kHz.
+
+1. **Onset strength (spectral flux).** Hann-windowed 1024-point FFTs, 100
+   frames a second, magnitudes summed into 64 mel-spaced bands (30 Hz to
+   11 kHz), log-compressed (`log1p(100·x)`), and the increases from the
+   previous frame summed. Mel bands matter: with plain FFT bins a hi-hat's
+   noise covers hundreds of bins and outvotes the kick drum that carries
+   the beat. Frames are centered, so the flux peaks a little before the
+   attack; 8 ms is added back (measured on the test click tracks).
+2. **Tempo.** Autocorrelation of the onset envelope (smoothed with a 20 ms
+   Gaussian first, or a period of 46.9 frames splits its peak between lags
+   46 and 47 and the doubled period wins), weighted by a log-normal prior
+   centered on 120 BPM with one octave of spread, over 40–240 BPM. The
+   peak is refined to a fraction of a frame by parabolic interpolation.
+3. **Beat tracking.** Ellis's dynamic programming tracker, as in librosa's
+   `beat_track`: each frame's score is its onset strength plus the best
+   earlier beat between half and twice a period back, penalized by
+   `tightness · log(gap / period)²` (tightness 100). Backtracking from the
+   end yields the chain of beats that best balances landing on onsets with
+   keeping time.
+   - *Last beat:* librosa starts from the latest strong peak. Beats and
+     off-beats form two chains with the same period, and whichever ends
+     later would win; we take the strongest peak within a period of the
+     end instead (pinned by a test).
+   - *Trim:* leading and trailing beats weaker than half the RMS onset
+     strength at the beats are dropped (count-ins, fade-outs, and the
+     phantom beat the DP places one period after the music stops).
+4. **BPM.** 60 / the least-squares slope of beat time against beat index,
+   which averages out each beat's 10 ms frame grid.
+
+| Option | Default | UI |
+|---|---|---|
+| `minBpm` / `maxBpm` | 40 / 240 | — |
+| `priorBpm` | 120 | — |
+| `tightness` | 100 | — |
+| marker every N beats | 1 | Every: 1, 2 or 4 beats |
+
+Measured on synthetic loops (kick, high-passed hat on the off-beat, a held
+chord): 90, 100 and 128 BPM come out within 0.1 BPM, every beat within
+5 ms of the truth.
+
+Where it came from: spectral flux onset detection (Bello et al., "A
+Tutorial on Onset Detection in Music Signals", 2005; log compression after
+Böck and Widmer), the tempo prior and the DP tracker from Ellis (2007) and
+their librosa implementation (ISC license; we read its documentation and
+behavior, no code was copied). Beat This! (MIT) is the planned upgrade for
+downbeats and tempo changes; madmom (non-commercial models), aubio (GPL)
+and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
+
+**Gaps.** One tempo per clip, no downbeats or bars, no tempo changes.
+Markers sit on the timeline, not on the clip, so they stay put if the
+music clip moves.
+
+## Credits: PySceneDetect
 
 The scene detector reimplements, in TypeScript, the algorithms of
 PySceneDetect (<https://github.com/Breakthrough/PySceneDetect>), read from
