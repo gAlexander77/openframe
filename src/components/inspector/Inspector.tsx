@@ -5,13 +5,14 @@ import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "../..
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM, uid } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
 import type { Animation, BlendMode, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
-import { FPS_PRESETS, formatDuration, framesToSeconds, secondsToFrames } from "../../lib/time";
+import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
+import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
 import "./inspector.css";
 
-type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "transition";
+type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "captions" | "transition";
 
 const TAB_LABEL: Record<Tab, string> = {
   video: "Video",
@@ -20,6 +21,7 @@ const TAB_LABEL: Record<Tab, string> = {
   animation: "Animation",
   adjust: "Adjust",
   text: "Text",
+  captions: "Captions",
   transition: "Transition",
 };
 
@@ -34,7 +36,7 @@ function tabsFor(c: Clip, p: Project): Tab[] {
     case "color":
       return ["video", "animation", "adjust", ...tr];
     case "text":
-      return ["text", "animation", ...tr];
+      return c.caption ? ["text", "captions", "animation"] : ["text", "animation", ...tr];
     case "audio":
       return ["audio", "speed"];
     case "adjustment":
@@ -74,6 +76,7 @@ function ClipInspector({ id }: { id: Id }) {
         {active === "animation" && <AnimationTab clip={clip} />}
         {active === "adjust" && <AdjustTab clip={clip} />}
         {active === "text" && <TextTab clip={clip as TextClip} />}
+        {active === "captions" && <CaptionList current={clip.id} />}
         {active === "transition" && <TransitionTab clip={clip} />}
       </div>
     </>
@@ -498,6 +501,14 @@ function TextTab({ clip }: { clip: TextClip }) {
   const style = (patch: Partial<TextStyle>, label: string) => patchClip(clip.id, label, (c) => ({ ...c, style: { ...(c as TextClip).style, ...patch } }) as Clip);
   return (
     <>
+      {clip.caption && (
+        <div className="insp-banner">
+          <span>Caption · style changes apply to this caption only</span>
+          <button className="btn" onClick={() => styleAllCaptions(clip.style, clip.transform.y)}>
+            Apply to all captions
+          </button>
+        </div>
+      )}
       <Section title="Text">
         <textarea
           className="field text-area"
@@ -570,6 +581,41 @@ function TextTab({ clip }: { clip: TextClip }) {
         <SliderRow clip={clip} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} {...pct} />
       </Section>
     </>
+  );
+}
+
+// ---- captions list ----------------------------------------------------------------
+
+/** CapCut's caption list: every caption with its time, editable in place;
+ * clicking a row moves the playhead there and selects that caption. */
+function CaptionList({ current }: { current: Id }) {
+  const p = useEditor((s) => s.project);
+  const caps = captionClips(p);
+  return (
+    <div className="cap-list">
+      {caps.map((c, i) => (
+        <div key={c.id} className={`cap-row${c.id === current ? " on" : ""}`} onClick={() => { store.seek(c.start); store.select([c.id]); }}>
+          <span className="cap-index num">{i + 1}</span>
+          <span className="cap-time num">{formatTimecode(c.start, p.fps)}</span>
+          <textarea
+            className="cap-text"
+            defaultValue={c.text}
+            key={c.text}
+            rows={1}
+            onClick={(e) => e.stopPropagation()}
+            onFocus={() => store.seek(c.start)}
+            onBlur={(e) => e.target.value !== c.text && patchClip(c.id, "Edit caption", (x) => ({ ...x, text: e.target.value }) as Clip)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.ctrlKey && !e.shiftKey) {
+                e.preventDefault();
+                (e.target as HTMLTextAreaElement).blur();
+              }
+            }}
+            aria-label={`Caption ${i + 1}`}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 
