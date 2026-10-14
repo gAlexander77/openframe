@@ -96,6 +96,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations.
+- **Type on the canvas**, as in CapCut: double-click a title or caption in
+  the viewer (or press Enter with it selected) and a caret appears in the
+  rendered text with everything selected; the frame redraws as you type,
+  in the real style. Escape or a click outside finishes, and the whole
+  session is one undo step. Enter breaks a title's line; in a caption it
+  finishes and Ctrl+Enter breaks the line. Shortcuts stay off while typing
+  ([[ADR-030 The canvas text editor is a transparent textarea over the
+  engine's text]], [[ADR-031 Typing into a text clip is one live session]]).
+- The inspector's Text box is live too, and mirrors typing on the canvas.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks; caption list editing; apply style to all; SRT/VTT import and

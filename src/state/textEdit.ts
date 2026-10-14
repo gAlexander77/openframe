@@ -8,7 +8,7 @@
 
 import * as ops from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
-import { run } from "./actions";
+import { provide, run } from "./actions";
 import { store } from "./store";
 
 let session: { id: Id; el: HTMLElement; before: string } | null = null;
@@ -66,3 +66,10 @@ export function editOnCanvas(id: Id) {
   store.select([id]);
   store.set({ textEdit: id });
 }
+
+provide({
+  editText: () => {
+    const sel = store.get().selection;
+    if (sel.length === 1) editOnCanvas(sel[0]);
+  },
+});

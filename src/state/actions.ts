@@ -240,11 +240,13 @@ function targetsAtPlayhead(p: Project) {
   return picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
 }
 
-/** Global key handling. Typing in a field is left alone, except Escape. */
+/** Global key handling. Typing in a field is left alone, except Escape;
+ * Enter on a focused button or link presses it rather than editing text. */
 export function onKeyDown(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null;
   const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
   if (typing && e.key !== "Escape") return;
+  if (e.key === "Enter" && el?.closest?.("button, a, select, [role=button]")) return;
   const id = index.get(chordOf(e, isMac));
   if (!id || !handlers[id]) return;
   e.preventDefault();
