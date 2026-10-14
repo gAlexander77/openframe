@@ -105,7 +105,8 @@ export function useAi<T>(selector: (s: AiState) => T): T {
 
 type MediaClip = VideoClip | AudioClip;
 
-const NEEDS: Record<ToolId, string> = {
+/** What each tool works on, for hints and errors. */
+export const NEEDS: Record<ToolId, string> = {
   silences: "a video or audio clip with sound",
   scenes: "a video clip",
   beats: "a music or video clip with sound",

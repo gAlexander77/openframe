@@ -120,5 +120,27 @@ async (page, base = "http://localhost:1420") => {
     delete d.beats;
   }
 
+  // 5. Through the UI once: the AI tools tab, settings popover (Escape must
+  //    close it without deselecting the clip), Remove, result on the card.
+  await fresh();
+  await page.evaluate(async () => {
+    const { clip } = await window.__place("talk-gaps.mp4");
+    window.videoEditor.select([clip.id]);
+  });
+  await page.getByRole("tab", { name: "AI tools" }).click();
+  await page.getByRole("button", { name: "Remove silences settings" }).click();
+  await page.keyboard.press("Escape");
+  const kept = await page.evaluate(() => window.videoEditor.state().selection.length);
+  await page.locator(".ai-silences .ai-run").click();
+  await page.waitForSelector(".ai-silences .ai-status.done", { timeout: 30000 });
+  await page.screenshot({ path: "scripts/drive/shots/ai-tools.png" }).catch(() => {});
+  details.ui = await page.evaluate(() => ({
+    status: document.querySelector(".ai-silences .ai-status").textContent.trim(),
+    pieces: window.videoEditor.describe().tracks.find((t) => t.main).clips.length,
+    popoverOpen: !!document.querySelector(".ai-pop"),
+  }));
+  details.ui.selectionKeptAfterEscape = kept === 1;
+  details.ui.ok = details.ui.selectionKeptAfterEscape && !details.ui.popoverOpen && details.ui.pieces === 4 && details.ui.status === "Removed 4 silences, 4.9 s shorter";
+
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

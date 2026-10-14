@@ -161,6 +161,31 @@ and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 Markers sit on the timeline, not on the clip, so they stay put if the
 music clip moves.
 
+## In the app and for agents
+
+- **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).
+  A banner names the selected clip; each tool card says what it needs,
+  opens its settings in a small popover, shows progress with a cancel
+  button while it runs, and keeps its last result ("Removed 4 silences,
+  4.9 s shorter"). *Auto captions* opens the Captions tab; *Auto reframe*
+  is marked as coming soon.
+- **One undo step per run**, labeled with what happened ("Remove 4
+  silences", "Split into 5 scenes", "Mark 43 beats"), built from the
+  registry commands `cut_ranges`, `split_at_times` and `add_markers`
+  ([[ADR-019 Smart edits compile to commands, one undo step]]).
+- **Automation:** `window.videoEditor.analyze.silences | scenes |
+  beats(clipId?, options?)` return results in source seconds without
+  editing ([[ADR-017 Analysis edits take source seconds]]);
+  `window.videoEditor.ai.removeSilences | splitScenes | markBeats` analyze
+  and apply. Omitting `clipId` uses the selected clip.
+- **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
+  known answers (`node scripts/make-fixtures.mjs`) and once through the
+  panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,
+  7.7–8.9 and 10.7–12 s (4.9 s removed, video and its sound cut together);
+  scene cuts on the exact frames (2.5, 5, 8, 10 s) with both detectors,
+  360 frames analyzed in about 0.7 s; 128 BPM with all 43 beats within
+  5 ms.
+
 ## Decoding
 
 `src/engine/analyze.ts` opens its own mediabunny Input per job (playback

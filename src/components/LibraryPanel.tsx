@@ -24,6 +24,7 @@ import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
 import "./library.css";
+import { AiToolsTab } from "./AiToolsTab";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -64,7 +65,7 @@ export function LibraryPanel() {
         {tab === "filters" && <FiltersTab />}
         {tab === "adjustment" && <AdjustmentTab />}
         {tab === "captions" && <Placeholder title="Captions" text="Automatic captions from speech run on your computer. Coming in the AI round." />}
-        {tab === "ai" && <Placeholder title="AI tools" text="Silence removal, scene detection and beat markers run locally. Coming in the AI round." />}
+        {tab === "ai" && <AiToolsTab />}
       </div>
     </section>
   );

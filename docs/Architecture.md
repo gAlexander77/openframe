@@ -51,6 +51,7 @@ derived from the audible audio clock; audio is scheduled separately by
 | `lib/project/types.ts` | The document schema (also `docs/Project format.md`, planned) |
 | `lib/project/ops.ts` | Every edit: place, split, trims, speed, freeze, detach, settle |
 | `lib/commands.ts` | Named commands + JSON Schemas; `describeProject` |
+| `lib/analysis/*` | Silence, scene and beat detection, pure ([[AI tools]]) |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
@@ -58,7 +59,9 @@ derived from the audible audio clock; audio is scheduled separately by
 | `engine/player.ts` | Preview loop, transport, shuttle |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
+| `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
+| `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |
