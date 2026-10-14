@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createProject, createTextClip, createTrack, createColorClip, createAdjustmentClip } from "../project/defaults";
+import { clipForAsset, createProject, createTextClip, createTrack, createColorClip, createAdjustmentClip } from "../project/defaults";
 import { addClip, addTrack, setTransition } from "../project/ops";
 import type { Project } from "../project/types";
 import { animationAt, planFrame } from "./plan";
@@ -71,5 +71,18 @@ describe("animations", () => {
     const pop = { ...clip, animIn: { type: "pop", duration: 20 }, animOut: undefined };
     const peak = Math.max(...Array.from({ length: 20 }, (_, r) => animationAt(pop, r).scale));
     expect(peak).toBeGreaterThan(1.02);
+  });
+});
+
+describe("source time", () => {
+  it("samples just past each frame's edge, inside the frame", () => {
+    let p = createProject({ fps: { num: 30, den: 1 } });
+    p = { ...p, assets: [{ id: "a", kind: "video", name: "v", src: "v", duration: 10, fps: 30, hasVideo: true, hasAudio: false }] };
+    const clip = { ...clipForAsset(p.assets[0], 0, p.fps), id: "v" };
+    p = addClip(p, p.tracks[0].id, clip);
+    const item = planFrame(p, 59)[0];
+    const t = item.kind === "layer" && item.layer.source.kind === "video" ? item.layer.source.time : -1;
+    expect(t).toBeGreaterThan(59 / 30);
+    expect(t).toBeLessThan(59 / 30 + 0.5 / 30);
   });
 });

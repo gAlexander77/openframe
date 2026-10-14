@@ -162,7 +162,13 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
   let source: LayerSource;
   if (clip.type === "video") {
     const asset = getAsset(p, clip.assetId);
-    const t = sourceTimeAt(clip, f, p.fps);
+    // Look up a quarter source-frame past the edge, never at the edge itself:
+    // containers stamp frame 59 at 30208/15360 s, two ulps after 59/30, and
+    // MKV rounds stamps to the millisecond, so an exact-edge lookup returns
+    // the previous frame (found by the framecode drive). A quarter frame
+    // clears both and still lands inside the intended frame at any speed,
+    // which keeps 2x showing frames 0, 2, 4... as Premiere does.
+    const t = sourceTimeAt(clip, f, p.fps) + 0.25 / (asset?.fps || 60);
     const max = asset && asset.duration > 0 ? asset.duration - 1e-3 : Infinity;
     source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max) };
   } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
