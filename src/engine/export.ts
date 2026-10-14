@@ -11,8 +11,13 @@
 // (research pitfall 23).
 
 import {
+  ALL_FORMATS,
+  AudioBufferSink,
   AudioBufferSource,
+  BufferSource,
+  BufferTarget,
   CanvasSource,
+  Input,
   MkvOutputFormat,
   MovOutputFormat,
   Mp4OutputFormat,
@@ -68,6 +73,8 @@ export interface ExportResult {
   elapsed: number;
   videoCodec: VideoCodec | null;
   audioCodec: AudioCodec | null;
+  /** Encoder delay removed with an edit list, in samples. */
+  audioDelay: number;
   /** Set when the codec asked for could not be encoded here. */
   note?: string;
 }
@@ -85,6 +92,60 @@ const AUDIO_LEAD = 1;
 const ENCODER_STALL_MS = 15_000;
 /** A single frame's sources taking this long = a stuck decoder. */
 const DECODE_STALL_MS = 60_000;
+/** Where the calibration click sits, in samples. */
+const CLICK_AT = 9600;
+const delays = new Map<AudioCodec, Promise<number>>();
+
+/**
+ * An AAC encoder's delay ("priming"), in samples, measured on this device:
+ * encode a click, decode it back, see how far it moved. WebCodecs does not
+ * report it and it differs by encoder: Edge's Media Foundation encoder
+ * measured 0, the WASM fallback 1024 (research §4.6, ADR-016). Stamping the
+ * first sample at -delay makes mediabunny write an MP4 edit list that skips
+ * exactly the priming. Measured once per session (~0.1 s).
+ */
+export function encoderDelay(codec: "aac", bitrate: number): Promise<number> {
+  let d = delays.get(codec);
+  if (!d) {
+    d = (async () => {
+      const sr = 48000;
+      const target = new BufferTarget();
+      const out = new Output({ format: new Mp4OutputFormat(), target });
+      const src = new AudioBufferSource({ codec, quality: new Quality({ bitrate }) });
+      out.addAudioTrack(src);
+      await out.start();
+      const click = new AudioBuffer({ length: sr / 2, numberOfChannels: 2, sampleRate: sr });
+      click.getChannelData(0)[CLICK_AT] = click.getChannelData(1)[CLICK_AT] = 0.9;
+      await src.add(click);
+      src.close();
+      await out.finalize();
+      const input = new Input({ source: new BufferSource(target.buffer!), formats: ALL_FORMATS });
+      try {
+        const track = await input.getPrimaryAudioTrack();
+        if (!track || !(await track.canDecode())) return 0;
+        let pos = 0;
+        let peak = 0;
+        let at = CLICK_AT;
+        for await (const { buffer } of new AudioBufferSink(track).buffers()) {
+          const ch = buffer.getChannelData(0);
+          for (let i = 0; i < ch.length; i++) {
+            if (Math.abs(ch[i]) > peak) {
+              peak = Math.abs(ch[i]);
+              at = pos + i;
+            }
+          }
+          pos += ch.length;
+        }
+        return Math.max(0, at - CLICK_AT);
+      } finally {
+        input.dispose();
+      }
+    })().catch(() => 0);
+    delays.set(codec, d);
+  }
+  return d;
+}
+
 /** The codecs this device can encode for a container at a size and rate,
  * in the container's preference order (for the dialog to grey out). */
 export async function encodableVideoCodecs(format: VideoFormat, width: number, height: number, fps: Rational, bitrate: number): Promise<VideoCodec[]> {
@@ -262,19 +323,25 @@ export async function exportProject(
     const a = plan.audio;
     const totalSamples = a ? Math.round(plan.seconds * a.sampleRate) : 0;
     let audio: AudioBufferSource | null = null;
+    let priming = 0;
     if (a) {
       if (a.codec === "aac") {
         const note = await guard(ensureAac(a.bitrate));
         if (note) notes.push(note);
       }
-      audio = new AudioBufferSource({
-        codec: a.codec,
-        ...(a.codec === "pcm-s16" ? {} : { quality: new Quality({ bitrate: a.bitrate }) }),
-        onEncodedPacket: () => {
-          lastPacket = performance.now();
+      const isobmff = plan.container === "mp4" || plan.container === "mov" || plan.container === "m4a";
+      priming = a.codec === "aac" && isobmff ? await guard(encoderDelay("aac", a.bitrate)) : 0;
+      audio = new AudioBufferSource(
+        {
+          codec: a.codec,
+          ...(a.codec === "pcm-s16" ? {} : { quality: new Quality({ bitrate: a.bitrate }) }),
+          onEncodedPacket: () => {
+            lastPacket = performance.now();
+          },
         },
-      });
-      output.addAudioTrack(audio, { maximumPacketCount: Math.ceil((totalSamples / 960) * 1.1) + 16 });
+        { startTimestamp: -priming / a.sampleRate },
+      );
+      output.addAudioTrack(audio, { maximumPacketCount: Math.ceil(((totalSamples + priming) / 960) * 1.1) + 16 });
     }
 
     await guard(output.start());
@@ -382,6 +449,7 @@ export async function exportProject(
       elapsed: (performance.now() - started) / 1000,
       videoCodec,
       audioCodec: a?.codec ?? null,
+      audioDelay: priming,
       ...(notes.length ? { note: notes.join(" ") } : {}),
     };
   } catch (e) {
