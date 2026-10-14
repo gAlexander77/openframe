@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ExportDialog } from "./components/ExportDialog";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { DragGhost, Toasts } from "./components/Overlays";
 import { PlayerPanel } from "./components/Player";
@@ -69,6 +70,7 @@ export default function App() {
         <Timeline />
       </div>
       <DragGhost />
+      <ExportDialog />
       <Toasts />
     </div>
   );

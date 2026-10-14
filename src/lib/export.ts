@@ -140,6 +140,22 @@ export function formatSize(bytes: number): string {
   return `about ${(bytes / 1e9).toFixed(1)} GB`;
 }
 
+/** An exact size for the done view: "1.2 MB", "840 KB". */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1e6) return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(1)} MB`;
+  return `${(bytes / 1e9).toFixed(2)} GB`;
+}
+
+/** Time left, rounded the way people say it: "8 s left", "3 min left". */
+export function formatEta(seconds: number | null): string {
+  if (seconds === null || !isFinite(seconds)) return "estimating time left";
+  if (seconds < 60) return `${Math.max(1, Math.ceil(seconds))} s left`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min left`;
+  const h = Math.floor(seconds / 3600);
+  return `${h} h ${Math.ceil((seconds - h * 3600) / 60)} min left`;
+}
+
 // ---- frames, ranges, audio windows -----------------------------------------------
 
 /** Timeline frames [from, to) to export. Out points are exclusive, like a

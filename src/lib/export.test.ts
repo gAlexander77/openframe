@@ -6,6 +6,8 @@ import {
   estimateBytes,
   exportBlocker,
   exportRange,
+  formatBytes,
+  formatEta,
   formatSize,
   fpsOptions,
   outputFrameCount,
@@ -96,6 +98,20 @@ describe("bitrates and size", () => {
     expect(formatSize(2_345_000)).toBe("about 2.3 MB");
     expect(formatSize(1_500_000_000)).toBe("about 1.5 GB");
     expect(formatSize(1000)).toBe("under 1 MB");
+  });
+});
+
+describe("done and progress text", () => {
+  it("states exact sizes", () => {
+    expect(formatBytes(840_000)).toBe("840 KB");
+    expect(formatBytes(1_234_567)).toBe("1.2 MB");
+    expect(formatBytes(2_500_000_000)).toBe("2.50 GB");
+  });
+  it("rounds time left up, the way people say it", () => {
+    expect(formatEta(null)).toBe("estimating time left");
+    expect(formatEta(7.2)).toBe("8 s left");
+    expect(formatEta(150)).toBe("3 min left");
+    expect(formatEta(3900)).toBe("1 h 5 min left");
   });
 });
 

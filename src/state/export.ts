@@ -5,16 +5,17 @@
 
 import { useSyncExternalStore } from "react";
 import { exportProject, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
-import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, type ExportPlan, type ExportSettings } from "../lib/export";
+import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, type ExportPlan, type ExportSettings } from "../lib/export";
 import { secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
+import { provide } from "./actions";
 import { store } from "./store";
 
 export type ExportView =
   | { phase: "closed" }
   | { phase: "settings" }
   | { phase: "running"; plan: ExportPlan; fileName: string; progress: ExportProgress; startedAt: number }
-  | { phase: "done"; plan: ExportPlan; fileName: string; result: ExportResult; reveal: (() => Promise<void>) | null }
+  | { phase: "done"; plan: ExportPlan; fileName: string; result: ExportResult; reveal: (() => Promise<void>) | null; revealLabel?: string }
   | { phase: "failed"; message: string };
 
 let view: ExportView = { phase: "closed" };
@@ -78,7 +79,7 @@ export async function startExport(settings: ExportSettings) {
     const running = (progress: ExportProgress) => set({ phase: "running", plan, fileName: target.displayName, progress, startedAt });
     running({ phase: "preparing", done: 0, total: plan.frames, fraction: 0, fps: 0, eta: null });
     const result = await exportProject(project, plan, target, running, controller.signal);
-    set({ phase: "done", plan, fileName: target.displayName, result, reveal: () => target.reveal() });
+    set({ phase: "done", plan, fileName: target.displayName, result, reveal: () => target.reveal(), revealLabel: target.revealLabel });
   } catch (e) {
     if (isAbort(e)) set({ phase: "settings" });
     else set({ phase: "failed", message: e instanceof Error ? e.message : String(e) });
@@ -117,6 +118,25 @@ export async function renderToUrl(options: RenderOptions = {}) {
   }
 }
 
+/**
+ * Save the frame under the playhead as a PNG wherever the platform puts
+ * exports (CapCut's "export still frame"). Call from the click handler.
+ * Returns the file's name, or null when the save dialog was canceled.
+ */
+export async function saveStill(name: string, resolution: ExportSettings["resolution"]): Promise<string | null> {
+  const target = await platform.createExportTarget(`${safeFileName(name)} frame`, "png");
+  if (!target) return null;
+  const s = store.get();
+  const short = RESOLUTIONS.find((r) => r.id === resolution)?.short ?? 1080;
+  const { width, height } = outputSize(s.project, short);
+  const blob = await exportStill(s.project, s.playhead, width, height);
+  const w = target.writable.getWriter();
+  await w.write({ type: "write", data: new Uint8Array(await blob.arrayBuffer()), position: 0 });
+  await w.close();
+  if (target.revealLabel) await target.reveal();
+  return target.displayName;
+}
+
 /** The current frame (or `frame`) as a PNG Blob URL at a preset size. */
 export async function stillToUrl(frame?: number, resolution: ExportSettings["resolution"] = "1080p") {
   const s = store.get();
@@ -125,3 +145,5 @@ export async function stillToUrl(frame?: number, resolution: ExportSettings["res
   const blob = await exportStill(s.project, frame ?? s.playhead, width, height);
   return { url: URL.createObjectURL(blob), size: blob.size, width, height };
 }
+
+provide({ export: openExportDialog });
