@@ -8,7 +8,7 @@ import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { createAdjustmentClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, TextStyle } from "../lib/project/types";
-import { secondsToFrames } from "../lib/time";
+import { secondsToFrames, type Rational } from "../lib/time";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -53,6 +53,16 @@ function topTrack(p: Project, name: string): [Project, Id] {
   return [ops.addTrack(p, t, 0), t.id];
 }
 
+/** The clip a preset adds; the library card's preview renders this same clip. */
+export function presetClip(preset: TextPreset, start: number, fps: Rational): Clip {
+  const clip = createTextClip(preset.text, start, secondsToFrames(3, fps), preset.style);
+  return {
+    ...clip,
+    transform: { ...clip.transform, y: preset.y ?? 0 },
+    ...(preset.anim ? { animIn: { type: preset.anim, duration: secondsToFrames(0.5, fps) } } : {}),
+  };
+}
+
 export function addTextPreset(key: string, at?: number) {
   const preset = TEXT_PRESETS[key];
   if (!preset) return;
@@ -60,13 +70,8 @@ export function addTextPreset(key: string, at?: number) {
   const f = at ?? s.playhead;
   let id = "";
   store.edit(`Add ${preset.label.toLowerCase()}`, (p0) => {
-    const dur = secondsToFrames(3, p0.fps);
-    let clip: Clip = createTextClip(preset.text, f, dur, preset.style);
-    clip = {
-      ...clip,
-      transform: { ...clip.transform, y: preset.y ?? 0 },
-      ...(preset.anim ? { animIn: { type: preset.anim, duration: secondsToFrames(0.5, p0.fps) } } : {}),
-    };
+    const clip = presetClip(preset, f, p0.fps);
+    const dur = clip.duration;
     id = clip.id;
     const free = p0.tracks.find((t) => t.kind === "video" && !t.main && !t.locked && ops.rangeFree(t, f, dur));
     if (free) return ops.addClip(p0, free.id, clip);

@@ -72,6 +72,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   breaks; caption list editing; apply style to all; SRT/VTT import and
   export.
 
+## Library
+
+- CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
+  Captions, Filters, Adjustment, with category sub-navigation.
+- **Previews drawn by the engine**: filter, effect, transition and text
+  cards show the real shaders and text rasterizer on a generated sample
+  shot, or on the selected clip's own frame; effects, transitions and
+  titles play a loop on hover (a still under reduced motion). Rendered
+  lazily for visible cards, one at a time, cached
+  ([[ADR-026 Library previews are drawn by the engine]]).
+
 ## Stickers
 
 - **A local sticker library**: about 140 stickers in ten categories with

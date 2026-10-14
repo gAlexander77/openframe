@@ -17,14 +17,15 @@ import {
   Upload,
   WandSparkles,
 } from "../icons";
-import { EFFECTS, FILTERS, TRANSITIONS, type FilterDef } from "../lib/catalog";
+import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition, TEXT_PRESETS } from "../state/apply";
+import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
+import { EnginePreview } from "./EnginePreview";
 import { StickersTab } from "./StickersTab";
 import "./library.css";
 
@@ -205,10 +206,10 @@ function CatalogTab<T extends { category: string; label: string }>(props: {
       <div className="lib-content">
         <p className="lib-hint">{props.hint}</p>
         {shown.map(([c, items]) => (
-          <div key={c}>
+          <section key={c} className="lib-section">
             <h4 className="lib-group">{c}</h4>
             <div className="card-grid small">{items.map(([k, d]) => props.render(k, d))}</div>
-          </div>
+          </section>
         ))}
       </div>
     </div>
@@ -226,7 +227,7 @@ function EffectsTab() {
           label={d.label}
           payload={{ kind: "effect", type: k, label: d.label }}
           onAdd={() => applyEffect(k)}
-          preview={<div className={`fx-preview fx-${k}`}><Sparkles size={18} strokeWidth={1.4} /></div>}
+          preview={<EnginePreview spec={{ kind: "effect", type: k }} />}
         />
       )}
     />
@@ -244,29 +245,11 @@ function TransitionsTab() {
           label={d.label}
           payload={{ kind: "transition", type: k, label: d.label }}
           onAdd={() => applyTransition(k)}
-          preview={
-            <div className={`tr-preview tr-${d.category.toLowerCase()} tr-${k}`}>
-              <div className="tr-a" />
-              <div className="tr-b" />
-            </div>
-          }
+          preview={<EnginePreview spec={{ kind: "transition", type: k }} />}
         />
       )}
     />
   );
-}
-
-/** A CSS approximation of a look, for the card preview only. */
-function cssLook(f: FilterDef): string {
-  const a = f.adjust;
-  const parts = [
-    `saturate(${Math.max(0, 1 + (a.saturation ?? 0) / 100 + (a.vibrance ?? 0) / 200)})`,
-    `contrast(${1 + (a.contrast ?? 0) / 100 - (a.fade ?? 0) / 300})`,
-    `brightness(${1 + ((a.exposure ?? 0) + (a.brightness ?? 0)) / 150})`,
-  ];
-  if (a.temperature) parts.push(`sepia(${Math.max(0, a.temperature / 120)})`, `hue-rotate(${a.temperature < 0 ? 180 + a.temperature / 2 : 0}deg)`);
-  if (a.tint) parts.push(`hue-rotate(${a.tint / 3}deg)`);
-  return parts.join(" ");
 }
 
 function FiltersTab() {
@@ -280,12 +263,14 @@ function FiltersTab() {
           label={d.label}
           payload={{ kind: "filter", type: k, label: d.label }}
           onAdd={() => applyFilter(k)}
-          preview={<div className="filter-preview" style={{ filter: cssLook(d) }} />}
+          preview={<EnginePreview spec={{ kind: "filter", type: k }} />}
         />
       )}
     />
   );
 }
+
+const PREVIEW_FPS = { num: 30, den: 1 };
 
 function TextTab() {
   const defs = Object.fromEntries(Object.entries(TEXT_PRESETS).map(([k, v]) => [k, { ...v, category: "Text" }]));
@@ -299,25 +284,7 @@ function TextTab() {
           label={d.label}
           payload={{ kind: "text", preset: k, label: d.label }}
           onAdd={() => addTextPreset(k)}
-          preview={
-            <div className="text-preview">
-              <span
-                style={{
-                  color: d.style.color ?? "#fff",
-                  fontWeight: d.style.bold === false ? 400 : 700,
-                  fontStyle: d.style.italic ? "italic" : undefined,
-                  fontFamily: d.style.font,
-                  WebkitTextStroke: d.style.stroke ? `1px ${d.style.stroke.color}` : undefined,
-                  textShadow: d.style.shadow ? `0 0 8px ${d.style.shadow.color}` : undefined,
-                  background: d.style.background?.color,
-                  padding: d.style.background ? "1px 6px" : undefined,
-                  borderRadius: d.style.background ? Math.min(d.style.background.radius, 10) : undefined,
-                }}
-              >
-                {d.text.length > 12 ? d.label : d.text}
-              </span>
-            </div>
-          }
+          preview={<EnginePreview spec={{ kind: "text", id: `preset:${k}`, clips: [presetClip(d, 0, PREVIEW_FPS)], scene: false }} />}
         />
       )}
     />
