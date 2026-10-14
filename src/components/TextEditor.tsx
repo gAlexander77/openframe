@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import { rasterizeText, textFamily } from "../engine/text";
+import { player } from "../engine/player";
 import type { Project, TextClip } from "../lib/project/types";
 import type { Layer } from "../lib/render/plan";
 import { editBox } from "../lib/textBox";
 import { beginTyping, endTyping, typeText } from "../state/textEdit";
+import { useEditor } from "../state/store";
 
 /** Room between the text and the frame, viewer pixels: the raster's own pad
  * is a pixel or two, which puts a caret at either end on the border. */
@@ -19,6 +21,7 @@ const MARGIN = 6;
 export function TextEditor({ clip, layer, project, width, height }: { clip: TextClip; layer: Layer; project: Project; width: number; height: number }) {
   const frame = useRef<HTMLDivElement>(null);
   const area = useRef<HTMLTextAreaElement>(null);
+  const previewScale = useEditor((s) => s.previewScale);
 
   useEffect(() => {
     const el = frame.current!;
@@ -32,7 +35,10 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
   }, [clip.id]);
 
   const s = clip.style;
-  const b = editBox(rasterizeText(clip, project.width, project.height).layout, s.align, layer, { width, height }, project.width);
+  // Layout at the renderer's target: raster rounding and font metrics at
+  // preview resolution differ from a scaled full-project raster.
+  const target = player.renderSize(project, previewScale);
+  const b = editBox(rasterizeText(clip, target.w, target.h).layout, s.align, layer, { width, height }, target.w);
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape") {

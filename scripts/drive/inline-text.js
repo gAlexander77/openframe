@@ -94,7 +94,9 @@ async (page) => {
       document.querySelector(".player-canvas").style.visibility = "hidden";
     });
     const f = await page.locator(".te-frame").boundingBox();
-    const clip = { x: f.x, y: f.y, width: f.width, height: f.height };
+    // Screenshot crops snap to device pixels. Use explicit integer bounds
+    // so the measured ink has the same origin as the captured image.
+    const clip = { x: Math.floor(f.x), y: Math.floor(f.y), width: Math.ceil(f.x + f.width) - Math.floor(f.x), height: Math.ceil(f.y + f.height) - Math.floor(f.y) };
     const png = await page.screenshot({ clip });
     await shot(`ghost-${name}`, clip);
     await ve(() => {
@@ -107,8 +109,8 @@ async (page) => {
         const ctx = new OffscreenCanvas(img.width, img.height).getContext("2d");
         ctx.drawImage(img, 0, 0);
         const { data } = ctx.getImageData(0, 0, img.width, img.height);
-        const k = clip.width / img.width;
-        return window.__inkLines(data, img.width, 0, 0, img.width, img.height, true).map((l) => ({ top: clip.y + l.top * k, bottom: clip.y + l.bottom * k, left: clip.x + l.left * k, right: clip.x + l.right * k }));
+        const kx = clip.width / img.width, ky = clip.height / img.height;
+        return window.__inkLines(data, img.width, 0, 0, img.width, img.height, true).map((l) => ({ top: clip.y + l.top * ky, bottom: clip.y + l.bottom * ky, left: clip.x + l.left * kx, right: clip.x + l.right * kx }));
       },
       { b64: png.toString("base64"), clip },
     );

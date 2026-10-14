@@ -205,7 +205,8 @@ export class Player {
     return () => this.frameListeners.delete(fn);
   }
 
-  private renderSize(p: Project, scale: number) {
+  /** The raster target, also used by the canvas text editor's layout. */
+  renderSize(p: Project, scale: number) {
     // Never render more pixels than the screen shows or the project has.
     const maxW = Math.min(p.width * scale, this.displayW || p.width);
     const maxH = Math.min(p.height * scale, this.displayH || p.height);

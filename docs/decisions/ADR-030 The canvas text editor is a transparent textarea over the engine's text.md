@@ -30,6 +30,13 @@ the engine's and lay an invisible editor over it.
   CSS centers ascent plus descent. The rasterizer measures the difference
   from the font (`fontBoundingBoxAscent` at both baselines) and the editor
   drops by it.
+- The editor requests layout at **the player's actual preview render
+  target**, through `player.renderSize()`, then maps that raster to viewer
+  pixels. It must not scale layout from the full project resolution:
+  integer raster bounds and font metrics measured at preview font sizes
+  differ, which displaced multi-line text at some viewer sizes. Preview
+  quality, display size and device-pixel ratio feed the same target
+  calculation used by the player.
 - A textarea rather than `contenteditable`: plain text in and out, native
   selection and undo while typing, no markup to sanitize on paste.
 
@@ -44,3 +51,14 @@ pixels low. At smaller type single edges scatter about a pixel and a half
 raster), which the eye does not see. Mirrored (flipped) and cropped text
 get a box that ignores the flip and the crop. The caret is the browser's
 one-pixel bar; CSS cannot thicken it yet.
+
+## 2026-10-14 — preview alignment verification
+
+The Codex pickup reproduced the three two-line alignment failures at
+1600×950. Correcting fractional screenshot crop coordinates alone did not
+fix them. Sharing the player's render target with the editor did: all 38
+checks pass at 1280×720, 1600×950 and 1920×1080 in headless Edge 155.
+The measured mean vertical offset for all three two-line alignments at
+1920×1080 is 0 px. The drive now captures integer crop bounds and maps
+horizontal and vertical image dimensions independently, keeping its pixel
+origin explicit. No constant alignment offset or tolerance was added.
