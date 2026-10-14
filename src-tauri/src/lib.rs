@@ -1,11 +1,18 @@
 mod export;
 mod ffmpeg;
 mod files;
+mod mcp;
 mod media;
 mod project;
 
 use std::sync::Arc;
 use tauri::Manager;
+
+/// `video-editor --mcp-stdio`: be an MCP stdio server that forwards to the
+/// running app (ADR-009), instead of opening a window.
+pub fn run_mcp_stdio_bridge() {
+    mcp::run_stdio_bridge()
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -14,6 +21,7 @@ pub fn run() {
         .manage(Arc::new(media::Media::default()))
         .manage(export::Exports::default())
         .manage(ffmpeg::Ffmpeg::default())
+        .manage(mcp::Mcp::default())
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
             let media = ctx
                 .app_handle()
@@ -39,6 +47,8 @@ pub fn run() {
             ffmpeg::ffmpeg_probe,
             ffmpeg::ffmpeg_proxy,
             ffmpeg::ffmpeg_cancel,
+            mcp::mcp_enable,
+            mcp::mcp_reply,
         ])
         .build(tauri::generate_context!())
         .expect("error while building the application")

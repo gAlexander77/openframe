@@ -53,6 +53,12 @@ export interface Platform {
    * FFmpeg); resolves to its src. Progress is 0..1. */
   makeProxy?(src: string, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<string>;
 
+  /** Let external AI agents connect over MCP (desktop: a local server plus a
+   * stdio bridge, ADR-009). Returns how to connect, or null when off. */
+  agents?: {
+    enable(on: boolean): Promise<AgentEndpoint | null>;
+  };
+
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;
   saveProject(project: Project, summary: ProjectSummary): Promise<void>;
@@ -62,4 +68,13 @@ export interface Platform {
   exportLocation?: string;
   /** Ask where to save an export; null when the user cancels. */
   createExportTarget(suggestedName: string, extension: string): Promise<ExportTarget | null>;
+}
+
+export interface AgentEndpoint {
+  /** Streamable HTTP endpoint. */
+  url: string;
+  /** Bearer token every request must carry. */
+  token: string;
+  /** Command line for clients that launch MCP servers as processes. */
+  stdio: string;
 }

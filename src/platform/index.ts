@@ -8,4 +8,4 @@ import { web } from "./web";
 
 export const platform: Platform = isDesktop ? desktop : web;
 
-export type { ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";
+export type { AgentEndpoint, ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";

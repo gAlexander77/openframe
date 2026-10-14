@@ -59,6 +59,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   no limit; the timeline mix at 16 kHz, cut at quiet points
 - [[ADR-008 MCP is a handler over the command registry]] — one pure
   JSON-RPC handler; transports only forward; agents see their own frames
+- [[ADR-009 Agents reach the app over local MCP, opt-in]] — local HTTP plus a
+  stdio bridge, token and origin checks, off by default
 - [[ADR-010 Desktop media is served by id over a media protocol]] — exact-range
   reads, the webview never sends raw paths
 - [[ADR-011 Desktop projects are JSON files written atomically by Rust]]

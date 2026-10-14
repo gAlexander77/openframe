@@ -6,7 +6,7 @@ import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
-import type { ImportedFile, Platform, ProjectSummary } from "./types";
+import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary } from "./types";
 
 const MEDIA_EXTENSIONS = {
   video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mts", "m2ts", "ts", "mxf", "3gp", "ogv"],
@@ -73,7 +73,35 @@ function writeJob(id: number): WritableStream<StreamTargetChunk> {
   });
 }
 
+// Requests from the MCP server in Rust arrive as events; the webview's MCP
+// handler answers them (ADR-008/009). Installed once, harmless while off.
+let mcpListening = false;
+async function listenForAgents() {
+  if (mcpListening) return;
+  mcpListening = true;
+  const { listen } = await import("@tauri-apps/api/event");
+  await listen<{ id: number; body: string }>("mcp-request", async (e) => {
+    let response: string | null;
+    try {
+      const msg = JSON.parse(e.payload.body);
+      if (Array.isArray(msg)) throw new Error("JSON-RPC batches are not supported (MCP 2025-06-18 removed them)");
+      const r = await window.videoEditor.mcp(msg);
+      response = r ? JSON.stringify(r) : null;
+    } catch (err) {
+      response = JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: err instanceof Error ? err.message : String(err) } });
+    }
+    await invoke("mcp_reply", { id: e.payload.id, response });
+  });
+}
+
 export const desktop: Platform = {
+  agents: {
+    async enable(on) {
+      if (on) await listenForAgents();
+      return invoke<AgentEndpoint | null>("mcp_enable", { on });
+    },
+  },
+
   kind: "desktop",
 
   async pickMedia() {

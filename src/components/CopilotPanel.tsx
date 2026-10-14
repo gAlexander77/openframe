@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Undo2, WandSparkles, X } from "../icons";
 import { ask, PROVIDERS, resetChat, setModel, setProvider, toggleCopilot, undoTurn, useCopilot, discoverModels } from "../state/copilot";
+import { AgentsSection } from "./AgentsSection";
 import "./copilot.css";
 
 const EXAMPLES = ["Add a title that says “Welcome” for the first 3 seconds", "Cut the first clip in half and add a dissolve between the halves", "Make every clip slightly warmer and add a vignette"];
@@ -103,6 +104,10 @@ export function CopilotPanel() {
           </div>
         )}
       </div>
+      <details className="copilot-agents">
+        <summary>Connect other AI agents</summary>
+        <AgentsSection />
+      </details>
       <div className="copilot-input">
         <textarea
           className="field"
