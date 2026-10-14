@@ -1,3 +1,4 @@
+mod export;
 mod files;
 mod media;
 mod project;
@@ -10,6 +11,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(media::Media::default()))
+        .manage(export::Exports::default())
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
             let media = ctx
                 .app_handle()
@@ -27,6 +29,11 @@ pub fn run() {
             project::project_load,
             project::project_save,
             project::project_delete,
+            export::export_begin,
+            export::adopt_begin,
+            export::export_write,
+            export::export_finish,
+            export::export_reveal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running the application");

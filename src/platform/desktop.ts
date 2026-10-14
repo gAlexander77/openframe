@@ -1,12 +1,11 @@
 // The desktop platform (ADR-003): media stays where the user keeps it and is
 // referenced by absolute path; Rust serves its bytes over the `media:`
-// protocol (ADR-010), and writes projects (ADR-011) and exports.
+// protocol (ADR-010), and writes projects (ADR-011) and exports (ADR-012).
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { CustomSource } from "mediabunny";
+import { CustomSource, type StreamTargetChunk } from "mediabunny";
 import type { ImportedFile, Platform, ProjectSummary } from "./types";
-import { web } from "./web";
 
 const MEDIA_EXTENSIONS = {
   video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mts", "m2ts", "ts", "mxf", "3gp", "ogv"],
@@ -59,6 +58,20 @@ async function adopt(path: string): Promise<ImportedFile> {
   return { name: baseName(path), src: path, size };
 }
 
+/** A sink for positional chunks into a Rust write job (ADR-012). Each chunk
+ * is one raw-body invoke, metadata in headers: wrapping the bytes in an
+ * object would send them as a JSON array of numbers, ten times slower. The
+ * stream calls write one chunk at a time, which keeps an MP4 muxer's
+ * back-patches in order. */
+function writeJob(id: number): WritableStream<StreamTargetChunk> {
+  return new WritableStream<StreamTargetChunk>({
+    write: (c) =>
+      invoke<void>("export_write", c.data, { headers: { "x-export-id": String(id), "x-position": String(c.position) } }),
+    close: () => invoke<void>("export_finish", { id, commit: true }),
+    abort: () => invoke<void>("export_finish", { id, commit: false }),
+  });
+}
+
 export const desktop: Platform = {
   kind: "desktop",
 
@@ -77,9 +90,27 @@ export const desktop: Platform = {
     return Promise.all(picked.map(adopt));
   },
 
-  // ponytail: a webview File has no path, so this keeps the browser's copy
-  // until the Rust copy into app data lands with export writes.
-  adoptFiles: (files) => web.adoptFiles(files),
+  // OS drops arrive as paths (onFileDrop). This is the fallback for a
+  // webview File, which has no path: copy it into app data and use that.
+  async adoptFiles(files) {
+    const out: ImportedFile[] = [];
+    for (const file of files) {
+      const { id, path } = await invoke<{ id: number; path: string }>("adopt_begin", { name: file.name });
+      const w = writeJob(id).getWriter();
+      try {
+        for (let position = 0; position < file.size; position += MAX_RESPONSE) {
+          const data = new Uint8Array(await file.slice(position, position + MAX_RESPONSE).arrayBuffer());
+          await w.write({ type: "write", data, position });
+        }
+        await w.close();
+      } catch (e) {
+        await w.abort(e).catch(() => undefined);
+        throw e;
+      }
+      out.push({ name: file.name, src: path, size: file.size });
+    }
+    return out;
+  },
 
   async sourceFor(src) {
     const { id, size } = await register(src);
@@ -114,6 +145,15 @@ export const desktop: Platform = {
     invoke("project_save", { id: project.id, project: JSON.stringify(project), summary: JSON.stringify(summary) }),
   deleteProject: (id) => invoke("project_delete", { id }),
 
-  // ponytail: exports run on the browser's storage until export.rs lands.
-  createExportTarget: (name, ext) => web.createExportTarget(name, ext),
+  // Rust shows the save dialog and owns the path; the page only streams
+  // bytes into the job and can ask to reveal the finished file (ADR-012).
+  async createExportTarget(suggestedName, extension) {
+    const begun = await invoke<{ id: number; displayName: string } | null>("export_begin", { suggestedName, extension });
+    if (!begun) return null;
+    return {
+      writable: writeJob(begun.id),
+      displayName: begun.displayName,
+      reveal: () => invoke<void>("export_reveal", { id: begun.id }),
+    };
+  },
 };
