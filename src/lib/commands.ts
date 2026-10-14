@@ -18,8 +18,10 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
+import type { Adjust, Clip, Effect, Grade, HslBand, Id, Project, TextStyle, Track, WheelName } from "./project/types";
 import { upsertKey } from "./keyframes";
+import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
+import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import type { Caption } from "./captions";
 
 export type JsonSchema = {
@@ -284,7 +286,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100). If the path has keyframes, sets a keyframe at `at` instead.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
@@ -409,7 +411,119 @@ export const COMMANDS: Command[] = [
     ),
     run: (p, a) => addCaptions(p, a.captions as Caption[], { ...((a.style ?? {}) as Partial<TextStyle>) }, a.y === undefined ? undefined : Number(a.y), a.replace === true),
   },
+  // ---- color grade (ADR-020): static values; animate with add_keyframe on the paths named ----
+  {
+    name: "set_hsl",
+    description: "Adjust one of CapCut's eight HSL color ranges on a visual or adjustment clip; only pixels of that color change. hue turns the range up to 30° toward its neighbors, saturation -100 makes it gray, lightness darkens or lightens it; each -100..100, omitted values stay. band 'all' sets every range. reset=true zeroes the band(s) first. Animate with add_keyframe on adjust.hsl.<band>.hue|saturation|lightness.",
+    input: S.obj(
+      {
+        clip_id: S.str("Visual or adjustment clip id"),
+        band: S.str("Color range", { enum: [...HSL_BANDS, "all"] }),
+        hue: S.num("-100..100", { minimum: -100, maximum: 100 }),
+        saturation: S.num("-100..100", { minimum: -100, maximum: 100 }),
+        lightness: S.num("-100..100", { minimum: -100, maximum: 100 }),
+        reset: S.bool("Zero the band(s) before applying the values given"),
+      },
+      ["clip_id", "band"],
+    ),
+    run: (p, a) =>
+      editGrade(p, a.clip_id, (adj) => {
+        const hsl = { ...adj.hsl };
+        for (const band of a.band === "all" ? HSL_BANDS : [a.band as HslBand]) {
+          const cur = a.reset ? { hue: 0, saturation: 0, lightness: 0 } : { hue: 0, saturation: 0, lightness: 0, ...hsl[band] };
+          const next = { hue: Number(a.hue ?? cur.hue), saturation: Number(a.saturation ?? cur.saturation), lightness: Number(a.lightness ?? cur.lightness) };
+          if (next.hue || next.saturation || next.lightness) hsl[band] = next;
+          else delete hsl[band];
+        }
+        return withPart(adj, "hsl", Object.keys(hsl).length ? hsl : undefined);
+      }),
+  },
+  {
+    name: "set_curve",
+    description: "Set a tone curve on a visual or adjustment clip. channel luma maps R, G and B alike (Lumetri's white curve); r, g, b are per channel. points are [input, output] pairs in 0..1, joined by a monotone cubic that never overshoots; include [0,0] and [1,1] to pin the ends. Omit points or pass [] to reset the channel. Gentle S-curve: [[0,0],[0.25,0.2],[0.75,0.8],[1,1]].",
+    input: S.obj(
+      {
+        clip_id: S.str("Visual or adjustment clip id"),
+        channel: S.str("Which curve", { enum: [...CURVE_CHANNELS] }),
+        points: { type: "array", description: "[input, output] pairs, each 0..1", items: { type: "array", items: { type: "number", minimum: 0, maximum: 1 } } },
+      },
+      ["clip_id", "channel"],
+    ),
+    run: (p, a) => {
+      const raw = (a.points ?? []) as number[][];
+      if (raw.some((pt) => pt.length !== 2)) throw new CommandError("each point is [input, output]");
+      const pts = cleanCurve(raw);
+      if (raw.length && !pts) throw new CommandError("a curve needs at least two points with different inputs");
+      return editGrade(p, a.clip_id, (adj) => {
+        const curves = { ...adj.curves };
+        const ch = a.channel as CurveChannel;
+        if (!pts || isIdentityCurve(pts)) delete curves[ch];
+        else curves[ch] = pts;
+        return withPart(adj, "curves", Object.keys(curves).length ? curves : undefined);
+      });
+    },
+  },
+  {
+    name: "set_color_wheel",
+    description: "Resolve-style color wheels on a visual or adjustment clip: lift (shadows; white stays put), gamma (midtones), gain (highlights; black stays put), offset (everything). y is the wheel's luminance ring; r/g/b its color balance; each -100..100. Or give hue (degrees: 0 red, 60 yellow, 120 green, 180 cyan, 240 blue, 300 magenta) and amount (0..100) to push the balance toward a color, e.g. lift hue 200 amount 12 for teal shadows. reset=true returns the wheel to neutral first. Animate with add_keyframe on adjust.wheels.<wheel>.r|g|b|y.",
+    input: S.obj(
+      {
+        clip_id: S.str("Visual or adjustment clip id"),
+        wheel: S.str("Which wheel", { enum: [...WHEELS] }),
+        r: S.num("Red balance, -100..100", { minimum: -100, maximum: 100 }),
+        g: S.num("Green balance, -100..100", { minimum: -100, maximum: 100 }),
+        b: S.num("Blue balance, -100..100", { minimum: -100, maximum: 100 }),
+        y: S.num("Luminance, -100..100", { minimum: -100, maximum: 100 }),
+        hue: S.num("Push the balance toward this hue, degrees", { minimum: 0, maximum: 360 }),
+        amount: S.num("How far toward hue, 0..100 (default 20)", { minimum: 0, maximum: 100 }),
+        reset: S.bool("Neutral before applying the values given"),
+      },
+      ["clip_id", "wheel"],
+    ),
+    run: (p, a) =>
+      editGrade(p, a.clip_id, (adj) => {
+        const name = a.wheel as WheelName;
+        const w = a.reset ? { r: 0, g: 0, b: 0, y: 0 } : { r: 0, g: 0, b: 0, y: 0, ...adj.wheels?.[name] };
+        if (a.hue !== undefined || a.amount !== undefined) {
+          const bal = puckToBalance(...hueToPuck(Number(a.hue ?? 0), Number(a.amount ?? 20)));
+          Object.assign(w, { r: +bal.r.toFixed(2), g: +bal.g.toFixed(2), b: +bal.b.toFixed(2) });
+        }
+        for (const k of ["r", "g", "b", "y"] as const) if (a[k] !== undefined) w[k] = Number(a[k]);
+        const wheels = { ...adj.wheels };
+        if (w.r || w.g || w.b || w.y) wheels[name] = w;
+        else delete wheels[name];
+        return withPart(adj, "wheels", Object.keys(wheels).length ? wheels : undefined);
+      }),
+  },
+  {
+    name: "apply_lut",
+    description: "Apply a .cube LUT to a visual or adjustment clip, mixed in at intensity 0..1 (default 1). lut_id is from the project's luts (describeProject lists them; files are imported with window.videoEditor.importLuts or by dropping a .cube on the app). lut_id 'none' removes it. Animate with add_keyframe on adjust.lut.intensity.",
+    input: S.obj({ clip_id: S.str("Visual or adjustment clip id"), lut_id: S.str("LUT id, or 'none'"), intensity: S.num("0..1", { minimum: 0, maximum: 1 }) }, ["clip_id", "lut_id"]),
+    run: (p, a) => {
+      if (a.lut_id !== "none" && !p.luts?.some((l) => l.id === a.lut_id)) throw new CommandError(`no LUT with id ${a.lut_id}; import the .cube first`);
+      return editGrade(p, a.clip_id, (adj) =>
+        withPart(adj, "lut", a.lut_id === "none" ? undefined : { id: String(a.lut_id), intensity: Number(a.intensity ?? (adj.lut?.id === a.lut_id ? adj.lut!.intensity : 1)) }),
+      );
+    },
+  },
 ];
+
+type Graded = Adjust & Grade;
+
+/** Edit a clip's adjust (its grade) or refuse clips that have none. */
+function editGrade(p: Project, clipId: unknown, fn: (a: Graded) => Graded): Project {
+  return ops.updateClip(p, clipOrThrow(p, clipId).clip.id, (c) => {
+    if (!("adjust" in c)) throw new CommandError(`${c.type} clips take no color grade`);
+    return { ...c, adjust: fn(c.adjust) } as Clip;
+  });
+}
+
+/** Set or remove one optional part of a grade. */
+function withPart<K extends keyof Grade>(a: Graded, key: K, value: Grade[K] | undefined): Graded {
+  const next = { ...a, [key]: value };
+  if (value === undefined) delete next[key];
+  return next;
+}
 
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 
@@ -448,9 +562,20 @@ export function describeProject(p: Project) {
         ...(c.type === "text" ? { text: c.text } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type) } : {}),
+        ...("adjust" in c ? gradeSummary(c.adjust) : {}),
       })),
     })),
     markers: p.markers.map((m) => ({ at: s(m.frame), label: m.label })),
+    ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
+  };
+}
+
+/** Which grade parts a clip uses, for describeProject. */
+function gradeSummary(a: Graded) {
+  const parts = (["hsl", "curves", "wheels"] as const).filter((k) => a[k]);
+  return {
+    ...(parts.length ? { grade: parts } : {}),
+    ...(a.lut ? { lut: { id: a.lut.id, intensity: a.lut.intensity } } : {}),
   };
 }
 

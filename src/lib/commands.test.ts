@@ -53,6 +53,68 @@ describe("command registry", () => {
   });
 });
 
+describe("color commands", () => {
+  const graded = () => {
+    let p: Project = { ...withAsset(), luts: [{ id: "l1", name: "Teal.cube", src: "teal.cube", kind: "3d", size: 33 }] };
+    p = runCommand(p, "add_color_clip", { color: "#808080", start: 0, duration: 2 });
+    return { p, id: describeProject(p).tracks[0].clips[0].id };
+  };
+  const adjustOf = (p: Project, id: string) => {
+    const c = p.tracks.flatMap((t) => t.clips).find((x) => x.id === id)!;
+    return "adjust" in c ? c.adjust : null;
+  };
+
+  it("set_hsl changes one band, keeps the others, and removes zeroed ones", () => {
+    let { p, id } = graded();
+    p = runCommand(p, "set_hsl", { clip_id: id, band: "red", saturation: -40 });
+    p = runCommand(p, "set_hsl", { clip_id: id, band: "blue", hue: 10 });
+    expect(adjustOf(p, id)!.hsl).toEqual({ red: { hue: 0, saturation: -40, lightness: 0 }, blue: { hue: 10, saturation: 0, lightness: 0 } });
+    p = runCommand(p, "set_hsl", { clip_id: id, band: "all", reset: true });
+    expect(adjustOf(p, id)!.hsl).toBeUndefined();
+    expect(() => runCommand(p, "set_hsl", { clip_id: id, band: "teal" })).toThrow(/must be one of/);
+  });
+
+  it("set_curve stores cleaned points and resets with none", () => {
+    let { p, id } = graded();
+    p = runCommand(p, "set_curve", { clip_id: id, channel: "luma", points: [[1, 1], [0, 0], [0.5, 0.6]] });
+    expect(adjustOf(p, id)!.curves).toEqual({ luma: [[0, 0], [0.5, 0.6], [1, 1]] });
+    p = runCommand(p, "set_curve", { clip_id: id, channel: "luma" });
+    expect(adjustOf(p, id)!.curves).toBeUndefined();
+    expect(() => runCommand(p, "set_curve", { clip_id: id, channel: "r", points: [[0.5]] })).toThrow(/\[input, output\]/);
+    expect(() => runCommand(p, "set_curve", { clip_id: id, channel: "r", points: [[0.5, 1.5]] })).toThrow(/<= 1/);
+  });
+
+  it("set_color_wheel takes a balance or a hue and amount", () => {
+    let { p, id } = graded();
+    p = runCommand(p, "set_color_wheel", { clip_id: id, wheel: "gain", y: 12 });
+    p = runCommand(p, "set_color_wheel", { clip_id: id, wheel: "lift", hue: 240, amount: 20 });
+    const w = adjustOf(p, id)!.wheels!;
+    expect(w.gain).toEqual({ r: 0, g: 0, b: 0, y: 12 });
+    expect(w.lift!.b).toBeGreaterThan(10);
+    expect(w.lift!.r).toBeLessThan(0);
+    p = runCommand(p, "set_color_wheel", { clip_id: id, wheel: "lift", reset: true });
+    expect(Object.keys(adjustOf(p, id)!.wheels!)).toEqual(["gain"]);
+  });
+
+  it("apply_lut needs a listed LUT and removes with none", () => {
+    let { p, id } = graded();
+    expect(() => runCommand(p, "apply_lut", { clip_id: id, lut_id: "zz" })).toThrow(/no LUT with id zz/);
+    p = runCommand(p, "apply_lut", { clip_id: id, lut_id: "l1", intensity: 0.5 });
+    expect(adjustOf(p, id)!.lut).toEqual({ id: "l1", intensity: 0.5 });
+    const d = describeProject(p);
+    expect(d.luts).toEqual([{ id: "l1", name: "Teal.cube", kind: "3d", size: 33 }]);
+    expect(d.tracks[0].clips[0]).toMatchObject({ lut: { id: "l1", intensity: 0.5 } });
+    p = runCommand(p, "apply_lut", { clip_id: id, lut_id: "none" });
+    expect(adjustOf(p, id)!.lut).toBeUndefined();
+  });
+
+  it("refuses clips without a picture", () => {
+    let p = runCommand({ ...withAsset(), assets: [{ ...withAsset().assets[0], kind: "audio", hasVideo: false }] }, "add_media_clip", { asset_id: "a1", start: 0 });
+    const id = describeProject(p).tracks.flatMap((t) => t.clips)[0].id;
+    expect(() => runCommand(p, "set_hsl", { clip_id: id, band: "red", hue: 5 })).toThrow(/audio clips take no color grade/);
+  });
+});
+
 describe("add_captions", () => {
   it("puts captions on one track and replaces them on request", () => {
     let p = withAsset();
