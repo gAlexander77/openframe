@@ -97,8 +97,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations.
 - **Type on the canvas**, as in CapCut: double-click a title or caption in
-  the viewer (or press Enter with it selected) and a caret appears in the
-  rendered text with everything selected; the frame redraws as you type,
+  the viewer or on the timeline (or press Enter with it selected) and a
+  caret appears in the rendered text with everything selected; the frame redraws as you type,
   in the real style. Escape or a click outside finishes, and the whole
   session is one undo step. Enter breaks a title's line; in a caption it
   finishes and Ctrl+Enter breaks the line. Shortcuts stay off while typing

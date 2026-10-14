@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from "r
 import { fromDb, toDb } from "../lib/audio";
 import { setParam } from "../lib/project/ops";
 import { store } from "../state/store";
+import { editOnCanvas } from "../state/textEdit";
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
@@ -198,6 +199,9 @@ export const ClipView = memo(function ClipView(p: Props) {
       style={{ transform: `translateX(${c.start * zoom}px)`, width: Math.max(2, w), height }}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       onContextMenu={(e) => p.onContext(e, c)}
+      // CapCut: double-click a caption (or title) on the timeline to edit its
+      // words; ours opens the canvas editor. The blade's double-click just cuts.
+      onDoubleClick={c.type === "text" ? () => store.get().tool === "select" && editOnCanvas(c.id) : undefined}
       data-clip={c.id}
     >
       <div className="clip-label" style={{ height: LABEL_H }}>
