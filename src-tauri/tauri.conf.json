@@ -21,7 +21,7 @@
         "minHeight": 680,
         "decorations": false,
         "dragDropEnabled": true,
-        "backgroundColor": "#0b0c0f"
+        "backgroundColor": "#141414"
       }
     ],
     "security": {

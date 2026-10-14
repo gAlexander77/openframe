@@ -1,6 +1,7 @@
-// Keymap: action id -> chord. Defaults follow CapCut desktop where CapCut has
-// the action and Premiere Pro where it does not (J/K/L, I/O, ripple trims),
-// per docs/research. "Mod" is Ctrl on Windows/Linux and Cmd on macOS.
+// Keymap: action id -> chord. Defaults are CapCut desktop's in-app list
+// (docs/research/CapCut desktop.md §7) wherever CapCut has the action, and
+// Premiere Pro's where it does not (Ctrl+K split, Shift+Delete ripple
+// delete, C blade). "Mod" is Ctrl on Windows/Linux and Cmd on macOS.
 // UI prose never types a chord: it calls chordLabel(id) (Conventions rule 8).
 
 export type ActionId =
@@ -21,6 +22,7 @@ export type ActionId =
   | "clearInOut"
   | "addMarker"
   | "split"
+  | "splitAll"
   | "trimStartToPlayhead"
   | "trimEndToPlayhead"
   | "delete"
@@ -39,6 +41,14 @@ export type ActionId =
   | "toolBlade"
   | "toggleSnapping"
   | "toggleMagnet"
+  | "toggleLinkage"
+  | "togglePreviewAxis"
+  | "selectLeft"
+  | "selectRight"
+  | "toggleClipEnabled"
+  | "nextMarker"
+  | "prevMarker"
+  | "rangeToClip"
   | "zoomIn"
   | "zoomOut"
   | "zoomFit"
@@ -65,9 +75,13 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   shuttleForward: ["L"],
   markIn: ["I"],
   markOut: ["O"],
-  clearInOut: ["Mod+Shift+X"],
+  clearInOut: ["Alt+X"],
+  rangeToClip: ["Shift+X"],
   addMarker: ["M"],
+  nextMarker: ["Shift+M"],
+  prevMarker: ["Alt+Shift+M"],
   split: ["Mod+B", "Mod+K"],
+  splitAll: ["Mod+Shift+B"],
   trimStartToPlayhead: ["Q"],
   trimEndToPlayhead: ["W"],
   delete: ["Delete", "Backspace"],
@@ -81,11 +95,16 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   undo: ["Mod+Z"],
   redo: ["Mod+Shift+Z", "Mod+Y"],
   freeze: ["Alt+F"],
-  detachAudio: ["Alt+Shift+D"],
-  toolSelect: ["A", "V"],
+  detachAudio: ["Mod+Shift+S"],
+  toolSelect: ["A"],
+  toggleClipEnabled: ["V"],
+  selectLeft: ["["],
+  selectRight: ["]"],
   toolBlade: ["B", "C"],
   toggleSnapping: ["N"],
-  toggleMagnet: ["Mod+Shift+M"],
+  toggleLinkage: ["`"],
+  togglePreviewAxis: ["S"],
+  toggleMagnet: ["P"],
   zoomIn: ["Mod+=", "="],
   zoomOut: ["Mod+-", "-"],
   zoomFit: ["Shift+Z"],
@@ -94,7 +113,7 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   openProject: ["Mod+O"],
   saveProject: ["Mod+S"],
   export: ["Mod+E"],
-  fullscreenPreview: ["Alt+Enter"],
+  fullscreenPreview: ["Mod+Shift+F"],
   showShortcuts: ["Mod+/"],
 };
 
@@ -113,11 +132,15 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   shuttleForward: "Shuttle forward",
   markIn: "Mark in",
   markOut: "Mark out",
-  clearInOut: "Clear in and out",
+  clearInOut: "Clear range",
+  rangeToClip: "Set range to clip",
   addMarker: "Add marker",
-  split: "Split at playhead",
-  trimStartToPlayhead: "Trim start to playhead",
-  trimEndToPlayhead: "Trim end to playhead",
+  nextMarker: "Next marker",
+  prevMarker: "Previous marker",
+  split: "Split",
+  splitAll: "Split all tracks",
+  trimStartToPlayhead: "Delete left",
+  trimEndToPlayhead: "Delete right",
   delete: "Delete",
   rippleDelete: "Ripple delete",
   duplicate: "Duplicate",
@@ -130,9 +153,14 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   redo: "Redo",
   freeze: "Freeze frame",
   detachAudio: "Extract audio",
-  toolSelect: "Select tool",
+  toolSelect: "Selection tool",
+  toggleClipEnabled: "Activate / deactivate clip",
+  selectLeft: "Select clips to the left",
+  selectRight: "Select clips to the right",
   toolBlade: "Split tool",
-  toggleSnapping: "Snapping",
+  toggleSnapping: "Auto snapping",
+  toggleLinkage: "Linkage",
+  togglePreviewAxis: "Preview axis",
   toggleMagnet: "Main track magnet",
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
@@ -161,6 +189,11 @@ export function chordOf(
     else if (e.code === "Equal") key = "=";
     else if (e.code === "Minus") key = "-";
     else if (e.code === "Slash") key = "/";
+    else if (e.code === "Backquote") key = "`";
+    else if (e.code === "BracketLeft") key = "[";
+    else if (e.code === "BracketRight") key = "]";
+    else if (e.code === "Period") key = ".";
+    else if (e.code === "Comma") key = ",";
     else key = key.toUpperCase();
   }
   const mods: string[] = [];

@@ -142,7 +142,52 @@ provide({
   toggleMagnet: () => {
     const on = !store.get().magnet;
     store.set({ magnet: on });
-    if (on) edit("Main track magnet", (p) => p);
+    // Turning the magnet on closes the main track's gaps, as in CapCut.
+    if (on) store.edit("Main track magnet", (p) => {
+      const q = ops.compactTrack(p, ops.mainTrack(p).id);
+      return ops.mainTrack(q).clips.every((c, i) => c.start === ops.mainTrack(p).clips[i].start) ? p : q;
+    });
+  },
+  toggleLinkage: () => store.set({ linkage: !store.get().linkage }),
+  togglePreviewAxis: () => store.set({ previewAxis: !store.get().previewAxis, hoverFrame: null }),
+  splitAll: () => {
+    const f = store.get().playhead;
+    edit("Split all", (p) => ops.splitAt(p, f));
+  },
+  selectLeft: () => {
+    const f = store.get().playhead;
+    store.select(store.get().project.tracks.flatMap((t) => t.clips.filter((c) => c.start < f).map((c) => c.id)));
+  },
+  selectRight: () => {
+    const f = store.get().playhead;
+    store.select(store.get().project.tracks.flatMap((t) => t.clips.filter((c) => c.start + c.duration > f).map((c) => c.id)));
+  },
+  toggleClipEnabled: () => {
+    const sel = store.get().selection;
+    if (!sel.length) return;
+    store.edit("Deactivate clip", (p) => {
+      for (const id of sel) p = ops.updateClip(p, id, (c) => ({ ...c, disabled: !c.disabled }));
+      return p;
+    });
+  },
+  nextMarker: () => {
+    const s = store.get();
+    const m = s.project.markers.find((x) => x.frame > s.playhead);
+    if (m) store.seek(m.frame);
+  },
+  prevMarker: () => {
+    const s = store.get();
+    const m = [...s.project.markers].reverse().find((x) => x.frame < s.playhead);
+    if (m) store.seek(m.frame);
+  },
+  rangeToClip: () => {
+    const s = store.get();
+    const items = selectedClips(s.project);
+    if (!items.length) return;
+    store.set({
+      inPoint: Math.min(...items.map((i) => i.c.start)),
+      outPoint: Math.max(...items.map((i) => i.c.start + i.c.duration)),
+    });
   },
   zoomIn: () => store.set({ zoom: Math.min(64, store.get().zoom * 1.25) }),
   zoomOut: () => store.set({ zoom: Math.max(0.02, store.get().zoom / 1.25) }),

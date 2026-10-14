@@ -1,2 +1,139 @@
-html, body, #root { height: 100%; margin: 0; }
-body { background: #0b0c0f; color: #e7e9ee; font-family: system-ui, sans-serif; }
+/* Design tokens. CapCut's 2025 neutral grey ramp and cyan accent, measured
+   from its screenshots (docs/research/CapCut desktop.md §8), so a CapCut
+   user feels at home. Neutral, untinted greys also keep the chrome from
+   skewing how footage color is judged — why Resolve and Premiere do it.
+   Color appears only where it carries meaning: the accent marks "on" and
+   primary actions, and each clip type has its own hue. */
+:root {
+  --bg-0: #141414;          /* app background, title bar, gutters */
+  --bg-1: #1f1f1f;          /* panel surface */
+  --bg-2: #2b2b2b;          /* raised: controls, hovered rows, cards */
+  --bg-3: #3b3b3b;          /* pressed, active segment */
+  --bg-inset: #171717;      /* fields, steppers, segmented-control track */
+  --viewer: #0f0f0f;        /* around the preview canvas */
+  --line: #2e2e2e;          /* hairlines */
+  --line-strong: #3d3d3d;
+
+  --text-1: #ececec;
+  --text-2: #b5b5b5;
+  --text-3: #6e6e6e;
+
+  --accent: #00c1cd;        /* on, primary action, current timecode */
+  --accent-strong: #00d1de;
+  --accent-ink: #00262a;    /* text on accent */
+  --accent-soft: rgb(0 193 205 / 15%);
+  --playhead: #ffffff;
+  --preview-axis: #f5c543;
+  --danger: #f05a5a;
+  --warn: #f2b84b;
+  --ok: #3ccf8e;
+
+  /* clip hues (CapCut-sampled bodies): body / edge */
+  --clip-video: #004d52;    --clip-video-edge: #1aa5ad;
+  --clip-image: #004d52;    --clip-image-edge: #1aa5ad;
+  --clip-audio: #0e3058;    --clip-audio-edge: #2f86c9;
+  --clip-text: #9c4937;     --clip-text-edge: #e08a6e;
+  --clip-color: #4b4fa8;    --clip-color-edge: #8d90f0;
+  --clip-adjust: #826190;   --clip-adjust-edge: #c79ad8;
+  --clip-caption: #9c4937;  --clip-caption-edge: #e08a6e;
+
+  --radius-panel: 8px;
+  --radius: 6px;
+  --radius-sm: 4px;
+  --gap: 6px;
+
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "SF Pro Text", Roboto, sans-serif;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+
+  /* motion: short, and only in answer to an action */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 110ms;
+  --t-med: 180ms;
+  --t-slow: 280ms;
+
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-fast: 0ms; --t-med: 0ms; --t-slow: 0ms; }
+  *, *::before, *::after { animation-duration: 0ms !important; transition-duration: 0ms !important; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; overflow: hidden; }
+body {
+  background: var(--bg-0);
+  color: var(--text-1);
+  font: var(--fs-md)/1.4 var(--font);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* scrollbars: thin and quiet */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #3a3a40; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #4a4a52; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---- shared controls ------------------------------------------------------ */
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 28px; padding: 0 12px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--bg-2); color: var(--text-1);
+  font-size: var(--fs-sm); font-weight: 500; white-space: nowrap;
+  transition: background var(--t-fast), border-color var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.btn:hover { background: var(--bg-3); }
+.btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.45; pointer-events: none; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.primary:hover { background: var(--accent-strong); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--bg-2); color: var(--text-1); }
+
+.icon-btn {
+  display: inline-grid; place-items: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--text-2);
+  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.icon-btn:hover { background: var(--bg-2); color: var(--text-1); }
+.icon-btn:active { transform: scale(0.92); }
+.icon-btn.on { color: var(--accent); background: var(--accent-soft); }
+.icon-btn:disabled { opacity: 0.35; pointer-events: none; }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.field {
+  height: 26px; padding: 0 8px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm);
+  background: var(--bg-0); color: var(--text-1); font-size: var(--fs-sm);
+  outline: none; transition: border-color var(--t-fast);
+  user-select: text;
+}
+.field:focus { border-color: var(--accent); }
+
+.empty {
+  display: grid; place-items: center; gap: 8px; text-align: center;
+  color: var(--text-3); font-size: var(--fs-sm); padding: 24px;
+}
+
+/* tooltips: one themed layer, via data-tip (TermHQ convention) */
+[data-tip] { position: relative; }
+
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.9s linear infinite; }

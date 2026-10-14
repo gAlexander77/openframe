@@ -33,6 +33,12 @@ export interface EditorState {
   tool: Tool;
   magnet: boolean;
   snapping: boolean;
+  /** CapCut's linkage: overlays above a main-track clip move with it. */
+  linkage: boolean;
+  /** CapCut's preview axis: hovering the timeline previews that frame. */
+  previewAxis: boolean;
+  /** Frame under the mouse while the preview axis is on, else null. */
+  hoverFrame: number | null;
   /** Preview at a fraction of project resolution (pro editors' playback
    * resolution: full, 1/2, 1/4). */
   previewScale: 1 | 0.5 | 0.25;
@@ -63,6 +69,9 @@ let state: EditorState = {
   tool: "select",
   magnet: true,
   snapping: true,
+  linkage: true,
+  previewAxis: false,
+  hoverFrame: null,
   previewScale: 1,
   leftTab: "media",
   inPoint: null,
