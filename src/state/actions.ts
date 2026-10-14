@@ -1,0 +1,190 @@
+// What each keymap action does. Edit actions are defined here on top of the
+// store and ops; actions that need the engine or the platform (play, import,
+// export) are filled in by the module that owns them at startup, so this
+// file never imports the engine. Menus, shortcuts and toolbar buttons all
+// call run(id) — one path, so they cannot disagree.
+
+import { buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
+import { createMarker, uid } from "../lib/project/defaults";
+import * as ops from "../lib/project/ops";
+import type { Clip, Id, Project } from "../lib/project/types";
+import { isMac } from "../platform/env";
+import { store } from "./store";
+
+type Handler = () => void;
+const handlers: Partial<Record<ActionId, Handler>> = {};
+
+export function provide(map: Partial<Record<ActionId, Handler>>) {
+  Object.assign(handlers, map);
+}
+
+export function run(id: ActionId) {
+  handlers[id]?.();
+}
+
+export const keymap = DEFAULT_KEYMAP;
+const index = buildIndex(keymap);
+
+/** The first chord bound to an action, for tooltips and menus. */
+export const chordFor = (id: ActionId) => keymap[id]?.[0];
+
+// ---- clipboard (in-app; clips are not useful outside the editor) -------------
+
+let clipboard: { clips: Clip[]; trackIds: Id[]; origin: number } | null = null;
+
+function selectedClips(p: Project) {
+  const sel = new Set(store.get().selection);
+  return p.tracks.flatMap((t) => t.clips.filter((c) => sel.has(c.id)).map((c) => ({ c, t })));
+}
+
+function afterEdit(p: Project): Project {
+  return store.get().magnet ? ops.compactTrack(p, ops.mainTrack(p).id) : p;
+}
+
+const edit = (label: string, fn: (p: Project) => Project) => store.edit(label, (p) => {
+  const next = fn(p);
+  return next === p ? p : afterEdit(next);
+});
+
+/** Frames to move per arrow press when nothing is playing. */
+function stepBy(n: number) {
+  const s = store.get();
+  store.seek(s.playhead + n);
+}
+
+provide({
+  undo: () => store.undo(),
+  redo: () => store.redo(),
+
+  split: () => {
+    const s = store.get();
+    const sel = s.selection.length ? s.selection : undefined;
+    edit("Split", (p) => ops.splitAt(p, s.playhead, sel));
+  },
+  trimStartToPlayhead: () => {
+    const s = store.get();
+    edit("Trim start", (p) => {
+      for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "start", s.playhead, true);
+      return p;
+    });
+  },
+  trimEndToPlayhead: () => {
+    const s = store.get();
+    edit("Trim end", (p) => {
+      for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "end", s.playhead, true);
+      return p;
+    });
+  },
+  delete: () => {
+    const sel = store.get().selection;
+    if (sel.length) edit("Delete", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel)));
+  },
+  rippleDelete: () => {
+    const sel = store.get().selection;
+    if (sel.length) edit("Ripple delete", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel, true)));
+  },
+  selectAll: () => store.select(store.get().project.tracks.flatMap((t) => t.clips.map((c) => c.id))),
+  deselect: () => store.select([]),
+  copy: () => {
+    const items = selectedClips(store.get().project);
+    if (!items.length) return;
+    clipboard = {
+      clips: items.map((i) => i.c),
+      trackIds: items.map((i) => i.t.id),
+      origin: Math.min(...items.map((i) => i.c.start)),
+    };
+  },
+  cut: () => {
+    run("copy");
+    run("delete");
+  },
+  paste: () => pasteAt(store.get().playhead),
+  duplicate: () => {
+    run("copy");
+    if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)));
+  },
+  freeze: () => {
+    const s = store.get();
+    const hit = targetsAtPlayhead(s.project).find(({ c }) => c.type === "video");
+    if (hit) edit("Freeze frame", (p) => ops.freezeFrame(p, hit.c.id, s.playhead, Math.round((3 * p.fps.num) / p.fps.den)));
+  },
+  detachAudio: () => {
+    for (const id of store.get().selection) edit("Extract audio", (p) => ops.detachAudio(p, id));
+  },
+  addMarker: () => {
+    const f = store.get().playhead;
+    store.edit("Add marker", (p) => ops.addMarker(p, createMarker(f)));
+  },
+  markIn: () => store.set({ inPoint: store.get().playhead }),
+  markOut: () => store.set({ outPoint: store.get().playhead }),
+  clearInOut: () => store.set({ inPoint: null, outPoint: null }),
+
+  stepBack: () => stepBy(-1),
+  stepForward: () => stepBy(1),
+  stepBack10: () => stepBy(-10),
+  stepForward10: () => stepBy(10),
+  goStart: () => store.seek(0),
+  goEnd: () => store.seek(ops.projectDuration(store.get().project)),
+  prevEdit: () => {
+    const s = store.get();
+    const pts = ops.editPoints(s.project).filter((x) => x < s.playhead);
+    store.seek(pts.at(-1) ?? 0);
+  },
+  nextEdit: () => {
+    const s = store.get();
+    const pts = ops.editPoints(s.project).filter((x) => x > s.playhead);
+    if (pts.length) store.seek(pts[0]);
+  },
+
+  toolSelect: () => store.set({ tool: "select" }),
+  toolBlade: () => store.set({ tool: "blade" }),
+  toggleSnapping: () => store.set({ snapping: !store.get().snapping }),
+  toggleMagnet: () => {
+    const on = !store.get().magnet;
+    store.set({ magnet: on });
+    if (on) edit("Main track magnet", (p) => p);
+  },
+  zoomIn: () => store.set({ zoom: Math.min(64, store.get().zoom * 1.25) }),
+  zoomOut: () => store.set({ zoom: Math.max(0.02, store.get().zoom / 1.25) }),
+});
+
+/** Paste the clipboard so its earliest clip starts at `at`, each clip on the
+ * track it was copied from, spilling to new tracks rather than overwriting. */
+function pasteAt(at: number) {
+  if (!clipboard) return;
+  const { clips, trackIds, origin } = clipboard;
+  const pasted: Id[] = [];
+  edit("Paste", (p) => {
+    clips.forEach((c, i) => {
+      const copy = { ...c, id: uid("c"), start: at + c.start - origin } as Clip;
+      pasted.push(copy.id);
+      const track = ops.findTrack(p, trackIds[i]) ?? p.tracks[0];
+      p = ops.placeClip(p, track.id, copy, { collision: "newTrack", magnet: store.get().magnet });
+    });
+    return p;
+  });
+  store.select(pasted);
+}
+
+/** Clips under the playhead: the selection if any is there, else all of them
+ * on unlocked tracks (CapCut's Q/W act on the main track clip by default). */
+function targetsAtPlayhead(p: Project) {
+  const f = store.get().playhead;
+  const under = p.tracks.flatMap((t) =>
+    t.locked ? [] : t.clips.filter((c) => c.start < f && f < c.start + c.duration).map((c) => ({ c, t })),
+  );
+  const sel = new Set(store.get().selection);
+  const picked = under.filter((x) => sel.has(x.c.id));
+  return picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
+}
+
+/** Global key handling. Typing in a field is left alone, except Escape. */
+export function onKeyDown(e: KeyboardEvent) {
+  const el = e.target as HTMLElement | null;
+  const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  if (typing && e.key !== "Escape") return;
+  const id = index.get(chordOf(e, isMac));
+  if (!id || !handlers[id]) return;
+  e.preventDefault();
+  run(id);
+}

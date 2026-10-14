@@ -271,16 +271,23 @@ export function moveClip(
   if (!loc || !target || target.locked || loc.track.locked || !fitsTrack(loc.clip, target.kind)) {
     return p;
   }
-  start = Math.max(0, Math.round(start));
-  const clip = { ...loc.clip, start } as Clip;
-  let q = withTrack(p, loc.track.id, (t) => ({
+  const clip = { ...loc.clip, start: Math.max(0, Math.round(start)) } as Clip;
+  const q = withTrack(p, loc.track.id, (t) => ({
     ...t,
     clips: t.clips.filter((c) => c.id !== clipId),
   }));
-  const dest = findTrack(q, trackId)!;
+  return placeClip(q, trackId, clip, opts);
+}
+
+/** Put a new clip on a track under the move rules: magnetic main track
+ * reorders, a free spot takes it, an occupied one either overwrites or
+ * spills onto a fresh track (see MoveOptions). */
+export function placeClip(p: Project, trackId: Id, clip: Clip, opts: MoveOptions = {}): Project {
+  const dest = findTrack(p, trackId);
+  if (!dest || dest.locked || !fitsTrack(clip, dest.kind)) return p;
   if (opts.magnet && dest.main) {
     // Reorder by where the clip's center lands among the others' centers.
-    const center = start + clip.duration / 2;
+    const center = clip.start + clip.duration / 2;
     const others = dest.clips;
     let index = others.findIndex((c) => c.start + c.duration / 2 > center);
     if (index < 0) index = others.length;
@@ -291,16 +298,16 @@ export function moveClip(
       at += c.duration;
       return placed;
     });
-    return withTrack(q, trackId, (t) => ({ ...t, clips }));
+    return withTrack(p, trackId, (t) => ({ ...t, clips }));
   }
-  if (rangeFree(dest, start, clip.duration) || opts.collision !== "newTrack") {
-    return addClip(q, trackId, clip, "overwrite");
+  if (rangeFree(dest, clip.start, clip.duration) || opts.collision !== "newTrack") {
+    return addClip(p, trackId, clip, "overwrite");
   }
   // CapCut: dropping onto an occupied overlay spot makes room on a new track
   // just above it (below it for audio, which stacks downward).
   const fresh = createTrack(dest.kind, dest.kind === "audio" ? "Audio" : "Video");
-  const at = q.tracks.findIndex((t) => t.id === trackId) + (dest.kind === "audio" ? 1 : 0);
-  q = { ...q, tracks: [...q.tracks.slice(0, at), fresh, ...q.tracks.slice(at)] };
+  const at = p.tracks.findIndex((t) => t.id === trackId) + (dest.kind === "audio" ? 1 : 0);
+  const q = { ...p, tracks: [...p.tracks.slice(0, at), fresh, ...p.tracks.slice(at)] };
   return addClip(q, fresh.id, clip, "overwrite");
 }
 
