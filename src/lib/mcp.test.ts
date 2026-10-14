@@ -22,6 +22,11 @@ function host(): McpHost & { project: Project } {
     redo: () => ({}),
     seek: () => ({}),
     frame: async () => "iVBOR",
+    aiCalls: [] as unknown[][],
+    async ai(tool: string, target: unknown, options: unknown) {
+      h.aiCalls.push([tool, target, options]);
+      return { removed: 2 };
+    },
   };
   return h;
 }
@@ -64,5 +69,19 @@ describe("MCP", () => {
   it("serves the project as a resource", async () => {
     const r = await call(host(), "resources/read", { uri: "project://summary" });
     expect((r!.result as { contents: { text: string }[] }).contents[0].text).toContain("canvas");
+  });
+});
+
+describe("MCP AI tools", () => {
+  it("routes to the app's AI tools with only the options given", async () => {
+    const h = host() as ReturnType<typeof host> & { aiCalls: unknown[][] };
+    const r = await call(h, "tools/call", { name: "remove_silences", arguments: { clip_id: "c1", padding: 0.2 } });
+    expect(r?.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ removed: 2 }) }] });
+    await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c1", "c2"] } });
+    expect(h.aiCalls).toEqual([
+      ["removeSilences", "c1", { padding: 0.2 }],
+      ["normalizeLoudness", ["c1", "c2"], {}],
+    ]);
+    expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech"]));
   });
 });

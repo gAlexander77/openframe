@@ -39,7 +39,9 @@ Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
-PNG, so an agent can look at its work). Every agent edit is undoable and
+PNG, so an agent can look at its work), and the local AI tools:
+`remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness` and
+`duck_under_speech` ([[AI tools]]). Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
 [[ADR-009 Agents reach the app over local MCP, opt-in]])
 

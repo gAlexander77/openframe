@@ -237,6 +237,9 @@ speech/music classifier is the upgrade. One depth for the whole clip.
   `ai.normalizeLoudness(clipIds?, { target })` takes a list and returns
   each clip's measured LUFS, gain and whether the peak held it back;
   `ai.duckUnderSpeech(clipId?, { depth })` returns the dips and keys made.
+- **MCP:** the same five as tools for external agents — `remove_silences`,
+  `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`
+  (snake_case options; unset ones keep the panel's defaults).
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

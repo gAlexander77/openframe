@@ -38,7 +38,14 @@ export interface McpHost {
   seek(seconds: number): unknown;
   /** PNG of the frame at `seconds`, base64 without the data: prefix. */
   frame(seconds: number, maxWidth: number): Promise<string>;
+  /** Run a local AI tool (src/state/ai.ts) by its automation name. */
+  ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
 }
+
+export type AiTool = "removeSilences" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech";
+
+/** Options with the unset ones dropped, so the tool's defaults apply. */
+const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
 interface AppTool {
   name: string;
@@ -94,6 +101,43 @@ export const APP_TOOLS: AppTool[] = [
     call: async (h, a) => ({ content: [{ type: "image", data: await h.frame(Number(a.at), Number(a.max_width ?? 640)), mimeType: "image/png" }] }),
   },
 ];
+
+// The local AI tools: analysis on this machine, then one undoable edit each
+// ([[AI tools]], ADR-019). They take a while on long clips.
+const clipId = { type: "string", description: "Video or audio clip id" } as const;
+const sensitivity = { type: "number", minimum: 0, maximum: 1, description: "0..1, default 0.5" } as const;
+APP_TOOLS.push(
+  {
+    name: "remove_silences",
+    description: "Find the pauses in a clip's speech and cut them out, closing the gaps (one undo step). Returns the silent source ranges and seconds saved.",
+    inputSchema: obj({ clip_id: clipId, sensitivity, min_silence: { type: "number", minimum: 0, description: "Shortest pause to cut, seconds (default 0.4)" }, padding: { type: "number", minimum: 0, description: "Kept around speech, seconds (default 0.1)" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("removeSilences", String(a.clip_id), given({ sensitivity: a.sensitivity, minSilence: a.min_silence, padding: a.padding }))),
+  },
+  {
+    name: "split_scenes",
+    description: "Find every shot change in a video clip and split there (or drop markers). Returns the cut times in source seconds.",
+    inputSchema: obj({ clip_id: clipId, sensitivity, output: { type: "string", enum: ["split", "markers"], description: "Default split" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("splitScenes", String(a.clip_id), given({ sensitivity: a.sensitivity, output: a.output }))),
+  },
+  {
+    name: "mark_beats",
+    description: "Drop a timeline marker on the beat of a music clip. Returns the BPM and beat count.",
+    inputSchema: obj({ clip_id: clipId, every: { type: "integer", enum: [1, 2, 4], description: "Marker on every Nth beat (default 1)" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("markBeats", String(a.clip_id), given({ every: a.every }))),
+  },
+  {
+    name: "normalize_loudness",
+    description: "Measure clips' loudness (EBU R128) and set their volume to reach a target without clipping. -14 LUFS suits social video, -16 podcasts, -23 broadcast.",
+    inputSchema: obj({ clip_ids: { type: "array", items: { type: "string" }, description: "Video or audio clip ids" }, target: { type: "number", minimum: -40, maximum: -5, description: "LUFS, default -14" } }, ["clip_ids"]),
+    call: async (h, a) => json(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target }))),
+  },
+  {
+    name: "duck_under_speech",
+    description: "Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes).",
+    inputSchema: obj({ clip_id: { type: "string", description: "The music clip" }, depth: { type: "number", minimum: 1, maximum: 40, description: "dB to lower, default 12" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("duckUnderSpeech", String(a.clip_id), given({ depth: a.depth }))),
+  },
+);
 
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
