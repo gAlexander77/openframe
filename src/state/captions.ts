@@ -1,0 +1,97 @@
+// Captions in the app: generate (local Whisper), import and export SRT/VTT,
+// restyle all at once. Results land through the add_captions command, so a
+// person, the auto-captioner and an agent with its own transcript all
+// produce the same clips.
+
+import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
+import { DEFAULT_LINES, parseSubtitles, toSrt, toVtt, wordsToCaptions, type Caption } from "../lib/captions";
+import { runCommand } from "../lib/commands";
+import type { Project, TextClip, TextStyle } from "../lib/project/types";
+import { framesToSeconds } from "../lib/time";
+import { platform } from "../platform";
+import { store } from "./store";
+import { dismiss, toast, updateToast } from "./toast";
+
+export function captionClips(p: Project): TextClip[] {
+  return p.tracks.flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption)).sort((a, b) => a.start - b.start);
+}
+
+export function currentCaptions(p: Project): Caption[] {
+  return captionClips(p).map((c) => ({ start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps), text: c.text }));
+}
+
+let running: AbortController | null = null;
+
+export function cancelCaptions() {
+  running?.abort();
+}
+
+const STAGE: Record<TranscribeProgress["stage"], string> = {
+  mixing: "Preparing audio",
+  downloading: "Downloading speech model (first time only)",
+  transcribing: "Recognizing speech",
+};
+
+export async function generateCaptions(opts: { model: string; language: string | null; replace: boolean }, onProgress?: (s: TranscribeProgress) => void) {
+  if (running) return;
+  running = new AbortController();
+  const id = toast("Preparing audio…", "progress");
+  try {
+    const words = await transcribeTimeline(
+      store.get().project,
+      opts,
+      (s) => {
+        onProgress?.(s);
+        updateToast(id, { text: `${STAGE[s.stage]}…`, progress: s.progress });
+      },
+      running.signal,
+    );
+    const caps = wordsToCaptions(words, DEFAULT_LINES);
+    if (!caps.length) {
+      toast("No speech found in the timeline's audio", "info");
+      return;
+    }
+    store.edit("Auto captions", (p) => runCommand(p, "add_captions", { captions: caps, replace: opts.replace }));
+    toast(`Added ${caps.length} captions`);
+  } catch (e) {
+    if ((e as Error).name !== "AbortError") toast(`Captions failed: ${e instanceof Error ? e.message : e}`, "error");
+  } finally {
+    dismiss(id);
+    running = null;
+  }
+}
+
+export async function importCaptions(file: File) {
+  const caps = parseSubtitles(await file.text());
+  if (!caps.length) {
+    toast(`${file.name} has no captions this app can read (SRT or WebVTT)`, "error");
+    return;
+  }
+  store.edit(`Import ${file.name}`, (p) => runCommand(p, "add_captions", { captions: caps }));
+  toast(`Imported ${caps.length} captions`);
+}
+
+export async function exportCaptions(format: "srt" | "vtt") {
+  const p = store.get().project;
+  const caps = currentCaptions(p);
+  if (!caps.length) return toast("There are no captions to export yet");
+  const target = await platform.createExportTarget(p.name, format);
+  if (!target) return;
+  const bytes = new TextEncoder().encode(format === "srt" ? toSrt(caps) : toVtt(caps));
+  const w = target.writable.getWriter();
+  await w.write({ type: "write", data: bytes, position: 0 });
+  await w.close();
+  await target.reveal();
+  toast(`Exported ${target.displayName}`);
+}
+
+/** Give every caption the same style (CapCut's "Apply to all"). */
+export function styleAllCaptions(style: TextStyle, y: number) {
+  store.edit("Style all captions", (p) => ({
+    ...p,
+    tracks: p.tracks.map((t) => ({
+      ...t,
+      clips: t.clips.map((c) => (c.type === "text" && c.caption ? { ...c, style: { ...style }, transform: { ...c.transform, y } } : c)),
+    })),
+  }));
+}

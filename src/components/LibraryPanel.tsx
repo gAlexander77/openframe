@@ -23,6 +23,7 @@ import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTrans
 import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
+import { CaptionsTab } from "./CaptionsTab";
 import "./library.css";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
@@ -63,7 +64,7 @@ export function LibraryPanel() {
         {tab === "transitions" && <TransitionsTab />}
         {tab === "filters" && <FiltersTab />}
         {tab === "adjustment" && <AdjustmentTab />}
-        {tab === "captions" && <Placeholder title="Captions" text="Automatic captions from speech run on your computer. Coming in the AI round." />}
+        {tab === "captions" && <CaptionsTab />}
         {tab === "ai" && <Placeholder title="AI tools" text="Silence removal, scene detection and beat markers run locally. Coming in the AI round." />}
       </div>
     </section>
