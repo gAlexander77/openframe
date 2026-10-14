@@ -33,6 +33,6 @@ fixtures/media/
 # Screenshots the drive scripts write beside themselves
 scripts/drive/shots/
 
-# Local scratch: drive outputs (exported files), throwaway runners and their
-# node_modules
+# Per-worktree scratch: playwright-core for desktop drives, isolated app
+# data and logs (docs/Driving the app.md)
 scratch/

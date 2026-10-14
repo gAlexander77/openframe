@@ -22,7 +22,9 @@ abstractions nobody asked for, and modules that all know about each other.
    are cheaper than one wrong abstraction.
 2. **Dependencies need a reason a few lines cannot provide.** Current list,
    frontend: react, react-dom, `@tauri-apps/*`, mediabunny (demux, WebCodecs, mux), `@mediabunny/aac-encoder` (AAC export where the platform has no encoder: Linux Chromium, Windows N; loaded on demand, ADR-015), lucide-react (icon drawings, re-exported only from `src/icons/`), @huggingface/transformers (Whisper captions in a worker, ADR-007). Rust: tauri,
-   serde, serde_json, tauri-plugin-dialog. Each addition gets a line here and
+   serde, serde_json, tauri-plugin-dialog, windows-sys (Windows only, already
+   in the tree via Tauri: the Job Object that kills ffmpeg with the app,
+   ADR-013). Each addition gets a line here and
    an ADR when it is load-bearing.
 3. **Errors cross IPC as `Result<T, String>`** — human-readable, shown in the
    UI. No error-type hierarchies.

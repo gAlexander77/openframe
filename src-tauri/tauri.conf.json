@@ -25,7 +25,15 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "worker-src": "'self' blob:",
+        "connect-src": "'self' ipc: http://ipc.localhost media: http://media.localhost",
+        "img-src": "'self' blob: data:",
+        "style-src": "'self' 'unsafe-inline'"
+      },
+      "dangerousDisableAssetCspModification": ["style-src"]
     }
   },
   "bundle": {

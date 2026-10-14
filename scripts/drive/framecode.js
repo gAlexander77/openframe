@@ -3,15 +3,19 @@
 // B-frames and backward seeks. Needs the dev server (npm run dev) and
 // fixtures (node scripts/make-fixtures.mjs).
 //
-// Run through the Playwright MCP tool `browser_run_code_unsafe` with
-// filename "scripts/drive/framecode.js", or any Playwright page. Returns
+// Web: run through the Playwright MCP tool `browser_run_code_unsafe` with
+// filename "scripts/drive/framecode.js". Desktop: attach over the WebView2
+// debug port and pass the absolute fixtures folder as the second argument,
+// so the clip is read from disk through the media: protocol. Returns
 // { checked, bad } — `bad` must be empty. See docs/Driving the app.md.
-async (page) => {
-  await page.goto("http://localhost:1420");
+async (page, fixtures) => {
+  if (fixtures) await page.reload();
+  else await page.goto("http://localhost:1420");
   await page.waitForFunction(() => !!window.videoEditor);
-  return await page.evaluate(async () => {
+  return await page.evaluate(async (fixtures) => {
     const ve = window.videoEditor;
-    const [a] = await ve.import([{ name: "framecode-30.mp4", src: "http://localhost:1420/fixtures/media/framecode-30.mp4" }]);
+    const src = fixtures ? `${fixtures}/framecode-30.mp4` : "http://localhost:1420/fixtures/media/framecode-30.mp4";
+    const [a] = await ve.import([{ name: "framecode-30.mp4", src }]);
     const clipAt = (s) => ve.describe().tracks.flatMap((t) => t.clips).find((c) => c.start === s);
     ve.exec("add_media_clip", { asset_id: a.id, start: 0 });
     ve.exec("add_media_clip", { asset_id: a.id, start: 12, in: 2, duration: 4 });
@@ -38,6 +42,6 @@ async (page) => {
       const got = read();
       if (got !== want) bad.push({ f, want, got });
     }
-    return { checked: cases.length, bad };
-  });
+    return { platform: ve.platform(), checked: cases.length, bad };
+  }, fixtures);
 }

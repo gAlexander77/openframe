@@ -44,8 +44,14 @@ export interface Platform {
   pickMedia(): Promise<ImportedFile[]>;
   /** Take files dropped onto the window (web) into the app's keeping. */
   adoptFiles(files: File[]): Promise<ImportedFile[]>;
+  /** Files dropped from the OS as real paths (desktop, where HTML5 file
+   * drops are off). Returns the unsubscribe. */
+  onFileDrop?(cb: (files: ImportedFile[]) => void): () => void;
   sourceFor(src: string): Promise<Source>;
   blobFor(src: string): Promise<Blob>;
+  /** An edit-friendly copy of media the webview cannot decode (desktop,
+   * FFmpeg); resolves to its src. Progress is 0..1. */
+  makeProxy?(src: string, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<string>;
 
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;

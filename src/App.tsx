@@ -13,7 +13,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Upload } from "./icons";
 import { platform } from "./platform";
 import { onKeyDown, provide } from "./state/actions";
-import { importFiles } from "./state/media";
+import { addToTimeline, importFiles } from "./state/media";
 import { useSession } from "./state/project";
 import "./components/shell.css";
 
@@ -53,6 +53,16 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // Desktop OS drops arrive as paths, not HTML5 events: import them and add
+  // each at the playhead, like the media panel's +.
+  useEffect(
+    () =>
+      platform.onFileDrop?.(async (files) => {
+        for (const a of await importFiles(files)) addToTimeline(a);
+      }),
+    [],
+  );
 
   const resize = (k: keyof Layout, d: number, lo: number, hi: number) =>
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
