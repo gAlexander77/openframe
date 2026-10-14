@@ -3,6 +3,7 @@
 // protocol (ADR-010), and writes projects (ADR-011) and exports (ADR-012).
 
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
@@ -79,7 +80,6 @@ let mcpListening = false;
 async function listenForAgents() {
   if (mcpListening) return;
   mcpListening = true;
-  const { listen } = await import("@tauri-apps/api/event");
   await listen<{ id: number; body: string }>("mcp-request", async (e) => {
     let response: string | null;
     try {
