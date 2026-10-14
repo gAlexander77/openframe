@@ -619,3 +619,32 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
   }
   return p;
 }
+
+// ---- frame rate ------------------------------------------------------------------
+
+/** Change the project frame rate, rescaling every frame-based value once
+ * (ADR-004: an explicit, rare operation). Clips keep their time in seconds;
+ * edges that no longer land on a frame round to the nearest one, and each
+ * track is re-packed so rounding can never create an overlap. */
+export function setFps(p: Project, fps: Rational): Project {
+  const r = (fps.num / fps.den) / (p.fps.num / p.fps.den);
+  if (r === 1) return { ...p, fps };
+  const f = (n: number) => Math.round(n * r);
+  const keys = (k: Clip["keyframes"]) =>
+    k ? Object.fromEntries(Object.entries(k).map(([path, list]) => [path, list.map((x) => ({ ...x, f: f(x.f) }))])) : k;
+  const anim = <T extends { duration: number } | undefined>(a: T): T => (a ? { ...a, duration: Math.max(1, f(a.duration)) } : a);
+  const tracks = p.tracks.map((t) => {
+    let prevEnd = 0;
+    const clips = t.clips.map((c) => {
+      const start = Math.max(f(c.start), prevEnd);
+      const end = Math.max(start + 1, f(c.start + c.duration));
+      prevEnd = end;
+      const out: Record<string, unknown> = { ...c, start, duration: end - start, keyframes: keys(c.keyframes) };
+      for (const k of ["fadeIn", "fadeOut"]) if (typeof out[k] === "number") out[k] = f(out[k] as number);
+      for (const k of ["animIn", "animOut", "animLoop", "transitionOut"]) if (out[k]) out[k] = anim(out[k] as { duration: number });
+      return out as unknown as Clip;
+    });
+    return { ...t, clips };
+  });
+  return { ...p, fps, tracks, markers: p.markers.map((m) => ({ ...m, frame: f(m.frame) })) };
+}

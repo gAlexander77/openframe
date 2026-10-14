@@ -17,6 +17,7 @@ import {
   splitClip,
   trimClip,
   settle,
+  setFps,
 } from "./ops";
 import type { Asset, Clip, Project, VideoClip } from "./types";
 
@@ -225,5 +226,18 @@ describe("settle", () => {
     expect(findClip(settled, "t")!.clip.start).toBe(40);
     const unlinked = settle(p, after, { magnet: true, linkage: false });
     expect(findClip(unlinked, "t")!.clip.start).toBe(70);
+  });
+});
+
+describe("setFps", () => {
+  it("keeps clips at the same seconds and never overlaps", () => {
+    const p = setFps(project([0, 30, 0], [30, 45, 0]), { num: 24, den: 1 });
+    expect(clips(p).map((c) => [c[0], c[1]])).toEqual([
+      [0, 24],
+      [24, 36],
+    ]);
+    const ntsc = setFps(project([0, 10, 0], [10, 10, 0], [20, 10, 0]), { num: 30000, den: 1001 });
+    const cs = ntsc.tracks[0].clips;
+    cs.forEach((c, i) => i && expect(c.start).toBeGreaterThanOrEqual(cs[i - 1].start + cs[i - 1].duration));
   });
 });
