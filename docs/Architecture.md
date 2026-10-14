@@ -67,5 +67,6 @@ a clock, so no frame is ever dropped
 | `engine/export.ts` | The export loop, codec choice, audio windows |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
+| `state/export.ts` | The export job: dialog state, `render()` for automation |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |

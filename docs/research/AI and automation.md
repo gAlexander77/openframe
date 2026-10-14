@@ -1068,6 +1068,13 @@ Rules that make agents succeed:
 - Jobs: `list_jobs`, `get_job`, `cancel_job`.
 - History: `undo`, `redo`, `history`.
 
+**Built, automation layer** (in `window.videoEditor` today; an MCP adapter lists them beside the registry):
+
+| Tool | In-page binding | Contract |
+|---|---|---|
+| `export_project` | `render(options)` | Renders the timeline into a file in memory and resolves with `{ url, size, type, fileName, frames, seconds, elapsed, videoCodec, audioCodec, audioDelay, note? }`, where `url` is a Blob URL. `options` takes any export-dialog setting: `format` (mp4, mov, webm, mkv), `codec` (avc, hevc, vp9, av1), `resolution` (480p, 720p, 1080p, 2k, 4k), `quality` (lower, recommended, higher, custom with `customMbps`), `fps` (`{num, den}`), `video`, `audio`, `audioFormat` (m4a, wav), plus `start`/`end` in seconds. A codec the device cannot encode falls back within the container and `note` says so. Side-effectful (encoders, memory), so it is not in the pure registry; the project is unchanged. One export at a time. ([[ADR-014 Export is a deterministic frame loop]]) |
+| `preview_frame` (still) | `still(frame?, resolution?)` | One frame as a PNG Blob URL at a preset size. |
+
 **Smart edits are compiled, never special.**
 - `remove_silences` = analysis (cached per asset) → a list of ranges → `run_batch([cut_ranges…])`.
 - `auto_reframe` = analysis → `add_keyframe` on `transform.x` / `transform.scale`.
