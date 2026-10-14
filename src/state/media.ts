@@ -99,7 +99,9 @@ async function convert(f: ImportedFile): Promise<string> {
 }
 
 /** CapCut: the first clip on an empty timeline sets the canvas size and
- * frame rate, so phone footage gets a vertical project automatically. */
+ * frame rate, so phone footage gets a vertical project automatically —
+ * unless the user already chose a canvas, which then only takes the
+ * clip's frame rate (UX-02). */
 function adoptSettings(p: Project, a: Asset): Project {
   const empty = p.tracks.every((t) => t.clips.length === 0);
   if (!empty || a.kind === "audio" || !a.width || !a.height) return p;
@@ -109,7 +111,7 @@ function adoptSettings(p: Project, a: Asset): Project {
     const nearest = FPS_PRESETS.reduce((b, x) => (Math.abs(fpsValue(x.fps) - a.fps!) < Math.abs(fpsValue(b.fps) - a.fps!) ? x : b));
     if (Math.abs(fpsValue(nearest.fps) - a.fps) < 0.5) fps = nearest.fps;
   }
-  return { ...p, width: even(a.width), height: even(a.height), fps };
+  return p.canvasFixed ? { ...p, fps } : { ...p, width: even(a.width), height: even(a.height), fps };
 }
 
 /**

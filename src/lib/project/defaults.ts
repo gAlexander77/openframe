@@ -128,6 +128,8 @@ export function createProject(init: ProjectInit = {}): Project {
     width: init.width ?? 1920,
     height: init.height ?? 1080,
     fps: init.fps ?? { num: 30, den: 1 },
+    // A size given up front is a choice (a Home preset).
+    ...(init.width || init.height ? { canvasFixed: true } : {}),
     sampleRate: 48000,
     background: "#000000",
     assets: [],
@@ -381,6 +383,7 @@ export function normalizeProject(raw: unknown): Project {
     fps,
     sampleRate: num(raw.sampleRate, base.sampleRate),
     background: typeof raw.background === "string" ? raw.background : base.background,
+    ...(raw.canvasFixed === true ? { canvasFixed: true } : {}),
     assets,
     tracks,
     markers,

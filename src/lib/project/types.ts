@@ -21,6 +21,10 @@ export interface Project {
   /** Canvas size in pixels. */
   width: number;
   height: number;
+  /** The user chose the canvas (a Home preset, the Details ratio or size, an
+   * agent's set_project). The first clip then keeps it rather than setting
+   * it, as CapCut's ratio does once picked. Absent = adapts (Original). */
+  canvasFixed?: boolean;
   fps: Rational;
   /** Audio mix rate, 48000 unless an agent asks otherwise. */
   sampleRate: number;

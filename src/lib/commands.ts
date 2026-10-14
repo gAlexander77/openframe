@@ -158,8 +158,8 @@ export const COMMANDS: Command[] = [
     run: (p, a) => ({
       ...p,
       ...(a.name !== undefined ? { name: String(a.name) } : {}),
-      ...(a.width !== undefined ? { width: Number(a.width) } : {}),
-      ...(a.height !== undefined ? { height: Number(a.height) } : {}),
+      ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
+      ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
       ...(a.background !== undefined ? { background: String(a.background) } : {}),
     }),
   },

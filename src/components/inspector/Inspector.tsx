@@ -852,7 +852,7 @@ function ProjectDetails() {
     // The short side is the "p" resolution, CapCut-style (1080p 9:16 = 1080x1920).
     const even = (n: number) => Math.round(n / 2) * 2;
     const [w, h] = rw >= rh ? [even((res * rw) / rh), res] : [res, even((res * rh) / rw)];
-    store.edit("Canvas size", (q) => ({ ...q, width: w, height: h }));
+    store.edit("Canvas size", (q) => ({ ...q, width: w, height: h, canvasFixed: true }));
   };
   const fpsLabel = FPS_PRESETS.find((f) => f.fps.num === p.fps.num && f.fps.den === p.fps.den)?.label ?? (p.fps.num / p.fps.den).toFixed(2);
   return (

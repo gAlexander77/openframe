@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_ADJUST, normalizeProject, ProjectError } from "./defaults";
+import { createProject, DEFAULT_ADJUST, normalizeProject, ProjectError } from "./defaults";
 
 describe("normalizeProject", () => {
   it("completes the minimal JSON an agent would write", () => {
@@ -68,5 +68,14 @@ describe("normalizeProject", () => {
     const p = normalizeProject({});
     expect(p.tracks).toHaveLength(1);
     expect(p.tracks[0].main).toBe(true);
+  });
+});
+
+describe("a chosen canvas (UX-02)", () => {
+  it("is marked when a size is given up front, kept on load, absent otherwise", () => {
+    expect(createProject({ width: 1080, height: 1920 }).canvasFixed).toBe(true);
+    expect(createProject().canvasFixed).toBeUndefined();
+    expect(normalizeProject({ ...createProject({ width: 1080, height: 1920 }) }).canvasFixed).toBe(true);
+    expect(normalizeProject({ width: 1080, height: 1920 }).canvasFixed).toBeUndefined();
   });
 });

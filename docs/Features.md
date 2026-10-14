@@ -11,7 +11,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Autosave** 800 ms after every change, never overlapping; "Saved 10:42"
   in the title bar; Ctrl+S saves now. No save dialog, as in CapCut.
 - **The first clip sets the canvas** size and frame rate on an empty
-  timeline, so phone footage makes a vertical project.
+  timeline, so phone footage makes a vertical project — unless a canvas
+  was chosen (a Home preset or the Details ratio), which it then keeps.
 - **Open JSON format** ([[Project format]]).
 
 ## Media

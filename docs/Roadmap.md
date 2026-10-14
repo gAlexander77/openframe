@@ -9,9 +9,8 @@ items move to [[Features]] when they ship.
 
 ## Next
 
-- **Open UX audit findings** ([[UX audit 2026-10-14]]): a chosen canvas
-  that the first clip must not override (UX-02), dropping above the main
-  track makes an overlay (UX-12) with a drop preview that shows the
+- **Open UX audit findings** ([[UX audit 2026-10-14]]): dropping above
+  the main track makes an overlay (UX-12) with a drop preview that shows the
   magnet's insertion point (UX-13), linkage that leaves music beds alone
   (UX-14), a new title visible when added (UX-15).
 - **Pro trim monitor**: the two-up view while rolling/slipping (the trim

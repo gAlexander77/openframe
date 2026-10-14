@@ -47,7 +47,7 @@ Everything not given gets its default. This is a complete file:
 ## Shape
 
 ```
-Project { schema: 1, id, name, width, height, fps, sampleRate, background,
+Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, background,
           assets: Asset[], tracks: Track[], markers: Marker[], luts?: LutFile[] }
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
