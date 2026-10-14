@@ -159,6 +159,18 @@ export class Player {
     return this.rate !== 0;
   }
 
+  /** Resolves when no frame is pending or drawing. */
+  async idle(): Promise<void> {
+    while (this.rendering || this.wanted !== null) await new Promise((r) => setTimeout(r, 16));
+  }
+
+  /** What the viewer shows, as { width, height, data } (RGBA, top row first). */
+  pixels() {
+    const c = this.compositor;
+    if (!c) return null;
+    return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+  }
+
   private renderSize(p: Project, scale: number) {
     // Never render more pixels than the screen shows or the project has.
     const maxW = Math.min(p.width * scale, this.displayW || p.width);
