@@ -4,10 +4,11 @@ import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { DragGhost, Toasts } from "./components/Overlays";
 import { PlayerPanel } from "./components/Player";
+import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { Splitter } from "./components/Splitter";
 import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
-import { onKeyDown } from "./state/actions";
+import { onKeyDown, provide } from "./state/actions";
 import { useSession } from "./state/project";
 import "./components/shell.css";
 
@@ -52,12 +53,14 @@ export default function App() {
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
 
   const { screen, saveState } = useSession();
+  const [shortcuts, setShortcuts] = useState(false);
+  useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
   // ponytail: key handling is global; editor actions are harmless on the
   // home screen (no project), so no per-screen keymap yet.
 
   return (
     <div className="app">
-      <TitleBar saveState={saveState} home={screen === "home"} onShortcuts={() => {}} />
+      <TitleBar saveState={saveState} home={screen === "home"} onShortcuts={() => setShortcuts(true)} />
       {screen === "home" ? (
         <Home />
       ) : (
@@ -79,6 +82,7 @@ export default function App() {
         <Timeline />
       </div>
       )}
+      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
       <DragGhost />
       <Toasts />
     </div>
