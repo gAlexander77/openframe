@@ -32,6 +32,10 @@ export interface ExportTarget {
   displayName: string;
   /** Reveal the finished file (desktop) or download it (web fallback). */
   reveal(): Promise<void>;
+  /** The button text for reveal() ("Show in folder", "Download"); absent
+   * when the file is already where the user chose and there is nothing to
+   * reveal. */
+  revealLabel?: string;
 }
 
 export interface Platform {
@@ -48,6 +52,8 @@ export interface Platform {
   saveProject(project: Project, summary: ProjectSummary): Promise<void>;
   deleteProject(id: string): Promise<void>;
 
+  /** Where exports go, in a few words, for the export dialog. */
+  exportLocation?: string;
   /** Ask where to save an export; null when the user cancels. */
   createExportTarget(suggestedName: string, extension: string): Promise<ExportTarget | null>;
 }

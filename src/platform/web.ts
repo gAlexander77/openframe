@@ -47,6 +47,10 @@ function pickFiles(accept: string): Promise<File[]> {
   });
 }
 
+/** Chromium's save dialog; Firefox and Safari have none. */
+const savePicker = () =>
+  (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker?.bind(window);
+
 export const web: Platform = {
   kind: "web",
 
@@ -126,8 +130,12 @@ export const web: Platform = {
     for (const n of [`${id}.json`, `${id}.summary.json`]) await d.removeEntry(n).catch(() => undefined);
   },
 
+  get exportLocation() {
+    return savePicker() ? "You choose where to save when the export starts." : "Your downloads, when the export finishes.";
+  },
+
   async createExportTarget(suggestedName, extension) {
-    const picker = (window as unknown as { showSaveFilePicker?: (o: unknown) => Promise<FileSystemFileHandle> }).showSaveFilePicker;
+    const picker = savePicker();
     let handle: FileSystemFileHandle;
     let viaOpfs = false;
     if (picker) {
@@ -151,7 +159,9 @@ export const web: Platform = {
     });
     const target: ExportTarget = {
       writable,
-      displayName: handle.name,
+      // The OPFS copy has a temporary name; the download gets the real one.
+      displayName: viaOpfs ? `${suggestedName}.${extension}` : handle.name,
+      ...(viaOpfs ? { revealLabel: "Download" } : {}),
       async reveal() {
         if (!viaOpfs) return;
         const url = URL.createObjectURL(await handle.getFile());
