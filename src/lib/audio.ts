@@ -20,7 +20,7 @@ export function soundingClips(p: Project, hasAudio: (assetId: string) => boolean
   for (const track of p.tracks) {
     if (track.muted) continue;
     for (const clip of track.clips) {
-      if (!isTimed(clip) || clip.disabled || clip.muted || clip.freeze) continue;
+      if (!isTimed(clip) || clip.type === "compound" || clip.disabled || clip.muted || clip.freeze) continue;
       if (!hasAudio(clip.assetId)) continue;
       out.push({ clip, track });
     }

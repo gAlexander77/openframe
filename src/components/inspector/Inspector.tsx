@@ -48,6 +48,8 @@ function tabsFor(c: Clip, p: Project): Tab[] {
       return ["audio", "speed"];
     case "adjustment":
       return ["adjust"];
+    case "compound":
+      return ["video", "audio", "speed", "animation", "adjust", ...tr];
   }
 }
 

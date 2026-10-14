@@ -13,6 +13,8 @@ import type {
   AudioClip,
   Clip,
   ColorClip,
+  Compound,
+  CompoundClip,
   Crop,
   ImageClip,
   LutFile,
@@ -213,6 +215,11 @@ export function createAdjustmentClip(start: number, duration: number): Adjustmen
   };
 }
 
+/** A clip playing compound `compoundId` from its start, at 1x. */
+export function createCompoundClip(compoundId: string, start: number, duration: number): CompoundClip {
+  return { id: uid("c"), type: "compound", compoundId, start, duration, in: 0, speed: 1, ...visual(), ...DEFAULT_SOUND };
+}
+
 export function createMarker(frame: number, label = "", color = "#3be0f0"): Marker {
   return { id: uid("m"), frame, label, color };
 }
@@ -227,8 +234,8 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 const num = (v: unknown, fallback: number) =>
   typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
-const VISUAL_TYPES = new Set(["video", "image", "text", "color"]);
-const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment"]);
+const VISUAL_TYPES = new Set(["video", "image", "text", "color", "compound"]);
+const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment", "compound"]);
 
 /** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
 function normalizeAdjust(raw: unknown, where: string, lutIds: Set<string>) {
@@ -261,7 +268,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.opacity = num(c.opacity, 1);
     c.effects = Array.isArray(c.effects) ? c.effects : [];
   }
-  if (type === "video" || type === "audio") {
+  if (type === "video" || type === "audio" || type === "compound") {
     for (const [k, v] of Object.entries(DEFAULT_SOUND)) {
       if (typeof c[k] !== typeof v) c[k] = v;
     }
@@ -274,6 +281,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (raw && points) c.speedCurve = { ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}), points };
     else delete c.speedCurve;
     for (const k of ["reverse", "changePitch"]) if (c[k] !== true) delete c[k];
+  }
+  if (type === "compound") {
+    if (typeof c.compoundId !== "string") throw new ProjectError(`${where}: missing compoundId`);
+    // Not supported on compound clips yet (ADR-037): dropped, not refused,
+    // so a file that has them still opens.
+    for (const k of ["speedCurve", "reverse", "freeze"]) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);
@@ -327,20 +340,64 @@ export function normalizeProject(raw: unknown): Project {
     };
   });
   const lutIds = new Set(luts.map((l) => l.id));
-  const rawTracks = Array.isArray(raw.tracks) ? raw.tracks : base.tracks;
+  const rawCompounds = Array.isArray(raw.compounds) ? raw.compounds : [];
+  const compoundIds = new Set(rawCompounds.map((k) => (isObj(k) ? k.id : undefined)));
+  const timeline = (rawTracks: unknown[], at: string) => normalizeTracks(rawTracks, at, assetIds, lutIds, compoundIds);
+  const tracks = timeline(Array.isArray(raw.tracks) ? raw.tracks : base.tracks, "tracks");
+  const compounds: Compound[] = rawCompounds.map((k, i) => {
+    if (!isObj(k) || typeof k.id !== "string") throw new ProjectError(`compounds[${i}]: needs an "id"`);
+    return {
+      id: k.id,
+      name: typeof k.name === "string" ? k.name : `Compound clip ${i + 1}`,
+      tracks: timeline(Array.isArray(k.tracks) ? k.tracks : [], `compounds[${i}].tracks`),
+      markers: normalizeMarkers(k.markers),
+    };
+  });
+  // A compound that plays itself, even through others, would never finish
+  // rendering.
+  const byId = new Map(compounds.map((k) => [k.id, k]));
+  const cyclic = (id: string, path: string[]): boolean =>
+    path.includes(id) || byId.get(id)!.tracks.some((t) => t.clips.some((c) => c.type === "compound" && cyclic(c.compoundId, [...path, id])));
+  for (const k of compounds) if (cyclic(k.id, [])) throw new ProjectError(`compounds: ${k.id} contains itself`);
+  const markers = normalizeMarkers(raw.markers);
+  return {
+    schema: 1,
+    id: typeof raw.id === "string" ? raw.id : base.id,
+    name: typeof raw.name === "string" ? raw.name : base.name,
+    width: Math.max(16, Math.round(num(raw.width, base.width))),
+    height: Math.max(16, Math.round(num(raw.height, base.height))),
+    fps,
+    sampleRate: num(raw.sampleRate, base.sampleRate),
+    background: typeof raw.background === "string" ? raw.background : base.background,
+    assets,
+    tracks,
+    markers,
+    ...(luts.length ? { luts } : {}),
+    ...(compounds.length ? { compounds } : {}),
+    createdAt: num(raw.createdAt, base.createdAt),
+    updatedAt: num(raw.updatedAt, base.updatedAt),
+  };
+}
+
+/** One timeline's tracks (the project's, or a compound's): clips checked
+ * against their tracks, assets, compounds and each other; one main track. */
+function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>, lutIds: Set<string>, compoundIds: Set<unknown>): Track[] {
   const tracks: Track[] = rawTracks.map((t, ti) => {
-    if (!isObj(t)) throw new ProjectError(`tracks[${ti}] must be an object`);
+    if (!isObj(t)) throw new ProjectError(`${at}[${ti}] must be an object`);
     const kind: TrackKind = t.kind === "audio" ? "audio" : "video";
     const clips = (Array.isArray(t.clips) ? t.clips : [])
-      .map((c, ci) => normalizeClip(c, `tracks[${ti}].clips[${ci}]`, lutIds))
+      .map((c, ci) => normalizeClip(c, `${at}[${ti}].clips[${ci}]`, lutIds))
       .sort((a, b) => a.start - b.start);
     clips.forEach((c, ci) => {
-      const where = `tracks[${ti}].clips[${ci}]`;
+      const where = `${at}[${ti}].clips[${ci}]`;
       if ((c.type === "audio") !== (kind === "audio")) {
         throw new ProjectError(`${where}: a ${c.type} clip cannot sit on a ${kind} track`);
       }
       if ("assetId" in c && !assetIds.has(c.assetId)) {
         throw new ProjectError(`${where}: assetId ${c.assetId} is not in assets`);
+      }
+      if (c.type === "compound" && !compoundIds.has(c.compoundId)) {
+        throw new ProjectError(`${where}: compoundId ${c.compoundId} is not in compounds`);
       }
       const prev = clips[ci - 1];
       if (prev && prev.start + prev.duration > c.start) {
@@ -364,28 +421,14 @@ export function normalizeProject(raw: unknown): Project {
     if (firstVideo) firstVideo.main = true;
     else tracks.unshift(createTrack("video", "Main", true));
   }
-  const markers: Marker[] = (Array.isArray(raw.markers) ? raw.markers : [])
-    .filter(isObj)
-    .map((m) => ({
-      id: typeof m.id === "string" ? m.id : uid("m"),
-      frame: Math.max(0, Math.round(num(m.frame, 0))),
-      label: typeof m.label === "string" ? m.label : "",
-      color: typeof m.color === "string" ? m.color : "#3be0f0",
-    }));
-  return {
-    schema: 1,
-    id: typeof raw.id === "string" ? raw.id : base.id,
-    name: typeof raw.name === "string" ? raw.name : base.name,
-    width: Math.max(16, Math.round(num(raw.width, base.width))),
-    height: Math.max(16, Math.round(num(raw.height, base.height))),
-    fps,
-    sampleRate: num(raw.sampleRate, base.sampleRate),
-    background: typeof raw.background === "string" ? raw.background : base.background,
-    assets,
-    tracks,
-    markers,
-    ...(luts.length ? { luts } : {}),
-    createdAt: num(raw.createdAt, base.createdAt),
-    updatedAt: num(raw.updatedAt, base.updatedAt),
-  };
+  return tracks;
+}
+
+function normalizeMarkers(raw: unknown): Marker[] {
+  return (Array.isArray(raw) ? raw : []).filter(isObj).map((m) => ({
+    id: typeof m.id === "string" ? m.id : uid("m"),
+    frame: Math.max(0, Math.round(num(m.frame, 0))),
+    label: typeof m.label === "string" ? m.label : "",
+    color: typeof m.color === "string" ? m.color : "#3be0f0",
+  }));
 }

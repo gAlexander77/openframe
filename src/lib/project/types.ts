@@ -34,6 +34,8 @@ export interface Project {
   /** .cube LUTs clips can use (Grade.lut). The table stays in its file;
    * only the reference lives here. Absent = none imported. */
   luts?: LutFile[];
+  /** Nested timelines that compound clips play (ADR-037). Absent = none. */
+  compounds?: Compound[];
   createdAt: number;
   updatedAt: number;
 }
@@ -95,6 +97,19 @@ export interface Track {
   locked: boolean;
   /** Linear gain, 1 = 0 dB. */
   volume: number;
+}
+
+/** A nested timeline (CapCut's compound clip, Premiere's nested sequence):
+ * tracks and markers like the project's own, at the project's frame rate
+ * and canvas. Compound clips play it; editing it changes every one of them.
+ * Stored flat in Project.compounds, so a compound inside a compound is just
+ * a compound clip on one of these tracks (never, even indirectly, itself). */
+export interface Compound {
+  id: Id;
+  name: string;
+  /** Top to bottom, one main video track, as Project.tracks. */
+  tracks: Track[];
+  markers: Marker[];
 }
 
 export interface Marker {
@@ -395,13 +410,20 @@ export type AdjustmentClip = ClipBase &
     type: "adjustment";
   };
 
+/** Plays a compound (Project.compounds) the way a video clip plays a file:
+ * `in` is seconds into the inner timeline, `speed` its rate. Its visual and
+ * sound settings apply to the inner timeline's composited picture and mix.
+ * Speed curves, reverse and freeze are not supported on it yet. */
+export type CompoundClip = ClipBase & Visual & Sound & Omit<Timed, "assetId"> & { type: "compound"; compoundId: Id };
+
 export type Clip =
   | VideoClip
   | AudioClip
   | ImageClip
   | TextClip
   | ColorClip
-  | AdjustmentClip;
+  | AdjustmentClip
+  | CompoundClip;
 
 export type ClipType = Clip["type"];
 export type VisualClip = Exclude<Clip, AudioClip | AdjustmentClip>;

@@ -185,7 +185,8 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max), ...(clip.reverse && !clip.freeze ? { reverse: true as const } : {}) };
   } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
   else if (clip.type === "text") source = { kind: "text", clip };
-  else source = { kind: "color", color: clip.color };
+  else if (clip.type === "color") source = { kind: "color", color: clip.color };
+  else return null;
 
   const anim = animationAt(clip, r);
   const { adjust, tone } = resolveAdjust(clip, r);

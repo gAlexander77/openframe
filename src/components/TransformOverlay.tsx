@@ -9,7 +9,8 @@ import { store, useEditor } from "../state/store";
 /** Size of a clip's source in project pixels before transform, and whether
  * it fits to the canvas (media) or keeps its native size (text). */
 function sourceSize(p: Project, c: VisualClip): { w: number; h: number; native: boolean } {
-  if (c.type === "color") return { w: p.width, h: p.height, native: true };
+  // A compound clip's picture is its inner timeline, drawn at canvas size.
+  if (c.type === "color" || c.type === "compound") return { w: p.width, h: p.height, native: true };
   if (c.type === "text") {
     const r = rasterizeText(c, p.width, p.height);
     return { w: r.width, h: r.height, native: true };
