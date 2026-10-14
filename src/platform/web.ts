@@ -3,7 +3,7 @@
 // browser keeps per site and never uploads anywhere (ADR-003). A File read
 // back from OPFS is disk-backed, so a 4 GB video costs no memory.
 
-import { BlobSource, type StreamTargetChunk } from "mediabunny";
+import { BlobSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import type { Project } from "../lib/project/types";
 import type { ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";
 
@@ -71,7 +71,6 @@ export const web: Platform = {
 
   async sourceFor(src) {
     if (/^https?:/.test(src)) {
-      const { UrlSource } = await import("mediabunny");
       return new UrlSource(src);
     }
     return new BlobSource(await fileFor(src));
