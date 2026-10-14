@@ -4,6 +4,7 @@
 // a text or style change, or a new render size, re-rasterizes.
 
 import type { TextClip, TextStyle } from "../lib/project/types";
+import type { TextLayout } from "../lib/textBox";
 import type { SourceImage } from "./compositor";
 
 const FALLBACK_FONTS = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
@@ -26,13 +27,17 @@ function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: nu
   return lines;
 }
 
-const cache = new Map<string, SourceImage>();
+/** A text raster, and how its text was laid out (the on-canvas editor
+ * sits on it, ADR-030). */
+export type TextRaster = SourceImage & { layout: TextLayout };
+
+const cache = new Map<string, TextRaster>();
 
 /**
  * Rasterize a text clip for a canvas `width` x `height` render target.
  * Sizes in the style are pixels at a 1080-pixel-tall canvas.
  */
-export function rasterizeText(clip: TextClip, width: number, height: number): SourceImage {
+export function rasterizeText(clip: TextClip, width: number, height: number): TextRaster {
   const s: TextStyle = clip.style;
   const key = `text:${height}:${width}:${clip.text}:${JSON.stringify(s)}`;
   const hit = cache.get(key);
@@ -45,7 +50,8 @@ export function rasterizeText(clip: TextClip, width: number, height: number): So
   const font = `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px "${s.font}", ${FALLBACK_FONTS}`;
   ctx.font = font;
   ctx.letterSpacing = `${s.letterSpacing * k}px`;
-  const lines = wrap(ctx, clip.text || " ", s.maxWidth * width);
+  const wrapWidth = s.maxWidth * width;
+  const lines = wrap(ctx, clip.text || " ", wrapWidth);
   const lineH = size * s.lineHeight;
   const textW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
   const stroke = s.stroke && s.stroke.width > 0 ? s.stroke.width * k : 0;
@@ -54,6 +60,12 @@ export function rasterizeText(clip: TextClip, width: number, height: number): So
   const pad = Math.ceil(stroke + shadow + bgPad + 2);
   const w = Math.ceil(textW + pad * 2);
   const h = Math.ceil(lineH * lines.length + pad * 2);
+  // "middle" puts the em box's center on the line's center; CSS puts the
+  // center of the font's ascent plus descent there instead.
+  const font0 = ctx.measureText("");
+  ctx.textBaseline = "middle";
+  const aboveMiddle = font0.fontBoundingBoxAscent - ctx.measureText("").fontBoundingBoxAscent;
+  const baselineShift = aboveMiddle - (font0.fontBoundingBoxAscent - font0.fontBoundingBoxDescent) / 2;
   canvas.width = w;
   canvas.height = h;
   // Resizing a canvas resets its state.
@@ -95,7 +107,8 @@ export function rasterizeText(clip: TextClip, width: number, height: number): So
     }
   });
 
-  const out: SourceImage = { image: canvas, width: w, height: h, rotation: 0, native: true, key };
+  const layout = { width: w, height: h, pad, textWidth: textW, wrapWidth, size, lineHeight: lineH, letterSpacing: s.letterSpacing * k, baselineShift };
+  const out: TextRaster = { image: canvas, width: w, height: h, rotation: 0, native: true, key, layout };
   cache.set(key, out);
   // ponytail: FIFO cap; an LRU only matters with hundreds of live titles.
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
