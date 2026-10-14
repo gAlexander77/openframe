@@ -90,6 +90,12 @@ A narrative log of each build round with its intent, for archaeology that
   order, plus waveform, parade, vectorscope and histogram scopes, proven
   against a CPU reference on color bars by `scripts/drive/color.js`
   ([[ADR-020 The grade lives in adjust, in Lumetri's order]] to ADR-022).
+- **Stickers, templates and truthful previews** — about 140 local
+  stickers rendered to PNG image assets, 16 word-art looks and 12 animated
+  title templates built from ordinary clips, and library cards drawn by
+  the real compositor — which showed that every wipe ran backwards
+  ([[ADR-025 Stickers and templates are ordinary clips]],
+  [[ADR-026 Library previews are drawn by the engine]]).
 - **Keyframes you can shape** — CapCut's keyframe panel docked under the
   tracks on their time axis, draggable diamonds, easing presets stored as
   CSS beziers, a section keyframe, and `move_keyframe`,
@@ -137,6 +143,15 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **Previews built on the real pipeline are regression tests**: the
+  engine-drawn wipe cards exposed that all four wipes ran backwards.
+- **A fresh WebGL context compiles its shaders in the first render**
+  (~300 ms); compile ahead with `KHR_parallel_shader_compile`. Reading back
+  or uploading a GPU-backed 2D canvas stalls ~70 ms; `willReadFrequently`
+  keeps it on the CPU.
+- **CSS `steps(n, jump-none)` shows n positions including both ends**, so
+  the step count must equal the frame count. **`Path2D` compound fills**
+  need every part wound the same way, or the overlap comes out empty.
 - **A `sampler3D` may never share a texture unit with a `sampler2D`** in
   WebGL2: pin every sampler to its own unit and bind 1x1 stand-ins when a
   grade part is off.

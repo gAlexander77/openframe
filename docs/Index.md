@@ -84,6 +84,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   the tracks' zoom and scroll; lanes plus a value graph
 - [[ADR-024 Keyframes are selected by path and frame, and keys come first]]
   — no ids in the format; Delete, Copy and Paste act on keys before clips
+- [[ADR-025 Stickers and templates are ordinary clips]] — rendered PNG
+  assets and stacks of clips; no new clip type
+- [[ADR-026 Library previews are drawn by the engine]] — an offscreen
+  compositor, lazy and cached; cannot drift from the renderer
 - [[ADR-029 Headless rendering reuses the app]] — `--render project.json
   --out file`, JSON-line progress, exit codes
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven

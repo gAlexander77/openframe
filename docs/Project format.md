@@ -48,7 +48,8 @@ Everything not given gets its default. This is a complete file:
 Project { schema: 1, id, name, width, height, fps, sampleRate, background,
           assets: Asset[], tracks: Track[], markers: Marker[], luts?: LutFile[] }
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
-          width?, height?, fps?, hasVideo, hasAudio, rotation? }
+          width?, height?, fps?, hasVideo, hasAudio, rotation?,
+          sticker? }   (sticker: the library sticker an image was drawn from)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
           muted, hidden, locked, volume }

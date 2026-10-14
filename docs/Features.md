@@ -122,6 +122,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations.
+- **Word art**: 16 looks (neon, retro, comic, hollow, gold, fire, frost,
+  candy, die-cut, chromatic, typewriter, highlight...) from fill, stroke,
+  shadow and box combinations. Click with text selected (or drop on a
+  text clip) to restyle it, keeping its words, size and layout.
+- **Templates**: 12 animated title designs — name and title, name tag,
+  subscribe callout, chapter title, quote card, countdown, location tag,
+  big opener, news banner, social handle, end card, link in bio — built
+  from text and box layers with staggered in/out/loop animations, each
+  layer its own clip ([[ADR-025 Stickers and templates are ordinary
+  clips]]). Agents: `add_text_template` (with replacement words) and
+  `apply_word_art`.
+- New text lands above everything showing at that time.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks; caption list editing; apply style to all; SRT/VTT import and
@@ -147,6 +159,33 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   transitions, speed, titles and markers for DaVinci Resolve, Premiere's
   OTIO plugin and other editors
   ([[ADR-034 Timelines leave as OpenTimelineIO]]).
+## Library
+
+- CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
+  Captions, Filters, Adjustment, with category sub-navigation.
+- **Previews drawn by the engine**: filter, effect, transition and text
+  cards show the real shaders and text rasterizer on a generated sample
+  shot, or on the selected clip's own frame; effects, transitions and
+  titles play a loop on hover (a still under reduced motion). Rendered
+  lazily for visible cards, one at a time, cached
+  ([[ADR-026 Library previews are drawn by the engine]]).
+
+## Stickers
+
+- **A local sticker library**: about 140 stickers in ten categories with
+  search — emoji drawn from the system's color emoji font, and original
+  graphics drawn in code (curved and scribble arrows, marker circles,
+  underlines, highlighter, bubbles, comic bursts, subscribe/like/follow
+  style badges, stars, hearts, checks). Nothing is downloaded.
+- Click + or drag onto the timeline: the sticker lands above everything
+  at that time at about a third of the frame, with a pop-in and a gentle
+  loop (the tab's motion menu; per viewer). It is an ordinary image clip,
+  so transform, blend, masks and animations all apply
+  ([[ADR-025 Stickers and templates are ordinary clips]]).
+- Rendered once to a PNG asset per project; adding the same sticker again
+  reuses it, and stickers stay out of the Media tab.
+- Agents: `add_sticker` by id, label or the emoji itself, with position,
+  scale, duration and motion; `window.videoEditor.stickers()` lists them.
 
 ## Keyboard
 

@@ -26,6 +26,8 @@ import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
 import type { Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
+import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
+import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -631,6 +633,78 @@ export const COMMANDS: Command[] = [
       return editGrade(p, a.clip_id, (adj) =>
         withPart(adj, "lut", a.lut_id === "none" ? undefined : { id: String(a.lut_id), intensity: Number(a.intensity ?? (adj.lut?.id === a.lut_id ? adj.lut!.intensity : 1)) }),
       );
+    },
+  },
+  {
+    name: "add_sticker",
+    description:
+      "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it.",
+    input: S.obj(
+      {
+        name: S.str("Sticker id, label or emoji"),
+        start: S.num("Seconds", { minimum: 0 }),
+        duration: S.num("Seconds; default 3", { minimum: 0.04 }),
+        x: S.num("Horizontal offset from center, -0.5..0.5"),
+        y: S.num("Vertical offset from center, -0.5..0.5"),
+        scale: S.num("1 = fit the canvas; default 0.3", { minimum: 0.01 }),
+        motion: S.str("Entrance and loop animation", { enum: Object.keys(STICKER_MOTIONS) }),
+      },
+      ["name", "start"],
+    ),
+    run: (p, a) => {
+      const s = findSticker(String(a.name));
+      if (!s) {
+        const near = searchStickers(String(a.name)).slice(0, 8).map((x) => x.id);
+        throw new CommandError(`no sticker named ${a.name}${near.length ? `; close: ${near.join(", ")}` : ""}`);
+      }
+      // The picture is media the engine draws (ADR-006: that lives one layer
+      // up); automation adds the asset in the same undo step, then runs this.
+      const asset = p.assets.find((x) => x.sticker === s.id);
+      if (!asset) throw new CommandError(`sticker ${s.id} has no image in this project yet: run add_sticker through window.videoEditor.exec, which draws it first`);
+      const num = (v: unknown) => (v === undefined ? undefined : Number(v));
+      return addStickerClip(p, asset, {
+        start: f(p, a.start),
+        duration: a.duration === undefined ? undefined : Math.max(1, f(p, a.duration)),
+        motion: a.motion === undefined ? undefined : String(a.motion),
+        x: num(a.x),
+        y: num(a.y),
+        scale: num(a.scale),
+      }).project;
+    },
+  },
+  {
+    name: "add_text_template",
+    description: `Add a text template: a title design of text and box layers with in/out/loop animations, stacked above everything at that time. Templates: ${Object.entries(TEXT_TEMPLATES)
+      .filter(([, t]) => t.category === "Templates")
+      .map(([k]) => k)
+      .join(", ")}. Word art (one styled text): ${Object.entries(TEXT_TEMPLATES)
+      .filter(([, t]) => t.category === "Word art")
+      .map(([k]) => k)
+      .join(", ")}. texts replaces the template's words, text layers in order (bottom first).`,
+    input: S.obj({ name: S.str("Template key or label"), start: S.num("Seconds", { minimum: 0 }), texts: { type: "array", items: { type: "string" }, description: "Words for the text layers, in order" } }, ["name", "start"]),
+    run: (p, a) => {
+      const hit = findTemplate(String(a.name));
+      if (!hit) throw new CommandError(`no text template named ${a.name}`);
+      const texts = (a.texts ?? []) as string[];
+      let i = 0;
+      const t = { ...hit[1], layers: hit[1].layers.map((l) => (l.text !== undefined && i < texts.length ? { ...l, text: texts[i++] } : l)) };
+      return addTemplate(p, t, f(p, a.start)).project;
+    },
+  },
+  {
+    name: "apply_word_art",
+    description: "Restyle text clips with a word-art look (fill, stroke, shadow, box), keeping their words, size and position. name is a Word art key from add_text_template.",
+    input: S.obj({ clip_ids: S.ids("Text clips"), name: S.str("Word art key or label") }, ["clip_ids", "name"]),
+    run: (p, a) => {
+      const hit = findTemplate(String(a.name));
+      if (!hit || hit[1].category !== "Word art") throw new CommandError(`no word art named ${a.name}`);
+      for (const id of a.clip_ids as Id[]) {
+        p = ops.updateClip(p, clipOrThrow(p, id).clip.id, (c) => {
+          if (c.type !== "text") throw new CommandError(`${id} is not a text clip`);
+          return { ...c, style: wordArtStyle(c.style, hit[1]) };
+        });
+      }
+      return p;
     },
   },
 ];

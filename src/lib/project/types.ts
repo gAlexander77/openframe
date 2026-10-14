@@ -64,6 +64,9 @@ export interface Asset {
   audioCodec?: string;
   /** Clockwise rotation from container metadata (phone footage). */
   rotation?: 0 | 90 | 180 | 270;
+  /** Library sticker this image was rendered from (src/lib/stickers.ts);
+   * adding that sticker again reuses this asset. */
+  sticker?: string;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */

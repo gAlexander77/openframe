@@ -12,18 +12,22 @@ import {
   Search,
   SlidersHorizontal,
   Sparkles,
+  Sticker,
   Type,
   Upload,
   WandSparkles,
 } from "../icons";
-import { EFFECTS, FILTERS, TRANSITIONS, type FilterDef } from "../lib/catalog";
+import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition, TEXT_PRESETS } from "../state/apply";
+import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
+import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
+import { EnginePreview } from "./EnginePreview";
+import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 
@@ -31,6 +35,7 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
   { id: "audio", label: "Audio", icon: Music },
   { id: "text", label: "Text", icon: Type },
+  { id: "stickers", label: "Stickers", icon: Sticker },
   { id: "effects", label: "Effects", icon: Sparkles },
   { id: "transitions", label: "Transitions", icon: Blend },
   { id: "captions", label: "Captions", icon: Captions },
@@ -61,6 +66,7 @@ export function LibraryPanel() {
         {tab === "media" && <MediaTab kind="visual" />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
+        {tab === "stickers" && <StickersTab />}
         {tab === "effects" && <EffectsTab />}
         {tab === "transitions" && <TransitionsTab />}
         {tab === "filters" && <FiltersTab />}
@@ -84,7 +90,8 @@ function MediaTab({ kind }: { kind: "visual" | "audio" }) {
   const [q, setQ] = useState("");
   useThumbs();
   const used = useMemo(() => new Set(tracks.flatMap((t) => t.clips.map((c) => ("assetId" in c ? c.assetId : "")))), [tracks]);
-  const list = assets.filter((a) => (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
+  // Stickers live in their own tab, as in CapCut, not among imported media.
+  const list = assets.filter((a) => !a.sticker && (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="lib-content">
@@ -173,6 +180,8 @@ function CatalogTab<T extends { category: string; label: string }>(props: {
   defs: Record<string, T>;
   hint: string;
   render: (key: string, def: T) => React.ReactNode;
+  /** Grid class per category (default: small square cards). */
+  grid?: (category: string) => string;
 }) {
   const [cat, setCat] = useState<string | null>(null);
   const groups = grouped(props.defs);
@@ -190,10 +199,10 @@ function CatalogTab<T extends { category: string; label: string }>(props: {
       <div className="lib-content">
         <p className="lib-hint">{props.hint}</p>
         {shown.map(([c, items]) => (
-          <div key={c}>
+          <section key={c} className="lib-section">
             <h4 className="lib-group">{c}</h4>
-            <div className="card-grid small">{items.map(([k, d]) => props.render(k, d))}</div>
-          </div>
+            <div className={props.grid?.(c) ?? "card-grid small"}>{items.map(([k, d]) => props.render(k, d))}</div>
+          </section>
         ))}
       </div>
     </div>
@@ -211,7 +220,7 @@ function EffectsTab() {
           label={d.label}
           payload={{ kind: "effect", type: k, label: d.label }}
           onAdd={() => applyEffect(k)}
-          preview={<div className={`fx-preview fx-${k}`}><Sparkles size={18} strokeWidth={1.4} /></div>}
+          preview={<EnginePreview spec={{ kind: "effect", type: k }} />}
         />
       )}
     />
@@ -229,29 +238,11 @@ function TransitionsTab() {
           label={d.label}
           payload={{ kind: "transition", type: k, label: d.label }}
           onAdd={() => applyTransition(k)}
-          preview={
-            <div className={`tr-preview tr-${d.category.toLowerCase()} tr-${k}`}>
-              <div className="tr-a" />
-              <div className="tr-b" />
-            </div>
-          }
+          preview={<EnginePreview spec={{ kind: "transition", type: k }} />}
         />
       )}
     />
   );
-}
-
-/** A CSS approximation of a look, for the card preview only. */
-function cssLook(f: FilterDef): string {
-  const a = f.adjust;
-  const parts = [
-    `saturate(${Math.max(0, 1 + (a.saturation ?? 0) / 100 + (a.vibrance ?? 0) / 200)})`,
-    `contrast(${1 + (a.contrast ?? 0) / 100 - (a.fade ?? 0) / 300})`,
-    `brightness(${1 + ((a.exposure ?? 0) + (a.brightness ?? 0)) / 150})`,
-  ];
-  if (a.temperature) parts.push(`sepia(${Math.max(0, a.temperature / 120)})`, `hue-rotate(${a.temperature < 0 ? 180 + a.temperature / 2 : 0}deg)`);
-  if (a.tint) parts.push(`hue-rotate(${a.tint / 3}deg)`);
-  return parts.join(" ");
 }
 
 function FiltersTab() {
@@ -265,46 +256,52 @@ function FiltersTab() {
           label={d.label}
           payload={{ kind: "filter", type: k, label: d.label }}
           onAdd={() => applyFilter(k)}
-          preview={<div className="filter-preview" style={{ filter: cssLook(d) }} />}
+          preview={<EnginePreview spec={{ kind: "filter", type: k }} />}
         />
       )}
     />
   );
 }
 
+const PREVIEW_FPS = { num: 30, den: 1 };
+
+/** Basic presets add a text clip; word art and templates come from
+ * src/lib/templates.ts. Each card's preview renders the exact clips it adds. */
 function TextTab() {
-  const defs = Object.fromEntries(Object.entries(TEXT_PRESETS).map(([k, v]) => [k, { ...v, category: "Text" }]));
+  const defs: Record<string, { category: string; label: string }> = {
+    ...Object.fromEntries(Object.entries(TEXT_PRESETS).map(([k, v]) => [`preset:${k}`, { category: "Basic", label: v.label }])),
+    ...Object.fromEntries(Object.entries(TEXT_TEMPLATES).map(([k, v]) => [`template:${k}`, { category: v.category, label: v.label }])),
+  };
   return (
     <CatalogTab
       defs={defs}
-      hint="Click + to add at the playhead, or drag onto the timeline."
-      render={(k, d) => (
-        <CatalogCard
-          key={k}
-          label={d.label}
-          payload={{ kind: "text", preset: k, label: d.label }}
-          onAdd={() => addTextPreset(k)}
-          preview={
-            <div className="text-preview">
-              <span
-                style={{
-                  color: d.style.color ?? "#fff",
-                  fontWeight: d.style.bold === false ? 400 : 700,
-                  fontStyle: d.style.italic ? "italic" : undefined,
-                  fontFamily: d.style.font,
-                  WebkitTextStroke: d.style.stroke ? `1px ${d.style.stroke.color}` : undefined,
-                  textShadow: d.style.shadow ? `0 0 8px ${d.style.shadow.color}` : undefined,
-                  background: d.style.background?.color,
-                  padding: d.style.background ? "1px 6px" : undefined,
-                  borderRadius: d.style.background ? Math.min(d.style.background.radius, 10) : undefined,
-                }}
-              >
-                {d.text.length > 12 ? d.label : d.text}
-              </span>
-            </div>
-          }
-        />
-      )}
+      hint="Click + to add at the playhead, or drag onto the timeline. Word art restyles the selected text."
+      grid={(c) => (c === "Templates" ? "card-grid wide" : "card-grid small")}
+      render={(id, d) => {
+        const [kind, k] = id.split(":");
+        if (kind === "preset") {
+          return (
+            <CatalogCard
+              key={id}
+              label={d.label}
+              payload={{ kind: "text", preset: k, label: d.label }}
+              onAdd={() => addTextPreset(k)}
+              preview={<EnginePreview spec={{ kind: "text", id, clips: [presetClip(TEXT_PRESETS[k], 0, PREVIEW_FPS)], scene: false }} />}
+            />
+          );
+        }
+        const t = TEXT_TEMPLATES[k];
+        const titles = t.category === "Templates";
+        return (
+          <CatalogCard
+            key={id}
+            label={d.label}
+            payload={{ kind: "template", id: k, label: d.label }}
+            onAdd={() => applyTemplate(k)}
+            preview={<EnginePreview spec={{ kind: "text", id, clips: templateClips(t, 0, PREVIEW_FPS), scene: titles }} shape={titles ? "wide" : "square"} />}
+          />
+        );
+      }}
     />
   );
 }
