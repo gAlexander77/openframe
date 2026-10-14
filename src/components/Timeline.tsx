@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Blend, Eye, EyeOff, Film, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
-import { createTrack, uid } from "../lib/project/defaults";
+import { clipForAsset, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
-import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
+import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight, visualDrop } from "../lib/timeline";
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit, provide, settleOptions } from "../state/actions";
@@ -71,7 +71,9 @@ export function Timeline() {
   const [view, setView] = useState({ left: 0, width: 1000 });
   const [snapLine, setSnapLine] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [drop, setDrop] = useState<{ frame: number; row: number; label: string; clipId?: Id; width: number } | null>(null);
+  /** The library drop preview: where it lands (row -1: a new top track),
+   * whether it lands on a clip, or inserts at a cut on the main track. */
+  const [drop, setDrop] = useState<{ frame: number; row: number; label: string; clipId?: Id; width: number; insert: boolean } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -407,13 +409,16 @@ export function Timeline() {
           if (!d) return setDrop(null);
           const s = store.get();
           const { rows: rs } = layoutRows(s.project);
-          const frame = Math.max(0, Math.round(frameAtX(d.x)));
-          const row = rowAtY(d.y, rs);
-          const track = rs[row]?.track;
-          const clip = track?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
+          let frame = Math.max(0, Math.round(frameAtX(d.x)));
+          let row = rowAtY(d.y, rs);
+          let insert = false;
           const p = d.payload;
-          const width = p.kind === "asset" ? Math.max(1, (p.asset.kind === "image" ? 5 : p.asset.duration) * fpsN) : 3 * fpsN;
-          setDrop({ frame, row, label: p.kind === "asset" ? p.asset.name : p.label, clipId: clip?.id, width });
+          // Video and images preview where they will really land: a new
+          // overlay track above, or the cut the magnet inserts at (UX-12, UX-13).
+          if (p.kind === "asset" && p.asset.kind !== "audio") ({ row, frame, insert } = visualDrop(s.project.tracks, row, frame, s.magnet));
+          const clip = insert ? undefined : rs[row]?.track.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
+          const width = p.kind === "asset" ? clipForAsset(p.asset, 0, s.project.fps).duration : 3 * fpsN;
+          setDrop({ frame, row, label: p.kind === "asset" ? p.asset.name : p.label, clipId: clip?.id, width, insert });
         },
         drop: (d: DragState) => {
           const s = store.get();
@@ -423,9 +428,11 @@ export function Timeline() {
           const track = rs[row]?.track;
           const clip = track?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
           const p = d.payload;
-          if (p.kind === "asset") {
-            const fits = track && (track.kind === "audio") === (p.asset.kind === "audio") && !track.locked;
-            addToTimeline(p.asset, frame, fits ? track.id : undefined);
+          if (p.kind === "asset" && p.asset.kind === "audio") {
+            addToTimeline(p.asset, frame, track?.kind === "audio" && !track.locked ? track.id : undefined);
+          } else if (p.kind === "asset") {
+            const to = visualDrop(s.project.tracks, row, frame, s.magnet);
+            addToTimeline(p.asset, to.frame, to.row < 0 ? "overlay" : s.project.tracks[to.row].id);
           } else if (p.kind === "text") addTextPreset(p.preset, frame);
           else if (p.kind === "sticker") void addSticker(p.id, frame);
           else if (p.kind === "template") applyTemplate(p.id, frame, clip?.type === "text" ? clip.id : undefined);

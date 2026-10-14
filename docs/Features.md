@@ -40,6 +40,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
+- Library drags land where the preview shows, by CapCut's rules: video and
+  images dropped above the tracks become a picture-in-picture overlay on a
+  new track at the drop time; on the magnetic main track they insert at
+  the nearest cut, never splitting a shot.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
 - Pro trim tools: ripple (T), roll (R), slip (Y) and slide (U), with
   readouts of what moves while dragging.

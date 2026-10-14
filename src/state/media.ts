@@ -6,6 +6,7 @@ import { prepare } from "../engine/thumbs";
 import { clipForAsset, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Asset, Clip, Id, Project } from "../lib/project/types";
+import { nearestCut } from "../lib/timeline";
 import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
 import { edit, provide } from "./actions";
@@ -117,13 +118,15 @@ function adoptSettings(p: Project, a: Asset): Project {
  * Video and images go on the main track at the playhead — with the magnet
  * on, at the nearest cut, since CapCut never overwrites the main track —
  * and audio goes on the first audio track with room, or a new one.
+ * `trackId` "overlay" puts video or an image on a new top track instead:
+ * CapCut's picture-in-picture, made by dropping above the tracks.
  */
-export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
+export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay"): Id {
   let id = "";
   edit(`Add ${asset.name}`, (p0) => {
     let p = adoptSettings(p0, asset);
     const s = store.get();
-    let start = at ?? s.playhead;
+    const start = at ?? s.playhead;
     let clip: Clip = clipForAsset(asset, start, p.fps);
     id = clip.id;
     if (asset.kind === "audio") {
@@ -134,13 +137,15 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
       }
       return ops.placeClip(p, track.id, clip, { collision: "newTrack" });
     }
+    if (trackId === "overlay") {
+      const t = createTrack("video", "Overlay");
+      return ops.addClip(ops.addTrack(p, t, 0), t.id, clip);
+    }
     const target = trackId ? ops.findTrack(p, trackId) : ops.mainTrack(p);
     if (!target || target.kind !== "video") return p;
     if (target.main && s.magnet) {
       // Snap to the nearest cut so nothing is split by an insert.
-      const cuts = [0, ...target.clips.map((c) => c.start + c.duration)];
-      start = cuts.reduce((b, x) => (Math.abs(x - start) < Math.abs(b - start) ? x : b), cuts[cuts.length - 1]);
-      clip = { ...clip, start };
+      clip = { ...clip, start: nearestCut(target, start) };
       return ops.addClip(p, target.id, clip, "insert");
     }
     return ops.placeClip(p, target.id, clip, { collision: "newTrack" });

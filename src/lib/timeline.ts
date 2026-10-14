@@ -85,6 +85,35 @@ export function trackHeight(t: Track): number {
   return hasMedia || t.clips.length === 0 ? 56 : 34;
 }
 
+/** The cut nearest `frame` on a track (0 or a clip's end), earlier on a
+ * tie: where an insert on the magnetic main track lands, since CapCut
+ * never splits or overwrites a main clip to make room (§2.8). */
+export function nearestCut(t: Track, frame: number): number {
+  let best = 0;
+  for (const c of t.clips) {
+    const end = c.start + c.duration;
+    if (Math.abs(end - frame) < Math.abs(best - frame)) best = end;
+  }
+  return best;
+}
+
+/**
+ * Where a video or image dropped on track `row` at `frame` lands (CapCut
+ * §2.8), so the drop preview shows what the drop will do. Above the top
+ * track (row -1), a new overlay track at the drop time — once the main
+ * track has something to overlay; on an unlocked video track, that track;
+ * anywhere else, the main track, where the magnet inserts at the nearest
+ * cut. `row` indexes `tracks`; a result row of -1 means a new top track.
+ */
+export function visualDrop(tracks: Track[], row: number, frame: number, magnet: boolean): { row: number; frame: number; insert: boolean } {
+  const main = tracks.findIndex((t) => t.main);
+  if (row < 0 && tracks[main].clips.length) return { row: -1, frame, insert: false };
+  const t = tracks[row];
+  const at = t && t.kind === "video" && !t.locked ? row : main;
+  if (at === main && magnet) return { row: at, frame: nearestCut(tracks[at], frame), insert: true };
+  return { row: at, frame, insert: false };
+}
+
 /** A zoom that fits `frames` into `width` px, with breathing room at the
  * end, clamped to the zoom range. */
 export function fitZoom(frames: number, width: number, fps: Rational): number {
