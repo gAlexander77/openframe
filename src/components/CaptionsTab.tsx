@@ -97,10 +97,12 @@ export function CaptionsTab() {
             </button>
           </div>
         ) : (
-          <button className="btn primary cap-go" disabled={empty} onClick={() => void run()} data-tip={empty ? "Add a clip with speech to the timeline first" : undefined}>
+          <button className="btn primary cap-go" disabled={empty} onClick={() => void run()}>
             <Captions size={15} /> Generate captions
           </button>
         )}
+        {/* Said in the card, not a tooltip: a disabled button gets no hover. */}
+        {empty && !busy && <p className="lib-hint">Add a clip with speech to the timeline first.</p>}
         <p className="lib-hint">The first run downloads the speech model ({chosen.size}); after that it works offline.</p>
       </div>
 
