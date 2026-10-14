@@ -47,19 +47,21 @@ export default function App() {
     }
   }, [layout]);
 
-  useEffect(() => {
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   const resize = (k: keyof Layout, d: number, lo: number, hi: number) =>
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
 
   const { screen, saveState } = useSession();
   const [shortcuts, setShortcuts] = useState(false);
   useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
-  // ponytail: key handling is global; editor actions are harmless on the
-  // home screen (no project), so no per-screen keymap yet.
+
+  // Shortcuts act on the open project, so they listen only while the
+  // editor is on screen: on Home the store still holds the project just
+  // closed, and the play key played its sound from nowhere.
+  useEffect(() => {
+    if (screen !== "editor") return;
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen]);
 
   // Files dropped anywhere but the timeline import into the library
   // (the timeline's own drop also places them). Web build only: on the
