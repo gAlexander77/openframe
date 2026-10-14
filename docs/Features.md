@@ -52,6 +52,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Playback on the audio clock with output-latency compensation; J/K/L
   shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
+- **Scopes** (Player header or View menu): luma waveform, RGB parade,
+  vectorscope with 75% targets and the skin-tone line, and histogram, of
+  the graded output; live while paused, 8 updates a second while playing
+  ([[ADR-022 Scopes bin a GPU-downscaled readback on the CPU]]).
 
 ## Inspector
 

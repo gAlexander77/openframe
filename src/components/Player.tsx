@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player, topClipAt } from "../engine/player";
-import { ChevronLeft, ChevronRight, Maximize2, Pause, Play } from "../icons";
+import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play } from "../icons";
 import { chordText } from "../lib/keymap";
 import { projectDuration } from "../lib/project/ops";
 import { formatTimecode } from "../lib/time";
@@ -64,6 +64,7 @@ export function PlayerPanel() {
     <section className="panel player-panel" aria-label="Player" ref={panelRef}>
       <header className="panel-head">
         <span className="panel-title">Player</span>
+        <ScopesToggle />
       </header>
       <div
         className="player-stage"
@@ -84,6 +85,21 @@ export function PlayerPanel() {
       </div>
       <Transport />
     </section>
+  );
+}
+
+function ScopesToggle() {
+  const on = useEditor((s) => s.scopes);
+  return (
+    <button
+      className={`icon-btn small player-scopes${on ? " on" : ""}`}
+      aria-label="Scopes"
+      aria-pressed={on}
+      data-tip={on ? "Hide scopes" : "Scopes: waveform, parade, vectorscope, histogram"}
+      onClick={() => store.set({ scopes: !on })}
+    >
+      <Activity size={14} />
+    </button>
   );
 }
 

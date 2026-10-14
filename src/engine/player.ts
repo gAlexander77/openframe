@@ -166,11 +166,20 @@ export class Player {
     while (this.rendering || this.wanted !== null) await new Promise((r) => setTimeout(r, 16));
   }
 
-  /** What the viewer shows, as { width, height, data } (RGBA, top row first). */
-  pixels() {
+  /** What the viewer shows, as { width, height, data } (RGBA, top row
+   * first); with `maxWidth`, scaled down on the GPU first (scopes). */
+  pixels(maxWidth?: number) {
     const c = this.compositor;
     if (!c) return null;
+    if (maxWidth) return c.readPixelsScaled(maxWidth);
     return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+  }
+
+  private frameListeners = new Set<() => void>();
+  /** Called after every frame the viewer draws, paused or playing. */
+  onFrame(fn: () => void): () => void {
+    this.frameListeners.add(fn);
+    return () => this.frameListeners.delete(fn);
   }
 
   private renderSize(p: Project, scale: number) {
@@ -234,6 +243,7 @@ export class Player {
     } catch (e) {
       console.error("render failed", e);
     }
+    for (const fn of this.frameListeners) fn();
     if (this.drawn.frame >= 0 && this.rate > 0 && f > this.drawn.frame + 1) this.drawn.dropped += f - this.drawn.frame - 1;
     this.drawn.frame = f;
     this.pool.sweep(4000);

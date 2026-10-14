@@ -78,6 +78,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { label: "Preview at 1/2 resolution", checked: s().previewScale === 0.5, onSelect: () => store.set({ previewScale: 0.5 }) },
         { label: "Preview at 1/4 resolution", checked: s().previewScale === 0.25, onSelect: () => store.set({ previewScale: 0.25 }) },
         "-",
+        { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
         { action: "fullscreenPreview" },
       ],
     },

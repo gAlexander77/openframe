@@ -39,7 +39,7 @@ export const automation = {
   /** Resolves once the viewer has drawn the current frame. */
   rendered: () => player.idle(),
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */
-  pixels: () => player.pixels(),
+  pixels: (maxWidth?: number) => player.pixels(maxWidth),
   platform: () => platform.kind,
 };
 

@@ -4,6 +4,7 @@ import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { DragGhost, Toasts } from "./components/Overlays";
 import { PlayerPanel } from "./components/Player";
+import { ScopesPanel } from "./components/Scopes";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
 import { Splitter } from "./components/Splitter";
 import { Timeline } from "./components/Timeline";
@@ -13,6 +14,7 @@ import { platform } from "./platform";
 import { onKeyDown, provide } from "./state/actions";
 import { importFiles } from "./state/media";
 import { useSession } from "./state/project";
+import { useEditor } from "./state/store";
 import "./components/shell.css";
 
 interface Layout {
@@ -56,6 +58,9 @@ export default function App() {
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
 
   const { screen, saveState } = useSession();
+  // Scopes take the library's place, as Premiere's Color workspace puts
+  // Lumetri Scopes where the Source monitor was.
+  const scopes = useEditor((s) => s.scopes);
   const [shortcuts, setShortcuts] = useState(false);
   useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
   // ponytail: key handling is global; editor actions are harmless on the
@@ -100,7 +105,7 @@ export default function App() {
           className="top-row"
           style={{ gridTemplateColumns: `${layout.left}px var(--gap) minmax(320px, 1fr) var(--gap) ${layout.right}px` }}
         >
-          <LibraryPanel />
+          {scopes ? <ScopesPanel /> : <LibraryPanel />}
           <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />
           <PlayerPanel />
           <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => setLayout((l) => ({ ...l, right: DEFAULT_LAYOUT.right }))} />

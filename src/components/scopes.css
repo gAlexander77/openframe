@@ -1,0 +1,36 @@
+/* The Scopes panel: waveform, parade, vectorscope, histogram. Scope faces
+   are near-black and neutral so traces read true, as in Resolve. */
+.scopes-panel { display: grid; grid-template-rows: 34px 1fr; overflow: hidden; animation: fade-in var(--t-med) ease-out; }
+.scopes-head { gap: 10px; }
+.scopes-head .segmented button { padding: 0 7px; }
+.scopes-close { margin-left: auto; }
+
+.scopes-body { display: grid; gap: 6px; min-height: 0; padding: 8px; }
+.scopes-body.mode-all { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+.scopes-body.mode-one { grid-template: 1fr / 1fr; }
+
+.scope {
+  display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; margin: 0;
+  border-radius: var(--radius-sm); background: #0b0b0b;
+  box-shadow: inset 0 0 0 1px var(--line);
+  animation: pop-in var(--t-med) var(--ease-out);
+}
+.scope figcaption { padding: 2px 8px 5px; font-size: 10.5px; color: var(--text-3); }
+.scope-plot { position: relative; min-width: 0; min-height: 0; margin: 8px 8px 2px 26px; container-type: size; }
+.scope-plot > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.scope-histogram .scope-plot { margin-left: 8px; }
+
+/* level scale beside waveform and parade, in percent of full range */
+.scope-scale { position: absolute; top: 0; bottom: 0; left: -24px; width: 20px; pointer-events: none; }
+.scope-scale span { position: absolute; right: 0; transform: translateY(-50%); font-size: 9px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* the vectorscope stays square, as large as its cell allows */
+.scope-vectorscope .scope-plot { margin-left: 8px; display: grid; place-items: center; }
+.vector-square { position: relative; width: min(100cqw, 100cqh); height: min(100cqw, 100cqh); }
+/* inset so the target labels outside the 100% points stay in the cell */
+.vector-face { position: absolute; inset: 7%; }
+.vector-face canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 50%; }
+.vector-label {
+  position: absolute; transform: translate(-50%, -50%) translate(var(--dx, 0), var(--dy, 0));
+  font-size: 9px; font-weight: 600; color: rgb(255 255 255 / 55%); pointer-events: none;
+}

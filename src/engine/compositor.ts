@@ -56,6 +56,20 @@ interface Target {
 
 const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4 } as const;
 
+/** GL reads rows bottom-up; flip them to top-down in place. */
+function flipRows(out: Uint8Array, width: number, height: number): Uint8Array {
+  const row = width * 4;
+  const tmp = new Uint8Array(row);
+  for (let y = 0; y < height / 2; y++) {
+    const a = y * row;
+    const b = (height - 1 - y) * row;
+    tmp.set(out.subarray(a, a + row));
+    out.copyWithin(a, b, b + row);
+    out.set(tmp, b);
+  }
+  return out;
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h.padEnd(6, "0");
@@ -81,6 +95,8 @@ export class Compositor {
   private blank3d: WebGLTexture | null = null;
   /** LUT tables on the GPU by source, with the parsed table they came from. */
   private lutTextures = new Map<string, { lut: Lut; tex: WebGLTexture; width: number }>();
+  /** Small target for scaled readbacks (scopes). */
+  private small: { fb: WebGLFramebuffer; rb: WebGLRenderbuffer; w: number; h: number } | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
     const gl = canvas.getContext("webgl2", {
@@ -561,17 +577,38 @@ export class Compositor {
     const out = new Uint8Array(this.width * this.height * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, out);
-    // GL rows are bottom-up; flip to top-down.
-    const row = this.width * 4;
-    const tmp = new Uint8Array(row);
-    for (let y = 0; y < this.height / 2; y++) {
-      const a = y * row;
-      const b = (this.height - 1 - y) * row;
-      tmp.set(out.subarray(a, a + row));
-      out.copyWithin(a, b, b + row);
-      out.set(tmp, b);
+    return flipRows(out, this.width, this.height);
+  }
+
+  /** The presented frame scaled down on the GPU to at most `maxWidth`
+   * pixels wide, then read back (rows top first). For scopes: reading a
+   * 320-pixel frame stalls the GPU for a fraction of a full-size read. */
+  readPixelsScaled(maxWidth: number): { width: number; height: number; data: Uint8Array } {
+    if (maxWidth >= this.width) return { width: this.width, height: this.height, data: this.readPixels() };
+    const gl = this.gl;
+    const w = Math.max(1, Math.round(maxWidth));
+    const h = Math.max(1, Math.round((this.height * w) / this.width));
+    if (!this.small || this.small.w !== w || this.small.h !== h) {
+      if (this.small) {
+        gl.deleteFramebuffer(this.small.fb);
+        gl.deleteRenderbuffer(this.small.rb);
+      }
+      const rb = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h);
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+      this.small = { fb, rb, w, h };
     }
-    return out;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.small.fb);
+    gl.blitFramebuffer(0, 0, this.width, this.height, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.small.fb);
+    const out = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { width: w, height: h, data: flipRows(out, w, h) };
   }
 
   /** Forget a cached source texture (text changed, image removed). */
@@ -597,6 +634,11 @@ export class Compositor {
     this.blank2d = this.blank3d = null;
     this.curveTextures.clear();
     this.lutTextures.clear();
+    if (this.small) {
+      gl.deleteFramebuffer(this.small.fb);
+      gl.deleteRenderbuffer(this.small.rb);
+      this.small = null;
+    }
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.targets = [];
     this.sourceTextures.clear();
