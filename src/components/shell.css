@@ -84,7 +84,7 @@
   font-size: var(--fs-sm); text-align: left;
 }
 .menu-item:hover, .menu-item:focus-visible { background: var(--accent-soft); outline: none; }
-.menu-item:disabled { color: var(--text-3); pointer-events: none; }
+.menu-item:disabled { color: var(--text-disabled); pointer-events: none; }
 .menu-check { display: grid; place-items: center; color: var(--accent); }
 /* One line per item: a long undo name ("Undo Add <file>") wrapped and
    spilled over the next row. The menu caps its width so it ellipsizes. */
