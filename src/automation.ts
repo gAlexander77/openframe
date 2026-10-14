@@ -7,6 +7,7 @@ import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import type { ActionId } from "./lib/keymap";
 import { run } from "./state/actions";
+import { analyzeBeats, analyzeScenes, analyzeSilences, markBeats, removeSilences, splitScenes } from "./state/ai";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -37,6 +38,11 @@ export const automation = {
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */
   pixels: () => player.pixels(),
   platform: () => platform.kind,
+  /** Local analysis without editing; times are source seconds (ADR-017).
+   * Omit clipId to use the selected clip. */
+  analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
+  /** The AI tools: analyze, then apply as one undoable edit. */
+  ai: { removeSilences, splitScenes, markBeats },
 };
 
 declare global {
