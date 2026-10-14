@@ -81,12 +81,19 @@ export function beginDrag(e: React.PointerEvent, payload: DragPayload) {
   window.addEventListener("keydown", esc);
 }
 
+const subscribe = (l: () => void) => {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+};
+
 export function useDrag(): DragState | null {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => state,
-  );
+  return useSyncExternalStore(subscribe, () => state);
+}
+
+/** Whether a library drag is under way; re-renders only when it starts and
+ * ends, not on every pointer move. */
+export function useDragging(): boolean {
+  return useSyncExternalStore(subscribe, () => state !== null);
 }

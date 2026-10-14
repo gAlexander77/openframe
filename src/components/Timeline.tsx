@@ -8,7 +8,7 @@ import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition } from "../state/apply";
-import { registerDropZone, type DragState } from "../state/drag";
+import { registerDropZone, useDragging, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
 import { addSticker } from "../state/stickers";
 import { store, useEditor } from "../state/store";
@@ -74,6 +74,7 @@ export function Timeline() {
   /** The library drop preview: where it lands (row -1: a new top track),
    * whether it lands on a clip, or inserts at a cut on the main track. */
   const [drop, setDrop] = useState<{ frame: number; row: number; label: string; clipId?: Id; width: number; insert: boolean } | null>(null);
+  const dragging = useDragging();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -518,7 +519,7 @@ export function Timeline() {
     <section className="panel timeline-panel" aria-label="Timeline">
       <TimelineToolbar />
       <div
-        className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}`}
+        className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}${dragging ? " lib-drag" : ""}`}
         ref={scrollRef}
         onDragOver={(e) => {
           if ([...e.dataTransfer.types].includes("Files")) {
@@ -535,7 +536,7 @@ export function Timeline() {
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
           <div className="tl-corner" />
           <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown}>
-            {rows.map((row) => (
+            {rows.map((row, ri) => (
               <div key={row.track.id} className={`tl-row${row.track.main ? " main" : ""}`} style={{ top: row.top, height: row.height }}>
                 <div className="tl-lane" style={{ left: HEADER_W }}>
                   {row.track.clips.map((c) => {
@@ -555,6 +556,7 @@ export function Timeline() {
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
                         playheadRel={selected.has(c.id) ? playheadRel(c, playhead) : null}
+                        shift={drop?.insert && drop.row === ri && c.start >= drop.frame ? drop.width * zoom : undefined}
                         onDown={onClipDown}
                         onContext={onContext}
                       />
@@ -595,16 +597,21 @@ export function Timeline() {
             )}
             {drop && (
               <div
-                className={`tl-drop${drop.clipId ? " on-clip" : ""}`}
+                className={`tl-drop${drop.clipId ? " on-clip" : ""}${drop.insert ? " insert" : ""}${drop.row < 0 ? " new-track" : ""}`}
                 style={{
                   left: HEADER_W + drop.frame * zoom,
-                  width: Math.max(40, drop.width * zoom),
-                  top: drop.row < 0 ? -6 : rows[drop.row]?.top ?? rowsH,
-                  height: drop.row < 0 ? 4 : rows[drop.row]?.height ?? 40,
+                  // An insert fills exactly the gap the later clips open.
+                  width: Math.max(drop.insert ? 2 : 40, drop.width * zoom),
+                  // Above the tracks: a chip in the ruler band, where the pointer is.
+                  top: drop.row < 0 ? 4 - RULER_H : rows[drop.row]?.top ?? rowsH,
+                  height: drop.row < 0 ? RULER_H - 8 : rows[drop.row]?.height ?? 40,
                 }}
               >
                 <span>{drop.label}</span>
               </div>
+            )}
+            {drop?.insert && rows[drop.row] && (
+              <div className="tl-insert" style={{ left: HEADER_W + drop.frame * zoom, top: rows[drop.row].top - 3, height: rows[drop.row].height + 6 }} />
             )}
           </div>
           <MarkersLayer zoom={zoom} />
