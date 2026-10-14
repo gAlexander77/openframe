@@ -235,11 +235,20 @@ function targetsAtPlayhead(p: Project) {
   return picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
 }
 
-/** Global key handling. Typing in a field is left alone, except Escape. */
+/** Inputs whose keys are not text: a focused slider or swatch must not
+ * swallow play, shuttle and the other shortcuts, as CapCut's never do. */
+const NOT_TEXT = new Set(["range", "checkbox", "radio", "color", "button", "submit", "reset", "file"]);
+/** The keys a focused slider or dropdown uses itself. */
+const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+/** Global key handling. Typing in a text field is left alone, except
+ * Escape; sliders and dropdowns keep only the keys they move by. */
 export function onKeyDown(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null;
-  const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
+  const input = el instanceof HTMLInputElement ? el : null;
+  const typing = !!el && ((!!input && !NOT_TEXT.has(input.type)) || el.tagName === "TEXTAREA" || el.isContentEditable);
   if (typing && e.key !== "Escape") return;
+  if ((input?.type === "range" || el?.tagName === "SELECT") && CONTROL_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey) return;
   const id = index.get(chordOf(e, isMac));
   if (!id) return;
   e.preventDefault();
