@@ -48,6 +48,10 @@ function Tool(props: { id: ActionId; icon: React.ReactNode; on?: boolean; disabl
   );
 }
 
+/** The trim tools show their key letter on the picker, as Premiere's
+ * toolbar does, until they get drawn icons. */
+const TOOL_LETTER: Record<string, string> = { ripple: "T", roll: "R", slip: "Y", slide: "U" };
+
 // Zoom slider is logarithmic: equal travel = equal zoom ratio.
 const toSlider = (z: number) => Math.log(z / ZOOM_MIN) / Math.log(ZOOM_MAX / ZOOM_MIN);
 const fromSlider = (v: number) => clampZoom(ZOOM_MIN * (ZOOM_MAX / ZOOM_MIN) ** v);
@@ -89,10 +93,26 @@ export function TimelineToolbar() {
       <div className="tl-tools">
         <div className="tool-picker">
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tool === "blade" ? tipFor("toolBlade") : tipFor("toolSelect")} onClick={() => setToolMenu((v) => !v)}>
-            {tool === "blade" ? <Scissors /> : <MousePointer2 />}
+            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : <span className="tool-letter">{TOOL_LETTER[tool]}</span>}
             <ChevronDown size={11} />
           </button>
-          {toolMenu && <MenuList items={[{ action: "toolSelect", checked: tool === "select" }, { action: "toolBlade", checked: tool === "blade" }, "-", { action: "selectLeft" }, { action: "selectRight" }]} onDone={() => setToolMenu(false)} />}
+          {toolMenu && (
+            <MenuList
+              items={[
+                { action: "toolSelect", checked: tool === "select" },
+                { action: "toolBlade", checked: tool === "blade" },
+                "-",
+                { action: "toolRipple", checked: tool === "ripple" },
+                { action: "toolRoll", checked: tool === "roll" },
+                { action: "toolSlip", checked: tool === "slip" },
+                { action: "toolSlide", checked: tool === "slide" },
+                "-",
+                { action: "selectLeft" },
+                { action: "selectRight" },
+              ]}
+              onDone={() => setToolMenu(false)}
+            />
+          )}
         </div>
         <span className="tl-sep" />
         <Tool id="undo" icon={<Undo2 />} disabled={!undo} label={undo ? `Undo ${undo}` : "Undo"} />

@@ -140,6 +140,10 @@ provide({
 
   toolSelect: () => store.set({ tool: "select" }),
   toolBlade: () => store.set({ tool: "blade" }),
+  toolRipple: () => store.set({ tool: "ripple" }),
+  toolRoll: () => store.set({ tool: "roll" }),
+  toolSlip: () => store.set({ tool: "slip" }),
+  toolSlide: () => store.set({ tool: "slide" }),
   toggleSnapping: () => store.set({ snapping: !store.get().snapping }),
   toggleMagnet: () => {
     const on = !store.get().magnet;

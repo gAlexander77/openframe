@@ -10,7 +10,9 @@ import { createProject } from "../lib/project/defaults";
 import { projectDuration } from "../lib/project/ops";
 import type { Id, Project } from "../lib/project/types";
 
-export type Tool = "select" | "blade";
+/** select and blade are CapCut's; ripple, roll, slip and slide are the
+ * Premiere/VEGAS trim tools CapCut lacks. */
+export type Tool = "select" | "blade" | "ripple" | "roll" | "slip" | "slide";
 export type LeftTab =
   | "media"
   | "audio"

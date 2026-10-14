@@ -179,3 +179,17 @@
   padding: 2px 7px; border-radius: 4px; background: rgb(0 0 0 / 75%); color: #fff;
   font-size: 10.5px; pointer-events: none; white-space: nowrap;
 }
+
+/* trim tools: the cursor and handle color say what a drag will do */
+.tl-scroll.tool-slip .clip, .tl-scroll.tool-slide .clip { cursor: ew-resize; }
+.tl-scroll.tool-roll .trim, .tl-scroll.tool-ripple .trim { cursor: col-resize; opacity: 0.7; }
+.tl-scroll.tool-ripple .trim-start { border-left-color: var(--warn); }
+.tl-scroll.tool-ripple .trim-end { border-right-color: var(--warn); }
+.tl-scroll.tool-roll .trim-start, .tl-scroll.tool-roll .trim-end { border-color: var(--accent); }
+.tl-readout {
+  position: fixed; z-index: 300; padding: 4px 9px; border-radius: 6px;
+  background: rgb(0 0 0 / 82%); color: #fff; font-size: var(--fs-xs);
+  pointer-events: none; white-space: nowrap;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+}
+.tool-letter { font-size: 12px; font-weight: 700; width: 16px; text-align: center; }

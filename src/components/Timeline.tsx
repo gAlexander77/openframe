@@ -4,6 +4,7 @@ import { createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
 import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
+import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition } from "../state/apply";
@@ -39,7 +40,9 @@ type Gesture =
       /** Alt-drag: copies land at the drop spot, originals stay put. */
       dupIds: Map<Id, Id> | null;
     }
-  | { kind: "trim"; id: Id; edge: "start" | "end"; started: boolean; x0: number }
+  | { kind: "trim"; id: Id; edge: "start" | "end"; started: boolean; x0: number; mode: "trim" | "ripple" | "roll" }
+  | { kind: "slip"; id: Id; started: boolean; x0: number; y0: number }
+  | { kind: "slide"; id: Id; started: boolean; x0: number; y0: number }
   | { kind: "scrub" }
   | { kind: "marquee"; x0: number; y0: number; additive: boolean; base: Id[] };
 
@@ -68,6 +71,7 @@ export function Timeline() {
   const [drop, setDrop] = useState<{ frame: number; row: number; label: string; clipId?: Id; width: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [osDrop, setOsDrop] = useState(false);
+  const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
 
   const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project]);
   const duration = ops.projectDuration(project);
@@ -187,8 +191,11 @@ export function Timeline() {
         sel = sel.includes(clip.id) ? sel.filter((x) => x !== clip.id) : [...sel, clip.id];
       } else if (!sel.includes(clip.id)) sel = [clip.id];
       store.select(sel);
-      if (zone !== "body") {
-        gesture.current = { kind: "trim", id: clip.id, edge: zone, started: false, x0: e.clientX };
+      if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
+        gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
+      } else if (zone !== "body") {
+        const mode = s.tool === "ripple" ? "ripple" : s.tool === "roll" ? "roll" : "trim";
+        gesture.current = { kind: "trim", id: clip.id, edge: zone, started: false, x0: e.clientX, mode };
       } else {
         const { rows: rs } = layoutRows(s.project);
         const origin = new Map<Id, { row: number; start: number; duration: number }>();
@@ -246,6 +253,22 @@ export function Timeline() {
       store.beginGesture();
     }
     const opts = settleOptions();
+    if (g.kind === "slip" || g.kind === "slide") {
+      const d = Math.round((e.clientX - g.x0) / s.zoom);
+      // Premiere's slip: dragging right reveals earlier source (the source
+      // slides right under the clip's fixed window).
+      store.previewGesture((base) => ops.settle(base, g.kind === "slip" ? ops.slipClip(base, g.id, -d) : ops.slideClip(base, g.id, d), opts));
+      const c = ops.findClip(store.get().project, g.id)?.clip;
+      if (c) {
+        const fps = s.project.fps;
+        const text =
+          g.kind === "slip" && "in" in c
+            ? `In ${formatTimecode(secondsToFrames(c.in, fps), fps)}  ·  Out ${formatTimecode(secondsToFrames(c.in + framesToSeconds(c.duration, fps) * c.speed, fps), fps)}`
+            : `${d >= 0 ? "+" : ""}${d} frames`;
+        setReadout({ x: e.clientX, y: e.clientY, text });
+      }
+      return;
+    }
     if (g.kind === "trim") {
       const loc = ops.findClip(s.project, g.id);
       if (!loc) return;
@@ -253,8 +276,23 @@ export function Timeline() {
       const snapped = snapSpan(f, [0], snapTargets(new Set([g.id])), SNAP_PX / s.zoom);
       f = Math.round(snapped.frame);
       setSnapLine(snapped.target);
-      const ripple = opts.magnet && !!loc.track.main;
-      store.previewGesture((base) => ops.settle(base, ops.trimClip(base, g.id, g.edge, f, ripple), opts));
+      const ripple = g.mode === "ripple" || (opts.magnet && !!loc.track.main);
+      // Roll moves the shared cut with the neighbor on that side, if they touch.
+      const nb = g.edge === "end" ? loc.track.clips[loc.clipIndex + 1] : loc.track.clips[loc.clipIndex - 1];
+      const touching = !!nb && (g.edge === "end" ? nb.start === loc.clip.start + loc.clip.duration : nb.start + nb.duration === loc.clip.start);
+      store.previewGesture((base) =>
+        ops.settle(
+          base,
+          g.mode === "roll" && touching
+            ? g.edge === "end"
+              ? ops.rollEdit(base, g.id, nb.id, f)
+              : ops.rollEdit(base, nb.id, g.id, f)
+            : ops.trimClip(base, g.id, g.edge, f, ripple),
+          opts,
+        ),
+      );
+      const c = ops.findClip(store.get().project, g.id)?.clip;
+      if (c) setReadout({ x: e.clientX, y: e.clientY, text: g.mode === "roll" && touching ? `Cut ${formatTimecode(f, s.project.fps)}` : `Duration ${formatTimecode(c.duration, s.project.fps)}` });
       return;
     }
     // move
@@ -298,9 +336,14 @@ export function Timeline() {
     detachWindowListeners();
     setSnapLine(null);
     setMarquee(null);
+    setReadout(null);
     if (!g || g.kind === "scrub" || g.kind === "marquee") return;
     if (!g.started) return;
-    store.endGesture(g.kind === "trim" ? "Trim" : g.kind === "move" && g.dupIds ? "Duplicate" : "Move");
+    const label =
+      g.kind === "trim"
+        ? g.mode === "roll" ? "Roll edit" : g.mode === "ripple" ? "Ripple trim" : "Trim"
+        : g.kind === "slip" ? "Slip" : g.kind === "slide" ? "Slide" : g.dupIds ? "Duplicate" : "Move";
+    store.endGesture(label);
     if (g.kind === "move" && g.dupIds) store.select([...g.dupIds.values()]);
   };
 
@@ -452,7 +495,7 @@ export function Timeline() {
     <section className="panel timeline-panel" aria-label="Timeline">
       <TimelineToolbar />
       <div
-        className={`tl-scroll${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}`}
+        className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}`}
         ref={scrollRef}
         onDragOver={(e) => {
           if ([...e.dataTransfer.types].includes("Files")) {
@@ -549,6 +592,11 @@ export function Timeline() {
           {marquee && <div className="tl-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
         </div>
       </div>
+      {readout && (
+        <div className="tl-readout num" style={{ left: readout.x + 14, top: readout.y - 30 }}>
+          {readout.text}
+        </div>
+      )}
       {menu && (
         <div className="ctx-anchor" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
           <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />

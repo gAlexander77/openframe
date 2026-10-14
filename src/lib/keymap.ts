@@ -39,6 +39,10 @@ export type ActionId =
   | "detachAudio"
   | "toolSelect"
   | "toolBlade"
+  | "toolRipple"
+  | "toolRoll"
+  | "toolSlip"
+  | "toolSlide"
   | "toggleSnapping"
   | "toggleMagnet"
   | "toggleLinkage"
@@ -101,6 +105,12 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   selectLeft: ["["],
   selectRight: ["]"],
   toolBlade: ["B", "C"],
+  // Premiere's Y slip and U slide; R and T are free in CapCut's map (its N
+  // and B, Premiere's roll and ripple keys, are snapping and blade there).
+  toolRipple: ["T"],
+  toolRoll: ["R"],
+  toolSlip: ["Y"],
+  toolSlide: ["U"],
   toggleSnapping: ["N"],
   toggleLinkage: ["`"],
   togglePreviewAxis: ["S"],
@@ -158,6 +168,10 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   selectLeft: "Select clips to the left",
   selectRight: "Select clips to the right",
   toolBlade: "Split tool",
+  toolRipple: "Ripple trim tool",
+  toolRoll: "Roll tool",
+  toolSlip: "Slip tool",
+  toolSlide: "Slide tool",
   toggleSnapping: "Auto snapping",
   toggleLinkage: "Linkage",
   togglePreviewAxis: "Preview axis",
