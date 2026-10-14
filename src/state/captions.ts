@@ -54,11 +54,22 @@ export async function generateCaptions(opts: { model: string; language: string |
     store.edit("Auto captions", (p) => runCommand(p, "add_captions", { captions: caps, replace: opts.replace }));
     toast(`Added ${caps.length} captions`);
   } catch (e) {
-    if ((e as Error).name !== "AbortError") toast(`Captions failed: ${e instanceof Error ? e.message : e}`, "error");
+    if ((e as Error).name !== "AbortError") toast(captionsError(e), "error");
   } finally {
     dismiss(id);
     running = null;
   }
+}
+
+/** What went wrong, in words a user can act on. The usual failure is the
+ * first-run model download (offline, blocked), which the browser reports
+ * only as "Failed to fetch" (Chrome), "NetworkError…" (Firefox) or "Load
+ * failed" (Safari). */
+function captionsError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  if (/failed to fetch|networkerror|load failed/i.test(msg))
+    return "Couldn't download the speech model. Check your internet connection and try again; after the first download, captions work offline.";
+  return `Captions failed: ${msg}`;
 }
 
 export async function importCaptions(file: File) {
