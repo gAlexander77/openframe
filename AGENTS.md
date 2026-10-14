@@ -1,5 +1,8 @@
 # OpenFrame - agent entry point
 
+**Codex: start with [CODEX_GUIDE.md](CODEX_GUIDE.md)** — your task list,
+rules and the current state.
+
 Read [CLAUDE.md](CLAUDE.md) for the shared operating manual, then
 [docs/Next agent handoff.md](docs/Next%20agent%20handoff.md) before continuing
 development. These instructions apply to every coding agent, including

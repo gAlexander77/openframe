@@ -36,6 +36,14 @@ another worktree without coordinating its ownership and current state.
 Keep your own worktree and all scratch under
 `F:\Dev\2026\worktrees\<repo>\<purpose>` and remove it when its work lands.
 
+## Codex pickup (added 2026-10-14 by Claude Code)
+
+Codex starts from `CODEX_GUIDE.md` at the repository root: rules, the
+headless drive runner, an ordered list of small tasks, and the parked
+branches it must not touch (`bg-removal`, `compound-clips`, `timeline-ux`,
+all committed as WIP and pushed as backup; the `inline-text` worktree is
+merged and removed).
+
 ## Pickup order
 
 1. Read `AGENTS.md`, `CLAUDE.md`, [[Index]], and the current worktree status.
