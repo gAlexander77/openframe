@@ -15,6 +15,9 @@ working on the app, and coding agents that need the reasoning behind it.
 
 ## Map of content
 
+- [[Features]] — everything the app does today, with the intent behind each
+- [[Roadmap]] — what is in flight and next, in priority order
+- [[Project format]] — the open JSON schema agents and pipelines write
 - [[Architecture]] — layers, how an edit becomes pixels, the module table
 - [[Conventions]] — where code goes, rules of thumb, commits, testing
 - [[History]] — the build story, round by round, including rejected attempts
@@ -49,3 +52,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   undo step
 - [[ADR-006 Every edit is a named command with a JSON Schema]] — the agent
   and MCP surface
+- [[ADR-007 Auto captions run Whisper on the user's machine]] — no upload,
+  no limit; the timeline mix at 16 kHz, cut at quiet points
