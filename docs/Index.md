@@ -19,6 +19,8 @@ working on the app, and coding agents that need the reasoning behind it.
 - [[Roadmap]] — what is in flight and next, in priority order
 - [[Project format]] — the open JSON schema agents and pipelines write
 - [[Automation]] — headless render, MCP for agents, Copilot: the three doors
+- [[UX audit 2026-10-14]] — 38 ranked findings from a first-time CapCut
+  user's walk, what was fixed, and what to keep
 - [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
 - [[Driving the app]] — the web build through Playwright, the desktop app over
   WebView2's debug port; native dialogs, OS drops, the drive scripts

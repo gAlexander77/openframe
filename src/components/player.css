@@ -11,7 +11,8 @@
 .player-stage {
   position: relative;
   display: grid; place-items: center;
-  min-height: 0; padding: 14px 14px 36px;
+  /* 24px sides: the meter (right: 8px, 9px wide) sits in the right gutter */
+  min-height: 0; padding: 14px 24px 36px;
   overflow: hidden;
 }
 .player-frame { position: relative; box-shadow: 0 0 0 1px rgb(255 255 255 / 4%); }

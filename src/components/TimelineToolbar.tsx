@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
@@ -74,6 +74,25 @@ export function TimelineToolbar() {
     return !!c && "transform" in c;
   }));
   const [toolMenu, setToolMenu] = useState(false);
+  const picker = useRef<HTMLDivElement>(null);
+  // The tool menu closes on a click elsewhere or Escape, like every menu.
+  useEffect(() => {
+    if (!toolMenu) return;
+    const close = (e: PointerEvent) => {
+      if (!picker.current?.contains(e.target as Node)) setToolMenu(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setToolMenu(false);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", esc, true);
+    };
+  }, [toolMenu]);
 
   const flip = () =>
     store.edit("Mirror", (p) => {
@@ -93,7 +112,7 @@ export function TimelineToolbar() {
   return (
     <div className="tl-toolbar">
       <div className="tl-tools">
-        <div className="tool-picker">
+        <div className="tool-picker" ref={picker}>
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tool === "blade" ? tipFor("toolBlade") : tipFor("toolSelect")} onClick={() => setToolMenu((v) => !v)}>
             {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : <span className="tool-letter">{TOOL_LETTER[tool]}</span>}
             <ChevronDown size={11} />

@@ -24,6 +24,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
     ],
     "Selection & tools": [
       "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",
+      "toolRipple", "toolRoll", "toolSlip", "toolSlide",
     ],
     Timeline: [
       "toggleMagnet", "toggleSnapping", "toggleLinkage", "togglePreviewAxis", "toggleKeyframePanel",

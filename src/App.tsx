@@ -51,11 +51,6 @@ export default function App() {
     }
   }, [layout]);
 
-  useEffect(() => {
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   // Desktop OS drops arrive as paths, not HTML5 events: import them and add
   // each at the playhead, like the media panel's +.
   useEffect(
@@ -75,8 +70,15 @@ export default function App() {
   const scopes = useEditor((s) => s.scopes);
   const [shortcuts, setShortcuts] = useState(false);
   useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
-  // ponytail: key handling is global; editor actions are harmless on the
-  // home screen (no project), so no per-screen keymap yet.
+
+  // Shortcuts act on the open project, so they listen only while the
+  // editor is on screen: on Home the store still holds the project just
+  // closed, and the play key played its sound from nowhere.
+  useEffect(() => {
+    if (screen !== "editor") return;
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [screen]);
 
   // Files dropped anywhere but the timeline import into the library
   // (the timeline's own drop also places them). Web build only: on the
@@ -115,7 +117,11 @@ export default function App() {
       >
         <div
           className="top-row"
-          style={{ gridTemplateColumns: `${layout.left}px var(--gap) minmax(320px, 1fr) var(--gap) ${layout.right}px` }}
+          // The side panels keep their saved widths but give way when the
+          // window is narrow (down to the splitters' own minimums), so the
+          // row never overflows: fixed widths cut off the inspector and the
+          // Export button at the desktop app's minimum window size.
+          style={{ gridTemplateColumns: `minmax(${Math.min(240, layout.left)}px, ${layout.left}px) var(--gap) minmax(320px, 1fr) var(--gap) minmax(${Math.min(260, layout.right)}px, ${layout.right}px)` }}
         >
           {scopes ? <ScopesPanel /> : <LibraryPanel />}
           <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />

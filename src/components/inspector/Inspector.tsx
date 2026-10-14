@@ -428,9 +428,10 @@ function StandardSpeed({ clip }: { clip: VideoClip | AudioClip }) {
             value={text ?? clip.speed.toFixed(2)}
             onChange={(e) => setText(e.target.value)}
             onBlur={(e) => {
+              const typed = text !== null;
               setText(null);
               const v = Number(e.target.value.replace(/x/i, ""));
-              if (v > 0) apply(v);
+              if (typed && v > 0) apply(v);
             }}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             aria-label="Speed value"

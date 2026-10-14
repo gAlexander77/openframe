@@ -51,7 +51,9 @@
 .lib-search .field { width: 100%; height: 28px; padding-left: 28px; }
 .lib-hint { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-xs); }
 .lib-group { margin: 14px 0 8px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
-.lib-group:first-of-type { margin-top: 0; }
+/* Each group sits in its own wrapper, so :first-of-type on the heading
+   matched every group and glued each heading to the labels above it. */
+.lib-content > div:first-of-type > .lib-group { margin-top: 0; }
 
 .drop-box {
   display: grid; place-items: center; gap: 6px;
@@ -102,7 +104,8 @@
   opacity: 0; transform: scale(0.6);
   transition: opacity var(--t-fast), transform var(--t-med) var(--ease-spring);
 }
-.card:hover .card-add { opacity: 1; transform: none; }
+/* Keyboard focus shows it too: tabbing landed on an invisible button. */
+.card:hover .card-add, .card-add:focus-visible { opacity: 1; transform: none; }
 .card-add:active { transform: scale(0.88); }
 
 /* Card pictures are rendered by the engine (ADR-026): a still that fades in,

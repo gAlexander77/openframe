@@ -46,8 +46,15 @@ export function PlayerPanel() {
   useLayoutEffect(() => {
     const stage = stageRef.current!;
     const fit = () => {
-      const r = stage.getBoundingClientRect();
-      const k = Math.min(r.width / width, r.height / height);
+      // Fit inside the content box: the stage's padding keeps the rotate
+      // knob clear of the transport and gives the meter its own gutter.
+      // Fitting the border box cropped the picture and put the meter on it.
+      const cs = getComputedStyle(stage);
+      const r = {
+        width: stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        height: stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+      };
+      const k = Math.max(0, Math.min(r.width / width, r.height / height));
       const w = Math.floor(width * k);
       const h = Math.floor(height * k);
       setBox({ w, h });

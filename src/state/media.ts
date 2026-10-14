@@ -8,10 +8,17 @@ import * as ops from "../lib/project/ops";
 import type { Asset, Clip, Id, Project } from "../lib/project/types";
 import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
-import { edit } from "./actions";
+import { edit, provide } from "./actions";
 import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
+
+/** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
+const CODEC_NAMES: Record<string, string> = {
+  avc: "H.264", hevc: "HEVC", vp8: "VP8", vp9: "VP9", av1: "AV1", prores: "ProRes",
+  aac: "AAC", opus: "Opus", mp3: "MP3", flac: "FLAC", vorbis: "Vorbis",
+};
+const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCase()) : undefined);
 
 const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|png|jpe?g|gif|webp|bmp|avif|svg)$/i;
 export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
@@ -45,7 +52,7 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
         toast(
           proxy
             ? `${f.name}: even its converted copy can't be decoded`
-            : `${f.name}: this browser can't decode ${info?.videoCodec ?? info?.audioCodec ?? "this format"}. The desktop app can.`,
+            : `${f.name}: this browser can't decode ${codecName(info?.videoCodec ?? info?.audioCodec) ?? "this format"}. The desktop app can.`,
           "error",
         );
         continue;
@@ -153,3 +160,6 @@ export async function pickAndImport(): Promise<Asset[]> {
   const files = await platform.pickMedia();
   return files.length ? importFiles(files) : [];
 }
+
+// The menu item and the shortcut open the same picker as the Import button.
+provide({ importMedia: () => void pickAndImport() });

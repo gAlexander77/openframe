@@ -33,6 +33,15 @@ fixtures/media/
 # Screenshots the drive scripts write beside themselves
 scripts/drive/shots/
 
+<<<<<<< HEAD
 # Per-worktree scratch: playwright-core for desktop drives, isolated app
 # data and logs (docs/Driving the app.md)
 scratch/
+=======
+# Playwright scratch for audits (its own node_modules, browser profiles)
+scratch/
+
+# UX audit captures: the raw PNGs run to megabytes per round and stay local;
+# the few shots an audit cites are committed as JPEGs beside them
+scripts/ui-review/shots/**/*.png
+>>>>>>> ux-audit

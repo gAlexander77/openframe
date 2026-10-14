@@ -63,7 +63,7 @@ export function LibraryPanel() {
         ))}
       </nav>
       <div className="lib-body" key={tab}>
-        {tab === "media" && <MediaTab kind="visual" />}
+        {tab === "media" && <MediaTab kind="all" />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
         {tab === "stickers" && <StickersTab />}
@@ -84,14 +84,17 @@ function useThumbs() {
   return useSyncExternalStore(thumbs.subscribe, thumbs.version);
 }
 
-function MediaTab({ kind }: { kind: "visual" | "audio" }) {
+/** Media lists every import, as CapCut's Media › Import does (an imported
+ * MP3 used to vanish into Audio); Audio shows just the sound files. */
+function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const [q, setQ] = useState("");
   useThumbs();
   const used = useMemo(() => new Set(tracks.flatMap((t) => t.clips.map((c) => ("assetId" in c ? c.assetId : "")))), [tracks]);
-  // Stickers live in their own tab, as in CapCut, not among imported media.
-  const list = assets.filter((a) => !a.sticker && (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
+  // Stickers live in their own tab, as in CapCut, not among imported media;
+  // the Media tab lists every import, sound included.
+  const list = assets.filter((a) => !a.sticker && (kind === "all" || a.kind === "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="lib-content">
@@ -111,7 +114,7 @@ function MediaTab({ kind }: { kind: "visual" | "audio" }) {
           <span>Drag videos, audio or photos here, or click to browse</span>
         </button>
       ) : list.length === 0 ? (
-        <div className="empty">{q ? `Nothing matches “${q}”` : kind === "audio" ? "No audio imported yet" : "No video or photos imported yet"}</div>
+        <div className="empty">{q ? `Nothing matches “${q}”` : "No audio imported yet"}</div>
       ) : (
         <div className="card-grid">
           {list.map((a) => (
@@ -140,6 +143,7 @@ function MediaCard({ asset, used }: { asset: Asset; used: boolean }) {
         <button
           className="card-add"
           aria-label={`Add ${asset.name} to the timeline`}
+          data-tip="Add to timeline"
           onPointerDown={(e) => e.stopPropagation()}
           onClick={() => addToTimeline(asset)}
         >
@@ -158,7 +162,7 @@ function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => 
     <div className={`card ${props.className ?? ""}`} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
       <div className="card-thumb">
         {props.preview}
-        <button className="card-add" aria-label={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
+        <button className="card-add" aria-label={`Add ${props.label}`} data-tip={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
           <Plus size={14} strokeWidth={2.4} />
         </button>
       </div>

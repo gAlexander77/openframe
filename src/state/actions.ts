@@ -4,13 +4,14 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
-import { buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
+import { ACTION_LABELS, buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
 import { createMarker, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
 import { copySelectedKeys, deleteSelectedKeys, forgetCopiedKeys, pasteKeysAtPlayhead } from "./keyframes";
 import { store } from "./store";
+import { toast } from "./toast";
 
 type Handler = () => void;
 const handlers: Partial<Record<ActionId, Handler>> = {};
@@ -19,8 +20,13 @@ export function provide(map: Partial<Record<ActionId, Handler>>) {
   Object.assign(handlers, map);
 }
 
+/** Run an action. One that no module provides yet (export, until the export
+ * round lands) says so rather than doing nothing: a silent primary button
+ * reads as a crash. */
 export function run(id: ActionId) {
-  handlers[id]?.();
+  const handler = handlers[id];
+  if (handler) handler();
+  else toast(`${ACTION_LABELS[id]} isn't available yet`);
 }
 
 export const keymap = DEFAULT_KEYMAP;
@@ -66,14 +72,14 @@ provide({
   },
   trimStartToPlayhead: () => {
     const s = store.get();
-    edit("Trim start", (p) => {
+    edit(ACTION_LABELS.trimStartToPlayhead, (p) => {
       for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "start", s.playhead, true);
       return p;
     });
   },
   trimEndToPlayhead: () => {
     const s = store.get();
-    edit("Trim end", (p) => {
+    edit(ACTION_LABELS.trimEndToPlayhead, (p) => {
       for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "end", s.playhead, true);
       return p;
     });
@@ -95,14 +101,15 @@ provide({
   },
   cut: () => {
     run("copy");
-    run("delete");
+    const sel = store.get().selection;
+    if (sel.length) edit("Cut", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel)));
   },
   paste: () => {
     if (!pasteKeysAtPlayhead()) pasteAt(store.get().playhead);
   },
   duplicate: () => {
     copyClips();
-    if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)));
+    if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)), "Duplicate");
   },
   freeze: () => {
     const s = store.get();
@@ -212,11 +219,11 @@ function copyClips() {
 
 /** Paste the clipboard so its earliest clip starts at `at`, each clip on the
  * track it was copied from, spilling to new tracks rather than overwriting. */
-function pasteAt(at: number) {
+function pasteAt(at: number, label = "Paste") {
   if (!clipboard) return;
   const { clips, trackIds, origin } = clipboard;
   const pasted: Id[] = [];
-  edit("Paste", (p) => {
+  edit(label, (p) => {
     clips.forEach((c, i) => {
       const copy = { ...c, id: uid("c"), start: at + c.start - origin } as Clip;
       pasted.push(copy.id);
@@ -240,13 +247,24 @@ function targetsAtPlayhead(p: Project) {
   return picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
 }
 
-/** Global key handling. Typing in a field is left alone, except Escape. */
+/** Inputs whose keys are not text: a focused slider or swatch must not
+ * swallow play, shuttle and the other shortcuts, as CapCut's never do. */
+const NOT_TEXT = new Set(["range", "checkbox", "radio", "color", "button", "submit", "reset", "file"]);
+/** The keys a focused slider or dropdown uses itself. */
+const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+/** Global key handling. Typing in a text field is left alone, Escape
+ * included: it is the field's (revert, cancel, leave), and passing it on
+ * deselected the clip and closed the inspector being typed in. Sliders and
+ * dropdowns keep only the keys they move by. */
 export function onKeyDown(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null;
-  const typing = el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
-  if (typing && e.key !== "Escape") return;
+  const input = el instanceof HTMLInputElement ? el : null;
+  const typing = !!el && ((!!input && !NOT_TEXT.has(input.type)) || el.tagName === "TEXTAREA" || el.isContentEditable);
+  if (typing) return;
+  if ((input?.type === "range" || el?.tagName === "SELECT") && CONTROL_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey) return;
   const id = index.get(chordOf(e, isMac));
-  if (!id || !handlers[id]) return;
+  if (!id) return;
   e.preventDefault();
   run(id);
 }

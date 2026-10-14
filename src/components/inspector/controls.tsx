@@ -103,7 +103,9 @@ export function SliderRow(p: SliderProps) {
           className="field num"
           value={text ?? shown.toFixed(digits)}
           onChange={(e) => setText(e.target.value)}
-          onBlur={(e) => commit(e.target.value)}
+          // Only what the user typed is an edit: committing on every blur
+          // recorded undo steps for tabbing past, and keyed the playhead.
+          onBlur={(e) => text !== null && commit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") (e.target as HTMLInputElement).blur();
             if (e.key === "Escape") setText(null);
@@ -133,7 +135,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
   const next = keys.find((k) => k.f > rel);
   return (
     <span className="insp-keys">
-      <button className="key-nav" disabled={!prev} aria-label="Previous keyframe" onClick={() => prev && store.seek(clip.start + prev.f)}>
+      <button className="key-nav" disabled={!prev} aria-label="Previous keyframe" data-tip="Previous keyframe" onClick={() => prev && store.seek(clip.start + prev.f)}>
         <ChevronLeft size={11} />
       </button>
       <button
@@ -144,7 +146,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
       >
         <Diamond size={11} fill={on ? "currentColor" : "none"} />
       </button>
-      <button className="key-nav" disabled={!next} aria-label="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
+      <button className="key-nav" disabled={!next} aria-label="Next keyframe" data-tip="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
         <ChevronRight size={11} />
       </button>
       <EaseButton clip={clip} path={path} f={rel} />
@@ -197,7 +199,7 @@ export function ColorInput(props: { value: string; onChange: (v: string) => void
         className="field num"
         defaultValue={hex}
         key={hex}
-        onBlur={(e) => /^#[0-9a-f]{6}$/i.test(e.target.value) && props.onChange(e.target.value)}
+        onBlur={(e) => /^#[0-9a-f]{6}$/i.test(e.target.value) && e.target.value.toLowerCase() !== hex.toLowerCase() && props.onChange(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         aria-label={`${props.label} hex`}
       />

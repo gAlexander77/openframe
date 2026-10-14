@@ -104,6 +104,11 @@ A narrative log of each build round with its intent, for archaeology that
   a reversed export reads 299 down to 240 frame for frame
   ([[ADR-027 Speed curves are exponential and anchored to clip frames]],
   [[ADR-028 Reverse and retimed sound are made in the engine]]).
+- **UX audit** — a first-time CapCut user's walk at five window sizes:
+  38 ranked findings in [[UX audit 2026-10-14]], 23 fixed (viewer fit,
+  narrow windows, phantom inspector edits, keys on sliders and on Home,
+  holding the last frame, keyboard and on-screen menus, Media lists every
+  import, contrast, tooltips).
 - **Keyframes you can shape** — CapCut's keyframe panel docked under the
   tracks on their time axis, draggable diamonds, easing presets stored as
   CSS beziers, a section keyframe, and `move_keyframe`,
@@ -151,6 +156,8 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **Fit the viewer to the content box**, not the panel; `:first-of-type`
+  counts per parent; disabled buttons never get hover.
 - **Centered WSOLA grains make slow-motion sound early** (90 ms at 0.1x):
   cap each grain at its 3/4 point, and skip the search in silence and at
   onsets.
