@@ -25,7 +25,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const menus: { label: string; items: () => MenuItem[] }[] = [
     {
       label: "File",
-      items: () => [
+      items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }] : [
         ...(props.home ? [] : [{ label: "Back to home", onSelect: () => void closeProject() }, "-" as const]),
         { action: "newProject" },
         { action: "openProject" },
@@ -98,7 +98,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "fullscreenPreview" },
       ],
     },
-    { label: "Help", items: () => [{ action: "showShortcuts" }, { label: `About ${APP_NAME}`, onSelect: () => {}, hint: `v${__APP_VERSION__}` }] },
+    { label: "Help", items: () => [{ action: "showShortcuts" }, { label: `About ${APP_NAME}`, onSelect: () => toast(`${APP_NAME} v${__APP_VERSION__}`), hint: `v${__APP_VERSION__}` }] },
   ];
 
   const win = isDesktop ? getCurrentWindow() : null;
@@ -108,7 +108,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
     <header className="titlebar" data-tauri-drag-region>
       <div className="titlebar-left" data-tauri-drag-region>
         <div className="app-mark" aria-hidden />
-        <MenuBar menus={menus} />
+        <MenuBar menus={props.home ? menus.filter((m) => m.label === "File" || m.label === "Help") : menus} />
       </div>
       <div className="titlebar-center" data-tauri-drag-region>
         {props.home ? (
