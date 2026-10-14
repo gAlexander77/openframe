@@ -203,3 +203,5 @@
   font-size: var(--fs-sm); line-height: 1.4; user-select: text;
 }
 .cap-text:focus { outline: none; border-color: var(--accent); background: var(--bg-inset); }
+
+.canvas-blurs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }

@@ -4,7 +4,7 @@ import { fromDb, toDb } from "../../lib/audio";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "../../lib/catalog";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM, uid } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
-import type { Animation, BlendMode, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
+import type { Animation, BlendMode, CanvasFill, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
@@ -155,6 +155,7 @@ function VideoTab({ clip }: { clip: Clip }) {
               </Row>
             </Section>
           )}
+          {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
           <Section title="Crop" defaultOpen={false} onReset={() => patchClip(clip.id, "Reset crop", (c) => ({ ...c, crop: { left: 0, top: 0, right: 0, bottom: 0 } }) as Clip)}>
             {(["left", "top", "right", "bottom"] as const).map((k) => (
               <SliderRow key={k} clip={clip} path={`crop.${k}`} label={k[0].toUpperCase() + k.slice(1)} min={0} max={95} unit="%" reset={0} keyframes={false} {...pct} />
@@ -165,6 +166,68 @@ function VideoTab({ clip }: { clip: Clip }) {
       {sub === "mask" && <MaskSection clip={clip} />}
       {sub === "key" && <ChromaSection clip={clip} />}
     </>
+  );
+}
+
+// CapCut's blur strengths (its draft file stores 0.0625, 0.375, 0.75, 1.0).
+const BLURS: [number, string][] = [[25, "Light"], [50, "Medium"], [80, "Strong"], [100, "Max"]];
+
+/** CapCut's Canvas: fill what a clip leaves uncovered (a 16:9 shot in a
+ * 9:16 project) with a blurred copy of itself or a color. */
+function CanvasSection({ clip }: { clip: Clip }) {
+  if (!("transform" in clip)) return null;
+  const fill = clip.canvas;
+  const set = (canvas: CanvasFill | undefined, label: string) =>
+    patchClip(clip.id, label, (c) => {
+      const next = { ...c } as Clip & { canvas?: CanvasFill };
+      if (canvas) next.canvas = canvas;
+      else delete next.canvas;
+      return next;
+    });
+  const applyAll = () =>
+    store.edit("Canvas on all clips", (p) => ({
+      ...p,
+      tracks: p.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) => {
+          if (c.type !== "video" && c.type !== "image") return c;
+          const next = { ...c } as Clip & { canvas?: CanvasFill };
+          if (fill) next.canvas = fill;
+          else delete next.canvas;
+          return next;
+        }),
+      })),
+    }));
+  return (
+    <Section title="Canvas">
+      <Segmented
+        value={fill?.type ?? "none"}
+        onChange={(v) => set(v === "none" ? undefined : v === "blur" ? { type: "blur", amount: 50 } : { type: "color", color: "#000000" }, v === "none" ? "Remove canvas" : "Canvas")}
+        options={[
+          { value: "none", label: "None" },
+          { value: "blur", label: "Blur" },
+          { value: "color", label: "Color" },
+        ]}
+      />
+      {fill?.type === "blur" && (
+        <div className="canvas-blurs">
+          {BLURS.map(([amount, label]) => (
+            <button key={amount} className={`chip-btn${fill.amount === amount ? " on" : ""}`} onClick={() => set({ type: "blur", amount }, "Canvas blur")}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {fill?.type === "color" && (
+        <Row label="Color">
+          <ColorInput label="Canvas color" value={fill.color} onChange={(v) => set({ type: "color", color: v }, "Canvas color")} />
+        </Row>
+      )}
+      <p className="insp-hint">Fills the frame around a clip that doesn't cover it, like a horizontal shot in a vertical video.</p>
+      <div className="insp-actions">
+        <button className="btn" onClick={applyAll}>Apply to all</button>
+      </div>
+    </Section>
   );
 }
 
