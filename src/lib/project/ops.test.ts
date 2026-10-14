@@ -227,6 +227,47 @@ describe("settle", () => {
     const unlinked = settle(p, after, { magnet: true, linkage: false });
     expect(findClip(unlinked, "t")!.clip.start).toBe(70);
   });
+
+  /** Shots c1 [0,50), c2 [50,80), c3 [80,110) under: a music bed past the
+   * end, a logo across all of them, a title and a sound effect on c1, and
+   * a title that starts on c2's tail but mostly covers c3. */
+  const scene = () => {
+    const p = project([0, 50, 0], [50, 30, 0], [80, 30, 0]);
+    const audio = (id: string, start: number, duration: number) => ({ ...clipForAsset(asset, start, p.fps), id, type: "audio", duration }) as Clip;
+    const text = (id: string, start: number, duration: number) => ({ ...createTextClip(id, start, duration), id });
+    return {
+      ...p,
+      tracks: [
+        { ...createTrack("video", "Logo"), clips: [text("logo", 0, 110)] },
+        { ...createTrack("video", "Titles"), clips: [text("t1", 5, 20), text("t3", 75, 30)] },
+        ...p.tracks,
+        { ...createTrack("audio", "Music"), clips: [audio("music", 0, 150)] },
+        { ...createTrack("audio", "SFX"), clips: [audio("whoosh", 5, 20)] },
+      ],
+    };
+  };
+  const linked = { magnet: true, linkage: true };
+
+  it("leaves a music bed alone when the first shot moves (UX-14)", () => {
+    // Drag the second shot to the front: c1 moves 0 -> 30.
+    const p = scene();
+    const s = settle(p, moveClip(p, "c2", p.tracks[2].id, 0, { magnet: true }), linked);
+    expect(s.tracks[2].clips.map((c) => [c.id, c.start])).toEqual([["c2", 0], ["c1", 30], ["c3", 80]]);
+    expect(findClip(s, "music")!.clip.start).toBe(0);
+    expect(findClip(s, "logo")!.clip.start).toBe(0);
+    // What sits on c1 goes with it.
+    expect(findClip(s, "t1")!.clip.start).toBe(35);
+    expect(findClip(s, "whoosh")!.clip.start).toBe(35);
+  });
+
+  it("carries a title with the shot under most of it, even if it starts on another", () => {
+    // Delete c2: c3 ripples 80 -> 50, and the title mostly over c3 follows.
+    const p = scene();
+    const s = settle(p, deleteClips(p, ["c2"]), linked);
+    expect(findClip(s, "t3")!.clip.start).toBe(45);
+    expect(findClip(s, "t1")!.clip.start).toBe(5);
+    expect(findClip(s, "music")!.clip.start).toBe(0);
+  });
 });
 
 describe("setFps", () => {

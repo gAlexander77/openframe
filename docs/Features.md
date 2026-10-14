@@ -29,8 +29,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 ## Timeline
 
 - CapCut's toggles: main track **magnet** (gapless, reorders on drag),
-  **snapping** with a cyan guide, **linkage** (overlays follow their shot
-  through ripples), **preview axis** (hover to preview).
+  **snapping** with a cyan guide, **linkage** (titles, overlays and sound
+  effects follow the shot under most of them through ripples and
+  reorders; music beds spanning several shots stay put), **preview axis**
+  (hover to preview).
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.

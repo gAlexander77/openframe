@@ -684,35 +684,41 @@ export function editPoints(p: Project, exclude: Set<Id> = new Set()): number[] {
 export interface SettleOptions {
   /** Pack the main track end to end (CapCut's main track magnet). */
   magnet: boolean;
-  /** Overlay clips that start on a main-track clip move with it when it
-   * moves (CapCut's linkage), so titles stay on their shots through ripples. */
+  /** Clips that sit on a main-track clip move with it when it moves
+   * (CapCut's linkage), so titles stay on their shots through ripples. */
   linkage: boolean;
 }
+
+/** Frames of [a, a+da) that overlap [b, b+db). */
+const overlap = (a: number, da: number, b: number, db: number) => Math.max(0, Math.min(a + da, b + db) - Math.max(a, b));
 
 /**
  * Apply the magnet and linkage after an edit turned `before` into `after`.
  * Linkage looks at where each main-track clip was and where it is now, and
- * shifts overlay clips that started inside its old span by the same amount,
- * unless the edit moved that overlay itself or the new spot is occupied.
+ * shifts the clips that sat on it by the same amount, unless the edit moved
+ * that clip itself or the new spot is occupied. A clip sits on the main
+ * clip under more than half of it: a title or a sound effect on one shot
+ * follows that shot, a music bed or a logo spanning several shots belongs
+ * to none of them and stays put (ADR-035).
  */
 export function settle(before: Project, after: Project, o: SettleOptions): Project {
   let p = o.magnet ? compactTrack(after, mainTrack(after).id) : after;
   if (!o.linkage) return p;
   const oldMain = mainTrack(before);
   const newMain = mainTrack(p);
-  const moves: { from: number; to: number; delta: number }[] = [];
+  const moves: { start: number; duration: number; delta: number }[] = [];
   for (const c of oldMain.clips) {
     const now = newMain.clips.find((x) => x.id === c.id);
-    if (now && now.start !== c.start) moves.push({ from: c.start, to: c.start + c.duration, delta: now.start - c.start });
+    if (now && now.start !== c.start) moves.push({ start: c.start, duration: c.duration, delta: now.start - c.start });
   }
   if (!moves.length) return p;
-  const oldPos = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c.start] as const)));
+  const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   for (const t of p.tracks) {
     if (t.main || t.locked) continue;
     for (const c of t.clips) {
-      const was = oldPos.get(c.id);
-      if (was === undefined || was !== c.start) continue; // new or moved by the edit itself
-      const m = moves.find((x) => was >= x.from && was < x.to);
+      const was = old.get(c.id);
+      if (!was || was.start !== c.start) continue; // new or moved by the edit itself
+      const m = moves.find((x) => 2 * overlap(was.start, was.duration, x.start, x.duration) > was.duration);
       if (!m) continue;
       const track = findTrack(p, t.id)!;
       const start = c.start + m.delta;
