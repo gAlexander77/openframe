@@ -5,7 +5,6 @@ items move to [[Features]] when they ship.
 
 ## In flight (parallel worktrees)
 
-- **Inline text editing** on the canvas.
 
 ## Next
 

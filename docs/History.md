@@ -109,6 +109,12 @@ A narrative log of each build round with its intent, for archaeology that
   narrow windows, phantom inspector edits, keys on sliders and on Home,
   holding the last frame, keyboard and on-screen menus, Media lists every
   import, contrast, tooltips).
+- **Typing on the canvas** — double-click a title or caption, or press
+  Enter, and type where it sits: an invisible text field rides on the
+  engine's own text, measured within a pixel line by line; the inspector's
+  Text box became live too, and each session is one undo step
+  ([[ADR-030 The canvas text editor is a transparent textarea over the engine's text]],
+  [[ADR-031 Typing into a text clip is one live session]]).
 - **Keyframes you can shape** — CapCut's keyframe panel docked under the
   tracks on their time axis, draggable diamonds, easing presets stored as
   CSS beziers, a section keyframe, and `move_keyframe`,
@@ -163,6 +169,13 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **Canvas and CSS place text differently vertically**: the canvas
+  centers each line on the em box, CSS on ascent plus descent (6.1 px apart
+  at 96 px Inter Bold); measure it from the font with the canvas API.
+  Measure alignment at a large size and at more than one viewer zoom.
+- **Leaving a text field fires too late to end an edit**: the click that
+  moved focus already ran; end the session in the capture phase.
+  Playwright hides the caret in screenshots unless `caret: "initial"`.
 - **Test the release build, not just dev**: the CSP only bites there, and
   the origin changes from `http://localhost:1420` to
   `http://tauri.localhost`, which local servers' CORS lists may refuse.

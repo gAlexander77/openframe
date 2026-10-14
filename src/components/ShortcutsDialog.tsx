@@ -20,7 +20,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
     Editing: [
       "split", "splitAll", "trimStartToPlayhead", "trimEndToPlayhead", "delete",
       "rippleDelete", "duplicate", "copy", "cut", "paste", "freeze", "detachAudio",
-      "toggleClipEnabled", "undo", "redo",
+      "toggleClipEnabled", "editText", "undo", "redo",
     ],
     "Selection & tools": [
       "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",

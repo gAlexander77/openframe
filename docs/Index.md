@@ -96,5 +96,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   GOP windows; WSOLA keeps pitch
 - [[ADR-029 Headless rendering reuses the app]] — `--render project.json
   --out file`, JSON-line progress, exit codes
+- [[ADR-030 The canvas text editor is a transparent textarea over the engine's text]]
+  — the engine keeps drawing; the textarea shows only caret and selection
+- [[ADR-031 Typing into a text clip is one live session]] — live keystrokes,
+  one undo step, ended by any press outside (capture phase)
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven
   with the reference library; our clip rides in metadata

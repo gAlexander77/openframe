@@ -3,7 +3,7 @@ title: CapCut desktop
 aliases: [CapCut PC, CapCut Pro desktop, JianYing Pro]
 tags: [research, competitor, capcut, ux, video-editor]
 created: 2026-10-13
-updated: 2026-10-13
+updated: 2026-10-14
 status: reference
 scope: CapCut desktop (Windows/macOS) 2025-2026 builds, v6.8 to v9.4
 ---
@@ -816,6 +816,9 @@ Applied effects show as tag pills on the audio clip in the timeline [SS].
 - **AI generated / AI writer:** generate text from a prompt.
 - **On-canvas editing:**
   - Double-click the text on the canvas to edit inline. Inspector edits sync live.
+  - Editing opens with the whole text selected, so typing replaces it (owner's observation).
+  - No key opens editing on a selected text clip: neither the in-app shortcut list (§7) nor the help center names one (searched 2026-10-14). Ours uses Enter, Figma's and Keynote's key.
+  - The help center has no desktop page on canvas editing. Its "can't add line breaks" page is about mobile keyboards where Enter acts as Done; a third-party tutorial confirms double-clicking a layer in the player edits it directly.
   - Alt-drag a corner to scale from the center.
   - **Enter** inside a caption splits it; **Ctrl+Enter** inserts a line break.
   - Letter shortcuts are disabled while editing.

@@ -62,6 +62,9 @@ export interface EditorState {
   /** Selected keyframes, on one clip at a time. Cleared whenever the clip
    * selection changes; refs to keys an undo removed are simply ignored. */
   keySel: { clipId: Id; keys: KeyRef[] } | null;
+  /** The text clip being typed into on the canvas, else null
+   * (`state/textEdit.ts`, ADR-031). */
+  textEdit: Id | null;
 }
 
 interface HistoryEntry {
@@ -93,6 +96,7 @@ let state: EditorState = {
   revision: 0,
   keyframePanel: false,
   keySel: null,
+  textEdit: null,
 };
 
 let past: HistoryEntry[] = [];
@@ -206,6 +210,7 @@ export const store = {
       inPoint: null,
       outPoint: null,
       keySel: null,
+      textEdit: null,
       revision: state.revision + 1,
       ...labels(),
     });

@@ -59,6 +59,7 @@ a clock, so no frame is ever dropped
 | `lib/analysis/*` | Silence, scene and beat detection, pure ([[AI tools]]) |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
 | `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
+| `lib/textBox.ts` | Where the canvas text editor sits: a text raster's layout mapped into the viewer |
 | `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
@@ -76,6 +77,7 @@ a clock, so no frame is ever dropped
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `state/export.ts` | The export job: dialog state, `render()` for automation |
+| `state/textEdit.ts` | The typing session: live text edits from the canvas or the inspector, one undo step |
 | `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |

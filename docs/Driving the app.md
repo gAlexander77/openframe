@@ -143,5 +143,11 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
    outlive the shell that started them. Find holders with
    `Get-NetTCPConnection -LocalPort <port> -State Listen` and the exe by
    path, and stop only your own.
-7. **Never ship a debug port**: any local process could drive the app. The
+7. **Playwright screenshots hide the caret** (`caret: "hide"` is the
+   default). Pass `caret: "initial"` to judge where a text caret sits.
+8. **To check DOM text against the engine's text**, paint the DOM glyphs a
+   color the frame lacks (red), hide the canvas, screenshot, and compare
+   the ink line by line with `pixels()` (`scripts/drive/inline-text.js`).
+   Single edges scatter a pixel or so; compare averages, at a large size.
+9. **Never ship a debug port**: any local process could drive the app. The
    variable belongs in a dev shell, not in config.

@@ -5,6 +5,8 @@ import { findClip, getAsset, setParam } from "../lib/project/ops";
 import type { Project, VisualClip } from "../lib/project/types";
 import { layerAt } from "../lib/render/plan";
 import { store, useEditor } from "../state/store";
+import { editOnCanvas } from "../state/textEdit";
+import { TextEditor } from "./TextEditor";
 
 /** Size of a clip's source in project pixels before transform, and whether
  * it fits to the canvas (media) or keeps its native size (text). */
@@ -30,12 +32,14 @@ type Drag =
  * the box to move, a corner to scale uniformly, the knob to rotate. Center
  * guides snap; holding Ctrl (Cmd on a Mac) ignores them. Values are written
  * through setParam, so keyframed properties get a keyframe at the playhead.
+ * Double-click a text clip's box to type into it on the canvas instead.
  */
 export function TransformOverlay({ width: W, height: H }: { width: number; height: number }) {
   const sel = useEditor((s) => s.selection);
   const project = useEditor((s) => s.project);
   const frame = useEditor((s) => s.playhead);
   const playing = useEditor((s) => s.playing);
+  const editing = useEditor((s) => s.textEdit);
   const [guides, setGuides] = useState({ v: false, h: false });
   const drag = useRef<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -47,6 +51,13 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
 
   const layer = layerAt(project, clip, frame);
   if (!layer) return null;
+  if (clip.type === "text" && editing === clip.id) {
+    return (
+      <div className="tf-layer">
+        <TextEditor key={clip.id} clip={clip} layer={layer} project={project} width={W} height={H} />
+      </div>
+    );
+  }
   const src = sourceSize(project, clip);
   const fit = src.native ? W / project.width : Math.min(W / src.w, H / src.h);
   const { left, top, right, bottom } = layer.crop;
@@ -132,6 +143,11 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
         onPointerDown={(e) => {
           const m = local(e);
           begin(e, { kind: "move", x0: paramAt(c, "transform.x", rel), y0: paramAt(c, "transform.y", rel), px: m.x, py: m.y });
+        }}
+        onDoubleClick={(e) => {
+          if (c.type !== "text") return;
+          e.stopPropagation(); // not the stage's full screen
+          editOnCanvas(c.id);
         }}
       >
         {["nw", "ne", "sw", "se"].map(corner)}

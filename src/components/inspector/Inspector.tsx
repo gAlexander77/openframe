@@ -10,6 +10,7 @@ import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsTo
 import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
+import { beginTyping, endTyping, typeText } from "../../state/textEdit";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
 import { SectionKey } from "./KeyTools";
 import { CurvesPanel } from "./CurvesPanel";
@@ -682,12 +683,18 @@ function TextTab({ clip }: { clip: TextClip }) {
         </div>
       )}
       <Section title="Text">
+        {/* Live, like the canvas editor: the viewer redraws as you type, and
+            the canvas editor's typing shows up here (ADR-031). */}
         <textarea
           className="field text-area"
-          defaultValue={clip.text}
-          key={clip.id}
+          value={clip.text}
           rows={3}
-          onBlur={(e) => e.target.value !== clip.text && patchClip(clip.id, "Edit text", (c) => ({ ...c, text: e.target.value }) as Clip)}
+          onFocus={(e) => beginTyping(clip.id, e.currentTarget)}
+          onChange={(e) => {
+            beginTyping(clip.id, e.currentTarget);
+            typeText(e.target.value);
+          }}
+          onBlur={endTyping}
           onKeyDown={(e) => e.key === "Escape" && (e.target as HTMLTextAreaElement).blur()}
           aria-label="Text"
         />

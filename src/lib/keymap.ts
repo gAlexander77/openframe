@@ -37,6 +37,7 @@ export type ActionId =
   | "redo"
   | "freeze"
   | "detachAudio"
+  | "editText"
   | "toolSelect"
   | "toolBlade"
   | "toolRipple"
@@ -101,6 +102,9 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   redo: ["Mod+Shift+Z", "Mod+Y"],
   freeze: ["Alt+F"],
   detachAudio: ["Mod+Shift+S"],
+  // Not in CapCut's list (it double-clicks); Figma's and Keynote's key for
+  // typing into the selected text box, and Enter is free here.
+  editText: ["Enter"],
   toolSelect: ["A"],
   toggleClipEnabled: ["V"],
   selectLeft: ["["],
@@ -165,6 +169,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   redo: "Redo",
   freeze: "Freeze frame",
   detachAudio: "Extract audio",
+  editText: "Edit text",
   toolSelect: "Selection tool",
   toggleClipEnabled: "Activate / deactivate clip",
   selectLeft: "Select clips to the left",

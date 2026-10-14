@@ -256,13 +256,15 @@ const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
 /** Global key handling. Typing in a text field is left alone, Escape
  * included: it is the field's (revert, cancel, leave), and passing it on
  * deselected the clip and closed the inspector being typed in. Sliders and
- * dropdowns keep only the keys they move by. */
+ * dropdowns keep only the keys they move by, and Enter on a focused button
+ * or link presses it rather than opening a title for typing. */
 export function onKeyDown(e: KeyboardEvent) {
   const el = e.target as HTMLElement | null;
   const input = el instanceof HTMLInputElement ? el : null;
   const typing = !!el && ((!!input && !NOT_TEXT.has(input.type)) || el.tagName === "TEXTAREA" || el.isContentEditable);
   if (typing) return;
   if ((input?.type === "range" || el?.tagName === "SELECT") && CONTROL_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey) return;
+  if (e.key === "Enter" && el?.closest?.("button, a, select, [role=button]")) return;
   const id = index.get(chordOf(e, isMac));
   if (!id) return;
   e.preventDefault();
