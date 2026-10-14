@@ -144,9 +144,13 @@ export function audioContext(): AudioContext {
  * sound if ignored (Web media engine pitfall 9).
  */
 export function audibleTime(ctx: AudioContext): number {
+  const fallback = ctx.currentTime - (ctx.outputLatency ?? 0) - ctx.baseLatency;
   const ts = ctx.getOutputTimestamp?.();
-  if (ts && ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.contextTime > 0) {
-    return ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+  if (ts && ts.contextTime !== undefined && ts.performanceTime !== undefined && ts.contextTime > 0 && ts.performanceTime > 0) {
+    const t = ts.contextTime + (performance.now() - ts.performanceTime) / 1000;
+    // Some environments (no audio device, headless) report a performanceTime
+    // from another time base; an audible time far from currentTime is that.
+    if (Math.abs(t - ctx.currentTime) < 1) return t;
   }
-  return ctx.currentTime - (ctx.outputLatency ?? 0) - ctx.baseLatency;
+  return fallback;
 }
