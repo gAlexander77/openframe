@@ -40,4 +40,4 @@ async (page) => {
     }
     return { checked: cases.length, bad };
   });
-};
+}

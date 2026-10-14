@@ -9,7 +9,7 @@
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
 import type { Asset } from "../lib/project/types";
 import { platform } from "../platform";
-import { imageFor } from "./media";
+import { imageFor, mediaOrigin } from "./media";
 
 export interface Filmstrip {
   /** Seconds between thumbnails. */
@@ -104,7 +104,7 @@ async function makeStrip(asset: Asset, src: string) {
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) return;
-    const start = await track.getFirstTimestamp();
+    const start = await mediaOrigin(track, await input.getPrimaryAudioTrack());
     const duration = asset.duration || (await input.computeDuration());
     const aspect = (await track.getDisplayWidth()) / (await track.getDisplayHeight());
     // At most ~120 thumbnails per file; the timeline picks the nearest.
@@ -143,7 +143,7 @@ async function makePeaks(asset: Asset, src: string) {
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) return;
-    const start = await track.getFirstTimestamp();
+    const start = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
     const duration = asset.duration || (await input.computeDuration());
     const data = new Float32Array(Math.ceil(duration * PEAK_RATE) + 1);
     peaks.set(src, { data, rate: PEAK_RATE });

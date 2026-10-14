@@ -9,6 +9,7 @@
 // responsive. A worker is the upgrade if long files show jank.
 
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
+import { mediaOrigin } from "./media";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
 import type { Asset } from "../lib/project/types";
 import { platform } from "../platform";
@@ -47,7 +48,7 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
     // timestamp. Real time 0 is timestamp 0 then, not the first timestamp,
     // or every result lands 21 ms late (measured on the fixtures). A stream
     // that starts late (MPEG-TS) still maps its first timestamp to 0.
-    const t0 = Math.max(0, await track.getFirstTimestamp());
+    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
     const n = Math.max(0, Math.ceil((to - from) * rate));
     const sum = new Float32Array(n);
     const count = new Uint16Array(n);
@@ -116,7 +117,7 @@ export async function frameScores(
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
-    const t0 = await track.getFirstTimestamp();
+    const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
     const sink = new CanvasSink(track, { width: opts.width ?? 128 });
     const weights = opts.lumaOnly ? LUMA_WEIGHTS : DEFAULT_WEIGHTS;
     const times: number[] = [];

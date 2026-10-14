@@ -23,7 +23,8 @@ export interface MediaFile {
   videoSink: VideoSampleSink | null;
   keySink: EncodedPacketSink | null;
   audioSink: AudioBufferSink | null;
-  /** First presentation timestamp; source time 0 maps to this. */
+  /** Container time that source time 0 maps to, shared by both tracks so
+   * they stay in sync (see mediaOrigin). */
   videoStart: number;
   audioStart: number;
   /** Container rotation in quarter turns clockwise. */
@@ -53,6 +54,20 @@ const AUDIO_EXT = /\.(mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?)$/i;
 
 export const isImageName = (name: string) => IMAGE_EXT.test(name);
 
+/**
+ * Where a file's source time 0 is, in container time. AAC's encoder priming
+ * packet carries a negative timestamp (-21.3 ms at 48 kHz) that is decoded
+ * but never presented; treating it as time 0 played every clip's sound
+ * 21 ms late (found by the beat detector). Files that genuinely start late
+ * (MPEG-TS, trimmed exports) keep their offset, and one origin for both
+ * tracks keeps picture and sound together.
+ */
+export async function mediaOrigin(video: InputVideoTrack | null, audio: InputAudioTrack | null): Promise<number> {
+  const firsts = await Promise.all([video?.getFirstTimestamp(), audio?.getFirstTimestamp()]);
+  const known = firsts.filter((t): t is number => typeof t === "number");
+  return known.length ? Math.max(0, Math.min(...known)) : 0;
+}
+
 async function openInput(source: Source): Promise<MediaFile> {
   const input = new Input({ source, formats: ALL_FORMATS });
   const video = await input.getPrimaryVideoTrack();
@@ -60,6 +75,7 @@ async function openInput(source: Source): Promise<MediaFile> {
   const videoOk = video ? await video.canDecode() : false;
   const audioOk = audio ? await audio.canDecode() : false;
   const rotation = video ? await video.getRotation() : 0;
+  const origin = await mediaOrigin(video, audio);
   return {
     input,
     video: videoOk ? video : null,
@@ -67,8 +83,8 @@ async function openInput(source: Source): Promise<MediaFile> {
     videoSink: videoOk && video ? new VideoSampleSink(video) : null,
     keySink: videoOk && video ? new EncodedPacketSink(video) : null,
     audioSink: audioOk && audio ? new AudioBufferSink(audio) : null,
-    videoStart: video ? await video.getFirstTimestamp() : 0,
-    audioStart: audio ? await audio.getFirstTimestamp() : 0,
+    videoStart: origin,
+    audioStart: origin,
     quarterTurns: ((rotation / 90) % 4) as 0 | 1 | 2 | 3,
     width: video ? await video.getDisplayWidth() : 0,
     height: video ? await video.getDisplayHeight() : 0,
