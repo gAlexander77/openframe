@@ -57,7 +57,7 @@ export function LibraryPanel() {
         ))}
       </nav>
       <div className="lib-body" key={tab}>
-        {tab === "media" && <MediaTab kind="visual" />}
+        {tab === "media" && <MediaTab kind="all" />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
         {tab === "effects" && <EffectsTab />}
@@ -88,13 +88,15 @@ function useThumbs() {
   return useSyncExternalStore(thumbs.subscribe, thumbs.version);
 }
 
-function MediaTab({ kind }: { kind: "visual" | "audio" }) {
+/** Media lists every import, as CapCut's Media › Import does (an imported
+ * MP3 used to vanish into Audio); Audio shows just the sound files. */
+function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const [q, setQ] = useState("");
   useThumbs();
   const used = useMemo(() => new Set(tracks.flatMap((t) => t.clips.map((c) => ("assetId" in c ? c.assetId : "")))), [tracks]);
-  const list = assets.filter((a) => (kind === "audio" ? a.kind === "audio" : a.kind !== "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
+  const list = assets.filter((a) => (kind === "all" || a.kind === "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
     <div className="lib-content">
@@ -114,7 +116,7 @@ function MediaTab({ kind }: { kind: "visual" | "audio" }) {
           <span>Drag videos, audio or photos here, or click to browse</span>
         </button>
       ) : list.length === 0 ? (
-        <div className="empty">{q ? `Nothing matches “${q}”` : kind === "audio" ? "No audio imported yet" : "No video or photos imported yet"}</div>
+        <div className="empty">{q ? `Nothing matches “${q}”` : "No audio imported yet"}</div>
       ) : (
         <div className="card-grid">
           {list.map((a) => (
