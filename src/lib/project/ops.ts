@@ -7,6 +7,7 @@
 // overlaps on a track, durations >= 1, source ranges inside the asset.
 
 import { setPath, upsertKey } from "../keyframes";
+import { areaTo, frameForArea, meanSpeed, toFrames, type NormPoint } from "../speed";
 import type { Rational } from "../time";
 import { createTrack, uid } from "./defaults";
 import type {
@@ -17,6 +18,7 @@ import type {
   Keyframe,
   Marker,
   Project,
+  SpeedPoint,
   Track,
   TrackKind,
   Transition,
@@ -60,14 +62,49 @@ export function projectDuration(p: Project): number {
 export const isTimed = (c: Clip): c is VideoClip | AudioClip =>
   c.type === "video" || c.type === "audio";
 
-/** Seconds of source consumed per timeline frame. */
-export const sourcePerFrame = (c: VideoClip | AudioClip, fps: Rational) =>
-  (c.speed * fps.den) / fps.num;
+type TimedClip = VideoClip | AudioClip;
 
-/** Source time (seconds) shown at timeline frame `f` inside clip `c`. */
-export function sourceTimeAt(c: VideoClip | AudioClip, f: number, fps: Rational): number {
+/** Seconds of source a constant-speed clip consumes per timeline frame;
+ * for a curve, the mean over the clip. */
+export const sourcePerFrame = (c: TimedClip, fps: Rational) =>
+  c.speedCurve ? sourceOffset(c, c.duration, fps) / c.duration : (c.speed * fps.den) / fps.num;
+
+/**
+ * Seconds of source the clip's first `x` timeline frames consume: the
+ * integral of its speed (ADR-027). `x` may be fractional, negative (what
+ * extending the start would add) or past the end (extending the end).
+ */
+export function sourceOffset(c: TimedClip, x: number, fps: Rational): number {
+  const area = c.speedCurve ? areaTo(c.speedCurve.points, x) : x * c.speed;
+  return (area * fps.den) / fps.num;
+}
+
+/** Inverse of sourceOffset: the clip frame (fractional) at which `seconds`
+ * of source have been consumed. */
+export function framesForSource(c: TimedClip, seconds: number, fps: Rational): number {
+  const area = (seconds * fps.num) / fps.den;
+  return c.speedCurve ? frameForArea(c.speedCurve.points, area) : area / c.speed;
+}
+
+/** +1 when source time grows with timeline time, -1 for a reversed clip. */
+const dir = (c: TimedClip) => (c.reverse ? -1 : 1);
+
+/**
+ * Source time (seconds) shown at timeline frame `f` inside clip `c`: the
+ * start of the stretch of source that frame covers. Reversed clips read
+ * downward from `in`, so their frame r covers [in - off(r+1), in - off(r)).
+ */
+export function sourceTimeAt(c: TimedClip, f: number, fps: Rational): number {
   if (c.freeze) return c.in;
-  return c.in + (f - c.start) * sourcePerFrame(c, fps);
+  const r = f - c.start;
+  return c.reverse ? c.in - sourceOffset(c, r + 1, fps) : c.in + sourceOffset(c, r, fps);
+}
+
+/** Source seconds the clip reads, low to high (freezes read one instant). */
+export function sourceRange(c: TimedClip, fps: Rational): [number, number] {
+  if (c.freeze) return [c.in, c.in];
+  const span = sourceOffset(c, c.duration, fps);
+  return c.reverse ? [c.in - span, c.in] : [c.in, c.in + span];
 }
 
 /** How many frames the clip's end could still grow before running out of
@@ -75,15 +112,22 @@ export function sourceTimeAt(c: VideoClip | AudioClip, f: number, fps: Rational)
 export function roomRight(p: Project, c: Clip): number {
   if (!isTimed(c) || c.freeze) return Infinity;
   const a = getAsset(p, c.assetId);
-  if (!a || !(a.duration > 0)) return Infinity;
-  const total = Math.floor((a.duration - c.in) / sourcePerFrame(c, p.fps) + 1e-6);
+  // Reading forward, the end eats into what is after `in`; reversed, into
+  // what is before it.
+  const avail = c.reverse ? c.in : a && a.duration > 0 ? a.duration - c.in : Infinity;
+  if (avail === Infinity) return Infinity;
+  const total = Math.floor(framesForSource(c, avail, p.fps) + 1e-6);
   return Math.max(0, total - c.duration);
 }
 
-/** How many frames the clip's start could move left before source frame 0. */
+/** How many frames the clip's start could move left before the source runs
+ * out (source frame 0, or the source's end for a reversed clip). */
 export function roomLeft(p: Project, c: Clip): number {
   if (!isTimed(c) || c.freeze) return Infinity;
-  return Math.floor(c.in / sourcePerFrame(c, p.fps) + 1e-6);
+  const a = getAsset(p, c.assetId);
+  const avail = c.reverse ? (a && a.duration > 0 ? a.duration - c.in : Infinity) : c.in;
+  if (avail === Infinity) return Infinity;
+  return Math.max(0, Math.floor(-framesForSource(c, -avail, p.fps) + 1e-6));
 }
 
 // ---- immutable plumbing -----------------------------------------------------
@@ -120,11 +164,17 @@ function shiftKeys(keys: Clip["keyframes"], by: number): Clip["keyframes"] {
   return out;
 }
 
+const shiftPoints = (pts: SpeedPoint[], by: number) => pts.map((x) => ({ ...x, f: x.f + by }));
+
 /** Move a clip's left edge by `d` frames (+ = later), keeping its content
- * anchored to the timeline: source in-point and keyframes shift with it. */
+ * anchored to the timeline: source in-point, speed curve and keyframes
+ * shift with it. */
 function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
   let out = { ...c, start: c.start + d, duration: c.duration - d } as Clip;
-  if (isTimed(out) && !out.freeze) out = { ...out, in: out.in + d * sourcePerFrame(out, fps) };
+  if (isTimed(c) && !c.freeze) {
+    out = { ...out, in: c.in + dir(c) * sourceOffset(c, d, fps) } as Clip;
+    if (c.speedCurve) out = { ...out, speedCurve: { ...c.speedCurve, points: shiftPoints(c.speedCurve.points, -d) } } as Clip;
+  }
   if (c.keyframes) out = { ...out, keyframes: shiftKeys(c.keyframes, -d) };
   return out;
 }
@@ -388,14 +438,21 @@ export function rollEdit(p: Project, leftId: Id, rightId: Id, frame: number): Pr
   return q;
 }
 
-/** Slip: change which part of the source plays, keeping position and length. */
+/** Slip: change which part of the source plays, keeping position and length.
+ * A frame of slip moves the source window by the clip's mean rate, so a
+ * ramp keeps its shape and only the material under it changes. */
 export function slipClip(p: Project, clipId: Id, deltaFrames: number): Project {
   const loc = findClip(p, clipId);
   if (!loc || !isTimed(loc.clip) || loc.clip.freeze) return p;
   const c = loc.clip;
-  const d = Math.min(Math.max(Math.round(deltaFrames), -roomLeft(p, c)), roomRight(p, c));
+  const per = sourcePerFrame(c, p.fps);
+  const [lo, hi] = sourceRange(c, p.fps);
+  const a = getAsset(p, c.assetId);
+  const earlier = Math.max(0, Math.floor(lo / per + 1e-6));
+  const later = a && a.duration > 0 ? Math.max(0, Math.floor((a.duration - hi) / per + 1e-6)) : Infinity;
+  const d = Math.min(Math.max(Math.round(deltaFrames), -earlier), later);
   if (d === 0) return p;
-  return updateClip(p, clipId, (x) => ({ ...x, in: (x as VideoClip).in + d * sourcePerFrame(c, p.fps) }) as Clip);
+  return updateClip(p, clipId, (x) => ({ ...x, in: (x as VideoClip).in + d * per }) as Clip);
 }
 
 /** Slide: move a clip between its neighbors; the previous clip's end and the
@@ -419,26 +476,69 @@ export function slideClip(p: Project, clipId: Id, deltaFrames: number): Project 
 
 // ---- speed, freeze, detach -------------------------------------------------
 
-/** Constant speed change. The clip keeps its source range, so its timeline
- * length scales; later clips on the track ripple by the difference. */
-export function setSpeed(p: Project, clipId: Id, speed: number): Project {
+/** Give a clip a new length (and the fields that go with it), rippling the
+ * later clips on its track by the difference. */
+function retime(p: Project, clipId: Id, fn: (c: TimedClip) => TimedClip): Project {
   const loc = findClip(p, clipId);
-  if (!loc || !isTimed(loc.clip) || !(speed > 0)) return p;
+  if (!loc || !isTimed(loc.clip)) return p;
   const c = loc.clip;
-  const duration = Math.max(1, Math.round((c.duration * c.speed) / speed));
-  const d = duration - c.duration;
+  const next = fn(c);
+  const d = next.duration - c.duration;
   return withTrack(p, loc.track.id, (t) =>
     setClips(
       t,
-      t.clips.map((x) =>
-        x.id === clipId
-          ? ({ ...x, speed, duration } as Clip)
-          : x.start >= clipEnd(c)
-            ? { ...x, start: x.start + d }
-            : x,
-      ),
+      t.clips.map((x) => (x.id === clipId ? next : d && x.start >= clipEnd(c) ? { ...x, start: x.start + d } : x)),
     ),
   );
+}
+
+/** Frames' worth of source (at the project rate) a clip reads. */
+const spanFrames = (c: TimedClip, fps: Rational) => (sourceOffset(c, c.duration, fps) * fps.num) / fps.den;
+
+/** Constant speed change (CapCut's Standard tab). The clip keeps its source
+ * range, so its timeline length scales; later clips on the track ripple by
+ * the difference. A speed curve gives way to the constant speed. */
+export function setSpeed(p: Project, clipId: Id, speed: number): Project {
+  if (!(speed > 0)) return p;
+  return retime(p, clipId, (c) => {
+    const duration = Math.max(1, Math.round(spanFrames(c, p.fps) / speed));
+    return { ...omit(c, ["speedCurve"]), speed, duration };
+  });
+}
+
+/**
+ * Apply a speed curve given over the clip normalized (t 0..1), or remove it
+ * with null (back to the constant speed). The source range stays; the length
+ * becomes span / mean speed, as in CapCut, and later clips ripple.
+ */
+export function setSpeedCurve(p: Project, clipId: Id, norm: NormPoint[] | null, preset?: string): Project {
+  if (norm && !norm.length) return p;
+  return retime(p, clipId, (c) => {
+    if (!norm) {
+      if (!c.speedCurve) return c;
+      return { ...omit(c, ["speedCurve"]), duration: Math.max(1, Math.round(spanFrames(c, p.fps) / c.speed)) };
+    }
+    const duration = Math.max(1, Math.round(spanFrames(c, p.fps) / meanSpeed(norm)));
+    return { ...c, duration, speedCurve: { ...(preset ? { preset } : {}), points: toFrames(norm, duration) } };
+  });
+}
+
+/** Play a clip backward (or forward again) over the same source range.
+ * `in` moves to the other end, since it is where playback begins. */
+export function setReverse(p: Project, clipId: Id, reverse: boolean): Project {
+  const loc = findClip(p, clipId);
+  if (!loc || !isTimed(loc.clip) || loc.clip.freeze || !!loc.clip.reverse === reverse) return p;
+  const c = loc.clip;
+  const [lo, hi] = sourceRange(c, p.fps);
+  return updateClip(p, clipId, () => (reverse ? { ...c, reverse: true, in: hi } : { ...omit(c, ["reverse"]), in: lo }));
+}
+
+/** CapCut's "Change pitch" toggle: off keeps the pitch at any speed. */
+export function setChangePitch(p: Project, clipIds: Id[], on: boolean): Project {
+  for (const id of clipIds) {
+    p = updateClip(p, id, (c) => (!isTimed(c) ? c : on ? { ...c, changePitch: true } : omit(c, ["changePitch"])));
+  }
+  return p;
 }
 
 /** Insert a held frame at `at`, rippling the rest of the track (CapCut's
@@ -450,7 +550,7 @@ export function freezeFrame(p: Project, clipId: Id, at: number, frames: number):
   }
   const c = loc.clip;
   const freeze: VideoClip = {
-    ...omit(c, ["transitionOut", "animIn", "animOut", "keyframes"]),
+    ...omit(c, ["transitionOut", "animIn", "animOut", "keyframes", "speedCurve", "reverse"]),
     id: uid("c"),
     start: at,
     duration: frames,
@@ -476,6 +576,9 @@ export function detachAudio(p: Project, clipId: Id): Project {
     duration: v.duration,
     in: v.in,
     speed: v.speed,
+    ...(v.speedCurve ? { speedCurve: v.speedCurve } : {}),
+    ...(v.reverse ? { reverse: true } : {}),
+    ...(v.changePitch ? { changePitch: true } : {}),
     ...(v.freeze ? { freeze: true } : {}),
     volume: v.volume,
     pan: v.pan,
@@ -625,7 +728,8 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
 /** Change the project frame rate, rescaling every frame-based value once
  * (ADR-004: an explicit, rare operation). Clips keep their time in seconds;
  * edges that no longer land on a frame round to the nearest one, and each
- * track is re-packed so rounding can never create an overlap. */
+ * track is re-packed so rounding can never create an overlap. Speed curve
+ * points scale without rounding, so a ramp keeps its exact shape in time. */
 export function setFps(p: Project, fps: Rational): Project {
   const r = (fps.num / fps.den) / (p.fps.num / p.fps.den);
   if (r === 1) return { ...p, fps };
@@ -640,6 +744,7 @@ export function setFps(p: Project, fps: Rational): Project {
       const end = Math.max(start + 1, f(c.start + c.duration));
       prevEnd = end;
       const out: Record<string, unknown> = { ...c, start, duration: end - start, keyframes: keys(c.keyframes) };
+      if (isTimed(c) && c.speedCurve) out.speedCurve = { ...c.speedCurve, points: c.speedCurve.points.map((x) => ({ ...x, f: x.f * r })) };
       for (const k of ["fadeIn", "fadeOut"]) if (typeof out[k] === "number") out[k] = f(out[k] as number);
       for (const k of ["animIn", "animOut", "animLoop", "transitionOut"]) if (out[k]) out[k] = anim(out[k] as { duration: number });
       return out as unknown as Clip;

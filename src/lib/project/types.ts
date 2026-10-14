@@ -263,12 +263,41 @@ export interface Sound {
   muted: boolean;
 }
 
+/** One point of a speed curve. */
+export interface SpeedPoint {
+  /** Frame relative to the clip's start. May be fractional, and may lie
+   * outside the clip after a trim (like keyframes), so extending the clip
+   * again brings the original ramp back. */
+  f: number;
+  /** Playback rate there, 0.1..10. */
+  speed: number;
+}
+
+/** Variable speed (CapCut's Curve, Premiere's time remapping). Between
+ * points the rate changes exponentially, a straight line on the graph's
+ * log axis; before the first and after the last point it holds. */
+export interface SpeedCurve {
+  /** Preset the curve came from (lib/speed.ts PRESETS), for the UI. */
+  preset?: string;
+  /** Sorted by f, at least one. */
+  points: SpeedPoint[];
+}
+
 export interface Timed {
   assetId: Id;
-  /** Seconds into the source where the clip begins. */
+  /** Seconds into the source where playback begins: the earliest source
+   * time it reads, or the latest when `reverse` is set. */
   in: number;
-  /** 1 = normal. 0.5 = half speed (clip lasts twice as long). */
+  /** 1 = normal. 0.5 = half speed (clip lasts twice as long). Ignored while
+   * `speedCurve` is set. */
   speed: number;
+  /** Replaces `speed` with a rate that varies over the clip. */
+  speedCurve?: SpeedCurve;
+  /** Play the source backward from `in`. */
+  reverse?: boolean;
+  /** CapCut's "Change pitch": absent (off) keeps the pitch at any speed;
+   * on lets it rise and fall with the speed, like tape. */
+  changePitch?: boolean;
   /** Hold the frame at `in` for the clip's whole length. */
   freeze?: boolean;
 }
