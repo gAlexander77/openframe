@@ -1,0 +1,25 @@
+/* Keyframe editing: the easing menu and the timeline's diamond extras.
+   Cyan marks what is selected, as everywhere else. */
+
+/* ---- easing menu ----------------------------------------------------------------- */
+.ease-menu { position: fixed; z-index: 300; min-width: 300px; }
+.ease-menu-title { padding: 4px 8px 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); }
+/* Scoped under .ease-menu: shell.css's .menu-item loads later and would win. */
+.ease-menu .ease-item { grid-template-columns: 18px 30px 1fr auto; gap: 8px; }
+.ease-menu .ease-item.custom { color: var(--text-2); cursor: default; }
+.ease-menu .ease-item.custom:hover { background: transparent; }
+.ease-curve { display: block; overflow: visible; }
+.ease-curve path { fill: none; stroke: var(--text-2); stroke-width: 1.5; stroke-linejoin: round; }
+.ease-item:hover .ease-curve path, .ease-item[aria-checked="true"] .ease-curve path, .kf-ease-btn .ease-curve path { stroke: var(--accent); }
+
+/* ---- timeline diamonds while dragging --------------------------------------------- */
+.clip-key-snap {
+  position: absolute; top: 0; bottom: 0; z-index: 4; width: 1px;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent); pointer-events: none;
+}
+.clip-key-readout {
+  position: absolute; bottom: 15px; z-index: 6; transform: translateX(-50%);
+  padding: 1px 6px; border-radius: 4px;
+  background: rgb(0 0 0 / 80%); color: #fff; font-size: 10px; white-space: nowrap;
+  pointer-events: none;
+}

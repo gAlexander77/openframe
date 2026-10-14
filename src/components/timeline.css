@@ -92,10 +92,15 @@
 .clip-strip, .clip-wave { position: absolute; pointer-events: none; }
 .clip-text .clip-label, .clip-adjustment .clip-label, .clip-color .clip-label { height: 100% !important; background: none; }
 .clip-key {
-  position: absolute; bottom: 3px; z-index: 3; color: #fff;
+  position: absolute; bottom: 1px; z-index: 5;
+  display: grid; place-items: center; width: 12px; height: 12px; padding: 0;
+  border: 0; background: none; color: #fff; cursor: ew-resize;
   filter: drop-shadow(0 0 1px rgb(0 0 0 / 80%));
+  transition: transform var(--t-fast) var(--ease-spring), color var(--t-fast);
 }
+.clip-key:hover { transform: scale(1.3); }
 .clip-key.on { color: var(--accent); }
+.clip-key.sel { color: var(--accent); transform: scale(1.35); filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px rgb(0 193 205 / 70%)); }
 
 .trim {
   position: absolute; top: 0; bottom: 0; width: 8px; z-index: 4;

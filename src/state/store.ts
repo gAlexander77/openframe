@@ -8,6 +8,7 @@
 import { useSyncExternalStore } from "react";
 import { createProject } from "../lib/project/defaults";
 import { projectDuration } from "../lib/project/ops";
+import type { KeyRef } from "../lib/keyframeEdit";
 import type { Id, Project } from "../lib/project/types";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
@@ -54,6 +55,9 @@ export interface EditorState {
   redoLabel: string | null;
   /** Bumped on every project change so autosave can debounce on it. */
   revision: number;
+  /** Selected keyframes, on one clip at a time. Cleared whenever the clip
+   * selection changes; refs to keys an undo removed are simply ignored. */
+  keySel: { clipId: Id; keys: KeyRef[] } | null;
 }
 
 interface HistoryEntry {
@@ -82,6 +86,7 @@ let state: EditorState = {
   undoLabel: null,
   redoLabel: null,
   revision: 0,
+  keySel: null,
 };
 
 let past: HistoryEntry[] = [];
@@ -194,6 +199,7 @@ export const store = {
       playing: false,
       inPoint: null,
       outPoint: null,
+      keySel: null,
       revision: state.revision + 1,
       ...labels(),
     });
@@ -206,7 +212,7 @@ export const store = {
   },
 
   select(ids: Id[]) {
-    set({ selection: ids });
+    set({ selection: ids, keySel: null });
   },
 };
 
