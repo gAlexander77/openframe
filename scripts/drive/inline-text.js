@@ -215,6 +215,11 @@ async (page) => {
   await settle();
   await aligned("two lines, left");
   await page.keyboard.press("Escape");
+  await ve((i) => window.videoEditor.exec("set_text", { clip_id: i, style: { align: "right" } }), id);
+  await page.keyboard.press("Enter");
+  await settle();
+  await aligned("two lines, right");
+  await page.keyboard.press("Escape");
   await ve((i) => {
     const v = window.videoEditor;
     v.exec("set_text", { clip_id: i, text: "Turned title", style: { align: "center" } });
