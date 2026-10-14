@@ -9,6 +9,9 @@
   overflow-x: auto; scrollbar-width: none;
 }
 .lib-tabs::-webkit-scrollbar { display: none; }
+.lib-tabs.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.lib-tabs.more-left { mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
+.lib-tabs.more-left.more-right { mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 .lib-tab {
   display: grid; justify-items: center; gap: 3px;
   flex: 1 0 auto; min-width: 46px; padding: 5px 4px 7px;

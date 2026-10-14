@@ -1,4 +1,4 @@
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { thumbs } from "../engine/thumbs";
 import {
   AudioLines,
@@ -44,11 +44,44 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "ai", label: "AI tools", icon: WandSparkles },
 ];
 
+/** The tab strip scrolls sideways when the panel is narrower than its ten
+ * tabs: edges fade where tabs are hidden, the mouse wheel scrolls it, and
+ * the open tab is kept in view (it can be opened from elsewhere). */
+function useTabStrip(tab: string) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const el = ref.current!;
+    const edges = () => {
+      el.classList.toggle("more-left", el.scrollLeft > 1);
+      el.classList.toggle("more-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+    };
+    const wheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      el.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    const ro = new ResizeObserver(edges);
+    ro.observe(el);
+    el.addEventListener("scroll", edges, { passive: true });
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      el.removeEventListener("scroll", edges);
+      el.removeEventListener("wheel", wheel);
+    };
+  }, []);
+  useEffect(() => {
+    ref.current?.querySelector(".lib-tab.on")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }, [tab]);
+  return ref;
+}
+
 export function LibraryPanel() {
   const tab = useEditor((s) => s.leftTab);
+  const strip = useTabStrip(tab);
   return (
     <section className="panel library-panel" aria-label="Library">
-      <nav className="lib-tabs" role="tablist">
+      <nav className="lib-tabs" role="tablist" ref={strip}>
         {TABS.map((t) => (
           <button
             key={t.id}
