@@ -71,6 +71,7 @@ export {
   Undo2,
   Unlink2,
   Upload,
+  Volume1,
   Volume2,
   VolumeX,
   WandSparkles,

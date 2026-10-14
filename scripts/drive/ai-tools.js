@@ -144,6 +144,50 @@ async (page, base = "http://localhost:1420") => {
     d.ok = near(d.measured, [-14.2, -14.6], 0.15) && near(d.gainDb, [2.5, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && d.undoLabel === "Normalize loudness of 2 clips";
   }
 
+  // 4c. Ducking: music under a voice that talks in 1.6 s bursts every 3 s
+  //     (speech-gaps.m4a; the silence check above finds speech at 0-1.7,
+  //     2.9-4.7, 5.9-7.7 and 8.9-10.7 s). Each burst is its own dip (the
+  //     1.2 s pauses outlast attack + release + hold), the music is down
+  //     12 dB inside speech and back at full between, in one undo step.
+  //     Then the music alone is exported and its level measured, so the
+  //     keys are proven to reach the sound, not just the document.
+  await fresh();
+  details.ducking = await run(async () => {
+    const ve = window.videoEditor;
+    const music = await window.__place("music-30s.mp3");
+    const voice = await window.__place("speech-gaps.m4a");
+    const id = music.clip.id;
+    ve.exec("trim_clip", { clip_id: id, edge: "end", to: 12 });
+    const r = await ve.ai.duckUnderSpeech(id, { depth: 12 });
+    const fps = ve.describe().fps;
+    const db = (t) => +(20 * Math.log10(ve.paramAt(id, "volume", Math.round(t * fps)))).toFixed(2);
+    const env = { speech: [0.8, 3.8, 6.8, 9.8].map(db), gaps: [2.5, 5.5, 8.5, 11.6].map(db) };
+    const undoLabel = ve.state().undoLabel;
+    // Music alone: mute the voice's track, render sound only.
+    const vt = ve.describe().tracks.find((t) => t.clips.some((c) => c.id === voice.clip.id));
+    ve.exec("update_track", { track_id: vt.id, muted: true });
+    const out = await ve.render({ video: false, audioFormat: "wav" });
+    const buf = await (await fetch(out.url)).arrayBuffer();
+    const ctx = new OfflineAudioContext(1, 1, 48000);
+    const audio = await ctx.decodeAudioData(buf);
+    const ch = audio.getChannelData(0);
+    const rms = (a, b) => {
+      let s = 0;
+      const [i, j] = [Math.round(a * audio.sampleRate), Math.round(b * audio.sampleRate)];
+      for (let k = i; k < j; k++) s += ch[k] * ch[k];
+      return 10 * Math.log10(s / (j - i));
+    };
+    // The bed repeats every 4 s, so 2.2-2.6 s (a pause, back at full) and
+    // 6.2-6.6 s (speech) are the same music: their level differs only by
+    // the dip.
+    const renderedDip = +(rms(2.2, 2.6) - rms(6.2, 6.6)).toFixed(2);
+    return { ...r, env, undoLabel, renderedDip };
+  });
+  {
+    const d = details.ducking;
+    d.ok = d.dips === 4 && d.voices === 1 && d.env.speech.every((x) => Math.abs(x + 12) < 0.05) && d.env.gaps.every((x) => Math.abs(x) < 0.05) && d.undoLabel === "Duck under speech" && Math.abs(d.renderedDip - 12) < 1;
+  }
+
   // 5. Through the UI once: the AI tools tab, settings popover (Escape must
   //    close it without deselecting the clip), Remove, result on the card.
   await fresh();

@@ -10,6 +10,7 @@
 import { useSyncExternalStore } from "react";
 import { decodeMono, frameScores, measureLoudness } from "../engine/analyze";
 import { detectBeats } from "../lib/analysis/beats";
+import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
@@ -17,12 +18,12 @@ import { runCommand } from "../lib/commands";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
 import type { Asset, AudioClip, Id, VideoClip } from "../lib/project/types";
-import { framesToSeconds } from "../lib/time";
+import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { edit } from "./actions";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 
-export type ToolId = "silences" | "scenes" | "beats" | "loudness";
+export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -51,11 +52,17 @@ export interface LoudnessSettings {
   target: number;
 }
 
+export interface DuckSettings {
+  /** How far the music dips under speech, dB. */
+  depth: number;
+}
+
 export interface AiSettings {
   silences: SilenceSettings;
   scenes: SceneSettings;
   beats: BeatSettings;
   loudness: LoudnessSettings;
+  ducking: DuckSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -64,6 +71,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   beats: { every: 1 },
   // YouTube, TikTok, Spotify and most social players normalize to about -14.
   loudness: { target: -14 },
+  // Ducking guides put music 10-15 dB under dialogue.
+  ducking: { depth: 12 },
 };
 
 export interface AiJob {
@@ -120,6 +129,7 @@ export const NEEDS: Record<ToolId, string> = {
   scenes: "a video clip",
   beats: "a music or video clip with sound",
   loudness: "video or audio clips with sound",
+  ducking: "a music clip with speech under it",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
@@ -419,4 +429,79 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
   const one = live.length === 1 ? ` from ${live[0].lufs.toFixed(1)}` : "";
   finish("loudness", `${plural(live.length, "clip")} set to ${target} LUFS${one}${held ? ` · ${held} held back to avoid clipping` : ""}`);
   return results;
+}
+
+// ---- ducking ---------------------------------------------------------------------
+
+export interface DuckEdit {
+  /** Clips listened to for speech. */
+  voices: number;
+  /** Stretches of speech the music dips under. */
+  dips: number;
+  keys: number;
+}
+
+/** Clips with sound that play under `clip`: not muted, not disabled. */
+function voicesUnder(clip: MediaClip): Target[] {
+  const p = store.get().project;
+  const end = clip.start + clip.duration;
+  return p.tracks
+    .filter((t) => !t.muted)
+    .flatMap((t) => t.clips)
+    .filter((c): c is MediaClip => (c.type === "video" || c.type === "audio") && c.id !== clip.id && !c.disabled && !c.muted && c.volume > 0 && !c.freeze)
+    .filter((c) => c.start < end && c.start + c.duration > clip.start)
+    .flatMap((c) => {
+      const asset = ops.getAsset(p, c.assetId);
+      return asset?.hasAudio ? [{ clip: c, asset }] : [];
+    });
+}
+
+/**
+ * Dip a music clip under the speech of every other clip with sound that
+ * plays with it, as volume keyframes the user can adjust (one undo step;
+ * existing volume keyframes are replaced). Speech is wherever the silence
+ * detector finds no silence.
+ * ponytail: every other audible clip counts as speech, music included; a
+ * speech/music classifier is the upgrade if mixed beds duck wrongly.
+ */
+export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> = {}): Promise<DuckEdit> {
+  const { clip, asset } = resolve("ducking", clipId);
+  const depth = opts.depth ?? state.settings.ducking.depth;
+  const fps = store.get().project.fps;
+  const voices = voicesUnder(clip);
+  if (!voices.length) {
+    const msg = "No other clip with sound plays under it";
+    toast(msg, "error");
+    throw new Error(msg);
+  }
+  const spans = await job("ducking", clip, `Finding speech under ${asset.name}`, async (progress, signal) => {
+    const out: [number, number][] = [];
+    for (const [i, v] of voices.entries()) {
+      const [from, to] = windowOf(v.clip);
+      const pcm = await decodeMono(v.asset, from, to, SILENCE_RATE, (x) => progress((i + x) / voices.length), signal);
+      const speech: Range[] = [];
+      let at = 0;
+      for (const r of findSilences(pcm, SILENCE_RATE).ranges) {
+        if (r.start > at) speech.push({ start: from + at, end: from + r.start });
+        at = r.end;
+      }
+      if (at < to - from) speech.push({ start: from + at, end: to });
+      out.push(...framesOfRanges(v.clip, speech, fps));
+    }
+    return out;
+  });
+  const c = stillThere(clip.id);
+  const frames = (s: number) => secondsToFrames(s, fps);
+  const keys = duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: depth, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) });
+  const dips = keys.filter((k, i) => k.v < c.volume && !(keys[i - 1]?.v < c.volume)).length;
+  if (!dips) {
+    finish("ducking", "No speech found under it");
+    return { voices: voices.length, dips: 0, keys: 0 };
+  }
+  edit("Duck under speech", (p) => {
+    if (c.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: c.id, path: "volume" });
+    return keys.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: c.id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
+  });
+  finish("ducking", `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
+  return { voices: voices.length, dips, keys: keys.length };
 }

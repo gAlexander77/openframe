@@ -16,7 +16,6 @@ items move to [[Features]] when they ship.
   tools themselves shipped).
 - **Inline text editing** on the canvas.
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
-- **Auto ducking**: music dips under speech as editable volume keyframes.
 
 ## Later
 

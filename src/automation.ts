@@ -10,7 +10,7 @@ import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
-import { analyzeBeats, analyzeScenes, analyzeSilences, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
+import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -62,7 +62,7 @@ export const automation = {
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
   /** The AI tools: analyze, then apply as one undoable edit. */
-  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness },
+  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech },
 };
 
 declare global {

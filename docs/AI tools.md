@@ -1,5 +1,5 @@
 ---
-tags: [ai, analysis, silence, scenes, beats, loudness]
+tags: [ai, analysis, silence, scenes, beats, loudness, ducking]
 created: 2026-10-13
 updated: 2026-10-14
 status: living
@@ -8,7 +8,7 @@ status: living
 # AI tools
 
 The first local "AI" tools: **Remove silences**, **Split scenes**, **Beat
-markers** and **Normalize loudness**. None of them is a neural network. Each one is a small piece of
+markers**, **Normalize loudness** and **Auto ducking**. None of them is a neural network. Each one is a small piece of
 classic signal processing that runs on the user's machine, in the webview,
 with no model download, no key and no network. Choices and sources are in
 [[AI and automation]] §2.3, §2.5 and §2.6; this note is what we actually
@@ -193,6 +193,30 @@ ceiling by a fraction of a dB); surround weights (1.41 on the rear pair,
 no LFE) need the channel layout; clips with volume keyframes are skipped;
 track volume is not taken into account.
 
+## Auto ducking
+
+`src/lib/analysis/duck.ts`. Select the music; every other clip with sound
+that plays with it (not muted or disabled) is listened to for speech with
+the silence detector above (speech = wherever it finds no silence). The
+music then gets **volume keyframes** — editable afterwards in the keyframe
+panel, unlike CapCut's ducking, which is a switch you cannot shape:
+
+- down by the depth (Light 6, **Medium 12**, Strong 18 dB; guides put
+  music 10–15 dB under dialogue) from 0.1 s before each stretch of speech
+  (attack, so the first word is clear) to its end;
+- back up over 0.4 s (release);
+- pauses shorter than attack + release + 0.6 s stay ducked, so the music
+  does not pump between sentences.
+
+Existing volume keyframes on the music are replaced, in one undo step
+("Duck under speech"). Measured on the fixtures: four 1.6 s bursts of
+speech every 3 s give four dips, −12.00 dB inside speech and 0 dB in every
+pause, and the exported music is 12.0 dB quieter under speech than in the
+pauses.
+
+**Gaps.** Every other audible clip counts as speech, music included; a
+speech/music classifier is the upgrade. One depth for the whole clip.
+
 ## In the app and for agents
 
 - **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).
@@ -211,7 +235,8 @@ track volume is not taken into account.
   `window.videoEditor.ai.removeSilences | splitScenes | markBeats` analyze
   and apply. Omitting `clipId` uses the selected clip.
   `ai.normalizeLoudness(clipIds?, { target })` takes a list and returns
-  each clip's measured LUFS, gain and whether the peak held it back.
+  each clip's measured LUFS, gain and whether the peak held it back;
+  `ai.duckUnderSpeech(clipId?, { depth })` returns the dips and keys made.
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

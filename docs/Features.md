@@ -103,8 +103,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## AI tools (all on this machine)
 
-- **Remove silences**, **Split scenes**, **Beat markers** and **Normalize
-  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) in the
+- **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
+  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) and **Auto
+  ducking** (music dips under speech as editable volume keyframes) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
 - **Copilot**: ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
