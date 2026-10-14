@@ -61,3 +61,87 @@ crossfade to avoid clicks.
 **Gaps.** Energy cannot tell a pause with music or traffic under it from
 speech. A voice activity model (Silero VAD, MIT, 2 MB) is the planned
 upgrade; it replaces step 1 and keeps steps 2–4.
+
+## Split scenes
+
+`src/lib/analysis/scenes.ts`, a port of PySceneDetect's ContentDetector,
+FlashFilter and AdaptiveDetector (see the credits below). Frames are
+decoded 128 px wide, converted to HSV in OpenCV's 8-bit ranges (H 0–179,
+S and V 0–255, which is what PySceneDetect's thresholds are tuned in), and
+each frame gets a **content score**: the mean absolute per-pixel difference
+from the previous frame, averaged over H, S and V. Only the scores are
+kept, so analysis memory does not grow with the video's length.
+
+- **AdaptiveDetector (default).** A frame is a cut when its score is at
+  least 3× the mean of its 2 neighbors on each side *and* at least 15. A
+  fast pan or handheld shake scores high on every frame, so its ratio stays
+  near 1; a cut stands out from both sides. The tests pin exactly this
+  case: the content detector sees a pan as two cuts, the adaptive one does
+  not.
+- **ContentDetector.** A cut is any frame scoring 27 or more. Simpler,
+  zero latency, fooled by motion. Offered for footage the adaptive detector
+  under-cuts.
+- **Minimum scene length** (0.5 s, PySceneDetect's 15 frames at 30 fps).
+  The content detector applies it through the FlashFilter: in *merge* mode
+  (default) a burst of cuts closer together than the minimum (a strobe, a
+  flash-frame edit) becomes one cut at the burst's last frame; *suppress*
+  keeps the first. Like PySceneDetect, the first cut must also be the
+  minimum length from the start of the clip.
+
+| Option | Default | UI |
+|---|---|---|
+| `detector` | `adaptive` | Detector: Adaptive / Fixed |
+| `adaptiveThreshold` | 3.0 | Sensitivity: 0…100 maps to 6.0…1.5 (halving per 50) |
+| `threshold` (content) | 27 | Sensitivity: 0…100 maps to 38…19 |
+| `minContentVal` | 15 | Sensitivity: 0…100 maps to 21…11 |
+| `windowWidth` | 2 frames | — |
+| `minScene` | 0.5 s | Min scene |
+| `filter` | `merge` | — |
+
+Output: the clip is split at each cut (`split_at_times`), or markers are
+dropped there (`add_markers`), Premiere's "Scene Edit Detection" options.
+
+**Gaps.** No edge component (PySceneDetect's default weight for it is 0
+anyway). Dissolves and fades are not cuts to this detector; PySceneDetect's
+ThresholdDetector (fades to black) and TransNetV2 (MIT, gradual
+transitions) are the upgrades listed in [[AI and automation]] §2.5.
+
+### Credits: PySceneDetect
+
+The scene detector reimplements, in TypeScript, the algorithms of
+PySceneDetect (<https://github.com/Breakthrough/PySceneDetect>), read from
+its main branch in October 2026, which is distributed under this license:
+
+```text
+BSD 3-Clause License
+
+Copyright (C) 2014, Brandon Castellano
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+The shipped app must carry this notice in its about box or third-party
+notices file once that exists.
