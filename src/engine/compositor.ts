@@ -240,14 +240,13 @@ export class Compositor {
   }
 
   /** Draw one layer's source into `out` (cleared first). */
-  private drawLayer(layer: Layer, src: SourceImage | null, out: Target, slot: number, projectHeight: number) {
+  private drawLayer(layer: Layer, src: SourceImage | null, out: Target, slot: number) {
     const gl = this.gl;
     this.clear(out);
     const p = this.program("layer", LAYER_VS, LAYER_FS);
     const u = this.use(p);
     const W = this.width;
     const H = this.height;
-    const scale = H / projectHeight; // render pixels per project pixel
 
     let sw: number, sh: number, fit: number;
     const solid = layer.source.kind === "color";
@@ -258,7 +257,7 @@ export class Compositor {
     } else {
       sw = src.width;
       sh = src.height;
-      fit = src.native ? scale : Math.min(W / sw, H / sh);
+      fit = src.native ? 1 : Math.min(W / sw, H / sh);
     }
     const { left, top, right, bottom } = layer.crop;
     const visW = sw * fit * layer.scale * (1 - left - right);
@@ -372,7 +371,7 @@ export class Compositor {
    * frame, image, text raster); returning null draws nothing for that
    * layer. Video frames may be closed as soon as this returns.
    */
-  render(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, background: string, projectHeight: number) {
+  render(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, background: string) {
     const gl = this.gl;
     const [A, B, L1, L2, T1, T2] = this.targets;
     let accum = A;
@@ -381,7 +380,7 @@ export class Compositor {
     let slot = 0;
 
     const layerToTarget = (layer: Layer, src: SourceImage | null, target: Target, temps: [Target, Target]): Target => {
-      this.drawLayer(layer, src, target, slot++, projectHeight);
+      this.drawLayer(layer, src, target, slot++);
       // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
       const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
       return fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
