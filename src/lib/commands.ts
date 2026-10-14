@@ -22,6 +22,7 @@ import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/type
 import { upsertKey } from "./keyframes";
 import type { Caption } from "./captions";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
+import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -445,6 +446,41 @@ export const COMMANDS: Command[] = [
         y: num(a.y),
         scale: num(a.scale),
       }).project;
+    },
+  },
+  {
+    name: "add_text_template",
+    description: `Add a text template: a title design of text and box layers with in/out/loop animations, stacked above everything at that time. Templates: ${Object.entries(TEXT_TEMPLATES)
+      .filter(([, t]) => t.category === "Templates")
+      .map(([k]) => k)
+      .join(", ")}. Word art (one styled text): ${Object.entries(TEXT_TEMPLATES)
+      .filter(([, t]) => t.category === "Word art")
+      .map(([k]) => k)
+      .join(", ")}. texts replaces the template's words, text layers in order (bottom first).`,
+    input: S.obj({ name: S.str("Template key or label"), start: S.num("Seconds", { minimum: 0 }), texts: { type: "array", items: { type: "string" }, description: "Words for the text layers, in order" } }, ["name", "start"]),
+    run: (p, a) => {
+      const hit = findTemplate(String(a.name));
+      if (!hit) throw new CommandError(`no text template named ${a.name}`);
+      const texts = (a.texts ?? []) as string[];
+      let i = 0;
+      const t = { ...hit[1], layers: hit[1].layers.map((l) => (l.text !== undefined && i < texts.length ? { ...l, text: texts[i++] } : l)) };
+      return addTemplate(p, t, f(p, a.start)).project;
+    },
+  },
+  {
+    name: "apply_word_art",
+    description: "Restyle text clips with a word-art look (fill, stroke, shadow, box), keeping their words, size and position. name is a Word art key from add_text_template.",
+    input: S.obj({ clip_ids: S.ids("Text clips"), name: S.str("Word art key or label") }, ["clip_ids", "name"]),
+    run: (p, a) => {
+      const hit = findTemplate(String(a.name));
+      if (!hit || hit[1].category !== "Word art") throw new CommandError(`no word art named ${a.name}`);
+      for (const id of a.clip_ids as Id[]) {
+        p = ops.updateClip(p, clipOrThrow(p, id).clip.id, (c) => {
+          if (c.type !== "text") throw new CommandError(`${id} is not a text clip`);
+          return { ...c, style: wordArtStyle(c.style, hit[1]) };
+        });
+      }
+      return p;
     },
   },
 ];

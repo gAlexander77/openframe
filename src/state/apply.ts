@@ -7,7 +7,9 @@
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { createAdjustmentClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
-import type { Clip, Id, Project, TextStyle } from "../lib/project/types";
+import { placeOnTop } from "../lib/overlays";
+import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
+import { addTemplate, TEXT_TEMPLATES, wordArtStyle } from "../lib/templates";
 import { secondsToFrames, type Rational } from "../lib/time";
 import { store } from "./store";
 import { toast } from "./toast";
@@ -71,14 +73,36 @@ export function addTextPreset(key: string, at?: number) {
   let id = "";
   store.edit(`Add ${preset.label.toLowerCase()}`, (p0) => {
     const clip = presetClip(preset, f, p0.fps);
-    const dur = clip.duration;
     id = clip.id;
-    const free = p0.tracks.find((t) => t.kind === "video" && !t.main && !t.locked && ops.rangeFree(t, f, dur));
-    if (free) return ops.addClip(p0, free.id, clip);
-    const [p, tid] = topTrack(p0, "Text");
-    return ops.addClip(p, tid, clip);
+    // Above whatever shows then, like stickers and templates.
+    return placeOnTop(p0, clip, "Text");
   });
   store.select([id]);
+}
+
+/** A word art or title template from the Text tab. Word art restyles text
+ * when there is some to restyle — the text clip it was dropped on, or the
+ * selected text clips on a click — as CapCut's text Effects do; otherwise
+ * it, like every template, adds its clips at `at` (default: the playhead). */
+export function applyTemplate(key: string, at?: number, clipId?: Id) {
+  const t = TEXT_TEMPLATES[key];
+  if (!t) return;
+  const s = store.get();
+  if (t.category === "Word art") {
+    const ids = clipId ? [clipId] : at === undefined ? s.selection : [];
+    const texts = ids.map((id) => ops.findClip(s.project, id)?.clip).filter((c): c is TextClip => c?.type === "text");
+    if (texts.length) {
+      store.edit(`${t.label} style`, (p) => texts.reduce((q, c) => ops.updateClip(q, c.id, (x) => (x.type === "text" ? { ...x, style: wordArtStyle(x.style, t) } : x)), p));
+      return;
+    }
+  }
+  let ids: Id[] = [];
+  store.edit(`Add ${t.label.toLowerCase()}`, (p) => {
+    const r = addTemplate(p, t, at ?? s.playhead);
+    ids = r.clipIds;
+    return r.project;
+  });
+  store.select(ids);
 }
 
 /** Attach an effect to `clipId`, or to the selection, or add it as a layer. */

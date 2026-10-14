@@ -7,7 +7,7 @@ import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/ti
 import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit, provide, settleOptions } from "../state/actions";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition } from "../state/apply";
+import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition } from "../state/apply";
 import { registerDropZone, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
 import { addSticker } from "../state/stickers";
@@ -426,6 +426,7 @@ export function Timeline() {
             addToTimeline(p.asset, frame, fits ? track.id : undefined);
           } else if (p.kind === "text") addTextPreset(p.preset, frame);
           else if (p.kind === "sticker") void addSticker(p.id, frame);
+          else if (p.kind === "template") applyTemplate(p.id, frame, clip?.type === "text" ? clip.id : undefined);
           else if (p.kind === "effect") applyEffect(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
           else if (p.kind === "filter") applyFilter(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
           else if (p.kind === "adjustment") addAdjustmentLayer(frame);

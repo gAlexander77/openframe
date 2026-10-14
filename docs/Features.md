@@ -67,6 +67,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations.
+- **Word art**: 16 looks (neon, retro, comic, hollow, gold, fire, frost,
+  candy, die-cut, chromatic, typewriter, highlight...) from fill, stroke,
+  shadow and box combinations. Click with text selected (or drop on a
+  text clip) to restyle it, keeping its words, size and layout.
+- **Templates**: 12 animated title designs — name and title, name tag,
+  subscribe callout, chapter title, quote card, countdown, location tag,
+  big opener, news banner, social handle, end card, link in bio — built
+  from text and box layers with staggered in/out/loop animations, each
+  layer its own clip ([[ADR-025 Stickers and templates are ordinary
+  clips]]). Agents: `add_text_template` (with replacement words) and
+  `apply_word_art`.
+- New text lands above everything showing at that time.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks; caption list editing; apply style to all; SRT/VTT import and

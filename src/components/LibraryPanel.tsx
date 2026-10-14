@@ -20,7 +20,8 @@ import {
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
+import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
+import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
@@ -189,6 +190,8 @@ function CatalogTab<T extends { category: string; label: string }>(props: {
   defs: Record<string, T>;
   hint: string;
   render: (key: string, def: T) => React.ReactNode;
+  /** Grid class per category (default: small square cards). */
+  grid?: (category: string) => string;
 }) {
   const [cat, setCat] = useState<string | null>(null);
   const groups = grouped(props.defs);
@@ -208,7 +211,7 @@ function CatalogTab<T extends { category: string; label: string }>(props: {
         {shown.map(([c, items]) => (
           <section key={c} className="lib-section">
             <h4 className="lib-group">{c}</h4>
-            <div className="card-grid small">{items.map(([k, d]) => props.render(k, d))}</div>
+            <div className={props.grid?.(c) ?? "card-grid small"}>{items.map(([k, d]) => props.render(k, d))}</div>
           </section>
         ))}
       </div>
@@ -272,21 +275,43 @@ function FiltersTab() {
 
 const PREVIEW_FPS = { num: 30, den: 1 };
 
+/** Basic presets add a text clip; word art and templates come from
+ * src/lib/templates.ts. Each card's preview renders the exact clips it adds. */
 function TextTab() {
-  const defs = Object.fromEntries(Object.entries(TEXT_PRESETS).map(([k, v]) => [k, { ...v, category: "Text" }]));
+  const defs: Record<string, { category: string; label: string }> = {
+    ...Object.fromEntries(Object.entries(TEXT_PRESETS).map(([k, v]) => [`preset:${k}`, { category: "Basic", label: v.label }])),
+    ...Object.fromEntries(Object.entries(TEXT_TEMPLATES).map(([k, v]) => [`template:${k}`, { category: v.category, label: v.label }])),
+  };
   return (
     <CatalogTab
       defs={defs}
-      hint="Click + to add at the playhead, or drag onto the timeline."
-      render={(k, d) => (
-        <CatalogCard
-          key={k}
-          label={d.label}
-          payload={{ kind: "text", preset: k, label: d.label }}
-          onAdd={() => addTextPreset(k)}
-          preview={<EnginePreview spec={{ kind: "text", id: `preset:${k}`, clips: [presetClip(d, 0, PREVIEW_FPS)], scene: false }} />}
-        />
-      )}
+      hint="Click + to add at the playhead, or drag onto the timeline. Word art restyles the selected text."
+      grid={(c) => (c === "Templates" ? "card-grid wide" : "card-grid small")}
+      render={(id, d) => {
+        const [kind, k] = id.split(":");
+        if (kind === "preset") {
+          return (
+            <CatalogCard
+              key={id}
+              label={d.label}
+              payload={{ kind: "text", preset: k, label: d.label }}
+              onAdd={() => addTextPreset(k)}
+              preview={<EnginePreview spec={{ kind: "text", id, clips: [presetClip(TEXT_PRESETS[k], 0, PREVIEW_FPS)], scene: false }} />}
+            />
+          );
+        }
+        const t = TEXT_TEMPLATES[k];
+        const titles = t.category === "Templates";
+        return (
+          <CatalogCard
+            key={id}
+            label={d.label}
+            payload={{ kind: "template", id: k, label: d.label }}
+            onAdd={() => applyTemplate(k)}
+            preview={<EnginePreview spec={{ kind: "text", id, clips: templateClips(t, 0, PREVIEW_FPS), scene: titles }} shape={titles ? "wide" : "square"} />}
+          />
+        );
+      }}
     />
   );
 }

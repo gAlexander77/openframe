@@ -32,14 +32,26 @@ build, a platform seam]]); the project file must stay open, plain JSON
   registry's command only places a sticker whose asset exists and says so
   otherwise; `window.videoEditor.exec` draws the asset first and runs the
   command with it in the same undo step.
+- **A text template is a stack of clips.** CapCut's templates are one
+  segment with several text fields inside; we have no such clip and do
+  not add one. A template (`src/lib/templates.ts`) is data: text layers
+  and solid boxes (a color clip cropped evenly to a rectangle), each with
+  position, delay, length and in/out/loop animations, placed bottom to
+  top with `placeOnTop` and selected together. Word art is a one-layer
+  template; applied to selected text it replaces only the look (fill,
+  stroke, shadow, box, font) and keeps size and layout.
 - **Not a virtual source.** A `sticker:` URL drawn on demand would avoid
   the file but put a second kind of source into decode, thumbnails,
   export and the desktop's Rust side, and tie a project's look to fonts.
 
 ## Consequences
 
-No new clip type, schema version or renderer path: stickers get the
-inspector's transform, blend, masks and animations for free. The sticker
+No new clip type, schema version or renderer path: stickers and template
+layers get the inspector's transform, blend, masks and animations for
+free, and agents edit them with the same commands. A template's layers
+are separate clips afterwards: `ponytail:` they are positioned by center
+for their default words, so a much longer name grows both ways; a group
+clip is the upgrade path. The sticker
 set is small (about 140) and static; `ponytail:` animated stickers would
 need an image-sequence or video source, the upgrade path being a rendered
 WebM through the same adopt path. Each first use writes a small PNG into
