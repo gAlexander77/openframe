@@ -95,29 +95,68 @@ export class Compositor {
   // ---- GL plumbing ---------------------------------------------------------------
 
   private program(key: string, vs: string, fs: string): Program {
-    const cached = this.programs.get(key);
-    if (cached) return cached;
+    return this.programs.get(key) ?? this.finishProgram(key, this.startProgram(vs, fs));
+  }
+
+  /** Compile and link without asking how it went, so a driver with
+   * KHR_parallel_shader_compile can work while this thread goes on. */
+  private startProgram(vs: string, fs: string) {
     const gl = this.gl;
-    const compile = (type: number, src: string) => {
+    const shader = (type: number, src: string) => {
       const sh = gl.createShader(type)!;
       gl.shaderSource(sh, src);
       gl.compileShader(sh);
-      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-        throw new Error(`shader ${key}: ${gl.getShaderInfoLog(sh)}`);
-      }
       return sh;
     };
+    const shaders = [shader(gl.VERTEX_SHADER, vs), shader(gl.FRAGMENT_SHADER, fs)];
     const prog = gl.createProgram()!;
-    gl.attachShader(prog, compile(gl.VERTEX_SHADER, vs));
-    gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fs));
+    for (const sh of shaders) gl.attachShader(prog, sh);
     gl.bindAttribLocation(prog, 0, "a_pos");
     gl.linkProgram(prog);
+    return { prog, shaders };
+  }
+
+  /** Check a started program (blocking until it is done) and cache it. */
+  private finishProgram(key: string, { prog, shaders }: { prog: WebGLProgram; shaders: WebGLShader[] }): Program {
+    const gl = this.gl;
+    for (const sh of shaders) {
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(`shader ${key}: ${gl.getShaderInfoLog(sh)}`);
+    }
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       throw new Error(`program ${key}: ${gl.getProgramInfoLog(prog)}`);
     }
     const p = { prog, loc: new Map<string, WebGLUniformLocation | null>() };
     this.programs.set(key, p);
     return p;
+  }
+
+  /**
+   * Compile every pass's program before the first render needs it. A fresh
+   * context otherwise compiles layer, blend, transition and present inside
+   * its first render: ~300 ms of main thread on ANGLE/D3D11 (measured with
+   * the library previews). With KHR_parallel_shader_compile the driver
+   * compiles them off this thread and this only polls between frames;
+   * without it, each still gets its own macrotask.
+   */
+  async warm(): Promise<void> {
+    const gl = this.gl;
+    const ext = gl.getExtension("KHR_parallel_shader_compile") as { COMPLETION_STATUS_KHR: number } | null;
+    const all: [string, string, string][] = [
+      ["layer", LAYER_VS, LAYER_FS],
+      ["blend", FULLSCREEN_VS, BLEND_FS],
+      ["present", FULLSCREEN_VS, PRESENT_FS],
+      ["transition", FULLSCREEN_VS, TRANSITION_FS],
+      ["adjust", FULLSCREEN_VS, ADJUST_FS],
+      ["mix", FULLSCREEN_VS, MIX_FS],
+      ...Object.entries(EFFECT_SHADERS).map(([k, fs]): [string, string, string] => [`fx:${k}`, FULLSCREEN_VS, fs]),
+    ];
+    const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
+    const frame = () => new Promise((r) => setTimeout(r, 16));
+    if (ext) while (pending.some((p) => !gl.getProgramParameter(p.prog, ext.COMPLETION_STATUS_KHR))) await frame();
+    for (const p of pending) {
+      if (!this.programs.has(p.key)) this.finishProgram(p.key, p);
+      if (!ext) await frame();
+    }
   }
 
   private use(p: Program) {

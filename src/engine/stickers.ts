@@ -636,22 +636,24 @@ function drawEmoji(ctx: Ctx, char: string) {
   ctx.fillText(char, x, y);
 }
 
-/** Crop to the visible pixels plus a small margin. */
+/** Crop to the visible pixels plus a small margin. `src` should be a
+ * willReadFrequently canvas: a GPU-backed one stalls on the readback. */
 function trim(src: OffscreenCanvas, margin: number): OffscreenCanvas {
-  const ctx = src.getContext("2d")!;
   const { width: w, height: h } = src;
-  const data = ctx.getImageData(0, 0, w, h).data;
+  // One alpha test per 32-bit pixel (RGBA bytes, little-endian: A is the top byte).
+  const px = new Uint32Array(src.getContext("2d")!.getImageData(0, 0, w, h).data.buffer);
   let x0 = w;
   let y0 = h;
   let x1 = -1;
   let y1 = -1;
   for (let y = 0; y < h; y++) {
+    const row = y * w;
     for (let x = 0; x < w; x++) {
-      if (data[(y * w + x) * 4 + 3] > 6) {
+      if (px[row + x] >>> 24 > 6) {
         if (x < x0) x0 = x;
         if (x > x1) x1 = x;
         if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
+        y1 = y;
       }
     }
   }
@@ -681,7 +683,7 @@ export function drawSticker(s: StickerDef, px: number): OffscreenCanvas {
   // shade each other and the sticker separates from any footage.
   const flat = s.art === "highlighter";
   const c = new OffscreenCanvas(size, size);
-  const out = c.getContext("2d")!;
+  const out = c.getContext("2d", { willReadFrequently: true })!;
   if (!flat) {
     out.shadowColor = `rgba(0,0,0,${s.emoji ? 0.25 : 0.38})`;
     out.shadowBlur = 2.2 * unit;

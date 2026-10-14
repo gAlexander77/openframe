@@ -27,7 +27,13 @@ image and play a loop on hover ([[CapCut desktop]] §1.4, §8.5).
 - **Never stall the UI.** Cards ask only while on screen; jobs run one at
   a time with a macrotask between them, a job whose card scrolled away
   is dropped, hover jobs jump the queue. Results are cached as small JPEG
-  blob URLs per card and scene.
+  blob URLs per card and scene. Two hidden stalls had to go: a fresh
+  context compiled its shaders inside the first render (~300 ms), now
+  compiled ahead with `KHR_parallel_shader_compile` (`Compositor.warm`);
+  and canvases that are read back or uploaded across contexts are
+  CPU-backed (`willReadFrequently`), which removed a ~70 ms readback.
+  Measured on the production build: no task over 50 ms opening any
+  library tab or hovering through cards.
 - **Motion on hover.** Effects, transitions and text render a 16-21 frame
   sprite strip on first hover; CSS steps through it, so playback costs
   nothing and `prefers-reduced-motion` keeps the still.

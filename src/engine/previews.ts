@@ -48,6 +48,7 @@ interface Job {
 }
 const queue: Job[] = [];
 let busy = false;
+let warming: Promise<void> | null = null;
 
 /** Run `work` when its turn comes, unless `alive` says the card is gone by
  * then (resolves null). `urgent` jumps the queue: the user is pointing at it. */
@@ -68,6 +69,8 @@ async function pump() {
   if (busy) return;
   busy = true;
   try {
+    // Shaders compile before the first card, not inside its render.
+    await (warming ??= compositor().warm().catch((e) => console.warn("preview shaders:", e)));
     while (queue.length) {
       const job = queue.shift()!;
       if (!job.alive()) {
@@ -119,7 +122,9 @@ function drawSample(night: boolean): Scene {
   const w = 640;
   const h = 360;
   const c = new OffscreenCanvas(w, h);
-  const g = c.getContext("2d")!;
+  // CPU-backed: uploading a GPU 2D canvas into the WebGL context forced a
+  // ~70 ms readback on the first card.
+  const g = c.getContext("2d", { willReadFrequently: true })!;
   const sky = g.createLinearGradient(0, 0, 0, h * 0.64);
   if (night) {
     sky.addColorStop(0, "#070b22");
@@ -453,7 +458,8 @@ function textPlan(spec: Extract<PreviewSpec, { kind: "text" }>, outW: number, ou
   ch *= fit;
   const cx = Math.min(Math.max(box.x + box.w / 2 - cw / 2, 0), 960 - cw);
   const cy = Math.min(Math.max(box.y + box.h / 2 - ch / 2, 0), 540 - ch);
-  const k = Math.min(4, Math.max(0.25, outW / cw));
+  // Capped: six framebuffers at this size, so never past 1920 x 1080.
+  const k = Math.min(2, Math.max(0.25, outW / cw));
   const W = Math.round(960 * k);
   const H = Math.round(540 * k);
   const crop = { x: cx * k, y: cy * k, w: cw * k, h: ch * k };
