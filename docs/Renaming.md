@@ -26,6 +26,7 @@ orphans browser projects the same way.
 | `src-tauri/tauri.conf.json` | `productName`, `mainBinaryName`, window `title`, `identifier` (§1) |
 | `src-tauri/Cargo.toml` | package `name`, `description`, lib name `video_editor_lib` |
 | `src-tauri/src/main.rs` | `video_editor_lib::run()` |
+| `src-tauri/src/ffmpeg.rs` | `VIDEO_EDITOR_FFMPEG` environment variable (keep reading the old name for a release) |
 | `package.json` | `name` |
 | `index.html` | `<title>` |
 | `README.md`, `CLAUDE.md`, `docs/Index.md` | headings and prose |

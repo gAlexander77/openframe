@@ -2,7 +2,7 @@
 // referenced by absolute path; Rust serves its bytes over the `media:`
 // protocol (ADR-010), and writes projects (ADR-011) and exports (ADR-012).
 
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
@@ -136,6 +136,20 @@ export const desktop: Platform = {
       prefetchProfile: "network",
       maxCacheSize: 64 << 20,
     });
+  },
+
+  // FFmpeg in Rust converts what WebCodecs cannot decode (ADR-013).
+  async makeProxy(src, onProgress, signal) {
+    const job = crypto.randomUUID();
+    const channel = new Channel<{ fraction: number }>();
+    channel.onmessage = (m) => onProgress(m.fraction); // before invoke: early messages are not replayed
+    const cancel = () => void invoke("ffmpeg_cancel", { job });
+    signal?.addEventListener("abort", cancel);
+    try {
+      return await invoke<string>("ffmpeg_proxy", { path: src, job, onProgress: channel });
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
   },
 
   /** For stills only: the whole file lands in memory. */

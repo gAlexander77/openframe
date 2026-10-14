@@ -45,6 +45,9 @@ export interface Platform {
   onFileDrop?(cb: (files: ImportedFile[]) => void): () => void;
   sourceFor(src: string): Promise<Source>;
   blobFor(src: string): Promise<Blob>;
+  /** An edit-friendly copy of media the webview cannot decode (desktop,
+   * FFmpeg); resolves to its src. Progress is 0..1. */
+  makeProxy?(src: string, onProgress: (fraction: number) => void, signal?: AbortSignal): Promise<string>;
 
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;

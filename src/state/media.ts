@@ -10,7 +10,7 @@ import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
 import { edit } from "./actions";
 import { store } from "./store";
-import { toast } from "./toast";
+import { dismiss, toast, updateToast } from "./toast";
 
 const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|png|jpe?g|gif|webp|bmp|avif|svg)$/i;
 export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
@@ -25,12 +25,20 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
       continue;
     }
     try {
-      const info = await probe(f.src, f.name);
-      if (!info.decodable) {
+      const canProxy = !!platform.makeProxy && !isImageName(f.name);
+      // When the webview cannot decode it, or cannot even open it (AVI,
+      // MXF), the desktop converts it with FFmpeg and edits the copy.
+      let info = await probe(f.src, f.name).catch((e) => (canProxy ? null : Promise.reject(e)));
+      let proxy: string | undefined;
+      if (!info?.decodable && canProxy) {
+        proxy = await convert(f);
+        info = await probe(proxy, f.name);
+      }
+      if (!info?.decodable) {
         toast(
-          platform.kind === "desktop"
-            ? `${f.name}: this codec needs a proxy, which isn't available yet`
-            : `${f.name}: this browser can't decode ${info.videoCodec ?? info.audioCodec ?? "this format"}. The desktop app can.`,
+          proxy
+            ? `${f.name}: even its converted copy can't be decoded`
+            : `${f.name}: this browser can't decode ${info?.videoCodec ?? info?.audioCodec ?? "this format"}. The desktop app can.`,
           "error",
         );
         continue;
@@ -40,6 +48,7 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
         kind: info.kind,
         name: f.name,
         src: f.src,
+        proxy,
         duration: info.duration,
         width: info.width,
         height: info.height,
@@ -63,6 +72,16 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
     added.forEach(prepare);
   }
   return added;
+}
+
+/** The desktop's FFmpeg proxy, with its progress in a toast. */
+async function convert(f: ImportedFile): Promise<string> {
+  const id = toast(`Converting ${f.name} for editing`, "progress");
+  try {
+    return await platform.makeProxy!(f.src, (progress) => updateToast(id, { progress }));
+  } finally {
+    dismiss(id);
+  }
 }
 
 /** CapCut: the first clip on an empty timeline sets the canvas size and

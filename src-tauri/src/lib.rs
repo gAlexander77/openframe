@@ -1,4 +1,5 @@
 mod export;
+mod ffmpeg;
 mod files;
 mod media;
 mod project;
@@ -12,6 +13,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(Arc::new(media::Media::default()))
         .manage(export::Exports::default())
+        .manage(ffmpeg::Ffmpeg::default())
         .register_asynchronous_uri_scheme_protocol("media", |ctx, request, responder| {
             let media = ctx
                 .app_handle()
@@ -34,7 +36,16 @@ pub fn run() {
             export::export_write,
             export::export_finish,
             export::export_reveal,
+            ffmpeg::ffmpeg_probe,
+            ffmpeg::ffmpeg_proxy,
+            ffmpeg::ffmpeg_cancel,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running the application");
+        .build(tauri::generate_context!())
+        .expect("error while building the application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // No ffmpeg outlives the app (ADR-013).
+                app.state::<ffmpeg::Ffmpeg>().kill_all();
+            }
+        });
 }
