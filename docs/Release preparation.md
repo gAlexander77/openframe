@@ -24,10 +24,12 @@ is retained verbatim. Do not silently switch to `GPL-3.0-or-later`.
 
 ## Next implementation tasks
 
-- [ ] Set license metadata to `GPL-3.0-only` in `package.json` and
+- [x] Set license metadata to `GPL-3.0-only` in `package.json` and
   `src-tauri/Cargo.toml`, updating generated metadata where appropriate.
   `package.json`'s `private: true` prevents npm publication; it does not
   control GitHub visibility and need not be removed to open the source.
+  Completed 2026-10-14 in both manifests and the npm lockfile's root entry;
+  dependency versions and repository visibility are unchanged.
 - [ ] Add the relevant copyright/license notice to original source files
   and include the complete license and notices with distributions.
 - [ ] Provide an About/license surface in the app and verify how users can
