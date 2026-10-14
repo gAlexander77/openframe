@@ -399,6 +399,9 @@ export function Timeline() {
 
   const onOsDrop = async (e: React.DragEvent) => {
     e.preventDefault();
+    // The timeline places what it imports; keep the window-level drop
+    // (library-only import) from importing it a second time.
+    e.stopPropagation();
     setOsDrop(false);
     const files = [...e.dataTransfer.files];
     if (!files.length) return;

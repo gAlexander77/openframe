@@ -145,3 +145,23 @@
 .toast-bar { width: 120px; height: 4px; border-radius: 4px; background: var(--bg-3); overflow: hidden; }
 .toast-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 200ms linear; }
 .home-title { font-size: var(--fs-md); font-weight: 600; color: var(--text-2); }
+
+/* window-wide "drop to import" */
+.drop-overlay {
+  position: fixed; inset: 40px 6px 6px; z-index: 250;
+  display: grid; place-items: center;
+  border: 2px dashed var(--accent); border-radius: var(--radius-panel);
+  background: rgb(0 193 205 / 8%);
+  pointer-events: none;
+  animation: fade-in var(--t-fast) ease-out;
+}
+.drop-overlay-card {
+  display: grid; justify-items: center; gap: 6px;
+  padding: 22px 30px; border-radius: 14px;
+  background: var(--bg-1); color: var(--text-2); font-size: var(--fs-sm);
+  box-shadow: 0 20px 50px rgb(0 0 0 / 50%);
+  animation: pop-in var(--t-med) var(--ease-spring);
+}
+.drop-overlay-card svg { color: var(--accent); }
+.drop-overlay-card strong { color: var(--text-1); font-size: var(--fs-lg); }
+
