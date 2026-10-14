@@ -8,7 +8,7 @@ import * as ops from "../lib/project/ops";
 import type { Asset, Clip, Id, Project } from "../lib/project/types";
 import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
-import { edit } from "./actions";
+import { edit, provide } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -127,3 +127,6 @@ export async function pickAndImport(): Promise<Asset[]> {
   const files = await platform.pickMedia();
   return files.length ? importFiles(files) : [];
 }
+
+// The menu item and the shortcut open the same picker as the Import button.
+provide({ importMedia: () => void pickAndImport() });
