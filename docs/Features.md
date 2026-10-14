@@ -64,6 +64,32 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   selected.
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- On a keyframe, an easing button beside the cluster opens the presets;
+  the Transform header's ◇ keys (or unkeys) all four of its properties at
+  once, as CapCut's section diamonds do.
+
+## Keyframes
+
+- **Keyframe animation panel** (CapCut's Show keyframe animation: toolbar,
+  clip right-click menu, or its shortcut), docked under the tracks on the
+  same time axis ([[ADR-023 The keyframe panel docks under the timeline
+  tracks]]): one lane per animated parameter, and a value graph of the
+  focused one in inspector units. Drag keys in time and value (Shift locks
+  an axis, the axis holds still mid-drag), drag bezier handles on a
+  selected key's segments, Shift+click to add, box-select, click to seek;
+  one-click keys for a clip with none.
+- **Easing presets** wherever keys are selected, with curve previews:
+  Linear, Hold, Ease in, Ease out, Ease in-out, Smooth, Fast in, Overshoot
+  (passes once, no bounce), Anticipate. Presets beyond the named five and
+  hand-drawn curves are stored as CSS beziers.
+- **Diamonds on the selected clip**: click to select (Shift/Ctrl adds),
+  drag to retime with snapping to the playhead and the other keys,
+  right-click for easing, double-click to seek; the tooltip names what is
+  keyed at that frame.
+- Delete, Copy, Paste and Escape act on selected keyframes before clips
+  ([[ADR-024 Keyframes are selected by path and frame, and keys come
+  first]]); paste lands at the playhead with spacing kept. A moved key
+  replaces one it lands on, and keys stay inside their clip.
 
 ## Text and captions
 
@@ -107,4 +133,7 @@ Three doors, one engine ([[Automation]]):
   command plus `preview_frame` so an agent can look at its work; HTTP or
   `--mcp-stdio`.
 - `window.videoEditor` in the page: commands, actions, import, render,
-  pixels and the AI tools — what the drives use.
+  pixels, animated values (`paramAt`) and the AI tools — what the drives
+  use.
+- Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
+  (preset or bezier), `remove_keyframes`.

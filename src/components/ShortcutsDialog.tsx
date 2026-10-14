@@ -26,7 +26,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
       "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",
     ],
     Timeline: [
-      "toggleMagnet", "toggleSnapping", "toggleLinkage", "togglePreviewAxis",
+      "toggleMagnet", "toggleSnapping", "toggleLinkage", "togglePreviewAxis", "toggleKeyframePanel",
       "zoomIn", "zoomOut", "zoomFit", "addMarker", "nextMarker", "prevMarker",
       "markIn", "markOut", "rangeToClip", "clearInOut",
     ],

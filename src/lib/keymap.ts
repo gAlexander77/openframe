@@ -47,6 +47,7 @@ export type ActionId =
   | "toggleMagnet"
   | "toggleLinkage"
   | "togglePreviewAxis"
+  | "toggleKeyframePanel"
   | "selectLeft"
   | "selectRight"
   | "toggleClipEnabled"
@@ -115,6 +116,7 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   toggleLinkage: ["`"],
   togglePreviewAxis: ["S"],
   toggleMagnet: ["P"],
+  toggleKeyframePanel: ["Alt+K"],
   zoomIn: ["Mod+=", "="],
   zoomOut: ["Mod+-", "-"],
   zoomFit: ["Shift+Z"],
@@ -176,6 +178,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   toggleLinkage: "Linkage",
   togglePreviewAxis: "Preview axis",
   toggleMagnet: "Main track magnet",
+  toggleKeyframePanel: "Keyframe animation",
   zoomIn: "Zoom in",
   zoomOut: "Zoom out",
   zoomFit: "Zoom to fit",

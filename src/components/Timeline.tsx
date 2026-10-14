@@ -12,6 +12,7 @@ import { registerDropZone, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
 import { store, useEditor } from "../state/store";
 import { ClipView, type ClipZone } from "./ClipView";
+import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
 import { TimelineToolbar } from "./TimelineToolbar";
 import "./timeline.css";
@@ -63,6 +64,7 @@ export function Timeline() {
   const selection = useEditor((s) => s.selection);
   const tool = useEditor((s) => s.tool);
   const previewAxis = useEditor((s) => s.previewAxis);
+  const keyframePanel = useEditor((s) => s.keyframePanel);
   const scrollRef = useRef<HTMLDivElement>(null);
   const gesture = useRef<Gesture | null>(null);
   const [view, setView] = useState({ left: 0, width: 1000 });
@@ -473,6 +475,7 @@ export function Timeline() {
       { action: "detachAudio", disabled: clip.type !== "video" },
       { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
       "-",
+      { action: "toggleKeyframePanel", label: "Show keyframe animation", checked: store.get().keyframePanel },
       { action: "rangeToClip" },
     ];
     setMenu({ x: e.clientX, y: e.clientY, items });
@@ -592,6 +595,7 @@ export function Timeline() {
           {marquee && <div className="tl-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />}
         </div>
       </div>
+      {keyframePanel && <KeyframePanel headerW={HEADER_W} scrollLeft={view.left} scrollEl={scrollRef} />}
       {readout && (
         <div className="tl-readout num" style={{ left: readout.x + 14, top: readout.y - 30 }}>
           {readout.text}

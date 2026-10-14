@@ -5,7 +5,9 @@
 
 import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
+import { paramAt } from "./lib/keyframes";
 import type { ActionId } from "./lib/keymap";
+import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
 import { analyzeBeats, analyzeScenes, analyzeSilences, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
@@ -33,6 +35,13 @@ export const automation = {
   },
   action: (id: ActionId) => run(id),
   seek: (frame: number) => store.seek(frame),
+  /** A parameter's value at a timeline frame, keyframes applied: what the
+   * renderer will use (before in/out animations). */
+  paramAt(clipId: string, path: string, frame: number) {
+    const c = findClip(store.get().project, clipId)?.clip;
+    if (!c) throw new Error(`no clip with id ${clipId}`);
+    return paramAt(c, path, frame - c.start);
+  },
   select: (ids: string[]) => store.select(ids),
   /** Import files by URL (web) or path (desktop). */
   async import(srcs: { name: string; src: string; size?: number }[]) {

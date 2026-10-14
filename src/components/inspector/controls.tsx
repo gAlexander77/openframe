@@ -4,6 +4,7 @@ import { getPath, paramAt } from "../../lib/keyframes";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Id } from "../../lib/project/types";
 import { store, useEditor } from "../../state/store";
+import { EaseButton } from "./KeyTools";
 
 /** The selected clip, re-read from the store on every change. */
 export function useClip(id: Id): Clip | null {
@@ -122,7 +123,8 @@ export function SliderRow(p: SliderProps) {
 }
 
 /** CapCut's ‹ ◇ › cluster: previous keyframe, add/remove at the playhead,
- * next keyframe. The diamond fills cyan when the playhead sits on one. */
+ * next keyframe. The diamond fills cyan when the playhead sits on one, and
+ * the easing button beside it then sets that keyframe's curve. */
 export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; value: number }) {
   const rel = useRel(clip);
   const keys = clip.keyframes?.[path] ?? [];
@@ -145,6 +147,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
       <button className="key-nav" disabled={!next} aria-label="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
         <ChevronRight size={11} />
       </button>
+      <EaseButton clip={clip} path={path} f={rel} />
     </span>
   );
 }

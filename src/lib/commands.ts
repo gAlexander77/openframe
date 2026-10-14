@@ -18,9 +18,10 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
+import type { Clip, Ease, Effect, Id, Project, TextStyle, Track } from "./project/types";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "./catalog";
 import { upsertKey } from "./keyframes";
+import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
 import type { Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 
@@ -466,7 +467,87 @@ export const COMMANDS: Command[] = [
       return { ...p, markers: [...p.markers, ...added].sort((x, y) => x.frame - y.frame) };
     },
   },
+  {
+    name: "move_keyframe",
+    description: "Retime a keyframe and/or change its value. at is the keyframe's current timeline time, to the new one (seconds). It stays inside the clip and replaces a keyframe already at its new time on that path.",
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        path: S.str("Parameter path (see set_param)"),
+        at: S.num("Timeline seconds of the keyframe now"),
+        to: S.num("Timeline seconds to move it to"),
+        value: S.num("New value"),
+      },
+      ["clip_id", "path", "at"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (a.to === undefined && a.value === undefined) throw new CommandError("give to, value or both");
+      const path = String(a.path);
+      const ref = { path, f: f(p, a.at) - clip.start };
+      if (!liveRefs(clip.keyframes, [ref]).length) throw new CommandError(`no ${path} keyframe at ${a.at}s on clip ${clip.id}`);
+      let keys = clip.keyframes!;
+      let at = ref;
+      if (a.to !== undefined) ({ keys, refs: [at] } = retimeKey(keys, ref, f(p, a.to) - clip.start, clip.duration));
+      if (a.value !== undefined) keys = setValues(keys, [at], () => Number(a.value));
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: keys }));
+    },
+  },
+  {
+    name: "set_keyframe_ease",
+    description: `Shape the curve leaving keyframes toward the next one. ease is a preset (${EASE_IDS.join(", ")}); bezier [x1, y1, x2, y2] is a CSS cubic-bezier (x in 0..1, y may overshoot) and overrides it. Without path, applies to every parameter keyed at that time; without at, to every keyframe on the path(s).`,
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        path: S.str("Parameter path; omit for all keyed parameters"),
+        at: S.num("Timeline seconds of the keyframe; omit for all keyframes"),
+        ease: S.str("Preset name", { enum: EASE_IDS }),
+        bezier: { type: "array", items: { type: "number" }, description: "[x1, y1, x2, y2]" },
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      let e: Ease | undefined = a.ease !== undefined ? easeById(String(a.ease)) : undefined;
+      if (a.bezier !== undefined) {
+        const b = a.bezier as number[];
+        if (b.length !== 4 || b[0] < 0 || b[0] > 1 || b[2] < 0 || b[2] > 1) throw new CommandError("bezier must be [x1, y1, x2, y2] with x1 and x2 in 0..1");
+        e = [b[0], b[1], b[2], b[3]];
+      }
+      if (!e) throw new CommandError("give ease or bezier");
+      const refs = keyRefs(p, clip, a.path, a.at === undefined ? undefined : [Number(a.at)]);
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: setEase(c.keyframes!, refs, e) }));
+    },
+  },
+  {
+    name: "remove_keyframes",
+    description: "Remove keyframes from a clip. at lists timeline times in seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keyframes goes back to its static value.",
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        path: S.str("Parameter path; omit for all keyed parameters"),
+        at: { type: "array", items: { type: "number" }, description: "Timeline seconds of the keyframes to remove" },
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      const refs = keyRefs(p, clip, a.path, a.at as number[] | undefined);
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: removeKeys(c.keyframes, refs) }));
+    },
+  },
 ];
+
+/** The keyframes a command names: on `path` (or every path) at the given
+ * timeline seconds (or every time). Throws when that is none at all. */
+function keyRefs(p: Project, clip: Clip, path: unknown, at: number[] | undefined): KeyRef[] {
+  const map = clip.keyframes ?? {};
+  const paths = path === undefined ? Object.keys(map) : [String(path)];
+  const frames = at && new Set(at.map((s) => f(p, s) - clip.start));
+  const refs = paths.flatMap((pt) => (map[pt] ?? []).filter((k) => !frames || frames.has(k.f)).map((k) => ({ path: pt, f: k.f })));
+  if (!refs.length) throw new CommandError(`no matching keyframes on clip ${clip.id}`);
+  return refs;
+}
 
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 

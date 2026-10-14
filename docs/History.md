@@ -86,6 +86,12 @@ A narrative log of each build round with its intent, for archaeology that
   Copilot driving it with a model on this machine (Ollama / LM Studio).
 - **Canvas fill** — CapCut's blurred or colored fill behind letterboxed
   clips.
+- **Keyframes you can shape** — CapCut's keyframe panel docked under the
+  tracks on their time axis, draggable diamonds, easing presets stored as
+  CSS beziers, a section keyframe, and `move_keyframe`,
+  `set_keyframe_ease` and `remove_keyframes`
+  ([[ADR-023 The keyframe panel docks under the timeline tracks]],
+  [[ADR-024 Keyframes are selected by path and frame, and keys come first]]).
 - **Agents from outside** — "Allow AI agents" opens a token-locked MCP
   server on `127.0.0.1:47280` plus a `--mcp-stdio` bridge
   ([[ADR-009 Agents reach the app over local MCP, opt-in]]), and
@@ -123,6 +129,14 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **`shell.css` loads after component CSS**, so a generic rule there
+  (`.menu-item`) silently beats a component rule of equal specificity;
+  scope component rules.
+- **Piping `tsc` into `tail` hides its exit code**; a commit went in with a
+  type error. Check the status, not the last lines.
+- **During a drag, compute from the clip as it was at pointer-down**; refs
+  updated on every render point at the already-moved clip and the motion
+  compounds.
 - **WebView2 prints `Failed to unregister class Chrome_WidgetWin_0`** on
   stderr when the app exits from a command; it is harmless — judge a
   headless run by its exit code and JSON lines.

@@ -59,6 +59,8 @@ a clock, so no frame is ever dropped
 | `lib/analysis/*` | Silence, scene and beat detection, pure ([[AI tools]]) |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
 | `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
+| `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
+| `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play |

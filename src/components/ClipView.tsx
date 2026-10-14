@@ -3,10 +3,11 @@ import { fromDb, toDb } from "../lib/audio";
 import { setParam } from "../lib/project/ops";
 import { store } from "../state/store";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, Diamond, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
+import { AudioLines, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
 import type { Asset, Clip, Project, Track } from "../lib/project/types";
 import { formatDuration, framesToSeconds } from "../lib/time";
+import { ClipKeys } from "./ClipKeys";
 
 export type ClipZone = "body" | "start" | "end";
 
@@ -189,7 +190,6 @@ export const ClipView = memo(function ClipView(p: Props) {
   const fxCount = "effects" in c ? c.effects.length + ("filter" in c && c.filter ? 1 : 0) : 0;
   const speed = "speed" in c && c.speed !== 1 ? `${+c.speed.toFixed(2)}x` : null;
   const freeze = "freeze" in c && c.freeze;
-  const keys = p.selected && c.keyframes ? [...new Set(Object.values(c.keyframes).flatMap((k) => k.map((x) => x.f)))] : [];
   const tiny = w < 34;
 
   return (
@@ -225,9 +225,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         />
       )}
       {c.type === "audio" && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={bodyH} top={LABEL_H} fps={p.fps} />}
-      {keys.map((f) => (
-        <Diamond key={f} size={9} className={`clip-key${p.playheadRel === f ? " on" : ""}`} style={{ left: f * zoom - 4.5 }} fill="currentColor" />
-      ))}
+      {p.selected && <ClipKeys clip={c} zoom={zoom} playheadRel={p.playheadRel} locked={p.track.locked} />}
       {!tiny && !p.track.locked && (
         <>
           <div className="trim trim-start" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />

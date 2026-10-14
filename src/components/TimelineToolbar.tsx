@@ -3,6 +3,7 @@ import {
   ArrowLeftToLine,
   ArrowRightToLine,
   Bookmark,
+  ChartSpline,
   ChevronDown,
   Crosshair,
   FlipHorizontal2,
@@ -62,6 +63,7 @@ export function TimelineToolbar() {
   const snapping = useEditor((s) => s.snapping);
   const linkage = useEditor((s) => s.linkage);
   const axis = useEditor((s) => s.previewAxis);
+  const keyframes = useEditor((s) => s.keyframePanel);
   const zoom = useEditor((s) => s.zoom);
   const hasSel = useEditor((s) => s.selection.length > 0);
   const undo = useEditor((s) => s.undoLabel);
@@ -137,6 +139,7 @@ export function TimelineToolbar() {
         <Tool id="toggleSnapping" icon={<Crosshair />} on={snapping} label="Auto snapping" />
         <Tool id="toggleLinkage" icon={<Link2 />} on={linkage} label="Linkage" />
         <Tool id="togglePreviewAxis" icon={<ScanLine />} on={axis} label="Preview axis" />
+        <Tool id="toggleKeyframePanel" icon={<ChartSpline />} on={keyframes} />
         <span className="tl-sep" />
         <button className="btn ghost fit-btn" data-tip={tipFor("zoomFit")} onClick={() => run("zoomFit")}>
           Fit

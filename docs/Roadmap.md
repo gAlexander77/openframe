@@ -6,7 +6,6 @@ items move to [[Features]] when they ship.
 ## In flight (parallel worktrees)
 
 - **Color** — LUTs (.cube), HSL, curves, color wheels, scopes.
-- **Keyframe graph editor** with easing curves, draggable diamonds.
 - **Stickers and text templates** with engine-rendered previews.
 - **Speed curves**, reverse, pitch preservation.
 - **UX audit** of the running editor against CapCut.

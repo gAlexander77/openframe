@@ -9,6 +9,7 @@ import { createMarker, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
+import { copySelectedKeys, deleteSelectedKeys, forgetCopiedKeys, pasteKeysAtPlayhead } from "./keyframes";
 import { store } from "./store";
 
 type Handler = () => void;
@@ -78,6 +79,7 @@ provide({
     });
   },
   delete: () => {
+    if (deleteSelectedKeys()) return;
     const sel = store.get().selection;
     if (sel.length) edit("Delete", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel)));
   },
@@ -86,23 +88,20 @@ provide({
     if (sel.length) edit("Ripple delete", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel, true)));
   },
   selectAll: () => store.select(store.get().project.tracks.flatMap((t) => t.clips.map((c) => c.id))),
-  deselect: () => store.select([]),
+  // Escape lets go of selected keyframes first, then of clips.
+  deselect: () => (store.get().keySel ? store.set({ keySel: null }) : store.select([])),
   copy: () => {
-    const items = selectedClips(store.get().project);
-    if (!items.length) return;
-    clipboard = {
-      clips: items.map((i) => i.c),
-      trackIds: items.map((i) => i.t.id),
-      origin: Math.min(...items.map((i) => i.c.start)),
-    };
+    if (!copySelectedKeys()) copyClips();
   },
   cut: () => {
     run("copy");
     run("delete");
   },
-  paste: () => pasteAt(store.get().playhead),
+  paste: () => {
+    if (!pasteKeysAtPlayhead()) pasteAt(store.get().playhead);
+  },
   duplicate: () => {
-    run("copy");
+    copyClips();
     if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)));
   },
   freeze: () => {
@@ -156,6 +155,7 @@ provide({
   },
   toggleLinkage: () => store.set({ linkage: !store.get().linkage }),
   togglePreviewAxis: () => store.set({ previewAxis: !store.get().previewAxis, hoverFrame: null }),
+  toggleKeyframePanel: () => store.set({ keyframePanel: !store.get().keyframePanel }),
   splitAll: () => {
     const f = store.get().playhead;
     edit("Split all", (p) => ops.splitAt(p, f));
@@ -198,6 +198,17 @@ provide({
   zoomIn: () => store.set({ zoom: Math.min(64, store.get().zoom * 1.25) }),
   zoomOut: () => store.set({ zoom: Math.max(0.02, store.get().zoom / 1.25) }),
 });
+
+function copyClips() {
+  const items = selectedClips(store.get().project);
+  if (!items.length) return;
+  clipboard = {
+    clips: items.map((i) => i.c),
+    trackIds: items.map((i) => i.t.id),
+    origin: Math.min(...items.map((i) => i.c.start)),
+  };
+  forgetCopiedKeys();
+}
 
 /** Paste the clipboard so its earliest clip starts at `at`, each clip on the
  * track it was copied from, spilling to new tracks rather than overwriting. */
