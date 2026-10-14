@@ -8,6 +8,7 @@
 
 import * as ops from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
+import { run } from "./actions";
 import { store } from "./store";
 
 let session: { id: Id; el: HTMLElement; before: string } | null = null;
@@ -50,4 +51,18 @@ export function endTyping() {
   if (textOf(id) === before) store.cancelGesture();
   else store.endGesture("Edit text");
   if (store.get().textEdit === id) store.set({ textEdit: null });
+}
+
+/** Open the editor on the canvas over a text clip, as CapCut's double-click
+ * on the text does: playback stops and, if the playhead is outside the
+ * clip, it moves to where the clip has finished animating in. */
+export function editOnCanvas(id: Id) {
+  const s = store.get();
+  const loc = ops.findClip(s.project, id);
+  if (!loc || loc.clip.type !== "text" || loc.track.hidden) return;
+  const c = loc.clip;
+  if (s.playing) run("shuttleStop");
+  if (s.playhead < c.start || s.playhead >= c.start + c.duration) store.seek(c.start + Math.min(c.animIn?.duration ?? 0, c.duration - 1));
+  store.select([id]);
+  store.set({ textEdit: id });
 }

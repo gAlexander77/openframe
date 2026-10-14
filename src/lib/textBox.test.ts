@@ -41,6 +41,15 @@ describe("editBox", () => {
     expect(r.left + r.textWidth).toBe(r.width - 10);
   });
 
+  it("trims the wrap-wide text area to half an em past the box", () => {
+    const c = editBox(layout, "center", still, viewer, 1920); // 48 px type
+    expect([c.clipLeft, c.clipRight]).toEqual([224 - 24, 224 - 24]);
+    const l = editBox(layout, "left", still, viewer, 1920);
+    expect([l.clipLeft, l.clipRight]).toEqual([0, 10 + 768 - 320 - 24]);
+    const wide = editBox({ ...layout, width: 1600, textWidth: 1560 }, "center", still, viewer, 1920);
+    expect([wide.clipLeft, wide.clipRight]).toEqual([0, 0]);
+  });
+
   it("widens the text area to a word longer than the wrap width", () => {
     const b = editBox({ ...layout, width: 2040, textWidth: 2000 }, "left", still, viewer, 1920);
     expect(b.textWidth).toBe(1000);

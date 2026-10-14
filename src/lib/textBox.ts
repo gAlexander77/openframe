@@ -36,6 +36,11 @@ export interface EditBox {
   top: number;
   textWidth: number;
   textHeight: number;
+  /** How much to trim off the text area's left and right so it reaches only
+   * half an em past the box: a wrap-wide area around a short title would
+   * otherwise swallow the clicks beside it that should end editing. */
+  clipLeft: number;
+  clipRight: number;
   fontSize: number;
   lineHeight: number;
   letterSpacing: number;
@@ -61,6 +66,7 @@ export function editBox(
   const textWidth = Math.max(layout.wrapWidth, layout.textWidth) * k;
   const pad = layout.pad * k;
   const left = align === "left" ? pad : align === "right" ? width - pad - textWidth : (width - textWidth) / 2;
+  const slack = (layout.size * k) / 2;
   return {
     cx: viewer.width / 2 + at.x * viewer.width,
     cy: viewer.height / 2 + at.y * viewer.height,
@@ -71,6 +77,8 @@ export function editBox(
     top: pad + layout.baselineShift * k,
     textWidth,
     textHeight: (layout.height - layout.pad * 2) * k,
+    clipLeft: Math.max(0, -left - slack),
+    clipRight: Math.max(0, left + textWidth - width - slack),
     fontSize: layout.size * k,
     lineHeight: layout.lineHeight * k,
     letterSpacing: layout.letterSpacing * k,

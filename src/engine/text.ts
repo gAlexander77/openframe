@@ -9,6 +9,10 @@ import type { SourceImage } from "./compositor";
 
 const FALLBACK_FONTS = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 
+/** The CSS font a style draws with at `size` pixels; the canvas editor types
+ * in the same one, so its caret lands on these glyphs. */
+export const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px "${s.font}", ${FALLBACK_FONTS}`;
+
 /** Break text into lines that fit `maxWidth`, keeping explicit newlines. */
 function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {
   const lines: string[] = [];
@@ -47,7 +51,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number): Te
   const size = s.size * k;
   const canvas = new OffscreenCanvas(2, 2);
   const ctx = canvas.getContext("2d")!;
-  const font = `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px "${s.font}", ${FALLBACK_FONTS}`;
+  const font = textFont(s, size);
   ctx.font = font;
   ctx.letterSpacing = `${s.letterSpacing * k}px`;
   const wrapWidth = s.maxWidth * width;
