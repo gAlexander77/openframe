@@ -154,3 +154,41 @@ export function audibleTime(ctx: AudioContext): number {
   }
   return fallback;
 }
+
+// ---- master bus and meters ----------------------------------------------------
+
+export interface MasterBus {
+  input: GainNode;
+  left: AnalyserNode;
+  right: AnalyserNode;
+}
+
+let bus: MasterBus | null = null;
+
+/** Playback's master bus: everything scheduled for preview goes through it,
+ * so the meters show exactly what reaches the speakers. */
+export function masterBus(): MasterBus {
+  if (bus) return bus;
+  const ctx = audioContext();
+  const input = ctx.createGain();
+  const split = ctx.createChannelSplitter(2);
+  const mk = () => Object.assign(ctx.createAnalyser(), { fftSize: 1024, smoothingTimeConstant: 0 });
+  const left = mk();
+  const right = mk();
+  input.connect(ctx.destination);
+  input.connect(split);
+  split.connect(left, 0);
+  split.connect(right, 1);
+  bus = { input, left, right };
+  return bus;
+}
+
+const scratch = new Float32Array(1024);
+
+/** Peak level of an analyser's last block, in dBFS (-Infinity for silence). */
+export function peakDb(a: AnalyserNode): number {
+  a.getFloatTimeDomainData(scratch);
+  let peak = 0;
+  for (let i = 0; i < scratch.length; i++) peak = Math.max(peak, Math.abs(scratch[i]));
+  return peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+}

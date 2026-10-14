@@ -7,6 +7,7 @@ import { formatTimecode } from "../lib/time";
 import { isMac } from "../platform/env";
 import { chordFor, provide, run } from "../state/actions";
 import { store, useEditor } from "../state/store";
+import { Meter } from "./Meter";
 import { TransformOverlay } from "./TransformOverlay";
 import "./player.css";
 
@@ -79,6 +80,7 @@ export function PlayerPanel() {
           <canvas ref={canvasRef} className="player-canvas" />
           <TransformOverlay width={box.w} height={box.h} />
         </div>
+        <Meter />
       </div>
       <Transport />
     </section>

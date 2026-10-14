@@ -16,7 +16,7 @@ import { planFrame, type Layer, type PlanItem } from "../lib/render/plan";
 import { frameAt, framesToSeconds } from "../lib/time";
 import { provide } from "../state/actions";
 import { store, type EditorState } from "../state/store";
-import { audibleTime, audioContext, scheduleAudio, type Schedule } from "./audio";
+import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "./audio";
 import { Compositor, type SourceImage } from "./compositor";
 import { VideoCursor } from "./cursor";
 import { imageFor, mediaFor } from "./media";
@@ -271,7 +271,7 @@ export class Player {
       await ctx.resume();
       if (this.rate !== rate) return; // paused while resuming
       this.ctxAt = ctx.currentTime + 0.12; // lead time for the first chunks
-      this.schedule = scheduleAudio(ctx, ctx.destination, p, this.t0, framesToSeconds(end, p.fps), this.ctxAt);
+      this.schedule = scheduleAudio(ctx, masterBus().input, p, this.t0, framesToSeconds(end, p.fps), this.ctxAt);
     }
     this.drawn = { frame: -1, dropped: 0 };
     const tick = () => {

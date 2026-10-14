@@ -78,3 +78,6 @@
 .tf-guide { position: absolute; background: var(--accent); pointer-events: none; }
 .tf-guide-v { left: 50%; top: 0; bottom: 0; width: 1px; }
 .tf-guide-h { top: 50%; left: 0; right: 0; height: 1px; }
+
+/* A canvas is a replaced element: top/bottom do not stretch it, so size it. */
+.meter { position: absolute; right: 8px; top: 14px; height: calc(100% - 50px); width: 9px; border-radius: 2px; }
