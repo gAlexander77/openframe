@@ -175,7 +175,7 @@
 }
 .vol-line:hover, .vol-line.on { opacity: 1; background-size: 100% 2.5px; }
 .fade-knob {
-  position: absolute; top: -4px; z-index: 6; width: 10px; height: 10px; border-radius: 50%;
+  position: absolute; top: 4px; z-index: 6; width: 10px; height: 10px; border-radius: 50%;
   background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 50%);
   cursor: ew-resize; transition: transform var(--t-fast) var(--ease-spring);
 }
