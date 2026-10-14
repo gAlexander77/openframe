@@ -1,5 +1,9 @@
 # Codex guide: start here
 
+**Pickup status, 2026-10-14:** the eight tasks below have been completed
+and committed locally. Read section 7 for hashes, verification, and the
+remaining captions/lifecycle follow-ups before repeating any work.
+
 You are Codex, picking up OpenFrame from Claude Code on 2026-10-14. This file
 tells you what to do, in order, and the rules that keep the project safe.
 Read all of it before you change anything.
@@ -88,9 +92,12 @@ The app opens on the home screen, so a drive clicks `.create-card` first.
 Copy the shape of `scripts/drive/ai-tools.js` for new drives. The runner
 prints PASS/FAIL and writes the full result to `scratch/drive-<name>.json`.
 
-Drives that pass on `main` today (2026-10-14): `framecode`, `ai-tools`,
-`keyframes`, `color`, `stickers`, `speed`, `export`. `inline-text` fails 3–4
-alignment checks at 1600x950 and larger (task 8).
+Drives previously passing on `main` (2026-10-14): `framecode`, `ai-tools`,
+`keyframes`, `color`, `stickers`, `speed`, `export`. `inline-text` now passes
+all 38 checks at 1280x720, 1600x950 and 1920x1080 after task 8 (`173fe58`).
+The added `timeline-menu`, `audio-fades`, `home-menus` and `audit-followup`
+drives pass at 1600x950. `web-capabilities` records a captions stall and
+exits 1; see section 7.
 
 ## 4. Project state, 2026-10-14
 
@@ -105,8 +112,8 @@ export, Copilot (local Ollama/LM Studio), an MCP server for outside agents,
 and headless rendering (`--render`). `docs/Features.md` is the full list;
 `docs/History.md` records every round and lesson.
 
-Main has two local commits the owner has not pushed yet: the OpenFrame
-documentation handoff and a `.gitignore` fix. Leave them as they are.
+At handoff, main already had the owner's local OpenFrame documentation and
+`.gitignore` fix commits. Preserve them; the pickup commits are in section 7.
 
 ## 5. Your tasks, in order
 
@@ -257,3 +264,45 @@ found but could not fix, and anything the next agent must know.
 
 - 2026-10-14: guide written by Claude Code. Main at the `.gitignore` fix
   commit plus this guide's commit.
+
+### 2026-10-14 — Codex pickup completed
+
+Worked on `main`, reusing the existing Vite server. All changes were committed
+locally; nothing was pushed, published, renamed, or changed on the remote.
+The three parked Claude Code worktrees and branch heads remain untouched.
+All browser checks were headless; no desktop app UI was launched.
+
+| Task | Commit | Result and evidence |
+| --- | --- | --- |
+| 1. Browser capability log | `6c5374b` | [Web capability log](docs/Web%20capability%20log.md) records Edge 155 / Windows 11 at `7243fb6`. URL and local-file reload persistence, four decode fixtures, readable ProRes refusal, and short MP4/WebM exports verified. Captions stalled twice; see below. |
+| 2. Timeline background menu | `c9e3040` | `timeline-menu` passed: clipboard-aware Paste, marker at clicked time (including beyond the last clip), undo, Select all, clip/marker menus, and native text menus. UX-27 updated. |
+| 3. Audio fade knobs | `0397787` | `audio-fades` passed; screenshot inspected. Knobs clear the label at rest and on hover. UX-35 updated. |
+| 4. Home menus and About | `fe4ca63` | `home-menus` passed: only File and Help on Home, appropriate items, About toast, Shortcuts, full editor menus preserved. UX-29 scoped status updated; lifecycle follow-up below. |
+| 5. Existing preview/text behavior | `9622422` | `audit-followup` passed; Effects and Transitions screenshots inspected, all 39 rest previews distinct. Text double-click edits; empty viewer double-click enters full screen. UX-28/34 updated, citing ADR-026/030/031. |
+| 6. GPL metadata | `94ea867` | `GPL-3.0-only` in npm/Cargo manifests and npm lockfile root. Only the first release checkbox was checked. Rust formatting, clippy with warnings denied, and all 28 Rust tests passed. |
+| 7. Dependency license declarations | `6400a30` | [Third-party licenses](docs/Third-party%20licenses.md) inventories 52 production npm packages and 420 Cargo packages at `94ea867`. Flagged declarations need owner review; no GPL compatibility judgment. Inventory tooling/data remain git-ignored in `scratch/`. |
+| 8. Preview text alignment | `173fe58` | All 38 `inline-text` checks passed at each of 1280x720, 1600x950 and 1920x1080. Editor now uses the player's actual raster target; screenshot crops use integer bounds. ADR-030 records the cause and evidence. |
+
+TypeScript and all 341 frontend unit tests passed before every task commit.
+New drives are in `scripts/drive/`; JSON results and screenshots stay local
+in their ignored output directories. UI checks validate the browser build,
+not desktop parity.
+
+**Remaining follow-ups:**
+
+- Captions: both five-minute attempts on `speech-test.wav` using Whisper
+  tiny English produced no text. The second remained at download progress
+  0% after 300,297 ms and recorded an aborted request for Vite's optimized
+  `@huggingface_transformers.js`. Inspect worker module loading and model
+  initialization; the capture does not establish the cause. No captions or
+  worker implementation was modified. The capability drive intentionally
+  continues to report this as a failed verification.
+- UX-29 lifecycle: the requested Home menu scope/About fix is complete.
+  New/Open still use the existing Home routing; actual creation/selection
+  uses the Create project and project cards. A separate change should decide
+  what those menu and keyboard entry points do while already on Home.
+- Release review: license declarations are an inventory, not artifact notices
+  or compatibility clearance. Keep the other release checkboxes open and
+  review binaries/WASM, models, fonts, icons and media separately.
+- Desktop checks, the coordinated OpenFrame runtime/data migration, parked
+  feature work, and any public release remain outside this pickup.
