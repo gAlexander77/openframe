@@ -130,10 +130,22 @@ button { cursor: pointer; }
 }
 
 /* tooltips: one themed layer, via data-tip (TermHQ convention) */
-[data-tip] { position: relative; }
+
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes pop-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.9s linear infinite; }
+
+/* the one tooltip layer (src/lib/tooltip.ts) */
+.tooltip {
+  position: fixed; left: 0; top: 0; z-index: 1000;
+  max-width: 280px; padding: 5px 9px; border-radius: 6px;
+  background: #2f2f2f; color: var(--text-1);
+  font-size: var(--fs-xs); line-height: 1.35;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(255 255 255 / 6%);
+  pointer-events: none; opacity: 0;
+  transition: opacity var(--t-fast) ease-out;
+}
+.tooltip.on { opacity: 1; }
