@@ -18,6 +18,9 @@ working on the app, and coding agents that need the reasoning behind it.
 - [[Features]] — everything the app does today, with the intent behind each
 - [[Roadmap]] — what is in flight and next, in priority order
 - [[Project format]] — the open JSON schema agents and pipelines write
+- [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
+- [[Driving the app]] — the web build through Playwright, the desktop app over
+  WebView2's debug port; native dialogs, OS drops, the drive scripts
 - [[Architecture]] — layers, how an edit becomes pixels, the module table
 - [[Conventions]] — where code goes, rules of thumb, commits, testing
 - [[History]] — the build story, round by round, including rejected attempts
@@ -56,3 +59,15 @@ Every non-obvious choice gets a short Architecture Decision Record in
   no limit; the timeline mix at 16 kHz, cut at quiet points
 - [[ADR-008 MCP is a handler over the command registry]] — one pure
   JSON-RPC handler; transports only forward; agents see their own frames
+- [[ADR-010 Desktop media is served by id over a media protocol]] — exact-range
+  reads, the webview never sends raw paths
+- [[ADR-011 Desktop projects are JSON files written atomically by Rust]]
+- [[ADR-012 Exports are positional raw-body writes into a part file]]
+- [[ADR-013 FFmpeg runs as a CLI child for proxies, LGPL in release]]
+- [[ADR-014 Export is a deterministic frame loop]] — every frame awaited,
+  never dropped; works hidden
+- [[ADR-015 Export codecs follow what the device can encode]]
+- [[ADR-016 AAC encoder delay is measured, not assumed]] — 0 native, 1024 WASM
+- [[ADR-017 Analysis edits take source seconds]]
+- [[ADR-018 Local analysis is our own signal processing in the webview]]
+- [[ADR-019 Smart edits compile to commands, one undo step]]

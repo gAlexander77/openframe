@@ -12,6 +12,9 @@ async (page, fixtures) => {
   if (fixtures) await page.reload();
   else await page.goto("http://localhost:1420");
   await page.waitForFunction(() => !!window.videoEditor);
+  // The app opens on the home screen; the viewer exists only in a project.
+  if (await page.locator(".create-card").count()) await page.locator(".create-card").click();
+  await page.waitForSelector(".timeline-panel");
   return await page.evaluate(async (fixtures) => {
     const ve = window.videoEditor;
     const src = fixtures ? `${fixtures}/framecode-30.mp4` : "http://localhost:1420/fixtures/media/framecode-30.mp4";
