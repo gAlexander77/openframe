@@ -71,14 +71,14 @@ provide({
   },
   trimStartToPlayhead: () => {
     const s = store.get();
-    edit("Trim start", (p) => {
+    edit(ACTION_LABELS.trimStartToPlayhead, (p) => {
       for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "start", s.playhead, true);
       return p;
     });
   },
   trimEndToPlayhead: () => {
     const s = store.get();
-    edit("Trim end", (p) => {
+    edit(ACTION_LABELS.trimEndToPlayhead, (p) => {
       for (const { c } of targetsAtPlayhead(p)) p = ops.trimClip(p, c.id, "end", s.playhead, true);
       return p;
     });
@@ -104,12 +104,13 @@ provide({
   },
   cut: () => {
     run("copy");
-    run("delete");
+    const sel = store.get().selection;
+    if (sel.length) edit("Cut", (p) => ops.pruneEmptyTracks(ops.deleteClips(p, sel)));
   },
   paste: () => pasteAt(store.get().playhead),
   duplicate: () => {
     run("copy");
-    if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)));
+    if (clipboard) pasteAt(Math.max(...clipboard.clips.map((c) => c.start + c.duration)), "Duplicate");
   },
   freeze: () => {
     const s = store.get();
@@ -207,11 +208,11 @@ provide({
 
 /** Paste the clipboard so its earliest clip starts at `at`, each clip on the
  * track it was copied from, spilling to new tracks rather than overwriting. */
-function pasteAt(at: number) {
+function pasteAt(at: number, label = "Paste") {
   if (!clipboard) return;
   const { clips, trackIds, origin } = clipboard;
   const pasted: Id[] = [];
-  edit("Paste", (p) => {
+  edit(label, (p) => {
     clips.forEach((c, i) => {
       const copy = { ...c, id: uid("c"), start: at + c.start - origin } as Clip;
       pasted.push(copy.id);
