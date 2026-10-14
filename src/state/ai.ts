@@ -352,7 +352,7 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
   const before = store.get().project.markers.length;
   edit(`Mark ${plural(times.length, "beat")}`, (p) => runCommand(p, "add_markers", { times, label: "Beat", color: "#f5c543" }));
   const markers = store.get().project.markers.length - before;
-  finish("beats", `Marked ${plural(markers, "beat")} · ${Math.round(res.bpm)} BPM`);
+  finish("beats", markers ? `Marked ${plural(markers, "beat")} · ${Math.round(res.bpm)} BPM` : `Every beat is already marked · ${Math.round(res.bpm)} BPM`);
   return { ...res, markers };
 }
 
