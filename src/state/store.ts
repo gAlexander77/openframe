@@ -46,6 +46,8 @@ export interface EditorState {
   /** Preview at a fraction of project resolution (pro editors' playback
    * resolution: full, 1/2, 1/4). */
   previewScale: 1 | 0.5 | 0.25;
+  /** The Scopes panel is showing (in the media library's place). */
+  scopes: boolean;
   leftTab: LeftTab;
   /** In/out range for export and three-point edits, frames. */
   inPoint: number | null;
@@ -82,6 +84,7 @@ let state: EditorState = {
   previewAxis: false,
   hoverFrame: null,
   previewScale: 1,
+  scopes: false,
   leftTab: "media",
   inPoint: null,
   outPoint: null,

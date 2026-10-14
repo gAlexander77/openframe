@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeProject, ProjectError } from "./defaults";
+import { DEFAULT_ADJUST, normalizeProject, ProjectError } from "./defaults";
 
 describe("normalizeProject", () => {
   it("completes the minimal JSON an agent would write", () => {
@@ -41,6 +41,27 @@ describe("normalizeProject", () => {
     expect(() =>
       normalizeProject(track([{ type: "video", assetId: "nope", start: 0, duration: 1 }])),
     ).toThrow(/not in assets/);
+  });
+
+  it("keeps files without a grade unchanged, and checks LUT references", () => {
+    const old = normalizeProject({ tracks: [{ kind: "video", clips: [{ type: "color", start: 0, duration: 5, adjust: { exposure: 10 } }] }] });
+    const c = old.tracks[0].clips[0];
+    expect(c.type === "color" && Object.keys(c.adjust).sort()).toEqual(Object.keys(DEFAULT_ADJUST).sort());
+    expect(c.type === "color" && c.adjust.exposure).toBe(10);
+    expect(old.luts).toBeUndefined();
+
+    const graded = normalizeProject({
+      luts: [{ id: "l1", src: "C:/luts/Film Look.cube", kind: "3d", size: 33 }],
+      tracks: [{ kind: "video", clips: [{ type: "adjustment", start: 0, duration: 5, adjust: { lut: { id: "l1", intensity: 2 }, wheels: { gain: { y: 10 } } } }] }],
+    });
+    expect(graded.luts?.[0].name).toBe("Film Look.cube");
+    const adj = graded.tracks[0].clips[0];
+    expect(adj.type === "adjustment" && adj.adjust.lut).toEqual({ id: "l1", intensity: 1 });
+    expect(adj.type === "adjustment" && adj.adjust.wheels?.gain).toEqual({ r: 0, g: 0, b: 0, y: 10 });
+    expect(adj.type === "adjustment" && adj.adjust.exposure).toBe(0);
+    expect(() =>
+      normalizeProject({ tracks: [{ kind: "video", clips: [{ type: "color", start: 0, duration: 5, adjust: { lut: { id: "gone" } } }] }] }),
+    ).toThrow(/lut gone is not in luts/);
   });
 
   it("gives an empty document a main track", () => {

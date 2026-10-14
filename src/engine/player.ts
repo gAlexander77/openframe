@@ -19,6 +19,7 @@ import { store, type EditorState } from "../state/store";
 import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "./audio";
 import { Compositor, type SourceImage } from "./compositor";
 import { VideoCursor } from "./cursor";
+import { loadPlanLuts } from "./luts";
 import { imageFor, mediaFor } from "./media";
 import { rasterizeText } from "./text";
 
@@ -72,8 +73,9 @@ export class CursorPool {
  * cursors and stay valid until the next call on the same cursor. */
 export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorPool): Promise<Resolved> {
   const out: Resolved = new Map();
-  await Promise.all(
-    layersOf(plan).map(async (l) => {
+  await Promise.all([
+    loadPlanLuts(plan),
+    ...layersOf(plan).map(async (l) => {
       const src = l.source;
       if (src.kind === "video") {
         const cursor = await pool.get(p, l.clipId, src.assetId);
@@ -87,7 +89,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
         }
       }
     }),
-  );
+  ]);
   return out;
 }
 
@@ -164,11 +166,20 @@ export class Player {
     while (this.rendering || this.wanted !== null) await new Promise((r) => setTimeout(r, 16));
   }
 
-  /** What the viewer shows, as { width, height, data } (RGBA, top row first). */
-  pixels() {
+  /** What the viewer shows, as { width, height, data } (RGBA, top row
+   * first); with `maxWidth`, scaled down on the GPU first (scopes). */
+  pixels(maxWidth?: number) {
     const c = this.compositor;
     if (!c) return null;
+    if (maxWidth) return c.readPixelsScaled(maxWidth);
     return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+  }
+
+  private frameListeners = new Set<() => void>();
+  /** Called after every frame the viewer draws, paused or playing. */
+  onFrame(fn: () => void): () => void {
+    this.frameListeners.add(fn);
+    return () => this.frameListeners.delete(fn);
   }
 
   private renderSize(p: Project, scale: number) {
@@ -232,6 +243,7 @@ export class Player {
     } catch (e) {
       console.error("render failed", e);
     }
+    for (const fn of this.frameListeners) fn();
     if (this.drawn.frame >= 0 && this.rate > 0 && f > this.drawn.frame + 1) this.drawn.dropped += f - this.drawn.frame - 1;
     this.drawn.frame = f;
     this.pool.sweep(4000);

@@ -11,6 +11,7 @@ import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
 import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
+import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -47,10 +48,13 @@ export const automation = {
   async import(srcs: { name: string; src: string; size?: number }[]) {
     return importFiles(srcs.map((s) => ({ name: s.name, src: s.src, size: s.size ?? 0 })));
   },
+  /** Import .cube LUTs by URL (web) or path (desktop) into project.luts;
+   * apply_lut then puts one on a clip. Returns the new entries. */
+  importLuts: (srcs: { name: string; src: string }[]) => importLuts(srcs),
   /** Resolves once the viewer has drawn the current frame. */
   rendered: () => player.idle(),
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */
-  pixels: () => player.pixels(),
+  pixels: (maxWidth?: number) => player.pixels(maxWidth),
   platform: () => platform.kind,
   /** Export to memory: { url (Blob URL), size, fileName, frames, ... }. */
   render: renderToUrl,

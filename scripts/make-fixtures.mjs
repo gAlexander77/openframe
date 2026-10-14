@@ -7,7 +7,7 @@
 //   node scripts/make-fixtures.mjs
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const out = join(import.meta.dirname, "..", "fixtures", "media");
@@ -19,6 +19,35 @@ const ff = (...args) => execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "er
 // source frame is on screen.
 const burn = (w, h, rate, extra = "") =>
   `testsrc2=size=${w}x${h}:rate=${rate},drawtext=text='%{pts\\:hms} f%{n}':fontsize=${Math.round(h / 12)}:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h-th-${Math.round(h / 10)}${extra}`;
+// Color bars for the grading drive: 75% bars on top (the vectorscope's 75%
+// targets), 100% bars below, and a 256-step gray ramp at the bottom for
+// curves and wheels. Bar order: white, yellow, cyan, green, magenta, red,
+// blue, black. Exact 8-bit values, so pixels can be checked to the unit.
+const bars = () => {
+  const bar = "floor(X/240)";
+  const on = (list) => `(${list.map((n) => `eq(${bar},${n})`).join("+")})`;
+  const level = "if(lt(Y,540),191,255)";
+  const ramp = "floor(X*256/W)";
+  const ch = (list) => `if(lt(Y,810),${level}*${on(list)},${ramp})`;
+  return `color=c=black:s=1920x1080,format=gbrp,geq=r='${ch([0, 1, 4, 5])}':g='${ch([0, 1, 2, 3])}':b='${ch([0, 2, 4, 6])}'`;
+};
+
+// .cube LUTs for the grading drive, written directly (no ffmpeg needed).
+const cube3d = (size, fn) => {
+  const rows = [`TITLE "${fn.name}"`, `LUT_3D_SIZE ${size}`];
+  for (let b = 0; b < size; b++)
+    for (let g = 0; g < size; g++)
+      for (let r = 0; r < size; r++) rows.push(fn(r / (size - 1), g / (size - 1), b / (size - 1)).map((v) => v.toFixed(6)).join(" "));
+  return rows.join("\n") + "\n";
+};
+const cube1d = (size, fn) => {
+  const rows = [`LUT_1D_SIZE ${size}`];
+  for (let i = 0; i < size; i++) rows.push(fn(i / (size - 1)).map((v) => v.toFixed(6)).join(" "));
+  return rows.join("\n") + "\n";
+};
+const identity = (r, g, b) => [r, g, b];
+const invert = (r, g, b) => [1 - r, 1 - g, 1 - b];
+
 const tone = (freq, seconds) => `sine=frequency=${freq}:sample_rate=48000:duration=${seconds}`;
 
 const jobs = {
@@ -58,6 +87,10 @@ const jobs = {
     ff("-f", "lavfi", "-i", "flite=text='Welcome to the video editor. This sentence was spoken by a computer. Captions should appear on screen.':voice=slt", "-ar", "48000", "-ac", "1", join(out, "speech-test.wav")),
   "photo.png": () => ff("-f", "lavfi", "-i", "testsrc2=size=1600x1200", "-frames:v", "1", join(out, "photo.png")),
   "photo.jpg": () => ff("-f", "lavfi", "-i", "mandelbrot=size=1920x1080", "-frames:v", "1", join(out, "photo.jpg")),
+  "color-bars.png": () => ff("-f", "lavfi", "-i", bars(), "-frames:v", "1", "-pix_fmt", "rgb24", join(out, "color-bars.png")),
+  "identity-33.cube": () => writeFileSync(join(out, "identity-33.cube"), cube3d(33, identity)),
+  "invert-17.cube": () => writeFileSync(join(out, "invert-17.cube"), cube3d(17, invert)),
+  "sqrt-1d.cube": () => writeFileSync(join(out, "sqrt-1d.cube"), cube1d(1024, (v) => [Math.sqrt(v), Math.sqrt(v), Math.sqrt(v)])),
   "green-screen.mp4": () =>
     ff("-f", "lavfi", "-i", "color=c=0x00b140:size=1280x720:rate=30,drawbox=x=440:y=160:w=400:h=400:color=0xff3b6b@1:t=fill", "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", join(out, "green-screen.mp4")),
   // AI tools (scripts/drive/ai-tools.js). Hard cuts at 2.5, 5, 8 and 10 s

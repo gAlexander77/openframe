@@ -74,6 +74,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-017 Analysis edits take source seconds]]
 - [[ADR-018 Local analysis is our own signal processing in the webview]]
 - [[ADR-019 Smart edits compile to commands, one undo step]]
+- [[ADR-020 The grade lives in adjust, in Lumetri's order]] — schema, order
+  and math of HSL, curves and wheels
+- [[ADR-021 LUTs are files by reference, sampled as 3D textures]] — no table
+  data in the project file
+- [[ADR-022 Scopes bin a GPU-downscaled readback on the CPU]] — 320 px
+  readback, at most 8 updates a second
 - [[ADR-023 The keyframe panel docks under the timeline tracks]] — shares
   the tracks' zoom and scroll; lanes plus a value graph
 - [[ADR-024 Keyframes are selected by path and frame, and keys come first]]

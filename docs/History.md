@@ -86,6 +86,10 @@ A narrative log of each build round with its intent, for archaeology that
   Copilot driving it with a model on this machine (Ollama / LM Studio).
 - **Canvas fill** — CapCut's blurred or colored fill behind letterboxed
   clips.
+- **Pro color** — HSL, curves, color wheels and .cube LUTs in Lumetri's
+  order, plus waveform, parade, vectorscope and histogram scopes, proven
+  against a CPU reference on color bars by `scripts/drive/color.js`
+  ([[ADR-020 The grade lives in adjust, in Lumetri's order]] to ADR-022).
 - **Keyframes you can shape** — CapCut's keyframe panel docked under the
   tracks on their time axis, draggable diamonds, easing presets stored as
   CSS beziers, a section keyframe, and `move_keyframe`,
@@ -129,6 +133,15 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **A `sampler3D` may never share a texture unit with a `sampler2D`** in
+  WebGL2: pin every sampler to its own unit and bind 1x1 stand-ins when a
+  grade part is off.
+- **Vite adds `?t=` to modules it hot-reloaded**, so a drive importing
+  `/src/engine/player.ts` gets a second, empty instance; take the exact URL
+  from `performance.getEntriesByType("resource")`.
+- **Python writes CRLF on Windows** unless the file is opened with
+  `newline=''` (or `'
+'`).
 - **`shell.css` loads after component CSS**, so a generic rule there
   (`.menu-item`) silently beats a component rule of equal specificity;
   scope component rules.

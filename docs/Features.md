@@ -55,6 +55,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Stereo peak meter.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
+- **Scopes** (Player header or View menu): luma waveform, RGB parade,
+  vectorscope with 75% targets and the skin-tone line, and histogram, of
+  the graded output; live while paused, 8 updates a second while playing
+  ([[ADR-022 Scopes bin a GPU-downscaled readback on the CPU]]).
 
 ## Inspector
 
@@ -90,6 +94,28 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-024 Keyframes are selected by path and frame, and keys come
   first]]); paste lands at the playhead with spacing kept. A moved key
   replaces one it lands on, and keys stay inside their clip.
+
+## Color
+
+- CapCut's Adjust sub-tabs with Resolve and Lumetri math underneath
+  ([[ADR-020 The grade lives in adjust, in Lumetri's order]]):
+  - **Basic**: filter looks and the temperature, tint, saturation,
+    vibrance, hue, exposure, contrast, highlights, shadows, whites, blacks,
+    sharpen, grain, fade and vignette sliders.
+  - **HSL**: eight color ranges, hue, saturation and lightness each; only
+    that color changes, grays never.
+  - **Curves**: luma, red, green and blue; click to add a point, drag to
+    shape, drag off the graph to remove; arrow keys nudge. Monotone cubic,
+    so a curve never overshoots its points.
+  - **Color wheel**: lift, gamma, gain and offset pucks (a vectorscope's
+    geometry, so the wheel and the scope agree) with luminance rings.
+  - **LUT**: import a 1D or 3D .cube (or drop one on the window), pick it,
+    set its intensity ([[ADR-021 LUTs are files by reference, sampled as
+    3D textures]]).
+- The grade runs on clips and adjustment layers alike, every number is
+  keyframeable, and preview and export render it with the same shader.
+- Agents: `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, and
+  `window.videoEditor.importLuts`.
 
 ## Text and captions
 

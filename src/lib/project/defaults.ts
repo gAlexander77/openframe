@@ -3,6 +3,7 @@
 // version, a hand-written agent script with half the fields missing — leaves
 // as a complete, valid Project or as an error naming what is wrong.
 
+import { cleanGrade } from "../grade";
 import { secondsToFrames, type Rational } from "../time";
 import type {
   Adjust,
@@ -13,6 +14,7 @@ import type {
   ColorClip,
   Crop,
   ImageClip,
+  LutFile,
   Marker,
   Project,
   Sound,
@@ -227,7 +229,14 @@ const num = (v: unknown, fallback: number) =>
 const VISUAL_TYPES = new Set(["video", "image", "text", "color"]);
 const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment"]);
 
-function normalizeClip(raw: unknown, where: string): Clip {
+/** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
+function normalizeAdjust(raw: unknown, where: string, lutIds: Set<string>) {
+  const a = cleanGrade({ ...DEFAULT_ADJUST, ...(isObj(raw) ? raw : {}) }) as unknown as Visual["adjust"];
+  if (a.lut && !lutIds.has(a.lut.id)) throw new ProjectError(`${where}: lut ${a.lut.id} is not in luts`);
+  return a;
+}
+
+function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
   if (!isObj(raw)) throw new ProjectError(`${where}: clip must be an object`);
   const type = raw.type;
   if (typeof type !== "string" || !CLIP_TYPES.has(type)) {
@@ -241,13 +250,13 @@ function normalizeClip(raw: unknown, where: string): Clip {
     const base = visual();
     c.transform = { ...base.transform, ...(isObj(c.transform) ? c.transform : {}) };
     c.crop = { ...base.crop, ...(isObj(c.crop) ? c.crop : {}) };
-    c.adjust = { ...base.adjust, ...(isObj(c.adjust) ? c.adjust : {}) };
+    c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
     c.effects = Array.isArray(c.effects) ? c.effects : [];
   }
   if (type === "adjustment") {
-    c.adjust = { ...DEFAULT_ADJUST, ...(isObj(c.adjust) ? c.adjust : {}) };
+    c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.effects = Array.isArray(c.effects) ? c.effects : [];
   }
@@ -299,12 +308,23 @@ export function normalizeProject(raw: unknown): Project {
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));
+  const luts: LutFile[] = (Array.isArray(raw.luts) ? raw.luts : []).map((l, i) => {
+    if (!isObj(l) || typeof l.src !== "string") throw new ProjectError(`luts[${i}]: needs at least a "src"`);
+    return {
+      id: typeof l.id === "string" ? l.id : uid("lut"),
+      name: typeof l.name === "string" ? l.name : l.src.split(/[\\/]/).pop()!,
+      src: l.src,
+      kind: l.kind === "1d" ? "1d" : "3d",
+      size: Math.max(2, Math.round(num(l.size, 33))),
+    };
+  });
+  const lutIds = new Set(luts.map((l) => l.id));
   const rawTracks = Array.isArray(raw.tracks) ? raw.tracks : base.tracks;
   const tracks: Track[] = rawTracks.map((t, ti) => {
     if (!isObj(t)) throw new ProjectError(`tracks[${ti}] must be an object`);
     const kind: TrackKind = t.kind === "audio" ? "audio" : "video";
     const clips = (Array.isArray(t.clips) ? t.clips : [])
-      .map((c, ci) => normalizeClip(c, `tracks[${ti}].clips[${ci}]`))
+      .map((c, ci) => normalizeClip(c, `tracks[${ti}].clips[${ci}]`, lutIds))
       .sort((a, b) => a.start - b.start);
     clips.forEach((c, ci) => {
       const where = `tracks[${ti}].clips[${ci}]`;
@@ -356,6 +376,7 @@ export function normalizeProject(raw: unknown): Project {
     assets,
     tracks,
     markers,
+    ...(luts.length ? { luts } : {}),
     createdAt: num(raw.createdAt, base.createdAt),
     updatedAt: num(raw.updatedAt, base.updatedAt),
   };

@@ -12,6 +12,10 @@
 //
 // Preview and export share this class; only the canvas and size differ.
 
+import { bakeCurves } from "../lib/curves";
+import type { GradeParams } from "../lib/grade";
+import { fit1d, type Lut } from "../lib/lut";
+import { lutFor } from "./luts";
 import type { BlendMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import {
@@ -52,6 +56,20 @@ interface Target {
 
 const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4 } as const;
 
+/** GL reads rows bottom-up; flip them to top-down in place. */
+function flipRows(out: Uint8Array, width: number, height: number): Uint8Array {
+  const row = width * 4;
+  const tmp = new Uint8Array(row);
+  for (let y = 0; y < height / 2; y++) {
+    const a = y * row;
+    const b = (height - 1 - y) * row;
+    tmp.set(out.subarray(a, a + row));
+    out.copyWithin(a, b, b + row);
+    out.set(tmp, b);
+  }
+  return out;
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const h = hex.replace("#", "");
   const n = h.length === 3 ? h.split("").map((c) => c + c).join("") : h.padEnd(6, "0");
@@ -70,6 +88,15 @@ export class Compositor {
   /** Textures for sources, by key (stable sources) or by slot. */
   private sourceTextures = new Map<string, WebGLTexture>();
   private slotTextures: WebGLTexture[] = [];
+  /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
+   * when a grade part is off so no sampler is ever left without one. */
+  private curveTextures = new Map<string, WebGLTexture>();
+  private blank2d: WebGLTexture | null = null;
+  private blank3d: WebGLTexture | null = null;
+  /** LUT tables on the GPU by source, with the parsed table they came from. */
+  private lutTextures = new Map<string, { lut: Lut; tex: WebGLTexture; width: number }>();
+  /** Small target for scaled readbacks (scopes). */
+  private small: { fb: WebGLFramebuffer; rb: WebGLRenderbuffer; w: number; h: number } | null = null;
 
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
     const gl = canvas.getContext("webgl2", {
@@ -190,7 +217,7 @@ export class Compositor {
 
   // ---- color uniforms ------------------------------------------------------------
 
-  private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number) {
+  private setColorUniforms(u: (n: string) => WebGLUniformLocation | null, adjust: Layer["adjust"], tone: Tone | undefined, time: number, grade: GradeParams | undefined) {
     const gl = this.gl;
     const k = (v: number) => v / 100;
     gl.uniform1f(u("u_exposure"), k(adjust.exposure));
@@ -212,6 +239,112 @@ export class Compositor {
     gl.uniform3fv(u("u_toneHighlights"), tone?.highlights ?? [0.5, 0.5, 0.5]);
     gl.uniform1f(u("u_toneAmount"), tone?.amount ?? 0);
     gl.uniform1f(u("u_time"), time);
+    this.setGradeUniforms(u, grade);
+  }
+
+  /** The grade's uniforms and tables (texture units 1..3; unit 0 is the
+   * pass's own input). */
+  private setGradeUniforms(u: (n: string) => WebGLUniformLocation | null, g: GradeParams | undefined) {
+    const gl = this.gl;
+    gl.uniform1i(u("u_curvesOn"), g?.curves ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, g?.curves ? this.curveTexture(g.curves) : this.blank());
+    gl.uniform1i(u("u_curves"), 1);
+    const w = g?.wheels;
+    gl.uniform1i(u("u_wheelsOn"), w ? 1 : 0);
+    if (w) {
+      gl.uniform3fv(u("u_lift"), w.lift);
+      gl.uniform3fv(u("u_gamma"), w.gamma);
+      gl.uniform3fv(u("u_gain"), w.gain);
+      gl.uniform3fv(u("u_offset"), w.offset);
+    }
+    gl.uniform1i(u("u_hslOn"), g?.hsl ? 1 : 0);
+    if (g?.hsl) gl.uniform3fv(u("u_hsl"), g.hsl);
+    // LUT: 1D on unit 2, 3D on unit 3. A sampler3D must never share a unit
+    // with a sampler2D, so both always point at their own units.
+    const lut = g?.lut ? this.lutTexture(g.lut.src) : null;
+    gl.uniform1i(u("u_lutKind"), lut ? (lut.lut.kind === "3d" ? 2 : 1) : 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, lut?.lut.kind === "1d" ? lut.tex : this.blank());
+    gl.uniform1i(u("u_lut1d"), 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_3D, lut?.lut.kind === "3d" ? lut.tex : this.blankVolume());
+    gl.uniform1i(u("u_lut3d"), 3);
+    if (lut) {
+      gl.uniform1f(u("u_lutAmount"), g!.lut!.intensity);
+      gl.uniform1f(u("u_lutSize"), lut.width);
+      gl.uniform3fv(u("u_lutMin"), lut.lut.domainMin);
+      gl.uniform3fv(u("u_lutMax"), lut.lut.domainMax);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+  }
+
+  private blankVolume(): WebGLTexture {
+    if (this.blank3d) return this.blank3d;
+    const gl = this.gl;
+    this.blank3d = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_3D, this.blank3d);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    return this.blank3d;
+  }
+
+  /** Upload a LUT once: 3D tables as an RGB16F volume (hardware trilinear),
+   * 1D tables as a strip. Half floats keep 11 bits, well past 8-bit output. */
+  private lutTexture(src: string) {
+    const lut = lutFor(src);
+    if (!lut) return null;
+    const hit = this.lutTextures.get(src);
+    if (hit?.lut === lut) return hit;
+    const gl = this.gl;
+    if (hit) gl.deleteTexture(hit.tex);
+    const tex = gl.createTexture()!;
+    let width = lut.size;
+    if (lut.kind === "3d") {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_3D, tex);
+      for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, lut.size, lut.size, lut.size, 0, gl.RGB, gl.FLOAT, lut.data);
+    } else {
+      const data = fit1d(lut);
+      width = data.length / 3;
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB16F, width, 1, 0, gl.RGB, gl.FLOAT, data);
+    }
+    const entry = { lut, tex, width };
+    this.lutTextures.set(src, entry);
+    return entry;
+  }
+
+  private blank(): WebGLTexture {
+    if (this.blank2d) return this.blank2d;
+    const gl = this.gl;
+    this.blank2d = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    return this.blank2d;
+  }
+
+  private curveTexture(c: NonNullable<GradeParams["curves"]>): WebGLTexture {
+    const key = JSON.stringify(c);
+    const hit = this.curveTextures.get(key);
+    if (hit) return hit;
+    const gl = this.gl;
+    const tex = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, bakeCurves(c));
+    this.curveTextures.set(key, tex);
+    // A curve drag bakes a table per pointer move; keep only recent ones.
+    if (this.curveTextures.size > 64) {
+      const [oldKey, oldTex] = this.curveTextures.entries().next().value!;
+      gl.deleteTexture(oldTex);
+      this.curveTextures.delete(oldKey);
+    }
+    return tex;
   }
 
   // ---- passes -------------------------------------------------------------------
@@ -321,7 +454,7 @@ export class Compositor {
       gl.uniform1f(u("u_maskFeather"), mask.feather);
       gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
     }
-    this.setColorUniforms(u, layer.adjust, layer.tone, layer.time);
+    this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
     gl.disable(gl.BLEND);
     this.draw();
   }
@@ -417,7 +550,7 @@ export class Compositor {
         this.bindTarget(L1);
         const u = this.use(this.program("adjust", FULLSCREEN_VS, ADJUST_FS));
         this.bindTex(0, accum.tex, u("u_tex"));
-        this.setColorUniforms(u, item.adjust, item.tone, item.time);
+        this.setColorUniforms(u, item.adjust, item.tone, item.time, item.grade);
         this.draw();
         const graded = item.effects.length ? this.applyEffects(item.effects, L1, item.time, [T1, T2]) : L1;
         this.bindTarget(spare);
@@ -444,17 +577,38 @@ export class Compositor {
     const out = new Uint8Array(this.width * this.height * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.readPixels(0, 0, this.width, this.height, gl.RGBA, gl.UNSIGNED_BYTE, out);
-    // GL rows are bottom-up; flip to top-down.
-    const row = this.width * 4;
-    const tmp = new Uint8Array(row);
-    for (let y = 0; y < this.height / 2; y++) {
-      const a = y * row;
-      const b = (this.height - 1 - y) * row;
-      tmp.set(out.subarray(a, a + row));
-      out.copyWithin(a, b, b + row);
-      out.set(tmp, b);
+    return flipRows(out, this.width, this.height);
+  }
+
+  /** The presented frame scaled down on the GPU to at most `maxWidth`
+   * pixels wide, then read back (rows top first). For scopes: reading a
+   * 320-pixel frame stalls the GPU for a fraction of a full-size read. */
+  readPixelsScaled(maxWidth: number): { width: number; height: number; data: Uint8Array } {
+    if (maxWidth >= this.width) return { width: this.width, height: this.height, data: this.readPixels() };
+    const gl = this.gl;
+    const w = Math.max(1, Math.round(maxWidth));
+    const h = Math.max(1, Math.round((this.height * w) / this.width));
+    if (!this.small || this.small.w !== w || this.small.h !== h) {
+      if (this.small) {
+        gl.deleteFramebuffer(this.small.fb);
+        gl.deleteRenderbuffer(this.small.rb);
+      }
+      const rb = gl.createRenderbuffer()!;
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h);
+      const fb = gl.createFramebuffer()!;
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+      this.small = { fb, rb, w, h };
     }
-    return out;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.small.fb);
+    gl.blitFramebuffer(0, 0, this.width, this.height, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.small.fb);
+    const out = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    return { width: w, height: h, data: flipRows(out, w, h) };
   }
 
   /** Forget a cached source texture (text changed, image removed). */
@@ -473,7 +627,18 @@ export class Compositor {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures]) gl.deleteTexture(tex);
+    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
+    if (this.blank2d) gl.deleteTexture(this.blank2d);
+    if (this.blank3d) gl.deleteTexture(this.blank3d);
+    this.blank2d = this.blank3d = null;
+    this.curveTextures.clear();
+    this.lutTextures.clear();
+    if (this.small) {
+      gl.deleteFramebuffer(this.small.fb);
+      gl.deleteRenderbuffer(this.small.rb);
+      this.small = null;
+    }
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.targets = [];
     this.sourceTextures.clear();

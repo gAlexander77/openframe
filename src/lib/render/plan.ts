@@ -5,6 +5,7 @@
 // the same plan, which is what makes export look like the preview.
 
 import { ANIMATIONS, FILTERS, IDENTITY_ANIM, type AnimState } from "../catalog";
+import { resolveGrade, type GradeParams } from "../grade";
 import { ease, paramAt } from "../keyframes";
 import { getAsset, sourceTimeAt } from "../project/ops";
 import { framesToSeconds } from "../time";
@@ -53,6 +54,8 @@ export interface Layer {
   crop: Crop;
   adjust: Adjust;
   tone?: Tone;
+  /** HSL, curves, wheels and LUT; absent when the clip has none. */
+  grade?: GradeParams;
   effects: ResolvedEffect[];
   mask?: Mask;
   chromaKey?: ChromaKey;
@@ -71,6 +74,7 @@ export type PlanItem =
       opacity: number;
       adjust: Adjust;
       tone?: Tone;
+      grade?: GradeParams;
       effects: ResolvedEffect[];
       time: number;
     };
@@ -191,6 +195,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     crop: clip.crop,
     adjust,
     tone,
+    grade: resolveGrade(p, clip, r),
     effects: resolveEffects(clip, r),
     mask: clip.mask,
     chromaKey: clip.chromaKey?.enabled ? clip.chromaKey : undefined,
@@ -267,6 +272,7 @@ export function planFrame(p: Project, f: number): PlanItem[] {
         opacity: paramAt(a, "opacity", r),
         adjust,
         tone,
+        grade: resolveGrade(p, a, r),
         effects: resolveEffects(a, r),
         time: framesToSeconds(r, p.fps),
       });

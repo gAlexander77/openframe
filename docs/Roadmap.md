@@ -5,7 +5,7 @@ items move to [[Features]] when they ship.
 
 ## In flight (parallel worktrees)
 
-- **Color** — LUTs (.cube), HSL, curves, color wheels, scopes.
+- **Inline text editing** on the canvas.
 - **Stickers and text templates** with engine-rendered previews.
 - **Speed curves**, reverse, pitch preservation.
 - **UX audit** of the running editor against CapCut.
@@ -14,7 +14,6 @@ items move to [[Features]] when they ship.
 
 - **Pro trim monitor**: the two-up view while rolling/slipping (the trim
   tools themselves shipped).
-- **Inline text editing** on the canvas.
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
 
 ## Later

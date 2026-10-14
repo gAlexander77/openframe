@@ -7,7 +7,10 @@
 // seconds; positions in the frame are fractions of the canvas, so a project
 // survives an aspect-ratio change.
 
+import type { Curves } from "../curves";
 import type { Rational } from "../time";
+
+export type { CurvePoints, Curves } from "../curves";
 
 export type Id = string;
 
@@ -28,6 +31,9 @@ export interface Project {
    * top track is drawn last and covers the ones below it. */
   tracks: Track[];
   markers: Marker[];
+  /** .cube LUTs clips can use (Grade.lut). The table stays in its file;
+   * only the reference lives here. Absent = none imported. */
+  luts?: LutFile[];
   createdAt: number;
   updatedAt: number;
 }
@@ -58,6 +64,16 @@ export interface Asset {
   audioCodec?: string;
   /** Clockwise rotation from container metadata (phone footage). */
   rotation?: 0 | 90 | 180 | 270;
+}
+
+/** An imported .cube LUT. `src` is a platform location, like Asset.src. */
+export interface LutFile {
+  id: Id;
+  name: string;
+  src: string;
+  kind: "1d" | "3d";
+  /** Entries per axis (17, 33, 65 for 3D; up to 65536 for 1D). */
+  size: number;
 }
 
 export type TrackKind = "video" | "audio";
@@ -114,8 +130,9 @@ interface ClipBase {
   /** Kept on the timeline, skipped by preview and export. */
   disabled?: boolean;
   /** Animated parameters by path ("transform.x", "opacity", "volume",
-   * "adjust.exposure", "effects.<effectId>.<param>"). A path with keyframes
-   * ignores its static value. */
+   * "adjust.exposure", "adjust.hsl.red.hue", "adjust.wheels.lift.y",
+   * "adjust.lut.intensity", "effects.<effectId>.<param>"). A path with
+   * keyframes ignores its static value. */
   keyframes?: Record<string, Keyframe[]>;
 }
 
@@ -162,6 +179,39 @@ export interface Adjust {
   vignette: number;
   /** 0..100 */
   grain: number;
+}
+
+/** CapCut's eight HSL swatches, in hue order. */
+export type HslBand = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "magenta";
+
+/** One HSL range's correction, each -100..100 (0 = unchanged). Hue ±100
+ * turns that range ±30° toward its neighbors; saturation -100 is gray. */
+export interface HslShift {
+  hue: number;
+  saturation: number;
+  lightness: number;
+}
+
+/** A Resolve-style color wheel, each -100..100 (0 = neutral): r/g/b are the
+ * color balance the puck sets, y the luminance ring. */
+export interface Wheel {
+  r: number;
+  g: number;
+  b: number;
+  y: number;
+}
+
+export type WheelName = "lift" | "gamma" | "gain" | "offset";
+
+/** The pro grade layered on the Basic sliders, applied in Lumetri's order:
+ * LUT, curves, wheels, HSL (ADR-020). Every part is optional and absent
+ * means unchanged, so files from before it stay valid and small. */
+export interface Grade {
+  hsl?: Partial<Record<HslBand, HslShift>>;
+  curves?: Curves;
+  wheels?: Partial<Record<WheelName, Wheel>>;
+  /** A LUT from Project.luts, mixed in at intensity 0..1. */
+  lut?: { id: Id; intensity: number };
 }
 
 export type BlendMode =
@@ -231,7 +281,7 @@ export interface Visual {
   opacity: number;
   blend: BlendMode;
   crop: Crop;
-  adjust: Adjust;
+  adjust: Adjust & Grade;
   /** A look from the filter catalog, mixed in at `intensity` (0..1). */
   filter?: { type: string; intensity: number };
   effects: Effect[];

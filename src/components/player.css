@@ -81,3 +81,4 @@
 
 /* A canvas is a replaced element: top/bottom do not stretch it, so size it. */
 .meter { position: absolute; right: 8px; top: 14px; height: calc(100% - 50px); width: 9px; border-radius: 2px; }
+.player-scopes { margin-left: auto; }
