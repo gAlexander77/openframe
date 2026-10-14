@@ -68,7 +68,10 @@ async function openInput(source: Source): Promise<MediaFile> {
     keySink: videoOk && video ? new EncodedPacketSink(video) : null,
     audioSink: audioOk && audio ? new AudioBufferSink(audio) : null,
     videoStart: video ? await video.getFirstTimestamp() : 0,
-    audioStart: audio ? await audio.getFirstTimestamp() : 0,
+    // A negative first timestamp is encoder priming the edit list says not
+    // to present (AAC: 1024 samples). Counting it as source 0 played every
+    // AAC file 21 ms late; the speed drive's beep-and-flash check found it.
+    audioStart: audio ? Math.max(0, await audio.getFirstTimestamp()) : 0,
     quarterTurns: ((rotation / 90) % 4) as 0 | 1 | 2 | 3,
     width: video ? await video.getDisplayWidth() : 0,
     height: video ? await video.getDisplayHeight() : 0,
