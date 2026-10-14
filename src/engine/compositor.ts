@@ -14,6 +14,8 @@
 
 import { bakeCurves } from "../lib/curves";
 import type { GradeParams } from "../lib/grade";
+import { fit1d, type Lut } from "../lib/lut";
+import { lutFor } from "./luts";
 import type { BlendMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import {
@@ -76,6 +78,9 @@ export class Compositor {
    * when a grade part is off so no sampler is ever left without one. */
   private curveTextures = new Map<string, WebGLTexture>();
   private blank2d: WebGLTexture | null = null;
+  private blank3d: WebGLTexture | null = null;
+  /** LUT tables on the GPU by source, with the parsed table they came from. */
+  private lutTextures = new Map<string, { lut: Lut; tex: WebGLTexture; width: number }>();
 
   constructor(readonly canvas: HTMLCanvasElement | OffscreenCanvas) {
     const gl = canvas.getContext("webgl2", {
@@ -239,7 +244,66 @@ export class Compositor {
     }
     gl.uniform1i(u("u_hslOn"), g?.hsl ? 1 : 0);
     if (g?.hsl) gl.uniform3fv(u("u_hsl"), g.hsl);
+    // LUT: 1D on unit 2, 3D on unit 3. A sampler3D must never share a unit
+    // with a sampler2D, so both always point at their own units.
+    const lut = g?.lut ? this.lutTexture(g.lut.src) : null;
+    gl.uniform1i(u("u_lutKind"), lut ? (lut.lut.kind === "3d" ? 2 : 1) : 0);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, lut?.lut.kind === "1d" ? lut.tex : this.blank());
+    gl.uniform1i(u("u_lut1d"), 2);
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_3D, lut?.lut.kind === "3d" ? lut.tex : this.blankVolume());
+    gl.uniform1i(u("u_lut3d"), 3);
+    if (lut) {
+      gl.uniform1f(u("u_lutAmount"), g!.lut!.intensity);
+      gl.uniform1f(u("u_lutSize"), lut.width);
+      gl.uniform3fv(u("u_lutMin"), lut.lut.domainMin);
+      gl.uniform3fv(u("u_lutMax"), lut.lut.domainMax);
+    }
     gl.activeTexture(gl.TEXTURE0);
+  }
+
+  private blankVolume(): WebGLTexture {
+    if (this.blank3d) return this.blank3d;
+    const gl = this.gl;
+    this.blank3d = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_3D, this.blank3d);
+    gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, 1, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+    return this.blank3d;
+  }
+
+  /** Upload a LUT once: 3D tables as an RGB16F volume (hardware trilinear),
+   * 1D tables as a strip. Half floats keep 11 bits, well past 8-bit output. */
+  private lutTexture(src: string) {
+    const lut = lutFor(src);
+    if (!lut) return null;
+    const hit = this.lutTextures.get(src);
+    if (hit?.lut === lut) return hit;
+    const gl = this.gl;
+    if (hit) gl.deleteTexture(hit.tex);
+    const tex = gl.createTexture()!;
+    let width = lut.size;
+    if (lut.kind === "3d") {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_3D, tex);
+      for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGB16F, lut.size, lut.size, lut.size, 0, gl.RGB, gl.FLOAT, lut.data);
+    } else {
+      const data = fit1d(lut);
+      width = data.length / 3;
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB16F, width, 1, 0, gl.RGB, gl.FLOAT, data);
+    }
+    const entry = { lut, tex, width };
+    this.lutTextures.set(src, entry);
+    return entry;
   }
 
   private blank(): WebGLTexture {
@@ -527,9 +591,12 @@ export class Compositor {
       gl.deleteTexture(t.tex);
     }
     for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
     if (this.blank2d) gl.deleteTexture(this.blank2d);
-    this.blank2d = null;
+    if (this.blank3d) gl.deleteTexture(this.blank3d);
+    this.blank2d = this.blank3d = null;
     this.curveTextures.clear();
+    this.lutTextures.clear();
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.targets = [];
     this.sourceTextures.clear();

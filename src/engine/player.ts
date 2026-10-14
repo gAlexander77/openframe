@@ -19,6 +19,7 @@ import { store, type EditorState } from "../state/store";
 import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } from "./audio";
 import { Compositor, type SourceImage } from "./compositor";
 import { VideoCursor } from "./cursor";
+import { loadPlanLuts } from "./luts";
 import { imageFor, mediaFor } from "./media";
 import { rasterizeText } from "./text";
 
@@ -72,8 +73,9 @@ export class CursorPool {
  * cursors and stay valid until the next call on the same cursor. */
 export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorPool): Promise<Resolved> {
   const out: Resolved = new Map();
-  await Promise.all(
-    layersOf(plan).map(async (l) => {
+  await Promise.all([
+    loadPlanLuts(plan),
+    ...layersOf(plan).map(async (l) => {
       const src = l.source;
       if (src.kind === "video") {
         const cursor = await pool.get(p, l.clipId, src.assetId);
@@ -87,7 +89,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
         }
       }
     }),
-  );
+  ]);
   return out;
 }
 

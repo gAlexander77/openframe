@@ -7,6 +7,7 @@ import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import type { ActionId } from "./lib/keymap";
 import { run } from "./state/actions";
+import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -32,6 +33,9 @@ export const automation = {
   async import(srcs: { name: string; src: string; size?: number }[]) {
     return importFiles(srcs.map((s) => ({ name: s.name, src: s.src, size: s.size ?? 0 })));
   },
+  /** Import .cube LUTs by URL (web) or path (desktop) into project.luts;
+   * apply_lut then puts one on a clip. Returns the new entries. */
+  importLuts: (srcs: { name: string; src: string }[]) => importLuts(srcs),
   /** Resolves once the viewer has drawn the current frame. */
   rendered: () => player.idle(),
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */

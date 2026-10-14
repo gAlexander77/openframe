@@ -9,6 +9,7 @@ import type { Asset, Clip, Id, Project } from "../lib/project/types";
 import { FPS_PRESETS, fpsValue } from "../lib/time";
 import { platform, type ImportedFile } from "../platform";
 import { edit } from "./actions";
+import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -18,6 +19,12 @@ export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
 export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
+  // A dropped .cube is a LUT for the project, not media for the library.
+  const luts = files.filter((f) => isLutName(f.name));
+  if (luts.length) {
+    void importLuts(luts).then((l) => l.length && toast(l.length === 1 ? `LUT ${l[0].name} is ready in Adjust > LUT` : `${l.length} LUTs are ready in Adjust > LUT`));
+    files = files.filter((f) => !isLutName(f.name));
+  }
   const added: Asset[] = [];
   for (const f of files) {
     if (!looksLikeMedia(f.name) && !isImageName(f.name)) {

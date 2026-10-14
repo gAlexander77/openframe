@@ -24,6 +24,11 @@ uniform vec3 u_toneShadows, u_toneHighlights;
 uniform float u_toneAmount;
 uniform float u_time;
 // the grade (ADR-020), mirrored from src/lib/grade.ts and curves.ts
+uniform int u_lutKind;                   // 0 none, 1 1D, 2 3D
+uniform float u_lutAmount, u_lutSize;    // size = texels per axis
+uniform vec3 u_lutMin, u_lutMax;         // the .cube's input domain
+uniform sampler2D u_lut1d;               // Nx1, RGB
+uniform highp sampler3D u_lut3d;         // NxNxN, red along x
 uniform bool u_curvesOn, u_wheelsOn, u_hslOn;
 uniform sampler2D u_curves;              // 256x1: R, G, B curves, luma in A
 uniform vec3 u_lift, u_gamma, u_gain, u_offset;
@@ -45,6 +50,16 @@ vec3 hueRotate(vec3 c, float a) {
   float h = atan(yiq.z, yiq.y) + a;
   float chroma = length(yiq.yz);
   return toRGB * vec3(yiq.x, chroma * cos(h), chroma * sin(h));
+}
+
+vec3 applyLut(vec3 c) {
+  vec3 v = clamp((c - u_lutMin) / (u_lutMax - u_lutMin), 0.0, 1.0);
+  // Texel centers, so 0 and 1 hit the first and last entries exactly and
+  // the hardware's trilinear filter interpolates between grid points.
+  vec3 p = v * ((u_lutSize - 1.0) / u_lutSize) + 0.5 / u_lutSize;
+  vec3 o = u_lutKind == 2 ? texture(u_lut3d, p).rgb
+    : vec3(texture(u_lut1d, vec2(p.r, 0.5)).r, texture(u_lut1d, vec2(p.g, 0.5)).g, texture(u_lut1d, vec2(p.b, 0.5)).b);
+  return mix(c, o, u_lutAmount);
 }
 
 vec3 applyCurves(vec3 c) {
@@ -93,6 +108,7 @@ vec3 applyHsl(vec3 c) {
 
 /** LUT, curves, wheels, HSL: Lumetri's order after the Basic sliders. */
 vec3 grade(vec3 c) {
+  if (u_lutKind > 0) c = applyLut(clamp(c, 0.0, 1.0));
   if (u_curvesOn) c = applyCurves(clamp(c, 0.0, 1.0));
   if (u_wheelsOn) c = applyWheels(clamp(c, 0.0, 1.0));
   if (u_hslOn) c = applyHsl(clamp(c, 0.0, 1.0));
