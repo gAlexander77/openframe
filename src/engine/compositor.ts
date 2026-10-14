@@ -464,7 +464,21 @@ export class Compositor {
     this.sourceTextures.delete(key);
   }
 
+  /** Free GPU objects. The context itself stays alive: a canvas hands the
+   * same context back on the next getContext, so losing it here would leave
+   * a re-mounted viewer (React StrictMode mounts twice) with a dead one. */
   dispose() {
-    this.gl.getExtension("WEBGL_lose_context")?.loseContext();
+    const gl = this.gl;
+    for (const t of this.targets) {
+      gl.deleteFramebuffer(t.fb);
+      gl.deleteTexture(t.tex);
+    }
+    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures]) gl.deleteTexture(tex);
+    for (const p of this.programs.values()) gl.deleteProgram(p.prog);
+    this.targets = [];
+    this.sourceTextures.clear();
+    this.slotTextures = [];
+    this.programs.clear();
+    this.width = this.height = 0;
   }
 }
