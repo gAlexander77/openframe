@@ -112,7 +112,13 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
     }
     return ops.placeClip(p, target.id, clip, { collision: "newTrack" });
   });
-  if (id) store.select([id]);
+  if (id) {
+    // Leave the playhead after the new clip so repeated adds line up in
+    // order, as an insert edit does in Premiere.
+    const c = ops.findClip(store.get().project, id)?.clip;
+    store.select([id]);
+    if (c && at === undefined) store.seek(c.start + c.duration);
+  }
   return id;
 }
 

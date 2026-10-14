@@ -11,7 +11,7 @@
 .player-stage {
   position: relative;
   display: grid; place-items: center;
-  min-height: 0; padding: 10px;
+  min-height: 0; padding: 14px 14px 36px;
   overflow: hidden;
 }
 .player-frame { position: relative; box-shadow: 0 0 0 1px rgb(255 255 255 / 4%); }
@@ -69,12 +69,12 @@
 .tf-ne { right: -6px; top: -6px; cursor: nesw-resize; }
 .tf-sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
 .tf-rotate {
-  position: absolute; left: 50%; top: -30px; width: 14px; height: 14px; margin-left: -7px;
+  position: absolute; left: 50%; bottom: -30px; width: 14px; height: 14px; margin-left: -7px;
   border-radius: 50%; background: #fff;
   box-shadow: 0 0 0 1px rgb(0 0 0 / 40%);
   cursor: grab; pointer-events: auto;
 }
-.tf-rotate::after { content: ""; position: absolute; left: 6px; top: 14px; width: 1.5px; height: 16px; background: #fff; }
+.tf-rotate::after { content: ""; position: absolute; left: 6px; bottom: 14px; width: 1.5px; height: 16px; background: #fff; }
 .tf-guide { position: absolute; background: var(--accent); pointer-events: none; }
 .tf-guide-v { left: 50%; top: 0; bottom: 0; width: 1px; }
 .tf-guide-h { top: 50%; left: 0; right: 0; height: 1px; }

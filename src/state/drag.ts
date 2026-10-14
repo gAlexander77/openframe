@@ -35,7 +35,9 @@ const emit = () => listeners.forEach((l) => l());
 
 export function registerDropZone(z: DropZone) {
   zones.add(z);
-  return () => zones.delete(z);
+  return () => {
+    zones.delete(z);
+  };
 }
 
 /** Begin a drag once the pointer has moved a few pixels (a click stays a
