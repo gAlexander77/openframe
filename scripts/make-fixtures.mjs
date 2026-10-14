@@ -54,6 +54,27 @@ const jobs = {
   "photo.jpg": () => ff("-f", "lavfi", "-i", "mandelbrot=size=1920x1080", "-frames:v", "1", join(out, "photo.jpg")),
   "green-screen.mp4": () =>
     ff("-f", "lavfi", "-i", "color=c=0x00b140:size=1280x720:rate=30,drawbox=x=440:y=160:w=400:h=400:color=0xff3b6b@1:t=fill", "-t", "4", "-c:v", "libx264", "-pix_fmt", "yuv420p", join(out, "green-screen.mp4")),
+  // AI tools (scripts/drive/ai-tools.js). Hard cuts at 2.5, 5, 8 and 10 s
+  // (frames 75, 150, 240, 300 at 30 fps) between five different sources,
+  // two of them moving, for scene detection.
+  "scene-cuts.mp4": () => {
+    const shots = [["testsrc2", 2.5], ["mandelbrot", 2.5], ["smptehdbars", 3], ["testsrc", 2], ["color=c=0x204080", 2]];
+    const inputs = shots.flatMap(([src, d]) => ["-f", "lavfi", "-t", String(d), "-i", `${src}${src.includes("=") ? ":" : "="}size=640x360:rate=30`]);
+    const graph = `${shots.map((_, i) => `[${i}:v]`).join("")}concat=n=${shots.length}:v=1:a=0,format=yuv420p[v]`;
+    ff(...inputs, "-filter_complex", graph, "-map", "[v]", "-c:v", "libx264", "-g", "60", join(out, "scene-cuts.mp4"));
+  },
+  // A drum loop at exactly 128 BPM from 0.25 s: a decaying kick on every
+  // beat and a high-passed noise hat on every off-beat, for beat detection.
+  "beat-128.m4a": () => {
+    const b = 60 / 128;
+    const kick = `0.8*sin(2*PI*90*mod(t-0.25,${b}))*exp(-mod(t-0.25,${b})/0.06)*gte(t,0.25)`;
+    const hat = `0.5*(2*random(0)-1)*exp(-mod(t-0.25-${b / 2},${b})/0.015)*gte(t,0.25+${b / 2})`;
+    ff("-f", "lavfi", "-i", `aevalsrc='${kick}':s=44100:d=20`, "-f", "lavfi", "-i", `aevalsrc='${hat}':s=44100:d=20`, "-filter_complex", "[1]highpass=f=6000[h];[0][h]amix=inputs=2:normalize=0", "-c:a", "aac", "-b:a", "160k", join(out, "beat-128.m4a"));
+  },
+  // A talking-head stand-in: picture plus the speech-gaps pattern (1.6 s of
+  // tone every 3 s), for removing silences from a video with its sound.
+  "talk-gaps.mp4": () =>
+    ff("-f", "lavfi", "-i", burn(640, 360, 30), "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*300*t)*lt(mod(t,3),1.6)':s=48000:d=12", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-shortest", join(out, "talk-gaps.mp4")),
 };
 
 const only = process.argv.slice(2);
