@@ -75,6 +75,36 @@ cycles (a sequence can't contain itself directly or indirectly), and cache
 renders of the nested sequence. Converting a selection to a nest replaces the
 clips with one clip spanning their union. Decompose is the inverse.
 
+**How the nest behaves, and what the open-source editors teach** (compound
+clips, 2026-10):
+
+- **Premiere:** the nest is a clip like any other: trim, slice, speed,
+  effects, opacity and blend mode apply to the nest's *composited* picture,
+  which is why editors nest two keyed layers to fade them out together.
+  Trimming a nest only changes what is visible; the clips inside stay.
+  Diagonal hatching at a nest's end means the nested sequence ended and
+  nothing fills the frames, so trim it back. There is no "un-nest": undo or
+  copy the clips out by hand.
+- **Resolve:** compound clips live in the media pool; *Decompose in Place*
+  puts the parts back where the compound sat. Effects on the compound itself
+  are lost, as there is no clip left to carry them.
+- **Kdenlive** (24.02): multiple sequences per project, a sequence used as a
+  clip in another, "create sequence from selection". Every sequence shares
+  the project's profile (frame rate, size), which keeps nesting simple.
+- **Shotcut:** no editable nesting; *Open MLT XML As Clip* treats another
+  project as a clip, edited only by opening that file. A nest you cannot
+  open in place is what CapCut's reviewers call "limited".
+- **OpenShot:** no nesting (a long-standing request).
+- **Olive** (0.2): a sequence is footage and can be dropped into another;
+  its node graph renders the inner sequence as an image the outer one
+  composites (from its design notes, not verified here).
+
+Lessons we took: one fps and canvas for every nested timeline (Kdenlive),
+render the group to a texture so opacity and blend are right (Premiere,
+Olive), Decompose in Place as the undo-compound (Resolve, CapCut), and
+one undo history across every level, so undo never depends on which
+timeline is open.
+
 ### 1.4 Linked A/V, grouping, J/L cuts
 
 - **PR:** Link and Unlink (Ctrl+L). The *Linked Selection* toggle is on the

@@ -507,7 +507,11 @@ Union of 2024 and 2025 builds.
   - Collapses the selected clips, across tracks, into one teal clip that behaves like a single video clip.
   - It is stored as a **Subproject** listed under Media > Import > Subprojects.
   - It can be pre-processed (render-cached) and undone back to its parts.
-  - Editing inside it as a nested timeline is unverified. Reviewers describe it as limited compared with NLE nesting.
+  - **Create:** select clips (any tracks; video, audio, text, stickers and effects all qualify), then right-click > **Create compound clip** or **Alt+G** (⌥G). The selected tracks collapse into one clip on one track (two third-party guides agree; no official page).
+  - **Edit inside:** double-click the compound clip (or open it) to edit each item inside (a Filmora guide; the exact view and the way back are undocumented). Edits inside stay inside: the clips it was made from are not linked to it any more.
+  - **On the compound clip itself**, speed, color, motion and effects apply to the whole group, like any video clip. Transitions can go before and after it.
+  - **Undo compound clip:** right-click > **Undo compound clip** or **Alt+Shift+G** puts the parts back on the timeline.
+  - Reviewers describe it as limited compared with NLE nesting (no second editable timeline per project).
 - **Group:** a lightweight move-together binding. No shared effects.
 - **Multicam** (2025+):
   - Select angles, then **Create multi-camera clip**. Sync by **Auto / Audio / First marker**.
