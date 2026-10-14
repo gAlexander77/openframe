@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Home } from "./components/Home";
 import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { DragGhost, Toasts } from "./components/Overlays";
@@ -7,6 +8,7 @@ import { Splitter } from "./components/Splitter";
 import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
 import { onKeyDown } from "./state/actions";
+import { useSession } from "./state/project";
 import "./components/shell.css";
 
 interface Layout {
@@ -49,9 +51,16 @@ export default function App() {
   const resize = (k: keyof Layout, d: number, lo: number, hi: number) =>
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
 
+  const { screen, saveState } = useSession();
+  // ponytail: key handling is global; editor actions are harmless on the
+  // home screen (no project), so no per-screen keymap yet.
+
   return (
     <div className="app">
-      <TitleBar saveState="" onShortcuts={() => {}} />
+      <TitleBar saveState={saveState} home={screen === "home"} onShortcuts={() => {}} />
+      {screen === "home" ? (
+        <Home />
+      ) : (
       <div
         className="workspace"
         style={{ gridTemplateRows: `${layout.top}px var(--gap) minmax(180px, 1fr)` }}
@@ -69,6 +78,7 @@ export default function App() {
         <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => setLayout((l) => ({ ...l, top: DEFAULT_LAYOUT.top }))} />
         <Timeline />
       </div>
+      )}
       <DragGhost />
       <Toasts />
     </div>

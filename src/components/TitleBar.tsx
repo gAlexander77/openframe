@@ -5,13 +5,14 @@ import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
+import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { MenuBar, type MenuItem } from "./Menu";
 
 /** The frameless window's title bar: menus, the project name, export, and
  * (on Windows/Linux desktop) the window buttons. Empty areas drag the
  * window via Tauri's drag region attribute. */
-export function TitleBar(props: { saveState: string; onShortcuts: () => void }) {
+export function TitleBar(props: { saveState: string; home: boolean; onShortcuts: () => void }) {
   const name = useEditor((s) => s.project.name);
   const [editing, setEditing] = useState(false);
 
@@ -22,6 +23,7 @@ export function TitleBar(props: { saveState: string; onShortcuts: () => void }) 
     {
       label: "File",
       items: () => [
+        ...(props.home ? [] : [{ label: "Back to home", onSelect: () => void closeProject() }, "-" as const]),
         { action: "newProject" },
         { action: "openProject" },
         { action: "saveProject" },
@@ -92,7 +94,11 @@ export function TitleBar(props: { saveState: string; onShortcuts: () => void }) 
         <MenuBar menus={menus} />
       </div>
       <div className="titlebar-center" data-tauri-drag-region>
-        {editing ? (
+        {props.home ? (
+          <span className="home-title" data-tauri-drag-region>
+            {APP_NAME}
+          </span>
+        ) : editing ? (
           <input
             className="field project-name-input"
             autoFocus
@@ -112,19 +118,21 @@ export function TitleBar(props: { saveState: string; onShortcuts: () => void }) 
             {name}
           </button>
         )}
-        <span className="save-state">{props.saveState}</span>
+        {!props.home && <span className="save-state">{props.saveState}</span>}
       </div>
       <div className="titlebar-right">
         <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip="Keyboard shortcuts" onClick={props.onShortcuts}>
           <Keyboard />
         </button>
-        <button
-          className="btn primary export-btn"
-          onClick={() => run("export")}
-          data-tip={exportChord ? chordText(exportChord, isMac) : undefined}
-        >
-          <Download size={15} /> Export
-        </button>
+        {!props.home && (
+          <button
+            className="btn primary export-btn"
+            onClick={() => run("export")}
+            data-tip={exportChord ? chordText(exportChord, isMac) : undefined}
+          >
+            <Download size={15} /> Export
+          </button>
+        )}
         {win && !isMac && (
           <div className="window-controls">
             <button aria-label="Minimize" onClick={() => win.minimize()}>
