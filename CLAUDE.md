@@ -17,7 +17,7 @@ identity string.
    lesson is paid for twice. Non-obvious decisions get an ADR (next number).
 3. **Gate before committing:** `npx tsc --noEmit`, `npm test`, and for Rust
    `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
-   `cargo test` (all via `just check` once the Justfile lands).
+   `cargo test` (all via `just check`).
 4. **Verify in the running product**, not just tests: the web build through
    the Playwright MCP tools, the desktop app over WebView2's debug port
    (`docs/Driving the app.md`). Playwright is for the product, never for
@@ -33,7 +33,9 @@ One project document (`src/lib/project/types.ts`, ADR-004: integer frames,
 rational fps) edited by pure ops (`ops.ts`) through one store with snapshot
 undo (`src/state/store.ts`, ADR-005). Every edit is also a named command with
 a JSON Schema (`src/lib/commands.ts`, ADR-006) — the surface for the AI
-copilot, `window.videoEditor` (`src/automation.ts`) and a future MCP server.
+Copilot, `window.videoEditor` (`src/automation.ts`), the MCP server
+(`src/lib/mcp.ts` + `src-tauri/src/mcp.rs`, ADR-008/009) and the headless
+renderer (`--render`, ADR-029); see `docs/Automation.md`.
 The media engine lives in the webview (ADR-002): `src/lib/render/plan.ts`
 decides what is on screen at a frame (pure, tested); `src/engine/` decodes
 (mediabunny, one cursor per clip), composites (WebGL2) and plays sound (Web
@@ -63,6 +65,12 @@ inspector, timeline. Full map: `docs/Architecture.md`.
 - `npm run tauri dev` runs the desktop app (Rust + the same Vite).
 - `node scripts/make-fixtures.mjs` regenerates test media in
   `fixtures/media/` (gitignored); `scripts/drive/*.js` are Playwright drives
-  run via the MCP `browser_run_code_unsafe` tool's `filename` parameter.
+  (`async (page) => ({ ok, details })`), run via the Playwright MCP tool's
+  `filename` parameter or with `playwright-core` and the system Edge
+  (`chromium.launch({ channel: "msedge" })`). The app opens on the home
+  screen: click `.create-card` before touching the editor.
+- Parallel agents: one Vite port each (1420 is main's), at most one dev
+  server and one browser per agent — the machine runs out of memory with
+  five agents each holding both.
 - Commit trailers: end messages with the Co-Authored-By and Claude-Session
   lines the session provides.

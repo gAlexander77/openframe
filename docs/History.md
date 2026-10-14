@@ -96,6 +96,10 @@ A narrative log of each build round with its intent, for archaeology that
   `set_keyframe_ease` and `remove_keyframes`
   ([[ADR-023 The keyframe panel docks under the timeline tracks]],
   [[ADR-024 Keyframes are selected by path and frame, and keys come first]]).
+- **Desktop verified live** — in the Tauri app over the WebView2 debug
+  port: a ProRes 422 file imports by path, gets an FFmpeg proxy and shows
+  the right frame; the project autosaves, survives a restart, reopens from
+  the home screen and plays from the cached proxy without re-encoding.
 - **Agents from outside** — "Allow AI agents" opens a token-locked MCP
   server on `127.0.0.1:47280` plus a `--mcp-stdio` bridge
   ([[ADR-009 Agents reach the app over local MCP, opt-in]]), and
