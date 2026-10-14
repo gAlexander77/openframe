@@ -1,4 +1,7 @@
-import { memo, useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { fromDb, toDb } from "../lib/audio";
+import { setParam } from "../lib/project/ops";
+import { store } from "../state/store";
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, Diamond, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
@@ -97,6 +100,71 @@ function describe(c: Clip): string {
   return c.name ?? "";
 }
 
+// ---- audio handles: CapCut's volume line and fade knobs ------------------------
+
+const DB_MIN = -36;
+const DB_MAX = 12;
+/** Volume line height: 0 dB sits a quarter of the way down, as in CapCut. */
+const dbToY = (db: number, h: number) => {
+  const t = (Math.min(DB_MAX, Math.max(DB_MIN, db)) - DB_MIN) / (DB_MAX - DB_MIN);
+  return h - t * h;
+};
+
+function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number; fps: Project["fps"] }) {
+  const c = p.clip as Clip & { volume: number; fadeIn: number; fadeOut: number };
+  const [drag, setDrag] = useState<null | { kind: "vol" | "in" | "out"; label: string }>(null);
+  const h = p.height;
+  const w = c.duration * p.zoom;
+  const db = toDb(c.volume);
+  const lineY = dbToY(db, h);
+  const fi = c.fadeIn * p.zoom;
+  const fo = c.fadeOut * p.zoom;
+  const start = (e: React.PointerEvent, kind: "vol" | "in" | "out") => {
+    e.stopPropagation();
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    store.beginGesture();
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const v0 = kind === "vol" ? lineY : kind === "in" ? c.fadeIn : c.fadeOut;
+    const move = (ev: PointerEvent) => {
+      if (kind === "vol") {
+        // Shift for fine control: a 30 px lane spans 48 dB otherwise.
+        const y = Math.min(h, Math.max(0, v0 + (ev.clientY - y0) * (ev.shiftKey ? 0.2 : 1)));
+        const d = DB_MIN + ((h - y) / h) * (DB_MAX - DB_MIN);
+        const v = y >= h - 0.5 ? 0 : fromDb(Math.round(d * 10) / 10);
+        store.previewGesture((q) => setParam(q, [c.id], "volume", v));
+        setDrag({ kind, label: v === 0 ? "-∞ dB" : `${d >= 0 ? "+" : ""}${d.toFixed(1)} dB` });
+      } else {
+        const dx = (ev.clientX - x0) / p.zoom;
+        const f = Math.round(Math.min(c.duration / 2, Math.max(0, v0 + (kind === "in" ? dx : -dx))));
+        store.previewGesture((q) => setParam(q, [c.id], kind === "in" ? "fadeIn" : "fadeOut", f));
+        setDrag({ kind, label: `Fade ${kind} ${framesToSeconds(f, p.fps).toFixed(1)}s` });
+      }
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setDrag(null);
+      store.endGesture(kind === "vol" ? "Volume" : kind === "in" ? "Fade in" : "Fade out");
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <div className="audio-handles" style={{ top: p.top, height: h }}>
+      <svg className="fade-shade" width={w} height={h} aria-hidden>
+        {fi > 0 && <path d={`M0,0 L${fi},${lineY} L0,${h} Z`} />}
+        {fo > 0 && <path d={`M${w},0 L${w - fo},${lineY} L${w},${h} Z`} />}
+      </svg>
+      <div className={`vol-line${drag?.kind === "vol" ? " on" : ""}`} style={{ top: lineY, left: fi, right: fo }} data-tip="Drag to change volume (Shift for fine)" onPointerDown={(e) => start(e, "vol")} />
+      <div className="fade-knob in" style={{ left: Math.max(8, fi - 5) }} data-tip="Drag to fade in" onPointerDown={(e) => start(e, "in")} />
+      <div className="fade-knob out" style={{ right: Math.max(8, fo - 5) }} data-tip="Drag to fade out" onPointerDown={(e) => start(e, "out")} />
+      {drag && <span className="handle-readout num">{drag.label}</span>}
+    </div>
+  );
+}
+
 export const ClipView = memo(function ClipView(p: Props) {
   const { clip: c, zoom, height } = p;
   const v = useThumbVersion();
@@ -156,6 +224,7 @@ export const ClipView = memo(function ClipView(p: Props) {
           style={{ left: x0, width: visW, height: waveH, top: c.type === "audio" ? LABEL_H : height - WAVE_H }}
         />
       )}
+      {c.type === "audio" && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={bodyH} top={LABEL_H} fps={p.fps} />}
       {keys.map((f) => (
         <Diamond key={f} size={9} className={`clip-key${p.playheadRel === f ? " on" : ""}`} style={{ left: f * zoom - 4.5 }} fill="currentColor" />
       ))}
