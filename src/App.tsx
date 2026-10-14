@@ -98,7 +98,11 @@ export default function App() {
       >
         <div
           className="top-row"
-          style={{ gridTemplateColumns: `${layout.left}px var(--gap) minmax(320px, 1fr) var(--gap) ${layout.right}px` }}
+          // The side panels keep their saved widths but give way when the
+          // window is narrow (down to the splitters' own minimums), so the
+          // row never overflows: fixed widths cut off the inspector and the
+          // Export button at the desktop app's minimum window size.
+          style={{ gridTemplateColumns: `minmax(${Math.min(240, layout.left)}px, ${layout.left}px) var(--gap) minmax(320px, 1fr) var(--gap) minmax(${Math.min(260, layout.right)}px, ${layout.right}px)` }}
         >
           <LibraryPanel />
           <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />
