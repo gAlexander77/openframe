@@ -74,7 +74,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Stickers
 
-- **A local sticker library**: about 150 stickers in ten categories with
+- **A local sticker library**: about 140 stickers in ten categories with
   search — emoji drawn from the system's color emoji font, and original
   graphics drawn in code (curved and scribble arrows, marker circles,
   underlines, highlighter, bubbles, comic bursts, subscribe/like/follow
@@ -86,6 +86,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-025 Stickers and templates are ordinary clips]]).
 - Rendered once to a PNG asset per project; adding the same sticker again
   reuses it, and stickers stay out of the Media tab.
+- Agents: `add_sticker` by id, label or the emoji itself, with position,
+  scale, duration and motion; `window.videoEditor.stickers()` lists them.
 
 ## Keyboard
 

@@ -8,7 +8,18 @@ import { renderSticker } from "../engine/stickers";
 import { prepare } from "../engine/thumbs";
 import { uid } from "../lib/project/defaults";
 import type { Asset, Id } from "../lib/project/types";
-import { addStickerClip, DEFAULT_STICKER_MOTION, STICKER_INDEX, STICKER_MOTIONS, stickerAsset, stickerFileName, type StickerDef } from "../lib/stickers";
+import { runCommand } from "../lib/commands";
+import {
+  addStickerClip,
+  DEFAULT_STICKER_MOTION,
+  findSticker,
+  STICKER_INDEX,
+  STICKER_MOTIONS,
+  stickerAsset,
+  stickerFileName,
+  withAsset,
+  type StickerDef,
+} from "../lib/stickers";
 import { platform, type ImportedFile } from "../platform";
 import { store } from "./store";
 import { toast } from "./toast";
@@ -58,6 +69,17 @@ export function setStickerMotion(m: string) {
   } catch {
     /* storage blocked: the choice lasts this session only */
   }
+}
+
+/** The add_sticker command for automation: draw the sticker's file when the
+ * project lacks it, then run the command with the asset added — one undo
+ * step, like a click. Throws the command's validation errors. */
+export async function execAddSticker(args: unknown) {
+  const name = typeof args === "object" && args !== null ? (args as { name?: unknown }).name : undefined;
+  const s = typeof name === "string" ? findSticker(name) : undefined;
+  const asset = s ? await stickerAssetFor(s) : null;
+  store.edit("add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args));
+  if (asset) prepare(asset);
 }
 
 /** Add a sticker at `at` (default: the playhead) above everything there. */

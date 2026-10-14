@@ -21,6 +21,7 @@ import * as ops from "./project/ops";
 import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
 import { upsertKey } from "./keyframes";
 import type { Caption } from "./captions";
+import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -408,6 +409,43 @@ export const COMMANDS: Command[] = [
       ["captions"],
     ),
     run: (p, a) => addCaptions(p, a.captions as Caption[], { ...((a.style ?? {}) as Partial<TextStyle>) }, a.y === undefined ? undefined : Number(a.y), a.replace === true),
+  },
+  {
+    name: "add_sticker",
+    description:
+      "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it.",
+    input: S.obj(
+      {
+        name: S.str("Sticker id, label or emoji"),
+        start: S.num("Seconds", { minimum: 0 }),
+        duration: S.num("Seconds; default 3", { minimum: 0.04 }),
+        x: S.num("Horizontal offset from center, -0.5..0.5"),
+        y: S.num("Vertical offset from center, -0.5..0.5"),
+        scale: S.num("1 = fit the canvas; default 0.3", { minimum: 0.01 }),
+        motion: S.str("Entrance and loop animation", { enum: Object.keys(STICKER_MOTIONS) }),
+      },
+      ["name", "start"],
+    ),
+    run: (p, a) => {
+      const s = findSticker(String(a.name));
+      if (!s) {
+        const near = searchStickers(String(a.name)).slice(0, 8).map((x) => x.id);
+        throw new CommandError(`no sticker named ${a.name}${near.length ? `; close: ${near.join(", ")}` : ""}`);
+      }
+      // The picture is media the engine draws (ADR-006: that lives one layer
+      // up); automation adds the asset in the same undo step, then runs this.
+      const asset = p.assets.find((x) => x.sticker === s.id);
+      if (!asset) throw new CommandError(`sticker ${s.id} has no image in this project yet: run add_sticker through window.videoEditor.exec, which draws it first`);
+      const num = (v: unknown) => (v === undefined ? undefined : Number(v));
+      return addStickerClip(p, asset, {
+        start: f(p, a.start),
+        duration: a.duration === undefined ? undefined : Math.max(1, f(p, a.duration)),
+        motion: a.motion === undefined ? undefined : String(a.motion),
+        x: num(a.x),
+        y: num(a.y),
+        scale: num(a.scale),
+      }).project;
+    },
   },
 ];
 

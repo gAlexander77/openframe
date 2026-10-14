@@ -27,6 +27,11 @@ build, a platform seam]]); the project file must stay open, plain JSON
   puts a new overlay directly above the topmost track busy at that time,
   reusing a free overlay row; scale 0.3 of fit; a pop-in plus a gentle
   loop by default, chosen per viewer in the tab.
+- **Agents** call `add_sticker`. Drawing the PNG needs the engine, so,
+  per [[ADR-006 Every edit is a named command with a JSON Schema]], the
+  registry's command only places a sticker whose asset exists and says so
+  otherwise; `window.videoEditor.exec` draws the asset first and runs the
+  command with it in the same undo step.
 - **Not a virtual source.** A `sticker:` URL drawn on demand would avoid
   the file but put a second kind of source into decode, thumbnails,
   export and the desktop's Rust side, and tie a project's look to fonts.
@@ -35,7 +40,7 @@ build, a platform seam]]); the project file must stay open, plain JSON
 
 No new clip type, schema version or renderer path: stickers get the
 inspector's transform, blend, masks and animations for free. The sticker
-set is small (about 150) and static; `ponytail:` animated stickers would
+set is small (about 140) and static; `ponytail:` animated stickers would
 need an image-sequence or video source, the upgrade path being a rendered
 WebM through the same adopt path. Each first use writes a small PNG into
 the platform's media store.

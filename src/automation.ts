@@ -5,20 +5,26 @@
 
 import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
+import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { run } from "./state/actions";
 import { importFiles } from "./state/media";
+import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
 
 export const automation = {
   /** Every command with its JSON Schema, for tool listing. */
   commands: () => COMMANDS.map(({ name, description, input }) => ({ name, description, input })),
-  /** Run one command as an undoable edit. Throws with every problem named. */
+  /** Run one command as an undoable edit. Throws with every problem named.
+   * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
+    if (name === "add_sticker") return execAddSticker(args).then(() => describeProject(store.get().project));
     store.edit(name.replace(/_/g, " "), (p) => runCommand(p, name, args));
     return describeProject(store.get().project);
   },
+  /** The sticker library, for add_sticker's name. */
+  stickers: () => STICKERS.map(({ id, label, category }) => ({ id, label, category })),
   describe: () => describeProject(store.get().project),
   project: () => store.get().project,
   state: () => {
