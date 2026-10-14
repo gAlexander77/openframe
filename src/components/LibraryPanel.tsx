@@ -65,7 +65,7 @@ export function LibraryPanel() {
         {tab === "filters" && <FiltersTab />}
         {tab === "adjustment" && <AdjustmentTab />}
         {tab === "captions" && <CaptionsTab />}
-        {tab === "ai" && <Placeholder title="AI tools" text="Silence removal, scene detection and beat markers run locally. Coming in the AI round." />}
+        {tab === "ai" && <Placeholder title="AI tools" text="Coming soon: remove silences, split scenes and mark the beat, all on this computer." />}
       </div>
     </section>
   );
