@@ -161,6 +161,30 @@ and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 Markers sit on the timeline, not on the clip, so they stay put if the
 music clip moves.
 
+## Decoding
+
+`src/engine/analyze.ts` opens its own mediabunny Input per job (playback
+decoders never move), decodes only the clip's source window, and keeps
+only what the algorithm needs ([[ADR-018 Local analysis is our own signal
+processing in the webview]]):
+
+- **Audio:** channels averaged to mono, resampled by a box filter (each
+  output sample is the mean of the input samples in its slot) to 16 kHz
+  for silence and 22.05 kHz for beats.
+- **Video:** every frame drawn 128 px wide by mediabunny's `CanvasSink`,
+  converted to HSV, scored against the previous frame, then dropped.
+
+**AAC priming (measured).** AAC encoders put 1024 samples of priming
+before the audio; an MP4 edit list says to skip them. mediabunny honors
+the edit list by giving that first packet a *negative* timestamp
+(−21.3 ms at 48 kHz, −23.2 ms at 44.1 kHz on our fixtures, video at 0).
+Mapping the first timestamp to source time 0, as `media.ts` and
+`thumbs.ts` do, puts the priming at 0 and every sound 21 ms late: the
+silence edges and beats came out 21 ms late until the analysis decoder
+switched to mapping timestamp 0 (or a later first timestamp, for streams
+that start late) to source 0. Beat error on the 128 BPM fixture went from
+27 ms to 5 ms. The same offset is likely in playback and waveforms.
+
 ## Credits: PySceneDetect
 
 The scene detector reimplements, in TypeScript, the algorithms of

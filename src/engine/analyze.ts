@@ -1,0 +1,142 @@
+// Decoding for the local AI tools: a clip's source range as mono PCM at a
+// fixed analysis rate, or as per-frame scene scores from small frames.
+// Each call opens its own mediabunny Input (like thumbs.ts), so analysis
+// never moves a playback decoder, and closes it when done. Long jobs report
+// progress (0..1) and stop promptly when their AbortSignal fires.
+//
+// ponytail: runs on the main thread; mediabunny's iterators yield between
+// packets, and the per-frame work is a 128 px HSV diff, so the UI stays
+// responsive. A worker is the upgrade if long files show jank.
+
+import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
+import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
+import type { Asset } from "../lib/project/types";
+import { platform } from "../platform";
+
+export type Progress = (fraction: number) => void;
+
+async function openInput(asset: Asset): Promise<Input> {
+  return new Input({ source: await platform.sourceFor(asset.proxy ?? asset.src), formats: ALL_FORMATS });
+}
+
+/** Call `onProgress` at most every 100 ms. */
+function throttle(onProgress: Progress | undefined): Progress {
+  let last = 0;
+  return (x) => {
+    const now = performance.now();
+    if (onProgress && now - last > 100) {
+      last = now;
+      onProgress(Math.min(1, Math.max(0, x)));
+    }
+  };
+}
+
+/**
+ * Source seconds [from, to) of an asset's audio as mono PCM at `rate` Hz.
+ * Channels are averaged; resampling is a box filter (each output sample is
+ * the mean of the input samples in its slot), which is plenty for level
+ * and onset analysis and costs one add per input sample.
+ */
+export async function decodeMono(asset: Asset, from: number, to: number, rate: number, onProgress?: Progress, signal?: AbortSignal): Promise<Float32Array> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
+    // AAC in MP4 starts with encoder priming (1024 samples) that the edit
+    // list hides; mediabunny honors it by giving that packet a negative
+    // timestamp. Real time 0 is timestamp 0 then, not the first timestamp,
+    // or every result lands 21 ms late (measured on the fixtures). A stream
+    // that starts late (MPEG-TS) still maps its first timestamp to 0.
+    const t0 = Math.max(0, await track.getFirstTimestamp());
+    const n = Math.max(0, Math.ceil((to - from) * rate));
+    const sum = new Float32Array(n);
+    const count = new Uint16Array(n);
+    const report = throttle(onProgress);
+    let mono = new Float32Array(0);
+    let plane = new Float32Array(0);
+    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+      try {
+        signal?.throwIfAborted();
+        const frames = sample.numberOfFrames;
+        const channels = sample.numberOfChannels;
+        if (mono.length < frames) [mono, plane] = [new Float32Array(frames), new Float32Array(frames)];
+        mono.fill(0, 0, frames);
+        for (let ch = 0; ch < channels; ch++) {
+          sample.copyTo(plane, { planeIndex: ch, format: "f32-planar" });
+          for (let j = 0; j < frames; j++) mono[j] += plane[j] / channels;
+        }
+        const base = (sample.timestamp - t0 - from) * rate;
+        const step = rate / sample.sampleRate;
+        for (let j = 0; j < frames; j++) {
+          const k = Math.floor(base + j * step);
+          if (k >= 0 && k < n) {
+            sum[k] += mono[j];
+            count[k]++;
+          }
+        }
+        report((sample.timestamp - t0 - from) / (to - from));
+      } finally {
+        sample.close();
+      }
+    }
+    // Slots no input sample landed in (a source rate below `rate`, or a gap
+    // in the stream) hold the previous value rather than a click to zero.
+    let prev = 0;
+    for (let k = 0; k < n; k++) {
+      if (count[k]) prev = sum[k] /= count[k];
+      else sum[k] = prev;
+    }
+    return sum;
+  } finally {
+    input.dispose();
+  }
+}
+
+export interface FrameScores {
+  /** Source seconds of each decoded frame. */
+  times: Float64Array;
+  /** Content score against the previous frame (scenes.ts); scores[0] = 0. */
+  scores: Float32Array;
+}
+
+/**
+ * Every frame of source seconds [from, to), decoded `width` pixels wide,
+ * reduced to its content score against the previous frame. Only the scores
+ * are kept, so memory does not grow with the video.
+ */
+export async function frameScores(
+  asset: Asset,
+  from: number,
+  to: number,
+  opts: { width?: number; lumaOnly?: boolean } = {},
+  onProgress?: Progress,
+  signal?: AbortSignal,
+): Promise<FrameScores> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
+    const t0 = await track.getFirstTimestamp();
+    const sink = new CanvasSink(track, { width: opts.width ?? 128 });
+    const weights = opts.lumaOnly ? LUMA_WEIGHTS : DEFAULT_WEIGHTS;
+    const times: number[] = [];
+    const scores: number[] = [];
+    let prev: Uint8Array | null = null;
+    let spare: Uint8Array | undefined;
+    const report = throttle(onProgress);
+    for await (const wrapped of sink.canvases(t0 + from, t0 + to)) {
+      signal?.throwIfAborted();
+      const { canvas } = wrapped;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+      const hsv = rgbaToHsv(ctx.getImageData(0, 0, canvas.width, canvas.height).data, spare);
+      scores.push(prev ? contentScore(prev, hsv, weights) : 0);
+      times.push(wrapped.timestamp - t0);
+      spare = prev ?? undefined;
+      prev = hsv;
+      report((wrapped.timestamp - t0 - from) / (to - from));
+    }
+    return { times: Float64Array.from(times), scores: Float32Array.from(scores) };
+  } finally {
+    input.dispose();
+  }
+}
