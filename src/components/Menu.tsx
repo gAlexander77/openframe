@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { chordText, type ActionId, ACTION_LABELS } from "../lib/keymap";
 import { isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
@@ -46,8 +46,24 @@ export function MenuBar(props: { menus: { label: string; items: () => MenuItem[]
 }
 
 export function MenuList(props: { items: MenuItem[]; onDone: () => void; style?: React.CSSProperties }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // Keep the menu inside the window. A right-click on the lowest track
+  // opened it below the window's edge; open upward from the pointer when
+  // there is room above, else slide it up just enough.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Layout sizes, not the rect: the open animation scales the menu.
+    const { top, left } = el.getBoundingClientRect();
+    const h = el.offsetHeight;
+    const room = 8;
+    let dy = 0;
+    if (top + h > innerHeight - room) dy = top - h >= room ? -h : Math.max(room - top, innerHeight - room - top - h);
+    const dx = Math.min(0, innerWidth - room - left - el.offsetWidth);
+    if (dx || dy) el.style.translate = `${dx}px ${dy}px`;
+  }, []);
   return (
-    <div className="menu" role="menu" style={props.style}>
+    <div className="menu" role="menu" style={props.style} ref={ref}>
       {props.items.map((item, i) => {
         if (item === "-") return <div key={i} className="menu-sep" />;
         const label = "action" in item ? (item.label ?? ACTION_LABELS[item.action]) : item.label;
