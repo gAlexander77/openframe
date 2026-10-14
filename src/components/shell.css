@@ -165,3 +165,5 @@
 .drop-overlay-card svg { color: var(--accent); }
 .drop-overlay-card strong { color: var(--text-1); font-size: var(--fs-lg); }
 
+.copilot-btn { height: 28px; gap: 5px; color: var(--text-1); }
+.copilot-btn svg { color: var(--accent); }

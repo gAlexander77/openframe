@@ -1,10 +1,11 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useState } from "react";
-import { Download, Keyboard, Minus, Square, X } from "../icons";
+import { Download, Keyboard, Minus, Square, WandSparkles, X } from "../icons";
 import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
+import { toggleCopilot } from "../state/copilot";
 import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { MenuBar, type MenuItem } from "./Menu";
@@ -121,6 +122,11 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         {!props.home && <span className="save-state">{props.saveState}</span>}
       </div>
       <div className="titlebar-right">
+        {!props.home && (
+          <button className="btn ghost copilot-btn" data-tip="Ask a model on this computer to make edits" onClick={() => toggleCopilot()}>
+            <WandSparkles size={14} /> Copilot
+          </button>
+        )}
         <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip="Keyboard shortcuts" onClick={props.onShortcuts}>
           <Keyboard />
         </button>

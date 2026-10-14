@@ -46,6 +46,8 @@ export const automation = {
   render: renderToUrl,
   /** The current frame (or `frame`) as a PNG Blob URL. */
   still: stillToUrl,
+  /** One MCP message in, one response out (null for notifications). */
+  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => handleMcp(req, mcpHost),
 };
 
 declare global {
@@ -100,6 +102,3 @@ const mcpHost: McpHost = {
     return btoa(bin);
   },
 };
-
-/** One MCP message in, one response out (null for notifications). */
-(automation as typeof automation & { mcp: (req: JsonRpcRequest) => Promise<JsonRpcResponse | null> }).mcp = (req) => handleMcp(req, mcpHost);
