@@ -12,6 +12,13 @@ import { edit, provide } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
 
+/** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
+const CODEC_NAMES: Record<string, string> = {
+  avc: "H.264", hevc: "HEVC", vp8: "VP8", vp9: "VP9", av1: "AV1", prores: "ProRes",
+  aac: "AAC", opus: "Opus", mp3: "MP3", flac: "FLAC", vorbis: "Vorbis",
+};
+const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCase()) : undefined);
+
 const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|png|jpe?g|gif|webp|bmp|avif|svg)$/i;
 export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
 
@@ -30,7 +37,7 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
         toast(
           platform.kind === "desktop"
             ? `${f.name}: this codec needs a proxy, which isn't available yet`
-            : `${f.name}: this browser can't decode ${info.videoCodec ?? info.audioCodec ?? "this format"}. The desktop app can.`,
+            : `${f.name}: this browser can't decode ${codecName(info.videoCodec ?? info.audioCodec) ?? "this format"}. The desktop app can.`,
           "error",
         );
         continue;
