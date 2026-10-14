@@ -19,9 +19,9 @@ the engine's and lay an invisible editor over it.
   stroke, shadow, background, filters, effects and blend all stay visible,
   which a DOM stand-in could not reproduce, and nothing in the engine knows
   editing exists.
-- The textarea types in the **same font string, size, letter spacing, line
-  pitch, alignment and rotation**, all derived from the rasterizer's own
-  layout (`TextLayout`, returned with the raster) by the pure
+- The textarea types in the **same font family, weight, size, letter
+  spacing, line pitch, alignment and rotation**, all derived from the
+  rasterizer's own layout (`TextLayout`, returned with the raster) by the pure
   `editBox()` in `src/lib/textBox.ts`. It is as wide as the wrap width,
   anchored like the lines, so it wraps where the rasterizer does; its sides
   are trimmed to half an em past the box so it does not swallow the clicks

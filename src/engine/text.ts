@@ -9,9 +9,10 @@ import type { SourceImage } from "./compositor";
 
 const FALLBACK_FONTS = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 
-/** The CSS font a style draws with at `size` pixels; the canvas editor types
- * in the same one, so its caret lands on these glyphs. */
-export const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px "${s.font}", ${FALLBACK_FONTS}`;
+/** The font family list a style draws with; the canvas editor types in the
+ * same one, so its caret lands on these glyphs. */
+export const textFamily = (s: TextStyle) => `"${s.font}", ${FALLBACK_FONTS}`;
+const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px ${textFamily(s)}`;
 
 /** Break text into lines that fit `maxWidth`, keeping explicit newlines. */
 function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {

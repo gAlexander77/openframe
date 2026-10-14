@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { rasterizeText, textFont } from "../engine/text";
+import { rasterizeText, textFamily } from "../engine/text";
 import type { Project, TextClip } from "../lib/project/types";
 import type { Layer } from "../lib/render/plan";
 import { editBox } from "../lib/textBox";
@@ -82,7 +82,12 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
           width: b.textWidth,
           height: b.textHeight,
           clipPath: `inset(0 ${b.clipRight}px 0 ${b.clipLeft}px)`,
-          font: textFont(s, b.fontSize),
+          // Longhands: the font shorthand would reset line-height whenever it
+          // alone changed between renders.
+          fontFamily: textFamily(s),
+          fontSize: b.fontSize,
+          fontWeight: s.bold ? 700 : 400,
+          fontStyle: s.italic ? "italic" : "normal",
           lineHeight: `${b.lineHeight}px`,
           letterSpacing: `${b.letterSpacing}px`,
           textAlign: s.align,
