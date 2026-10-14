@@ -19,6 +19,7 @@ export type LeftTab =
   | "effects"
   | "transitions"
   | "filters"
+  | "adjustment"
   | "captions"
   | "ai";
 
