@@ -15,6 +15,7 @@ working on the app, and coding agents that need the reasoning behind it.
 
 ## Map of content
 
+- [[Architecture]] — layers, how an edit becomes pixels, the module table
 - [[Conventions]] — where code goes, rules of thumb, commits, testing
 - [[History]] — the build story, round by round, including rejected attempts
 - [[Renaming]] — every site the placeholder name touches, and the one that
@@ -39,3 +40,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
 `decisions/`. Oldest first:
 
 - [[ADR-001 Tauri v2 and React, the TermHQ stack]]
+- [[ADR-002 The media engine lives in the webview]] — frames never cross IPC;
+  Rust supplies bytes, proxies and masters
+- [[ADR-003 Desktop first, one build, a platform seam]] — all compute on the
+  user's machine; web is a client-only subset
+- [[ADR-004 Timeline time is integer frames]] — rational fps, SMPTE timecode
+- [[ADR-005 One store, snapshot undo]] — useSyncExternalStore, drags as one
+  undo step
+- [[ADR-006 Every edit is a named command with a JSON Schema]] — the agent
+  and MCP surface
