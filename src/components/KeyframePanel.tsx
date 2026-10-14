@@ -66,7 +66,7 @@ export function KeyframePanel(props: Props) {
           <ClipGraph key={clip.id} clip={clip} {...props} />
         ) : (
           <>
-            <Head headerW={props.headerW}>{clip && <span className="kf-clip-name">{clipName(clip)}</span>}</Head>
+            <Head headerW={props.headerW}>{clip && <ClipName clip={clip} />}</Head>
             <div className="kf-empty">{clip ? <QuickAdd clip={clip} /> : <span>Select a clip to see and edit its keyframes.</span>}</div>
           </>
         )}
@@ -75,9 +75,11 @@ export function KeyframePanel(props: Props) {
   );
 }
 
-function clipName(c: Clip) {
-  if (c.type === "text") return c.text.split("\n")[0] || "Text";
-  return c.name ?? (c.type === "color" ? "Solid color" : c.type[0].toUpperCase() + c.type.slice(1));
+/** What the timeline's clip label says: its name, else its file's. */
+function ClipName({ clip: c }: { clip: Clip }) {
+  const file = useEditor((s) => ("assetId" in c ? s.project.assets.find((a) => a.id === c.assetId)?.name : undefined));
+  const name = c.type === "text" ? c.text.split("\n")[0] || "Text" : (c.name ?? file ?? (c.type === "color" ? "Solid color" : "Adjustment"));
+  return <span className="kf-clip-name">{name}</span>;
 }
 
 function Head(props: { headerW: number; children?: React.ReactNode }) {
@@ -408,7 +410,7 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
   return (
     <>
       <Head headerW={headerW}>
-        <span className="kf-clip-name">{clipName(clip)}</span>
+        <ClipName clip={clip} />
         <span className="kf-focus">
           {info.label}
           <PlayheadValue clip={clip} path={lane} info={info} />

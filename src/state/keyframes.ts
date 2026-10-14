@@ -69,7 +69,7 @@ export function pasteKeysAtPlayhead(): boolean {
   }
   const { keys, refs } = pasteKeys(clip, board, s.playhead - clip.start);
   if (!refs.length) {
-    toast("The keyframes don't fit this clip at the playhead");
+    toast("None of the copied keyframes fit this clip at the playhead");
     return true;
   }
   store.edit(refs.length > 1 ? "Paste keyframes" : "Paste keyframe", (p) => withKeys(p, clip.id, keys), { keySel: { clipId: clip.id, keys: refs } });
