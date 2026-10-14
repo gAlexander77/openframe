@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
 import { DragGhost, Toasts } from "./components/Overlays";
 import { PlayerPanel } from "./components/Player";
@@ -63,7 +64,7 @@ export default function App() {
           <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />
           <PlayerPanel />
           <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => setLayout((l) => ({ ...l, right: DEFAULT_LAYOUT.right }))} />
-          <section className="panel inspector-panel" aria-label="Inspector" />
+          <InspectorPanel />
         </div>
         <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => setLayout((l) => ({ ...l, top: DEFAULT_LAYOUT.top }))} />
         <Timeline />
