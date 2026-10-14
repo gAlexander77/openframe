@@ -25,6 +25,7 @@ import { addToTimeline, pickAndImport } from "../state/media";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import "./library.css";
+import { AiToolsTab } from "./AiToolsTab";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -65,20 +66,9 @@ export function LibraryPanel() {
         {tab === "filters" && <FiltersTab />}
         {tab === "adjustment" && <AdjustmentTab />}
         {tab === "captions" && <CaptionsTab />}
-        {tab === "ai" && <Placeholder title="AI tools" text="Silence removal, scene detection and beat markers run locally. Coming in the AI round." />}
+        {tab === "ai" && <AiToolsTab />}
       </div>
     </section>
-  );
-}
-
-function Placeholder({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="lib-content">
-      <div className="empty">
-        <strong>{title}</strong>
-        <span>{text}</span>
-      </div>
-    </div>
   );
 }
 

@@ -56,6 +56,7 @@ a clock, so no frame is ever dropped
 | `lib/project/types.ts` | The document schema (also `docs/Project format.md`, planned) |
 | `lib/project/ops.ts` | Every edit: place, split, trims, speed, freeze, detach, settle |
 | `lib/commands.ts` | Named commands + JSON Schemas; `describeProject` |
+| `lib/analysis/*` | Silence, scene and beat detection, pure ([[AI tools]]) |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
 | `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
@@ -65,8 +66,10 @@ a clock, so no frame is ever dropped
 | `engine/audio.ts` | Web Audio scheduling and the audible clock |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |
+| `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `state/export.ts` | The export job: dialog state, `render()` for automation |
+| `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |

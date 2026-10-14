@@ -1,0 +1,146 @@
+// AI tools drive: proves Remove silences, Split scenes and Beat markers on
+// fixtures whose answers are known, through window.videoEditor, then
+// checks each edit is one undo step. Needs the dev server and fixtures
+// (node scripts/make-fixtures.mjs: speech-gaps.m4a, talk-gaps.mp4,
+// scene-cuts.mp4, beat-128.m4a).
+//
+// Run through the Playwright MCP tool `browser_run_code_unsafe` with
+// filename "scripts/drive/ai-tools.js", or any Playwright page; pass a base
+// URL as the second argument when the server is not on :1420. Returns
+// { ok, details } — every check in details has ok: true when it passes.
+async (page, base = "http://localhost:1420") => {
+  // Each check starts from a fresh page with one fixture on the timeline.
+  const fresh = async () => {
+    await page.goto(base);
+    await page.waitForFunction(() => !!window.videoEditor);
+    await page.evaluate(() => {
+      window.__place = async (name) => {
+        const ve = window.videoEditor;
+        const [a] = await ve.import([{ name, src: location.origin + "/fixtures/media/" + name }]);
+        if (!a) throw new Error("import failed: " + name);
+        ve.exec("add_media_clip", { asset_id: a.id, start: 0 });
+        return { asset: a, clip: ve.describe().tracks.flatMap((t) => t.clips).find((c) => c.asset === a.id) };
+      };
+    });
+  };
+  const run = (fn) => page.evaluate(fn);
+  const details = {};
+  const near = (got, want, tol) => got.length === want.length && got.every((g, i) => Math.abs(g - want[i]) <= tol);
+
+  // 1. Silences in an audio clip: 1.6 s tones every 3 s, 12 s long. With
+  //    the default 0.1 s padding the cuts are known to the window.
+  await fresh();
+  details.silences = await run(
+    async () => {
+      const ve = window.videoEditor;
+      const { clip } = await window.__place("speech-gaps.m4a");
+      const a = await ve.analyze.silences(clip.id);
+      const r = await ve.ai.removeSilences(clip.id);
+      const after = ve.describe().tracks.find((t) => t.kind === "audio").clips;
+      const undoLabel = ve.state().undoLabel;
+      ve.action("undo");
+      const restored = ve.describe().tracks.find((t) => t.kind === "audio").clips;
+      return { ranges: a.ranges, thresholdDb: a.thresholdDb, removed: r.removed, seconds: r.seconds, pieces: after.map((c) => [c.start, c.end, c.in]), undoLabel, restored: restored.map((c) => [c.start, c.end]) };
+    },
+  );
+  {
+    const d = details.silences;
+    const want = [[1.7, 2.9], [4.7, 5.9], [7.7, 8.9], [10.7, 12]];
+    d.ok =
+      d.ranges.length === 4 &&
+      d.ranges.every((r, i) => Math.abs(r.start - want[i][0]) <= 0.03 && Math.abs(r.end - want[i][1]) <= 0.03) &&
+      d.removed === 4 &&
+      Math.abs(d.seconds - 4.9) <= 0.1 &&
+      d.pieces.length === 4 &&
+      d.undoLabel === "Remove 4 silences" &&
+      d.restored.length === 1 &&
+      Math.abs(d.restored[0][1] - 12) < 0.05;
+  }
+
+  // 2. The same pattern on a video's sound: picture and sound cut together
+  //    on the main track, which closes up.
+  await fresh();
+  details.videoSilences = await run(
+    async () => {
+      const ve = window.videoEditor;
+      const { clip } = await window.__place("talk-gaps.mp4");
+      const r = await ve.ai.removeSilences(clip.id);
+      const main = ve.describe().tracks.find((t) => t.main).clips;
+      return { removed: r.removed, seconds: r.seconds, main: main.map((c) => [c.start, c.end, c.in]), duration: ve.describe().duration };
+    },
+  );
+  {
+    const d = details.videoSilences;
+    d.ok = d.removed === 4 && d.main.length === 4 && Math.abs(d.duration - 7.1) <= 0.1 && d.main.every((c, i) => i === 0 || Math.abs(c[0] - d.main[i - 1][1]) < 1e-6);
+  }
+
+  // 3. Scene cuts at 2.5, 5, 8 and 10 s (30 fps): both detectors within one
+  //    frame, then a split into five clips as one undo step.
+  await fresh();
+  details.scenes = await run(
+    async () => {
+      const ve = window.videoEditor;
+      const { clip } = await window.__place("scene-cuts.mp4");
+      const t0 = performance.now();
+      const adaptive = await ve.analyze.scenes(clip.id);
+      const ms = performance.now() - t0;
+      const content = await ve.analyze.scenes(clip.id, { detector: "content" });
+      const r = await ve.ai.splitScenes(clip.id);
+      const main = ve.describe().tracks.find((t) => t.main).clips;
+      const undoLabel = ve.state().undoLabel;
+      return { adaptive: adaptive.cuts, content: content.cuts, frames: adaptive.frames, ms: Math.round(ms), split: main.map((c) => [c.start, c.end]), undoLabel, output: r.output };
+    },
+  );
+  {
+    const d = details.scenes;
+    const want = [2.5, 5, 8, 10];
+    d.ok = near(d.adaptive, want, 1 / 30 + 1e-3) && near(d.content, want, 1 / 30 + 1e-3) && d.split.length === 5 && near(d.split.slice(1).map((c) => c[0]), want, 1 / 30 + 1e-3) && d.undoLabel === "Split into 5 scenes";
+  }
+
+  // 4. Beats of a 128 BPM loop starting at 0.25 s.
+  await fresh();
+  details.beats = await run(
+    async () => {
+      const ve = window.videoEditor;
+      const { clip } = await window.__place("beat-128.m4a");
+      const a = await ve.analyze.beats(clip.id);
+      const r = await ve.ai.markBeats(clip.id);
+      const markers = ve.describe().markers;
+      const again = await ve.ai.markBeats(clip.id); // must not duplicate
+      return { bpm: a.bpm, count: a.beats.length, beats: a.beats, markers: markers.length, label: markers[0]?.label, againMarkers: again.markers, undoLabel: ve.state().undoLabel };
+    },
+  );
+  {
+    const d = details.beats;
+    const truth = Array.from({ length: 43 }, (_, k) => 0.25 + (k * 60) / 128).filter((t) => t < 20);
+    const errs = d.beats.map((t) => Math.min(...truth.map((u) => Math.abs(u - t))));
+    d.maxErrorMs = Math.round(Math.max(...errs) * 1000);
+    d.truthCount = truth.length;
+    d.ok = Math.abs(d.bpm - 128) <= 2 && d.count >= truth.length - 1 && d.count <= truth.length && d.maxErrorMs <= 34 && d.markers === d.count && d.againMarkers === 0 && d.label === "Beat";
+    delete d.beats;
+  }
+
+  // 5. Through the UI once: the AI tools tab, settings popover (Escape must
+  //    close it without deselecting the clip), Remove, result on the card.
+  await fresh();
+  await page.evaluate(async () => {
+    const { clip } = await window.__place("talk-gaps.mp4");
+    window.videoEditor.select([clip.id]);
+  });
+  await page.getByRole("tab", { name: "AI tools" }).click();
+  await page.getByRole("button", { name: "Remove silences settings" }).click();
+  await page.keyboard.press("Escape");
+  const kept = await page.evaluate(() => window.videoEditor.state().selection.length);
+  await page.locator(".ai-silences .ai-run").click();
+  await page.waitForSelector(".ai-silences .ai-status.done", { timeout: 30000 });
+  await page.screenshot({ path: "scripts/drive/shots/ai-tools.png" }).catch(() => {});
+  details.ui = await page.evaluate(() => ({
+    status: document.querySelector(".ai-silences .ai-status").textContent.trim(),
+    pieces: window.videoEditor.describe().tracks.find((t) => t.main).clips.length,
+    popoverOpen: !!document.querySelector(".ai-pop"),
+  }));
+  details.ui.selectionKeptAfterEscape = kept === 1;
+  details.ui.ok = details.ui.selectionKeptAfterEscape && !details.ui.popoverOpen && details.ui.pieces === 4 && details.ui.status === "Removed 4 silences, 4.9 s shorter";
+
+  return { ok: Object.values(details).every((d) => d.ok), details };
+};

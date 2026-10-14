@@ -21,6 +21,7 @@ import * as ops from "./project/ops";
 import type { Clip, Effect, Id, Project, TextStyle, Track } from "./project/types";
 import { upsertKey } from "./keyframes";
 import type { Caption } from "./captions";
+import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -409,6 +410,61 @@ export const COMMANDS: Command[] = [
     ),
     run: (p, a) => addCaptions(p, a.captions as Caption[], { ...((a.style ?? {}) as Partial<TextStyle>) }, a.y === undefined ? undefined : Number(a.y), a.replace === true),
   },
+  {
+    name: "cut_ranges",
+    description:
+      "Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The primitive behind silence and filler removal.",
+    input: S.obj(
+      {
+        clip_id: S.str("Video or audio clip id"),
+        ranges: {
+          type: "array",
+          description: "Source ranges to remove; overlaps merge, parts outside the clip are ignored",
+          items: S.obj({ start: S.num("Source seconds", { minimum: 0 }), end: S.num("Source seconds", { minimum: 0 }) }, ["start", "end"]),
+        },
+        ripple: S.bool("Close the gaps (default true)"),
+      },
+      ["clip_id", "ranges"],
+    ),
+    run: (p, a) => {
+      const { clip, track } = clipOrThrow(p, a.clip_id);
+      if (!ops.isTimed(clip) || clip.freeze) throw new CommandError(`${clip.type} clips have no source to cut`);
+      if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+      return cutRanges(p, clip.id, a.ranges as SourceRange[], a.ripple !== false).project;
+    },
+  },
+  {
+    name: "split_at_times",
+    description:
+      "Split a video or audio clip at several SOURCE times (seconds into its media file, the way scene detection reports them). Times on or outside the clip's edges are ignored; a detached audio clip lined up with it splits too. For a cut at a timeline time use split.",
+    input: S.obj({ clip_id: S.str("Video or audio clip id"), times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds" } }, ["clip_id", "times"]),
+    run: (p, a) => {
+      const { clip, track } = clipOrThrow(p, a.clip_id);
+      if (!ops.isTimed(clip) || clip.freeze) throw new CommandError(`${clip.type} clips have no source to split by`);
+      if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+      return splitAtSourceTimes(p, clip.id, a.times as number[]);
+    },
+  },
+  {
+    name: "add_markers",
+    description: "Drop several markers at once at TIMELINE seconds (beats, scene cuts, chapters). A time that already has a marker with the same label is skipped, so running a detector twice does not double its markers.",
+    input: S.obj(
+      {
+        times: { type: "array", items: { type: "number", minimum: 0 }, description: "Timeline seconds" },
+        label: S.str("Text for every marker"),
+        color: S.str("CSS color"),
+      },
+      ["times"],
+    ),
+    run: (p, a) => {
+      const label = String(a.label ?? "");
+      const taken = new Set(p.markers.filter((m) => m.label === label).map((m) => m.frame));
+      const fresh = [...new Set((a.times as number[]).map((t) => f(p, t)))].filter((fr) => !taken.has(fr));
+      if (!fresh.length) return p;
+      const added = fresh.map((fr) => createMarker(fr, label, a.color ? String(a.color) : undefined));
+      return { ...p, markers: [...p.markers, ...added].sort((x, y) => x.frame - y.frame) };
+    },
+  },
 ];
 
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
@@ -444,7 +500,7 @@ export function describeProject(p: Project) {
         start: s(c.start),
         end: s(c.start + c.duration),
         ...("assetId" in c ? { asset: c.assetId } : {}),
-        ...("in" in c ? { in: +c.in.toFixed(3), speed: c.speed } : {}),
+        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speed } : {}),
         ...(c.type === "text" ? { text: c.text } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type) } : {}),
