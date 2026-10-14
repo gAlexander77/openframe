@@ -49,7 +49,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   19 effects, 20 transitions, 17 looks, adjustment layers.
 - On-canvas handles: move, scale, rotate, snapping to center guides.
 - Frame-exact: the framecode drive proves the right source frame at 1x,
-  2x and 0.5x across GOPs and backward seeks.
+  2x and 0.5x across GOPs and backward seeks; the speed drive proves it
+  for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
   shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
@@ -116,6 +117,23 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   keyframeable, and preview and export render it with the same shader.
 - Agents: `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, and
   `window.videoEditor.importLuts`.
+
+## Speed
+
+- **Standard**: one rate, 0.1x to 100x, with quick picks; the clip keeps
+  its source and later clips move with the new length.
+- **Curve** (CapCut's curve speed): None, Custom, Montage, Hero time,
+  Bullet time, Jump cut, Flash in, Flash out, and a graph editor. The graph
+  has a log speed axis from 0.1x to 10x, draggable points, add at the
+  playhead, delete, reset, a playhead line and the live duration. The line
+  drawn is exactly what plays, and trims and splits keep the ramp
+  ([[ADR-027 Speed curves are exponential and anchored to clip frames]]).
+- **Reverse**: frame-exact, on any GOP length, with sound reversed too.
+  Reversed 1080p plays without dropped frames ([[ADR-028 Reverse and
+  retimed sound are made in the engine]]).
+- **Change pitch**: off by default, as in CapCut. Voices keep their pitch
+  at any speed and through ramps; on, pitch follows the speed like tape.
+  Sound stays within a frame of the picture in preview and export.
 
 ## Text and captions
 

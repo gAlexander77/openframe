@@ -4,6 +4,7 @@
 // as a complete, valid Project or as an error naming what is wrong.
 
 import { cleanGrade } from "../grade";
+import { cleanPoints } from "../speed";
 import { secondsToFrames, type Rational } from "../time";
 import type {
   Adjust,
@@ -266,6 +267,13 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     }
     c.in = Math.max(0, num(c.in, 0));
     c.speed = num(c.speed, 1) > 0 ? num(c.speed, 1) : 1;
+    // Optional retiming fields: absent means off, so files written before
+    // they existed load unchanged.
+    const raw = isObj(c.speedCurve) && Array.isArray(c.speedCurve.points) ? c.speedCurve : null;
+    const points = raw && cleanPoints((raw.points as unknown[]).filter(isObj).map((p) => ({ f: Number(p.f), speed: Number(p.speed) })), (p) => p.f);
+    if (raw && points) c.speedCurve = { ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}), points };
+    else delete c.speedCurve;
+    for (const k of ["reverse", "changePitch"]) if (c[k] !== true) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);

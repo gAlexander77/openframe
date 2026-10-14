@@ -82,6 +82,11 @@ const jobs = {
   // the drives read pixels back to prove exactly which source frame shows.
   "framecode-30.mp4": () =>
     ff("-f", "lavfi", "-i", "color=c=black:size=640x360:rate=30,format=gray,geq=lum='255*mod(floor(N/pow(2,floor(X*10/W))),2)'", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "90", "-bf", "2", join(out, "framecode-30.mp4")),
+  // A white flash (frames 15-17 of every second) and a 1 kHz beep starting
+  // on the same instant (0.5 s into every second, 100 ms long): the speed
+  // drive proves sound stays on picture through ramps and reverse.
+  "flash-beep-30.mp4": () =>
+    ff("-f", "lavfi", "-i", "color=c=black:size=320x180:rate=30,format=gray,geq=lum='255*between(mod(N,30),15,17)'", "-f", "lavfi", "-i", "aevalsrc='0.8*sin(2*PI*1000*t)*between(mod(t,1),0.5,0.6)':s=48000:d=10", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "192k", join(out, "flash-beep-30.mp4")),
   // Real synthesized speech with a known script, for auto captions.
   "speech-test.wav": () =>
     ff("-f", "lavfi", "-i", "flite=text='Welcome to the video editor. This sentence was spoken by a computer. Captions should appear on screen.':voice=slt", "-ar", "48000", "-ac", "1", join(out, "speech-test.wav")),

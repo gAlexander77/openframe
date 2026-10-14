@@ -21,6 +21,7 @@ import * as ops from "./project/ops";
 import type { Adjust, Clip, Ease, Effect, Grade, HslBand, Id, Project, TextStyle, Track, WheelName } from "./project/types";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "./catalog";
 import { upsertKey } from "./keyframes";
+import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
@@ -707,6 +708,55 @@ export const COMMANDS: Command[] = [
       return p;
     },
   },
+  {
+    name: "set_speed_curve",
+    description:
+      "Ramp a video or audio clip's speed (CapCut's Curve speed): a preset, or points over the clip with t from 0 (its start) to 1 (its end) and speed 0.1..10. The rate changes smoothly (exponentially) between points. The clip keeps its source range, so its length becomes source length / mean speed and later clips on its track move. preset 'none' returns to the constant speed.",
+    input: S.obj(
+      {
+        clip_id: S.str("Video or audio clip id"),
+        preset: S.str("A ready-made ramp", { enum: ["none", ...Object.keys(PRESETS)] }),
+        points: {
+          type: "array",
+          description: "Speed points across the clip; used when no preset is given",
+          items: S.obj({ t: S.num("0 = clip start, 1 = clip end", { minimum: 0, maximum: 1 }), speed: S.num("Rate there", { minimum: CURVE_MIN, maximum: CURVE_MAX }) }, ["t", "speed"]),
+        },
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips have no speed`);
+      if (a.preset === "none") return ops.setSpeedCurve(p, clip.id, null);
+      if (a.preset !== undefined) return ops.setSpeedCurve(p, clip.id, PRESETS[String(a.preset)].points, String(a.preset));
+      const pts = cleanPoints((a.points ?? []) as { t: number; speed: number }[], (x) => x.t);
+      if (!pts) throw new CommandError("give a preset or at least one point");
+      // Pin the ends so the curve covers the whole clip, holding the end speeds.
+      const norm = [...(pts[0].t > 0 ? [{ t: 0, speed: pts[0].speed }] : []), ...pts, ...(pts[pts.length - 1].t < 1 ? [{ t: 1, speed: pts[pts.length - 1].speed }] : [])];
+      return ops.setSpeedCurve(p, clip.id, norm, "custom");
+    },
+  },
+  {
+    name: "set_reverse",
+    description: "Play a video or audio clip backward (reverse=true) or forward again. The clip keeps its length and source range; its sound reverses too.",
+    input: S.obj({ clip_id: S.str("Video or audio clip id"), reverse: S.bool("Backward") }, ["clip_id", "reverse"]),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips cannot play backward`);
+      if (clip.freeze) throw new CommandError("a freeze frame has no direction");
+      return ops.setReverse(p, clip.id, a.reverse === true);
+    },
+  },
+  {
+    name: "set_preserve_pitch",
+    description: "Keep a sped-up or slowed-down clip's pitch natural (preserve=true, the default) or let it rise and fall with the speed like tape (preserve=false, CapCut's Change pitch).",
+    input: S.obj({ clip_id: S.str("Video or audio clip id"), preserve: S.bool("Keep the original pitch") }, ["clip_id", "preserve"]),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips have no sound`);
+      return ops.setChangePitch(p, [clip.id], a.preserve !== true);
+    },
+  },
 ];
 
 /** The keyframes a command names: on `path` (or every path) at the given
@@ -770,7 +820,9 @@ export function describeProject(p: Project) {
         start: s(c.start),
         end: s(c.start + c.duration),
         ...("assetId" in c ? { asset: c.assetId } : {}),
-        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speed } : {}),
+        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, speed_curve: c.speedCurve ? (c.speedCurve.preset ?? "custom") : undefined } : {}),
+        ...("reverse" in c && c.reverse ? { reverse: true } : {}),
+        ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
         ...(c.type === "text" ? { text: c.text } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),

@@ -1,11 +1,12 @@
 import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { fromDb, toDb } from "../lib/audio";
-import { setParam } from "../lib/project/ops";
+import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
 import { store } from "../state/store";
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
 import type { Asset, Clip, Project, Track } from "../lib/project/types";
+import { PRESETS } from "../lib/speed";
 import { formatDuration, framesToSeconds } from "../lib/time";
 import { ClipKeys } from "./ClipKeys";
 
@@ -35,6 +36,14 @@ function useThumbVersion() {
   return useSyncExternalStore(thumbs.subscribe, thumbs.version);
 }
 
+/** Source second under clip-relative frame r (fractional), following the
+ * clip's speed, ramp and direction, so strips and waveforms show what plays. */
+function sourceAt(c: Clip, r: number, fps: Project["fps"]): number {
+  if (!isTimed(c)) return 0;
+  if (c.freeze) return c.in;
+  return c.in + (c.reverse ? -1 : 1) * sourceOffset(c, r, fps);
+}
+
 /** Paint a filmstrip into the visible slice of the clip. */
 function paintStrip(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: number) {
   const ctx = cv.getContext("2d")!;
@@ -45,14 +54,11 @@ function paintStrip(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: n
   const tileW = h * strip.aspect;
   const first = Math.floor(x0 / tileW) * tileW;
   const c = p.clip;
-  const speed = "speed" in c ? c.speed : 1;
-  const srcIn = "in" in c ? c.in : 0;
   for (let x = first; x < x0 + w; x += tileW) {
     let img: ImageBitmap | undefined;
     if (strip.step === Infinity) img = strip.frames[0];
     else {
-      const frozen = "freeze" in c && c.freeze;
-      const t = frozen ? srcIn : srcIn + framesToSeconds((x + tileW / 2) / p.zoom, p.fps) * speed;
+      const t = sourceAt(c, (x + tileW / 2) / p.zoom, p.fps);
       const i = Math.min(strip.frames.length - 1, Math.max(0, Math.round(t / strip.step)));
       img = strip.frames[i] ?? strip.frames.find(Boolean);
     }
@@ -67,14 +73,14 @@ function paintWave(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: nu
   if (!peaks) return;
   const dpr = cv.width / Math.max(1, w);
   const c = p.clip;
-  const speed = "speed" in c ? c.speed : 1;
-  const srcIn = "in" in c ? c.in : 0;
   const gain = "volume" in c ? Math.min(2, c.volume) : 1;
   ctx.fillStyle = color;
   const mid = (h * dpr) / 2;
   for (let px = 0; px < w * dpr; px++) {
-    const a = srcIn + framesToSeconds((x0 + px / dpr) / p.zoom, p.fps) * speed;
-    const b = srcIn + framesToSeconds((x0 + (px + 1) / dpr) / p.zoom, p.fps) * speed;
+    const u = sourceAt(c, (x0 + px / dpr) / p.zoom, p.fps);
+    const v = sourceAt(c, (x0 + (px + 1) / dpr) / p.zoom, p.fps);
+    const a = Math.min(u, v);
+    const b = Math.max(u, v);
     let m = 0;
     for (let i = Math.floor(a * peaks.rate); i <= Math.floor(b * peaks.rate); i++) m = Math.max(m, peaks.data[i] ?? 0);
     const amp = Math.min(1, Math.sqrt(m) * gain) * mid * 0.95;
@@ -188,7 +194,9 @@ export const ClipView = memo(function ClipView(p: Props) {
   const name = c.type === "video" || c.type === "image" || c.type === "audio" ? (c.name ?? p.asset?.name ?? "") : describe(c);
   const Icon = c.type === "text" ? Type : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? Image : null;
   const fxCount = "effects" in c ? c.effects.length + ("filter" in c && c.filter ? 1 : 0) : 0;
-  const speed = "speed" in c && c.speed !== 1 ? `${+c.speed.toFixed(2)}x` : null;
+  const curve = isTimed(c) && c.speedCurve ? (PRESETS[c.speedCurve.preset ?? ""]?.label ?? "Curve") : null;
+  const speed = curve ?? ("speed" in c && c.speed !== 1 ? `${+c.speed.toFixed(2)}x` : null);
+  const reversed = isTimed(c) && c.reverse && !c.freeze;
   const freeze = "freeze" in c && c.freeze;
   const tiny = w < 34;
 
@@ -205,6 +213,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         {!tiny && <span className="clip-name">{name}</span>}
         {!tiny && w > 120 && <span className="clip-dur num">{formatDuration(framesToSeconds(c.duration, p.fps))}</span>}
         {speed && !tiny && <span className="clip-badge num">{speed}</span>}
+        {reversed && !tiny && <span className="clip-badge">Reverse</span>}
         {freeze && !tiny && <Snowflake size={11} className="clip-badge-icon" />}
         {fxCount > 0 && !tiny && c.type !== "adjustment" && (
           <span className="clip-badge">

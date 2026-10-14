@@ -88,6 +88,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   assets and stacks of clips; no new clip type
 - [[ADR-026 Library previews are drawn by the engine]] — an offscreen
   compositor, lazy and cached; cannot drift from the renderer
+- [[ADR-027 Speed curves are exponential and anchored to clip frames]] —
+  exact time maps; trims keep ramps; reverse reads down from in
+- [[ADR-028 Reverse and retimed sound are made in the engine]] — backward
+  GOP windows; WSOLA keeps pitch
 - [[ADR-029 Headless rendering reuses the app]] — `--render project.json
   --out file`, JSON-line progress, exit codes
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven

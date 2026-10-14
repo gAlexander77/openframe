@@ -63,9 +63,9 @@ a clock, so no frame is ever dropped
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
-| `engine/cursor.ts` | One decoder per clip; scrub and play |
+| `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
 | `engine/player.ts` | Preview loop, transport, shuttle |
-| `engine/audio.ts` | Web Audio scheduling and the audible clock |
+| `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |
 | `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |

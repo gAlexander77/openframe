@@ -4,7 +4,8 @@ import { fromDb, toDb } from "../../lib/audio";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "../../lib/catalog";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM, uid } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
-import type { Animation, BlendMode, CanvasFill, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
+import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
+import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
@@ -15,6 +16,7 @@ import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
 import { WheelsPanel } from "./WheelsPanel";
+import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "captions" | "transition";
@@ -77,7 +79,7 @@ function ClipInspector({ id }: { id: Id }) {
       <div className="insp-body" key={active}>
         {active === "video" && <VideoTab clip={clip} />}
         {active === "audio" && <AudioTab clip={clip} />}
-        {active === "speed" && <SpeedTab clip={clip as VideoClip} />}
+        {active === "speed" && <SpeedTab clip={clip as VideoClip | AudioClip} />}
         {active === "animation" && <AnimationTab clip={clip} />}
         {active === "adjust" && <AdjustTab clip={clip} />}
         {active === "text" && <TextTab clip={clip as TextClip} />}
@@ -336,7 +338,65 @@ const SPEED_MAX = 100;
 const toLog = (s: number) => Math.log(s / SPEED_MIN) / Math.log(SPEED_MAX / SPEED_MIN);
 const fromLog = (v: number) => SPEED_MIN * (SPEED_MAX / SPEED_MIN) ** v;
 
-function SpeedTab({ clip }: { clip: VideoClip }) {
+/** CapCut's Speed tab: Standard (one rate) or Curve (presets and a graph),
+ * plus direction and pitch, which apply to either. */
+function SpeedTab({ clip }: { clip: VideoClip | AudioClip }) {
+  const [mode, setMode] = useState<"standard" | "curve">(clip.speedCurve ? "curve" : "standard");
+  const hasSound = useEditor((s) => (clip.type === "audio" || !clip.muted) && (ops.getAsset(s.project, clip.assetId)?.hasAudio ?? false));
+  return (
+    <>
+      <div className="insp-sub">
+        <Segmented value={mode} onChange={setMode} options={[{ value: "standard", label: "Standard" }, { value: "curve", label: "Curve" }]} />
+      </div>
+      {mode === "standard" ? <StandardSpeed clip={clip} /> : <CurveSpeed clip={clip} />}
+      {!clip.freeze && (
+        <Section title="Playback">
+          <Row label="Reverse">
+            <Toggle label="Reverse" on={!!clip.reverse} onChange={(v) => edit(v ? "Reverse" : "Play forward", (p) => ops.setReverse(p, clip.id, v))} />
+          </Row>
+          {hasSound && (
+            <Row label="Change pitch">
+              <Toggle label="Change pitch" on={!!clip.changePitch} onChange={(v) => edit(v ? "Change pitch with speed" : "Keep pitch", (p) => ops.setChangePitch(p, [clip.id], v))} />
+            </Row>
+          )}
+          <p className="insp-hint">{clip.changePitch ? "Pitch rises and falls with the speed, like tape." : "Voices keep their pitch at any speed."}</p>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function CurveSpeed({ clip }: { clip: VideoClip | AudioClip }) {
+  const fps = useEditor((s) => s.project.fps);
+  const curve = clip.speedCurve;
+  const [lo, hi] = ops.sourceRange(clip, fps);
+  return (
+    <>
+      <div className="anim-grid">
+        <button className={`anim-tile${!curve ? " on" : ""}`} onClick={() => curve && edit("Remove speed curve", (p) => ops.setSpeedCurve(p, clip.id, null))}>
+          <span className="anim-demo none" />
+          <span>None</span>
+        </button>
+        {Object.entries(PRESETS).map(([k, d]) => (
+          <button key={k} className={`anim-tile${curve?.preset === k ? " on" : ""}`} onClick={() => curve?.preset !== k && edit(`Speed curve: ${d.label}`, (p) => ops.setSpeedCurve(p, clip.id, d.points, k))}>
+            <CurvePreview points={d.points} />
+            <span>{d.label}</span>
+          </button>
+        ))}
+      </div>
+      {curve && (
+        <Section title="Graph">
+          <SpeedGraph clip={clip} />
+          <p className="insp-hint num">
+            Duration {formatDuration(framesToSeconds(clip.duration, fps))} for {formatDuration(hi - lo)} of source. Later clips on the track move with the change.
+          </p>
+        </Section>
+      )}
+    </>
+  );
+}
+
+function StandardSpeed({ clip }: { clip: VideoClip | AudioClip }) {
   const fps = useEditor((s) => s.project.fps);
   const [text, setText] = useState<string | null>(null);
   const apply = (speed: number) => {
@@ -381,12 +441,14 @@ function SpeedTab({ clip }: { clip: VideoClip }) {
       </div>
       <div className="speed-presets">
         {[0.25, 0.5, 1, 1.5, 2, 4].map((s) => (
-          <button key={s} className={`chip-btn${clip.speed === s ? " on" : ""}`} onClick={() => apply(s)}>
+          <button key={s} className={`chip-btn${!clip.speedCurve && clip.speed === s ? " on" : ""}`} onClick={() => apply(s)}>
             {s}x
           </button>
         ))}
       </div>
-      <p className="insp-hint num">Duration {formatDuration(framesToSeconds(clip.duration, fps))}. Later clips on the track move with the change.</p>
+      <p className="insp-hint num">
+        Duration {formatDuration(framesToSeconds(clip.duration, fps))}. {clip.speedCurve ? "A speed here replaces the curve." : "Later clips on the track move with the change."}
+      </p>
     </Section>
   );
 }

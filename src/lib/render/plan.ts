@@ -24,7 +24,15 @@ import type {
 } from "../project/types";
 
 export type LayerSource =
-  | { kind: "video"; assetId: Id; /** seconds into the source */ time: number }
+  | {
+      kind: "video";
+      assetId: Id;
+      /** seconds into the source */
+      time: number;
+      /** Successive frames walk backward through the source: the engine
+       * decodes GOP windows forward and hands them out in reverse. */
+      reverse?: true;
+    }
   | { kind: "image"; assetId: Id }
   | { kind: "text"; clip: TextClip }
   | { kind: "color"; color: string };
@@ -174,7 +182,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     // which keeps 2x showing frames 0, 2, 4... as Premiere does.
     const t = sourceTimeAt(clip, f, p.fps) + 0.25 / (asset?.fps || 60);
     const max = asset && asset.duration > 0 ? asset.duration - 1e-3 : Infinity;
-    source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max) };
+    source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max), ...(clip.reverse && !clip.freeze ? { reverse: true as const } : {}) };
   } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
   else if (clip.type === "text") source = { kind: "text", clip };
   else source = { kind: "color", color: clip.color };

@@ -6,7 +6,6 @@ items move to [[Features]] when they ship.
 ## In flight (parallel worktrees)
 
 - **Inline text editing** on the canvas.
-- **Speed curves**, reverse, pitch preservation.
 - **UX audit** of the running editor against CapCut.
 
 ## Next

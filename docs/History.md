@@ -96,6 +96,14 @@ A narrative log of each build round with its intent, for archaeology that
   the real compositor — which showed that every wipe ran backwards
   ([[ADR-025 Stickers and templates are ordinary clips]],
   [[ADR-026 Library previews are drawn by the engine]]).
+- **Speed ramps and reverse** — CapCut's Curve speed with presets and a
+  graph, exponential between points and anchored to clip frames so trims
+  keep the ramp; reverse from backward GOP windows (1.3–2.9 ms a frame
+  instead of 26–57 ms per backward seek); pitch kept by WSOLA or let go
+  like tape; every frame of a ramp and a reverse proven by framecode, and
+  a reversed export reads 299 down to 240 frame for frame
+  ([[ADR-027 Speed curves are exponential and anchored to clip frames]],
+  [[ADR-028 Reverse and retimed sound are made in the engine]]).
 - **Keyframes you can shape** — CapCut's keyframe panel docked under the
   tracks on their time axis, draggable diamonds, easing presets stored as
   CSS beziers, a section keyframe, and `move_keyframe`,
@@ -143,6 +151,12 @@ A narrative log of each build round with its intent, for archaeology that
 - **Number ADRs before agents fork**: the headless ADR was first written
   as 020, which the color agent already held; reserve ranges per agent
   and take the next free number on main.
+- **Centered WSOLA grains make slow-motion sound early** (90 ms at 0.1x):
+  cap each grain at its 3/4 point, and skip the search in silence and at
+  onsets.
+- **Two agents fixed the same AAC-priming bug** on separate branches; the
+  merge kept main's shared media origin. Land cross-cutting fixes on main
+  early and tell running agents.
 - **Previews built on the real pipeline are regression tests**: the
   engine-drawn wipe cards exposed that all four wipes ran backwards.
 - **A fresh WebGL context compiles its shaders in the first render**
