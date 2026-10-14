@@ -103,7 +103,8 @@
   opacity: 0; transform: scale(0.6);
   transition: opacity var(--t-fast), transform var(--t-med) var(--ease-spring);
 }
-.card:hover .card-add { opacity: 1; transform: none; }
+/* Keyboard focus shows it too: tabbing landed on an invisible button. */
+.card:hover .card-add, .card-add:focus-visible { opacity: 1; transform: none; }
 .card-add:active { transform: scale(0.88); }
 
 /* previews: just enough motion on hover to say what the item does */
