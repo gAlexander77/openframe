@@ -50,6 +50,9 @@ const jobs = {
   // the drives read pixels back to prove exactly which source frame shows.
   "framecode-30.mp4": () =>
     ff("-f", "lavfi", "-i", "color=c=black:size=640x360:rate=30,format=gray,geq=lum='255*mod(floor(N/pow(2,floor(X*10/W))),2)'", "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "90", "-bf", "2", join(out, "framecode-30.mp4")),
+  // Real synthesized speech with a known script, for auto captions.
+  "speech-test.wav": () =>
+    ff("-f", "lavfi", "-i", "flite=text='Welcome to the video editor. This sentence was spoken by a computer. Captions should appear on screen.':voice=slt", "-ar", "48000", "-ac", "1", join(out, "speech-test.wav")),
   "photo.png": () => ff("-f", "lavfi", "-i", "testsrc2=size=1600x1200", "-frames:v", "1", join(out, "photo.png")),
   "photo.jpg": () => ff("-f", "lavfi", "-i", "mandelbrot=size=1920x1080", "-frames:v", "1", join(out, "photo.jpg")),
   "green-screen.mp4": () =>

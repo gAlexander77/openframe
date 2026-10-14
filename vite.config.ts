@@ -19,6 +19,14 @@ export default defineConfig({
   // Workers are ES modules so they can import mediabunny like the main thread.
   worker: { format: "es" },
 
+  // Pre-bundle the heavy media/AI dependencies at startup. Otherwise Vite
+  // discovers them on first use (opening the captions worker, say) and
+  // reloads the page to re-optimize, losing whatever the user was doing —
+  // TermHQ hit the same trap with Monaco.
+  optimizeDeps: {
+    include: ["mediabunny", "@huggingface/transformers", "lucide-react"],
+  },
+
   // Tauri expects a fixed port and must see Rust errors, so no screen clear.
   clearScreen: false,
   server: {

@@ -21,7 +21,7 @@ abstractions nobody asked for, and modules that all know about each other.
 1. **No abstraction until the second caller exists.** Two similar functions
    are cheaper than one wrong abstraction.
 2. **Dependencies need a reason a few lines cannot provide.** Current list,
-   frontend: react, react-dom, `@tauri-apps/*`, mediabunny (demux, WebCodecs, mux), lucide-react (icon drawings, re-exported only from `src/icons/`). Rust: tauri,
+   frontend: react, react-dom, `@tauri-apps/*`, mediabunny (demux, WebCodecs, mux), lucide-react (icon drawings, re-exported only from `src/icons/`), @huggingface/transformers (Whisper captions in a worker, ADR-007). Rust: tauri,
    serde, serde_json, tauri-plugin-dialog. Each addition gets a line here and
    an ADR when it is load-bearing.
 3. **Errors cross IPC as `Result<T, String>`** — human-readable, shown in the
