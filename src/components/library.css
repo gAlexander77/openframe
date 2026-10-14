@@ -117,6 +117,7 @@
   content: ""; position: absolute; inset: 0; opacity: 0;
   background: var(--sprite) 0 0 / calc(var(--frames) * 100%) 100% no-repeat;
 }
+/* steps(n, jump-none) holds n positions, both ends included: one per frame. */
 .card:hover .eng-preview.has-motion::after {
   opacity: 1;
   animation: sprite-play var(--dur) steps(var(--steps), jump-none) infinite;

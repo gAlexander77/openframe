@@ -45,7 +45,7 @@ export function EnginePreview({ spec, shape = "square" }: { spec: PreviewSpec; s
   const m = motion?.key === key ? motion.m : null;
   const style = {
     backgroundImage: still ? `url(${still})` : undefined,
-    ...(m ? { "--sprite": `url(${m.sprite})`, "--frames": m.frames, "--steps": m.frames - 1, "--dur": `${m.seconds}s` } : {}),
+    ...(m ? { "--sprite": `url(${m.sprite})`, "--frames": m.frames, "--steps": m.frames, "--dur": `${m.seconds}s` } : {}),
   } as CSSProperties;
   return <div ref={ref} className={`eng-preview${still ? " ready" : ""}${m ? " has-motion" : ""}`} style={style} />;
 }

@@ -447,21 +447,29 @@ function textPlan(spec: Extract<PreviewSpec, { kind: "text" }>, outW: number, ou
   let ch = box.h + pad * 2;
   if (cw / ch > outW / outH) ch = (cw * outH) / outW;
   else cw = (ch * outW) / outH;
+  // Never show past the frame's edges: shrink to fit, then slide inside.
+  const fit = Math.min(1, 960 / cw, 540 / ch);
+  cw *= fit;
+  ch *= fit;
+  const cx = Math.min(Math.max(box.x + box.w / 2 - cw / 2, 0), 960 - cw);
+  const cy = Math.min(Math.max(box.y + box.h / 2 - ch / 2, 0), 540 - ch);
   const k = Math.min(4, Math.max(0.25, outW / cw));
   const W = Math.round(960 * k);
   const H = Math.round(540 * k);
-  const crop = { x: (box.x + box.w / 2 - cw / 2) * k, y: (box.y + box.h / 2 - ch / 2) * k, w: cw * k, h: ch * k };
+  const crop = { x: cx * k, y: cy * k, w: cw * k, h: ch * k };
   const end = Math.max(...spec.clips.map((c) => c.start + c.duration));
   const tracks: Clip[][] = scene ? [[sceneClip(scene, 0, end, W, H)]] : [];
   for (const c of spec.clips) tracks.push([c]);
   const span = Math.min(end - 1, settle + 14);
   const n = 18;
-  const motion = Array.from({ length: n }, (_, i) => Math.round((span * i) / (n - 1)));
+  // Word art has no motion: no hover loop to render.
+  const moves = spec.clips.some((c) => "transform" in c && (c.animIn || c.animOut || c.animLoop));
+  const motion = moves ? Array.from({ length: n }, (_, i) => Math.round((span * i) / (n - 1))) : [];
   return {
     p: project(W, H, scene ? [scene] : [], tracks, scene ? "#000000" : PLAIN),
     scenes: scene ? [scene] : [],
     still: Math.min(settle, end - 1),
-    motion: [...motion, span, span, span],
+    motion: moves ? [...motion, span, span, span] : [],
     seconds: (n + 3) / 15,
     out: [outW, outH],
     crop,
