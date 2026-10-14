@@ -3,6 +3,7 @@
 // protocol (ADR-010), and writes projects (ADR-011) and exports (ADR-012).
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
 import type { ImportedFile, Platform, ProjectSummary } from "./types";
@@ -88,6 +89,18 @@ export const desktop: Platform = {
     });
     if (!picked) return [];
     return Promise.all(picked.map(adopt));
+  },
+
+  // Tauri reports OS drops with real paths (dragDropEnabled, which also
+  // turns HTML5 file drops off on Windows; in-app drags are pointer events).
+  // A path that cannot be registered (a folder) still goes through, so the
+  // import names it in its error toast.
+  onFileDrop(cb) {
+    const unlisten = getCurrentWebview().onDragDropEvent(async ({ payload }) => {
+      if (payload.type !== "drop" || !payload.paths.length) return;
+      cb(await Promise.all(payload.paths.map((p) => adopt(p).catch(() => ({ name: baseName(p), src: p, size: 0 })))));
+    });
+    return () => void unlisten.then((stop) => stop());
   },
 
   // OS drops arrive as paths (onFileDrop). This is the fallback for a

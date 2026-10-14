@@ -5,7 +5,9 @@ import { PlayerPanel } from "./components/Player";
 import { Splitter } from "./components/Splitter";
 import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
+import { platform } from "./platform";
 import { onKeyDown } from "./state/actions";
+import { addToTimeline, importFiles } from "./state/media";
 import "./components/shell.css";
 
 interface Layout {
@@ -44,6 +46,16 @@ export default function App() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // Desktop OS drops arrive as paths, not HTML5 events: import them and add
+  // each at the playhead, like the media panel's +.
+  useEffect(
+    () =>
+      platform.onFileDrop?.(async (files) => {
+        for (const a of await importFiles(files)) addToTimeline(a);
+      }),
+    [],
+  );
 
   const resize = (k: keyof Layout, d: number, lo: number, hi: number) =>
     setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));

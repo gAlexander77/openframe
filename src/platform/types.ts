@@ -40,6 +40,9 @@ export interface Platform {
   pickMedia(): Promise<ImportedFile[]>;
   /** Take files dropped onto the window (web) into the app's keeping. */
   adoptFiles(files: File[]): Promise<ImportedFile[]>;
+  /** Files dropped from the OS as real paths (desktop, where HTML5 file
+   * drops are off). Returns the unsubscribe. */
+  onFileDrop?(cb: (files: ImportedFile[]) => void): () => void;
   sourceFor(src: string): Promise<Source>;
   blobFor(src: string): Promise<Blob>;
 
