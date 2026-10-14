@@ -1,4 +1,5 @@
-.timeline-panel { display: grid; grid-template-rows: 38px 1fr; }
+/* The last row is the keyframe panel when it is open (keyframes.css). */
+.timeline-panel { display: grid; grid-template-rows: 38px 1fr auto; }
 
 /* ---- toolbar ------------------------------------------------------------------ */
 .tl-toolbar {

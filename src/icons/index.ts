@@ -10,6 +10,7 @@ export {
   Bookmark,
   Bot,
   Captions,
+  ChartSpline,
   Check,
   ChevronDown,
   ChevronLeft,

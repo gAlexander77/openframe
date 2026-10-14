@@ -64,6 +64,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Keyframes
 
+- **Keyframe animation panel** (CapCut's Show keyframe animation: toolbar,
+  clip right-click menu, or its shortcut), docked under the tracks on the
+  same time axis ([[ADR-023 The keyframe panel docks under the timeline
+  tracks]]): one lane per animated parameter, and a value graph of the
+  focused one in inspector units. Drag keys in time and value (Shift locks
+  an axis, the axis holds still mid-drag), drag bezier handles on a
+  selected key's segments, Shift+click to add, box-select, click to seek;
+  one-click keys for a clip with none.
 - **Easing presets** wherever keys are selected, with curve previews:
   Linear, Hold, Ease in, Ease out, Ease in-out, Smooth, Fast in, Overshoot
   (passes once, no bounce), Anticipate. Presets beyond the named five and

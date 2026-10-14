@@ -155,6 +155,7 @@ provide({
   },
   toggleLinkage: () => store.set({ linkage: !store.get().linkage }),
   togglePreviewAxis: () => store.set({ previewAxis: !store.get().previewAxis, hoverFrame: null }),
+  toggleKeyframePanel: () => store.set({ keyframePanel: !store.get().keyframePanel }),
   splitAll: () => {
     const f = store.get().playhead;
     edit("Split all", (p) => ops.splitAt(p, f));

@@ -24,7 +24,6 @@ items move to [[Features]] when they ship.
   two-up trim monitor (the ops already exist and are tested).
 - **LUTs** (.cube import), **scopes** (waveform, vectorscope, histogram),
   HSL and curves.
-- **Keyframe graph editor** with easing curves.
 - **Speed curves** and reverse.
 - **Background canvas** (blur/color fill for letterboxed clips — CapCut's
   "Canvas").

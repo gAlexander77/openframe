@@ -55,6 +55,8 @@ export interface EditorState {
   redoLabel: string | null;
   /** Bumped on every project change so autosave can debounce on it. */
   revision: number;
+  /** CapCut's keyframe animation panel under the timeline tracks. */
+  keyframePanel: boolean;
   /** Selected keyframes, on one clip at a time. Cleared whenever the clip
    * selection changes; refs to keys an undo removed are simply ignored. */
   keySel: { clipId: Id; keys: KeyRef[] } | null;
@@ -86,6 +88,7 @@ let state: EditorState = {
   undoLabel: null,
   redoLabel: null,
   revision: 0,
+  keyframePanel: false,
   keySel: null,
 };
 
