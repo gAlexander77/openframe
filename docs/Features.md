@@ -107,5 +107,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 ## Automation
 
 - `window.videoEditor`: the command registry with JSON Schemas, actions,
-  seek, import, and the viewer's pixels — the surface for drives, the
-  planned MCP server and the headless renderer.
+  seek, import, animated values (`paramAt`) and the viewer's pixels — the
+  surface for drives, the planned MCP server and the headless renderer.
+- Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
+  (preset or bezier), `remove_keyframes`.
