@@ -481,8 +481,18 @@ export function Timeline() {
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
+    // Capture, so Escape closes the menu instead of deselecting the clip.
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setMenu(null);
+    };
     window.addEventListener("pointerdown", close);
-    return () => window.removeEventListener("pointerdown", close);
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", esc, true);
+    };
   }, [menu]);
 
   // ---- render --------------------------------------------------------------------------------
