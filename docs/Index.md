@@ -86,3 +86,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   — no ids in the format; Delete, Copy and Paste act on keys before clips
 - [[ADR-029 Headless rendering reuses the app]] — `--render project.json
   --out file`, JSON-line progress, exit codes
+- [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven
+  with the reference library; our clip rides in metadata

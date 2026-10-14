@@ -17,6 +17,7 @@ import { store } from "./state/store";
 import { platform } from "./platform";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
+import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { secondsToFrames } from "./lib/time";
 
@@ -67,6 +68,8 @@ export const automation = {
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
   /** The AI tools: analyze, then apply as one undoable edit. */
   ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech },
+  /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
+  otio: () => toOtio(store.get().project),
 };
 
 declare global {

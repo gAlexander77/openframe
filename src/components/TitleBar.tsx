@@ -6,8 +6,10 @@ import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
 import { toggleCopilot } from "../state/copilot";
+import { saveOtio } from "../state/export";
 import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
+import { toast } from "../state/toast";
 import { MenuBar, type MenuItem } from "./Menu";
 
 /** The frameless window's title bar: menus, the project name, export, and
@@ -31,6 +33,19 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "importMedia" },
         { action: "export" },
+        ...(props.home
+          ? []
+          : [
+              {
+                label: "Export timeline (OTIO)",
+                hint: "Resolve, Premiere",
+                onSelect: () =>
+                  void saveOtio().then(
+                    (name) => name && toast(`Saved ${name}`),
+                    (e) => toast(e instanceof Error ? e.message : String(e), "error"),
+                  ),
+              },
+            ]),
       ],
     },
     {

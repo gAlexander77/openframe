@@ -143,6 +143,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   rate, in/out range, audio-only (WAV/M4A/...) and still frames.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
+- **Timeline as OpenTimelineIO** (File > Export timeline): tracks, gaps,
+  transitions, speed, titles and markers for DaVinci Resolve, Premiere's
+  OTIO plugin and other editors
+  ([[ADR-034 Timelines leave as OpenTimelineIO]]).
 
 ## Keyboard
 

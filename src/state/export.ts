@@ -6,6 +6,7 @@
 import { useSyncExternalStore } from "react";
 import { exportProject, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, type ExportPlan, type ExportSettings } from "../lib/export";
+import { toOtio } from "../lib/interchange/otio";
 import { secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { provide } from "./actions";
@@ -132,6 +133,22 @@ export async function saveStill(name: string, resolution: ExportSettings["resolu
   const blob = await exportStill(s.project, s.playhead, width, height);
   const w = target.writable.getWriter();
   await w.write({ type: "write", data: new Uint8Array(await blob.arrayBuffer()), position: 0 });
+  await w.close();
+  if (target.revealLabel) await target.reveal();
+  return target.displayName;
+}
+
+/**
+ * Save the timeline as OpenTimelineIO (.otio) for Resolve, Premiere's OTIO
+ * plugin and other editors. Call from the click handler. Returns the
+ * file's name, or null when the save dialog was canceled.
+ */
+export async function saveOtio(): Promise<string | null> {
+  const p = store.get().project;
+  const target = await platform.createExportTarget(safeFileName(p.name), "otio");
+  if (!target) return null;
+  const w = target.writable.getWriter();
+  await w.write({ type: "write", data: new TextEncoder().encode(JSON.stringify(toOtio(p), null, 2)), position: 0 });
   await w.close();
   if (target.revealLabel) await target.reveal();
   return target.displayName;
