@@ -52,6 +52,8 @@ derived from the audible audio clock; audio is scheduled separately by
 | `lib/project/ops.ts` | Every edit: place, split, trims, speed, freeze, detach, settle |
 | `lib/commands.ts` | Named commands + JSON Schemas; `describeProject` |
 | `lib/render/plan.ts` | What is visible at a frame, fully resolved |
+| `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
+| `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play |
