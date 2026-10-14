@@ -57,6 +57,7 @@ export {
   SlidersHorizontal,
   Snowflake,
   Sparkles,
+  Spline,
   Square,
   Sticker,
   Trash2,

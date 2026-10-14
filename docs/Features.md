@@ -61,6 +61,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   selected.
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- On a keyframe, an easing button beside the cluster opens the presets;
+  the Transform header's ◇ keys (or unkeys) all four of its properties at
+  once, as CapCut's section diamonds do.
 
 ## Keyframes
 

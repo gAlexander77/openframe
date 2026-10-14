@@ -48,7 +48,7 @@
 
 /* a row: label | slider | number | keyframes */
 .insp-row {
-  display: grid; grid-template-columns: 82px 1fr 74px 50px; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 82px 1fr 74px 60px; align-items: center; gap: 8px;
   min-height: 32px;
 }
 .insp-row.plain { grid-template-columns: 82px 1fr; }
@@ -86,6 +86,15 @@
 .key-nav:not(:disabled):hover, .key-toggle:hover { color: var(--text-1); }
 .key-toggle.has { color: var(--text-2); }
 .key-toggle.on { color: var(--accent); transform: scale(1.15); }
+.key-toggle.section-key { width: 22px; }
+.key-toggle.section-key.some { color: var(--accent); opacity: 0.6; }
+.key-ease {
+  display: grid; place-items: center; width: 14px; height: 22px; padding: 0;
+  border: 0; background: transparent; color: var(--text-3);
+  transition: color var(--t-fast);
+}
+button.key-ease { animation: pop-in var(--t-fast) var(--ease-out); }
+button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 
 /* toggles, chips, colors */
 .toggle {

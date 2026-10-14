@@ -10,6 +10,7 @@ import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
+import { SectionKey } from "./KeyTools";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "captions" | "transition";
@@ -86,6 +87,7 @@ function ClipInspector({ id }: { id: Id }) {
 // ---- video -------------------------------------------------------------------
 
 const pct = { show: (v: number) => v * 100, store: (v: number) => v / 100 };
+const TRANSFORM_PATHS = ["transform.scale", "transform.x", "transform.y", "transform.rotation"];
 
 function TransformSection({ clip }: { clip: Clip }) {
   const w = useEditor((s) => s.project.width);
@@ -94,6 +96,7 @@ function TransformSection({ clip }: { clip: Clip }) {
   return (
     <Section
       title="Transform"
+      extra={<SectionKey clip={clip} paths={TRANSFORM_PATHS} title="Transform" />}
       onReset={() => patchClip(clip.id, "Reset transform", (c) => ({ ...c, transform: { ...DEFAULT_TRANSFORM }, keyframes: stripKeys(c, "transform.") }) as Clip)}
     >
       <SliderRow clip={clip} path="transform.scale" label="Scale" min={1} max={500} unit="%" reset={1} {...pct} />
