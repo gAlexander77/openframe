@@ -56,6 +56,11 @@ is retained verbatim. Do not silently switch to `GPL-3.0-or-later`.
 
 ## Initial dependency inventory
 
+The expanded [[Third-party licenses]] inventory records 52 installed
+production npm packages and 420 Cargo dependency packages at `94ea867`,
+including transitive dependencies and declarations flagged for owner review.
+It does not complete the release audit or the checkbox above.
+
 These are declarations read from the installed direct frontend package
 manifests on 2026-10-14. This is a starting inventory, not a completed
 distribution audit; reproduce it against the actual release lockfile and

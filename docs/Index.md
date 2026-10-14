@@ -29,6 +29,7 @@ of the documentation and how agents use it as shared working memory.
 - [[Web capability log]] — dated browser checks and limits, separately from desktop
 - [[Release preparation]] — GPL license, dependency inventory and remaining
   tasks before a separately authorized public release
+- [[Third-party licenses]] — production npm and Cargo license declarations to review
 - [Contributing](../CONTRIBUTING.md) — how users, developers and AI agents can help
 - [[Features]] — everything the app does today, with the intent behind each
 - [[Roadmap]] — what is in flight and next, in priority order
