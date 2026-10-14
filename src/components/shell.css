@@ -48,6 +48,9 @@
 }
 .titlebar-left, .titlebar-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .titlebar-right { justify-content: flex-end; }
+/* Window buttons sit flush with the edge; without them (web, macOS) the
+   last button needs the same margin as the left side. */
+.titlebar-right:not(:has(.window-controls)) { padding-right: 10px; }
 .titlebar-center { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 .app-mark {
