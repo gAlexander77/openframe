@@ -62,7 +62,7 @@ A narrative log of each build round with its intent, for archaeology that
 ## 2026-10-14
 
 - **Parallel rounds in worktrees** — after the core landed, agents built in
-  their own worktrees under `F:\Dev6\worktreesideo-editor\` and were
+  their own worktrees under `F:\Dev\2026\worktrees\video-editor\` and were
   merged one by one:
   - **Desktop platform** — the desktop build stopped borrowing the web
     platform: media by id over a `media:` protocol, projects as JSON files
