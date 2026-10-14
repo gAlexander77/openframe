@@ -83,7 +83,7 @@
   background: transparent; color: var(--text-1);
   font-size: var(--fs-sm); text-align: left;
 }
-.menu-item:hover { background: var(--accent-soft); }
+.menu-item:hover, .menu-item:focus-visible { background: var(--accent-soft); outline: none; }
 .menu-item:disabled { color: var(--text-3); pointer-events: none; }
 .menu-check { display: grid; place-items: center; color: var(--accent); }
 .menu-hint { color: var(--text-3); font-size: var(--fs-xs); }
