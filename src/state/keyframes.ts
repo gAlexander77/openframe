@@ -57,6 +57,8 @@ export function forgetCopiedKeys() {
   keysCopiedLast = false;
 }
 
+export const hasCopiedKeys = () => keysCopiedLast && !!board;
+
 /** Paste copied keyframes onto the selected clip, the earliest at the
  * playhead. Returns false when the clipboard holds clips instead. */
 export function pasteKeysAtPlayhead(): boolean {

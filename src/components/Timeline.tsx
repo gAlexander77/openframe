@@ -6,7 +6,7 @@ import type { Clip, Id, Project, Track } from "../lib/project/types";
 import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
-import { edit, provide, settleOptions } from "../state/actions";
+import { canPaste, edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition } from "../state/apply";
 import { registerDropZone, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
@@ -462,6 +462,20 @@ export function Timeline() {
   };
 
   // ---- context menu ------------------------------------------------------------------------
+  const onBackgroundContext = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (e.defaultPrevented || target.closest("input, textarea") || target.isContentEditable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Background actions can target empty time beyond the last clip.
+    store.set({ playhead: Math.max(0, Math.round(frameAtX(e.clientX))) });
+    setMenu({ x: e.clientX, y: e.clientY, items: [
+      { action: "paste", disabled: !canPaste() },
+      { action: "addMarker" },
+      { action: "selectAll" },
+    ] });
+  };
+
   const onContext = useCallback((e: React.MouseEvent, clip: Clip) => {
     e.preventDefault();
     e.stopPropagation();
@@ -513,6 +527,7 @@ export function Timeline() {
       <div
         className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}`}
         ref={scrollRef}
+        onContextMenu={onBackgroundContext}
         onDragOver={(e) => {
           if ([...e.dataTransfer.types].includes("Files")) {
             e.preventDefault();
@@ -720,6 +735,7 @@ function MarkersLayer({ zoom }: { zoom: number }) {
           }}
           onContextMenu={(e) => {
             e.preventDefault();
+            e.stopPropagation();
             store.edit("Delete marker", (p) => ops.removeMarker(p, m.id));
           }}
         />

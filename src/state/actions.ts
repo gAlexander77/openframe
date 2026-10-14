@@ -9,7 +9,7 @@ import { createMarker, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
-import { copySelectedKeys, deleteSelectedKeys, forgetCopiedKeys, pasteKeysAtPlayhead } from "./keyframes";
+import { copySelectedKeys, deleteSelectedKeys, forgetCopiedKeys, hasCopiedKeys, pasteKeysAtPlayhead } from "./keyframes";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -38,6 +38,8 @@ export const chordFor = (id: ActionId) => keymap[id]?.[0];
 // ---- clipboard (in-app; clips are not useful outside the editor) -------------
 
 let clipboard: { clips: Clip[]; trackIds: Id[]; origin: number } | null = null;
+
+export const canPaste = () => hasCopiedKeys() || !!clipboard;
 
 function selectedClips(p: Project) {
   const sel = new Set(store.get().selection);
