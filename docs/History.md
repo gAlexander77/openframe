@@ -98,7 +98,7 @@ A narrative log of each build round with its intent, for archaeology that
 - **Windows renames** fail with os error 5 when the target is held and 32
   when the source is; retry both. `ffmpeg -encoders` lists AMF on machines
   where it fails — trial-encode before trusting an encoder.
-- **Git Bash heredocs collapse `\` to `\`**; write scripts that need
+- **Git Bash heredocs collapse `\\` to `\`**; write scripts that need
   backslashes with an editor or a Python file, not a heredoc.
 - **Escape in a popover must be caught in the capture phase**, or the app's
   deselect shortcut fires too; an animated card is a stacking context, so a
