@@ -1,4 +1,6 @@
+mod files;
 mod media;
+mod project;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -19,7 +21,13 @@ pub fn run() {
                 responder.respond(media::respond(&request, &media))
             });
         })
-        .invoke_handler(tauri::generate_handler![media::media_register])
+        .invoke_handler(tauri::generate_handler![
+            media::media_register,
+            project::project_list,
+            project::project_load,
+            project::project_save,
+            project::project_delete,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the application");
 }

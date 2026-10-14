@@ -1,11 +1,11 @@
 // The desktop platform (ADR-003): media stays where the user keeps it and is
 // referenced by absolute path; Rust serves its bytes over the `media:`
-// protocol (ADR-010), and writes projects and exports.
+// protocol (ADR-010), and writes projects (ADR-011) and exports.
 
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource } from "mediabunny";
-import type { ImportedFile, Platform } from "./types";
+import type { ImportedFile, Platform, ProjectSummary } from "./types";
 import { web } from "./web";
 
 const MEDIA_EXTENSIONS = {
@@ -106,11 +106,14 @@ export const desktop: Platform = {
     return new Blob(parts, { type });
   },
 
-  // ponytail: projects and exports run on the browser's storage until their
-  // Rust commands land (project.rs, export.rs).
-  listProjects: () => web.listProjects(),
-  loadProject: (id) => web.loadProject(id),
-  saveProject: (project, summary) => web.saveProject(project, summary),
-  deleteProject: (id) => web.deleteProject(id),
+  // Projects are JSON files in the app data folder, written atomically by
+  // Rust (ADR-011). They travel as text so Rust never re-serializes them.
+  listProjects: () => invoke<ProjectSummary[]>("project_list"),
+  loadProject: async (id) => JSON.parse(await invoke<string>("project_load", { id })),
+  saveProject: (project, summary) =>
+    invoke("project_save", { id: project.id, project: JSON.stringify(project), summary: JSON.stringify(summary) }),
+  deleteProject: (id) => invoke("project_delete", { id }),
+
+  // ponytail: exports run on the browser's storage until export.rs lands.
   createExportTarget: (name, ext) => web.createExportTarget(name, ext),
 };
