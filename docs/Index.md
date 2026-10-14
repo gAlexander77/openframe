@@ -1,12 +1,19 @@
-# Video Editor — Documentation
+# OpenFrame — Documentation
 
 Obsidian-style vault. Open the `docs/` folder as a vault (or just read the
-markdown); `[[wikilinks]]` connect the notes. Written for two readers: people
-working on the app, and coding agents that need the reasoning behind it.
+markdown); `[[wikilinks]]` connect the notes. Written for users learning the
+editor, contributors changing it, and coding agents that need the reasoning
+and evidence from earlier sessions. [[AI development]] explains the purpose
+of the documentation and how agents use it as shared working memory.
 
 ## Ground rules
 
-- "Video Editor" is a placeholder name — [[Renaming]] lists every site.
+- The chosen name is **OpenFrame**; the implementation rename is pending.
+  [[Renaming]] lists the identity sites and data/automation compatibility work.
+- **Desktop first**, browser support second (ADR-003). The 2026-10-14 owner
+  handoff reaffirmed this; web capability checks remain separately documented.
+- GPL-3.0-only applies to original project code and documentation. The repo
+  remains private pending owner instruction; see [[Release preparation]].
 - The owner reads history to learn *why*: commits are small, one intention
   each, and docs land in the same commit as the code ([[Conventions]]).
 - What we learn about the products we imitate (CapCut, VEGAS, Premiere,
@@ -15,6 +22,13 @@ working on the app, and coding agents that need the reasoning behind it.
 
 ## Map of content
 
+- [[User guide]] — setup, a first editing session, storage and platform limits
+- [[AI development]] — the Claude Code/Codex experiment, documentation purpose,
+  evidence and continuity across agent sessions
+- [[Next agent handoff]] — current owner direction and safe pickup order
+- [[Release preparation]] — GPL license, dependency inventory and remaining
+  tasks before a separately authorized public release
+- [Contributing](../CONTRIBUTING.md) — how users, developers and AI agents can help
 - [[Features]] — everything the app does today, with the intent behind each
 - [[Roadmap]] — what is in flight and next, in priority order
 - [[Project format]] — the open JSON schema agents and pipelines write

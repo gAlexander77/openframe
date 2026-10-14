@@ -1,10 +1,28 @@
-# Video Editor — agent operating manual
+# OpenFrame — agent operating manual
 
 A desktop-first video editor (Tauri v2 + Rust + React 19 + TypeScript) with a
 client-only web build. CapCut's ease with VEGAS/Premiere depth. Everything
-runs on the user's hardware; there is no server of ours (ADR-003). "Video
-Editor" is a placeholder name — read `docs/Renaming.md` before touching any
-identity string.
+runs on the user's hardware; there is no server of ours (ADR-003). The owner
+selected **OpenFrame** on 2026-10-14; the implementation still uses the old
+"Video Editor" identity. Read `docs/Renaming.md` before touching identity
+strings.
+
+## Read before resuming — 2026-10-14 owner handoff
+
+Read `AGENTS.md` and `docs/Next agent handoff.md` before continuing previous
+work. The owner reaffirmed **desktop first**, selected **GPL-3.0-only**, and
+asked for the coordinated rename to be documented for the next pickup.
+The repository remains private at `gAlexander77/video-editor`; public release,
+remote renaming, and deployment need a separate owner instruction.
+
+This handoff changes documentation/licensing only. Preserve the paused
+Claude Code work, other agents' worktrees, and any pending changes.
+Do not stop their processes or clean their state. The owner subsequently
+authorized local commits of this documentation pass; pushing and publication
+remain unrequested. The new README, `CONTRIBUTING.md`,
+`docs/AI development.md`, `docs/User guide.md`, and
+`docs/Release preparation.md` provide the public-facing context and remaining
+work; they do not mean the app has already been renamed or released.
 
 ## The workflow rules
 

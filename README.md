@@ -1,23 +1,100 @@
-# Video Editor
+# OpenFrame
 
-A desktop and web video editor: CapCut's speed with the editing depth of
-VEGAS Pro and Premiere Pro. Tauri v2 + Rust on the desktop, the same
-TypeScript engine in any modern browser.
+OpenFrame began as an experiment: **autonomously develop a fully open video
+editor using Claude Code and Codex**. The project's implementation was
+developed using AI coding agents, with a human owner setting the direction,
+trying the product, and deciding what should ship. The goal is a capable
+editor that anyone can use, study, improve, and redistribute.
 
-"Video Editor" is a placeholder name. Every site that carries it is listed in
-[docs/Renaming.md](docs/Renaming.md).
+Development is **desktop first**: Tauri v2 + Rust, with a shared React and
+TypeScript editing engine. A secondary web app runs on the user's own
+device with the capabilities its browser supports. The ambition combines
+fast, approachable editing with deep timeline, color, audio, and automation
+tools. This remains an experiment in active development; the feature map
+and roadmap distinguish implemented work from plans.
 
-## Run it
+## Repository and current status
 
+Current repository: [gAlexander77/video-editor](https://github.com/gAlexander77/video-editor).
+
+The owner has chosen **OpenFrame** as the product name. Runtime strings,
+packages, binaries, and the repository still use the earlier identity;
+the coordinated rename is the next agent's task. See
+[the rename plan](docs/Renaming.md) and
+[the handoff](docs/Next%20agent%20handoff.md).
+
+The repository is being kept private while it is prepared for an open-source
+release. Access currently requires permission; this README does not announce
+a public release, hosted service, or downloadable installer.
+
+## Run from source
+
+With repository access, clone the current URL:
+
+```sh
+git clone https://github.com/gAlexander77/video-editor.git
+cd video-editor
+npm ci
+npm run tauri dev
 ```
-npm install
-npm run tauri dev     # desktop app (needs Rust + ffmpeg on PATH for the full format set)
-npm run dev           # web build at http://localhost:1420
-just check            # every quality gate, run before pushing
+
+Desktop development needs Node.js/npm, Rust, and Tauri's platform-specific
+build prerequisites. FFmpeg and ffprobe on `PATH` enable the desktop's
+broader media-format support. The optional `just` task runner provides the
+combined quality gates.
+
+```sh
+npm run dev          # secondary web app at http://localhost:1420
+just check           # frontend build/tests and Rust checks
+npm run tauri build  # build this platform's desktop release
 ```
 
-## Read first
+See the [user guide](docs/User%20guide.md) for a first editing session,
+project storage, exports, and platform limits.
 
-`docs/Index.md` is the map: features, architecture, conventions, and every
-architectural decision (ADR) with the reasoning behind it. `CLAUDE.md` is the
-operating manual for coding agents working in this repository.
+## What the documentation is for
+
+Documentation is part of the experiment's working memory. It helps users
+understand the editor, contributors understand the implementation, and AI
+agents resume work with the decisions, evidence, and lessons from earlier
+sessions. It explains why a choice was made, how it was checked, and what
+remains uncertain.
+
+- [Documentation index](docs/Index.md): the map of guides, architecture,
+  research, decisions, and history.
+- [Features](docs/Features.md): what is implemented today.
+- [Roadmap](docs/Roadmap.md): pending and proposed work.
+- [AI development and documentation](docs/AI%20development.md): how the
+  experiment works and how agents use these records.
+- [Architecture](docs/Architecture.md) and
+  [project format](docs/Project%20format.md): how the editor works and how
+  projects are represented.
+- [Automation](docs/Automation.md): headless rendering, MCP, and Copilot.
+
+## Contribute
+
+Bug reports, usability feedback, documentation, accessibility work, tests,
+and code contributions are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md). During private development, contributors
+need repository access from the owner. AI-assisted contributions are welcome
+when their author can explain and validate the result.
+
+Coding agents should begin with [AGENTS.md](AGENTS.md), the shared
+[CLAUDE.md](CLAUDE.md) manual, and the
+[next-agent handoff](docs/Next%20agent%20handoff.md).
+
+## License
+
+Copyright (C) 2026 Alex Martinez and OpenFrame contributors.
+
+OpenFrame's original project code and documentation are licensed under the
+**GNU General Public License, version 3 only** (`GPL-3.0-only`). You may use,
+modify, and redistribute covered work under its terms, including for
+commercial purposes. Distributed modified versions must preserve the GPL's
+freedoms and satisfy its source-code requirements. There is no warranty.
+The complete terms are in [LICENSE](LICENSE).
+
+Third-party libraries, models, fonts, and media retain their own licenses.
+Using the editor does not automatically place your videos under the GPL.
+See [release preparation](docs/Release%20preparation.md) for the dependency
+inventory and the remaining distribution work.

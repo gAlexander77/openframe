@@ -216,3 +216,29 @@ A narrative log of each build round with its intent, for archaeology that
 - **WebView2 prints `Failed to unregister class Chrome_WidgetWin_0`** on
   stderr when the app exits from a command; it is harmless — judge a
   headless run by its exit code and JSON lines.
+
+### OpenFrame documentation handoff
+
+- **Owner chose OpenFrame** as the product name. Documentation now uses the
+  chosen identity; the coordinated runtime/package/binary rename is pending
+  in [[Renaming]], including saved-data and automation compatibility. The
+  current repository remains `gAlexander77/video-editor`.
+- **AI development experiment disclosed** in README and [[AI development]]:
+  the implementation was developed using Claude Code and Codex, with a human
+  owner setting direction and giving feedback. Documentation is working
+  memory for users, contributors, and resumed agents, recording decisions,
+  evidence, and lessons rather than treating plans as shipped behavior.
+- **GPL-3.0-only selected by the owner** and applied through LICENSE and the
+  README grant. [[Release preparation]] records the remaining manifest,
+  attribution, packaging, and corresponding-source work. The owner explicitly
+  requested that the repository stay private; no public release was made.
+- **Desktop priority reaffirmed** after discussing uncertainty about web
+  development. ADR-003 remains current. The next agent should log actual web
+  capability checks separately; no browser-first switch was implemented.
+- **Continuity protected**: [[Next agent handoff]], root `AGENTS.md`, and
+  `CLAUDE.md` tell the resumed agent to preserve paused Claude Code work and
+  existing worktrees. User and contributor guides were added. This was a
+  documentation/licensing pass without app changes, pushes, or process
+  interruptions. It was initially prepared without commits; the owner then
+  authorized committing the handoff locally. Existing `.gitignore` merge markers were observed
+  and logged for the owning agent, not repaired here.
