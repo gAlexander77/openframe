@@ -200,7 +200,10 @@ const TITLES: Record<string, TextTemplate> = {
 
 export const TEXT_TEMPLATES: Record<string, TextTemplate> = { ...WORD_ART, ...TITLES };
 
-/** The clips a template adds at `start`, bottom layer first. */
+/** The clips a template adds at `start`, bottom layer first.
+ * ponytail: layers are placed by their centers, tuned for the default
+ * words; a much longer name grows both ways past its box. A group clip
+ * that lays out its children is the upgrade path. */
 export function templateClips(t: TextTemplate, start: number, fps: Rational): Clip[] {
   const end = start + secondsToFrames(t.seconds, fps);
   const anim = (a?: [string, number]): Animation | undefined => (a ? { type: a[0], duration: Math.max(1, secondsToFrames(a[1], fps)) } : undefined);

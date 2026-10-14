@@ -58,6 +58,10 @@ derived from the audible audio clock; audio is scheduled separately by
 | `engine/player.ts` | Preview loop, transport, shuttle |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
+| `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |
+| `lib/templates.ts` | Word art and title templates as data, turned into text and box clips |
+| `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time |
+| `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `automation.ts` | `window.videoEditor` |
