@@ -40,6 +40,17 @@ and [[Roadmap]] for what is still planned.
 The app's shortcut panel is the source for the current keyboard bindings.
 [[Features]] explains the deeper trim, color, keyframe, and audio tools.
 
+**File → New project** saves the current project and creates a new one.
+**File → Open project** saves the current project, returns to Home and
+focuses Search projects; select a saved project card to reopen it. Open also
+focuses search when you are already on Home. The project shortcuts shown in
+the shortcut panel use these same actions. Home ignores editing/playback
+shortcuts so they cannot change a closed project.
+
+If saving fails, New, Open and Back to home keep the current project open
+with its edits. Resolve the storage problem and retry; a failed save does
+not show a successful-save notification.
+
 ## Where your work lives
 
 **Desktop:** project JSON and home-screen summaries are saved in the app's
@@ -47,12 +58,14 @@ data folder. Saves keep a previous project version as a `.json.bak` file.
 Imported media is referenced by its path, so keep the original files
 available. Autosave does not make a portable backup of all source footage.
 
-**Browser:** imported media and project JSON are kept in the origin private
+**Browser:** locally imported media and project JSON are kept in the origin private
 file system (OPFS) for that browser profile and site. Clearing site data,
 changing the site origin, or switching profiles can make those projects
 unavailable. Storage failures can leave imported files usable for the current
 session without keeping them for a reload. Keep independent backups of your
 original media and important project data.
+URL imports through automation retain their original URLs and need those
+sources to stay reachable after reload; see [[Web capability log]].
 
 The OpenFrame rename must preserve existing saved work. Its migration plan
 is in [[Renaming]]. The project format itself is documented in

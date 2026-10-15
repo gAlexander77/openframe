@@ -13,7 +13,7 @@ import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
 import { Upload } from "./icons";
 import { platform } from "./platform";
-import { onKeyDown, provide } from "./state/actions";
+import { onHomeKeyDown, onKeyDown, provide } from "./state/actions";
 import { addToTimeline, importFiles } from "./state/media";
 import { useSession } from "./state/project";
 import { useEditor } from "./state/store";
@@ -71,13 +71,12 @@ export default function App() {
   const [shortcuts, setShortcuts] = useState(false);
   useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
 
-  // Shortcuts act on the open project, so they listen only while the
-  // editor is on screen: on Home the store still holds the project just
-  // closed, and the play key played its sound from nowhere.
+  // Home keeps only project entry points and Help. Editing and playback
+  // must never act on the project still held in the store after closing.
   useEffect(() => {
-    if (screen !== "editor") return;
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    const handler = screen === "editor" ? onKeyDown : onHomeKeyDown;
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, [screen]);
 
   // Files dropped anywhere but the timeline import into the library

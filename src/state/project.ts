@@ -19,11 +19,13 @@ export type Screen = "home" | "editor";
 
 interface Session {
   screen: Screen;
+  /** Incremented by Open, including when Home is already showing. */
+  openRequest: number;
   /** "Saving…", "Saved 10:42", "Couldn't save: …" */
   saveState: string;
 }
 
-let session: Session = { screen: "home", saveState: "" };
+let session: Session = { screen: "home", saveState: "", openRequest: 0 };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<Session>) => {
   session = { ...session, ...patch };
@@ -69,18 +71,20 @@ function summaryOf(p: Project): ProjectSummary {
   };
 }
 
-let saving: Promise<void> | null = null;
+let saving: Promise<boolean> | null = null;
 let again = false;
 
 /** Save the open project now. Saves never overlap; a request during a save
- * runs once more when it finishes, so the last state always lands. */
-export async function saveNow(): Promise<void> {
-  if (session.screen !== "editor") return;
+ * runs once more when it finishes. A false result keeps navigation from
+ * discarding the project after a storage failure. */
+export async function saveNow(): Promise<boolean> {
+  if (session.screen !== "editor") return true;
   if (saving) {
     again = true;
     return saving;
   }
   saving = (async () => {
+    let saved = false;
     do {
       again = false;
       const p = store.get().project;
@@ -89,14 +93,17 @@ export async function saveNow(): Promise<void> {
         await platform.saveProject(p, summaryOf(p));
         const t = new Date();
         set({ saveState: `Saved ${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}` });
+        saved = true;
       } catch (e) {
         set({ saveState: "Not saved" });
         toast(`Couldn't save the project: ${e instanceof Error ? e.message : e}`, "error");
+        saved = false;
       }
     } while (again);
+    return saved;
   })();
   try {
-    await saving;
+    return await saving;
   } finally {
     saving = null;
   }
@@ -138,12 +145,15 @@ export async function openProject(id: string) {
 
 export async function closeProject() {
   player.pause();
-  await saveNow();
+  if (!await saveNow()) return false;
   set({ screen: "home" });
+  return true;
 }
 
 provide({
-  newProject: () => void closeProject(),
-  openProject: () => void closeProject(),
-  saveProject: () => void saveNow().then(() => toast("Project saved")),
+  newProject: () => void closeProject().then((closed) => { if (closed) newProject(); }),
+  openProject: () => void closeProject().then((closed) => {
+    if (closed) set({ openRequest: session.openRequest + 1 });
+  }),
+  saveProject: () => void saveNow().then((saved) => { if (saved) toast("Project saved"); }),
 });

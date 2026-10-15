@@ -272,3 +272,11 @@ export function onKeyDown(e: KeyboardEvent) {
   e.preventDefault();
   run(id);
 }
+
+/** Home keeps project entry points and Help, without editing the closed project. */
+export function onHomeKeyDown(e: KeyboardEvent) {
+  const id = index.get(chordOf(e, isMac));
+  if (id !== "newProject" && id !== "openProject" && id !== "showShortcuts") return;
+  e.preventDefault();
+  run(id);
+}

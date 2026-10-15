@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clapperboard, Film, Plus, Search, Trash2 } from "../icons";
 import { formatDuration } from "../lib/time";
 import { platform, type ProjectSummary } from "../platform";
-import { newProject, openProject } from "../state/project";
+import { newProject, openProject, useSession } from "../state/project";
 import "./home.css";
 
 const PRESETS: { label: string; hint: string; w: number; h: number }[] = [
@@ -24,6 +24,8 @@ function ago(t: number): string {
 /** CapCut's home: a big Create project card, canvas presets, and every
  * project as a card with its thumbnail. */
 export function Home() {
+  const { openRequest } = useSession();
+  const search = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
@@ -36,6 +38,11 @@ export function Home() {
   useEffect(() => {
     void refresh();
   }, []);
+  useEffect(() => {
+    if (!openRequest) return;
+    search.current?.focus();
+    search.current?.select();
+  }, [openRequest]);
 
   const shown = (projects ?? []).filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
 
@@ -67,7 +74,7 @@ export function Home() {
           <h2>Projects</h2>
           <label className="lib-search home-search">
             <Search size={14} />
-            <input className="field" placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input ref={search} className="field" placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />
           </label>
         </header>
         {projects === null ? null : shown.length === 0 ? (
