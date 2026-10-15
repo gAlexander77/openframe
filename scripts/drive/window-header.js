@@ -6,7 +6,7 @@ async (page, { drag, mocks }) => {
   await page.setViewportSize({ width: 1600, height: 950 });
   const setup = () => {
     window.headerCalls = [];
-    window.headerMaximized = false;
+    window.headerMaximized = sessionStorage.getItem('header-initial-maximized') === 'true';
     window.headerProjects = new Map();
     mockIPC((cmd, args) => {
       window.headerCalls.push(cmd);
@@ -47,8 +47,12 @@ async (page, { drag, mocks }) => {
   };
   await doubleClick('home double click maximizes', '.home-title');
   details['home double click maximizes'].ok &&= await page.evaluate(() => window.headerMaximized);
+  await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
+  details['double click updates restore control'] = { ok: await page.locator('.window-controls .lucide-copy').isVisible() };
   await doubleClick('home double click restores', '.home-title');
   details['home double click restores'].ok &&= await page.evaluate(() => !window.headerMaximized);
+  await page.getByRole('button', { name: 'Maximize', exact: true }).waitFor();
+  details['restore updates maximize control'] = { ok: await page.locator('.window-controls .lucide-square').isVisible() };
   await page.locator('.create-card').click();
   await page.locator('.save-state').waitFor();
   await click('editor save status drags', '.save-state');
@@ -75,5 +79,19 @@ async (page, { drag, mocks }) => {
   await page.getByRole('button', { name: 'Maximize', exact: true }).click();
   const calls = await gestures();
   details['maximize button does not also drag'] = { ok: calls.length === 1 && calls[0] === 'plugin:window|toggle_maximize', calls };
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  await page.getByRole('button', { name: 'Maximize', exact: true }).waitFor();
+  details['restore button updates state'] = { ok: await page.evaluate(() => !window.headerMaximized) };
+  await reset();
+  await page.evaluate(() => {
+    window.headerMaximized = true;
+    return window.__TAURI_INTERNALS__.invoke('plugin:event|emit', { event: 'tauri://resize', payload: { width: 1920, height: 1080 } });
+  });
+  await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
+  details['external resize updates control without clicking'] = { ok: (await gestures()).length === 0 };
+  await page.evaluate(() => sessionStorage.setItem('header-initial-maximized', 'true'));
+  await page.reload();
+  await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
+  details['initial maximized window shows restore'] = { ok: await page.locator('.window-controls .lucide-copy').isVisible() };
   return { ok: Object.values(details).every(d => d.ok), verification: 'Headless Playwright MCP; installed Tauri Windows drag handler; simulated IPC only', details };
 }

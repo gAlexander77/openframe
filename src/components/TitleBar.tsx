@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useState } from "react";
-import { Download, Keyboard, Minus, Square, WandSparkles, X } from "../icons";
+import { useEffect, useState } from "react";
+import { Copy, Download, Keyboard, Minus, Square, WandSparkles, X } from "../icons";
 import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
@@ -19,6 +19,25 @@ import { MenuBar, type MenuItem } from "./Menu";
 export function TitleBar(props: { saveState: string; home: boolean; onShortcuts: () => void }) {
   const name = useEditor((s) => s.project.name);
   const [editing, setEditing] = useState(false);
+  const [maximized, setMaximized] = useState(false);
+
+  // Read the window, not just our button: caption double-click and the OS
+  // can change maximization too. Clean up even if registration finishes late.
+  useEffect(() => {
+    if (!isDesktop || isMac) return;
+    const win = getCurrentWindow();
+    let live = true;
+    const sync = () => void win.isMaximized().then(
+      (value) => { if (live) setMaximized(value); },
+      (error) => console.warn("Couldn't read the window state", error),
+    );
+    const unlisten = win.onResized(sync);
+    void unlisten.then(sync, (error) => console.warn("Couldn't watch the window state", error));
+    return () => {
+      live = false;
+      void unlisten.then((stop) => stop(), () => {});
+    };
+  }, []);
 
   // Menus read the store when they open, so the title bar does not re-render
   // on every playhead tick.
@@ -161,8 +180,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
             <button aria-label="Minimize" onClick={() => win.minimize()}>
               <Minus size={16} />
             </button>
-            <button aria-label="Maximize" onClick={() => win.toggleMaximize()}>
-              <Square size={13} />
+            <button aria-label={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
+              {maximized ? <Copy size={13} /> : <Square size={13} />}
             </button>
             <button aria-label="Close" className="close" onClick={() => win.close()}>
               <X size={16} />

@@ -24,7 +24,8 @@ On desktop, drag any noninteractive part of the top header to move the
 window, including the logo, save status and spaces between controls.
 Double-click the same areas to maximize the window; double-click again to
 restore its previous size. Menus, project renaming and buttons keep their
-normal actions.
+normal actions. The maximize button changes to a Restore button while the
+window is maximized.
 
 1. On the home screen, create a project and choose a canvas preset if you
    know the destination format. Otherwise, the first clip can establish the

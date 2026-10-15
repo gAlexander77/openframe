@@ -355,3 +355,11 @@ simulated IPC; see [Driving the app](docs/Driving%20the%20app.md). Native
 movement is pending owner testing. The owner explicitly stopped desktop
 automation during this work; use headless Playwright MCP going forward.
 TypeScript and all 346 frontend tests passed before the drag-region commit.
+
+- `39ec821`: full-header drag/double-click region, menu exclusion, owner
+  automation restriction and 15 passing headless header checks; the existing
+  Home menus drive also passed through Playwright MCP.
+- The adjacent maximize control now follows the window's actual maximized
+  state on mount and resize, changing its icon and label to Restore. The
+  expanded headless header drive passed 20 checks. TypeScript and all 346
+  frontend tests passed before this follow-up commit.

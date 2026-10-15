@@ -189,3 +189,12 @@ maximize button without duplicate dragging. This verifies frontend event
 routing with simulated IPC. Native window movement, Windows snap behavior,
 and other operating systems remain unverified; no desktop interaction was
 attempted after the owner's instruction to stop.
+
+The adjacent maximize control previously always displayed a square and the
+label "Maximize", even when its next action would restore the window. It
+now reads `isMaximized` after subscribing to window resize events and shows
+the overlapping-window icon and "Restore" while maximized. Listening to the
+window covers caption double-clicks and OS-driven changes as well as button
+clicks; late listener registration is cleaned up on unmount. This uses
+existing core permissions. The expanded drive passed all 20 checks,
+including initial maximization, external resize events and icon/label changes.
