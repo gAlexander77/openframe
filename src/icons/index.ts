@@ -5,6 +5,8 @@
 export {
   Activity,
   ArrowLeftToLine,
+  ArrowDown,
+  ArrowUp,
   ArrowRightToLine,
   AudioLines,
   AudioWaveform,

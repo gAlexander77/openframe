@@ -54,6 +54,14 @@ dissolve between the parts" about 2 s. Each answer can be undone as a whole.
 
 ## In the page
 
+`edit_effects` manages one clip's stack: `move_up`, `move_down`, `reset`,
+`remove`, `clear`, `enable`, `disable`. Supply `effect_id` for individual
+effects; enable/disable without it targets the whole stack. `describe_project`
+retains the existing effect-type list and adds `effectStack` entries with
+`id`, `type`, `enabled`. Reset/remove/clear clean only the affected effect
+keys. Stack edits reject locked tracks; `add_effect` now fills catalog
+defaults before applying parameter overrides.
+
 `window.videoEditor` (`src/automation.ts`) is the same surface for scripts
 in the web build or over the WebView2 debug port: `exec(name, args)`,
 `describe()`, `import(...)`, `render(options)`, `still(frame)`, `pixels()`,

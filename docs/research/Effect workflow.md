@@ -20,9 +20,10 @@ an ordered effect stack; its UI lacked reordering and reuse controls.
 
 1. **Make the existing controls discoverable.** Give effects their own
    inspector tab with an applied count, keep color/filter settings in Adjust,
-   and wrap the tab row instead of hiding later tabs. Delivered in this pass.
+   and wrap the tab row instead of hiding later tabs. Delivered in `f9ce2f9`.
 2. **Expose stack editing.** Add reorder, reset and remove-all controls using
-   the existing effect IDs and undo history. Pending the next small commit.
+   the existing effect IDs and undo history. Delivered in this pass, along
+   with explicit Enable all/Disable all actions and effect IDs for automation.
 3. **Reuse effects across clips.** Add an explicit effect-stack clipboard;
    preserve existing effects and keep copying separate from clip/keyframe
    clipboard actions. Pending a following commit.
@@ -39,3 +40,17 @@ are needed for this pass.
 disable/remove/undo work, and Adjust still contains color controls. Tests
 run through an isolated headless Playwright MCP browser; screenshots remain
 in `scratch/`. This checks shared UI, not native desktop behavior.
+
+The `effect-stack` drive passed ten checks at 1100×680, including actual
+rendered-pixel differences when two effects swap order, undo, reset/keyframe
+cleanup, enable/disable-all, remove-all, and fitting control/tab labels.
+Seven pure tests cover stable IDs, keyframe preservation, similar ID prefixes,
+locked tracks, command validation and default parameters (353 tests total).
+
+Reset returns one effect's parameters to catalog defaults and removes that
+effect's animated keys; it preserves the effect's identity and enabled state.
+Clear removes the effect stack and its keys while retaining grading,
+transforms and other animation. Disable all and Enable all explicitly set
+every effect's enabled flag; Undo restores any previous mixed enabled state.
+Text and caption clips also expose Effects, since the renderer already
+supports their video-effect stack. Track locks protect stack edits.

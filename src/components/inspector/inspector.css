@@ -131,7 +131,9 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .fx-card { margin-top: 8px; padding: 6px 8px 8px; border-radius: var(--radius); background: var(--bg-inset); animation: rise-in var(--t-med) var(--ease-out); }
 .fx-card.off { opacity: 0.55; }
 .fx-head { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-1); }
-.fx-head span { flex: 1; }
+.fx-stack { border: 0; padding: 0; margin: 0; min-width: 0; }
+.fx-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-head > svg, .fx-head button { flex-shrink: 0; }
 
 /* animation tiles: each previews its motion on hover */
 .anim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; padding: 10px 12px; }

@@ -67,6 +67,14 @@ are attached. Use the eye to enable/disable an effect, or its trash button
 to remove it; Undo restores a removed effect. Filters and color correction
 remain under **Adjust**. Inspector tabs wrap when space is narrow.
 
+Effects run from top to bottom. Use the up/down arrows to change their
+order, or Reset to restore one effect's defaults and clear its keyframes.
+**Disable all / Enable all** sets the whole stack off/on; Undo restores a
+previous mix of enabled and disabled effects. **Remove all** clears the
+stack and its effect keyframes in one undoable step. Color grading,
+transforms and their keyframes are retained. Unlock a track before editing
+its effects. Text and caption clips have the same Effects tab.
+
 ## Where your work lives
 
 **Desktop:** project JSON and home-screen summaries are saved in the app's

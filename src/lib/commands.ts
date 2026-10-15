@@ -19,7 +19,8 @@ import {
 } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Adjust, Clip, Ease, Effect, Grade, HslBand, Id, Project, TextStyle, Track, WheelName } from "./project/types";
-import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "./catalog";
+import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
+import { editEffects, EFFECT_ACTIONS, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
@@ -336,11 +337,18 @@ export const COMMANDS: Command[] = [
     description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults.",
     input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Effect", { enum: Object.keys(EFFECTS) }), params: { type: "object", description: "Effect parameters" } }, ["clip_id", "type"]),
     run: (p, a) => {
-      const { clip } = clipOrThrow(p, a.clip_id);
+      const { clip, track } = clipOrThrow(p, a.clip_id);
       if (!("effects" in clip)) throw new CommandError(`${clip.type} clips take no video effects`);
-      const fx: Effect = { id: uid("fx"), type: String(a.type), enabled: true, params: (a.params ?? {}) as Record<string, number> };
+      if (track.locked) throw new CommandError("Unlock the track before editing effects");
+      const fx: Effect = { id: uid("fx"), type: String(a.type), enabled: true, params: { ...effectDefaults(String(a.type)), ...(a.params ?? {}) as Record<string, number> } };
       return ops.updateClip(p, clip.id, (c) => ({ ...c, effects: [...(c as { effects: Effect[] }).effects, fx] }) as Clip);
     },
+  },
+  {
+    name: "edit_effects",
+    description: "Manage a clip's effect stack. Move/reset/remove need effect_id; enable/disable without it affects all effects. Clear removes the entire stack. Reset/remove/clear also remove the affected effect keyframes; other settings stay unchanged.",
+    input: S.obj({ clip_id: S.str("Clip id"), action: S.str("Stack action", { enum: [...EFFECT_ACTIONS] }), effect_id: S.str("Effect id from effectStack in describeProject") }, ["clip_id", "action"]),
+    run: (p, a) => editEffects(p, String(a.clip_id), a.action as EffectAction, a.effect_id as string | undefined),
   },
   {
     name: "set_filter",
@@ -826,7 +834,7 @@ export function describeProject(p: Project) {
         ...(c.type === "text" ? { text: c.text } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
-        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type) } : {}),
+        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
       })),
     })),

@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Eye, EyeOff, Plus, Sparkles, Trash2 } from "../../icons";
+import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, RotateCw, Sparkles, Trash2 } from "../../icons";
 import { fromDb, toDb } from "../../lib/audio";
-import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "../../lib/catalog";
-import { DEFAULT_ADJUST, DEFAULT_TRANSFORM, uid } from "../../lib/project/defaults";
+import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
+import { runCommand } from "../../lib/commands";
+import type { EffectAction } from "../../lib/effectStack";
+import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
-import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Effect, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
+import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
@@ -45,7 +47,7 @@ function tabsFor(c: Clip, p: Project): Tab[] {
     case "color":
       return ["video", "animation", "adjust", "effects", ...tr];
     case "text":
-      return c.caption ? ["text", "captions", "animation"] : ["text", "animation", ...tr];
+      return c.caption ? ["text", "captions", "animation", "effects"] : ["text", "animation", "effects", ...tr];
     case "audio":
       return ["audio", "speed"];
     case "adjustment":
@@ -617,20 +619,34 @@ function FilterSection({ clip }: { clip: Clip }) {
 
 function EffectsSection({ clip }: { clip: Clip }) {
   const [adding, setAdding] = useState(false);
+  const locked = useEditor(s => ops.findClip(s.project, clip.id)?.track.locked ?? false);
   if (!("effects" in clip)) return null;
+  const change = (label: string, action: EffectAction, effectId?: string) =>
+    edit(label, p => runCommand(p, "edit_effects", { clip_id: clip.id, action, ...(effectId ? { effect_id: effectId } : {}) }));
   const add = (type: string) => {
-    patchClip(clip.id, `Add ${EFFECTS[type].label.toLowerCase()}`, (c) => ({ ...c, effects: [...(c as { effects: Effect[] }).effects, { id: uid("fx"), type, enabled: true, params: effectDefaults(type) }] }) as Clip);
+    edit(`Add ${EFFECTS[type].label.toLowerCase()}`, p => runCommand(p, "add_effect", { clip_id: clip.id, type }));
     setAdding(false);
   };
   return (
     <Section
       title="Effects"
       extra={
-        <button className="icon-btn small" aria-label="Add effect" data-tip="Add effect" onClick={() => setAdding(!adding)}>
+        <button className="icon-btn small" aria-label="Add effect" data-tip="Add effect" disabled={locked} onClick={() => setAdding(!adding)}>
           <Plus size={13} />
         </button>
       }
     >
+      {locked && <p className="insp-hint">Unlock the track to edit effects.</p>}
+      <fieldset className="fx-stack" disabled={locked}>
+      {clip.effects.length > 0 && <>
+        <p className="insp-hint">Effects run from top to bottom. Changing the order changes the result.</p>
+        <div className="insp-actions">
+          <button className="btn" onClick={() => change(clip.effects.some(e => e.enabled) ? "Disable all effects" : "Enable all effects", clip.effects.some(e => e.enabled) ? "disable" : "enable")}>
+            {clip.effects.some(e => e.enabled) ? "Disable all" : "Enable all"}
+          </button>
+          <button className="btn" onClick={() => change("Remove all effects", "clear")}>Remove all</button>
+        </div>
+      </>}
       {adding && (
         <div className="fx-picker">
           {Object.entries(EFFECTS).map(([k, d]) => (
@@ -641,7 +657,7 @@ function EffectsSection({ clip }: { clip: Clip }) {
         </div>
       )}
       {clip.effects.length === 0 && !adding && <p className="insp-hint">No effects. Add one here or drag one from the Effects tab onto the clip.</p>}
-      {clip.effects.map((fx) => {
+      {clip.effects.map((fx, index) => {
         const def = EFFECTS[fx.type];
         if (!def) return null;
         return (
@@ -649,10 +665,13 @@ function EffectsSection({ clip }: { clip: Clip }) {
             <div className="fx-head">
               <Sparkles size={12} />
               <span>{def.label}</span>
-              <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => patchClip(clip.id, fx.enabled ? "Disable effect" : "Enable effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.map((e) => (e.id === fx.id ? { ...e, enabled: !e.enabled } : e)) }) as Clip)}>
+              <button className="icon-btn small" aria-label="Move effect up" data-tip="Move effect up" disabled={index === 0} onClick={() => change("Move effect up", "move_up", fx.id)}><ArrowUp /></button>
+              <button className="icon-btn small" aria-label="Move effect down" data-tip="Move effect down" disabled={index === clip.effects.length - 1} onClick={() => change("Move effect down", "move_down", fx.id)}><ArrowDown /></button>
+              <button className="icon-btn small" aria-label="Reset effect" data-tip="Reset effect and its keyframes" onClick={() => change("Reset effect", "reset", fx.id)}><RotateCw /></button>
+              <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => change(fx.enabled ? "Disable effect" : "Enable effect", fx.enabled ? "disable" : "enable", fx.id)}>
                 {fx.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
-              <button className="icon-btn small" aria-label="Remove effect" data-tip="Remove effect" onClick={() => patchClip(clip.id, "Remove effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.filter((e) => e.id !== fx.id), keyframes: stripKeys(c, `effects.${fx.id}.`) }) as Clip)}>
+              <button className="icon-btn small" aria-label="Remove effect" data-tip="Remove effect" onClick={() => change("Remove effect", "remove", fx.id)}>
                 <Trash2 size={12} />
               </button>
             </div>
@@ -662,6 +681,7 @@ function EffectsSection({ clip }: { clip: Clip }) {
           </div>
         );
       })}
+      </fieldset>
     </Section>
   );
 }

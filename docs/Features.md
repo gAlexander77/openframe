@@ -69,7 +69,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **Effects** (applied stack with its count), Text, Captions, Transition; project Details when nothing is
   selected.
 - Applied effects have their own inspector tab, with enable/disable and
-  removal controls. Tabs wrap at narrow widths so none are hidden offscreen.
+  removal controls, top-to-bottom reordering, reset including effect keys,
+  Enable/Disable all, and undoable Remove all. Text/captions are supported.
+  Tabs wrap at narrow widths so none are hidden offscreen.
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
 - On a keyframe, an easing button beside the cluster opens the presets;
