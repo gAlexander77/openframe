@@ -176,7 +176,9 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
           </button>
         )}
         {win && !isMac && (
-          <div className="window-controls">
+          // Window chrome must not take typing focus or commit an unfinished
+          // rename. Keyboard focus still reaches these buttons normally.
+          <div className="window-controls" onMouseDown={(e) => { if (e.button === 0) e.preventDefault(); }}>
             <button aria-label="Minimize" onClick={() => win.minimize()}>
               <Minus size={16} />
             </button>

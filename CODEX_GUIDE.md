@@ -359,7 +359,12 @@ TypeScript and all 346 frontend tests passed before the drag-region commit.
 - `39ec821`: full-header drag/double-click region, menu exclusion, owner
   automation restriction and 15 passing headless header checks; the existing
   Home menus drive also passed through Playwright MCP.
-- The adjacent maximize control now follows the window's actual maximized
+- `cc2d077`: the adjacent maximize control now follows the window's actual maximized
   state on mount and resize, changing its icon and label to Restore. The
   expanded headless header drive passed 20 checks. TypeScript and all 346
   frontend tests passed before this follow-up commit.
+- Window-control mouse presses now preserve typing focus. The headless
+  reproduction lost Home search focus and further text before the fix; all
+  26 expanded header checks now pass, including rename cancellation and
+  keyboard activation. TypeScript and all 346 frontend tests passed before
+  this separate focus-fix commit. Native movement remains for owner testing.

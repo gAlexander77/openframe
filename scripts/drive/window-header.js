@@ -93,5 +93,28 @@ async (page, { drag, mocks }) => {
   await page.reload();
   await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
   details['initial maximized window shows restore'] = { ok: await page.locator('.window-controls .lucide-copy').isVisible() };
+  const search = page.getByPlaceholder('Search projects');
+  await search.fill('Keep typing');
+  await page.getByRole('button', { name: 'Restore', exact: true }).click();
+  details['window control preserves text focus'] = { ok: await search.evaluate(el => document.activeElement === el) };
+  await page.keyboard.type(' here');
+  details['typing resumes after window control'] = { ok: await search.inputValue() === 'Keep typing here' };
+  const control = page.locator('.window-controls button').nth(1);
+  const beforeKeyboard = await page.evaluate(() => window.headerMaximized);
+  await control.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(before => window.headerMaximized !== before, beforeKeyboard);
+  details['window controls remain keyboard accessible'] = { ok: await control.evaluate(el => document.activeElement === el) };
+  await page.locator('.create-card').click();
+  const originalName = await page.locator('.project-name').textContent();
+  await page.locator('.project-name').click();
+  const rename = page.locator('.project-name-input');
+  await rename.fill('Uncommitted rename');
+  await control.click();
+  details['resize preserves an unfinished rename'] = { ok: await rename.isVisible() && await rename.evaluate(el => document.activeElement === el && el.value === 'Uncommitted rename') };
+  await page.getByRole('button', { name: 'Minimize', exact: true }).click();
+  details['minimize preserves typing focus'] = { ok: await rename.evaluate(el => document.activeElement === el) };
+  await rename.press('Escape');
+  details['rename can still be canceled'] = { ok: await page.locator('.project-name').textContent() === originalName };
   return { ok: Object.values(details).every(d => d.ok), verification: 'Headless Playwright MCP; installed Tauri Windows drag handler; simulated IPC only', details };
 }

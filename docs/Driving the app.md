@@ -198,3 +198,12 @@ window covers caption double-clicks and OS-driven changes as well as button
 clicks; late listener registration is cleaned up on unmount. This uses
 existing core permissions. The expanded drive passed all 20 checks,
 including initial maximization, external resize events and icon/label changes.
+
+A further headless reproduction showed that clicking Restore took focus from
+Home's search: subsequent typing disappeared, and Space could activate the
+focused window button again. Mouse presses on window controls now prevent
+that default focus transfer, matching the desktop-caption behavior reviewed
+in TermHQ. Keyboard navigation and activation still work. The drive passed
+all 26 checks after the fix, including continued search typing, preservation
+and cancellation of an unfinished project rename, and focus retained after
+the simulated minimize action. TypeScript and all 346 frontend tests passed.
