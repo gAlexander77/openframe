@@ -8,6 +8,7 @@ import { quietCuts, rms10ms, type Word } from "../lib/captions";
 import { projectDuration } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
+import { workerRequest } from "../lib/workerRequest";
 import { scheduleAudio } from "./audio";
 
 export interface AsrModel {
@@ -56,23 +57,17 @@ function getWorker(): Worker {
   return worker;
 }
 
-function call<T>(msg: Record<string, unknown>, onDownload?: (p: number) => void, transfer: Transferable[] = []): Promise<T> {
+async function call<T>(msg: Record<string, unknown>, onDownload?: (p: number) => void, transfer: Transferable[] = [], signal?: AbortSignal): Promise<T> {
   const w = getWorker();
   const id = nextId++;
-  return new Promise((resolve, reject) => {
-    const onMsg = (e: MessageEvent) => {
-      const m = e.data;
-      if (m.id !== id) return;
-      if (m.type === "download") onDownload?.(m.progress);
-      else {
-        w.removeEventListener("message", onMsg);
-        if (m.type === "error") reject(new Error(m.message));
-        else resolve(m as T);
-      }
-    };
-    w.addEventListener("message", onMsg);
-    w.postMessage({ ...msg, id }, transfer);
-  });
+  try {
+    return await workerRequest<T>(w, { ...msg, id }, { onDownload, transfer, signal });
+  } catch (e) {
+    // Failed imports and canceled inference cannot keep a reusable worker.
+    w.terminate();
+    if (worker === w) worker = null;
+    throw e;
+  }
 }
 
 export interface TranscribeProgress {
@@ -91,7 +86,7 @@ export async function transcribeTimeline(
   onProgress({ stage: "mixing", progress: 0 });
   const pcm = await timelineAudio16k(p, 0, undefined, signal);
   onProgress({ stage: "downloading", progress: 0 });
-  await call({ type: "load", model: opts.model }, (x) => onProgress({ stage: "downloading", progress: x }));
+  await call({ type: "load", model: opts.model }, (x) => onProgress({ stage: "downloading", progress: x }), [], signal);
   const total = pcm.length / RATE;
   const bounds = [0, ...quietCuts(rms10ms(pcm, RATE), total), total];
   const words: Word[] = [];
@@ -105,7 +100,7 @@ export async function transcribeTimeline(
     let peak = 0;
     for (let j = 0; j < slice.length; j += 32) peak = Math.max(peak, Math.abs(slice[j]));
     if (peak < 0.01) continue;
-    const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: bounds[i] }, undefined, [slice.buffer]);
+    const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: bounds[i] }, undefined, [slice.buffer], signal);
     words.push(...r.words);
   }
   onProgress({ stage: "transcribing", progress: 1 });

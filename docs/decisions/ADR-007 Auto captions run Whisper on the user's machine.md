@@ -37,3 +37,22 @@ Captions are unlimited and offline after the first download. Measured: a
 words exact. `ponytail:` the desktop build could move to native whisper.cpp
 (faster, frees the webview) when long-form transcription times matter; the
 worker message shape is the seam.
+
+## 2026-10-15 — worker failure and cancellation recovery
+
+An aborted worker module load reproduced a caption job stuck at model
+loading: the RPC awaited messages but never handled the worker's `error`
+event. Cancel's signal was checked between chunks, so it could not end a
+pending load or inference request either.
+
+Requests now use `src/lib/workerRequest.ts` to reject startup/message errors
+and cancellation, removing listeners on settlement. The caption engine
+terminates a failed/canceled worker and clears its reference; retry creates
+a fresh one. Successful requests retain the loaded model across chunks and
+jobs. No arbitrary download timeout is imposed.
+
+`scripts/drive/caption-recovery.js` verifies startup failure, cancellation
+while a module load is held, and a successful Whisper retry in headless
+Edge. The full web capability drive also passed on unchanged `d717e35`
+before this recovery fix; the original 2026-10-14 stall's cause remains
+unproven. See [[Web capability log]] for the dated transcript and limits.

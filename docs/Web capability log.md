@@ -3,6 +3,39 @@
 Desktop is the primary product. This log records observations from the
 client-only browser build; it does not establish desktop/browser parity.
 
+## 2026-10-15 — captions verified and worker recovery checked
+
+On unchanged app revision `d717e35`, the full `web-capabilities` drive
+passed in headless Edge on Windows at 1600 × 950. Media persistence, all
+fixture results, and both export measurements matched the earlier entry.
+Whisper tiny English generated five captions in **7,600 ms**, with no
+failed requests recorded:
+
+> Welcome to the video editor,
+> this sentence was spoken
+> by a computer.
+> Captions should appear
+> on screen.
+
+The previous stalls were not reproduced, so their cause remains unknown.
+This fresh browser context completed its model initialization; offline
+cache reuse and desktop captions remain untested.
+
+A separate failure-injection drive, `scripts/drive/caption-recovery.js`,
+reproduced an indefinite wait when the worker module request was aborted.
+The caption RPC previously listened only for worker messages, so startup
+errors could never reject that request and Cancel did not interrupt it.
+The implementation now handles worker errors and unreadable messages,
+passes cancellation into load/inference requests, and terminates failed or
+canceled workers before a retry. Successful jobs keep their loaded worker.
+The drive verifies a readable error, cancellation during a held module
+load, and a successful real-model retry. This is a recovery fix, not an
+established diagnosis of the 2026-10-14 Vite request abort.
+
+Unit tests cover response routing, progress, worker startup failures,
+unreadable/error replies, cancellation, and synchronous send failures.
+The broader platform and storage limits below still apply.
+
 ## 2026-10-14 — Edge on Windows
 
 - App revision: `7243fb6` (before this drive and log were added).
