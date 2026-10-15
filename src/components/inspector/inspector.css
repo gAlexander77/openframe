@@ -2,14 +2,14 @@
 
 /* top text tabs: active one cyan, CapCut-style (no underline) */
 .insp-tabs {
-  display: flex; gap: 2px; padding: 0 8px;
-  height: 36px; align-items: center;
+  display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 8px;
+  min-height: 36px; align-items: center;
   border-bottom: 1px solid var(--line);
   overflow-x: auto; scrollbar-width: none;
 }
-/* 6px sides: a video clip with sound and a transition has six tabs, and
-   at 10px the sixth (Transition) fell off the default 360px panel */
+/* Wrap at narrow widths so Effects and Transition stay discoverable. */
 .insp-tabs button {
+  flex: 0 0 auto;
   height: 28px; padding: 0 6px; border: 0; border-radius: var(--radius);
   background: transparent; color: var(--text-2); font-size: var(--fs-md); white-space: nowrap;
   transition: color var(--t-fast), background var(--t-fast);

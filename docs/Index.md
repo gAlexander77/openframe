@@ -48,6 +48,8 @@ of the documentation and how agents use it as shared working memory.
 
 ## Research
 
+- [[Effect workflow]] — applied-effect discoverability and stack-editing review
+
 - [[CapCut desktop]] — the UX baseline: layout, every panel, shortcuts,
   export, what users complain about
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim

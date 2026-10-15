@@ -20,7 +20,7 @@ import { WheelsPanel } from "./WheelsPanel";
 import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import "./inspector.css";
 
-type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "text" | "captions" | "transition";
+type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
 
 const TAB_LABEL: Record<Tab, string> = {
   video: "Video",
@@ -28,6 +28,7 @@ const TAB_LABEL: Record<Tab, string> = {
   speed: "Speed",
   animation: "Animation",
   adjust: "Adjust",
+  effects: "Effects",
   text: "Text",
   captions: "Captions",
   transition: "Transition",
@@ -39,16 +40,16 @@ function tabsFor(c: Clip, p: Project): Tab[] {
   const hasSound = c.type === "video" && (ops.getAsset(p, c.assetId)?.hasAudio ?? false);
   switch (c.type) {
     case "video":
-      return ["video", ...(hasSound ? (["audio"] as Tab[]) : []), "speed", "animation", "adjust", ...tr];
+      return ["video", ...(hasSound ? (["audio"] as Tab[]) : []), "speed", "animation", "adjust", "effects", ...tr];
     case "image":
     case "color":
-      return ["video", "animation", "adjust", ...tr];
+      return ["video", "animation", "adjust", "effects", ...tr];
     case "text":
       return c.caption ? ["text", "captions", "animation"] : ["text", "animation", ...tr];
     case "audio":
       return ["audio", "speed"];
     case "adjustment":
-      return ["adjust"];
+      return ["adjust", "effects"];
   }
 }
 
@@ -73,7 +74,7 @@ function ClipInspector({ id }: { id: Id }) {
       <nav className="insp-tabs" role="tablist">
         {tabs.map((t) => (
           <button key={t} role="tab" aria-selected={active === t} className={active === t ? "on" : ""} onClick={() => setTab(t)}>
-            {TAB_LABEL[t]}
+            {TAB_LABEL[t]}{t === "effects" && "effects" in clip && clip.effects.length > 0 ? ` (${clip.effects.length})` : ""}
           </button>
         ))}
       </nav>
@@ -83,6 +84,7 @@ function ClipInspector({ id }: { id: Id }) {
         {active === "speed" && <SpeedTab clip={clip as VideoClip | AudioClip} />}
         {active === "animation" && <AnimationTab clip={clip} />}
         {active === "adjust" && <AdjustTab clip={clip} />}
+        {active === "effects" && <EffectsSection clip={clip} />}
         {active === "text" && <TextTab clip={clip as TextClip} />}
         {active === "captions" && <CaptionList current={clip.id} />}
         {active === "transition" && <TransitionTab clip={clip} />}
@@ -585,7 +587,6 @@ function AdjustBasic({ clip }: { clip: Clip }) {
         {a("fade", "Fade", 0)}
         {a("vignette", "Vignette", 0)}
       </Section>
-      <EffectsSection clip={clip} />
     </>
   );
 }
@@ -648,10 +649,10 @@ function EffectsSection({ clip }: { clip: Clip }) {
             <div className="fx-head">
               <Sparkles size={12} />
               <span>{def.label}</span>
-              <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => patchClip(clip.id, fx.enabled ? "Disable effect" : "Enable effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.map((e) => (e.id === fx.id ? { ...e, enabled: !e.enabled } : e)) }) as Clip)}>
+              <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => patchClip(clip.id, fx.enabled ? "Disable effect" : "Enable effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.map((e) => (e.id === fx.id ? { ...e, enabled: !e.enabled } : e)) }) as Clip)}>
                 {fx.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
-              <button className="icon-btn small" aria-label="Remove effect" onClick={() => patchClip(clip.id, "Remove effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.filter((e) => e.id !== fx.id), keyframes: stripKeys(c, `effects.${fx.id}.`) }) as Clip)}>
+              <button className="icon-btn small" aria-label="Remove effect" data-tip="Remove effect" onClick={() => patchClip(clip.id, "Remove effect", (c) => ({ ...c, effects: (c as { effects: typeof clip.effects }).effects.filter((e) => e.id !== fx.id), keyframes: stripKeys(c, `effects.${fx.id}.`) }) as Clip)}>
                 <Trash2 size={12} />
               </button>
             </div>

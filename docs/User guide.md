@@ -59,6 +59,14 @@ If saving fails, New, Open and Back to home keep the current project open
 with its edits. Resolve the storage problem and retry; a failed save does
 not show a successful-save notification.
 
+## Manage effects
+
+Select a visual clip or adjustment layer on the timeline, then open the
+right-hand inspector's **Effects** tab. Its count shows how many effects
+are attached. Use the eye to enable/disable an effect, or its trash button
+to remove it; Undo restores a removed effect. Filters and color correction
+remain under **Adjust**. Inspector tabs wrap when space is narrow.
+
 ## Where your work lives
 
 **Desktop:** project JSON and home-screen summaries are saved in the app's
