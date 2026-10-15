@@ -23,10 +23,12 @@ an ordered effect stack; its UI lacked reordering and reuse controls.
    and wrap the tab row instead of hiding later tabs. Delivered in `f9ce2f9`.
 2. **Expose stack editing.** Add reorder, reset and remove-all controls using
    the existing effect IDs and undo history. Delivered in this pass, along
-   with explicit Enable all/Disable all actions and effect IDs for automation.
+   with explicit Enable all/Disable all actions and effect IDs for automation
+   in `e71c31b`.
 3. **Reuse effects across clips.** Add an explicit effect-stack clipboard;
    preserve existing effects and keep copying separate from clip/keyframe
-   clipboard actions. Pending a following commit.
+   clipboard actions. Delivered in this pass, including multiple eligible
+   targets, text/captions, animated parameters and one-step undo.
 
 Large work such as multicam, trim monitors and model-based tools remains on
 the roadmap; the paused Claude Code worktrees keep their ownership. No new
@@ -54,3 +56,10 @@ transforms and other animation. Disable all and Enable all explicitly set
 every effect's enabled flag; Undo restores any previous mixed enabled state.
 Text and caption clips also expose Effects, since the renderer already
 supports their video-effect stack. Track locks protect stack edits.
+
+`effect-copy` passed eight headless MCP checks. Five additional unit tests
+cover snapshot independence and animation remapping (358 tests total).
+[[ADR-038 Copied effects preserve animation and get new identities]] explains
+frame-rate conversion and why animation keys beyond a shorter target survive.
+Future improvements include named effect presets and selective Paste
+Attributes for color, audio and transforms; these need separate UI decisions.

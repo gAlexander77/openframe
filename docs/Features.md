@@ -72,6 +72,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   removal controls, top-to-bottom reordering, reset including effect keys,
   Enable/Disable all, and undoable Remove all. Text/captions are supported.
   Tabs wrap at narrow widths so none are hidden offscreen.
+- **Copy/Paste effects** between visual clips (including text/captions and
+  adjustment layers), or onto a multi-selection in one undo step. Appends
+  independent effect instances and animation; preserves existing effects
+  and other clip settings. A session clipboard keeps normal clip/keyframe
+  copying separate ([[ADR-038 Copied effects preserve animation and get new identities]]).
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
 - On a keyframe, an easing button beside the cluster opens the presets;

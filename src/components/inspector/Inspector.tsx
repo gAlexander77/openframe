@@ -20,6 +20,7 @@ import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
 import { WheelsPanel } from "./WheelsPanel";
 import { CurvePreview, SpeedGraph } from "./SpeedGraph";
+import { EffectClipboard } from "./EffectClipboard";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
@@ -636,6 +637,7 @@ function EffectsSection({ clip }: { clip: Clip }) {
         </button>
       }
     >
+      <EffectClipboard clip={clip} />
       {locked && <p className="insp-hint">Unlock the track to edit effects.</p>}
       <fieldset className="fx-stack" disabled={locked}>
       {clip.effects.length > 0 && <>
@@ -966,6 +968,7 @@ function MultiSelection({ count }: { count: number }) {
             <button className="btn" onClick={() => run("duplicate")}>Duplicate</button>
             <button className="btn ghost" onClick={() => run("delete")}>Delete</button>
           </div>
+          <EffectClipboard />
         </Section>
       </div>
     </>

@@ -62,6 +62,13 @@ retains the existing effect-type list and adds `effectStack` entries with
 keys. Stack edits reject locked tracks; `add_effect` now fills catalog
 defaults before applying parameter overrides.
 
+`copy_effects` takes `source_clip_id` and target `clip_ids`, appending an
+independent copy of the effect stack and its keyframes in one undoable
+command. Existing target settings are preserved. Every target must be a
+visual/adjustment clip on an unlocked track; invalid targets reject the
+command before any change. The UI's multi-selection filters ineligible clips
+and shows the receiving count before calling the same pure paste operation.
+
 `window.videoEditor` (`src/automation.ts`) is the same surface for scripts
 in the web build or over the WebView2 debug port: `exec(name, args)`,
 `describe()`, `import(...)`, `render(options)`, `still(frame)`, `pixels()`,

@@ -20,7 +20,7 @@ import {
 import * as ops from "./project/ops";
 import type { Adjust, Clip, Ease, Effect, Grade, HslBand, Id, Project, TextStyle, Track, WheelName } from "./project/types";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
-import { editEffects, EFFECT_ACTIONS, type EffectAction } from "./effectStack";
+import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
@@ -349,6 +349,12 @@ export const COMMANDS: Command[] = [
     description: "Manage a clip's effect stack. Move/reset/remove need effect_id; enable/disable without it affects all effects. Clear removes the entire stack. Reset/remove/clear also remove the affected effect keyframes; other settings stay unchanged.",
     input: S.obj({ clip_id: S.str("Clip id"), action: S.str("Stack action", { enum: [...EFFECT_ACTIONS] }), effect_id: S.str("Effect id from effectStack in describeProject") }, ["clip_id", "action"]),
     run: (p, a) => editEffects(p, String(a.clip_id), a.action as EffectAction, a.effect_id as string | undefined),
+  },
+  {
+    name: "copy_effects",
+    description: "Append a source clip's effect stack and effect keyframes to target clips. Each copy gets fresh effect IDs; existing effects, grading, transforms and clip timing stay intact. Animation keeps clip-relative timing, including keys beyond a shorter target's end. Locked or nonvisual targets are rejected.",
+    input: S.obj({ source_clip_id: S.str("Clip whose effects to reuse"), clip_ids: S.ids("Target visual or adjustment clip IDs") }, ["source_clip_id", "clip_ids"]),
+    run: (p, a) => pasteEffectStack(p, a.clip_ids as string[], copyEffectStack(p, String(a.source_clip_id))),
   },
   {
     name: "set_filter",

@@ -368,3 +368,28 @@ TypeScript and all 346 frontend tests passed before the drag-region commit.
   26 expanded header checks now pass, including rename cancellation and
   keyboard activation. TypeScript and all 346 frontend tests passed before
   this separate focus-fix commit. Native movement remains for owner testing.
+
+### 2026-10-15 — effect workflow improvements
+
+The owner requested useful additions from other video editors after asking
+how to remove an effect. [[Effect workflow]] in `docs/research/` records the
+Premiere/Kdenlive references and choices. Work stayed on main; parked
+branches, runtime identity and remote settings are unchanged.
+
+- `f9ce2f9`: Effects has its own inspector tab and applied count; tabs wrap
+  at narrow widths. Seven headless MCP checks cover video/audio/transition
+  tab fit, disable/remove/undo and color controls at 1600×950 and 1100×680.
+- `e71c31b`: effect reorder/reset/clear and bulk enable/disable, a named
+  `edit_effects` command, defaults for automation-added effects, and effect
+  IDs in project descriptions. Text/caption stacks are exposed too. Ten
+  MCP checks include rendered-pixel differences after reordering and undo.
+- Copy/Paste effects now appends independent animated stacks to one or
+  several eligible clips, preserving other settings and the normal clip
+  clipboard. `copy_effects` gives agents the same operation. Eight MCP
+  checks and five additional unit tests cover paste and animation behavior;
+  ADR-038 records the timing/identity decision.
+
+TypeScript and all 358 unit tests passed at the end of the pass. UI checks
+used isolated headless Playwright MCP, with screenshot review; no desktop
+control or native-platform verification. No Rust files changed. Future
+effect presets/selective Paste Attributes are proposals, not shipped features.

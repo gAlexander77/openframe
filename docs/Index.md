@@ -120,3 +120,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   one undo step, ended by any press outside (capture phase)
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven
   with the reference library; our clip rides in metadata
+- [[ADR-038 Copied effects preserve animation and get new identities]] —
+  stack reuse, independent IDs, timing conversion and undo

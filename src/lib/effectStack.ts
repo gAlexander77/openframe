@@ -1,10 +1,61 @@
 import { EFFECTS, effectDefaults } from "./catalog";
 import { findClip, updateClip } from "./project/ops";
-import type { Clip, Effect, Id, Project } from "./project/types";
+import { uid } from "./project/defaults";
+import { framesToSeconds, secondsToFrames, type Rational } from "./time";
+import type { Clip, Effect, Id, Keyframe, Project } from "./project/types";
 
 export type EffectClip = Clip & { effects: Effect[] };
 export const EFFECT_ACTIONS = ["move_up", "move_down", "reset", "remove", "clear", "enable", "disable"] as const;
 export type EffectAction = typeof EFFECT_ACTIONS[number];
+
+export interface EffectClipboard {
+  effects: Effect[];
+  keyframes: Record<string, Keyframe[]>;
+  fps: Rational;
+}
+
+/** A detached snapshot: later edits to the source must not change the copy. */
+export function copyEffectStack(p: Project, clipId: Id): EffectClipboard {
+  const clip = effectClip(p, clipId);
+  const prefixes = clip.effects.map(e => `effects.${e.id}.`);
+  return structuredClone({
+    effects: clip.effects,
+    keyframes: Object.fromEntries(Object.entries(clip.keyframes ?? {}).filter(([path]) => prefixes.some(prefix => path.startsWith(prefix)))),
+    fps: p.fps,
+  });
+}
+
+/** Append independent instances, keeping animation time in seconds across
+ * projects. Keys beyond a shorter clip's end stay: they define interpolation
+ * inside the clip too, just as they do after a trim. */
+export function pasteEffectStack(p: Project, ids: Id[], copied: EffectClipboard): Project {
+  const targets = [...new Set(ids)];
+  for (const id of targets) {
+    effectClip(p, id);
+    if (findClip(p, id)!.track.locked) throw new Error("Unlock the track before pasting effects");
+  }
+  if (!copied.effects.length) return p;
+  let next = p;
+  for (const id of targets) {
+    const clip = effectClip(next, id);
+    const keyframes = { ...clip.keyframes };
+    const added = copied.effects.map(fx => {
+      const fresh = uid("fx"), prefix = `effects.${fx.id}.`;
+      for (const [path, keys] of Object.entries(copied.keyframes)) {
+        if (!path.startsWith(prefix)) continue;
+        const byFrame = new Map<number, Keyframe>();
+        for (const key of [...keys].sort((a, b) => a.f - b.f)) {
+          const f = secondsToFrames(framesToSeconds(key.f, copied.fps), p.fps);
+          byFrame.set(f, { ...structuredClone(key), f });
+        }
+        keyframes[`effects.${fresh}.${path.slice(prefix.length)}`] = [...byFrame.values()];
+      }
+      return { ...structuredClone(fx), id: fresh, params: { ...effectDefaults(fx.type), ...fx.params } };
+    });
+    next = updateClip(next, id, () => ({ ...clip, effects: [...clip.effects, ...added], keyframes: Object.keys(keyframes).length ? keyframes : undefined }));
+  }
+  return next;
+}
 
 export function effectClip(p: Project, id: Id): EffectClip {
   const loc = findClip(p, id);

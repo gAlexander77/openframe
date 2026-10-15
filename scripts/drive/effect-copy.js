@@ -1,0 +1,54 @@
+// Reuse effects without replacing a target's existing look or the clip clipboard.
+async (page) => {
+  page.setDefaultTimeout(10000);
+  await page.setViewportSize({ width: 1100, height: 680 });
+  await page.goto("http://localhost:1420");
+  await page.locator(".create-card").click();
+  const ids = await page.evaluate(async () => {
+    const v = window.videoEditor;
+    v.exec("add_color_clip", { color: "#39b077", start: 0, duration: 3 });
+    v.exec("add_color_clip", { color: "#903020", start: 3, duration: 1 });
+    v.exec("add_text", { text: "Title effects", start: 4, duration: 3 });
+    const clips = v.project().tracks.flatMap(t => t.clips), source = clips[0].id, target = clips[1].id, title = clips.find(c => c.type === "text").id;
+    await v.import([{ name: "speech-test.wav", src: `${location.origin}/fixtures/media/speech-test.wav` }]);
+    v.exec("add_media_clip", { asset_id: v.project().assets[0].id, start: 0, duration: 2 });
+    const audio = v.project().tracks.flatMap(t => t.clips).find(c => c.type === "audio").id;
+    v.exec("add_effect", { clip_id: source, type: "blur", params: { amount: 40 } });
+    v.exec("add_effect", { clip_id: source, type: "glow" });
+    v.exec("add_effect", { clip_id: target, type: "posterize", params: { levels: 7 } });
+    const fx = v.project().tracks.flatMap(t => t.clips).find(c => c.id === source).effects[0];
+    v.exec("add_keyframe", { clip_id: source, path: `effects.${fx.id}.amount`, at: 0, value: 10 });
+    v.exec("add_keyframe", { clip_id: source, path: `effects.${fx.id}.amount`, at: 2, value: 80 });
+    v.select([source]);
+    v.action("copy");
+    return { source, target, title, audio };
+  });
+  const inspector = page.getByRole("region", { name: "Inspector", exact: true });
+  const getClip = id => page.evaluate(id => window.videoEditor.project().tracks.flatMap(t => t.clips).find(c => c.id === id), id);
+  const details = {};
+  await inspector.getByRole("tab", { name: "Effects (2)", exact: true }).click();
+  details.emptyClipboard = { ok: await inspector.getByRole("button", { name: "Paste effects", exact: true }).isDisabled() };
+  await inspector.getByRole("button", { name: "Copy effects", exact: true }).click();
+  await page.evaluate(id => window.videoEditor.select([id]), ids.target);
+  await inspector.getByRole("tab", { name: "Effects (1)", exact: true }).click();
+  const original = await getClip(ids.target), source = await getClip(ids.source);
+  await inspector.getByRole("button", { name: "Paste effects", exact: true }).click();
+  const pasted = await getClip(ids.target);
+  details.append = { ok: pasted.effects.length === 3 && pasted.effects[0].id === original.effects[0].id && pasted.color === original.color && pasted.duration === original.duration };
+  details.animation = { ok: JSON.stringify(pasted.keyframes[`effects.${pasted.effects[1].id}.amount`]) === JSON.stringify(source.keyframes[`effects.${source.effects[0].id}.amount`]) && pasted.effects[1].id !== source.effects[0].id };
+  await page.evaluate(ids => window.videoEditor.select([ids.target, ids.title, ids.audio]), ids);
+  details.mixedSelection = { ok: await inspector.getByRole("button", { name: "Paste effects to 2 clips", exact: true }).isEnabled() && await inspector.getByText("Only unlocked visual clips receive effects.").isVisible() };
+  await inspector.getByRole("button", { name: "Paste effects to 2 clips", exact: true }).click();
+  details.multiple = { ok: (await getClip(ids.target)).effects.length === 5 && (await getClip(ids.title)).effects.length === 2 && !("effects" in await getClip(ids.audio)) };
+  await page.evaluate(() => window.videoEditor.action("undo"));
+  details.undoTogether = { ok: (await getClip(ids.target)).effects.length === 3 && (await getClip(ids.title)).effects.length === 0 };
+  await page.evaluate(() => window.videoEditor.action("redo"));
+  await page.evaluate(id => window.videoEditor.select([id]), ids.title);
+  await inspector.getByRole("tab", { name: "Effects (2)", exact: true }).click();
+  details.textEffects = { ok: await inspector.locator(".fx-card").count() === 2 };
+  await inspector.screenshot({ path: "scratch/effect-copy.png", animations: "disabled" });
+  const before = await page.evaluate(() => window.videoEditor.project().tracks.flatMap(t => t.clips).length);
+  await page.evaluate(() => { window.videoEditor.seek(600); window.videoEditor.action("paste"); });
+  details.clipClipboardPreserved = { ok: await page.evaluate(before => window.videoEditor.project().tracks.flatMap(t => t.clips).length === before + 1, before) };
+  return { ok: Object.values(details).every(d => d.ok), details };
+}

@@ -75,6 +75,19 @@ stack and its effect keyframes in one undoable step. Color grading,
 transforms and their keyframes are retained. Unlock a track before editing
 its effects. Text and caption clips have the same Effects tab.
 
+To reuse a stack, choose **Copy effects**, select another clip, and choose
+**Paste effects** in its Effects tab. For several selected clips, use
+**Paste effects to N clips** in the Selection inspector. It appends effects
+and their keyframes to unlocked visual clips; audio and locked clips are
+excluded and the count reflects that. Existing effects, grading, transforms
+and timing stay intact. One Undo reverses the whole paste.
+
+This clipboard lasts for the current app session and is separate from
+normal clip/keyframe copying. Animation keeps its timing relative to the
+clip's beginning, including when copied between projects with different
+frame rates. Keys beyond a shorter clip's end are retained so the visible
+part of an animated effect keeps the same interpolation.
+
 ## Where your work lives
 
 **Desktop:** project JSON and home-screen summaries are saved in the app's
