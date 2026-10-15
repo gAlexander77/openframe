@@ -1,8 +1,8 @@
 # Codex guide: start here
 
-**Pickup status, 2026-10-14:** the eight tasks below have been completed
-and committed locally. Read section 7 for hashes, verification, and the
-remaining captions/lifecycle follow-ups before repeating any work.
+**Pickup status, 2026-10-15:** the eight original tasks and the captions/
+project-lifecycle follow-ups are completed and committed locally. Read the
+dated entries in section 7 for hashes, evidence, and remaining release work.
 
 You are Codex, picking up OpenFrame from Claude Code on 2026-10-14. This file
 tells you what to do, in order, and the rules that keep the project safe.
@@ -96,8 +96,9 @@ Drives previously passing on `main` (2026-10-14): `framecode`, `ai-tools`,
 `keyframes`, `color`, `stickers`, `speed`, `export`. `inline-text` now passes
 all 38 checks at 1280x720, 1600x950 and 1920x1080 after task 8 (`173fe58`).
 The added `timeline-menu`, `audio-fades`, `home-menus` and `audit-followup`
-drives pass at 1600x950. `web-capabilities` records a captions stall and
-exits 1; see section 7.
+drives pass at 1600x950. On 2026-10-15, `web-capabilities` passed, including
+captions, on unchanged `d717e35`. The new `caption-recovery` and
+`project-lifecycle` drives pass too; see section 7 for the recovery fixes.
 
 ## 4. Project state, 2026-10-14
 
@@ -288,7 +289,7 @@ New drives are in `scripts/drive/`; JSON results and screenshots stay local
 in their ignored output directories. UI checks validate the browser build,
 not desktop parity.
 
-**Remaining follow-ups:**
+**Follow-ups recorded on 2026-10-14** (see the next dated entry for updates):
 
 - Captions: both five-minute attempts on `speech-test.wav` using Whisper
   tiny English produced no text. The second remained at download progress
@@ -306,3 +307,36 @@ not desktop parity.
   review binaries/WASM, models, fonts, icons and media separately.
 - Desktop checks, the coordinated OpenFrame runtime/data migration, parked
   feature work, and any public release remain outside this pickup.
+
+### 2026-10-15 — captions and project lifecycle follow-ups
+
+- **`602ee56` — caption worker recovery.** The full web capability drive
+  passed on unchanged `d717e35`: Whisper tiny English generated five captions
+  in 7,600 ms. The earlier stall's cause remains unknown. Separately,
+  aborting the worker module request reproduced an indefinite wait.
+  Caption RPCs now reject worker startup/message errors and cancellation;
+  failed/canceled workers are terminated and recreated on retry. Five new
+  unit tests and `caption-recovery` verify error handling, cancel during a
+  held module load, and a successful real-model retry. The [web capability log](docs/Web%20capability%20log.md)
+  and ADR-007 record the evidence and limits.
+- **`6c208ce` — New/Open project actions.** New saves the current project
+  and creates a project; Open saves and focuses the Home project search.
+  Menu and keyboard entry points work on both screens, including while
+  Home's search has focus. Only project entry/Help shortcuts act on Home.
+  Failed saves keep the current project open for New, Open and Back to home;
+  explicit Save no longer reports success after failure. `project-lifecycle`
+  passed 15 checks covering persistence, saved-project reopening, repeated
+  Open, menu/shortcut entry points, injected write failures, recovery, and
+  ignored Home editing/playback. `home-menus` also passed. UX-29 and the
+  user guide are updated.
+
+TypeScript and all **346 frontend unit tests** passed before both code
+commits. No Rust files changed in this continuation. The existing Vite
+server was reused; all browser runs stayed headless. All commits remain
+local, with the parked worktrees and remote settings untouched.
+
+**Still pending:** desktop verification, the coordinated runtime/data
+rename, and the artifact/license/source-distribution checks in
+`docs/Release preparation.md`. The dependency declarations are not release
+clearance. Other browsers/operating systems and offline speech-model cache
+reuse remain untested. No public release or remote operation is authorized.
