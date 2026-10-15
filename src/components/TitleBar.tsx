@@ -13,8 +13,9 @@ import { toast } from "../state/toast";
 import { MenuBar, type MenuItem } from "./Menu";
 
 /** The frameless window's title bar: menus, the project name, export, and
- * (on Windows/Linux desktop) the window buttons. Empty areas drag the
- * window via Tauri's drag region attribute. */
+ * (on Windows/Linux desktop) the window buttons. Tauri's deep drag region
+ * covers all noninteractive descendants and handles double-click maximize;
+ * buttons and inputs keep their normal behavior. */
 export function TitleBar(props: { saveState: string; home: boolean; onShortcuts: () => void }) {
   const name = useEditor((s) => s.project.name);
   const [editing, setEditing] = useState(false);
@@ -105,14 +106,14 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const exportChord = chordFor("export");
 
   return (
-    <header className="titlebar" data-tauri-drag-region>
-      <div className="titlebar-left" data-tauri-drag-region>
+    <header className="titlebar" data-tauri-drag-region="deep">
+      <div className="titlebar-left">
         <div className="app-mark" aria-hidden />
         <MenuBar menus={props.home ? menus.filter((m) => m.label === "File" || m.label === "Help") : menus} />
       </div>
-      <div className="titlebar-center" data-tauri-drag-region>
+      <div className="titlebar-center">
         {props.home ? (
-          <span className="home-title" data-tauri-drag-region>
+          <span className="home-title">
             {APP_NAME}
           </span>
         ) : editing ? (

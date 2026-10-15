@@ -42,7 +42,7 @@ export function MenuBar(props: { menus: { label: string; items: () => MenuItem[]
     setOpen(i);
   };
   return (
-    <div className="menubar" ref={ref}>
+    <div className="menubar" ref={ref} data-tauri-drag-region="false">
       {props.menus.map((m, i) => (
         <div key={m.label} className="menubar-item">
           <button

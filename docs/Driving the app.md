@@ -6,6 +6,12 @@ Ported from TermHQ's page of the same name and rewritten for this app.
 Reach for it whenever "does the built thing work" matters more than "does
 the unit pass".
 
+**Owner direction, 2026-10-15:** do not control this computer's desktop,
+mouse or keyboard while the owner is working. Use headless Playwright MCP.
+The owner may provide a separate computer for native checks later. The
+desktop setup below is a reference for an explicitly authorized session,
+not permission to interrupt the current one.
+
 **Which harness:**
 
 - **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.
@@ -154,3 +160,32 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
    Single edges scatter a pixel or so; compare averages, at a large size.
 9. **Never ship a debug port**: any local process could drive the app. The
    variable belongs in a dev shell, not in config.
+
+## Header interaction check — 2026-10-15
+
+The owner expects the whole header to behave like a desktop caption: drag
+to move, double-click to maximize, double-click again to restore. The old
+bare `data-tauri-drag-region` attributes matched only direct targets, so
+the logo, save-status text and right-side spaces were dead areas. One
+`data-tauri-drag-region="deep"` on the header covers all noninteractive
+descendants. Remove the nested bare attributes: they would stop ancestor
+matching. Tauri 2.12.3's installed `src/window/scripts/drag.js` supplies the
+native gesture handling and excludes buttons/inputs. The menubar explicitly
+opts out so dropdown padding and separators cannot drag the window.
+
+`scripts/drive/window-header.js` checks the real rendered Home/editor header
+with the installed Tauri Windows drag script and official JS API mocks.
+Its second argument is `{ drag, mocks }`: `drag` is that script with its
+`__TEMPLATE_os_name__` replaced by `'windows'`; `mocks` is
+`node_modules/@tauri-apps/api/mocks.js` with its final export statement
+removed. Inject both before page initialization in a single init script.
+The local `scratch/run-headless-mcp.mjs` supplied these inputs through a
+dedicated Playwright MCP stdio session using `--headless --browser msedge
+--isolated`; it did not attach to the owner's browser or desktop app.
+
+All 15 checks passed: Home/editor drag targets, one maximize/restore command
+per double-click, project renaming, dropdown separators, Shortcuts, and the
+maximize button without duplicate dragging. This verifies frontend event
+routing with simulated IPC. Native window movement, Windows snap behavior,
+and other operating systems remain unverified; no desktop interaction was
+attempted after the owner's instruction to stop.

@@ -20,6 +20,12 @@ and [[Roadmap]] for what is still planned.
 
 ## Make your first edit
 
+On desktop, drag any noninteractive part of the top header to move the
+window, including the logo, save status and spaces between controls.
+Double-click the same areas to maximize the window; double-click again to
+restore its previous size. Menus, project renaming and buttons keep their
+normal actions.
+
 1. On the home screen, create a project and choose a canvas preset if you
    know the destination format. Otherwise, the first clip can establish the
    canvas size and frame rate on an empty timeline.

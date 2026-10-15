@@ -37,6 +37,10 @@ done (`docs/Renaming.md`).
   work. Never open a visible browser, never launch the desktop app
   (`npm run tauri dev`, `video-editor.exe`, `tauri build`) unless a task
   here says so. Run drives with `scripts/drive/run.mjs`, which is headless.
+  **Owner update, 2026-10-15:** the owner requested a desktop launch for
+  personal testing, then explicitly prohibited computer/desktop control
+  while they work. Use headless Playwright MCP for further verification;
+  native input testing needs their separate test computer or new permission.
 - **One dev server at most.** If port 1420 is already listening, it is this
   repo's Vite: reuse it. Check with
   `Get-NetTCPConnection -LocalPort 1420 -State Listen`. Start one with
@@ -340,3 +344,14 @@ rename, and the artifact/license/source-distribution checks in
 `docs/Release preparation.md`. The dependency declarations are not release
 clearance. Other browsers/operating systems and offline speech-model cache
 reuse remain untested. No public release or remote operation is authorized.
+
+### 2026-10-15 — desktop header follow-up
+
+The owner requested full-header dragging and double-click maximize/restore,
+plus small, documented fixes for related issues. The header now uses Tauri's
+deep drag region; menus and inputs retain their actions. Fifteen headless
+Playwright MCP checks passed against the installed Tauri drag script with
+simulated IPC; see [Driving the app](docs/Driving%20the%20app.md). Native
+movement is pending owner testing. The owner explicitly stopped desktop
+automation during this work; use headless Playwright MCP going forward.
+TypeScript and all 346 frontend tests passed before the drag-region commit.
