@@ -230,9 +230,11 @@ function keyFor(s: EditorState): string {
   const loc = s.selection.length === 1 ? findClip(s.project, s.selection[0]) : null;
   const c = loc?.clip;
   if (!c || (c.type !== "video" && c.type !== "image") || c.disabled) return "sample";
-  if (c.type === "image") return `image:${c.assetId}`;
+  // The source location too: a relink keeps the asset ID.
+  const src = s.project.assets.find((a) => a.id === c.assetId)?.src;
+  if (c.type === "image") return `image:${c.assetId}:${src}`;
   const f = Math.min(Math.max(s.playhead, c.start), c.start + c.duration - 1);
-  return `video:${c.id}:${c.assetId}:${c.in}:${c.speed}:${f - c.start}`;
+  return `video:${c.id}:${c.assetId}:${src}:${c.in}:${c.speed}:${f - c.start}`;
 }
 
 function watch() {
