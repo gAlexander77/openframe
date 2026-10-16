@@ -23,6 +23,10 @@ function ago(t: number): string {
 
 /** CapCut's home: a big Create project card, canvas presets, and every
  * project as a card with its thumbnail. */
+/** The last Open request Home answered: Home remounts on every return,
+ * and only a new request should take focus. */
+let answeredOpen = 0;
+
 export function Home() {
   const { openRequest, transitioning } = useSession();
   const search = useRef<HTMLInputElement>(null);
@@ -39,7 +43,8 @@ export function Home() {
     void refresh();
   }, []);
   useEffect(() => {
-    if (!openRequest) return;
+    if (openRequest === answeredOpen) return;
+    answeredOpen = openRequest;
     search.current?.focus();
     search.current?.select();
   }, [openRequest]);
