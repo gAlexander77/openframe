@@ -10,6 +10,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   21:9), and searchable project cards with thumbnails. Delete asks twice.
 - **Autosave** 800 ms after every change, never overlapping; "Saved 10:42"
   in the title bar; Ctrl+S saves now. No save dialog, as in CapCut.
+- **Safe project switching:** edits made during a slow save are persisted
+  before leaving; overlapping navigation requests are ignored. Save errors
+  keep the project open. Home shows a loading status and supports keyboard
+  opening/deletion without triggering both actions.
 - **The first clip sets the canvas** size and frame rate on an empty
   timeline, so phone footage makes a vertical project — unless a canvas
   was chosen (a Home preset or the Details ratio), which it then keeps.

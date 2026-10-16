@@ -76,6 +76,7 @@ a clock, so no frame is ever dropped
 | `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time |
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |
+| `state/project.ts` | Autosave drains changed revisions; one navigation transition at a time (ADR-039) |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `state/export.ts` | The export job: dialog state, `render()` for automation |
 | `state/textEdit.ts` | The typing session: live text edits from the canvas or the inspector, one undo step |

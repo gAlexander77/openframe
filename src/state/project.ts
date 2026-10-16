@@ -21,11 +21,13 @@ interface Session {
   screen: Screen;
   /** Incremented by Open, including when Home is already showing. */
   openRequest: number;
+  /** One navigation at a time; repeated requests are ignored, not queued. */
+  transitioning: boolean;
   /** "Saving…", "Saved 10:42", "Couldn't save: …" */
   saveState: string;
 }
 
-let session: Session = { screen: "home", saveState: "", openRequest: 0 };
+let session: Session = { screen: "home", saveState: "", openRequest: 0, transitioning: false };
 const listeners = new Set<() => void>();
 const set = (patch: Partial<Session>) => {
   session = { ...session, ...patch };
@@ -87,10 +89,17 @@ export async function saveNow(): Promise<boolean> {
     let saved = false;
     do {
       again = false;
-      const p = store.get().project;
+      const { project: p, revision } = store.get();
       set({ saveState: "Saving…" });
       try {
         await platform.saveProject(p, summaryOf(p));
+        // Editing stays available during disk I/O. Persist anything that
+        // changed before reporting success or allowing navigation to leave.
+        if (store.get().revision !== revision) {
+          again = true;
+          continue;
+        }
+        clearTimeout(timer);
         const t = new Date();
         set({ saveState: `Saved ${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}` });
         saved = true;
@@ -121,39 +130,61 @@ store.subscribe(() => {
 });
 
 function enter(p: Project) {
+  clearTimeout(timer);
   store.load(p);
   lastRevision = store.get().revision;
   p.assets.forEach(prepare);
   set({ screen: "editor", saveState: "" });
 }
 
-export function newProject(init: ProjectInit = {}) {
-  const now = new Date();
-  // CapCut names new projects by date (MMDD); a readable date is kinder.
-  const name = init.name ?? `Project ${now.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
-  enter(createProject({ ...init, name }));
-  void saveNow();
-}
-
-export async function openProject(id: string) {
+/** Keep a slow request from replacing a project opened by a later click. */
+async function navigate(action: () => Promise<boolean>): Promise<boolean> {
+  if (session.transitioning) return false;
+  set({ transitioning: true });
+  player.pause();
   try {
-    enter(normalizeProject(await platform.loadProject(id)));
-  } catch (e) {
-    toast(`Couldn't open the project: ${e instanceof Error ? e.message : e}`, "error");
+    return await action();
+  } finally {
+    set({ transitioning: false });
   }
 }
 
-export async function closeProject() {
-  player.pause();
-  if (!await saveNow()) return false;
-  set({ screen: "home" });
-  return true;
+export function newProject(init: ProjectInit = {}) {
+  return navigate(async () => {
+    if (!await saveNow()) return false;
+    const now = new Date();
+    const name = init.name ?? `Project ${now.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+    enter(createProject({ ...init, name }));
+    void saveNow();
+    return true;
+  });
+}
+
+export function openProject(id: string) {
+  return navigate(async () => {
+    try {
+      const p = normalizeProject(await platform.loadProject(id));
+      if (!await saveNow()) return false;
+      enter(p);
+      return true;
+    } catch (e) {
+      toast(`Couldn't open the project: ${e instanceof Error ? e.message : e}`, "error");
+      return false;
+    }
+  });
+}
+
+export function closeProject(focusSearch = false) {
+  return navigate(async () => {
+    if (!await saveNow()) return false;
+    clearTimeout(timer);
+    set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });
+    return true;
+  });
 }
 
 provide({
-  newProject: () => void closeProject().then((closed) => { if (closed) newProject(); }),
-  openProject: () => void closeProject().then((closed) => {
-    if (closed) set({ openRequest: session.openRequest + 1 });
-  }),
+  newProject: () => void newProject(),
+  openProject: () => void closeProject(true),
   saveProject: () => void saveNow().then((saved) => { if (saved) toast("Project saved"); }),
 });

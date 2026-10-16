@@ -428,3 +428,18 @@ are session UI state, with no new saved-data fields or native desktop control.
   TypeScript and all 374 tests pass. The marker drive now waits for the
   editor to finish opening before comparing reloaded notes; reading the
   store immediately after clicking a Home card could race async loading.
+
+### 2026-10-15 — project safety and media organization
+
+The owner requested continued product improvements with decisions recorded.
+The unrelated untracked `Modelfile.qwen32k` is preserved; parked worktrees
+remain untouched. Work stays local on main with headless Playwright MCP.
+
+- Project switching now drains edits made during a slow save before leaving
+  and ignores overlapping navigation. A real OPFS delay reproduced lost
+  text before the fix. Home exposes loading state, prevents simultaneous
+  creation/deletion, and distinguishes card keyboard activation from its
+  nested Delete button. ADR-039 records the policy and remaining async-job
+  ownership audit. Seven `project-races` checks and all 15 lifecycle
+  regression checks pass; loading screenshot reviewed. TypeScript and all
+  374 unit tests pass. No Rust changes or native desktop validation.

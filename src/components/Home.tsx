@@ -24,7 +24,7 @@ function ago(t: number): string {
 /** CapCut's home: a big Create project card, canvas presets, and every
  * project as a card with its thumbnail. */
 export function Home() {
-  const { openRequest } = useSession();
+  const { openRequest, transitioning } = useSession();
   const search = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [q, setQ] = useState("");
@@ -47,9 +47,9 @@ export function Home() {
   const shown = (projects ?? []).filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="home">
+    <div className="home" aria-busy={transitioning}>
       <section className="home-hero">
-        <button className="create-card" onClick={() => newProject()}>
+        <button className="create-card" disabled={transitioning} onClick={() => void newProject()}>
           <span className="create-icon">
             <Plus size={26} strokeWidth={2.2} />
           </span>
@@ -60,7 +60,7 @@ export function Home() {
         </button>
         <div className="presets">
           {PRESETS.map((p) => (
-            <button key={p.label} className="preset" onClick={() => newProject({ width: p.w, height: p.h })} data-tip={`${p.w}×${p.h}`}>
+            <button key={p.label} className="preset" disabled={transitioning} onClick={() => void newProject({ width: p.w, height: p.h })} data-tip={`${p.w}×${p.h}`}>
               <span className="preset-box" style={{ aspectRatio: `${p.w} / ${p.h}` }} />
               <strong>{p.label}</strong>
               <span>{p.hint}</span>
@@ -72,6 +72,7 @@ export function Home() {
       <section className="home-projects">
         <header className="home-projects-head">
           <h2>Projects</h2>
+          {transitioning && <span role="status">Opening project…</span>}
           <label className="lib-search home-search">
             <Search size={14} />
             <input ref={search} className="field" placeholder="Search projects" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -86,12 +87,17 @@ export function Home() {
         ) : (
           <div className="project-grid">
             {shown.map((p) => (
-              <div key={p.id} className="project-card" role="button" tabIndex={0} onClick={() => void openProject(p.id)} onKeyDown={(e) => e.key === "Enter" && void openProject(p.id)}>
+              <div key={p.id} className="project-card" role="button" tabIndex={transitioning ? -1 : 0} aria-disabled={transitioning} onClick={() => void openProject(p.id)} onKeyDown={(e) => {
+                if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return;
+                e.preventDefault();
+                void openProject(p.id);
+              }}>
                 <div className="project-thumb">
                   {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Film size={24} strokeWidth={1.3} />}
                   {p.duration > 0 && <span className="chip num">{formatDuration(p.duration)}</span>}
                   <button
                     className={`project-delete${confirm === p.id ? " armed" : ""}`}
+                    disabled={transitioning}
                     aria-label={confirm === p.id ? `Confirm delete ${p.name}` : `Delete ${p.name}`}
                     data-tip={confirm === p.id ? "Click again to delete" : "Delete project"}
                     onClick={(e) => {

@@ -59,6 +59,13 @@ If saving fails, New, Open and Back to home keep the current project open
 with its edits. Resolve the storage problem and retry; a failed save does
 not show a successful-save notification.
 
+Edits made while a save is running are saved before navigation completes.
+While a project is opening or the old one is being saved for a switch,
+repeated navigation requests are ignored. Home shows **Opening project…**
+and disables creation/deletion during loading; retry after it finishes.
+A focused project card opens with Enter or Space. Activating its Delete
+button with the keyboard only arms deletion, just like clicking it.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**

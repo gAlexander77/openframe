@@ -124,3 +124,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   with the reference library; our clip rides in metadata
 - [[ADR-038 Copied effects preserve animation and get new identities]] —
   stack reuse, independent IDs, timing conversion and undo
+- [[ADR-039 Project navigation waits for current edits]] — save in-flight
+  edits and ignore overlapping navigation requests
