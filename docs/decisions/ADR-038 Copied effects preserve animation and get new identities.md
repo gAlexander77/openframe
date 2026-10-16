@@ -32,8 +32,8 @@ clips. A short destination still needs later keys to interpolate correctly.
 ## Consequences and verification
 
 This is effect-stack reuse, not a general Paste Attributes dialog: color,
-audio, speed and transforms are not copied. Named persistent presets remain
-a future addition. No dependencies or saved-data migration are introduced.
+audio, speed and transforms are not copied. Named persistent presets shipped
+later; see [[ADR-043 Reused settings preserve timing and ownership]]. No dependencies or saved-data migration are introduced.
 
 Five unit tests cover snapshot independence, fresh IDs, existing settings,
 keyframe path remapping, cross-frame-rate conversion, rounded-frame collisions
