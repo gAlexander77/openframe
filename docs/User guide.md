@@ -233,6 +233,14 @@ groups replace those settings and their animation; effects append unless
 Unavailable groups need compatible targets on unlocked tracks. Undo restores
 the previous settings.
 
+## Preview trim edges
+
+While dragging with Trim, Ripple, Slip, Roll or Slide, the player shows two
+clip-edge frames and their times. Roll compares the outgoing and incoming
+frames; Slide compares neighboring clips. Other tracks and transitions are
+excluded so the cut is clear. Release to keep the edit; cancel the gesture to
+restore it. The whole drag is one Undo step.
+
 ## Preview sources
 
 Choose **Preview** under a media card to open its source. Play, scrub or step

@@ -12,6 +12,7 @@ import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
 import type { Id, Project } from "../lib/project/types";
+import type { TrimPreviewState } from "../lib/trimPreview";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
  * Premiere/VEGAS trim tools CapCut lacks. */
@@ -46,6 +47,7 @@ export interface EditorState {
   previewAxis: boolean;
   /** Frame under the mouse while the preview axis is on, else null. */
   hoverFrame: number | null;
+  trimPreview: TrimPreviewState | null;
   /** Preview at a fraction of project resolution (pro editors' playback
    * resolution: full, 1/2, 1/4). */
   previewScale: 1 | 0.5 | 0.25;
@@ -95,6 +97,7 @@ let state: EditorState = {
   linkage: true,
   previewAxis: false,
   hoverFrame: null,
+  trimPreview: null,
   previewScale: 1,
   scopes: false,
   viewerGuides: "off",
@@ -195,6 +198,7 @@ export const store = {
   cancelGesture() {
     if (gestureBase) setProject(gestureBase);
     gestureBase = null;
+    set({ trimPreview: null });
   },
 
   undo() {
@@ -213,6 +217,7 @@ export const store = {
   /** Replace the document wholesale (open, new). History starts over. */
   load(project: Project) {
     projectWork.open();
+    gestureBase = null;
     past = [];
     future = [];
     set({
@@ -224,6 +229,7 @@ export const store = {
       outPoint: null,
       keySel: null,
       textEdit: null,
+      trimPreview: null,
       markerEdit: null,
       mediaBrowser: { ...DEFAULT_MEDIA_BROWSER, view: state.mediaBrowser.view, sort: state.mediaBrowser.sort },
       revision: state.revision + 1,

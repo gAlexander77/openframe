@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { player } from "../engine/player";
 import { Blend, Eye, EyeOff, Film, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
@@ -263,6 +264,7 @@ export function Timeline() {
     if (!g.started) {
       if (Math.abs(e.clientX - g.x0) < 3 && (g.kind === "trim" || Math.abs(e.clientY - g.y0) < 3)) return;
       g.started = true;
+      player.pause();
       store.beginGesture();
     }
     const opts = settleOptions();
@@ -271,6 +273,7 @@ export function Timeline() {
       // Premiere's slip: dragging right reveals earlier source (the source
       // slides right under the clip's fixed window).
       store.previewGesture((base) => ops.settle(base, g.kind === "slip" ? ops.slipClip(base, g.id, -d) : ops.slideClip(base, g.id, d), opts));
+      store.set({ trimPreview: { kind: g.kind, id: g.id }, hoverFrame: null });
       const c = ops.findClip(store.get().project, g.id)?.clip;
       if (c) {
         const fps = s.project.fps;
@@ -306,6 +309,7 @@ export function Timeline() {
       );
       const c = ops.findClip(store.get().project, g.id)?.clip;
       if (c) setReadout({ x: e.clientX, y: e.clientY, text: g.mode === "roll" && touching ? `Cut ${formatTimecode(f, s.project.fps)}` : `Duration ${formatTimecode(c.duration, s.project.fps)}` });
+      store.set({ trimPreview: { kind: g.mode, id: g.id, edge: g.edge }, hoverFrame: null });
       return;
     }
     // move
@@ -350,6 +354,7 @@ export function Timeline() {
     setSnapLine(null);
     setMarquee(null);
     setReadout(null);
+    store.set({ trimPreview: null });
     if (!g || g.kind === "scrub" || g.kind === "marquee") return;
     if (!g.started) return;
     const label =
@@ -360,19 +365,35 @@ export function Timeline() {
     if (g.kind === "move" && g.dupIds) store.select([...g.dupIds.values()]);
   };
 
-  const listeners = useRef({ move: (e: PointerEvent) => onMove(e), up: () => onUp() });
+  const onCancel = () => {
+    gesture.current = null; detachWindowListeners();
+    store.cancelGesture(); setReadout(null); setSnapLine(null); setMarquee(null);
+  };
+  const listeners = useRef({ move: (e: PointerEvent) => onMove(e), up: () => onUp(), cancel: () => onCancel() });
   listeners.current.move = onMove;
   listeners.current.up = onUp;
+  listeners.current.cancel = onCancel;
   const winMove = useRef((e: PointerEvent) => listeners.current.move(e)).current;
   const winUp = useRef(() => listeners.current.up()).current;
+  const winCancel = useRef(() => listeners.current.cancel()).current;
+  const winKey = useRef((e: KeyboardEvent) => {
+    if (e.key === "Escape" && gesture.current) { e.preventDefault(); e.stopImmediatePropagation(); listeners.current.cancel(); }
+  }).current;
   const attachWindowListeners = () => {
     window.addEventListener("pointermove", winMove);
     window.addEventListener("pointerup", winUp);
+    window.addEventListener("pointercancel", winCancel);
+    window.addEventListener("blur", winCancel);
+    window.addEventListener("keydown", winKey, true);
   };
   const detachWindowListeners = () => {
     window.removeEventListener("pointermove", winMove);
     window.removeEventListener("pointerup", winUp);
+    window.removeEventListener("pointercancel", winCancel);
+    window.removeEventListener("blur", winCancel);
+    window.removeEventListener("keydown", winKey, true);
   };
+  useEffect(() => () => { detachWindowListeners(); if (gesture.current) store.cancelGesture(); }, []);
 
   const onRulerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;

@@ -490,3 +490,8 @@ untouched. Local commits only.
 - Presets committed as `345d395`; selective Paste Attributes adds compatible
   groups, explicit effect replacement and cross-project LUT references. Six
   desktop MCP checks and 395 unit tests pass; see ADR-043.
+- Paste Attributes committed as `558c34d`. Two-up trim preview now renders
+  actual clip edges, with cancellation restoring the gesture baseline.
+  Eight desktop MCP checks (including framecode pixels) and 397 tests pass.
+  Timeline gesture edits may overlap the parked `timeline-ux` branch on its
+  eventual merge; no parked work was modified.

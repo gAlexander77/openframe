@@ -14,7 +14,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 - [x] Media folders and favorites.
 - [x] Source preview and In/Out selection before timeline placement.
 - [x] Reusable effect presets and selective Paste Attributes.
-- [ ] Two-up trim preview.
+- [x] Two-up trim preview.
 - [ ] Final real desktop WebView review through Playwright MCP.
 
 ## Decisions and evidence
@@ -181,3 +181,26 @@ replacement/independent IDs, Undo, lock enforcement and narrow fit. Screenshot
 inspected. TypeScript and 395 unit tests pass, including mixed-rate keys/fades,
 cross-project LUT references and all-target validation. The first drive used
 an incorrect command name for locking; corrected to `update_track`.
+
+### Two-up trim preview
+
+During trim/ripple/slip drags the player shows the clip's first and last
+frames. Roll shows outgoing/incoming edges; slide shows the neighboring
+edges. The panels read the actual applied edit after source limits clamp it.
+They isolate clips with their settings, excluding transitions/other tracks;
+audio clips show edge timecodes. The displayed source timecodes use project
+fps. Private engine cursors supply actual frames without moving the playhead.
+
+Release commits one Undo step and restores the program viewer. Escape,
+pointer cancellation and lost focus restore the gesture's starting edit and
+clear the preview/listeners. Loading a document clears the gesture baseline
+so a later cancellation cannot restore another project. No saved fields or
+editing command are needed: this observes existing trim operations.
+
+Eight real desktop MCP checks pass, including pixel decoding of the numbered
+fixture for roll, slip, slide and trim; one-step Undo; Escape/pointer cancel;
+and 1100×680 layout. Both screenshots inspected. TypeScript and 397 unit
+tests pass, including clamped handles, reverse and freeze edge mapping.
+The existing Timeline gesture handlers were touched; Claude's parked
+`timeline-ux` worktree remains untouched and will need normal conflict review.
+Reference: [Adobe trim mode](https://helpx.adobe.com/premiere/desktop/edit-projects/trim-clips/edit-in-trim-mode.html).

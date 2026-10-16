@@ -276,3 +276,5 @@ Three doors, one engine ([[Automation]]):
   cross-project reuse and undoable application to unlocked visual clips.
 - **Paste Attributes:** choose transform, color, audio and/or effects, with
   animation retiming and optional effect replacement. Clip timing stays intact.
+- **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
+  clamped source times, one-step Undo and gesture cancellation.

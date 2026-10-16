@@ -12,6 +12,15 @@ The owner may provide a separate computer for native checks later. The
 desktop setup below is a reference for an explicitly authorized session,
 not permission to interrupt the current one.
 
+**Owner update, 2026-10-16:** the owner authorized using/restarting the current
+test instance and required final verification through Playwright MCP attached
+to its real WebView. That instance now exposes CDP on `127.0.0.1:9222`; native
+desktop input is still outside the test boundary. Attach the MCP server with
+`--cdp-endpoint http://127.0.0.1:9222`, verify
+`window.videoEditor.platform() === "desktop"`, and disconnect without calling
+MCP's `browser_close` on the app page. Use native file paths for fixtures.
+The dated [[Development pass 2026-10-16]] lists the checks and limitations.
+
 **Which harness:**
 
 - **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.
@@ -90,9 +99,12 @@ fixtures folder as its second argument on the desktop and must return
 - **`window.videoEditor`** (`src/automation.ts`): `import([{ name, src }])`
   with an absolute path, `exec(command, args)`, `describe()`, `project()`,
   `seek(frame)`, `rendered()`, `pixels()`, `platform()`.
-- **The platform module itself.** In dev,
-  `await import("/src/platform/index.ts")` inside `page.evaluate` returns
-  the instance the app uses (Vite serves one module graph), so
+- **The platform module itself.** In dev, resolve its exact URL from Resource
+  Timing before importing in `page.evaluate`. Vite can append a timestamp to
+  dependencies, even after a reload; importing an unversioned path may create
+  a second module/store instance. Reload before a drive and import the URL
+  ending in `/src/platform/index.ts` (with an optional query) from
+  `performance.getEntriesByType("resource")`, so
   `saveProject`, `listProjects`, `createExportTarget` and `adoptFiles` can
   be called directly.
 - **mediabunny in the page.** A bare `import("mediabunny")` cannot resolve.

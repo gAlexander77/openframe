@@ -10,6 +10,7 @@ import { store, useEditor } from "../state/store";
 import { Meter } from "./Meter";
 import { TransformOverlay } from "./TransformOverlay";
 import { ViewerGuideControl, ViewerGuides } from "./ViewerGuides";
+import { TrimPreview } from "./TrimPreview";
 import "./player.css";
 
 const tip = (label: string, id: Parameters<typeof chordFor>[0]) => {
@@ -25,6 +26,7 @@ export function PlayerPanel() {
   const panelRef = useRef<HTMLElement>(null);
   const width = useEditor((s) => s.project.width);
   const height = useEditor((s) => s.project.height);
+  const trimPreview = useEditor((s) => s.trimPreview);
   const [box, setBox] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
@@ -92,6 +94,7 @@ export function PlayerPanel() {
           <TransformOverlay width={box.w} height={box.h} />
         </div>
         <Meter />
+        {trimPreview && <TrimPreview state={trimPreview} />}
       </div>
       <Transport />
     </section>

@@ -11,3 +11,12 @@
 .source-monitor > .lib-hint { margin: 8px 0 14px; }
 .media-preview-button { padding: 3px 0; border: 0; background: none; color: var(--accent); text-align: left; font-size: var(--fs-xs); }
 .media-preview-button:hover { text-decoration: underline; }
+.trim-preview { position: absolute; inset: 0; z-index: 5; background: var(--bg-1); display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 14px; overflow: auto; }
+.trim-preview header { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--accent); }
+.trim-preview header span, .trim-preview p { color: var(--text-3); font-size: var(--fs-xs); }
+.trim-preview p { margin: 0; }
+.trim-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.trim-pair figure { display: grid; align-content: start; gap: 8px; min-width: 0; margin: 0; font-size: var(--fs-xs); }
+.trim-pair figcaption { color: var(--accent); min-height: 28px; }
+.trim-clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trim-audio { display: grid; place-content: center; justify-items: center; gap: 6px; background: #111; aspect-ratio: 16 / 9; }

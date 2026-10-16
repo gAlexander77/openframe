@@ -28,7 +28,7 @@ export function FramePreview({ project, frame, label }: { project: Project; fram
           comp.resize(w, h);
           comp.render(plan, sourceImages(sources, w, h), p.background);
           canvas.current!.dataset.frame = String(f);
-          setError(plan.length && !sources.size ? "Source unavailable" : "");
+          setError(plan.some((i) => i.kind === "layer" && ["video", "image"].includes(i.layer.source.kind) && !sources.has(i.layer.clipId)) ? "Source unavailable" : "");
           pool.sweep(2000);
         }
       } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : String(e)); }
