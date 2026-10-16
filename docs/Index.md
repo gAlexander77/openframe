@@ -48,6 +48,8 @@ of the documentation and how agents use it as shared working memory.
 
 ## Research
 
+- [[Navigation and composition]] — viewer guides, marker management and
+  priorities from the next editor comparison
 - [[Effect workflow]] — applied-effect discoverability and stack-editing review
 
 - [[CapCut desktop]] — the UX baseline: layout, every panel, shortcuts,

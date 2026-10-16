@@ -103,3 +103,13 @@
 /* A canvas is a replaced element: top/bottom do not stretch it, so size it. */
 .meter { position: absolute; right: 8px; top: 14px; height: calc(100% - 50px); width: 9px; border-radius: 2px; }
 .player-scopes { margin-left: auto; }
+
+.viewer-guide-select { min-width: 0; max-width: 180px; }
+.viewer-guides, .viewer-thirds { position: absolute; inset: 0; pointer-events: none; }
+.viewer-safe { position: absolute; border: 1px solid rgb(255 255 255 / 85%); box-shadow: 0 0 0 1px rgb(0 0 0 / 50%); }
+.viewer-safe-action { inset: 5%; }
+.viewer-safe-title { inset: 10%; border-style: dashed; }
+.viewer-safe span { position: absolute; left: 3px; top: 2px; font-size: 9px; line-height: 12px; color: white; text-shadow: 0 1px 2px black, 0 0 3px black; }
+.viewer-thirds i { position: absolute; background: rgb(255 255 255 / 65%); box-shadow: 0 0 0 1px rgb(0 0 0 / 35%); }
+.viewer-third-v { top: 0; bottom: 0; width: 1px; }
+.viewer-third-h { left: 0; right: 0; height: 1px; }

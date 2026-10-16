@@ -48,6 +48,8 @@ export interface EditorState {
   previewScale: 1 | 0.5 | 0.25;
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
+  /** Viewer overlays only: never saved into the project or rendered. */
+  viewerGuides: "off" | "safe" | "thirds" | "both";
   leftTab: LeftTab;
   /** In/out range for export and three-point edits, frames. */
   inPoint: number | null;
@@ -88,6 +90,7 @@ let state: EditorState = {
   hoverFrame: null,
   previewScale: 1,
   scopes: false,
+  viewerGuides: "off",
   leftTab: "media",
   inPoint: null,
   outPoint: null,

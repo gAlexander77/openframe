@@ -9,6 +9,7 @@ import { chordFor, provide, run } from "../state/actions";
 import { store, useEditor } from "../state/store";
 import { Meter } from "./Meter";
 import { TransformOverlay } from "./TransformOverlay";
+import { ViewerGuideControl, ViewerGuides } from "./ViewerGuides";
 import "./player.css";
 
 const tip = (label: string, id: Parameters<typeof chordFor>[0]) => {
@@ -71,6 +72,7 @@ export function PlayerPanel() {
     <section className="panel player-panel" aria-label="Player" ref={panelRef}>
       <header className="panel-head">
         <span className="panel-title">Player</span>
+        <ViewerGuideControl />
         <ScopesToggle />
       </header>
       <div
@@ -86,6 +88,7 @@ export function PlayerPanel() {
       >
         <div className="player-frame" style={{ width: box.w, height: box.h }}>
           <canvas ref={canvasRef} className="player-canvas" />
+          <ViewerGuides />
           <TransformOverlay width={box.w} height={box.h} />
         </div>
         <Meter />

@@ -59,6 +59,19 @@ If saving fails, New, Open and Back to home keep the current project open
 with its edits. Resolve the storage problem and retry; a failed save does
 not show a successful-save notification.
 
+## Compose with viewer guides
+
+Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**
+from the Player header's guides selector or the View menu. The action box
+encloses 90% of the canvas dimensions; the title box encloses 80%. Use them
+to keep text away from edges and balance a shot. They are general guides,
+not platform-specific safe-area requirements.
+
+Guides follow the picture when resizing, using a portrait canvas or entering
+full screen. They do not block editing handles, appear in exports, change
+the project or consume an Undo step. The choice lasts for this app session;
+choose **Guides off** to hide them.
+
 ## Manage effects
 
 Select a visual clip or adjustment layer on the timeline, then open the

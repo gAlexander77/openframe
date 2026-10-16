@@ -55,6 +55,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Playback on the audio clock with output-latency compensation; J/K/L
   shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
+- **Composition guides** in the Player header and View menu: safe margins
+  (90% action / 80% title), rule of thirds, or both. Follow the canvas in
+  portrait and full screen; preview only, excluded from exported pictures.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,

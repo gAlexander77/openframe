@@ -393,3 +393,13 @@ TypeScript and all 358 unit tests passed at the end of the pass. UI checks
 used isolated headless Playwright MCP, with screenshot review; no desktop
 control or native-platform verification. No Rust files changed. Future
 effect presets/selective Paste Attributes are proposals, not shipped features.
+
+### 2026-10-15 — navigation and composition follow-up
+
+The owner requested more research and additions. [[Navigation and composition]]
+in `docs/research/` records the comparison and next candidates. Viewer guides
+now offer safe margins, thirds or both in the Player header and View menu.
+Eleven headless Playwright MCP checks passed, including portrait/full-screen
+geometry and identical engine pixels/exported PNGs with guides on/off.
+TypeScript and all 358 unit tests passed; the screenshot was reviewed. Guides
+are session UI state, with no new saved-data fields or native desktop control.

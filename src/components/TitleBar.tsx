@@ -11,6 +11,7 @@ import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { MenuBar, type MenuItem } from "./Menu";
+import { VIEWER_GUIDES } from "./ViewerGuides";
 
 /** The frameless window's title bar: menus, the project name, export, and
  * (on Windows/Linux desktop) the window buttons. Tauri's deep drag region
@@ -113,6 +114,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { label: "Preview at full resolution", checked: s().previewScale === 1, onSelect: () => store.set({ previewScale: 1 }) },
         { label: "Preview at 1/2 resolution", checked: s().previewScale === 0.5, onSelect: () => store.set({ previewScale: 0.5 }) },
         { label: "Preview at 1/4 resolution", checked: s().previewScale === 0.25, onSelect: () => store.set({ previewScale: 0.25 }) },
+        "-",
+        ...VIEWER_GUIDES.map(([value, label]) => ({ label, checked: s().viewerGuides === value, onSelect: () => store.set({ viewerGuides: value }) })),
         "-",
         { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
         { action: "fullscreenPreview" },
