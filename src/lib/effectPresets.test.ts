@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { applyEffectPreset, readEffectPreset } from "./effectPresets";
+import { EFFECTS } from "./catalog";
+import { applyEffectPreset, readEffectPreset, readPresetLibrary } from "./effectPresets";
 import { createColorClip, createProject } from "./project/defaults";
 const raw = () => ({ id: "p", name: "Look", stack: { fps: { num: 60, den: 1 }, effects: [{ id: "f", type: "blur", params: { amount: 12 }, enabled: false }], keyframes: { "effects.f.amount": [{ f: 60, v: 10, ease: [0.1, 0.2, 0.8, 1] }] } } });
 it("round trips animation and applies independent IDs at the target rate", () => {
@@ -19,4 +20,14 @@ it("rejects corrupt or unknown preset data instead of applying arbitrary paths",
   expect(() => readEffectPreset(path)).toThrow();
   const fps = raw(); fps.stack.fps.den = 0;
   expect(() => readEffectPreset(fps)).toThrow();
+});
+it("keeps unreadable library entries apart instead of failing the whole library", () => {
+  const bad = raw(); bad.stack.effects[0].type = "renamed";
+  const { presets, unreadable } = readPresetLibrary([raw(), bad]);
+  expect(presets.map((p) => p.name)).toEqual(["Look"]);
+  expect(unreadable).toEqual([bad]);
+});
+it("clamps animated values to the parameter's range", () => {
+  const big = raw(); big.stack.keyframes["effects.f.amount"][0].v = 1e6;
+  expect(readEffectPreset(big).stack.keyframes["effects.f.amount"][0].v).toBe(EFFECTS.blur.params.amount.max);
 });

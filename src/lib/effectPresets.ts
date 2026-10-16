@@ -31,15 +31,29 @@ export function readEffectPreset(raw: unknown): EffectPreset {
   const keyframes: Record<string, Keyframe[]> = {};
   for (const [path, keys] of Object.entries(s.keyframes)) {
     const fx = effects.find((e) => path.startsWith(`effects.${e.id}.`));
-    if (!fx || !Object.hasOwn(EFFECTS[fx.type].params, path.slice(`effects.${fx.id}.`.length)) || !Array.isArray(keys)) throw new Error("Invalid preset animation path.");
+    const key = fx && path.slice(`effects.${fx.id}.`.length);
+    const def = fx && Object.hasOwn(EFFECTS[fx.type].params, key!) ? EFFECTS[fx.type].params[key!] : undefined;
+    if (!def || !Array.isArray(keys)) throw new Error("Invalid preset animation path.");
     keyframes[path] = keys.map((k) => {
       if (!obj(k) || !finite(k.f) || !finite(k.v)) throw new Error("Invalid preset keyframe.");
       const e = k.ease;
       if (e !== undefined && !(typeof e === "string" && ["linear", "hold", "easeIn", "easeOut", "easeInOut"].includes(e)) && !(Array.isArray(e) && e.length === 4 && e.every(finite))) throw new Error("Invalid preset easing.");
-      return { f: k.f, v: k.v, ...(e !== undefined ? { ease: structuredClone(e) as Ease } : {}) };
+      return { f: k.f, v: Math.max(def.min, Math.min(def.max, k.v)), ...(e !== undefined ? { ease: structuredClone(e) as Ease } : {}) };
     });
   }
   return { id: raw.id, name: presetName(raw.name), stack: { effects, keyframes, fps: { num: s.fps.num, den: s.fps.den } } };
+}
+
+/** Reads a stored library entry by entry: one bad preset (say, an effect a
+ * later version renamed) must not hide the others, or be erased by the next
+ * save. Unreadable entries come back raw so they can be written back. */
+export function readPresetLibrary(data: unknown): { presets: EffectPreset[]; unreadable: unknown[] } {
+  if (!Array.isArray(data)) throw new Error("Invalid preset library.");
+  const presets: EffectPreset[] = [], unreadable: unknown[] = [];
+  for (const raw of data) {
+    try { presets.push(readEffectPreset(raw)); } catch { unreadable.push(raw); }
+  }
+  return { presets, unreadable };
 }
 
 export function applyEffectPreset(p: Project, ids: string[], raw: unknown) {
