@@ -146,13 +146,17 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const options = useEditor((s) => s.mediaBrowser);
+  const folders = useEditor((s) => s.project.mediaFolders);
+  useEffect(() => {
+    if (options.folder && !folders?.includes(options.folder)) store.set({ mediaBrowser: { ...store.get().mediaBrowser, folder: null } });
+  }, [folders, options.folder]);
   const change = (patch: Partial<MediaBrowser>) => store.set({ mediaBrowser: { ...store.get().mediaBrowser, ...patch } });
-  const clearFilters = () => change({ query: "", kind: "all", usage: "all" });
+  const clearFilters = () => change({ query: "", kind: "all", usage: "all", folder: null, favorites: false });
   useThumbs();
   const usage = useMemo(() => mediaUsage(tracks), [tracks]);
   const list = filterMedia(assets, usage, kind === "audio" ? { ...options, kind: "audio" } : options);
   const total = assets.filter((a) => !a.sticker && (kind === "all" || a.kind === "audio")).length;
-  const filtered = !!options.query || options.usage !== "all" || (kind === "all" && options.kind !== "all");
+  const filtered = !!options.query || options.usage !== "all" || options.folder !== null || options.favorites || (kind === "all" && options.kind !== "all");
 
   return (
     <div className="lib-content media-browser">
@@ -185,6 +189,10 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
           <button className="icon-btn" aria-label="Grid view" data-tip="Grid view" aria-pressed={options.view === "grid"} onClick={() => change({ view: "grid" })}><LayoutGrid size={14} /></button>
           <button className="icon-btn" aria-label="List view" data-tip="List view" aria-pressed={options.view === "list"} onClick={() => change({ view: "list" })}><List size={14} /></button>
         </div>
+      </div>
+      <div className="media-organization media-folder-filter">
+        <select className="field" aria-label="Filter by folder" value={JSON.stringify(options.folder)} onChange={(e) => change({ folder: JSON.parse(e.target.value) })}><option value="null">All folders</option><option value={'""'}>Unfiled</option>{folders?.map((f) => <option key={f} value={JSON.stringify(f)}>{f}</option>)}</select>
+        <label><input type="checkbox" checked={options.favorites} onChange={(e) => change({ favorites: e.target.checked })} />Favorites only</label>
       </div>
       {total === 0 ? (
         <button className="drop-box" onClick={() => void pickAndImport()}>
@@ -235,6 +243,7 @@ function MediaCard({ asset, uses, list }: { asset: Asset; uses: MediaUse[]; list
       </div>
       <div className="media-info">
         <span className="card-label">{asset.name}</span>
+        {(asset.folder || asset.favorite) && <span className="media-details">{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}
         {list && <>
           <span className="media-details">{metadata}</span>
           {uses.length ? <button className="media-uses" aria-label={`Select ${uses.length} timeline uses of ${asset.name}`}

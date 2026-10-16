@@ -11,7 +11,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 - [x] Project-session ownership for delayed imports and analysis.
 - [x] Save a copy / independent project versions.
 - [x] Missing-media relinking.
-- [ ] Media folders and favorites.
+- [x] Media folders and favorites.
 - [ ] Source preview and In/Out selection before timeline placement.
 - [ ] Reusable effect presets and selective Paste Attributes.
 - [ ] Two-up trim preview.
@@ -98,3 +98,21 @@ real desktop I/O. Screenshot inspected. TypeScript and all 384 tests pass.
 Lesson: even after reload, Vite can serve timestamped module dependencies.
 Dev-only test hooks must import the URL recorded in Resource Timing rather
 than an unversioned URL that can create a second store instance.
+
+### Media folders and favorites
+
+Manage media now creates/renames/deletes flat virtual folders and assigns
+assets and favorites. Folder deletion unfiles media without removing files
+or clips; rename/delete and membership changes are undoable metadata edits.
+Library folder/favorites filters intersect the existing search/type/usage
+filters. Deleted/undone folder selections clear instead of hiding everything.
+
+Optional `mediaFolders`, asset `folder` and `favorite` fields extend schema 1;
+old documents need no migration. The loader repairs case/whitespace duplicates
+and invalid favorites. Older builds can still render these projects, but may
+discard folder definitions on saving. ADR-042 explains the compatibility
+tradeoff. Commands expose folder CRUD and multi-asset assignment.
+
+Nine real desktop MCP checks pass for membership, rename, combined filters,
+empty results, clearing, native save/load, deletion, Undo and narrow layout.
+Both desktop screenshots were inspected. TypeScript and 387 unit tests pass.

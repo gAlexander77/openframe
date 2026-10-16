@@ -268,3 +268,5 @@ Three doors, one engine ([[Automation]]):
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
+- **Media organization:** saved virtual folders and favorites, undoable folder
+  rename/delete and assignment, plus intersecting folder/favorite filters.

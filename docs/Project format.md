@@ -48,10 +48,10 @@ Everything not given gets its default. This is a complete file:
 
 ```
 Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, background,
-          assets: Asset[], tracks: Track[], markers: Marker[], luts?: LutFile[] }
+          assets: Asset[], mediaFolders?: string[], tracks: Track[], markers: Marker[], luts?: LutFile[] }
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
-          sticker? }   (sticker: the library sticker an image was drawn from)
+          sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
           muted, hidden, locked, volume }
@@ -63,6 +63,15 @@ overlap; audio clips only on audio tracks and nothing else on them; every
 `assetId` exists; exactly one video track is `main` (the bottom one if
 none is marked). Tracks are listed top to bottom; the top video track draws
 last.
+
+## Media organization
+
+Media folders are flat virtual names (1–80 trimmed characters), independent
+of disk paths. Missing `mediaFolders` means none; missing asset `folder` means
+Unfiled and missing `favorite` means false. Normalization merges case-insensitive
+folder duplicates, recovers referenced folders and discards invalid favorites.
+These optional schema-1 fields do not change rendering. Older builds can read
+the edits but may discard folder definitions on saving (ADR-042).
 
 ## Color grading
 

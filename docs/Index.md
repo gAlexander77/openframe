@@ -130,3 +130,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   edits and ignore overlapping navigation requests
 - [[ADR-040 Media browsing stays outside the project document]] — derived
   usage counts, sorting and session preferences without changing saved assets
+- [[ADR-041 Relinking preserves source handles and edit identity]] — recovery
+  without silent trim changes
+- [[ADR-042 Media organization is optional project metadata]] — folders,
+  favorites, compatibility and undo

@@ -318,6 +318,15 @@ export function normalizeProject(raw: unknown): Project {
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));
+  const mediaFolders: string[] = [];
+  for (const name of [...(Array.isArray(raw.mediaFolders) ? raw.mediaFolders : []), ...assets.map((a) => a.folder)]) {
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 80) continue;
+    if (!mediaFolders.some((f) => f.toLocaleLowerCase() === name.trim().toLocaleLowerCase())) mediaFolders.push(name.trim());
+  }
+  for (const a of assets) {
+    a.folder = typeof a.folder === "string" ? mediaFolders.find((f) => f.toLocaleLowerCase() === a.folder!.trim().toLocaleLowerCase()) : undefined;
+    a.favorite = a.favorite === true ? true : undefined;
+  }
   const luts: LutFile[] = (Array.isArray(raw.luts) ? raw.luts : []).map((l, i) => {
     if (!isObj(l) || typeof l.src !== "string") throw new ProjectError(`luts[${i}]: needs at least a "src"`);
     return {
@@ -385,6 +394,7 @@ export function normalizeProject(raw: unknown): Project {
     background: typeof raw.background === "string" ? raw.background : base.background,
     ...(raw.canvasFixed === true ? { canvasFixed: true } : {}),
     assets,
+    ...(mediaFolders.length ? { mediaFolders } : {}),
     tracks,
     markers,
     ...(luts.length ? { luts } : {}),

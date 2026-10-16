@@ -6,9 +6,11 @@ export interface MediaBrowser {
   usage: "all" | "used" | "unused";
   sort: "import" | "name" | "name-desc" | "duration" | "duration-desc";
   view: "grid" | "list";
+  folder: string | null;
+  favorites: boolean;
 }
 
-export const DEFAULT_MEDIA_BROWSER: MediaBrowser = { query: "", kind: "all", usage: "all", sort: "import", view: "grid" };
+export const DEFAULT_MEDIA_BROWSER: MediaBrowser = { query: "", kind: "all", usage: "all", sort: "import", view: "grid", folder: null, favorites: false };
 export interface MediaUse { clipId: string; start: number }
 
 /** References count even on disabled clips or hidden/locked/muted tracks. */
@@ -31,6 +33,8 @@ export function filterMedia(assets: Asset[], usage: Map<string, MediaUse[]>, opt
     const used = (usage.get(asset.id)?.length ?? 0) > 0;
     return !asset.sticker && (options.kind === "all" || asset.kind === options.kind)
       && asset.name.toLocaleLowerCase().includes(query)
+      && (options.folder === null || (asset.folder ?? "") === options.folder)
+      && (!options.favorites || asset.favorite === true)
       && (options.usage === "all" || (options.usage === "used" ? used : !used));
   });
   if (options.sort === "name" || options.sort === "name-desc") {

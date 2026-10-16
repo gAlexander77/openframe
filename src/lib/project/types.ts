@@ -31,6 +31,8 @@ export interface Project {
   /** Color behind every layer (CSS hex). */
   background: string;
   assets: Asset[];
+  /** Flat virtual folders; source files stay in place. Absent = none. */
+  mediaFolders?: string[];
   /** Display order, top to bottom. Visual tracks composite bottom-up, so the
    * top track is drawn last and covers the ones below it. */
   tracks: Track[];
@@ -71,6 +73,8 @@ export interface Asset {
   /** Library sticker this image was rendered from (src/lib/stickers.ts);
    * adding that sticker again reuses this asset. */
   sticker?: string;
+  folder?: string;
+  favorite?: boolean;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */

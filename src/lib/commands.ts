@@ -32,6 +32,7 @@ import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
+import { editFolder, organizeMedia } from "./project/mediaOrganization";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -149,6 +150,18 @@ const TEXT_STYLE_SCHEMA = S.obj({
 // ---- the registry ------------------------------------------------------------------
 
 export const COMMANDS: Command[] = [
+  {
+    name: "edit_media_folder",
+    description: "Create, rename or delete a virtual media folder. Deleting unfiles its media; source files and clips are preserved.",
+    input: S.obj({ action: S.str("Operation", { enum: ["create", "rename", "delete"] }), name: S.str("Folder name"), new_name: S.str("New name for rename") }, ["action", "name"]),
+    run: (p, a) => editFolder(p, a.action as "create" | "rename" | "delete", String(a.name), a.new_name as string | undefined),
+  },
+  {
+    name: "organize_media",
+    description: "Set virtual folder membership and/or favorite status for imported assets. An empty folder name unfiles media; does not move source files.",
+    input: S.obj({ asset_ids: S.ids("Assets"), folder: S.str("Existing folder, or empty to unfile"), favorite: S.bool("Favorite status") }, ["asset_ids"]),
+    run: (p, a) => organizeMedia(p, a.asset_ids as string[], { ...(typeof a.folder === "string" ? { folder: a.folder } : {}), ...(typeof a.favorite === "boolean" ? { favorite: a.favorite } : {}) }),
+  },
   {
     name: "relink_media",
     description: "Relink every use of an asset to another imported asset's source. Preserves edits and identity; requires compatible streams and duration. Undoable.",

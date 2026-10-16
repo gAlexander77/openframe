@@ -3,11 +3,14 @@ import { probe } from "../engine/media";
 import type { Asset } from "../lib/project/types";
 import { projectWork } from "../state/projectWork";
 import { applyReplacement, pickReplacement } from "../state/relink";
-import { useEditor } from "../state/store";
+import { store, useEditor } from "../state/store";
+import { organizeMedia } from "../lib/project/mediaOrganization";
+import { MediaFolders } from "./MediaFolders";
 import { Dialog } from "./Dialog";
 
 export function MediaManager({ onClose }: { onClose: () => void }) {
   const assets = useEditor((s) => s.project.assets);
+  const folders = useEditor((s) => s.project.mediaFolders);
   const [signal] = useState(() => projectWork.signal());
   const [status, setStatus] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -28,10 +31,14 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
   }, [assets, signal]);
   return <Dialog title="Manage media" busy={busy} onClose={onClose} className="media-manager">
     <p className="lib-hint">Locate moved or missing files. Relinking updates every use in this project and preserves your edits. Undo restores the previous location.</p>
+    <MediaFolders />
     <div className="media-file-list">
       {assets.length === 0 && <p>No media imported.</p>}
       {assets.map((a) => <div className="media-file" key={a.id}>
-        <div><strong>{a.name}</strong><span className="media-path">{a.src}</span>{a.proxy && <span className="media-path">Editing copy: {a.proxy}</span>}<span role="status">{status[a.id] ?? "Checking…"}</span></div>
+        <div><strong>{a.name}</strong><span className="media-path">{a.src}</span>{a.proxy && <span className="media-path">Editing copy: {a.proxy}</span>}<span role="status">{status[a.id] ?? "Checking…"}</span>
+          <div className="media-organization"><select className="field" aria-label={`Folder for ${a.name}`} value={a.folder ?? ""} onChange={(e) => store.edit("Move media to folder", (p) => organizeMedia(p, [a.id], { folder: e.target.value }))}><option value="">Unfiled</option>{folders?.map((f) => <option key={f}>{f}</option>)}</select>
+          <label><input type="checkbox" checked={!!a.favorite} onChange={(e) => store.edit("Favorite media", (p) => organizeMedia(p, [a.id], { favorite: e.target.checked }))} />Favorite {a.name}</label></div>
+        </div>
         <button className="btn" disabled={busy} aria-label={`Locate ${a.name}`} onClick={async () => {
           setBusy(true); setError(""); setDraft(null);
           try { const replacement = await pickReplacement(a, signal); if (replacement) setDraft({ original: a, replacement }); }

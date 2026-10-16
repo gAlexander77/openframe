@@ -478,3 +478,6 @@ untouched. Local commits only.
 - Save a copy committed as `ff6fff6`. Media relinking adds a real-file
   recovery dialog and `relink_media` command. Seven desktop MCP checks and
   384 unit tests pass; ADR-041 records source-handle and cache decisions.
+- Media folders/favorites add optional schema-1 metadata approved in the
+  workflow expansion. Nine desktop MCP checks and 387 unit tests pass.
+  See ADR-042 and the dated development pass for compatibility and limits.

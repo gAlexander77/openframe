@@ -218,6 +218,15 @@ desktop/browser target, steps, expected result, and actual result. Share only
 media you have permission to share and remove private paths and tokens from
 logs. During the private phase, use the review channel agreed with the owner.
 
+## Organize media
+
+In **Manage media → Organize folders**, create a folder, then choose it beside
+each file. Mark **Favorite** for your preferred takes. Filter the library by
+folder or **Favorites only**, combined with its other filters. Rename and
+delete folders in the same section; deleting a folder unfiles its media and
+keeps all clips and source files. Organization is saved with this project and
+can be undone. These are virtual folders, so footage stays on disk where it is.
+
 ## Relink moved media
 
 Open **Media → Manage media** to check source availability and see file paths.
