@@ -34,6 +34,9 @@ let result;
 try {
   const page = await browser.newPage({ viewport: { width, height } });
   page.on("pageerror", (e) => console.error("pageerror:", e.message));
+  // Drives written for an attached page (the desktop WebView) start with a
+  // reload, which needs a page already on the app.
+  await page.goto("http://localhost:1420/");
   result = await drive(page);
 } finally {
   await browser.close();

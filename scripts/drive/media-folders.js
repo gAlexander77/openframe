@@ -4,8 +4,8 @@ async page => {
   await page.locator(".create-card").click(); await page.locator(".timeline-panel").waitFor();
   await page.locator(".project-name").click(); await page.locator(".project-name-input").fill("__QA_20261016_folders"); await page.locator(".project-name-input").press("Enter");
   await page.evaluate(async () => { await window.videoEditor.import([
-    { name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" },
-    { name: "color-bars.png", src: "F:/Dev/video-editor/fixtures/media/color-bars.png" },
+    { name: "framecode-30.mp4", src: (window.videoEditor.platform() === "desktop" ? "F:/Dev/video-editor" : location.origin) + "/fixtures/media/framecode-30.mp4" },
+    { name: "color-bars.png", src: (window.videoEditor.platform() === "desktop" ? "F:/Dev/video-editor" : location.origin) + "/fixtures/media/color-bars.png" },
   ]); });
   const details = {};
   await page.getByRole("button", { name: "Manage media", exact: true }).click();

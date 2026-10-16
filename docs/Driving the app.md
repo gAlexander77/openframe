@@ -28,7 +28,11 @@ The dated [[Development pass 2026-10-16]] lists the checks and limitations.
   [--size 1600x950]` (once: `npm i --prefix scratch playwright-core`); it
   prints PASS/FAIL, the failed checks, and writes the full result to
   `scratch/`. The Playwright MCP tool's `browser_run_code_unsafe` runs the
-  same files.
+  same files. The runner opens the app before calling the drive, so drives
+  written for an attached desktop page (they start with a reload) run too
+  when their fixtures are URLs: pick the source by `platform()`, as
+  `trim-preview.js` does. Drives that stub desktop platform calls
+  (`media-relink`, `desktop-session-jobs`) stay desktop-only.
 - **This page**: the desktop app over WebView2's debug port. Anything that
   crosses IPC: the `media:` protocol, projects, exports, FFmpeg proxies,
   OS drops.
@@ -172,6 +176,15 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
    Single edges scatter a pixel or so; compare averages, at a large size.
 9. **Never ship a debug port**: any local process could drive the app. The
    variable belongs in a dev shell, not in config.
+10. **Swap a watched source file in one write.** `git show rev:file > file`
+    truncates first and writes later; Vite transformed the empty file and
+    kept serving it, so the app failed to load ("does not provide an
+    export named …") until the next change. Use `git checkout`, an
+    editor, or a script that writes the whole file at once.
+11. **Every save under `src/` reaches the owner's running app.** A desktop
+    dev build loads from the same Vite on :1420, so hot updates (and full
+    reloads, for non-component modules) land in their window too. Keep
+    edits off `src/` while they test, or give your run its own port.
 
 ## Header interaction check — 2026-10-15
 

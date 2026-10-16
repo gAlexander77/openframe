@@ -5,7 +5,7 @@ async page => {
   await page.locator(".project-name").click(); await page.locator(".project-name-input").fill("__QA_20261016_trim"); await page.locator(".project-name-input").press("Enter");
   const ids = await page.evaluate(async () => {
     const api = window.videoEditor;
-    const [a] = await api.import([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]);
+    const [a] = await api.import([{ name: "framecode-30.mp4", src: (window.videoEditor.platform() === "desktop" ? "F:/Dev/video-editor" : location.origin) + "/fixtures/media/framecode-30.mp4" }]);
     api.exec("add_media_clip", { asset_id: a.id, start: 0, in: 1, duration: 2 });
     api.exec("add_media_clip", { asset_id: a.id, start: 2, in: 4, duration: 2 });
     api.exec("add_media_clip", { asset_id: a.id, start: 4, in: 7, duration: 2 });
