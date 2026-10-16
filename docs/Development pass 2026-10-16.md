@@ -3,7 +3,7 @@
 The owner approved the six proposed workflow additions and asked for styling
 and interaction checks through Playwright MCP attached to a real application
 WebView. Keep each intention in a local commit with its documentation.
-Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
+Preserve `Modelfile.qwen32k`, the owner's work and the parked
 `bg-removal`, `compound-clips` and `timeline-ux` worktrees. No publication.
 
 ## Delivery checklist
@@ -15,7 +15,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 - [x] Source preview and In/Out selection before timeline placement.
 - [x] Reusable effect presets and selective Paste Attributes.
 - [x] Two-up trim preview.
-- [ ] Final real desktop WebView review through Playwright MCP.
+- [x] Final real desktop WebView review through Playwright MCP.
 
 ## Decisions and evidence
 
@@ -204,3 +204,45 @@ tests pass, including clamped handles, reverse and freeze edge mapping.
 The existing Timeline gesture handlers were touched; Claude's parked
 `timeline-ux` worktree remains untouched and will need normal conflict review.
 Reference: [Adobe trim mode](https://helpx.adobe.com/premiere/desktop/edit-projects/trim-clips/edit-in-trim-mode.html).
+
+### Final verification and pickup
+
+All eight drives were run sequentially through Playwright MCP attached to
+the existing desktop WebView at `127.0.0.1:9222`, after the implementation
+reached `7735d24`. They exercised real Tauri project persistence and native
+file decoding. File-picker returns and deliberate error/delay points were
+stubbed; no native OS input was automated.
+
+| Drive | Passing checks |
+| --- | ---: |
+| `project-copy` | 7 |
+| `media-relink` | 7 |
+| `media-folders` | 9 |
+| `source-monitor` | 8 |
+| `effect-presets` | 6 |
+| `paste-attributes` | 6 |
+| `trim-preview` | 8 |
+| `desktop-session-jobs` | 4 |
+| **Total** | **55** |
+
+The native session checks cover delayed import after New, a picker result
+after reopening the same project ID, canceled beat analysis and successful
+work in the new session. Earlier isolated web drives also covered captions,
+subtitles, LUTs and stickers. Production web build, TypeScript and all 397
+unit tests pass. Vite reports its existing large-bundle advisory; no Rust
+source changed, so native build/test gates were not rerun for this pass.
+
+Desktop screenshots were inspected at 1600×950 and 1100×680. Final Home
+reload reports no page errors and confirms the desktop platform. The
+`__QA_20261016_` projects/preset were removed, along with the early failed
+test's unnamed fixture project after checking its exact ID, name, source
+and clip shape. The resulting Home is empty, matching the test instance's
+initial state. Reload cleared test overrides; CDP viewport emulation was
+reset. The app remains open for the owner at its native 1600×940 CSS size.
+
+All changes are local commits on main. Nothing was pushed or published;
+the three parked worktrees and `Modelfile.qwen32k` remain untouched. No new
+worktree is left behind. Remaining product/release work lives in the existing
+roadmap and handoff: this completes the approved pass, not every possible
+editor feature. Source marks and clipboard stay session-only, presets stay
+device-local, relinking is one file at a time, and folders are flat.

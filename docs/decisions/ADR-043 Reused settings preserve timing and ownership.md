@@ -4,6 +4,10 @@
 
 ## Decision
 
+[Adobe's effect copying workflow](https://helpx.adobe.com/premiere/desktop/add-video-effects/apply-video-effects/copy-and-paste-clip-effects.html)
+informs including keyframes when reusing effects; the explicit attribute
+groups and append/replace defaults below are this project's decisions.
+
 Reusable effects store a detached stack and its source frame rate in a local
 preset library. Presets validate known effect types, parameters, key paths and
 easing before application. Local writes complete before updating the visible

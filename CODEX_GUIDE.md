@@ -1,8 +1,10 @@
 # Codex guide: start here
 
-**Pickup status, 2026-10-15:** the eight original tasks and the captions/
-project-lifecycle follow-ups are completed and committed locally. Read the
-dated entries in section 7 for hashes, evidence, and remaining release work.
+**Pickup status, 2026-10-16:** the original tasks, lifecycle follow-ups and
+all six approved workflow additions are complete and committed locally.
+The final real desktop WebView pass has 55 passing MCP checks; TypeScript,
+397 unit tests and the production web build pass. Read section 7 and
+`docs/Development pass 2026-10-16.md` for evidence and remaining release work.
 
 You are Codex, picking up OpenFrame from Claude Code on 2026-10-14. This file
 tells you what to do, in order, and the rules that keep the project safe.
@@ -41,6 +43,9 @@ done (`docs/Renaming.md`).
   personal testing, then explicitly prohibited computer/desktop control
   while they work. Use headless Playwright MCP for further verification;
   native input testing needs their separate test computer or new permission.
+  **Owner update, 2026-10-16:** the owner authorized using/restarting the current
+  test instance. It is running with CDP on localhost:9222; use Playwright MCP
+  attached to that WebView. Native desktop input remains outside this scope.
 - **One dev server at most.** If port 1420 is already listening, it is this
   repo's Vite: reuse it. Check with
   `Get-NetTCPConnection -LocalPort 1420 -State Listen`. Start one with
@@ -48,6 +53,8 @@ done (`docs/Renaming.md`).
 - **Do not rename the app, change the app identifier
   (`com.alex.video-editor`), the license, or saved-data formats.** Those
   need the owner and a migration plan (`docs/Renaming.md` §1).
+  The approved 2026-10-16 folders/favorites feature added optional schema-1
+  metadata (ADR-042); identity, paths and existing render data remain compatible.
 - **No new npm or cargo dependencies.** `scratch/` (git-ignored) may hold
   tools such as `playwright-core`.
 - **Small commits, one intention each.** The message's first line says
@@ -461,10 +468,10 @@ for final Playwright MCP verification on a real application WebView. Follow
 `docs/Development pass 2026-10-16.md` for the checklist, scope and evidence.
 Delayed work now belongs to a single document session: close/reopen also
 invalidates work when the project ID stays the same. Eight `project-jobs`
-MCP checks and all 380 unit tests pass; TypeScript passes. The owner's current
-desktop app lacks a debugging port, so an isolated real desktop instance is
-planned for the final review. Parked agent work and unrelated files remain
-untouched. Local commits only.
+MCP checks and all 380 unit tests passed at that stage; TypeScript passed.
+The owner then authorized restarting the current test app with debugging;
+the completed desktop review below supersedes the initial isolated-instance
+plan. Parked agent work and unrelated files remain untouched. Local commits only.
 
 - `edd7e77`: delayed-job document-session protection above.
 - Save a copy now supports independent named versions and optional switching,
@@ -495,3 +502,8 @@ untouched. Local commits only.
   Eight desktop MCP checks (including framecode pixels) and 397 tests pass.
   Timeline gesture edits may overlap the parked `timeline-ux` branch on its
   eventual merge; no parked work was modified.
+- Relinking is `83c7230`; trim preview is `7735d24`. Final review on that
+  complete implementation: all 55 checks across eight desktop MCP drives pass,
+  including four native delayed-job/session checks. Build and 397 unit tests
+  pass. QA projects/presets were removed, test overrides cleared by reload,
+  and viewport emulation reset. The app remains running at Home on port 9222.

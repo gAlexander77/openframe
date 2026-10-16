@@ -136,3 +136,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   favorites, compatibility and undo
 - [[ADR-043 Reused settings preserve timing and ownership]] — presets,
   selective attributes, animation conversion and source preview isolation
+- [[ADR-044 Trim previews read the applied edit]] — exact cut frames,
+  source limits and cancellable gestures

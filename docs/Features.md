@@ -37,6 +37,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   list. Usage counts select all referencing clips and seek the earliest.
   Counts follow edits/Undo, including references on inactive tracks.
 
+- **Media recovery:** Manage media checks editing-source availability; Locate
+  and Relink repair every clip reference while preserving edits, with Undo.
+  Replacements require compatible streams and full source duration.
+- **Folders and favorites:** saved virtual folders, undoable folder rename/delete
+  and assignment, plus intersecting folder/favorite filters.
+- **Source preview:** independent video/audio transport, scrubbing and frame
+  stepping, In/Out range insertion, and still image preview.
+
 ## Timeline
 
 - CapCut's toggles: main track **magnet** (gapless, reorders on drag),
@@ -59,6 +67,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
 - Pro trim tools: ripple (T), roll (R), slip (Y) and slide (U), with
   readouts of what moves while dragging.
+
+- **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
+  clamped source times, one-step Undo and gesture cancellation.
 
 ## Viewer
 
@@ -102,6 +113,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - On a keyframe, an easing button beside the cluster opens the presets;
   the Transform header's ◇ keys (or unkeys) all four of its properties at
   once, as CapCut's section diamonds do.
+
+- **Reusable effect presets:** local named stacks with animation, rename/delete,
+  cross-project reuse and undoable application to unlocked visual clips.
+- **Paste Attributes:** choose transform, color, audio and/or effects, with
+  animation retiming and optional effect replacement. Clip timing stays intact.
 
 ## Keyframes
 
@@ -264,17 +280,5 @@ Three doors, one engine ([[Automation]]):
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
   (preset or bezier), `remove_keyframes`.
-
-- **Media recovery:** Manage media checks editing-source availability; Locate
-  and Relink repair every clip reference while preserving edits, with Undo.
-  Replacements require compatible streams and full source duration.
-- **Media organization:** saved virtual folders and favorites, undoable folder
-  rename/delete and assignment, plus intersecting folder/favorite filters.
-- **Source preview:** independent video/audio transport, scrubbing and frame
-  stepping, In/Out range insertion, and still image preview.
-- **Reusable effect presets:** local named stacks with animation, rename/delete,
-  cross-project reuse and undoable application to unlocked visual clips.
-- **Paste Attributes:** choose transform, color, audio and/or effects, with
-  animation retiming and optional effect replacement. Clip timing stays intact.
-- **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
-  clamped source times, one-step Undo and gesture cancellation.
+- Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
+  `apply_effect_preset`, `paste_attributes`.
