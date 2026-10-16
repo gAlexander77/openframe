@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { audioContext, scheduleAudio, type Schedule } from "../engine/audio";
+import { audibleTime, audioContext, scheduleAudio, type Schedule } from "../engine/audio";
 import { player } from "../engine/player";
 import { AudioLines, ChevronLeft, ChevronRight, Pause, Play } from "../icons";
 import { sourceFrames, sourceProject } from "../lib/sourceMonitor";
@@ -43,7 +43,7 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
       setPlaying(true);
       const tick = () => {
         if (generation !== transport.current.generation) return;
-        const f = start + Math.max(0, Math.floor((ctx.currentTime - at) * rate));
+        const f = start + Math.max(0, Math.floor((audibleTime(ctx) - at) * rate));
         if (f >= markOut) { setFrame(markOut - 1); stop(); return; }
         setFrame(f); transport.current.raf = requestAnimationFrame(tick);
       };

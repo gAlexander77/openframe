@@ -1,9 +1,15 @@
 import { clipForAsset, createProject } from "./project/defaults";
 import type { Asset, Clip, Project } from "./project/types";
-import { fpsValue, type Rational } from "./time";
+import { FPS_PRESETS, fpsValue, type Rational } from "./time";
 
 export interface SourceRange { in: number; out: number }
-export const sourceFps = (asset: Asset): Rational => ({ num: Math.round((asset.fps && asset.fps > 0 ? asset.fps : 30) * 1000), den: 1000 });
+/** The source's own rate; a probed 29.97 snaps to 30000/1001 (as on import)
+ * so its timecode is drop-frame like the program monitor's. */
+export function sourceFps(asset: Asset): Rational {
+  const fps = asset.fps && asset.fps > 0 ? asset.fps : 30;
+  const preset = FPS_PRESETS.find((x) => Math.abs(fpsValue(x.fps) - fps) < 0.01);
+  return preset ? preset.fps : { num: Math.round(fps * 1000), den: 1000 };
+}
 export const sourceFrames = (asset: Asset, fps = sourceFps(asset)) => Math.max(1, Math.floor((asset.kind === "image" ? 5 : asset.duration) * fpsValue(fps) + 1e-6));
 
 /** An isolated source timeline, with no edits from the program monitor. */

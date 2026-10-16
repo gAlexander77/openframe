@@ -4,7 +4,8 @@ import type { Asset } from "./project/types";
 const asset: Asset = { id: "a", name: "a", src: "a.mp4", kind: "video", duration: 10, fps: 60, hasVideo: true, hasAudio: true };
 it("makes an isolated source timeline without changing source metadata", () => {
   const p = sourceProject(asset);
-  expect(p.fps).toEqual({ num: 60000, den: 1000 });
+  expect(p.fps).toEqual({ num: 60, den: 1 });
+  expect(sourceProject({ ...asset, fps: 29.97 }).fps).toEqual({ num: 30000, den: 1001 });
   expect(p.tracks[0].clips[0].duration).toBe(600);
   expect(sourceFrames({ ...asset, duration: 0.001 })).toBe(1);
 });
