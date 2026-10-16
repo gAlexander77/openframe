@@ -265,7 +265,8 @@ export function Timeline() {
     if (!g.started) {
       if (Math.abs(e.clientX - g.x0) < 3 && (g.kind === "trim" || Math.abs(e.clientY - g.y0) < 3)) return;
       g.started = true;
-      player.pause();
+      // Trims swap the viewer for the trim preview; a move keeps playing.
+      if (g.kind !== "move") player.pause();
       store.beginGesture();
     }
     const opts = settleOptions();
