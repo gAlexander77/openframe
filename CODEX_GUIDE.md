@@ -484,3 +484,6 @@ untouched. Local commits only.
 - Folders/favorites committed as `9b90ae0`; source preview now adds selected
   In/Out ranges using engine decoding and audio. Eight desktop MCP checks
   and 389 unit tests pass. Source marks are session-only.
+- Source monitor committed as `d36cac7`. Reusable effect presets add a local
+  library with storage failure recovery; six desktop MCP checks and 391 unit
+  tests pass. Applying uses independent IDs and keeps animation timing.

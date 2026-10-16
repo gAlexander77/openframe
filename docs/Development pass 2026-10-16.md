@@ -138,3 +138,24 @@ Undo, audio range, cancel and narrow layout. Screenshot inspected. TypeScript
 and 389 unit tests pass. Audibility was not assessed by a human; playback
 progress and actual desktop audio decoding/scheduling were exercised.
 Reference: [Adobe Source monitor In/Out workflow](https://helpx.adobe.com/premiere/desktop/get-started/source-and-program-monitor-adjustments/set-in-and-out-points-in-the-source-monitor.html).
+
+### Reusable effect presets
+
+Inspector → Effects → Effect presets saves, renames, deletes and applies
+named stacks across projects on this device. Presets include enabled state,
+parameters, keyframes and source frame rate. Applying uses the established
+stack copier: append independent effect IDs, convert key times, preserve
+existing attributes, and respect track locks. `apply_effect_preset` accepts
+the same serialized preset for automation.
+
+The local preset library is separate from the project and its Undo history;
+applying a preset is undoable. Storage writes precede visible changes. Failed
+writes retain the draft and old library; corrupt stored data reports a
+recoverable error. The parser validates catalog types/paths, numeric data,
+frame rates and easing. No dependency or document fields were added.
+
+Six real desktop MCP checks pass: failed storage/retry, rename, persistence
+through WebView reload and a new project, application Undo, deletion and
+narrow layout. Screenshot inspected. TypeScript and 391 tests pass. The first
+drive needed its Close selector scoped to the modal (the title bar also has
+a Close button); no native window button was clicked.

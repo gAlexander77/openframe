@@ -33,6 +33,7 @@ import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templ
 import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
+import { applyEffectPreset } from "./effectPresets";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -150,6 +151,12 @@ const TEXT_STYLE_SCHEMA = S.obj({
 // ---- the registry ------------------------------------------------------------------
 
 export const COMMANDS: Command[] = [
+  {
+    name: "apply_effect_preset",
+    description: "Append a serialized effect preset (id, name, stack with effects/keyframes/fps) to visual clips. Validates catalog parameters, remaps effect IDs and converts animation timing.",
+    input: S.obj({ clip_ids: S.ids("Target clips"), preset_json: S.str("Effect preset JSON") }, ["clip_ids", "preset_json"]),
+    run: (p, a) => applyEffectPreset(p, a.clip_ids as string[], JSON.parse(String(a.preset_json))),
+  },
   {
     name: "edit_media_folder",
     description: "Create, rename or delete a virtual media folder. Deleting unfiles its media; source files and clips are preserved.",

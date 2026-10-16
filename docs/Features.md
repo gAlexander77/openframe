@@ -272,3 +272,5 @@ Three doors, one engine ([[Automation]]):
   rename/delete and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame
   stepping, In/Out range insertion, and still image preview.
+- **Reusable effect presets:** local named stacks with animation, rename/delete,
+  cross-project reuse and undoable application to unlocked visual clips.

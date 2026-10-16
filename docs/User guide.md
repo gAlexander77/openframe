@@ -220,6 +220,12 @@ logs. During the private phase, use the review channel agreed with the owner.
 
 ## Organize media
 
+In the clip inspector's **Effects** tab, open **Effect presets…**. Name and
+save the selected clip's stack, then choose it on another clip and **Apply
+preset**. Presets append effects with independent animation and work across
+projects on this device. Rename/delete them in the same dialog. Applying is
+undoable; deleting a saved preset does not remove already applied effects.
+
 Choose **Preview** under a media card to open its source. Play, scrub or step
 frames, set **Mark In** and **Mark Out**, then **Add range**. Out includes the
 frame you see. The range is placed using the current timeline mode; Undo
