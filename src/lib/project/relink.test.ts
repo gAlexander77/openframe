@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { clipForAsset, createProject } from "./defaults";
 import { relinkAsset, relinkProblem } from "./relink";
-import type { Asset } from "./types";
+import type { Asset, VideoClip } from "./types";
 
 const asset: Asset = { id: "a", name: "Original", src: "gone.mp4", proxy: "old-proxy.mp4", kind: "video", duration: 10, hasAudio: true, hasVideo: true };
 it("relinks all uses without changing edits or mutating the original", () => {
@@ -17,4 +17,11 @@ it("rejects mismatched streams, short sources and stale identities", () => {
   expect(relinkProblem(asset, { ...asset, hasAudio: false })).toContain("audio");
   expect(relinkProblem(asset, { ...asset, duration: 9.9 })).toContain("handles");
   expect(() => relinkAsset(createProject(), "a", asset)).toThrow();
+});
+it("checks the clips' source range when the original's length is unknown", () => {
+  const unknown = { ...asset, duration: 0 };
+  const p = createProject(); p.assets = [unknown];
+  p.tracks[0].clips = [{ ...(clipForAsset(asset, 0, p.fps) as VideoClip), in: 4 }];
+  expect(() => relinkAsset(p, "a", { ...asset, duration: 5 })).toThrow("cover the clips");
+  expect(relinkAsset(p, "a", { ...asset, duration: 20 }).assets[0].duration).toBe(20);
 });
