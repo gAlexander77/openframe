@@ -11,8 +11,17 @@ export function FramePreview({ project, frame, label }: { project: Project; fram
   const request = useRef<(p: Project, f: number) => void>(() => {});
   const [error, setError] = useState("");
   useEffect(() => {
-    const comp = new Compositor(canvas.current!);
+    const el = canvas.current!;
+    const comp = new Compositor(el);
     const pool = new CursorPool({ maxSide: 640 });
+    // A page gets about 16 WebGL contexts and one per trim pane adds up; a
+    // real unmount (the canvas left the page, unlike StrictMode's rehearsal)
+    // gives its context back instead of waiting for GC.
+    const release = () => {
+      pool.clear();
+      comp.dispose();
+      if (!el.isConnected) el.getContext("webgl2")?.getExtension("WEBGL_lose_context")?.loseContext();
+    };
     let pending: { p: Project; f: number } | null = null, running = false, disposed = false;
     const pump = async () => {
       if (running) return;
@@ -27,15 +36,20 @@ export function FramePreview({ project, frame, label }: { project: Project; fram
           const w = Math.max(2, Math.round(p.width * k)), h = Math.max(2, Math.round(p.height * k));
           comp.resize(w, h);
           comp.render(plan, sourceImages(sources, w, h), p.background);
-          canvas.current!.dataset.frame = String(f);
+          el.dataset.frame = String(f);
           setError(plan.some((i) => i.kind === "layer" && ["video", "image"].includes(i.layer.source.kind) && !sources.has(i.layer.clipId)) ? "Source unavailable" : "");
           pool.sweep(2000);
         }
       } catch (e) { if (!disposed) setError(e instanceof Error ? e.message : String(e)); }
-      finally { running = false; if (disposed) { pool.clear(); comp.dispose(); } }
+      finally {
+        running = false;
+        if (disposed) release();
+        // An error ends the loop; a newer request must still be drawn.
+        else if (pending) void pump();
+      }
     };
     request.current = (p, f) => { pending = { p, f }; void pump(); };
-    return () => { disposed = true; pending = null; request.current = () => {}; if (!running) { pool.clear(); comp.dispose(); } };
+    return () => { disposed = true; pending = null; request.current = () => {}; if (!running) release(); };
   }, []);
   useEffect(() => { request.current(project, frame); }, [project, frame]);
   return <div className="frame-preview"><canvas ref={canvas} aria-label={label} />{error && <span className="frame-preview-error" role="status">{error}</span>}</div>;
