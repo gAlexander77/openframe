@@ -25,7 +25,8 @@ The dated [[Development pass 2026-10-16]] lists the checks and limitations.
 
 - **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.
   Run a drive headless with `node scripts/drive/run.mjs scripts/drive/<name>.js
-  [--size 1600x950]` (once: `npm i --prefix scratch playwright-core`); it
+  [--size 1600x950] [--base http://localhost:1430]` (once: `npm i --prefix
+  scratch playwright-core`; `--base` aims it at a worktree's own server); it
   prints PASS/FAIL, the failed checks, and writes the full result to
   `scratch/`. The Playwright MCP tool's `browser_run_code_unsafe` runs the
   same files. The runner opens the app before calling the drive, so drives

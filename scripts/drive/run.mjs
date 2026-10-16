@@ -3,7 +3,8 @@
 // this machine while agents work, so no window may pop up.
 //
 // One-time setup (scratch/ is git-ignored):  npm i --prefix scratch playwright-core
-// Usage:  node scripts/drive/run.mjs scripts/drive/framecode.js [--size 1600x950]
+// Usage:  node scripts/drive/run.mjs scripts/drive/framecode.js [--size 1600x950] [--base http://localhost:1430]
+// --base points the drive at another dev server (a worktree's own port).
 // Prints a summary, writes the full result to scratch/drive-<name>.json,
 // and exits 1 when the drive did not pass.
 
@@ -18,6 +19,7 @@ if (!file) {
 }
 const sizeArg = rest[rest.indexOf("--size") + 1];
 const [width, height] = rest.includes("--size") ? sizeArg.split("x").map(Number) : [1600, 950];
+const base = rest.includes("--base") ? rest[rest.indexOf("--base") + 1].replace(/\/$/, "") : "http://localhost:1420";
 
 let chromium;
 try {
@@ -28,7 +30,8 @@ try {
 }
 
 // A drive file is one function expression: async (page, ...) => result.
-const drive = (0, eval)(readFileSync(file, "utf8"));
+// Drives name the main checkout's server; --base swaps it for this run.
+const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base));
 const browser = await chromium.launch({ channel: "msedge", headless: true });
 let result;
 try {
@@ -36,7 +39,7 @@ try {
   page.on("pageerror", (e) => console.error("pageerror:", e.message));
   // Drives written for an attached page (the desktop WebView) start with a
   // reload, which needs a page already on the app.
-  await page.goto("http://localhost:1420/");
+  await page.goto(`${base}/`);
   result = await drive(page);
 } finally {
   await browser.close();
