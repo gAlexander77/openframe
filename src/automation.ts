@@ -14,6 +14,7 @@ import { renderToUrl, stillToUrl } from "./state/export";
 import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, removeSilences, splitScenes } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
+import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
@@ -23,7 +24,13 @@ import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { secondsToFrames } from "./lib/time";
 
-export const automation = {
+export /** Imports belong to the open project (ADR-039). On Home none is open, and
+ * an empty result would read as "none of the files worked". */
+function needProject() {
+  if (projectWork.signal().aborted) throw new Error("No project is open: create or open one first.");
+}
+
+const automation = {
   /** Every command with its JSON Schema, for tool listing. */
   commands: () => COMMANDS.map(({ name, description, input }) => ({ name, description, input })),
   /** Run one command as an undoable edit. Throws with every problem named.
@@ -53,11 +60,12 @@ export const automation = {
   select: (ids: string[]) => store.select(ids),
   /** Import files by URL (web) or path (desktop). */
   async import(srcs: { name: string; src: string; size?: number }[]) {
+    needProject();
     return importFiles(srcs.map((s) => ({ name: s.name, src: s.src, size: s.size ?? 0 })));
   },
   /** Import .cube LUTs by URL (web) or path (desktop) into project.luts;
    * apply_lut then puts one on a clip. Returns the new entries. */
-  importLuts: (srcs: { name: string; src: string }[]) => importLuts(srcs),
+  importLuts: (srcs: { name: string; src: string }[]) => (needProject(), importLuts(srcs)),
   /** Resolves once the viewer has drawn the current frame. */
   rendered: () => player.idle(),
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */

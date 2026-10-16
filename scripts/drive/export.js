@@ -25,6 +25,9 @@ async (page, opts = {}) => {
 
   await page.goto(base);
   await page.waitForFunction(() => !!window.videoEditor);
+  // Imports belong to an open project; the app starts on Home.
+  await page.locator(".create-card").click();
+  await page.locator(".timeline-panel").waitFor();
   await page.evaluate(async (base) => {
     const ve = window.videoEditor;
     const [fc, wav] = await ve.import([
