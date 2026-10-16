@@ -368,6 +368,8 @@ export function Timeline() {
   };
 
   const onCancel = () => {
+    const g = gesture.current;
+    if (g?.kind === "marquee") store.select(g.base);
     gesture.current = null; detachWindowListeners();
     store.cancelGesture(); setReadout(null); setSnapLine(null); setMarquee(null);
   };
