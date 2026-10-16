@@ -84,13 +84,14 @@ export function Timeline() {
   const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame), duration);
   const fpsN = project.fps.num / project.fps.den;
   const contentW = Math.max(view.width, HEADER_W + (timelineEnd + fpsN * 30) * zoom);
-  const focusedMarker = useEditor((s) => s.project.markers.find((m) => m.id === s.markerEdit));
+  const focusedFrame = useEditor((s) => s.project.markers.find((m) => m.id === s.markerEdit)?.frame);
+  // Only when the edited marker changes: zooming later must not jump back to it.
   useLayoutEffect(() => {
     const el = scrollRef.current;
-    if (!el || !focusedMarker) return;
-    const x = HEADER_W + focusedMarker.frame * zoom;
+    if (!el || focusedFrame === undefined) return;
+    const x = HEADER_W + focusedFrame * store.get().zoom;
     if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 40);
-  }, [focusedMarker, zoom]);
+  }, [focusedFrame]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
   const empty = duration === 0;
