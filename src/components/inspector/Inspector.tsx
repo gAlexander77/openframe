@@ -21,6 +21,7 @@ import { LutPanel } from "./LutPanel";
 import { WheelsPanel } from "./WheelsPanel";
 import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
+import { AttributeClipboard } from "./AttributeClipboard";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
@@ -82,6 +83,7 @@ function ClipInspector({ id }: { id: Id }) {
         ))}
       </nav>
       <div className="insp-body" key={active}>
+        <AttributeClipboard clip={clip} />
         {active === "video" && <VideoTab clip={clip} />}
         {active === "audio" && <AudioTab clip={clip} />}
         {active === "speed" && <SpeedTab clip={clip as VideoClip | AudioClip} />}
@@ -969,6 +971,7 @@ function MultiSelection({ count }: { count: number }) {
             <button className="btn ghost" onClick={() => run("delete")}>Delete</button>
           </div>
           <EffectClipboard />
+          <AttributeClipboard />
         </Section>
       </div>
     </>

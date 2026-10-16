@@ -13,7 +13,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 - [x] Missing-media relinking.
 - [x] Media folders and favorites.
 - [x] Source preview and In/Out selection before timeline placement.
-- [ ] Reusable effect presets and selective Paste Attributes.
+- [x] Reusable effect presets and selective Paste Attributes.
 - [ ] Two-up trim preview.
 - [ ] Final real desktop WebView review through Playwright MCP.
 
@@ -159,3 +159,25 @@ through WebView reload and a new project, application Undo, deletion and
 narrow layout. Screenshot inspected. TypeScript and 391 tests pass. The first
 drive needed its Close selector scoped to the modal (the title bar also has
 a Close button); no native window button was clicked.
+
+### Selective Paste Attributes
+
+The inspector offers a detached attribute clipboard and a group-selection
+dialog: transform/crop/opacity/blend, color/filter, audio settings/fades, and
+effects. Only compatible groups across all targets are enabled; locked tracks
+are rejected atomically. Checked groups replace their static settings and
+keys. Effects append by default or explicitly replace the existing stack.
+Clip timing, source offset, speed, text content, masks and animations stay.
+
+Keyframes and audio fades preserve seconds across frame rates; fades clamp to
+the target duration. Color carries its referenced LUT into another project
+without reusing a conflicting ID. This shares the existing local file, not
+its bytes. `paste_attributes` exposes same-project copying to automation.
+Attribute/preset application uses metadata transactions so magnetic mode
+cannot compact intentional gaps as a side effect.
+
+Six real desktop MCP checks pass for selective color, unchanged gaps, effect
+replacement/independent IDs, Undo, lock enforcement and narrow fit. Screenshot
+inspected. TypeScript and 395 unit tests pass, including mixed-rate keys/fades,
+cross-project LUT references and all-target validation. The first drive used
+an incorrect command name for locking; corrected to `update_track`.

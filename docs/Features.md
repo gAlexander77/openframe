@@ -274,3 +274,5 @@ Three doors, one engine ([[Automation]]):
   stepping, In/Out range insertion, and still image preview.
 - **Reusable effect presets:** local named stacks with animation, rename/delete,
   cross-project reuse and undoable application to unlocked visual clips.
+- **Paste Attributes:** choose transform, color, audio and/or effects, with
+  animation retiming and optional effect replacement. Clip timing stays intact.

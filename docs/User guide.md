@@ -218,7 +218,7 @@ desktop/browser target, steps, expected result, and actual result. Share only
 media you have permission to share and remove private paths and tokens from
 logs. During the private phase, use the review channel agreed with the owner.
 
-## Organize media
+## Reuse settings
 
 In the clip inspector's **Effects** tab, open **Effect presets…**. Name and
 save the selected clip's stack, then choose it on another clip and **Apply
@@ -226,11 +226,22 @@ preset**. Presets append effects with independent animation and work across
 projects on this device. Rename/delete them in the same dialog. Applying is
 undoable; deleting a saved preset does not remove already applied effects.
 
+Use **Copy attributes** in a clip inspector, select the destination clip(s),
+then **Paste attributes…**. Choose transform, color, audio or effects. Checked
+groups replace those settings and their animation; effects append unless
+**Replace existing effects** is selected. Timing and source offsets stay put.
+Unavailable groups need compatible targets on unlocked tracks. Undo restores
+the previous settings.
+
+## Preview sources
+
 Choose **Preview** under a media card to open its source. Play, scrub or step
 frames, set **Mark In** and **Mark Out**, then **Add range**. Out includes the
 frame you see. The range is placed using the current timeline mode; Undo
 removes it. Previewing does not move the timeline playhead. Marks reset when
 the preview closes. Image previews offer **Add image** instead.
+
+## Organize media
 
 In **Manage media → Organize folders**, create a folder, then choose it beside
 each file. Mark **Favorite** for your preferred takes. Filter the library by

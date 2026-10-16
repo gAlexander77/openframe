@@ -34,6 +34,7 @@ import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
+import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -151,6 +152,12 @@ const TEXT_STYLE_SCHEMA = S.obj({
 // ---- the registry ------------------------------------------------------------------
 
 export const COMMANDS: Command[] = [
+  {
+    name: "paste_attributes",
+    description: "Copy selected groups from a source clip to targets. Replaces those settings/keyframes; effects append by default. Keeps timing/source offsets and respects locks.",
+    input: S.obj({ source_clip_id: S.str("Source clip"), clip_ids: S.ids("Target clips"), groups: { type: "array", items: S.str("Group", { enum: [...ATTRIBUTE_GROUPS] }) }, replace_effects: S.bool("Replace target effect stacks") }, ["source_clip_id", "clip_ids", "groups"]),
+    run: (p, a) => pasteAttributes(p, a.clip_ids as string[], copyAttributes(p, String(a.source_clip_id)), a.groups as AttributeGroup[], a.replace_effects === true),
+  },
   {
     name: "apply_effect_preset",
     description: "Append a serialized effect preset (id, name, stack with effects/keyframes/fps) to visual clips. Validates catalog parameters, remaps effect IDs and converts animation timing.",

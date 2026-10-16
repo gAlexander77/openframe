@@ -487,3 +487,6 @@ untouched. Local commits only.
 - Source monitor committed as `d36cac7`. Reusable effect presets add a local
   library with storage failure recovery; six desktop MCP checks and 391 unit
   tests pass. Applying uses independent IDs and keeps animation timing.
+- Presets committed as `345d395`; selective Paste Attributes adds compatible
+  groups, explicit effect replacement and cross-project LUT references. Six
+  desktop MCP checks and 395 unit tests pass; see ADR-043.

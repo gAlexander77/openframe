@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { applyEffectPreset } from "../../lib/effectPresets";
 import type { Clip } from "../../lib/project/types";
-import { edit } from "../../state/actions";
+import { store } from "../../state/store";
 import { deleteEffectPreset, presetLoadError, renameEffectPreset, saveEffectPreset, useEffectPresets } from "../../state/effectPresets";
 import { Dialog } from "../Dialog";
 
@@ -21,7 +21,7 @@ export function EffectPresets({ clip, targets }: { clip?: Clip; targets: string[
           {preset ? <><button className="btn" disabled={!name.trim()} onClick={() => attempt(() => renameEffectPreset(preset.id, name))}>Rename preset</button><button className="btn ghost" onClick={() => attempt(() => { deleteEffectPreset(preset.id); setSelected(""); setName(""); })}>Delete preset</button></> : <button className="btn" disabled={!name.trim() || !clip || !("effects" in clip) || !clip.effects.length} onClick={() => attempt(() => setSelected(saveEffectPreset(clip!.id, name)))}>Save preset</button>}
         </div>
         {(error || presetLoadError()) && <p className="dialog-error" role="alert">{error || presetLoadError()}</p>}
-        <footer><button className="btn ghost" onClick={() => setOpen(false)}>Close</button><button className="btn primary" disabled={!preset || !targets.length} onClick={() => attempt(() => { edit(`Apply ${preset!.name} preset`, (p) => applyEffectPreset(p, targets, preset)); setOpen(false); })}>Apply preset</button></footer>
+        <footer><button className="btn ghost" onClick={() => setOpen(false)}>Close</button><button className="btn primary" disabled={!preset || !targets.length} onClick={() => attempt(() => { store.edit(`Apply ${preset!.name} preset`, (p) => applyEffectPreset(p, targets, preset)); setOpen(false); })}>Apply preset</button></footer>
       </div>
     </Dialog>}
   </>;

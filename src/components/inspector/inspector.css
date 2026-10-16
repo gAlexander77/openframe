@@ -218,3 +218,4 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .cap-text:focus { outline: none; border-color: var(--accent); background: var(--bg-inset); }
 
 .canvas-blurs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.attribute-actions { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
