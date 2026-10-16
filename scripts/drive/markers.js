@@ -94,6 +94,7 @@ async (page) => {
   const saved = await page.evaluate(() => JSON.stringify(window.videoEditor.project().markers));
   await page.reload();
   await page.getByText("Marker panel drive", { exact: true }).click();
+  await page.locator(".timeline-panel").waitFor();
   details.persistence = { ok: await page.evaluate(saved => JSON.stringify(window.videoEditor.project().markers) === saved, saved) };
   return { ok: Object.values(details).every(d => d.ok), details };
 }

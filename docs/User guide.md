@@ -93,6 +93,21 @@ the exported movie longer. Editing markers leaves clips, gaps and clip
 selection alone. Saved markers reopen with the project; clip-specific
 markers and range markers are not implemented yet.
 
+Use **Export shown markers** to preview and save just the notes shown by
+the current search and color filter. **Timecoded notes** keeps frame-exact
+positions; **YouTube chapters** uses whole-second timestamps. The export
+preview can be selected and copied with your normal text-copy shortcut.
+**Save text** uses the platform's save picker or browser download fallback.
+
+Chapter checks flag a missing `00:00` start, fewer than three chapters,
+duplicate timestamps, markers at/past the movie end, and chapters shorter
+than ten seconds (including the last). You can still save a draft and fix
+its markers later. Names without notes become numbered chapter titles.
+Times refer to the full timeline, even if an export In/Out range is set;
+chapter timestamps round down to whole seconds. This saves a text file for
+your video description; chapter display also depends on the destination's
+requirements. [YouTube's chapter guidance](https://support.google.com/youtube/answer/9884579?hl=en).
+
 ## Manage effects
 
 Select a visual clip or adjustment layer on the timeline, then open the

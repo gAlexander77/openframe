@@ -416,3 +416,15 @@ are session UI state, with no new saved-data fields or native desktop control.
   put its coordinate-based clicks outside the visible timeline. TypeScript
   and all 367 tests passed. Timecode parsing also rejects nonexistent
   drop-frame labels and oversized values rather than moving a note silently.
+- `d9b8596`: the marker management change above.
+- Marker export now saves the displayed search/color subset as timecoded
+  notes or chapter descriptions, with a preview and chapter timing checks.
+  It uses the existing platform file-export boundary, keeps full-timeline
+  timestamps and leaves project/history unchanged. Eleven headless MCP
+  checks cover real TXT download contents, cancellation and write-error
+  recovery, filters, timing issues and keyboard isolation. Seven new pure
+  formatting tests cover fractional/NTSC times, long timestamps and invalid
+  chapter sets. Native save-picker verification remains for the owner.
+  TypeScript and all 374 tests pass. The marker drive now waits for the
+  editor to finish opening before comparing reloaded notes; reading the
+  store immediately after clicking a Home card could race async loading.

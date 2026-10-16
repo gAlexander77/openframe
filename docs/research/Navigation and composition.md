@@ -19,6 +19,10 @@ or timeline-drag branches.
   uses reference frames for shot matching. This is a useful next step for
   OpenFrame's existing grading and scopes, but requires a deliberate second
   preview path and memory/performance checks.
+- [YouTube: video chapters](https://support.google.com/youtube/answer/9884579?hl=en),
+  checked 2026-10-15, calls for a zero start, at least three ascending chapter
+  timestamps, and chapters of at least ten seconds. Account eligibility is
+  separate from timestamp formatting; the app checks timing only.
 
 ## Delivery choices
 
@@ -42,10 +46,18 @@ or timeline-drag branches.
    unsorted imported marker arrays and coincident markers. The existing
    timecode parser now rejects nonexistent drop-frame labels and unsafe
    integer positions instead of silently moving the note elsewhere.
+3. **Marker text export:** explicitly exports the displayed search/color
+   subset, with a preview before saving through the existing platform file
+   boundary. Notes use exact project timecodes; chapter descriptions floor
+   source seconds to whole seconds, then check the resulting timestamps.
+   Duplicate/short/out-of-range chapters remain in the preview with issues
+   shown, never silently merged or dropped. Unnamed markers receive numbered
+   titles; whitespace inside a note collapses to one line. The full movie's
+   duration determines the last chapter length. In/Out export ranges do not
+   rebase these notes. Export is read-only and consumes no Undo step.
 
 ## Remaining candidates
 
-- Marker chapter-text export after the basic marker management workflow.
 - Reference-frame comparison for matching shot grades.
 - Named reusable effect presets and selective Paste Attributes (see
   [[Effect workflow]]). Preset persistence and keyframe timing need design.
@@ -68,3 +80,11 @@ preservation, narrow layout and active-tab visibility, and save/reopen.
 `markers.test.ts` covers pure operations, invalid IDs/frames, unsorted and
 coincident navigation, JSON round-trip, and the command/description surface;
 `time.test.ts` covers invalid drop-frame labels and oversized typed times.
+
+`scripts/drive/marker-export.js` checks filtered previews, chapter timing
+issues, modal keyboard isolation, canceled saves, simulated write failure
+and retry, full-timeline timing despite an In/Out range, actual TXT downloads,
+and unchanged project/history. Picker cancellation/failure are browser stubs;
+the successful saves use the real OPFS download fallback. The native desktop
+save picker is not exercised. `markerText.test.ts` covers formatting at NTSC,
+fractional seconds and hour boundaries, invalid chapter sets and blank notes.

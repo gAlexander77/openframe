@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Plus, Search, Trash2 } from "../icons";
+import { ChevronLeft, ChevronRight, Download, Plus, Search, Trash2 } from "../icons";
 import { runCommand } from "../lib/commands";
 import { adjacentMarker, filterMarkers } from "../lib/markers";
 import type { Marker } from "../lib/project/types";
@@ -8,6 +8,7 @@ import { run } from "../state/actions";
 import { openMarkers } from "../state/markers";
 import { store, useEditor } from "../state/store";
 import "./markers.css";
+import { MarkerExport } from "./MarkerExport";
 
 const COLORS = [
   ["#3be0f0", "Cyan"], ["#6a9bff", "Blue"], ["#67d88b", "Green"],
@@ -22,6 +23,7 @@ export function MarkersTab() {
   const selected = useEditor((s) => s.markerEdit);
   const [query, setQuery] = useState("");
   const [color, setColor] = useState("");
+  const [exporting, setExporting] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const colors = [...new Set(markers.map((m) => m.color))];
   const activeColor = colors.includes(color) ? color : "";
@@ -56,6 +58,7 @@ export function MarkersTab() {
           {colors.map((c) => <option key={c} value={c}>{colorName(c)}</option>)}
         </select>
       </div>
+      <button className="btn ghost marker-export-open" disabled={!list.length} onClick={() => setExporting(true)}><Download size={14} /> Export shown markers</button>
       <div className="marker-list" aria-label="Timeline markers" ref={listRef}>
         {!list.length && <p className="lib-hint">{markers.length ? "No markers match. Clear the search or color filter." : "Mark chapters, beats or editing notes. Add a marker at the playhead to get started."}</p>}
         {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
@@ -67,6 +70,7 @@ export function MarkersTab() {
         </div>)}
       </div>
       {current && <MarkerEditor key={`${current.id}:${current.frame}:${current.label}:${current.color}`} marker={current} fps={fps} />}
+      {exporting && <MarkerExport markers={list} onClose={() => setExporting(false)} />}
     </div>
   );
 }

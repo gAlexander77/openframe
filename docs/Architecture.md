@@ -72,6 +72,7 @@ a clock, so no frame is ever dropped
 | `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
 | `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |
 | `lib/templates.ts` | Word art and title templates as data, turned into text and box clips |
+| `lib/markers.ts`, `lib/markerText.ts` | Marker edits/navigation/search and read-only notes/chapter formatting |
 | `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time |
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |

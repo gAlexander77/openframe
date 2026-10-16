@@ -1,0 +1,72 @@
+// Preview and save only the displayed notes; use isolated browser downloads.
+async (page) => {
+  page.setDefaultTimeout(10000);
+  await page.setViewportSize({ width: 1100, height: 680 });
+  await page.addInitScript(() => Object.defineProperty(window, "showSaveFilePicker", { value: undefined, writable: true, configurable: true }));
+  await page.goto("http://localhost:1420");
+  await page.locator(".create-card").click();
+  await page.getByRole("button", { name: "View", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Markers", exact: true }).click();
+  const details = {}, open = page.getByRole("button", { name: "Export shown markers", exact: true });
+  details.emptyDisabled = { ok: await open.isDisabled() };
+  const future = await page.evaluate(() => {
+    const v = window.videoEditor;
+    v.exec("set_project", { name: "Chapter export drive" });
+    v.exec("add_color_clip", { color: "#237f62", start: 0, duration: 30 });
+    for (const [at, label, color] of [[0, "Intro", "#6a9bff"], [5, "Fix this edit", "#ff6b75"], [10, "Topic", "#6a9bff"], [20, "Wrap up", "#6a9bff"], [45, "Beyond end", "#6a9bff"]]) v.exec("add_marker", { at, label, color });
+    v.select([v.project().tracks[0].clips[0].id]);
+    return v.project().markers.at(-1).id;
+  });
+  await page.getByRole("combobox", { name: "Filter markers by color" }).selectOption("#6a9bff");
+  await open.click();
+  const dialog = page.getByRole("dialog", { name: "Export markers", exact: true });
+  const preview = dialog.getByRole("textbox", { name: "Marker export preview" });
+  details.filteredNotes = { ok: (await preview.inputValue()).split("\n").length === 4 && !(await preview.inputValue()).includes("Fix this edit") };
+  await dialog.getByRole("combobox", { name: "Marker export format" }).selectOption("chapters");
+  details.draftIssues = { ok: await dialog.getByText("Chapter markers must fall before the end of the timeline.", { exact: true }).isVisible() && (await preview.inputValue()).includes("00:45 Beyond end") };
+  const selection = await page.evaluate(() => JSON.stringify(window.videoEditor.state().selection));
+  await preview.focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Tab");
+  details.modalKeyboard = { ok: await page.evaluate(() => !window.videoEditor.state().playing && !!document.activeElement.closest("dialog")) };
+  await page.keyboard.press("Escape");
+  details.escape = { ok: await dialog.count() === 0 && await page.evaluate(selection => JSON.stringify(window.videoEditor.state().selection) === selection, selection) };
+  await page.evaluate(id => {
+    const v = window.videoEditor;
+    v.exec("delete_markers", { marker_ids: [id] });
+    v.seek(300); v.action("markIn"); v.seek(600); v.action("markOut");
+  }, future);
+  const before = await page.evaluate(() => ({ project: JSON.stringify(window.videoEditor.project()), undo: window.videoEditor.state().undoLabel }));
+  await open.click();
+  await dialog.getByRole("combobox", { name: "Marker export format" }).selectOption("chapters");
+  const expected = "00:00 Intro\n00:10 Topic\n00:20 Wrap up";
+  details.validFullTimeline = { ok: await preview.inputValue() === expected && await dialog.getByText("Chapter timestamps meet the timing requirements.", { exact: true }).isVisible() };
+  await dialog.screenshot({ path: "scratch/marker-export.png", animations: "disabled" });
+  await page.evaluate(() => { window.showSaveFilePicker = async () => { throw new DOMException("Canceled", "AbortError"); }; });
+  await dialog.getByRole("button", { name: "Save text", exact: true }).click();
+  details.canceledPicker = { ok: await dialog.isVisible() && await dialog.getByRole("button", { name: "Save text", exact: true }).isEnabled() };
+  await page.evaluate(() => { window.showSaveFilePicker = async () => ({ name: "failed.txt", createWritable: async () => { throw new Error("Test disk is full"); } }); });
+  await dialog.getByRole("button", { name: "Save text", exact: true }).click();
+  details.writeError = { ok: await page.getByText("Test disk is full", { exact: true }).isVisible() && await dialog.getByRole("button", { name: "Save text", exact: true }).isEnabled() };
+  await page.evaluate(() => { window.showSaveFilePicker = undefined; });
+  const downloadPromise = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Save text", exact: true }).click();
+  const download = await downloadPromise;
+  await download.saveAs("scratch/marker-chapters.txt");
+  const downloadedText = async file => {
+    const stream = await file.createReadStream();
+    let text = "";
+    for await (const chunk of stream) text += chunk.toString("utf8");
+    return text;
+  };
+  details.chapterDownload = { ok: download.suggestedFilename() === "Chapter export drive chapters.txt" && await downloadedText(download) === expected + "\n" };
+  await open.click();
+  const notes = await preview.inputValue();
+  const noteDownloadPromise = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Save text", exact: true }).click();
+  const noteDownload = await noteDownloadPromise;
+  await noteDownload.saveAs("scratch/marker-notes.txt");
+  details.notesDownload = { ok: notes.startsWith("00:00:00:00 Intro") && await downloadedText(noteDownload) === notes + "\n" };
+  details.noDocumentEdit = { ok: await page.evaluate(before => JSON.stringify(window.videoEditor.project()) === before.project && window.videoEditor.state().undoLabel === before.undo, before) };
+  return { ok: Object.values(details).every(d => d.ok), details };
+}

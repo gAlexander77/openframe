@@ -39,6 +39,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. Double-click a ruler flag to edit it. Markers
   beyond the last clip remain reachable without extending export duration.
+- **Export marker text:** preview and save the displayed notes as exact
+  timecodes or YouTube-style chapter timestamps. Search/color filters choose
+  the exported set; chapter timing checks surface issues before saving.
 - Drag to move (across tracks, above the top track for a new one),
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
