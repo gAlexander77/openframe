@@ -8,6 +8,7 @@ import { useSyncExternalStore } from "react";
 import { COPILOT_SYSTEM, runTurn, toFunctionTools, type ChatMessage, type Step } from "../lib/copilot";
 import { listTools } from "../lib/mcp";
 import { platform } from "../platform";
+import { projectWork } from "./projectWork";
 import { store } from "./store";
 
 
@@ -193,12 +194,17 @@ export async function ask(text: string) {
   const before = store.get().undoLabel;
   let edits = 0;
   const unsub = store.subscribe(() => void 0);
+  // A turn edits the project it started in: after a switch, no further tool
+  // runs and the next model round trip stops the turn.
+  const session = projectWork.signal();
   try {
-    const r = await runTurn(history, q, chat, async (name, args) => {
+    const r = await runTurn(history, q, (m) => (session.aborted ? Promise.reject(new Error("The project changed during this request, so the Copilot stopped.")) : chat(m)), async (name, args) => {
+      if (session.aborted) return { text: "The project was closed; nothing was changed.", isError: true };
       const out = await callTool(name, args);
       if (!out.isError && store.get().undoLabel !== before) edits++;
       return out;
     }, (s) => set({ live: [...state.live, s] }));
+    if (session.aborted) return; // the chat was reset for the new project
     history = r.messages;
     const changed = r.steps.filter((s) => s.ok && !["describe_project", "list_catalog", "seek"].includes(s.tool)).length;
     set({ entries: [...state.entries, { role: "assistant", text: r.reply || "Done.", steps: r.steps, edits: changed }] });
@@ -209,6 +215,15 @@ export async function ask(text: string) {
     set({ status: "idle", live: [] });
   }
 }
+
+// A chat belongs to one open project: its history describes that project,
+// and Undo turn steps back through that project's history.
+let chatSession = projectWork.signal();
+store.subscribe(() => {
+  if (projectWork.signal() === chatSession) return;
+  chatSession = projectWork.signal();
+  resetChat();
+});
 
 /** Undo every edit a copilot turn made. */
 export function undoTurn(entry: Entry) {
