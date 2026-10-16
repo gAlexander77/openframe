@@ -35,6 +35,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
+- **Marker management** in the library and View menu: search notes or
+  timecodes, filter by color, jump between notes, edit exact positions and
+  labels, and undo deletion. Double-click a ruler flag to edit it. Markers
+  beyond the last clip remain reachable without extending export duration.
 - Drag to move (across tracks, above the top track for a new one),
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,

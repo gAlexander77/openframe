@@ -30,11 +30,18 @@ or timeline-drag branches.
    frame and ignores pointer input, below editing handles. It never enters
    engine pixels, scopes, stills, or movie exports. Like preview quality, the
    choice belongs to the editor session, not project history or saved JSON.
-2. **Marker management, next:** searchable chronological list with seek,
+2. **Marker management:** searchable chronological list with seek,
    rename, precise time, color and deletion, using existing document fields
    and undoable commands. Searching should filter the list, not hide ruler
    flags unexpectedly. Leave clip markers, ranges and category schemas for
    a separate compatibility decision.
+   A row opens an explicit Save/Cancel editor; all edited fields form one
+   Undo step. Marker edits use `store.edit` without the magnet/linkage pass:
+   a note must never close preexisting gaps. Beyond-end markers expand the
+   navigable ruler without extending movie duration. Navigation handles
+   unsorted imported marker arrays and coincident markers. The existing
+   timecode parser now rejects nonexistent drop-frame labels and unsafe
+   integer positions instead of silently moving the note elsewhere.
 
 ## Remaining candidates
 
@@ -53,3 +60,11 @@ project/history, and identical engine pixels and exported PNGs with guides
 on/off. Runs use isolated headless Playwright MCP; native desktop testing
 remains for the owner's separate test computer. No dependencies or project
 schema fields were added.
+
+`scripts/drive/markers.js` covers empty/add, searching by text/timecode,
+color intersection, precise edit and cancel, grouped undo/redo, navigation,
+ruler double-click/keyboard activation, delete/undo, clip selection and gap
+preservation, narrow layout and active-tab visibility, and save/reopen.
+`markers.test.ts` covers pure operations, invalid IDs/frames, unsorted and
+coincident navigation, JSON round-trip, and the command/description surface;
+`time.test.ts` covers invalid drop-frame labels and oversized typed times.

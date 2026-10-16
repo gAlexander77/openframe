@@ -10,6 +10,7 @@ import { saveOtio } from "../state/export";
 import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
+import { openMarkers } from "../state/markers";
 import { MenuBar, type MenuItem } from "./Menu";
 import { VIEWER_GUIDES } from "./ViewerGuides";
 
@@ -96,6 +97,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "detachAudio" },
         "-",
         { action: "addMarker" },
+        { label: "Manage markers", onSelect: () => openMarkers() },
         { action: "markIn" },
         { action: "markOut" },
         { action: "clearInOut" },
@@ -118,6 +120,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         ...VIEWER_GUIDES.map(([value, label]) => ({ label, checked: s().viewerGuides === value, onSelect: () => store.set({ viewerGuides: value }) })),
         "-",
         { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
+        { label: "Markers", checked: s().leftTab === "markers" && !s().scopes, onSelect: () => openMarkers() },
         { action: "fullscreenPreview" },
       ],
     },

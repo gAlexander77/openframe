@@ -75,7 +75,10 @@ export function parseTimecode(text: string, fps: Rational): number | null {
   const t = text.trim();
   if (!t) return null;
   const secs = /^(\d+(?:\.\d+)?)s$/i.exec(t);
-  if (secs) return secondsToFrames(Number(secs[1]), fps);
+  if (secs) {
+    const frame = secondsToFrames(Number(secs[1]), fps);
+    return Number.isSafeInteger(frame) ? frame : null;
+  }
   if (!/^\d+([:;.]\d+){0,3}$/.test(t)) return null;
   const parts = t.split(/[:;.]/).map(Number);
   while (parts.length < 4) parts.unshift(0);
@@ -86,9 +89,11 @@ export function parseTimecode(text: string, fps: Rational): number | null {
   if (isDropFrameRate(fps)) {
     const dropped = nominal === 60 ? 4 : 2;
     const totalMinutes = hh * 60 + mm;
+    // These frame labels do not exist at the start of a drop-frame minute.
+    if (totalMinutes % 10 !== 0 && ss === 0 && ff < dropped) return null;
     frame -= dropped * (totalMinutes - Math.floor(totalMinutes / 10));
   }
-  return frame;
+  return Number.isSafeInteger(frame) ? frame : null;
 }
 
 /** Short human duration for clip badges and the media panel: 1:05, 12.4s. */

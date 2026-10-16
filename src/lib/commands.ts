@@ -30,6 +30,7 @@ import type { Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
+import { deleteMarkers, updateMarker } from "./markers";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -412,6 +413,22 @@ export const COMMANDS: Command[] = [
     description: "Drop a marker at a time (chapters, beats, notes).",
     input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["at"]),
     run: (p, a) => ops.addMarker(p, createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined)),
+  },
+  {
+    name: "update_marker",
+    description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds.",
+    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["marker_id"]),
+    run: (p, a) => updateMarker(p, String(a.marker_id), {
+      ...(a.at !== undefined ? { frame: f(p, a.at) } : {}),
+      ...(a.label !== undefined ? { label: String(a.label) } : {}),
+      ...(a.color !== undefined ? { color: String(a.color) } : {}),
+    }),
+  },
+  {
+    name: "delete_markers",
+    description: "Delete the specified timeline markers together. Unknown ids reject the whole edit.",
+    input: S.obj({ marker_ids: S.ids("Marker ids") }, ["marker_ids"]),
+    run: (p, a) => deleteMarkers(p, a.marker_ids as Id[]),
   },
   {
     name: "add_captions",
@@ -844,7 +861,7 @@ export function describeProject(p: Project) {
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
       })),
     })),
-    markers: p.markers.map((m) => ({ at: s(m.frame), label: m.label })),
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
   };
 }

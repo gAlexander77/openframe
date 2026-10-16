@@ -50,6 +50,17 @@ describe("timecode", () => {
     expect(parseTimecode("00:00:00:30", f30)).toBeNull();
     expect(parseTimecode("abc", f30)).toBeNull();
   });
+  it("rejects dropped frame labels instead of moving to the previous second", () => {
+    expect(parseTimecode("00:01:00;00", f2997)).toBeNull();
+    expect(parseTimecode("00:01:00;01", f2997)).toBeNull();
+    expect(parseTimecode("00:01:00;03", f5994)).toBeNull();
+    expect(parseTimecode("00:01:00;04", f5994)).toBe(3600);
+    expect(parseTimecode("00:10:00;00", f2997)).toBe(17982);
+  });
+  it("rejects typed times outside exact integer-frame precision", () => {
+    expect(parseTimecode("99999999999999999999999999999s", f30)).toBeNull();
+    expect(parseTimecode("99999999999999999:00:00:00", f30)).toBeNull();
+  });
 });
 
 describe("formatDuration", () => {

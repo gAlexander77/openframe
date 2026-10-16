@@ -12,6 +12,7 @@ import { registerDropZone, type DragState } from "../state/drag";
 import { addToTimeline, importFiles } from "../state/media";
 import { addSticker } from "../state/stickers";
 import { store, useEditor } from "../state/store";
+import { openMarkers } from "../state/markers";
 import { ClipView, type ClipZone } from "./ClipView";
 import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
@@ -78,8 +79,16 @@ export function Timeline() {
 
   const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project]);
   const duration = ops.projectDuration(project);
+  const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame), duration);
   const fpsN = project.fps.num / project.fps.den;
-  const contentW = Math.max(view.width, HEADER_W + (duration + fpsN * 30) * zoom);
+  const contentW = Math.max(view.width, HEADER_W + (timelineEnd + fpsN * 30) * zoom);
+  const focusedMarker = useEditor((s) => s.project.markers.find((m) => m.id === s.markerEdit));
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !focusedMarker) return;
+    const x = HEADER_W + focusedMarker.frame * zoom;
+    if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 40);
+  }, [focusedMarker, zoom]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
   const empty = duration === 0;
@@ -728,11 +737,14 @@ function MarkersLayer({ zoom }: { zoom: number }) {
           key={m.id}
           className="tl-marker"
           style={{ left: HEADER_W + m.frame * zoom - 5, borderTopColor: m.color }}
-          data-tip={m.label || "Marker (right-click to delete)"}
+          aria-label={m.label || "Untitled marker"}
+          data-tip={`${m.label || "Marker"} (double-click to edit, right-click to delete)`}
           onPointerDown={(e) => {
             e.stopPropagation();
-            store.seek(m.frame);
+            store.set({ playhead: m.frame, hoverFrame: null });
           }}
+          onClick={() => store.set({ playhead: m.frame, hoverFrame: null })}
+          onDoubleClick={(e) => { e.stopPropagation(); openMarkers(m.id); }}
           onContextMenu={(e) => {
             e.preventDefault();
             e.stopPropagation();

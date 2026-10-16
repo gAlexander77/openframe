@@ -166,8 +166,8 @@ describe("analysis commands", () => {
     let p = talk();
     p = runCommand(p, "add_markers", { times: [1, 0.4, 1.0001], label: "Beat", color: "#f5c543" }); // 25 fps
     expect(describeProject(p).markers).toEqual([
-      { at: 0.4, label: "Beat" },
-      { at: 1, label: "Beat" },
+      { id: p.markers[0].id, frame: 10, at: 0.4, label: "Beat", color: "#f5c543" },
+      { id: p.markers[1].id, frame: 25, at: 1, label: "Beat", color: "#f5c543" },
     ]);
     const again = runCommand(p, "add_markers", { times: [0.4, 1], label: "Beat" });
     expect(again).toBe(p);

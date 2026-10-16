@@ -54,6 +54,12 @@ dissolve between the parts" about 2 s. Each answer can be undone as a whole.
 
 ## In the page
 
+`update_marker` takes `marker_id` plus optional `at` (timeline seconds),
+`label`, and `color`. `delete_markers` takes `marker_ids`; unknown IDs reject
+the entire command. Both are undoable and leave clip positions unchanged.
+Marker descriptions now include `id`, integer `frame`, and `color` alongside
+the existing `at` and `label`, so agents can target the note they described.
+
 `edit_effects` manages one clip's stack: `move_up`, `move_down`, `reset`,
 `remove`, `clear`, `enable`, `disable`. Supply `effect_id` for individual
 effects; enable/disable without it targets the whole stack. `describe_project`

@@ -24,6 +24,7 @@ export type LeftTab =
   | "filters"
   | "adjustment"
   | "captions"
+  | "markers"
   | "ai";
 
 export interface EditorState {
@@ -51,6 +52,8 @@ export interface EditorState {
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: "off" | "safe" | "thirds" | "both";
   leftTab: LeftTab;
+  /** Marker opened in the library editor; independent of clip selection. */
+  markerEdit: Id | null;
   /** In/out range for export and three-point edits, frames. */
   inPoint: number | null;
   outPoint: number | null;
@@ -92,6 +95,7 @@ let state: EditorState = {
   scopes: false,
   viewerGuides: "off",
   leftTab: "media",
+  markerEdit: null,
   inPoint: null,
   outPoint: null,
   undoLabel: null,
@@ -214,6 +218,7 @@ export const store = {
       outPoint: null,
       keySel: null,
       textEdit: null,
+      markerEdit: null,
       revision: state.revision + 1,
       ...labels(),
     });

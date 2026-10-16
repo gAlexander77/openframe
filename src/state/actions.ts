@@ -6,6 +6,7 @@
 
 import { ACTION_LABELS, buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
 import { createMarker, uid } from "../lib/project/defaults";
+import { adjacentMarker } from "../lib/markers";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
@@ -187,13 +188,13 @@ provide({
   },
   nextMarker: () => {
     const s = store.get();
-    const m = s.project.markers.find((x) => x.frame > s.playhead);
-    if (m) store.seek(m.frame);
+    const m = adjacentMarker(s.project.markers, s.playhead, 1);
+    if (m) store.set({ playhead: m.frame, hoverFrame: null });
   },
   prevMarker: () => {
     const s = store.get();
-    const m = [...s.project.markers].reverse().find((x) => x.frame < s.playhead);
-    if (m) store.seek(m.frame);
+    const m = adjacentMarker(s.project.markers, s.playhead, -1);
+    if (m) store.set({ playhead: m.frame, hoverFrame: null });
   },
   rangeToClip: () => {
     const s = store.get();

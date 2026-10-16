@@ -403,3 +403,16 @@ Eleven headless Playwright MCP checks passed, including portrait/full-screen
 geometry and identical engine pixels/exported PNGs with guides on/off.
 TypeScript and all 358 unit tests passed; the screenshot was reviewed. Guides
 are session UI state, with no new saved-data fields or native desktop control.
+
+- `f49e66c`: composition guides and the research note above.
+- Marker management now has a searchable/color-filtered list, exact position
+  and note editing, undoable deletion, and ruler double-click entry. Commands
+  expose the same edits and descriptions include marker IDs. A marker beyond
+  the movie's end remains reachable without extending export duration. Marker
+  edits preserve gaps, and the active library tab stays visible after resize.
+  All 23 `markers` drive checks and nine `timeline-menu` regression checks
+  passed through headless MCP; screenshot reviewed. The latter drive now
+  declares its 1600×950 viewport explicitly so MCP's smaller default cannot
+  put its coordinate-based clicks outside the visible timeline. TypeScript
+  and all 367 tests passed. Timecode parsing also rejects nonexistent
+  drop-frame labels and oversized values rather than moving a note silently.

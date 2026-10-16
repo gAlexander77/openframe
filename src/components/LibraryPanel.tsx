@@ -3,6 +3,7 @@ import { thumbs } from "../engine/thumbs";
 import {
   AudioLines,
   Blend,
+  Bookmark,
   Captions,
   Film,
   Image,
@@ -30,6 +31,7 @@ import { EnginePreview } from "./EnginePreview";
 import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
+import { MarkersTab } from "./MarkersTab";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -42,9 +44,10 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "filters", label: "Filters", icon: Palette },
   { id: "adjustment", label: "Adjustment", icon: SlidersHorizontal },
   { id: "ai", label: "AI tools", icon: WandSparkles },
+  { id: "markers", label: "Markers", icon: Bookmark },
 ];
 
-/** The tab strip scrolls sideways when the panel is narrower than its ten
+/** The tab strip scrolls sideways when the panel is narrower than its
  * tabs: edges fade where tabs are hidden, the mouse wheel scrolls it, and
  * the open tab is kept in view (it can be opened from elsewhere). */
 function useTabStrip(tab: string) {
@@ -60,7 +63,16 @@ function useTabStrip(tab: string) {
       el.scrollLeft += e.deltaY;
       e.preventDefault();
     };
-    const ro = new ResizeObserver(edges);
+    const ro = new ResizeObserver(() => {
+      // Scroll only this strip. scrollIntoView can also move clipped panels.
+      const active = el.querySelector(".lib-tab.on");
+      if (active) {
+        const r = active.getBoundingClientRect(), strip = el.getBoundingClientRect();
+        if (r.left < strip.left) el.scrollLeft += r.left - strip.left;
+        else if (r.right > strip.right) el.scrollLeft += r.right - strip.right;
+      }
+      edges();
+    });
     ro.observe(el);
     el.addEventListener("scroll", edges, { passive: true });
     el.addEventListener("wheel", wheel, { passive: false });
@@ -71,7 +83,11 @@ function useTabStrip(tab: string) {
     };
   }, []);
   useEffect(() => {
-    ref.current?.querySelector(".lib-tab.on")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const el = ref.current, active = el?.querySelector(".lib-tab.on");
+    if (!el || !active) return;
+    const r = active.getBoundingClientRect(), strip = el.getBoundingClientRect();
+    const delta = r.left < strip.left ? r.left - strip.left : r.right > strip.right ? r.right - strip.right : 0;
+    el.scrollBy({ left: delta, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [tab]);
   return ref;
 }
@@ -106,6 +122,7 @@ export function LibraryPanel() {
         {tab === "adjustment" && <AdjustmentTab />}
         {tab === "captions" && <CaptionsTab />}
         {tab === "ai" && <AiToolsTab />}
+        {tab === "markers" && <MarkersTab />}
       </div>
     </section>
   );

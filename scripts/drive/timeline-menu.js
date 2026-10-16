@@ -1,5 +1,6 @@
 // Timeline background menu, clipboard state, marker time, and native text menus.
 async (page) => {
+  await page.setViewportSize({ width: 1600, height: 950 });
   await page.goto("http://localhost:1420");
   await page.waitForFunction(() => !!window.videoEditor);
   await page.locator(".create-card").click();

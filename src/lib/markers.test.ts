@@ -1,0 +1,73 @@
+import { describe, expect, it } from "vitest";
+import { describeProject, runCommand } from "./commands";
+import { adjacentMarker, deleteMarkers, filterMarkers, updateMarker } from "./markers";
+import { createProject, normalizeProject } from "./project/defaults";
+import { projectDuration } from "./project/ops";
+
+const project = () => ({ ...createProject(), markers: [
+  { id: "later", frame: 90, label: "Fix audio", color: "red" },
+  { id: "intro", frame: 0, label: "INTRO", color: "blue" },
+  { id: "beat", frame: 30, label: "Beat", color: "red" },
+] });
+
+describe("timeline marker management", () => {
+  it("retimes one marker, preserving identity, other markers, and clip duration", () => {
+    const p = project();
+    const changed = updateMarker(p, "beat", { frame: 1200, label: "Chapter", color: "green" });
+    expect(changed.markers.map((m) => m.id)).toEqual(["intro", "later", "beat"]);
+    expect(changed.markers[2]).toEqual({ id: "beat", frame: 1200, label: "Chapter", color: "green" });
+    expect(changed.markers[1]).toBe(p.markers[0]);
+    expect(changed.tracks).toBe(p.tracks);
+    expect(projectDuration(changed)).toBe(0);
+    expect(p.markers[2].frame).toBe(30);
+  });
+
+  it("does not create an edit for unchanged values and allows an empty note", () => {
+    const p = project();
+    expect(updateMarker(p, "beat", {})).toBe(p);
+    expect(updateMarker(p, "beat", { frame: 30, label: "Beat" })).toBe(p);
+    expect(updateMarker(p, "beat", { label: "" }).markers[1].label).toBe("");
+    expect(deleteMarkers(p, [])).toBe(p);
+  });
+
+  it("rejects missing markers and unsafe positions before mutation", () => {
+    const p = project();
+    for (const frame of [-1, .5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(() => updateMarker(p, "beat", { frame })).toThrow(/integer frame/);
+    expect(() => updateMarker(p, "missing", { label: "Test" })).toThrow(/No marker/);
+    expect(() => deleteMarkers(p, ["intro", "missing"])).toThrow(/No marker/);
+    expect(p.markers).toHaveLength(3);
+  });
+
+  it("deletes chosen ids once and round-trips existing saved JSON fields", () => {
+    const p = deleteMarkers(project(), ["beat", "beat", "later"]);
+    expect(p.markers.map((m) => m.id)).toEqual(["intro"]);
+    expect(normalizeProject(JSON.parse(JSON.stringify(p))).markers).toEqual(p.markers);
+  });
+
+  it("searches notes and timecodes, intersects color, and sorts without mutating", () => {
+    const p = project();
+    expect(filterMarkers(p.markers, p.fps, " intro ").map((m) => m.id)).toEqual(["intro"]);
+    expect(filterMarkers(p.markers, p.fps, "00:00:01").map((m) => m.id)).toEqual(["beat"]);
+    expect(filterMarkers(p.markers, p.fps, "", "red").map((m) => m.id)).toEqual(["beat", "later"]);
+    expect(filterMarkers(p.markers, p.fps, "intro", "red")).toEqual([]);
+    expect(p.markers[0].id).toBe("later");
+  });
+
+  it("navigates unsorted and coincident markers without getting stuck", () => {
+    const markers = [...project().markers, { id: "duplicate", frame: 30, label: "Other note", color: "red" }];
+    expect(adjacentMarker(markers, 0, 1)?.id).toBe("beat");
+    expect(adjacentMarker(markers, 90, -1)?.frame).toBe(30);
+    expect(adjacentMarker(markers, 30, 1)?.id).toBe("later");
+    expect(adjacentMarker(markers, 0, -1)).toBeUndefined();
+    expect(adjacentMarker(markers, 90, 1)).toBeUndefined();
+  });
+
+  it("exposes editable ids and colors to agents and snaps command seconds to frames", () => {
+    let p = project();
+    p = runCommand(p, "update_marker", { marker_id: "beat", at: 2.51, label: "Moved" });
+    expect(describeProject(p).markers.find((m) => m.id === "beat")).toEqual({ id: "beat", frame: 75, at: 2.5, label: "Moved", color: "red" });
+    expect(() => runCommand(p, "update_marker", { marker_id: "beat", at: -1 })).toThrow();
+    p = runCommand(p, "delete_markers", { marker_ids: ["beat"] });
+    expect(p.markers.map((m) => m.id)).not.toContain("beat");
+  });
+});

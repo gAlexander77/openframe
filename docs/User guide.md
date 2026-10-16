@@ -72,6 +72,27 @@ full screen. They do not block editing handles, appear in exports, change
 the project or consume an Undo step. The choice lasts for this app session;
 choose **Guides off** to hide them.
 
+## Organize edits with markers
+
+Open **View → Markers**, **Timeline → Manage markers**, or the library's
+**Markers** tab. **Add marker** places a note at the playhead. Click a row
+to jump to it and edit its note, position and color; choose **Save marker**
+to apply all changes in one Undo step. Cancel discards the draft. Position
+accepts timecode or seconds with `s`, such as `12.5s`, rounded to the nearest
+project frame. Invalid timecodes cannot be saved.
+
+Search matches note text or displayed timecode; the color filter narrows
+that list. Ruler flags remain visible while searching. Previous/Next moves
+through all markers. Double-click a flag to open its editor, or use the
+list's trash button to delete it. Undo restores a deletion. The shortcuts
+panel lists marker navigation bindings.
+
+Markers retain their absolute timeline positions when clips move. Notes
+beyond the last clip are reachable and appear in the list, but do not make
+the exported movie longer. Editing markers leaves clips, gaps and clip
+selection alone. Saved markers reopen with the project; clip-specific
+markers and range markers are not implemented yet.
+
 ## Manage effects
 
 Select a visual clip or adjustment layer on the timeline, then open the
