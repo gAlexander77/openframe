@@ -1,0 +1,13 @@
+.source-monitor { width: min(780px, calc(100vw - 40px)); }
+.frame-preview { position: relative; display: grid; place-items: center; min-width: 0; background: #000; aspect-ratio: 16 / 9; overflow: hidden; }
+.frame-preview canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+.frame-preview-error { position: absolute; inset: 0; display: grid; place-items: center; background: #111b; color: var(--text-2); }
+.source-monitor .frame-preview, .source-audio { max-height: 45vh; }
+.source-audio { height: 150px; display: grid; place-content: center; justify-items: center; gap: 12px; color: var(--accent); background: var(--bg-2); }
+.source-scrub { width: 100%; margin: 14px 0 4px; }
+.source-transport { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.source-marks { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 14px 0; }
+.source-marks > div { display: flex; gap: 8px; align-items: center; }
+.source-monitor > .lib-hint { margin: 8px 0 14px; }
+.media-preview-button { padding: 3px 0; border: 0; background: none; color: var(--accent); text-align: left; font-size: var(--fs-xs); }
+.media-preview-button:hover { text-decoration: underline; }

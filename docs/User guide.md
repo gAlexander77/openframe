@@ -220,6 +220,12 @@ logs. During the private phase, use the review channel agreed with the owner.
 
 ## Organize media
 
+Choose **Preview** under a media card to open its source. Play, scrub or step
+frames, set **Mark In** and **Mark Out**, then **Add range**. Out includes the
+frame you see. The range is placed using the current timeline mode; Undo
+removes it. Previewing does not move the timeline playhead. Marks reset when
+the preview closes. Image previews offer **Add image** instead.
+
 In **Manage media → Organize folders**, create a folder, then choose it beside
 each file. Mark **Favorite** for your preferred takes. Filter the library by
 folder or **Favorites only**, combined with its other filters. Rename and

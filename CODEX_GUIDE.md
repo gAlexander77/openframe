@@ -481,3 +481,6 @@ untouched. Local commits only.
 - Media folders/favorites add optional schema-1 metadata approved in the
   workflow expansion. Nine desktop MCP checks and 387 unit tests pass.
   See ADR-042 and the dated development pass for compatibility and limits.
+- Folders/favorites committed as `9b90ae0`; source preview now adds selected
+  In/Out ranges using engine decoding and audio. Eight desktop MCP checks
+  and 389 unit tests pass. Source marks are session-only.

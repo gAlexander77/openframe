@@ -37,6 +37,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
+import { SourceMonitor } from "./SourceMonitor";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -143,6 +144,7 @@ function useThumbs() {
  * MP3 used to vanish into Audio); Audio shows just the sound files. */
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [managing, setManaging] = useState(false);
+  const [source, setSource] = useState<Asset | null>(null);
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const options = useEditor((s) => s.mediaBrowser);
@@ -205,16 +207,17 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
       ) : (
         <div className={options.view === "list" ? "media-list" : "card-grid"}>
           {list.map((a) => (
-            <MediaCard key={a.id} asset={a} uses={usage.get(a.id) ?? []} list={options.view === "list"} />
+            <MediaCard key={a.id} asset={a} uses={usage.get(a.id) ?? []} list={options.view === "list"} onPreview={() => setSource(a)} />
           ))}
         </div>
       )}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
+      {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
   );
 }
 
-function MediaCard({ asset, uses, list }: { asset: Asset; uses: MediaUse[]; list: boolean }) {
+function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -243,6 +246,7 @@ function MediaCard({ asset, uses, list }: { asset: Asset; uses: MediaUse[]; list
       </div>
       <div className="media-info">
         <span className="card-label">{asset.name}</span>
+        <button className="media-preview-button" aria-label={`Preview ${asset.name}`} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onPreview(); }}>Preview</button>
         {(asset.folder || asset.favorite) && <span className="media-details">{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}
         {list && <>
           <span className="media-details">{metadata}</span>

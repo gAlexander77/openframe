@@ -12,7 +12,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 - [x] Save a copy / independent project versions.
 - [x] Missing-media relinking.
 - [x] Media folders and favorites.
-- [ ] Source preview and In/Out selection before timeline placement.
+- [x] Source preview and In/Out selection before timeline placement.
 - [ ] Reusable effect presets and selective Paste Attributes.
 - [ ] Two-up trim preview.
 - [ ] Final real desktop WebView review through Playwright MCP.
@@ -116,3 +116,25 @@ tradeoff. Commands expose folder CRUD and multi-asset assignment.
 Nine real desktop MCP checks pass for membership, rename, combined filters,
 empty results, clearing, native save/load, deletion, Undo and narrow layout.
 Both desktop screenshots were inspected. TypeScript and 387 unit tests pass.
+
+### Source preview and In/Out
+
+Each Media/Audio card has Preview. The source modal decodes through private
+engine cursors, with Web Audio playback and its own clock. It pauses program
+playback without moving the program playhead. Scrub and frame-step before
+marking In/Out; Out includes the current source frame. Add range converts the
+exclusive interval to whole project frames, rounding down to avoid going past
+the selection. It uses the existing insert/placement path and is undoable.
+Still images have preview/Add image; audio has transport/range controls.
+
+The modal's marks are session-only. Closing it cancels playback, and changing
+projects or relinking during preview prevents stale insertion. `add_media_clip`
+already exposes equivalent source offset/duration controls. Private cursor
+cleanup waits for in-flight decoding before releasing borrowed samples.
+
+Eight `source-monitor` checks pass through real desktop MCP: exact marks,
+range playback, untouched program state, correct inserted duration/offset,
+Undo, audio range, cancel and narrow layout. Screenshot inspected. TypeScript
+and 389 unit tests pass. Audibility was not assessed by a human; playback
+progress and actual desktop audio decoding/scheduling were exercised.
+Reference: [Adobe Source monitor In/Out workflow](https://helpx.adobe.com/premiere/desktop/get-started/source-and-program-monitor-adjustments/set-in-and-out-points-in-the-source-monitor.html).

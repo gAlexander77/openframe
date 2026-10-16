@@ -13,6 +13,7 @@ import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
+import { withSourceRange, type SourceRange } from "../lib/sourceMonitor";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
 const CODEC_NAMES: Record<string, string> = {
@@ -126,7 +127,7 @@ function adoptSettings(p: Project, a: Asset): Project {
  * on, at the nearest cut, since CapCut never overwrites the main track —
  * and audio goes on the first audio track with room, or a new one.
  */
-export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
+export function addToTimeline(asset: Asset, at?: number, trackId?: Id, range?: SourceRange): Id {
   if (projectWork.signal().aborted || !store.get().project.assets.some((a) => a.id === asset.id)) return "";
   let id = "";
   edit(`Add ${asset.name}`, (p0) => {
@@ -134,6 +135,7 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
     const s = store.get();
     let start = at ?? s.playhead;
     let clip: Clip = clipForAsset(asset, start, p.fps);
+    if (range) clip = withSourceRange(clip, asset, range, p.fps);
     id = clip.id;
     if (asset.kind === "audio") {
       let track = trackId ? ops.findTrack(p, trackId) : p.tracks.find((t) => t.kind === "audio" && !t.locked && ops.rangeFree(t, start, clip.duration));

@@ -270,3 +270,5 @@ Three doors, one engine ([[Automation]]):
   Replacements require compatible streams and full source duration.
 - **Media organization:** saved virtual folders and favorites, undoable folder
   rename/delete and assignment, plus intersecting folder/favorite filters.
+- **Source preview:** independent video/audio transport, scrubbing and frame
+  stepping, In/Out range insertion, and still image preview.
