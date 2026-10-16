@@ -22,6 +22,7 @@ of the documentation and how agents use it as shared working memory.
 
 ## Map of content
 
+- [[Development pass 2026-10-16]] — approved workflow additions, decisions and verification
 - [[User guide]] — setup, a first editing session, storage and platform limits
 - [[AI development]] — the Claude Code/Codex experiment, documentation purpose,
   evidence and continuity across agent sessions

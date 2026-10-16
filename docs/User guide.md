@@ -66,6 +66,11 @@ and disables creation/deletion during loading; retry after it finishes.
 A focused project card opens with Enter or Space. Activating its Delete
 button with the keyboard only arms deletion, just like clicking it.
 
+Closing or switching projects cancels unfinished captions/analysis and
+discards late import results. Reopening the same project starts a new session;
+restart unfinished work there. A movie export already in progress may finish
+from its original project snapshot.
+
 ## Find and reuse imported media
 
 In **Media**, combine Search media with **All types** and **All usage** to

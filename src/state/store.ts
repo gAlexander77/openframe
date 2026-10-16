@@ -6,6 +6,7 @@
 // whole mechanism (ADR-005).
 
 import { useSyncExternalStore } from "react";
+import { projectWork } from "./projectWork";
 import { createProject } from "../lib/project/defaults";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { projectDuration } from "../lib/project/ops";
@@ -211,6 +212,7 @@ export const store = {
 
   /** Replace the document wholesale (open, new). History starts over. */
   load(project: Project) {
+    projectWork.open();
     past = [];
     future = [];
     set({

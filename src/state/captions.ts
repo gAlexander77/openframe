@@ -11,6 +11,7 @@ import { framesToSeconds } from "../lib/time";
 import { platform } from "../platform";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
+import { projectWork } from "./projectWork";
 
 export function captionClips(p: Project): TextClip[] {
   return p.tracks.flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption)).sort((a, b) => a.start - b.start);
@@ -35,6 +36,7 @@ const STAGE: Record<TranscribeProgress["stage"], string> = {
 export async function generateCaptions(opts: { model: string; language: string | null; replace: boolean }, onProgress?: (s: TranscribeProgress) => void) {
   if (running) return;
   running = new AbortController();
+  const signal = AbortSignal.any([running.signal, projectWork.signal()]);
   const id = toast("Preparing audio…", "progress");
   try {
     const words = await transcribeTimeline(
@@ -44,8 +46,9 @@ export async function generateCaptions(opts: { model: string; language: string |
         onProgress?.(s);
         updateToast(id, { text: `${STAGE[s.stage]}…`, progress: s.progress });
       },
-      running.signal,
+      signal,
     );
+    signal.throwIfAborted();
     const caps = wordsToCaptions(words, DEFAULT_LINES);
     if (!caps.length) {
       toast("No speech found in the timeline's audio", "info");
@@ -73,7 +76,9 @@ function captionsError(e: unknown): string {
 }
 
 export async function importCaptions(file: File) {
+  const signal = projectWork.signal();
   const caps = parseSubtitles(await file.text());
+  if (signal.aborted) return;
   if (!caps.length) {
     toast(`${file.name} has no captions this app can read (SRT or WebVTT)`, "error");
     return;

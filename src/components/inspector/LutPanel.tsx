@@ -3,6 +3,7 @@ import { FileUp, Loader2, Palette, Trash2 } from "../../icons";
 import type { Clip } from "../../lib/project/types";
 import { platform } from "../../platform";
 import { importLuts } from "../../state/luts";
+import { projectWork } from "../../state/projectWork";
 import { useEditor } from "../../state/store";
 import { Row, Section, SliderRow } from "./controls";
 import { setGradePart } from "./gradeEdit";
@@ -25,8 +26,9 @@ export function LutPanel({ clip }: { clip: Clip }) {
   const pick = async (files: File[]) => {
     if (!files.length) return;
     setBusy(true);
+    const signal = projectWork.signal();
     try {
-      await importLuts(await platform.adoptFiles(files), clip.id);
+      await importLuts(await platform.adoptFiles(files), clip.id, signal);
     } finally {
       setBusy(false);
     }

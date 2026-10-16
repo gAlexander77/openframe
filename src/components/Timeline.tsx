@@ -13,6 +13,7 @@ import { addToTimeline, importFiles } from "../state/media";
 import { addSticker } from "../state/stickers";
 import { store, useEditor } from "../state/store";
 import { openMarkers } from "../state/markers";
+import { projectWork } from "../state/projectWork";
 import { ClipView, type ClipZone } from "./ClipView";
 import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
@@ -463,7 +464,8 @@ export function Timeline() {
     const files = [...e.dataTransfer.files];
     if (!files.length) return;
     let frame = Math.max(0, Math.round(frameAtX(e.clientX)));
-    const assets = await importFiles(await platform.adoptFiles(files));
+    const signal = projectWork.signal();
+    const assets = await importFiles(await platform.adoptFiles(files), signal);
     for (const a of assets) {
       addToTimeline(a, frame);
       frame += Math.round((a.kind === "image" ? 5 : a.duration) * fpsN);

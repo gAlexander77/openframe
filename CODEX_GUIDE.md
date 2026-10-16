@@ -453,3 +453,15 @@ remain untouched. Work stays local on main with headless Playwright MCP.
   drag/add/double-click/keyboard behavior and 1600×950 / 1100×680 layouts;
   screenshots inspected. TypeScript and all 379 unit tests pass. No saved
   format, native backend, dependency or runtime identity changes.
+
+### 2026-10-16 — approved workflow expansion
+
+The owner approved all six additions in the preceding discussion and asked
+for final Playwright MCP verification on a real application WebView. Follow
+`docs/Development pass 2026-10-16.md` for the checklist, scope and evidence.
+Delayed work now belongs to a single document session: close/reopen also
+invalidates work when the project ID stays the same. Eight `project-jobs`
+MCP checks and all 380 unit tests pass; TypeScript passes. The owner's current
+desktop app lacks a debugging port, so an isolated real desktop instance is
+planned for the final review. Parked agent work and unrelated files remain
+untouched. Local commits only.

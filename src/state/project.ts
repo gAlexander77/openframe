@@ -14,6 +14,7 @@ import { platform, type ProjectSummary } from "../platform";
 import { provide } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
+import { projectWork } from "./projectWork";
 
 export type Screen = "home" | "editor";
 
@@ -178,6 +179,7 @@ export function closeProject(focusSearch = false) {
   return navigate(async () => {
     if (!await saveNow()) return false;
     clearTimeout(timer);
+    projectWork.close();
     set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });
     return true;
   });

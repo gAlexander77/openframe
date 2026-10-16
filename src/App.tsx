@@ -14,7 +14,7 @@ import { TitleBar } from "./components/TitleBar";
 import { Upload } from "./icons";
 import { platform } from "./platform";
 import { onHomeKeyDown, onKeyDown, provide } from "./state/actions";
-import { addToTimeline, importFiles } from "./state/media";
+import { addToTimeline, adoptAndImport, importFiles } from "./state/media";
 import { useSession } from "./state/project";
 import { useEditor } from "./state/store";
 import "./components/shell.css";
@@ -103,7 +103,7 @@ export default function App() {
         e.preventDefault();
         setDropping(false);
         const files = [...e.dataTransfer.files];
-        if (files.length) void platform.adoptFiles(files).then(importFiles);
+        if (files.length) void adoptAndImport(files);
       }}
     >
       <TitleBar saveState={saveState} home={screen === "home"} onShortcuts={() => setShortcuts(true)} />

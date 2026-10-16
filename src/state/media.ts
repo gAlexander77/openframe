@@ -12,6 +12,7 @@ import { edit, provide } from "./actions";
 import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
+import { projectWork } from "./projectWork";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
 const CODEC_NAMES: Record<string, string> = {
@@ -25,11 +26,12 @@ export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
 
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
-export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
+export async function importFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+  if (signal.aborted) return [];
   // A dropped .cube is a LUT for the project, not media for the library.
   const luts = files.filter((f) => isLutName(f.name));
   if (luts.length) {
-    void importLuts(luts).then((l) => l.length && toast(l.length === 1 ? `LUT ${l[0].name} is ready in Adjust > LUT` : `${l.length} LUTs are ready in Adjust > LUT`));
+    void importLuts(luts, undefined, signal).then((l) => l.length && toast(l.length === 1 ? `LUT ${l[0].name} is ready in Adjust > LUT` : `${l.length} LUTs are ready in Adjust > LUT`));
     files = files.filter((f) => !isLutName(f.name));
   }
   const added: Asset[] = [];
@@ -43,11 +45,14 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
       // When the webview cannot decode it, or cannot even open it (AVI,
       // MXF), the desktop converts it with FFmpeg and edits the copy.
       let info = await probe(f.src, f.name).catch((e) => (canProxy ? null : Promise.reject(e)));
+      if (signal.aborted) return [];
       let proxy: string | undefined;
       if (!info?.decodable && canProxy) {
         proxy = await convert(f);
+        if (signal.aborted) return [];
         info = await probe(proxy, f.name);
       }
+      if (signal.aborted) return [];
       if (!info?.decodable) {
         toast(
           proxy
@@ -75,6 +80,7 @@ export async function importFiles(files: ImportedFile[]): Promise<Asset[]> {
         rotation: info.rotation,
       });
     } catch (e) {
+      if (signal.aborted) return [];
       toast(`Couldn't open ${f.name}: ${e instanceof Error ? e.message : e}`, "error");
     }
   }
@@ -121,6 +127,7 @@ function adoptSettings(p: Project, a: Asset): Project {
  * and audio goes on the first audio track with room, or a new one.
  */
 export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
+  if (projectWork.signal().aborted || !store.get().project.assets.some((a) => a.id === asset.id)) return "";
   let id = "";
   edit(`Add ${asset.name}`, (p0) => {
     let p = adoptSettings(p0, asset);
@@ -159,8 +166,15 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id): Id {
 
 /** Import files from the OS picker; returns the new assets. */
 export async function pickAndImport(): Promise<Asset[]> {
+  const signal = projectWork.signal();
   const files = await platform.pickMedia();
-  return files.length ? importFiles(files) : [];
+  return files.length ? importFiles(files, signal) : [];
+}
+
+/** Capture ownership before copying/adopting browser files, too. */
+export async function adoptAndImport(files: File[]): Promise<Asset[]> {
+  const signal = projectWork.signal();
+  return importFiles(await platform.adoptFiles(files), signal);
 }
 
 // The menu item and the shortcut open the same picker as the Import button.

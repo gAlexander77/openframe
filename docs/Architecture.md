@@ -78,6 +78,7 @@ a clock, so no frame is ever dropped
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |
 | `state/project.ts` | Autosave drains changed revisions; one navigation transition at a time (ADR-039) |
+| `state/projectWork.ts`, `lib/taskScope.ts` | Abortable document-session ownership for delayed imports, captions, stickers and analysis |
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `state/export.ts` | The export job: dialog state, `render()` for automation |
 | `state/textEdit.ts` | The typing session: live text edits from the canvas or the inspector, one undo step |

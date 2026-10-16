@@ -22,6 +22,7 @@ import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { edit } from "./actions";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
+import { projectWork } from "./projectWork";
 
 export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking";
 
@@ -190,6 +191,7 @@ function windowOf(clip: MediaClip): [number, number] {
 async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
   if (state.jobs[tool]) throw new Error("Already running");
   const abort = new AbortController();
+  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
   const tid = toast(label, "progress");
   updateToast(tid, { progress: 0 });
   const progress = (x: number) => {
@@ -199,9 +201,11 @@ async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progr
   };
   set({ jobs: { ...state.jobs, [tool]: { clipId: clip.id, progress: 0, abort } } });
   try {
-    return await work(progress, abort.signal);
+    const result = await work(progress, signal);
+    signal.throwIfAborted();
+    return result;
   } catch (e) {
-    if (abort.signal.aborted) toast("Canceled");
+    if (signal.aborted) toast("Canceled");
     else toast(e instanceof Error ? e.message : String(e), "error");
     throw e;
   } finally {
@@ -308,8 +312,10 @@ export interface SilenceEdit extends SilenceAnalysis {
 
 /** Remove a clip's silences as one undoable edit. */
 export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings> = {}): Promise<SilenceEdit> {
+  const signal = projectWork.signal();
   const id = resolve("silences", clipId).clip.id;
   const res = await analyzeSilences(id, opts);
+  signal.throwIfAborted();
   const clip = stillThere(id);
   const [from, to] = windowOf(clip);
   if (!res.ranges.length) {
@@ -336,9 +342,11 @@ export interface SceneEdit extends SceneAnalysis {
 
 /** Split a clip at its scene cuts (or mark them) as one undoable edit. */
 export async function splitScenes(clipId?: Id, opts: Partial<SceneSettings> = {}): Promise<SceneEdit> {
+  const signal = projectWork.signal();
   const id = resolve("scenes", clipId).clip.id;
   const o = { ...state.settings.scenes, ...opts };
   const res = await analyzeScenes(id, o);
+  signal.throwIfAborted();
   const clip = stillThere(id);
   if (!res.cuts.length) {
     finish("scenes", "No scene cuts found");
@@ -362,9 +370,11 @@ export interface BeatEdit extends BeatAnalysis {
 
 /** Drop a marker on every (Nth) beat of a clip as one undoable edit. */
 export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): Promise<BeatEdit> {
+  const signal = projectWork.signal();
   const id = resolve("beats", clipId).clip.id;
   const every = opts.every ?? state.settings.beats.every;
   const res = await analyzeBeats(id);
+  signal.throwIfAborted();
   const clip = stillThere(id);
   const picked = res.beats.filter((_, i) => i % every === 0);
   if (!picked.length) {
@@ -402,6 +412,7 @@ export interface LoudnessResult extends Normalization {
  * "Normalize loudness", measured per ITU-R BS.1770).
  */
 export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> = {}): Promise<LoudnessResult[]> {
+  const scope = projectWork.signal();
   const target = opts.target ?? state.settings.loudness.target;
   const ids = clipIds ?? store.get().selection;
   const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
@@ -416,6 +427,7 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
     }
     return out;
   });
+  scope.throwIfAborted();
   const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.peak) }));
   const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
   if (!live.length) {
@@ -465,6 +477,7 @@ function voicesUnder(clip: MediaClip): Target[] {
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
 export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> = {}): Promise<DuckEdit> {
+  const scope = projectWork.signal();
   const { clip, asset } = resolve("ducking", clipId);
   const depth = opts.depth ?? state.settings.ducking.depth;
   const fps = store.get().project.fps;
@@ -490,6 +503,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> =
     }
     return out;
   });
+  scope.throwIfAborted();
   const c = stillThere(clip.id);
   const frames = (s: number) => secondsToFrames(s, fps);
   const keys = duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: depth, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) });

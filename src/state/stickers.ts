@@ -23,6 +23,7 @@ import {
 import { platform, type ImportedFile } from "../platform";
 import { store } from "./store";
 import { toast } from "./toast";
+import { projectWork } from "./projectWork";
 
 const files = new Map<string, Promise<{ file: ImportedFile; width: number; height: number }>>();
 
@@ -75,21 +76,25 @@ export function setStickerMotion(m: string) {
  * project lacks it, then run the command with the asset added — one undo
  * step, like a click. Throws the command's validation errors. */
 export async function execAddSticker(args: unknown) {
+  const signal = projectWork.signal();
   const name = typeof args === "object" && args !== null ? (args as { name?: unknown }).name : undefined;
   const s = typeof name === "string" ? findSticker(name) : undefined;
   const asset = s ? await stickerAssetFor(s) : null;
+  signal.throwIfAborted();
   store.edit("add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args));
   if (asset) prepare(asset);
 }
 
 /** Add a sticker at `at` (default: the playhead) above everything there. */
 export async function addSticker(id: string, at?: number): Promise<Id | null> {
+  const signal = projectWork.signal();
   const s = STICKER_INDEX.get(id);
   if (!s) return null;
   const start = at ?? store.get().playhead;
   let asset: Asset;
   try {
     asset = await stickerAssetFor(s);
+    if (signal.aborted) return null;
   } catch (e) {
     toast(`Couldn't make the ${s.label.toLowerCase()} sticker: ${e instanceof Error ? e.message : e}`, "error");
     return null;
