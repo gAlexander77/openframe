@@ -16,10 +16,13 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState<{ original: Asset; replacement: Asset } | null>(null);
+  // Folder and favorite edits change the assets too; only a new location
+  // needs another probe.
+  const sources = assets.map((a) => `${a.id}:${a.proxy ?? a.src}`).join("|");
   useEffect(() => {
     let canceled = false;
     void (async () => {
-      for (const a of assets) {
+      for (const a of store.get().project.assets) {
         if (canceled || signal.aborted) break;
         let message = "Available";
         try { if (!(await probe(a.proxy ?? a.src, a.name)).decodable) message = "Cannot decode"; }
@@ -28,7 +31,7 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
       }
     })();
     return () => { canceled = true; };
-  }, [assets, signal]);
+  }, [sources, signal]);
   return <Dialog title="Manage media" busy={busy} onClose={onClose} className="media-manager">
     <p className="lib-hint">Locate moved or missing files. Relinking updates every use in this project and preserves your edits. Undo restores the previous location.</p>
     <MediaFolders />
