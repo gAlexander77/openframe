@@ -95,13 +95,14 @@ export async function saveNow(): Promise<boolean> {
       set({ saveState: "Saving…" });
       try {
         await platform.saveProject(p, summaryOf(p));
-        // Editing stays available during disk I/O. Persist anything that
-        // changed before reporting success or allowing navigation to leave.
-        if (store.get().revision !== revision) {
+        // Editing stays available during disk I/O. Leaving the project must
+        // persist what changed meanwhile; otherwise the re-armed autosave
+        // timer does, without a save per keystroke while the edits go on.
+        if (store.get().revision !== revision && session.transitioning) {
           again = true;
           continue;
         }
-        clearTimeout(timer);
+        if (store.get().revision === revision) clearTimeout(timer);
         const t = new Date();
         set({ saveState: `Saved ${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}` });
         saved = true;
