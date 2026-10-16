@@ -50,7 +50,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
     {
       label: "File",
       items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }] : [
-        ...(props.home ? [] : [{ label: "Back to home", onSelect: () => void closeProject() }, "-" as const]),
+        { label: "Back to home", onSelect: () => void closeProject() },
+        "-",
         { action: "newProject" },
         { action: "openProject" },
         { action: "saveProject" },
@@ -58,19 +59,15 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "importMedia" },
         { action: "export" },
-        ...(props.home
-          ? []
-          : [
-              {
-                label: "Export timeline (OTIO)",
-                hint: "Resolve, Premiere",
-                onSelect: () =>
-                  void saveOtio().then(
-                    (name) => name && toast(`Saved ${name}`),
-                    (e) => toast(e instanceof Error ? e.message : String(e), "error"),
-                  ),
-              },
-            ]),
+        {
+          label: "Export timeline (OTIO)",
+          hint: "Resolve, Premiere",
+          onSelect: () =>
+            void saveOtio().then(
+              (name) => name && toast(`Saved ${name}`),
+              (e) => toast(e instanceof Error ? e.message : String(e), "error"),
+            ),
+        },
       ],
     },
     {
