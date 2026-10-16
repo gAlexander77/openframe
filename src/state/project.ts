@@ -195,7 +195,7 @@ export function saveProjectCopy(name: string, openCopy: boolean, id?: string) {
     await platform.saveProject(copy, summaryOf(copy));
     if (openCopy) {
       // The original may have received an automation edit during the write.
-      if (!await saveNow()) return false;
+      if (!await saveNow()) throw new Error(`Saved "${copy.name}", but this project's latest edits could not be saved, so it stays open.`);
       enter(copy);
     }
     toast(`Saved copy: ${copy.name}`);
