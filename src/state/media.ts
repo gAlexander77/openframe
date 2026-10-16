@@ -49,7 +49,7 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
       if (signal.aborted) return [];
       let proxy: string | undefined;
       if (!info?.decodable && canProxy) {
-        proxy = await convert(f);
+        proxy = await convert(f, signal);
         if (signal.aborted) return [];
         info = await probe(proxy, f.name);
       }
@@ -96,10 +96,10 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
 }
 
 /** The desktop's FFmpeg proxy, with its progress in a toast. */
-async function convert(f: ImportedFile): Promise<string> {
+async function convert(f: ImportedFile, signal?: AbortSignal): Promise<string> {
   const id = toast(`Converting ${f.name} for editing`, "progress");
   try {
-    return await platform.makeProxy!(f.src, (progress) => updateToast(id, { progress }));
+    return await platform.makeProxy!(f.src, (progress) => updateToast(id, { progress }), signal);
   } finally {
     dismiss(id);
   }
