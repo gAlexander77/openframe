@@ -503,7 +503,11 @@ export function Timeline() {
     if (e.defaultPrevented || target.closest("input, textarea") || target.isContentEditable) return;
     e.preventDefault();
     e.stopPropagation();
-    // Background actions can target empty time beyond the last clip.
+    // Track headers and the corner are sticky over the timeline: no frame under them.
+    if (target.closest(".tl-header, .tl-corner")) return;
+    // Background actions can target empty time beyond the last clip; playback
+    // would move the playhead off it before the menu item runs.
+    player.pause();
     store.set({ playhead: Math.max(0, Math.round(frameAtX(e.clientX))) });
     setMenu({ x: e.clientX, y: e.clientY, items: [
       { action: "paste", disabled: !canPaste() },
