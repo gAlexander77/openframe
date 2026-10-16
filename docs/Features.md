@@ -18,6 +18,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   timeline, so phone footage makes a vertical project — unless a canvas
   was chosen (a Home preset or the Details ratio), which it then keeps.
 - **Open JSON format** ([[Project format]]).
+- **Save a copy:** named independent edit versions, optionally opened after
+  saving; source media stays shared. Failed writes keep the original open.
 
 ## Media
 

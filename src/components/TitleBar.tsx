@@ -13,6 +13,7 @@ import { toast } from "../state/toast";
 import { openMarkers } from "../state/markers";
 import { MenuBar, type MenuItem } from "./Menu";
 import { VIEWER_GUIDES } from "./ViewerGuides";
+import { SaveCopyDialog } from "./SaveCopyDialog";
 
 /** The frameless window's title bar: menus, the project name, export, and
  * (on Windows/Linux desktop) the window buttons. Tauri's deep drag region
@@ -22,6 +23,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const name = useEditor((s) => s.project.name);
   const [editing, setEditing] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [copyDialog, setCopyDialog] = useState(false);
 
   // Read the window, not just our button: caption double-click and the OS
   // can change maximization too. Clean up even if registration finishes late.
@@ -52,6 +54,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "newProject" },
         { action: "openProject" },
         { action: "saveProject" },
+        { label: "Save a copy…", onSelect: () => setCopyDialog(true) },
         "-",
         { action: "importMedia" },
         { action: "export" },
@@ -131,7 +134,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const exportChord = chordFor("export");
 
   return (
-    <header className="titlebar" data-tauri-drag-region="deep">
+    <><header className="titlebar" data-tauri-drag-region="deep">
       <div className="titlebar-left">
         <div className="app-mark" aria-hidden />
         <MenuBar menus={props.home ? menus.filter((m) => m.label === "File" || m.label === "Help") : menus} />
@@ -198,5 +201,6 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         )}
       </div>
     </header>
+    {copyDialog && !props.home && <SaveCopyDialog onClose={() => setCopyDialog(false)} />}</>
   );
 }

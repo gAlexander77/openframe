@@ -465,3 +465,12 @@ MCP checks and all 380 unit tests pass; TypeScript passes. The owner's current
 desktop app lacks a debugging port, so an isolated real desktop instance is
 planned for the final review. Parked agent work and unrelated files remain
 untouched. Local commits only.
+
+- `edd7e77`: delayed-job document-session protection above.
+- Save a copy now supports independent named versions and optional switching,
+  with storage-error recovery. Seven `project-copy` checks passed on the
+  owner's real desktop WebView through Playwright MCP, including native Rust
+  project persistence. The owner authorized restarting that test instance;
+  it now exposes port 9222. The unused isolated validation worktree was
+  removed. TypeScript and all 382 tests pass; screenshot reviewed. See the
+  dated development-pass note for design choices and the HMR testing lesson.

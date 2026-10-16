@@ -71,6 +71,12 @@ discards late import results. Reopening the same project starts a new session;
 restart unfinished work there. A movie export already in progress may finish
 from its original project snapshot.
 
+Choose **File → Save a copy…**, give the version a name, and choose whether
+to open it after saving. The original saves first and remains independent:
+later edits to either version do not change the other. Both reference the
+same footage, so keep those media files available. A project copy is not a
+backup of the footage. Save errors keep the dialog open for retry.
+
 ## Find and reuse imported media
 
 In **Media**, combine Search media with **All types** and **All usage** to

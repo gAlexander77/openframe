@@ -15,6 +15,7 @@ import { provide } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
 import { projectWork } from "./projectWork";
+import { copyProject } from "../lib/project/copy";
 
 export type Screen = "home" | "editor";
 
@@ -181,6 +182,22 @@ export function closeProject(focusSearch = false) {
     clearTimeout(timer);
     projectWork.close();
     set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });
+    return true;
+  });
+}
+
+/** Persist a detached version before switching; retries reuse the draft ID. */
+export function saveProjectCopy(name: string, openCopy: boolean, id?: string) {
+  return navigate(async () => {
+    if (session.screen !== "editor" || !await saveNow()) return false;
+    const copy = copyProject(store.get().project, name, id);
+    await platform.saveProject(copy, summaryOf(copy));
+    if (openCopy) {
+      // The original may have received an automation edit during the write.
+      if (!await saveNow()) return false;
+      enter(copy);
+    }
+    toast(`Saved copy: ${copy.name}`);
     return true;
   });
 }

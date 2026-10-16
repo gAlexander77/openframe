@@ -9,7 +9,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 ## Delivery checklist
 
 - [x] Project-session ownership for delayed imports and analysis.
-- [ ] Save a copy / independent project versions.
+- [x] Save a copy / independent project versions.
 - [ ] Missing-media relinking.
 - [ ] Media folders and favorites.
 - [ ] Source preview and In/Out selection before timeline placement.
@@ -43,8 +43,33 @@ unit tests pass. These checks are not native desktop evidence.
 
 ### Real desktop verification setup
 
-The owner's existing desktop process has no WebView debugging port. Final
-checks will use the real Tauri application with an isolated project folder
-and WebView profile, attached through Playwright MCP. The existing app is
-preserved; OS input, native file dialogs and window dragging are outside
-the DOM/WebView automation boundary. Record the final results here.
+The owner chose the current app, then explicitly authorized restarting that
+test instance. It was closed gracefully and restarted with WebView debugging
+on localhost:9222. Playwright MCP attaches with `--cdp-endpoint`; a probe
+confirmed `platform() === "desktop"`. Its shutdown disconnects without
+calling `browser_close`. The temporary isolated validation worktree/build was
+stopped and removed before this change of setup. OS input, native file dialogs
+and window dragging remain outside the DOM/WebView automation boundary.
+
+### Save a copy
+
+File → Save a copy creates a separate project ID and detached edit document,
+preserving internal clip/asset references. It shares source file locations,
+so this is an alternate edit/version, not a footage backup. The original is
+saved before copying; an optional switch waits for the copy write and another
+original save to protect edits made during I/O. A failed copy keeps the
+original open and the dialog draft available; retry uses the same generated
+ID. A native modal supplies focus trapping and keyboard isolation.
+
+This follows the useful distinction between a project document and its
+referenced media in [Adobe's project copying guidance](https://helpx.adobe.com/premiere/desktop/organize-media/transfer-files/copy-transcode-or-archive-project.html).
+Media collection/archival is separate work. Seven `project-copy` checks pass
+on the real desktop WebView through MCP, including real Rust persistence,
+copy failure/retry, original independence, cancel, name validation and
+1100×680 fit. The desktop screenshot was inspected. TypeScript and all 382
+unit tests pass.
+
+Lesson: after module changes, reload the testing WebView before importing
+dev-only module helpers. A page spanning hot reloads can contain old/new
+module instances; the first drive created an invisible second session.
+The corrected drive starts from a fresh page and uses Home/rename UI.
