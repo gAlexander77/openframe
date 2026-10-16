@@ -625,9 +625,9 @@ function EffectsSection({ clip }: { clip: Clip }) {
   const locked = useEditor(s => ops.findClip(s.project, clip.id)?.track.locked ?? false);
   if (!("effects" in clip)) return null;
   const change = (label: string, action: EffectAction, effectId?: string) =>
-    edit(label, p => runCommand(p, "edit_effects", { clip_id: clip.id, action, ...(effectId ? { effect_id: effectId } : {}) }));
+    store.edit(label, p => runCommand(p, "edit_effects", { clip_id: clip.id, action, ...(effectId ? { effect_id: effectId } : {}) }));
   const add = (type: string) => {
-    edit(`Add ${EFFECTS[type].label.toLowerCase()}`, p => runCommand(p, "add_effect", { clip_id: clip.id, type }));
+    store.edit(`Add ${EFFECTS[type].label.toLowerCase()}`, p => runCommand(p, "add_effect", { clip_id: clip.id, type }));
     setAdding(false);
   };
   return (

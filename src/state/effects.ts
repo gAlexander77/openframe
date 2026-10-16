@@ -2,7 +2,6 @@
 import { useSyncExternalStore } from "react";
 import { copyEffectStack, pasteEffectStack, type EffectClipboard } from "../lib/effectStack";
 import type { Id } from "../lib/project/types";
-import { edit } from "./actions";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -24,5 +23,5 @@ export function copyEffects(id: Id) {
 export function pasteEffects(ids: Id[]) {
   if (!copied || !ids.length) return;
   const snapshot = copied;
-  edit("Paste effects", p => pasteEffectStack(p, ids, snapshot));
+  store.edit("Paste effects", p => pasteEffectStack(p, ids, snapshot));
 }
