@@ -246,3 +246,59 @@ A narrative log of each build round with its intent, for archaeology that
   interruptions. It was initially prepared without commits; the owner then
   authorized committing the handoff locally. Existing `.gitignore` merge markers were observed
   and logged for the owning agent, not repaired here.
+
+## 2026-10-16 — Claude Code reviews the Codex pass
+
+Codex worked on main from 2026-10-14 to 2026-10-16 (32 local commits): the
+guide's eight tasks, then owner-approved additions — caption worker
+recovery, New/Open from Home, the desktop header, effect stack controls,
+copy/paste effects, presets, Paste Attributes, composition guides, marker
+management and export, media filters, folders and favorites, Save a copy,
+relinking, the source monitor and the two-up trim preview. Its log is
+`CODEX_GUIDE.md` §7 and [[Development pass 2026-10-16]].
+
+Claude Code reviewed every commit (four parallel readers, each finding
+checked in the code) and ran all drives headless. Type-check, 397 unit
+tests and the production build passed; 27 web drives passed. Fixed, each
+with a check that fails without the fix where one could be built:
+
+- **Imports on Home returned nothing.** Tying imports to the open document
+  session made `window.videoEditor.import` and MCP `import_media` answer
+  `[]` with no project open; the export drive broke on it. They now throw
+  "No project is open".
+- **Effect edits closed gaps.** They went through `edit()`, whose magnet
+  settle compacts the main track; effects are metadata and use
+  `store.edit`, as ADR-043 already prescribed for presets.
+- **One unreadable preset erased the library** on the next save; entries
+  are now read one by one and unreadable ones are written back.
+- **Autosave chained saves** while edits arrived during a write (only a
+  waiting navigation must drain); **a Copilot turn edited the next
+  project** after a switch; **relink accepted a short file** when the
+  original's duration was unknown.
+- Smaller: pasted fades overlapping, trim previews holding WebGL contexts,
+  a stale frame after a decode error, the source monitor's clock and NTSC
+  timecode, timeline menu at the wrong frame during playback or under a
+  header, zoom jumping to a marker, moves pausing playback, marquee
+  Escape, Home stealing focus, Manage media re-probing, FFmpeg conversions
+  outliving their project, effect previews after relink.
+
+### Lessons paid for in this round
+
+- **A new guard needs the callers that run where it bites.** The session
+  guard was right for delayed work but also caught synchronous automation
+  on Home; a drive that was never re-run hid it. Re-run every drive after
+  cross-cutting changes, not only the new ones.
+- **`edit()` is for timing edits.** Its settle applies the magnet; a
+  metadata change through it silently compacts gaps.
+- **Load stored collections entry by entry** and keep what you cannot read;
+  all-or-nothing parsing turns one bad entry into total loss on the next
+  write.
+- **`git show rev:file > file` under Vite** serves an empty module until
+  the next change (truncate, then write); swap files in one write.
+- **The owner's dev app shares :1420**: every save under `src/` hot-reloads
+  their window.
+- **Not fixed, needs a desktop test:** nothing saves when the window
+  closes, so an edit within the 800 ms autosave delay is lost on close.
+  The fix (an `onCloseRequested` handler that awaits `saveNow`) needs the
+  `core:window:allow-destroy` permission and a desktop run; a handler that
+  fails would leave a window that cannot close.

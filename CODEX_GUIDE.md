@@ -507,3 +507,16 @@ plan. Parked agent work and unrelated files remain untouched. Local commits only
   including four native delayed-job/session checks. Build and 397 unit tests
   pass. QA projects/presets were removed, test overrides cleared by reload,
   and viewport emulation reset. The app remains running at Home on port 9222.
+
+### 2026-10-16 — Claude Code review of this pass
+
+Claude Code reviewed all 32 commits above and fixed what it found in 22
+small local commits (`0c20bbf`..HEAD); see the 2026-10-16 entry in
+`docs/History.md`. Highlights: automation imports on Home now throw
+instead of returning `[]` (the export drive had broken), effect edits keep
+timeline gaps, the preset library survives an unreadable entry, autosave
+no longer chains saves, and Copilot turns stop at a project switch. The
+runner opens the app before a drive, so `source-monitor`, `media-folders`
+and `trim-preview` run headless on the web too. Still open: save on window
+close (needs a desktop test), and Copy/Paste effects overlaps Paste
+Attributes with only Effects checked (owner's call whether to keep both).
