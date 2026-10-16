@@ -36,6 +36,7 @@ import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
+import { MediaManager } from "./MediaManager";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -141,6 +142,7 @@ function useThumbs() {
 /** Media lists every import, as CapCut's Media › Import does (an imported
  * MP3 used to vanish into Audio); Audio shows just the sound files. */
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
+  const [managing, setManaging] = useState(false);
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const options = useEditor((s) => s.mediaBrowser);
@@ -176,6 +178,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         </select>
       </div>
       <div className="media-results">
+        <button className="media-clear" onClick={() => setManaging(true)}>Manage media</button>
         <span role="status">{list.length} of {total} {kind === "audio" ? "audio files" : "media files"}</span>
         {filtered && <button className="media-clear" onClick={clearFilters}>Clear filters</button>}
         <div className="media-views" role="group" aria-label="Media view">
@@ -198,6 +201,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
           ))}
         </div>
       )}
+      {managing && <MediaManager onClose={() => setManaging(false)} />}
     </div>
   );
 }

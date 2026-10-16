@@ -264,3 +264,7 @@ Three doors, one engine ([[Automation]]):
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
   (preset or bezier), `remove_keyframes`.
+
+- **Media recovery:** Manage media checks editing-source availability; Locate
+  and Relink repair every clip reference while preserving edits, with Undo.
+  Replacements require compatible streams and full source duration.

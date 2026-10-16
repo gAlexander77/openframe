@@ -217,3 +217,11 @@ Follow [CONTRIBUTING.md](../CONTRIBUTING.md). Include the revision, OS,
 desktop/browser target, steps, expected result, and actual result. Share only
 media you have permission to share and remove private paths and tokens from
 logs. During the private phase, use the review channel agreed with the owner.
+
+## Relink moved media
+
+Open **Media → Manage media** to check source availability and see file paths.
+Choose **Locate…**, pick one replacement, review its path, then **Relink file**.
+Every use keeps its cuts and effects; Undo restores the old location. Choose
+the same media kind with the original audio/video streams and at least the
+original duration. When a proxy exists, the check reports that editing copy.

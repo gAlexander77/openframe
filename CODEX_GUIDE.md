@@ -474,3 +474,7 @@ untouched. Local commits only.
   it now exposes port 9222. The unused isolated validation worktree was
   removed. TypeScript and all 382 tests pass; screenshot reviewed. See the
   dated development-pass note for design choices and the HMR testing lesson.
+
+- Save a copy committed as `ff6fff6`. Media relinking adds a real-file
+  recovery dialog and `relink_media` command. Seven desktop MCP checks and
+  384 unit tests pass; ADR-041 records source-handle and cache decisions.

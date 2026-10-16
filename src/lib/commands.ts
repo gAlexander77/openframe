@@ -31,6 +31,7 @@ import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 import { deleteMarkers, updateMarker } from "./markers";
+import { relinkAsset } from "./project/relink";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -148,6 +149,16 @@ const TEXT_STYLE_SCHEMA = S.obj({
 // ---- the registry ------------------------------------------------------------------
 
 export const COMMANDS: Command[] = [
+  {
+    name: "relink_media",
+    description: "Relink every use of an asset to another imported asset's source. Preserves edits and identity; requires compatible streams and duration. Undoable.",
+    input: S.obj({ asset_id: S.str("Original asset"), replacement_asset_id: S.str("Imported replacement asset") }, ["asset_id", "replacement_asset_id"]),
+    run: (p, a) => {
+      const replacement = p.assets.find((asset) => asset.id === a.replacement_asset_id);
+      if (!replacement) throw new CommandError("Import the replacement first.");
+      return relinkAsset(p, String(a.asset_id), replacement);
+    },
+  },
   {
     name: "set_project",
     description: "Change project settings: name, canvas size (pixels), frame rate, background color.",

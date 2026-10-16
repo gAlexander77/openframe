@@ -10,7 +10,7 @@ Preserve `Modelfile.qwen32k`, the owner's open desktop instance and the parked
 
 - [x] Project-session ownership for delayed imports and analysis.
 - [x] Save a copy / independent project versions.
-- [ ] Missing-media relinking.
+- [x] Missing-media relinking.
 - [ ] Media folders and favorites.
 - [ ] Source preview and In/Out selection before timeline placement.
 - [ ] Reusable effect presets and selective Paste Attributes.
@@ -73,3 +73,28 @@ Lesson: after module changes, reload the testing WebView before importing
 dev-only module helpers. A page spanning hot reloads can contain old/new
 module instances; the first drive created an invisible second session.
 The corrected drive starts from a fresh page and uses Home/rename UI.
+
+### Missing-media relinking
+
+Media → Manage media checks editing sources and lists their paths. Locate
+probes one replacement, converts unsupported desktop codecs if needed, then
+shows its path and metadata before Relink applies it. It keeps the original
+asset ID/label and every clip edit; Undo restores the old location. Duration
+must cover the original source, including unused handles. Stream/type checks
+prevent accidental loss of picture or sound. See ADR-041 for the rationale.
+
+`relink_media` exposes the same operation using an already imported replacement.
+Cursor cache keys now include the source location so relink/undo cannot keep
+showing an old decoder. The scope and original-location checks reject stale
+picker results. There is no batch path guessing or source timecode alignment.
+Availability checks examine the editing proxy when present; they do not
+certify that a separately referenced original still exists.
+
+Seven `media-relink` checks pass through MCP on the real desktop WebView:
+missing detection, picker cancellation, incompatible image rejection, edit
+preservation, actual decoded output, Undo and 1100×680 layout. The replacement
+file selection is stubbed (no OS dialog control); file probing/rendering are
+real desktop I/O. Screenshot inspected. TypeScript and all 384 tests pass.
+Lesson: even after reload, Vite can serve timestamped module dependencies.
+Dev-only test hooks must import the URL recorded in Resource Timing rather
+than an unversioned URL that can create a second store instance.

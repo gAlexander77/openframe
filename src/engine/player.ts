@@ -51,10 +51,11 @@ export class CursorPool {
   }
 
   private open(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
-    const key = reverse ? `${clipId}#reverse` : clipId;
+    const asset = getAsset(p, assetId);
+    // Relinking and undo can change a clip's source without changing its ID.
+    const key = JSON.stringify([clipId, asset?.proxy ?? asset?.src, reverse]);
     let e = this.map.get(key);
     if (!e) {
-      const asset = getAsset(p, assetId);
       const cursor = asset
         ? mediaFor(asset).then((m) => {
             if (!m.videoSink || !m.keySink) return null;

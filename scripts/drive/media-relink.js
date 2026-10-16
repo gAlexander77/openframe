@@ -1,0 +1,46 @@
+async page => {
+  await page.setViewportSize({ width: 1600, height: 950 });
+  await page.reload(); await page.waitForFunction(() => !!window.videoEditor);
+  await page.locator(".create-card").click(); await page.locator(".timeline-panel").waitFor();
+  const details = {};
+  await page.evaluate(async () => {
+    const api = window.videoEditor;
+    const [a] = await api.import([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]);
+    api.exec("add_media_clip", { asset_id: a.id, start: 0, in: 1, duration: 2 });
+    const { store } = await import(performance.getEntriesByType("resource").find((e) => /\/src\/state\/store\.ts(?:\?|$)/.test(e.name)).name);
+    store.edit("Missing fixture", (p) => ({ ...p, name: "__QA_20261016_relink", assets: p.assets.map((a) => ({ ...a, src: "F:/Dev/video-editor/scratch/does-not-exist.mp4" })) }));
+    window.__beforeRelink = api.project();
+    const { platform } = await import(performance.getEntriesByType("resource").find((e) => /\/src\/platform\/index\.ts(?:\?|$)/.test(e.name)).name);
+    window.__pickKind = "cancel";
+    platform.pickMedia = async () => window.__pickKind === "cancel" ? [] : [{ name: window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4", src: `F:/Dev/video-editor/fixtures/media/${window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4"}` }];
+  });
+  await page.getByRole("button", { name: "Manage media", exact: true }).click();
+  await page.getByText("Unavailable — locate file", { exact: true }).waitFor();
+  details.detectsMissing = { ok: true };
+  await page.getByRole("button", { name: "Locate framecode-30.mp4" }).click();
+  details.cancelUnchanged = { ok: await page.evaluate(() => JSON.stringify(window.videoEditor.project().assets) === JSON.stringify(window.__beforeRelink.assets)) };
+  await page.evaluate(() => { window.__pickKind = "bad"; });
+  await page.getByRole("button", { name: "Locate framecode-30.mp4" }).click();
+  await page.getByRole("alert").filter({ hasText: "Choose a video file" }).waitFor();
+  details.rejectsWrongKind = { ok: await page.locator(".relink-review").count() === 0 };
+  await page.evaluate(() => { window.__pickKind = "good"; });
+  await page.getByRole("button", { name: "Locate framecode-30.mp4" }).click();
+  await page.getByRole("button", { name: "Relink file", exact: true }).waitFor();
+  await page.screenshot({ path: "scratch/media-relink-desktop.png", animations: "disabled" });
+  await page.getByRole("button", { name: "Relink file", exact: true }).click();
+  await page.getByText("Available", { exact: true }).waitFor();
+  details.preservesEdit = { ok: await page.evaluate(() => {
+    const p = window.videoEditor.project(), before = window.__beforeRelink;
+    return JSON.stringify(p.tracks) === JSON.stringify(before.tracks) && p.assets[0].id === before.assets[0].id && p.assets[0].src.endsWith("fixtures/media/framecode-30.mp4");
+  }) };
+  await page.setViewportSize({ width: 1100, height: 680 });
+  details.narrowFit = { ok: await page.locator(".editor-dialog").evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().bottom <= innerHeight) };
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await page.evaluate(async () => { window.videoEditor.seek(0.5); await window.videoEditor.rendered(); });
+  details.decodedAfterRelink = { ok: await page.evaluate(() => { const p = window.videoEditor.pixels(); return !!p && p.data.some((v, i) => i % 4 !== 3 && v > 40); }) };
+  await page.evaluate(() => window.videoEditor.action("undo"));
+  details.undoRestoresLocation = { ok: await page.evaluate(() => window.videoEditor.project().assets[0].src.includes("does-not-exist")) };
+  await page.evaluate(() => window.videoEditor.action("redo"));
+  await page.evaluate(async () => { const { saveNow } = await import(performance.getEntriesByType("resource").find((e) => /\/src\/state\/project\.ts(?:\?|$)/.test(e.name)).name); await saveNow(); });
+  return { ok: Object.values(details).every((d) => d.ok), details };
+};
