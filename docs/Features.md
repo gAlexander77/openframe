@@ -30,6 +30,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   build refuses it with the codec named.
 - Background filmstrips and waveforms, two files at a time.
 - Phone footage rotation honored.
+- **Media organization:** combined name/type/used/unused filtering; import
+  order, natural name and source-duration sorts; grid or compact metadata
+  list. Usage counts select all referencing clips and seek the earliest.
+  Counts follow edits/Undo, including references on inactive tracks.
 
 ## Timeline
 

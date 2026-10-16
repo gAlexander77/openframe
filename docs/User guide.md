@@ -66,6 +66,29 @@ and disables creation/deletion during loading; retry after it finishes.
 A focused project card opens with Enter or Space. Activating its Delete
 button with the keyboard only arms deletion, just like clicking it.
 
+## Find and reuse imported media
+
+In **Media**, combine Search media with **All types** and **All usage** to
+find video, audio, images, used files or unused files. **Clear filters**
+shows all imports again. **Audio** uses the same browsing controls but only
+shows audio files. Stickers remain in their separate tab.
+
+Choose **Import order**, a name sort, or shortest/longest source duration.
+Name sorting puts numbered shots in natural order (Shot2 before Shot10).
+Images have no fixed source duration, so they sort after timed media in
+both duration directions. Sorting never rearranges timeline clips.
+
+Switch to **List view** beside the file count to see duration, dimensions,
+frame rate and file size when available. Click a **timeline uses** count
+to select every referencing clip and seek the earliest one. Counts include
+disabled clips and references on hidden, muted or locked tracks; **Unused**
+means no timeline reference. It does not remove any source files.
+
+Drag a row, double-click it, or use its Add button to place media, just as
+with the grid. Search/filter/view choices survive tab changes. Opening or
+creating a project clears search/type/usage filters; view and sort last for
+the app session. Browsing and selecting uses do not consume Undo steps.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**

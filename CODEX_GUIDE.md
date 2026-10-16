@@ -443,3 +443,13 @@ remain untouched. Work stays local on main with headless Playwright MCP.
   ownership audit. Seven `project-races` checks and all 15 lifecycle
   regression checks pass; loading screenshot reviewed. TypeScript and all
   374 unit tests pass. No Rust changes or native desktop validation.
+- `ce9ad73`: the project switching fix above.
+- Media now combines search/type/usage filters with natural name and source
+  duration sorting, plus a metadata list and clickable timeline use counts.
+  Browsing remains outside project/history; filter choices survive tabs and
+  clear on New/Open while view/sort persist for the session. [[Media organization]]
+  in `docs/research/` cites the Adobe sources; ADR-040 records semantics and
+  deferred bins/relinking. All 22 `media-library` MCP checks pass, including
+  drag/add/double-click/keyboard behavior and 1600×950 / 1100×680 layouts;
+  screenshots inspected. TypeScript and all 379 unit tests pass. No saved
+  format, native backend, dependency or runtime identity changes.

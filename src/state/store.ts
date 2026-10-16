@@ -7,6 +7,7 @@
 
 import { useSyncExternalStore } from "react";
 import { createProject } from "../lib/project/defaults";
+import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
 import type { Id, Project } from "../lib/project/types";
@@ -52,6 +53,8 @@ export interface EditorState {
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: "off" | "safe" | "thirds" | "both";
   leftTab: LeftTab;
+  /** Shared Media/Audio browsing preferences, never serialized as edits. */
+  mediaBrowser: MediaBrowser;
   /** Marker opened in the library editor; independent of clip selection. */
   markerEdit: Id | null;
   /** In/out range for export and three-point edits, frames. */
@@ -95,6 +98,7 @@ let state: EditorState = {
   scopes: false,
   viewerGuides: "off",
   leftTab: "media",
+  mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },
   markerEdit: null,
   inPoint: null,
   outPoint: null,
@@ -219,6 +223,7 @@ export const store = {
       keySel: null,
       textEdit: null,
       markerEdit: null,
+      mediaBrowser: { ...DEFAULT_MEDIA_BROWSER, view: state.mediaBrowser.view, sort: state.mediaBrowser.sort },
       revision: state.revision + 1,
       ...labels(),
     });

@@ -73,6 +73,7 @@ a clock, so no frame is ever dropped
 | `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |
 | `lib/templates.ts` | Word art and title templates as data, turned into text and box clips |
 | `lib/markers.ts`, `lib/markerText.ts` | Marker edits/navigation/search and read-only notes/chapter formatting |
+| `lib/mediaLibrary.ts` | Derived media filters, stable sorts and timeline reference counts; session preferences live in the store |
 | `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time |
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |

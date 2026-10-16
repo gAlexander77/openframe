@@ -7,6 +7,8 @@ import {
   Captions,
   Film,
   Image,
+  LayoutGrid,
+  List,
   Music,
   Palette,
   Plus,
@@ -19,6 +21,8 @@ import {
   WandSparkles,
 } from "../icons";
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
+import { formatBytes } from "../lib/export";
+import { filterMedia, mediaUsage, type MediaBrowser, type MediaUse } from "../lib/mediaLibrary";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
@@ -139,36 +143,58 @@ function useThumbs() {
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
-  const [q, setQ] = useState("");
+  const options = useEditor((s) => s.mediaBrowser);
+  const change = (patch: Partial<MediaBrowser>) => store.set({ mediaBrowser: { ...store.get().mediaBrowser, ...patch } });
+  const clearFilters = () => change({ query: "", kind: "all", usage: "all" });
   useThumbs();
-  const used = useMemo(() => new Set(tracks.flatMap((t) => t.clips.map((c) => ("assetId" in c ? c.assetId : "")))), [tracks]);
-  // Stickers live in their own tab, as in CapCut, not among imported media;
-  // the Media tab lists every import, sound included.
-  const list = assets.filter((a) => !a.sticker && (kind === "all" || a.kind === "audio") && a.name.toLowerCase().includes(q.toLowerCase()));
+  const usage = useMemo(() => mediaUsage(tracks), [tracks]);
+  const list = filterMedia(assets, usage, kind === "audio" ? { ...options, kind: "audio" } : options);
+  const total = assets.filter((a) => !a.sticker && (kind === "all" || a.kind === "audio")).length;
+  const filtered = !!options.query || options.usage !== "all" || (kind === "all" && options.kind !== "all");
 
   return (
-    <div className="lib-content">
+    <div className="lib-content media-browser">
       <div className="lib-toolbar">
         <button className="btn import-btn" onClick={() => void pickAndImport()}>
           <Upload size={14} /> Import
         </button>
         <label className="lib-search">
           <Search size={14} />
-          <input className="field" placeholder={kind === "audio" ? "Search audio" : "Search media"} value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="field" aria-label={kind === "audio" ? "Search audio" : "Search media"} placeholder={kind === "audio" ? "Search audio" : "Search media"} value={options.query} onChange={(e) => change({ query: e.target.value })} />
         </label>
       </div>
-      {assets.length === 0 ? (
+      <div className="media-filters">
+        {kind === "all" && <select className="field" aria-label="Media type" value={options.kind} onChange={(e) => change({ kind: e.target.value as MediaBrowser["kind"] })}>
+          <option value="all">All types</option><option value="video">Video</option><option value="audio">Audio</option><option value="image">Images</option>
+        </select>}
+        <select className="field" aria-label="Timeline usage" value={options.usage} onChange={(e) => change({ usage: e.target.value as MediaBrowser["usage"] })}>
+          <option value="all">All usage</option><option value="used">Used</option><option value="unused">Unused</option>
+        </select>
+        <select className="field" aria-label="Sort media" value={options.sort} onChange={(e) => change({ sort: e.target.value as MediaBrowser["sort"] })}>
+          <option value="import">Import order</option><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option>
+          <option value="duration">Shortest first</option><option value="duration-desc">Longest first</option>
+        </select>
+      </div>
+      <div className="media-results">
+        <span role="status">{list.length} of {total} {kind === "audio" ? "audio files" : "media files"}</span>
+        {filtered && <button className="media-clear" onClick={clearFilters}>Clear filters</button>}
+        <div className="media-views" role="group" aria-label="Media view">
+          <button className="icon-btn" aria-label="Grid view" data-tip="Grid view" aria-pressed={options.view === "grid"} onClick={() => change({ view: "grid" })}><LayoutGrid size={14} /></button>
+          <button className="icon-btn" aria-label="List view" data-tip="List view" aria-pressed={options.view === "list"} onClick={() => change({ view: "list" })}><List size={14} /></button>
+        </div>
+      </div>
+      {total === 0 ? (
         <button className="drop-box" onClick={() => void pickAndImport()}>
           <Upload size={22} />
           <strong>Import</strong>
-          <span>Drag videos, audio or photos here, or click to browse</span>
+          <span>{kind === "audio" ? "No audio imported yet. Click to browse." : "Drag videos, audio or photos here, or click to browse"}</span>
         </button>
       ) : list.length === 0 ? (
-        <div className="empty">{q ? `Nothing matches “${q}”` : "No audio imported yet"}</div>
+        <div className="empty">No media matches these filters.</div>
       ) : (
-        <div className="card-grid">
+        <div className={options.view === "list" ? "media-list" : "card-grid"}>
           {list.map((a) => (
-            <MediaCard key={a.id} asset={a} used={used.has(a.id)} />
+            <MediaCard key={a.id} asset={a} uses={usage.get(a.id) ?? []} list={options.view === "list"} />
           ))}
         </div>
       )}
@@ -176,31 +202,45 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   );
 }
 
-function MediaCard({ asset, used }: { asset: Asset; used: boolean }) {
+function MediaCard({ asset, uses, list }: { asset: Asset; uses: MediaUse[]; list: boolean }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
+  const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
+    asset.width && asset.height ? `${asset.width}×${asset.height}` : null,
+    asset.fps ? `${Number(asset.fps.toFixed(3))} fps` : null,
+    asset.size ? formatBytes(asset.size) : null].filter(Boolean).join(" · ");
+  const add = <button
+    className={list ? "icon-btn media-add" : "card-add"}
+    aria-label={`Add ${asset.name} to the timeline`} data-tip="Add to timeline"
+    onPointerDown={(e) => e.stopPropagation()}
+    onDoubleClick={(e) => e.stopPropagation()}
+    onClick={(e) => { e.stopPropagation(); addToTimeline(asset); }}
+  ><Plus size={14} strokeWidth={2.4} /></button>;
   return (
     <div
       className="card media-card"
-      title={asset.name}
+      title={`${asset.name}\n${metadata}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
-        {asset.kind !== "image" && <span className="chip num">{formatDuration(asset.duration)}</span>}
-        {used && <span className="badge-added">Added</span>}
-        <button
-          className="card-add"
-          aria-label={`Add ${asset.name} to the timeline`}
-          data-tip="Add to timeline"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => addToTimeline(asset)}
-        >
-          <Plus size={14} strokeWidth={2.4} />
-        </button>
+        {!list && asset.kind !== "image" && <span className="chip num">{formatDuration(asset.duration)}</span>}
+        {!list && uses.length > 0 && <span className="badge-added">Added</span>}
+        {!list && add}
       </div>
-      <span className="card-label">{asset.name}</span>
+      <div className="media-info">
+        <span className="card-label">{asset.name}</span>
+        {list && <>
+          <span className="media-details">{metadata}</span>
+          {uses.length ? <button className="media-uses" aria-label={`Select ${uses.length} timeline uses of ${asset.name}`}
+            onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); store.select(uses.map((u) => u.clipId)); store.set({ hoverFrame: null }); store.seek(uses[0].start); }}>
+            {uses.length} timeline {uses.length === 1 ? "use" : "uses"}
+          </button> : <span className="media-details">Unused</span>}
+        </>}
+      </div>
+      {list && add}
     </div>
   );
 }

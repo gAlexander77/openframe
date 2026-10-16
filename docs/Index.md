@@ -48,6 +48,7 @@ of the documentation and how agents use it as shared working memory.
 
 ## Research
 
+- [[Media organization]] — source metadata, filtering, sorting and timeline usage
 - [[Navigation and composition]] — viewer guides, marker management and
   priorities from the next editor comparison
 - [[Effect workflow]] — applied-effect discoverability and stack-editing review
@@ -126,3 +127,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   stack reuse, independent IDs, timing conversion and undo
 - [[ADR-039 Project navigation waits for current edits]] — save in-flight
   edits and ignore overlapping navigation requests
+- [[ADR-040 Media browsing stays outside the project document]] — derived
+  usage counts, sorting and session preferences without changing saved assets
