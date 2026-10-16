@@ -11,7 +11,8 @@ it("retimes audio fades and leaves source offsets and speed unchanged", () => {
   p.tracks = [{ ...createTrack("audio", "Audio"), clips: [a, b] }];
   const copied = copyAttributes(p, a.id); copied.fps = { num: 60, den: 1 };
   const c = pasteAttributes(p, [b.id], copied, ["audio"]).tracks[0].clips[1];
-  expect(c).toMatchObject({ volume: 0.4, fadeIn: 30, duration: 30, in: 2, speed: 2, start: 400 });
+  // 1.5 s at the target rate is 45 frames; a fade stops at half the clip, as in the inspector.
+  expect(c).toMatchObject({ volume: 0.4, fadeIn: 15, duration: 30, in: 2, speed: 2, start: 400 });
 });
 const setup = () => {
   const p = createProject(); const a = createColorClip("#fff", 0, 60), b = createColorClip("#000", 90, 30);

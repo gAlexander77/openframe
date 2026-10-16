@@ -39,7 +39,7 @@ export function pasteAttributes(p: Project, ids: string[], copied: AttributeClip
     const target = findClip(next, id)!.clip;
     const patch: Record<string, unknown> = {};
     for (const group of nonEffects) for (const field of fields[group]) patch[field] = structuredClone((source as unknown as Record<string, unknown>)[field]);
-    if (groups.includes("audio")) for (const field of ["fadeIn", "fadeOut"]) patch[field] = Math.min(target.duration, Math.max(0, secondsToFrames(framesToSeconds(patch[field] as number, copied.fps), p.fps)));
+    if (groups.includes("audio")) for (const field of ["fadeIn", "fadeOut"]) patch[field] = Math.min(Math.floor(target.duration / 2), Math.max(0, secondsToFrames(framesToSeconds(patch[field] as number, copied.fps), p.fps)));
     const keyframes = Object.fromEntries(Object.entries(target.keyframes ?? {}).filter(([path]) => !nonEffects.some((g) => matches(path, g))));
     for (const [path, keys] of Object.entries(source.keyframes ?? {})) {
       if (!nonEffects.some((g) => matches(path, g))) continue;
