@@ -26,9 +26,12 @@ work; they do not mean the app has already been renamed or released.
 
 ## The workflow rules
 
-1. **Small commits, one intention each, message says why.** The owner reads
-   history to learn the reasoning behind every choice. Docs land in the same
-   commit as the code they describe.
+1. **Few commits, each a finished piece of work, message says why.** One
+   commit per feature (or per batch of related small changes, such as a
+   round of fixes), never one per step: the owner found 160 commits in a
+   day too many (2026-10-16) and squashed them by area. The body says why
+   each part changed and what was checked, so the reasoning stays readable.
+   Docs land in the same commit as the code they describe.
 2. **Document every lesson.** What we learn about the products we imitate
    (CapCut, VEGAS, Premiere, Resolve) and the platforms (WebCodecs,
    WebView2, Tauri) goes in `docs/` — research notes, ADRs, History — so no

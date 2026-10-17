@@ -57,8 +57,9 @@ done (`docs/Renaming.md`).
   metadata (ADR-042); identity, paths and existing render data remain compatible.
 - **No new npm or cargo dependencies.** `scratch/` (git-ignored) may hold
   tools such as `playwright-core`.
-- **Small commits, one intention each.** The message's first line says
-  what changed; the body says **why**, and what you checked. Docs change in
+- **Few commits: one per finished feature or batch of related changes**,
+  never one per step. The message's first line says what changed; the
+  body says **why**, and what you checked. Docs change in
   the same commit as the code they describe. Do not add the Claude
   `Co-Authored-By` / `Claude-Session` lines; those are Claude's.
 - **Gates before every commit**, and read their exit codes (never pipe
