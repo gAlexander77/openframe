@@ -6,6 +6,10 @@ import { sourceFrames, sourceProject } from "../lib/sourceMonitor";
 import type { Asset } from "../lib/project/types";
 import { formatTimecode, fpsValue, framesToSeconds } from "../lib/time";
 import { addToTimeline } from "../state/media";
+import { actionFor, provide } from "../state/actions";
+import { toast } from "../state/toast";
+import { tipFor } from "./TimelineToolbar";
+import type { PlaceMode } from "../lib/project/ops";
 import { projectWork } from "../state/projectWork";
 import { store } from "../state/store";
 import { Dialog } from "./Dialog";
@@ -51,7 +55,32 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
     } catch (e) { stop(); setError(e instanceof Error ? e.message : String(e)); }
   };
   const still = asset.kind === "image";
-  return <Dialog title={`Source: ${asset.name}`} onClose={onClose} className="source-monitor">
+  // Add follows the timeline's own placement (CapCut); Insert and Overwrite
+  // land exactly at the playhead (Premiere's).
+  const place = (mode?: PlaceMode) => {
+    stop();
+    try {
+      const current = store.get().project.assets.find((a) => a.id === asset.id);
+      if (signal.aborted || !current || current.src !== asset.src || current.proxy !== asset.proxy) throw new Error("The source changed. Reopen its preview.");
+      addToTimeline(current, undefined, undefined, still ? undefined : { in: framesToSeconds(markIn, project.fps), out: framesToSeconds(markOut, project.fps) }, mode);
+      onClose();
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+  };
+  const placeRef = useRef(place);
+  placeRef.current = place;
+  useEffect(() => {
+    provide({ insertSource: () => placeRef.current("insert"), overwriteSource: () => placeRef.current("overwrite") });
+    const none = () => toast("Open a clip in the source monitor first (double-click it in the library)");
+    return () => provide({ insertSource: none, overwriteSource: none });
+  }, []);
+  // The dialog keeps the editor's shortcuts out; Insert and Overwrite are its own.
+  const onKey = (e: React.KeyboardEvent) => {
+    const id = actionFor(e.nativeEvent);
+    if (id !== "insertSource" && id !== "overwriteSource") return;
+    e.preventDefault();
+    place(id === "insertSource" ? "insert" : "overwrite");
+  };
+  return <Dialog title={`Source: ${asset.name}`} onClose={onClose} className="source-monitor" onKeyDown={onKey}>
     {asset.kind === "audio" ? <div className="source-audio"><AudioLines size={40} /><span>Audio source</span></div> : <FramePreview project={project} frame={frame} label="Source preview" />}
     {!still && <>
       <input className="source-scrub" type="range" aria-label="Source position" min={0} max={total - 1} step={1} value={frame} onChange={(e) => seek(+e.target.value)} />
@@ -61,17 +90,14 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
         <div><button className="btn" onClick={() => { stop(); setOut(frame + 1); if (markIn > frame) setIn(frame); }}>Mark Out</button><output className="num" aria-label="Source Out">{formatTimecode(markOut - 1, project.fps)}</output></div>
         <button className="btn ghost" onClick={() => { stop(); setIn(0); setOut(total); }}>Clear marks</button>
       </div>
-      <p className="lib-hint">{((markOut - markIn) / rate).toFixed(3)} seconds selected. Out includes the displayed frame. Add range inserts at the playhead using the current timeline mode.</p>
+      <p className="lib-hint">{((markOut - markIn) / rate).toFixed(3)} seconds selected. Out includes the displayed frame. Add range places it at the playhead as the timeline would; Insert pushes what follows; Overwrite covers it.</p>
     </>}
     {error && <p className="dialog-error" role="alert">{error}</p>}
-    <footer><button className="btn ghost" onClick={onClose}>Cancel</button><button className="btn primary" onClick={() => {
-      stop();
-      try {
-        const current = store.get().project.assets.find((a) => a.id === asset.id);
-        if (signal.aborted || !current || current.src !== asset.src || current.proxy !== asset.proxy) throw new Error("The source changed. Reopen its preview.");
-        addToTimeline(current, undefined, undefined, still ? undefined : { in: framesToSeconds(markIn, project.fps), out: framesToSeconds(markOut, project.fps) });
-        onClose();
-      } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
-    }}>{still ? "Add image" : "Add range"}</button></footer>
+    <footer>
+      <button className="btn ghost" onClick={onClose}>Cancel</button>
+      <button className="btn" data-tip={tipFor("overwriteSource", "Cover what is under the playhead")} onClick={() => place("overwrite")}>Overwrite</button>
+      <button className="btn" data-tip={tipFor("insertSource", "Split at the playhead and push what follows")} onClick={() => place("insert")}>Insert</button>
+      <button className="btn primary" onClick={() => place()}>{still ? "Add image" : "Add range"}</button>
+    </footer>
   </Dialog>;
 }

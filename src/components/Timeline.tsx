@@ -7,6 +7,7 @@ import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "..
 import { placeOnTop } from "../lib/overlays";
 import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
 import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
+import { stretchClip } from "../lib/project/stretch";
 import { expandGroups } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
@@ -23,9 +24,9 @@ import {
   applyFilter,
   applyTemplate,
   applyTransition,
-  LAYER_SECONDS,
+  layerSeconds,
   placeTextPreset,
-  TRANSITION_SECONDS,
+  transitionSeconds,
 } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
@@ -67,7 +68,7 @@ type Gesture =
       /** Alt-drag: copies land at the drop spot, originals stay put. */
       dupIds: Map<Id, Id> | null;
     }
-  | { kind: "trim"; id: Id; edge: "start" | "end"; started: boolean; x0: number; mode: "trim" | "ripple" | "roll" }
+  | { kind: "trim"; id: Id; edge: "start" | "end"; started: boolean; x0: number; mode: "trim" | "ripple" | "roll" | "stretch" }
   | { kind: "slip"; id: Id; started: boolean; x0: number; y0: number }
   | { kind: "slide"; id: Id; started: boolean; x0: number; y0: number }
   | { kind: "scrub" }
@@ -121,7 +122,7 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
   const under = tracks[row]?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
   const onto = (c: Clip): DropView => ({ row, newTrack: false, frame: c.start, duration: c.duration, shifts: none, label, insert: false, attach: true });
   // Effect, filter and adjustment layers go on a new top track.
-  const layer: DropView = { row: 0, newTrack: true, frame, duration: secondsToFrames(LAYER_SECONDS, p.fps), shifts: none, label, insert: false, attach: false };
+  const layer: DropView = { row: 0, newTrack: true, frame, duration: secondsToFrames(layerSeconds(), p.fps), shifts: none, label, insert: false, attach: false };
   switch (payload.kind) {
     case "asset": {
       const a = payload.asset;
@@ -166,7 +167,7 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       return { view: layer, run: () => addAdjustmentLayer(frame) };
     case "transition": {
       const cut = transitionCut(tracks, row, frame);
-      const d = secondsToFrames(TRANSITION_SECONDS, p.fps);
+      const d = secondsToFrames(transitionSeconds(), p.fps);
       const view = cut && { row: cut.row, newTrack: false, frame: cut.frame - Math.round(d / 2), duration: d, shifts: none, label, insert: false, attach: true };
       return { view, run: () => applyTransition(payload.type, cut?.clipId, true) };
     }
@@ -339,7 +340,7 @@ export function Timeline() {
       if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
         gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
       } else if (zone !== "body") {
-        const mode = s.tool === "ripple" ? "ripple" : s.tool === "roll" ? "roll" : "trim";
+        const mode = s.tool === "ripple" ? "ripple" : s.tool === "roll" ? "roll" : s.tool === "stretch" ? "stretch" : "trim";
         gesture.current = { kind: "trim", id: clip.id, edge: zone, started: false, x0: e.clientX, mode };
       } else {
         const { rows: rs } = layoutRows(s.project);
@@ -429,6 +430,14 @@ export function Timeline() {
       // Roll moves the shared cut with the neighbor on that side, if they touch.
       const nb = g.edge === "end" ? loc.track.clips[loc.clipIndex + 1] : loc.track.clips[loc.clipIndex - 1];
       const touching = !!nb && (g.edge === "end" ? nb.start === loc.clip.start + loc.clip.duration : nb.start + nb.duration === loc.clip.start);
+      if (g.mode === "stretch") {
+        // Premiere's Rate Stretch: the edge sets the length, the speed follows.
+        store.previewGesture((base) => ops.settle(base, stretchClip(base, g.id, g.edge, f), opts));
+        const c = ops.findClip(store.get().project, g.id)?.clip;
+        if (c && "speed" in c) setReadout({ x: e.clientX, y: e.clientY, text: `Speed ${+c.speed.toFixed(2)}x  ·  Duration ${formatTimecode(c.duration, s.project.fps)}` });
+        store.set({ trimPreview: { kind: "trim", id: g.id, edge: g.edge }, hoverFrame: null });
+        return;
+      }
       store.previewGesture((base) =>
         ops.settle(
           base,
@@ -492,7 +501,7 @@ export function Timeline() {
     if (!g.started) return;
     const label =
       g.kind === "trim"
-        ? g.mode === "roll" ? "Roll edit" : g.mode === "ripple" ? "Ripple trim" : "Trim"
+        ? g.mode === "roll" ? "Roll edit" : g.mode === "ripple" ? "Ripple trim" : g.mode === "stretch" ? "Rate stretch" : "Trim"
         : g.kind === "slip" ? "Slip" : g.kind === "slide" ? "Slide" : g.dupIds ? "Duplicate" : "Move";
     store.endGesture(label);
     if (g.kind === "move" && g.dupIds) store.select([...g.dupIds.values()]);
@@ -628,6 +637,52 @@ export function Timeline() {
     ] });
   };
 
+  // ---- keyboard reach (UX-33) ----------------------------------------------------------
+  // One clip is the tab stop: the first selected one, else the first clip of
+  // the main track. Arrows move along a track and between tracks.
+  const tabStop = useMemo(() => {
+    const all = project.tracks.flatMap((t) => t.clips);
+    return all.find((c) => selected.has(c.id))?.id ?? (project.tracks.find((t) => t.main)?.clips[0] ?? all[0])?.id;
+  }, [project, selected]);
+  const focusClip = (id: Id) => {
+    store.select([id]);
+    const c = ops.findClip(store.get().project, id)?.clip;
+    const el = scrollRef.current;
+    if (c && el) {
+      const x = c.start * store.get().zoom;
+      if (x < el.scrollLeft || x > el.scrollLeft + el.clientWidth - HEADER_W - 40) el.scrollLeft = Math.max(0, x - 80);
+    }
+    // It may only render once scrolled into view.
+    requestAnimationFrame(() => el?.querySelector<HTMLElement>(`[data-clip="${id}"]`)?.focus());
+  };
+  const onClipKey = (e: React.KeyboardEvent) => {
+    const id = (e.target as HTMLElement).dataset?.clip;
+    if (!id || e.ctrlKey || e.metaKey || e.altKey) return;
+    const p = store.get().project;
+    const loc = ops.findClip(p, id);
+    if (!loc) return;
+    if (e.key === "Escape") {
+      (e.target as HTMLElement).blur();
+      return;
+    }
+    let next: Clip | undefined;
+    const clips = [...loc.track.clips].sort((a, b) => a.start - b.start);
+    const i = clips.findIndex((c) => c.id === id);
+    if (e.key === "ArrowLeft") next = clips[i - 1];
+    else if (e.key === "ArrowRight") next = clips[i + 1];
+    else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      const ti = p.tracks.findIndex((t) => t.id === loc.track.id);
+      const mid = loc.clip.start + loc.clip.duration / 2;
+      for (let t = ti + (e.key === "ArrowUp" ? -1 : 1); t >= 0 && t < p.tracks.length && !next; t += e.key === "ArrowUp" ? -1 : 1) {
+        // The clip under the middle of this one, else the nearest.
+        next = [...p.tracks[t].clips].sort((a, b) => Math.abs(a.start + a.duration / 2 - mid) - Math.abs(b.start + b.duration / 2 - mid))[0];
+      }
+    } else return;
+    e.preventDefault();
+    e.stopPropagation(); // not the frame step or edit jump on the same keys
+    if (next) focusClip(next.id);
+  };
+
   const onContext = useCallback((e: React.MouseEvent, clip: Clip) => {
     e.preventDefault();
     e.stopPropagation();
@@ -705,7 +760,7 @@ export function Timeline() {
         <div className="tl-content" style={{ width: contentW, height: RULER_H + rowsH + 40 }}>
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
           <div className="tl-corner" style={{ width: HEADER_W }} />
-          <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown}>
+          <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown} onKeyDown={onClipKey}>
             {rows.map((row) => (
               <div key={row.track.id} className={`tl-row${row.track.main ? " main" : ""}`} style={{ top: row.top, height: row.height }}>
                 <div className="tl-lane" style={{ left: HEADER_W }}>
@@ -724,6 +779,7 @@ export function Timeline() {
                         zoom={zoom}
                         height={row.height}
                         selected={selected.has(c.id)}
+                        tabStop={c.id === tabStop}
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
                         shift={(drop?.shifts.get(c.id) ?? 0) * zoom}

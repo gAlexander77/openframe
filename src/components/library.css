@@ -105,7 +105,7 @@
 }
 .card-add {
   position: absolute; right: 5px; bottom: 5px;
-  display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
   border: 0; border-radius: 50%;
   background: var(--accent); color: var(--accent-ink);
   opacity: 0; transform: scale(0.6);

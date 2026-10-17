@@ -73,6 +73,18 @@ describe("landing", () => {
     expect(Object.fromEntries(l.shifts)).toEqual({ s2: still, title: still });
   });
 
+  it("Insert splits the shot at the playhead and pushes the rest; Overwrite covers it", () => {
+    const p = project();
+    const span = (q: Project) => ops.mainTrack(q).clips.map((c) => [c.id === "s1" || c.id === "s2" ? c.id : "new", c.start, c.duration]);
+    const ins = placeAsset(p, photo, 40, undefined, true, undefined, "insert");
+    expect(span(ins.project)).toEqual([["s1", 0, 40], ["new", 40, still], ["s1", 40 + still, 50], ["s2", 90 + still, 60]].map((x, i) => (i === 2 ? [expect.any(String), x[1], x[2]] : x)));
+    // A 5 s still from frame 40 covers the rest of s1 and all of s2 (to 150).
+    const over = placeAsset(p, photo, 40, undefined, true, undefined, "overwrite");
+    expect(span(over.project)).toEqual([["s1", 0, 40], ["new", 40, still]]);
+    const short = placeAsset(p, photo, 100, undefined, true, undefined, "overwrite");
+    expect(span(short.project)).toEqual([["s1", 0, 90], ["s2", 90, 10], ["new", 100, still]]);
+  });
+
   it("an overlay is a new track at the top", () => {
     expect(drop(project(), photo, 40, "overlay")).toMatchObject({ row: 0, newTrack: true, frame: 40, shifts: new Map() });
   });

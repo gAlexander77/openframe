@@ -25,6 +25,8 @@ interface Props {
   /** Lane height in px. */
   height: number;
   selected: boolean;
+  /** The timeline's one keyboard stop (UX-33): Tab lands here. */
+  tabStop?: boolean;
   /** Visible content range in px relative to the clip's left edge. */
   visFrom: number;
   visTo: number;
@@ -220,6 +222,16 @@ export const ClipView = memo(function ClipView(p: Props) {
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
       style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height }}
       onPointerDown={(e) => p.onDown(e, c, "body")}
+      // Keyboard reach (UX-33): Tab focuses one clip, arrows move between
+      // them. A click must not focus it, or the arrows would stop stepping
+      // frames after every click; it still takes focus off an inspector
+      // field, as clicking the timeline always has.
+      tabIndex={p.tabStop ? 0 : -1}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur();
+      }}
+      aria-label={`${name}, ${formatDuration(framesToSeconds(c.start, p.fps))} to ${formatDuration(framesToSeconds(c.start + c.duration, p.fps))}${p.selected ? ", selected" : ""}`}
       onContextMenu={(e) => p.onContext(e, c)}
       // CapCut: double-click a caption (or title) on the timeline to edit its
       // words; ours opens the canvas editor. The blade's double-click just cuts.

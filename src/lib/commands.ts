@@ -411,6 +411,12 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "lift_range",
+    description: "Take a timeline range out of every unlocked track (Premiere's Lift and Extract): clips crossing its edges are cut; ripple=false leaves a gap, ripple=true closes it.",
+    input: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), ripple: S.bool("Close the gap (Extract)") }, ["start", "end"]),
+    run: (p, a) => ops.liftRange(p, f(p, a.start), f(p, a.end), a.ripple === true),
+  },
+  {
     name: "close_gaps",
     description: "Close empty space on a track by rippling later clips left: the gap at `at` seconds, or every gap (packing the track from 0) when `at` is left out.",
     input: S.obj({ track_id: S.str("Track id"), at: S.num("Timeline seconds inside the gap") }, ["track_id"]),

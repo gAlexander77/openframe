@@ -97,8 +97,12 @@ function visual(): Visual {
   };
 }
 
-/** Image and text clips default to the length CapCut gives them. */
+/** Image clips default to the length CapCut gives them. */
 export const DEFAULT_STILL_SECONDS = 5;
+// ponytail: module state, as setTextMeasure is: the viewer's preference
+// (src/state/prefs.ts) without threading it through every caller.
+let stillSeconds = DEFAULT_STILL_SECONDS;
+export const setStillSeconds = (s: number) => void (stillSeconds = s);
 
 export function createTrack(kind: TrackKind, name: string, main = false): Track {
   return {
@@ -151,7 +155,7 @@ export function clipForAsset(asset: Asset, start: number, fps: Rational): Clip {
       type: "image",
       assetId: asset.id,
       start,
-      duration: secondsToFrames(DEFAULT_STILL_SECONDS, fps),
+      duration: secondsToFrames(stillSeconds, fps),
       ...visual(),
     };
     return clip;

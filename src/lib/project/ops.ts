@@ -251,6 +251,23 @@ function clearRange(clips: Clip[], from: number, to: number, fps: Rational): Cli
   return out;
 }
 
+/** Premiere's Lift (gap stays) and Extract (ripple): take the timeline
+ * range [from, to) out of every unlocked track, cutting clips that cross
+ * its edges. A clip cut short at `from` loses its transition, whose
+ * partner is gone. */
+export function liftRange(p: Project, from: number, to: number, ripple: boolean): Project {
+  if (to <= from) return p;
+  const len = to - from;
+  return {
+    ...p,
+    tracks: p.tracks.map((t) => {
+      if (t.locked || !t.clips.some((c) => c.start < to && clipEnd(c) > from)) return ripple && !t.locked ? { ...t, clips: t.clips.map((c) => (c.start >= to ? ({ ...c, start: c.start - len } as Clip) : c)) } : t;
+      const kept = clearRange(t.clips, from, to, p.fps).map((c) => (clipEnd(c) === from && "transitionOut" in c && c.transitionOut ? (omit(c, ["transitionOut"]) as Clip) : c));
+      return { ...t, clips: ripple ? kept.map((c) => (c.start >= to ? ({ ...c, start: c.start - len } as Clip) : c)) : kept };
+    }),
+  };
+}
+
 // ---- add, delete, move ------------------------------------------------------
 
 export type PlaceMode = "overwrite" | "insert";

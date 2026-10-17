@@ -46,6 +46,7 @@ export type ActionId =
   | "toolRoll"
   | "toolSlip"
   | "toolSlide"
+  | "toolStretch"
   | "toggleSnapping"
   | "toggleMagnet"
   | "toggleLinkage"
@@ -66,6 +67,10 @@ export type ActionId =
   | "saveProject"
   | "export"
   | "fullscreenPreview"
+  | "insertSource"
+  | "overwriteSource"
+  | "liftRange"
+  | "extractRange"
   | "groupClips"
   | "ungroupClips"
   | "nudgeLeft"
@@ -74,7 +79,8 @@ export type ActionId =
   | "nudgeRight5"
   | "toggleLoop"
   | "playInToOut"
-  | "showShortcuts";
+  | "showShortcuts"
+  | "showPreferences";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   playPause: ["Space"],
@@ -130,6 +136,8 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   toolRoll: ["R"],
   toolSlip: ["Y"],
   toolSlide: ["U"],
+  // Premiere's Rate Stretch is R, our roll; Shift+R keeps it next to it.
+  toolStretch: ["Shift+R"],
   toggleSnapping: ["N"],
   toggleLinkage: ["`"],
   togglePreviewAxis: ["S"],
@@ -144,6 +152,12 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   saveProject: ["Mod+S"],
   export: ["Mod+E"],
   fullscreenPreview: ["Mod+Shift+F"],
+  // Premiere's Lift and Extract of the in/out range.
+  // Premiere's Insert and Overwrite from the source monitor.
+  insertSource: [","],
+  overwriteSource: ["."],
+  liftRange: [";"],
+  extractRange: ["'"],
   // Premiere's Group and Ungroup.
   groupClips: ["Mod+G"],
   ungroupClips: ["Mod+Shift+G"],
@@ -157,6 +171,7 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   toggleLoop: ["Mod+L"],
   playInToOut: ["Mod+Shift+Space"],
   showShortcuts: ["Mod+/"],
+  showPreferences: ["Mod+,"],
 };
 
 export const ACTION_LABELS: Record<ActionId, string> = {
@@ -207,6 +222,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   toolRoll: "Roll tool",
   toolSlip: "Slip tool",
   toolSlide: "Slide tool",
+  toolStretch: "Rate stretch tool",
   toggleSnapping: "Auto snapping",
   toggleLinkage: "Linkage",
   togglePreviewAxis: "Preview axis",
@@ -221,6 +237,10 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   saveProject: "Save project",
   export: "Export",
   fullscreenPreview: "Full-screen preview",
+  insertSource: "Insert source at playhead",
+  overwriteSource: "Overwrite source at playhead",
+  liftRange: "Lift in to out",
+  extractRange: "Extract in to out",
   groupClips: "Group clips",
   ungroupClips: "Ungroup clips",
   nudgeLeft: "Nudge clips one frame left",
@@ -230,6 +250,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   toggleLoop: "Loop playback",
   playInToOut: "Play in to out",
   showShortcuts: "Keyboard shortcuts",
+  showPreferences: "Preferences",
 };
 
 /** Canonical chord for a keyboard event: modifiers in a fixed order, then

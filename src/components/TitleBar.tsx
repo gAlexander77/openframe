@@ -90,6 +90,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "groupClips", disabled: s().selection.length < 2 },
         { action: "ungroupClips" },
+        "-",
+        { action: "showPreferences" },
       ],
     },
     {
@@ -109,6 +111,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "markOut" },
         { action: "clearInOut" },
         { action: "playInToOut" },
+        { action: "liftRange" },
+        { action: "extractRange" },
         { action: "toggleLoop", checked: s().loop },
         "-",
         { action: "toggleSnapping", checked: s().snapping },

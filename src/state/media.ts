@@ -111,12 +111,12 @@ async function convert(f: ImportedFile, signal?: AbortSignal): Promise<string> {
  * otherwise. The playhead moves after the clip only for an add at the
  * playhead, so repeated adds line up.
  */
-export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay", range?: SourceRange): Id {
+export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay", range?: SourceRange, mode?: ops.PlaceMode): Id {
   if (projectWork.signal().aborted || !store.get().project.assets.some((a) => a.id === asset.id)) return "";
   let id = "";
-  edit(`Add ${asset.name}`, (p0) => {
+  edit(mode === "insert" ? `Insert ${asset.name}` : mode === "overwrite" ? `Overwrite with ${asset.name}` : `Add ${asset.name}`, (p0) => {
     const s = store.get();
-    const r = placeAsset(p0, asset, at ?? s.playhead, trackId, s.magnet, range);
+    const r = placeAsset(p0, asset, at ?? s.playhead, trackId, s.magnet, range, mode);
     id = r.clipId;
     return r.project;
   });

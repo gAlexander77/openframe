@@ -46,7 +46,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Folders and favorites:** saved virtual folders, undoable folder rename/delete
   and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame
-  stepping, In/Out range insertion, and still image preview.
+  stepping, In/Out range insertion, and still image preview. **Add range**
+  places the range as the timeline would (CapCut); **Insert** (,) splits at
+  the playhead and pushes what follows, **Overwrite** (.) covers what is
+  there (Premiere's), on the main track or the first audio track.
 
 ## Timeline
 
@@ -100,12 +103,23 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   file and it takes the clip's place, keeping its start, length (shorter
   only if the new source runs out), transform, effects, animations and
   sound settings; video and pictures swap freely, sound for sound.
+- **Keyboard reach** on the timeline: Tab lands on the selected clip (or
+  the first), arrows move between clips and tracks with a focus ring, and
+  every edit key acts on it; screen readers hear its name and span.
+- **Lift and Extract** (Premiere's ; and ', Timeline menu; `lift_range`):
+  take the in/out range out of every unlocked track, cutting clips at its
+  edges; Lift leaves the gap (the magnetic main track closes its own),
+  Extract closes it. The marks clear after.
 - **Close gap**: right-click an empty stretch of a track for Close gap
   (ripple the clips after it left) or Close all gaps on this track
   (Premiere's ripple delete of a gap, Resolve's Delete gaps; `close_gaps`).
 - **Nudge clips** by a frame with Alt+Left/Right, five with Shift
   (Premiere's keys; `nudge_clips`), all or nothing: never past the start or
   over another clip.
+- **Equalizer** (Audio tab): low shelf (120 Hz), mid bell (1 kHz) and
+  high shelf (8 kHz), -12 to +12 dB, on audio clips and a video's own
+  sound; the same biquads in preview and export; copied by Paste
+  Attributes with the rest of the sound.
 - **Sound crossfades under transitions**: a video transition between two
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,
@@ -125,6 +139,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   output latency, with the pre-roll dropped.
 - Pro trim tools: ripple (T), roll (R), slip (Y) and slide (U), with
   readouts of what moves while dragging.
+- **Rate stretch tool** (Shift+R, Premiere's Rate Stretch): drag a clip's
+  edge and its speed changes so the same source fills the new length
+  (0.1x to 100x); the end ripples later clips, the start stops at the clip
+  before. Clips with a speed curve or a freeze keep their length.
 
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
   clamped source times, one-step Undo and gesture cancellation.
@@ -135,6 +153,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   are kept as shares of the window, so a bigger screen grows them all
   (CapCut's behavior). Drag the splitters (double-click resets one); View
   has Default, Large preview and Large timeline layouts and Reset layout.
+- **Preferences** (Edit > Preferences, Ctrl+,; Premiere's Timeline
+  preferences): the lengths new pictures (5 s), titles and effect layers
+  (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap
+  and layout, never in a project.
 
 ## Viewer
 
@@ -188,7 +210,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
-- Stereo peak meter.
+- Stereo peak meter, and a **loudness line** under it (Premiere's
+  Loudness Meter in one row): momentary, short-term and integrated LUFS
+  of what plays (EBU R128, an AudioWorklet K-weighting the master bus),
+  integrated since play started; it stays after a stop. On the drive it
+  agrees with an offline BS.1770 measurement within 0.3 LU.
 - **Viewer zoom** (Premiere's Program monitor zoom): Fit or 25 to 400 %
   of the project's own pixels from the transport, Ctrl+wheel to zoom at
   the pointer, the wheel (Shift: sideways) or a middle-button drag to pan;
@@ -279,6 +305,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   - **LUT**: import a 1D or 3D .cube (or drop one on the window), pick it,
     set its intensity ([[ADR-021 LUTs are files by reference, sampled as
     3D textures]]).
+- **Auto adjust** (Adjust > Basic, CapCut's): corrects exposure, levels
+  and white balance from the clip's own frame at the playhead, measured
+  with its adjustments off. Exposure only moves a median outside
+  0.35-0.65; white balance reads the near-neutral pixels and leaves a
+  frame of saturated color alone; every value stays within moderate
+  limits. One undo step; `auto_adjust` for agents.
 - The grade runs on clips and adjustment layers alike, every number is
   keyframeable, and preview and export render it with the same shader.
 - Agents: `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, and
@@ -363,6 +395,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
   a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
+- **Remove filler words** (CapCut's and Premiere's; AI tools card,
+  `remove_filler_words`): Whisper base or small on this computer
+  transcribes the clip and its "um", "hmm" and "ah" are cut with the
+  hesitation around each, the gaps closed. Whisper does not transcribe
+  "uh" or "er", so those stay ([[Filler words]]).
 - **Remove background** (CapCut's Video > Remove BG > Auto removal, also an
   AI tools card): a segmentation model on this computer cuts the person or
   main subject out of every frame, once, with progress and cancel; the

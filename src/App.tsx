@@ -8,6 +8,7 @@ import { DragGhost, Toasts } from "./components/Overlays";
 import { PlayerPanel } from "./components/Player";
 import { ScopesPanel } from "./components/Scopes";
 import { ShortcutsDialog } from "./components/ShortcutsDialog";
+import { PreferencesDialog } from "./components/PreferencesDialog";
 import { Splitter } from "./components/Splitter";
 import { Timeline } from "./components/Timeline";
 import { TitleBar } from "./components/TitleBar";
@@ -55,7 +56,8 @@ export default function App() {
   // Lumetri Scopes where the Source monitor was.
   const scopes = useEditor((s) => s.scopes);
   const [shortcuts, setShortcuts] = useState(false);
-  useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v) }), []);
+  const [prefs, setPrefs] = useState(false);
+  useEffect(() => provide({ showShortcuts: () => setShortcuts((v) => !v), showPreferences: () => setPrefs(true) }), []);
 
   // Home keeps only project entry points and Help. Editing and playback
   // must never act on the project still held in the store after closing.
@@ -132,6 +134,7 @@ export default function App() {
       )}
       {screen === "editor" && <CopilotPanel />}
       <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+      {prefs && <PreferencesDialog onClose={() => setPrefs(false)} />}
       <DragGhost />
       <ExportDialog />
       <Toasts />

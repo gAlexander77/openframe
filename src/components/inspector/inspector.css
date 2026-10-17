@@ -50,7 +50,7 @@
 
 /* a row: label | slider | number | keyframes */
 .insp-row {
-  display: grid; grid-template-columns: 82px 1fr 74px 60px; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 82px 1fr 74px 74px; align-items: center; gap: 8px;
   min-height: 32px;
 }
 .insp-row.plain { grid-template-columns: 82px 1fr; }
@@ -60,7 +60,7 @@
    and dialogs sit in the top layer. */
 .inspector-panel { container-type: inline-size; }
 @container (max-width: 339px) {
-  .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px 60px; row-gap: 0; }
+  .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px 74px; row-gap: 0; }
   .insp-row:not(.plain) > .insp-slider { grid-column: 1 / -1; grid-row: 2; }
 }
 .insp-label { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -88,19 +88,23 @@
 
 /* keyframe cluster */
 .insp-keys { display: inline-flex; align-items: center; justify-content: flex-end; gap: 0; }
+/* Bigger targets, same glyphs (UX-31): the diamond, the main action, is
+   24 x 24; the arrows 18 x 24, so the column (with the ease slot) costs
+   the slider 14 px rather than 26. */
 .key-nav, .key-toggle {
-  display: grid; place-items: center; width: 16px; height: 22px; padding: 0;
+  display: grid; place-items: center; width: 18px; height: 24px; padding: 0;
   border: 0; background: transparent; color: var(--text-3);
   transition: color var(--t-fast), transform var(--t-fast) var(--ease-spring);
 }
 .key-nav:disabled { opacity: 0.25; }
 .key-nav:not(:disabled):hover, .key-toggle:hover { color: var(--text-1); }
 .key-toggle.has { color: var(--text-2); }
+.key-toggle { width: 24px; }
 .key-toggle.on { color: var(--accent); transform: scale(1.15); }
-.key-toggle.section-key { width: 22px; }
+.key-toggle.section-key { width: 24px; }
 .key-toggle.section-key.some { color: var(--accent); opacity: 0.6; }
 .key-ease {
-  display: grid; place-items: center; width: 14px; height: 22px; padding: 0;
+  display: grid; place-items: center; width: 14px; height: 24px; padding: 0;
   border: 0; background: transparent; color: var(--text-3);
   transition: color var(--t-fast);
 }
@@ -248,3 +252,4 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .cutout-pct { display: inline-flex; align-items: center; gap: 5px; min-width: 52px; color: var(--text-2); font-size: var(--fs-xs); }
 .cutout-pct svg { color: var(--accent); }
 .spoken-word { display: flex; align-items: center; gap: 8px; }
+.auto-adjust { padding: 8px 12px 0; margin-top: 0; }

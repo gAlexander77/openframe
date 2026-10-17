@@ -5,6 +5,7 @@
 // everything below for its duration. A drop (`at` given) always acts where
 // it lands, never on the selection, so it does what its preview shows.
 
+import { prefsStore } from "./prefs";
 import { player } from "../engine/player";
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { createAdjustmentClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
@@ -51,10 +52,10 @@ const visualSelection = (p: Project): Clip[] =>
     .map((id) => ops.findClip(p, id)?.clip)
     .filter((c): c is Clip => !!c && c.type !== "audio");
 
-/** Seconds a new effect, filter or adjustment layer lasts. */
-export const LAYER_SECONDS = 3;
+/** Seconds a new title, effect, filter or adjustment layer lasts. */
+export const layerSeconds = () => prefsStore.get().layerSeconds;
 /** Seconds a new transition lasts (shorter when a clip beside it is). */
-export const TRANSITION_SECONDS = 0.5;
+export const transitionSeconds = () => prefsStore.get().transitionSeconds;
 
 /** A new top video track (CapCut stacks the newest layer on top). */
 function topTrack(p: Project, name: string): [Project, Id] {
@@ -64,7 +65,7 @@ function topTrack(p: Project, name: string): [Project, Id] {
 
 /** The clip a preset adds; the library card's preview renders this same clip. */
 export function presetClip(preset: TextPreset, start: number, fps: Rational): Clip {
-  const clip = createTextClip(preset.text, start, secondsToFrames(3, fps), preset.style);
+  const clip = createTextClip(preset.text, start, secondsToFrames(layerSeconds(), fps), preset.style);
   return {
     ...clip,
     transform: { ...clip.transform, y: preset.y ?? 0 },
@@ -162,7 +163,7 @@ export function applyEffect(type: string, clipId?: Id, at?: number) {
   let id = "";
   store.edit("Add effect layer", (p0) => {
     const [p, tid] = topTrack(p0, "Effect");
-    const clip = { ...createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps)), effects: [{ id: uid("fx"), type, enabled: true, params: effectDefaults(type) }] };
+    const clip = { ...createAdjustmentClip(f, secondsToFrames(layerSeconds(), p.fps)), effects: [{ id: uid("fx"), type, enabled: true, params: effectDefaults(type) }] };
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });
@@ -184,7 +185,7 @@ export function applyFilter(type: string, clipId?: Id, at?: number) {
   let id = "";
   store.edit("Add filter layer", (p0) => {
     const [p, tid] = topTrack(p0, "Filter");
-    const clip = { ...createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps)), filter: { type, intensity: 1 } };
+    const clip = { ...createAdjustmentClip(f, secondsToFrames(layerSeconds(), p.fps)), filter: { type, intensity: 1 } };
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });
@@ -211,7 +212,7 @@ export function applyTransition(type: string, clipId?: Id, dropped = false) {
     return;
   }
   const before = store.get().project;
-  store.edit(`Add ${TRANSITIONS[type].label.toLowerCase()}`, (q) => ops.setTransition(q, left!.id, { type, duration: secondsToFrames(TRANSITION_SECONDS, q.fps) }));
+  store.edit(`Add ${TRANSITIONS[type].label.toLowerCase()}`, (q) => ops.setTransition(q, left!.id, { type, duration: secondsToFrames(transitionSeconds(), q.fps) }));
   if (store.get().project === before) toast("Transitions go between two touching clips on the same track");
 }
 
@@ -221,7 +222,7 @@ export function addAdjustmentLayer(at?: number) {
   let id = "";
   store.edit("Add adjustment layer", (p0) => {
     const [p, tid] = topTrack(p0, "Adjustment");
-    const clip = createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps));
+    const clip = createAdjustmentClip(f, secondsToFrames(layerSeconds(), p.fps));
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kWeighting, LoudnessMeter, normalizeGain } from "./loudness";
+import { kWeighting, LiveLoudness, LoudnessMeter, normalizeGain } from "./loudness";
 
 /** `seconds` of a 997 Hz sine at `dbfs` peak on the channels in `on`. */
 function measure(rate: number, channels: number, on: number[], dbfs: number, seconds = 5, silenceAfter = 0) {
@@ -72,5 +72,26 @@ describe("normalizeGain", () => {
     expect(normalizeGain(-60, -14, 0.001)).toEqual({ gain: Math.pow(10, 12 / 20), limitedBy: "range" });
     expect(normalizeGain(-Infinity, -14, 0)).toEqual({ gain: 1, limitedBy: null });
     expect(20 * Math.log10(normalizeGain(-5, -14, 1).gain)).toBeCloseTo(-9, 6);
+  });
+});
+
+describe("LiveLoudness", () => {
+  it("reads momentary, short-term and integrated from 100 ms steps", () => {
+    const live = new LiveLoudness();
+    // -23 LUFS steady: mean square 10^((-23 + 0.691) / 10).
+    const ms = Math.pow(10, (-23 + 0.691) / 10);
+    for (let i = 0; i < 3; i++) live.push(ms);
+    expect(live.momentary()).toBe(-Infinity); // under 400 ms yet
+    for (let i = 0; i < 40; i++) live.push(ms);
+    expect(live.momentary()).toBeCloseTo(-23, 5);
+    expect(live.shortTerm()).toBeCloseTo(-23, 5);
+    expect(live.integrated()).toBeCloseTo(-23, 5);
+    // Silence after: momentary falls away; integrated is gated and holds,
+    // but for the three blocks that straddle the edge (-23.15).
+    for (let i = 0; i < 40; i++) live.push(0);
+    expect(live.momentary()).toBe(-Infinity);
+    expect(Math.abs(live.integrated() + 23)).toBeLessThan(0.2);
+    live.reset();
+    expect(live.integrated()).toBe(-Infinity);
   });
 });

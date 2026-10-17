@@ -201,3 +201,5 @@
 
 /* The anchor point: what scale and rotation turn about. */
 .tf-anchor { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 1.5px solid var(--accent); border-radius: 50%; pointer-events: none; background: linear-gradient(var(--accent), var(--accent)) center / 1.5px 100% no-repeat, linear-gradient(var(--accent), var(--accent)) center / 100% 1.5px no-repeat; }
+/* The LUFS line in the stage's bottom gutter, under the meter. */
+.lufs { position: absolute; right: 8px; bottom: 10px; display: flex; gap: 8px; font-size: 10px; line-height: 14px; color: var(--text-3); white-space: nowrap; }

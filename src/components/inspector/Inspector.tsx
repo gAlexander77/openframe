@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
-import { fromDb, soundingClips, toDb } from "../../lib/audio";
+import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
@@ -31,6 +31,8 @@ import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
 import { AttributeClipboard } from "./AttributeClipboard";
 import { AlignBar, useMovable } from "./AlignBar";
+import { autoAdjustClip } from "../../state/autoColor";
+import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
 import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
@@ -499,6 +501,18 @@ function AudioTab({ clip }: { clip: Clip }) {
         <SliderRow clip={clip} path="fadeOut" label="Fade out" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
         <SliderRow clip={clip} path="pan" label="Pan" min={-100} max={100} reset={0} keyframes={false} {...pct} />
       </Section>
+      <Section
+        title="Equalizer"
+        defaultOpen={!!clip.eq}
+        onReset={() => patchClip(clip.id, "Reset EQ", (c) => {
+          const { eq: _, ...rest } = c as AudioClip;
+          return rest as Clip;
+        })}
+      >
+        {EQ_BANDS.map((b) => (
+          <SliderRow key={b.key} clip={clip} path={`eq.${b.key}`} label={b.label} min={-12} max={12} step={0.5} digits={1} unit="dB" reset={0} keyframes={false} />
+        ))}
+      </Section>
       {clip.type === "video" && (
         <Section title="Sound">
           <div className="insp-actions">
@@ -748,6 +762,13 @@ function AdjustTab({ clip }: { clip: Clip }) {
         />
       </div>
       <div className="grade-pane" key={sub}>
+        {sub === "basic" && (clip.type === "video" || clip.type === "image") && (
+          <div className="insp-actions auto-adjust">
+            <button className="btn" data-tip="Correct exposure, white balance and levels from the frame at the playhead" onClick={() => void autoAdjustClip(clip.id).catch((e) => toast((e as Error).message, "error"))}>
+              <Sparkles size={13} /> Auto adjust
+            </button>
+          </div>
+        )}
         {sub === "basic" && <AdjustBasic clip={clip} />}
         {sub === "hsl" && <HslPanel clip={clip} />}
         {sub === "curves" && <CurvesPanel clip={clip} />}

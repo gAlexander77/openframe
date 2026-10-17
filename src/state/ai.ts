@@ -20,6 +20,8 @@ import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
+import { FILLERS, fillerRanges } from "../lib/fillers";
+import { transcribePcm } from "../engine/transcribe";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
@@ -32,7 +34,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout";
+export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -75,6 +77,11 @@ export interface StabilizeSettings {
   level: StabilizeLevel;
 }
 
+export interface FillerSettings {
+  /** A Whisper model id from ASR_MODELS. */
+  model: string;
+}
+
 export interface AiSettings {
   silences: SilenceSettings;
   scenes: SceneSettings;
@@ -83,6 +90,7 @@ export interface AiSettings {
   ducking: DuckSettings;
   denoise: DenoiseSettings;
   stabilize: StabilizeSettings;
+  fillers: FillerSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -95,6 +103,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   ducking: { depth: 12 },
   denoise: { strength: 0.75 },
   stabilize: { level: "recommended" },
+  // Tiny drops every "um"; base keeps them at a third of small's download.
+  fillers: { model: "onnx-community/whisper-base.en_timestamped" },
 };
 
 export interface AiJob {
@@ -151,6 +161,7 @@ type MediaClip = VideoClip | AudioClip;
 /** What each tool works on, for hints and errors. */
 export const NEEDS: Record<ToolId, string> = {
   silences: "a video or audio clip with sound",
+  fillers: "a video or audio clip with speech",
   scenes: "a video clip",
   beats: "a music or video clip with sound",
   loudness: "video or audio clips with sound",
@@ -365,6 +376,62 @@ export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings>
   edit(label, (p) => runCommand(p, "cut_ranges", { clip_id: id, ranges: res.ranges, ripple: true }));
   finish("silences", `Removed ${plural(spans.length, "silence")}, ${seconds.toFixed(1)} s shorter`);
   return { ...res, removed: spans.length, seconds };
+}
+
+export interface FillerAnalysis {
+  /** Source seconds. */
+  ranges: Range[];
+  /** The filler words heard, as transcribed. */
+  words: string[];
+}
+
+/** The filler words in a clip's speech (Whisper on this machine), as source
+ * ranges to cut. */
+export async function analyzeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerAnalysis> {
+  const { clip, asset } = resolve("fillers", clipId);
+  const o = { ...state.settings.fillers, ...opts };
+  return job("fillers", clip, `Listening to ${asset.name}`, async (progress, signal) => {
+    const [from, to] = windowOf(clip);
+    const pcm = await decodeMono(asset, from, to, SILENCE_RATE, (x) => progress(x * 0.2), signal);
+    const words = await transcribePcm(
+      pcm,
+      from,
+      { model: o.model, language: null },
+      (s) => (s.stage === "downloading" ? progress(0.2 + s.progress * 0.2, "Downloading the speech model") : progress(0.4 + s.progress * 0.6, "Finding filler words")),
+      signal,
+    );
+    const ranges = fillerRanges(words)
+      .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to) }))
+      .filter((r) => r.end > r.start);
+    return { ranges, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
+  });
+}
+
+export interface FillerEdit extends FillerAnalysis {
+  removed: number;
+  /** Seconds the timeline got shorter. */
+  seconds: number;
+}
+
+/** Cut a clip's filler words, with the hesitation around each, as one
+ * undoable edit. */
+export async function removeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerEdit> {
+  const signal = projectWork.signal();
+  const id = resolve("fillers", clipId).clip.id;
+  const res = await analyzeFillers(id, opts);
+  signal.throwIfAborted();
+  const clip = stillThere(id);
+  if (!res.ranges.length) {
+    finish("fillers", "No filler words found");
+    return { ...res, removed: 0, seconds: 0 };
+  }
+  const fps = store.get().project.fps;
+  const spans = framesOfRanges(clip, res.ranges, fps);
+  const seconds = +framesToSeconds(spans.reduce((n, [a, b]) => n + b - a, 0), fps).toFixed(2);
+  const n = res.words.length;
+  edit(`Remove ${plural(n, "filler word")}`, (p) => runCommand(p, "cut_ranges", { clip_id: id, ranges: res.ranges, ripple: true }));
+  finish("fillers", `Removed ${plural(n, "filler word")}, ${seconds.toFixed(1)} s shorter`);
+  return { ...res, removed: n, seconds };
 }
 
 export interface SceneEdit extends SceneAnalysis {

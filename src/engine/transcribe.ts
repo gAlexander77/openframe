@@ -84,7 +84,18 @@ export async function transcribeTimeline(
   signal?: AbortSignal,
 ): Promise<Word[]> {
   onProgress({ stage: "mixing", progress: 0 });
-  const pcm = await timelineAudio16k(p, 0, undefined, signal);
+  return transcribePcm(await timelineAudio16k(p, 0, undefined, signal), 0, opts, onProgress, signal);
+}
+
+/** Recognize speech in 16 kHz mono `pcm`; words come back in seconds from
+ * `offset` (the time the first sample stands for). */
+export async function transcribePcm(
+  pcm: Float32Array,
+  offset: number,
+  opts: { model: string; language: string | null },
+  onProgress: (s: TranscribeProgress) => void,
+  signal?: AbortSignal,
+): Promise<Word[]> {
   onProgress({ stage: "downloading", progress: 0 });
   await call({ type: "load", model: opts.model }, (x) => onProgress({ stage: "downloading", progress: x }), [], signal);
   const total = pcm.length / RATE;
@@ -100,7 +111,7 @@ export async function transcribeTimeline(
     let peak = 0;
     for (let j = 0; j < slice.length; j += 32) peak = Math.max(peak, Math.abs(slice[j]));
     if (peak < 0.01) continue;
-    const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: bounds[i] }, undefined, [slice.buffer], signal);
+    const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: offset + bounds[i] }, undefined, [slice.buffer], signal);
     words.push(...r.words);
   }
   onProgress({ stage: "transcribing", progress: 1 });

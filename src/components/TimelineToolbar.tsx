@@ -16,6 +16,7 @@ import {
   ScanLine,
   Scissors,
   Snowflake,
+  StretchHorizontal,
   Trash2,
   Undo2,
   ZoomIn,
@@ -120,7 +121,7 @@ export function TimelineToolbar() {
       <div className="tl-tools">
         <div className="tool-picker" ref={picker}>
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tool === "blade" ? tipFor("toolBlade") : tipFor("toolSelect")} onClick={() => setToolMenu((v) => !v)}>
-            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : <span className="tool-letter">{TOOL_LETTER[tool]}</span>}
+            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : tool === "stretch" ? <StretchHorizontal /> : <span className="tool-letter">{TOOL_LETTER[tool]}</span>}
             <ChevronDown size={11} />
           </button>
           {toolMenu && (
@@ -133,6 +134,7 @@ export function TimelineToolbar() {
                 { action: "toolRoll", checked: tool === "roll" },
                 { action: "toolSlip", checked: tool === "slip" },
                 { action: "toolSlide", checked: tool === "slide" },
+                { action: "toolStretch", checked: tool === "stretch" },
                 "-",
                 { action: "selectLeft" },
                 { action: "selectRight" },

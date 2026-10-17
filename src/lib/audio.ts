@@ -91,6 +91,15 @@ export function throughCompound<T extends Clip & { speed: number }>(c: T, k: Com
   return out;
 }
 
+/** The equalizer's bands (CapCut's and Premiere's simple EQ): a low and a
+ * high shelf with a broad presence bell between, as Web Audio biquads, the
+ * same in preview and export. */
+export const EQ_BANDS = [
+  { key: "low", label: "Low", type: "lowshelf", frequency: 120 },
+  { key: "mid", label: "Mid", type: "peaking", frequency: 1000, q: 0.8 },
+  { key: "high", label: "High", type: "highshelf", frequency: 8000 },
+] as const;
+
 /** Click guard: every clip edge ramps over at least this long. */
 export const EDGE_RAMP = 0.004;
 

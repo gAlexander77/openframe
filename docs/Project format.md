@@ -61,6 +61,7 @@ Track   { id, kind: video|audio, name, main?, clips: Clip[],
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
 Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together
+          video and audio clips may carry eq?: { low?, mid?, high? } (dB)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }

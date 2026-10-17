@@ -10,7 +10,8 @@
 // (lib/stretch.ts) and schedules each block at rate 1 (ADR-028).
 
 import type { AudioBufferSink } from "mediabunny";
-import { soundEnvelope, soundingClips, soundSpan } from "../lib/audio";
+import { EQ_BANDS, soundEnvelope, soundingClips, soundSpan } from "../lib/audio";
+import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Project, VideoClip } from "../lib/project/types";
 import { varispeed, wsola } from "../lib/stretch";
@@ -111,6 +112,19 @@ export function scheduleAudio(
     pan.pan.value = Math.max(-1, Math.min(1, clip.pan));
     gain.connect(pan).connect(dest);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
+    // The clip's EQ sits before its gain: sources feed the first band.
+    let input: AudioNode = gain;
+    for (const b of [...EQ_BANDS].reverse()) {
+      const db = clip.eq?.[b.key] ?? 0;
+      if (!db) continue;
+      const f = ctx.createBiquadFilter();
+      f.type = b.type;
+      f.frequency.value = b.frequency;
+      if ("q" in b) f.Q.value = b.q;
+      f.gain.value = Math.max(-12, Math.min(12, db));
+      f.connect(input);
+      input = f;
+    }
     const env = soundEnvelope(sounding, p.fps, lo, hi);
     const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
     const envDur = toCtx(hi) - envAt;
@@ -121,7 +135,7 @@ export function scheduleAudio(
     }
 
     if (needsRetime(clip)) {
-      await retimed(clip, clipStart, lo, hi, media.audioSink, media.audioStart, asset.duration, gain);
+      await retimed(clip, clipStart, lo, hi, media.audioSink, media.audioStart, asset.duration, input);
       return;
     }
     const speed = clip.speed;
@@ -149,7 +163,7 @@ export function scheduleAudio(
       const node = ctx.createBufferSource();
       node.buffer = buffer;
       node.playbackRate.value = speed;
-      node.connect(gain);
+      node.connect(input);
       node.start(grid(when), offset);
       node.stop(grid(toCtx(hi)));
       nodes.add(node);
@@ -174,7 +188,7 @@ export function scheduleAudio(
     sink: AudioBufferSink,
     off: number,
     srcDuration: number,
-    gain: GainNode,
+    gain: AudioNode,
   ) {
     const fpsRate = p.fps.num / p.fps.den;
     const dir = clip.reverse ? -1 : 1;
@@ -319,6 +333,29 @@ export function setMonitor(on: boolean) {
 const scratch = new Float32Array(1024);
 
 /** Peak level of an analyser's last block, in dBFS (-Infinity for silence). */
+let loudnessTap: Promise<AudioWorkletNode> | null = null;
+
+/** Feed `onStep` the master bus's K-weighted mean square every 100 ms (the
+ * LUFS meter). One tap, connected once and kept: two biquads a sample. */
+export function tapLoudness(onStep: (meanSquare: number) => void): Promise<() => void> {
+  const ctx = audioContext();
+  loudnessTap ??= ctx.audioWorklet.addModule("/loudness-tap.js").then(() => {
+    const node = new AudioWorkletNode(ctx, "loudness-tap", { numberOfOutputs: 1, channelCount: 2, channelCountMode: "explicit", processorOptions: { filters: kWeighting(ctx.sampleRate) } });
+    // A silent path to the output keeps the tap pulled by the graph.
+    const sink = ctx.createGain();
+    sink.gain.value = 0;
+    masterBus().input.connect(node).connect(sink).connect(ctx.destination);
+    return node;
+  });
+  loudnessTap.catch(() => (loudnessTap = null));
+  return loudnessTap.then((node) => {
+    const on = (e: MessageEvent<number>) => onStep(e.data);
+    node.port.addEventListener("message", on);
+    node.port.start();
+    return () => node.port.removeEventListener("message", on);
+  });
+}
+
 export function peakDb(a: AnalyserNode): number {
   a.getFloatTimeDomainData(scratch);
   let peak = 0;

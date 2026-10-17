@@ -9,6 +9,7 @@ import { breakCompound, breakProblem, compoundProblem, createCompound, newClipId
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
 import { nudgeClips } from "../lib/project/gaps";
+import { exportRange } from "../lib/export";
 import { groupClips, regroupCopies, ungroupClips } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
@@ -81,6 +82,18 @@ export const edit = (label: string, fn: (p: Project) => Project) =>
     const next = fn(p);
     return next === p ? p : ops.settle(p, next, settleOptions());
   });
+
+/** Premiere's Lift (gap stays) or Extract (closes) of the in/out range on
+ * every unlocked track; the marks go with it. */
+function takeRange(ripple: boolean) {
+  const s = store.get();
+  if (s.inPoint === null && s.outPoint === null) return toast("Mark In and Out on the timeline first");
+  const { from, to } = exportRange(s.project, "inout", s.inPoint, s.outPoint);
+  if (to <= from) return;
+  edit(ripple ? "Extract" : "Lift", (p) => ops.liftRange(p, from, to, ripple));
+  store.set({ inPoint: null, outPoint: null });
+  store.seek(from);
+}
 
 /** Premiere's Alt+arrow: the selected clips by frames, when they fit. */
 function nudge(frames: number) {
@@ -183,6 +196,11 @@ provide({
   markOut: () => store.set({ outPoint: store.get().playhead }),
   clearInOut: () => store.set({ inPoint: null, outPoint: null }),
   toggleLoop: () => store.set({ loop: !store.get().loop }),
+  // The source monitor provides these while it is open.
+  insertSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),
+  overwriteSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),
+  liftRange: () => takeRange(false),
+  extractRange: () => takeRange(true),
   groupClips: () => {
     const ids = store.get().selection;
     if (ids.length > 1) store.edit("Group clips", (p) => groupClips(p, ids));
@@ -216,6 +234,7 @@ provide({
   toolRoll: () => store.set({ tool: "roll" }),
   toolSlip: () => store.set({ tool: "slip" }),
   toolSlide: () => store.set({ tool: "slide" }),
+  toolStretch: () => store.set({ tool: "stretch" }),
   toggleSnapping: () => store.set({ snapping: !store.get().snapping }),
   toggleMagnet: () => {
     const on = !store.get().magnet;
@@ -337,6 +356,10 @@ export function onKeyDown(e: KeyboardEvent) {
   e.preventDefault();
   run(id);
 }
+
+/** The action a key press is bound to, for a dialog that answers a few of
+ * the app's shortcuts itself (dialogs keep the rest from the editor). */
+export const actionFor = (e: KeyboardEvent) => index.get(chordOf(e, isMac));
 
 /** Home keeps project entry points and Help, without editing the closed project. */
 export function onHomeKeyDown(e: KeyboardEvent) {

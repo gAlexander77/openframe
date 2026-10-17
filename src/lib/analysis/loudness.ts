@@ -83,23 +83,48 @@ export class LoudnessMeter {
 
   /** Gated integrated loudness in LUFS; -Infinity for silence. */
   integrated(): number {
-    // 400 ms blocks overlapping by 75%: four consecutive 100 ms steps. A
-    // clip shorter than one block is measured as a single short block.
-    const st = this.steps;
-    const blocks: number[] = [];
-    if (st.length < 4) {
-      if (st.length) blocks.push(st.reduce((a, b) => a + b, 0) / st.length);
-    } else {
-      for (let j = 0; j + 4 <= st.length; j++) blocks.push((st[j] + st[j + 1] + st[j + 2] + st[j + 3]) / 4);
-    }
-    const loud = blocks.filter((z) => z > fromLufs(ABSOLUTE_GATE));
-    if (!loud.length) return -Infinity;
-    const gate = fromLufs(toLufs(mean(loud)) + RELATIVE_GATE);
-    return toLufs(mean(loud.filter((z) => z > gate)));
+    return gatedLoudness(this.steps);
   }
 }
 
 const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+/** Gated loudness of 100 ms steps' mean squares (BS.1770 integrated). */
+export function gatedLoudness(st: number[]): number {
+  // 400 ms blocks overlapping by 75%: four consecutive 100 ms steps. A
+  // clip shorter than one block is measured as a single short block.
+  const blocks: number[] = [];
+  if (st.length < 4) {
+    if (st.length) blocks.push(mean(st));
+  } else {
+    for (let j = 0; j + 4 <= st.length; j++) blocks.push((st[j] + st[j + 1] + st[j + 2] + st[j + 3]) / 4);
+  }
+  const loud = blocks.filter((z) => z > fromLufs(ABSOLUTE_GATE));
+  if (!loud.length) return -Infinity;
+  const gate = fromLufs(toLufs(mean(loud)) + RELATIVE_GATE);
+  return toLufs(mean(loud.filter((z) => z > gate)));
+}
+
+/** EBU R128's live readings from a stream of K-weighted 100 ms mean
+ * squares (the master bus tap): momentary (last 400 ms), short-term (last
+ * 3 s) and integrated (gated, since `reset`). */
+export class LiveLoudness {
+  private steps: number[] = [];
+  push(meanSquare: number) {
+    this.steps.push(meanSquare);
+  }
+  reset() {
+    this.steps = [];
+  }
+  private last(n: number) {
+    // ponytail: integrated keeps every step (36k numbers an hour), as LoudnessMeter does.
+    const s = this.steps.slice(-n);
+    return s.length < n ? -Infinity : toLufs(mean(s));
+  }
+  momentary = () => this.last(4);
+  shortTerm = () => this.last(30);
+  integrated = () => gatedLoudness(this.steps);
+}
 
 export interface Normalization {
   /** Linear gain to set as the clip's volume. */

@@ -96,7 +96,7 @@ are written with `setParam` (`src/lib/project/ops.ts`) and drawn by
 | Fit, Fill and Stretch quick actions | P R F OSS | partial: media fit (scale 1 = contain); no Fill or Stretch action | P1 | Fill = cover scale from `align.ts` `sourceSize`; Stretch uses Scale X/Y. Add a `fit_clips` command (mode fit, fill or stretch). Shotcut places these next to its align buttons. |
 | Position presets (PIP corner at a set size) | R F | partial: align covers edges | P2 | Presets that call align plus a scale. |
 | Opacity, 13 blend modes | all | yes | — | Hue, Saturation, Color and Luminosity modes are missing (P2, compositor). |
-| Border, drop shadow and rounded corners on a picture layer | C R F V | no | P1 | A catalog effect in `src/lib/catalog.ts` with a shader that reads layer alpha. It is keyframeable for free. |
+| Border, drop shadow and rounded corners on a picture layer | C R F V | partial: rounded corners through Mask > Rectangle's corner radius, as CapCut users do; no border or shadow | P2 | Effects run in canvas space and cannot see the layer's box; both belong in `LAYER_FS` (border inset) and a padded quad (shadow). |
 | Canvas fill: blur or color | C | yes | — | An image or pattern fill is missing (P2). |
 | Stabilize | C P R V F | no | P1 | Desktop first: run FFmpeg `vidstabdetect` where the build has libvidstab, or a phase-correlation pass in a worker. Store a per-frame offset track beside the asset; `plan.ts` applies it as an extra transform with a crop-to-hide. Analysis belongs in `src/lib/analysis/`. |
 | Optical flow / smooth slow-mo | C P R V F | no | P1 | See §9 (frame blending first). |
@@ -143,7 +143,7 @@ binding in `src/lib/keymap.ts`.
 | Compound clip / nested sequence | C P R V F | no on main; parked `compound-clips` | P1 | Resume the branch. |
 | Replace clip, keeping timing and effects | C P R F | no | P1 | Per-clip asset swap, reusing the checks in `src/lib/project/relink.ts`. Add a context-menu item and `replace_clip`. |
 | Rate stretch tool (drag an edge to change speed) | P R V F | no | P1 | A trim variant that calls `setSpeed` so the source range stays fixed. Add a tool in `TimelineToolbar.tsx`. |
-| Insert, overwrite and replace edits from the source monitor | P R V F | partial: Add range inserts at the playhead (`SourceMonitor.tsx`); `add_media_clip` takes `mode: insert/overwrite`; no overwrite button or keys | P1 | Add Insert (`,`) and Overwrite (`.`) buttons and keys that reuse `addClip`'s place modes. |
+| Insert, overwrite and replace edits from the source monitor | P R V F | yes: Insert (,) and Overwrite (.) in the source monitor | — | Replace edit and track targeting remain (P2). |
 | Lift and extract the In/Out range | P R V F | no; the range drives export only | P1 | A pure `extractRange(p, in, out, ripple)` over unlocked tracks, with a test. Add commands and keys. |
 | Three- and four-point editing, fit to fill | P R F | partial: source In/Out only | P2 | After insert/overwrite. |
 | Link/unlink A/V; Alt-trim one side for J/L cuts | P R V F | partial: `detach_audio` splits sound off for good; no relink, no one-side trim, no out-of-sync badge | P1 | Add `linkId` on the detached pair so moves stay together. Alt bypasses the link. Draw a ±N badge when offsets drift. |
@@ -181,7 +181,7 @@ in both.
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
 | Pitch shift independent of speed | C P V | no; pitch only follows speed (Change pitch) | P2 | The engine's time-stretch (ADR-028) can expose a semitone offset. |
 | Fill channel (left or right to both) | C | partial: mono plays on both; a one-sided stereo file cannot be fixed | P2 | A `ChannelSplitter`/`ChannelMerger` option on `Sound`. |
-| Loudness meter (LUFS M/S/I) | P R V F | no; peak meter only (`Meter.tsx`) | P1 | Reuse the BS.1770 code in `src/lib/analysis/loudness.ts` on the master bus. |
+| Loudness meter (LUFS M/S/I) | P R V F | yes (`Meter.tsx`, `public/loudness-tap.js`) | — | Integrated resets on each play; no Reset button, loudness range or true peak yet (P2). |
 | Track mixer with per-track meters | P R V F | no | P2 | After solo and track volume. Add buses and inserts later. |
 | Stretch music to fit (Premiere Remix) | P | no | P2 | Beat analysis already exists; L. |
 
@@ -203,7 +203,7 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 | Local text to speech | C R V | no | P1 | Kokoro-82M or Piper ONNX in a worker (transformers.js), writing a WAV asset aligned to the text clip. Add `add_speech` and "update speech when text changes". Voices download once, like the Whisper models. |
 | Auto captions (local Whisper), SRT/VTT, list editing | C P R F | yes | — | — |
 | Word-by-word highlight (karaoke) and single-word captions | C P R | no; word timings are dropped after grouping (`wordsToCaptions`) | P1 | Keep `words: {f, d}[]` on caption clips; `engine/text.ts` highlights the active word; add caption templates. Premiere 26.3 added single-word captions and Resolve 20 added animated subtitles, so this is now table stakes. |
-| Filler-word detection and removal | C P | no (`src/lib/project/cut.ts` is ready; no UI) | P1 | Whisper words plus a filler list, removed with `cut_ranges`. Add it as a card in the AI tools tab. |
+| Filler-word detection and removal | C P | yes: "um", "hmm", "ah" (Whisper drops "uh"; [[Filler words]]) | — | Whisper words plus a filler list, removed with `cut_ranges`. Add it as a card in the AI tools tab. |
 | Transcript-based editing | C P R V | no | P1 | A transcript panel; deleting words maps to `cut_ranges`. L. |
 | Translate captions / bilingual captions | C P | no | P1 | Whisper `task: "translate"` gives English cheaply (S). Other targets need a local MT model (NLLB/Marian ONNX, L). Bilingual = a second caption track. |
 | Caption find and replace | C P R | no | P2 | Pure function in `lib/captions.ts`. |
@@ -219,7 +219,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 |---|---|---|---|---|
 | 19 effects, 20 transitions, 17 looks, in/out/loop animations, adjustment layers | C P R V F | yes | — | — |
 | Effect stack reorder, presets, copy/paste | P R V F | yes | — | — |
-| Picture border, shadow and rounded corners | C R F V | no | P1 | See §2. |
+| Picture border, shadow and rounded corners | C R F V | partial (rounded corners via the rectangle mask) | P2 | See §2. |
 | Animated GIF, WebP or APNG import | C | no; `createImageBitmap` keeps the first frame (`src/engine/media.ts`) | P2 | WebCodecs `ImageDecoder` decodes animated frames; treat the file like a short video. |
 | Lottie or HTML motion graphics | R | no | P2 | — |
 | More transition families (3D cube, page curl, shape dissolve) | C P R | partial | P2 | Catalog entries. |
@@ -308,7 +308,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 |---|---|---|---|---|
 | Autosave, Save a copy, relink, folders and favorites, source monitor, usage counts | C P R V F | yes | — | — |
 | Proxies on demand for heavy decodable media (4K HEVC, long GOP) | C P R V F | partial: desktop proxies only for codecs the webview cannot decode (`Asset.proxy`); web proxies on the [[Roadmap]] | P1 | A "Make proxy" action and a project toggle, using the existing FFmpeg path and the planned mediabunny `Conversion`. |
-| Preferences: default still length, step size, cache location, hardware acceleration | C P R V F | no (`DEFAULT_STILL_SECONDS = 5`; step fixed at 10) | P1 | A small settings store outside the project (ADR-040 pattern). S. |
+| Preferences: default still length, step size, cache location, hardware acceleration | C P R V F | partial: default lengths of pictures, titles and effects, and transitions (Edit > Preferences) | P2 | Step size, cache location and hardware acceleration remain; the step actions are named for 10 frames. |
 | Project trash / restore a deleted project | C | no; delete asks twice | P2 | Move to a trash folder in the platform layer. |
 | Hover-scrub on media cards | C P V F | no (not found in `LibraryPanel.tsx`) | P2 | The thumbnail sprite already exists. |
 | Collect or archive a project with its media | P R F V | no | P2 | Copy sources beside the JSON and rewrite paths. |

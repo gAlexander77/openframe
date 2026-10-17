@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
-import { masterBus, peakDb } from "../engine/audio";
+import { useEffect, useRef, useState } from "react";
+import { masterBus, peakDb, tapLoudness } from "../engine/audio";
+import { LiveLoudness } from "../lib/analysis/loudness";
 import { useEditor } from "../state/store";
 
 const FLOOR = -60;
@@ -58,5 +59,46 @@ export function Meter() {
     draw();
     return () => cancelAnimationFrame(raf);
   }, [playing]);
-  return <canvas ref={ref} className="meter" aria-label="Audio level" data-tip="Audio level (dBFS); the top line holds the recent peak" />;
+  return (
+    <>
+      <canvas ref={ref} className="meter" aria-label="Audio level" data-tip="Audio level (dBFS); the top line holds the recent peak" />
+      <Loudness playing={playing} />
+    </>
+  );
+}
+
+const live = new LiveLoudness();
+// Under BS.1770's -70 LUFS absolute gate is silence (a stopped filter's
+// tail read -1221).
+const lu = (v: number) => (v > -70 ? v.toFixed(1) : "—");
+
+/** EBU R128 loudness of what plays (Premiere's Loudness Meter, in one
+ * line): momentary, short-term, and integrated since play started. Stays
+ * after a stop, so a pass can be read. */
+function Loudness({ playing }: { playing: boolean }) {
+  const [v, setV] = useState<[number, number, number] | null>(null);
+  useEffect(() => {
+    if (!playing) return;
+    live.reset();
+    let off: (() => void) | undefined;
+    let alive = true;
+    tapLoudness((ms) => live.push(ms))
+      .then((f) => (alive ? (off = f) : f()))
+      .catch(() => {});
+    const id = setInterval(() => setV([live.momentary(), live.shortTerm(), live.integrated()]), 250);
+    return () => {
+      alive = false;
+      off?.();
+      clearInterval(id);
+      setV([live.momentary(), live.shortTerm(), live.integrated()]);
+    };
+  }, [playing]);
+  if (!v) return null;
+  return (
+    <div className="lufs num" aria-label="Loudness" data-tip="Loudness in LUFS (EBU R128): momentary, short-term (3 s) and integrated since play started. Streaming sites play at about -14.">
+      <span>M {lu(v[0])}</span>
+      <span>S {lu(v[1])}</span>
+      <span>I {lu(v[2])}</span>
+    </div>
+  );
 }

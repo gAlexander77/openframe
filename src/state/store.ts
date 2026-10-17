@@ -19,7 +19,7 @@ import type { TrimPreviewState } from "../lib/trimPreview";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
  * Premiere/VEGAS trim tools CapCut lacks. */
-export type Tool = "select" | "blade" | "ripple" | "roll" | "slip" | "slide";
+export type Tool = "select" | "blade" | "ripple" | "roll" | "slip" | "slide" | "stretch";
 export type LeftTab =
   | "media"
   | "audio"

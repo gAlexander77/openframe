@@ -12,7 +12,8 @@ import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
 import { textToSpeech } from "./state/tts";
-import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
+import { autoAdjustClip } from "./state/autoColor";
+import { analyzeBeats, analyzeFillers, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
@@ -87,7 +88,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech },
+  ai: { removeSilences, removeFillers, analyzeFillers, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip },
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
   otio: () => toOtio(store.document()),
 };

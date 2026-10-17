@@ -12,6 +12,7 @@ import {
   setParam,
   setSpeed,
   setFlip,
+  liftRange,
   setUniformScale,
   setTransition,
   slideClip,
@@ -317,5 +318,23 @@ describe("setFlip", () => {
     const v = setFlip({ ...p, tracks: [{ ...p.tracks[0], clips: [h] }] }, [c.id], { vertical: true }).tracks[0].clips[0] as typeof c;
     expect(v.transform).toMatchObject({ flipX: true, flipY: true });
     expect(setFlip(p, [c.id], { horizontal: false })).toEqual(p);
+  });
+});
+
+describe("liftRange", () => {
+  it("lifts a range out of every unlocked track, leaving a gap, or extracts it", () => {
+    const p = createProject();
+    const a = createColorClip("#111", 0, 100);
+    const b = createColorClip("#222", 100, 50);
+    const o = createColorClip("#333", 40, 40);
+    p.tracks = [{ ...p.tracks[0], clips: [a, b] }, { ...createTrack("video", "O"), clips: [o] }];
+    const lifted = liftRange(p, 30, 60, false);
+    expect(lifted.tracks[0].clips.map((c) => [c.start, c.duration])).toEqual([[0, 30], [60, 40], [100, 50]]);
+    expect(lifted.tracks[1].clips.map((c) => [c.start, c.duration])).toEqual([[60, 20]]);
+    const extracted = liftRange(p, 30, 60, true);
+    expect(extracted.tracks[0].clips.map((c) => [c.start, c.duration])).toEqual([[0, 30], [30, 40], [70, 50]]);
+    expect(extracted.tracks[1].clips.map((c) => [c.start, c.duration])).toEqual([[30, 20]]);
+    const locked = { ...p, tracks: [p.tracks[0], { ...p.tracks[1], locked: true }] };
+    expect(liftRange(locked, 30, 60, true).tracks[1]).toBe(locked.tracks[1]);
   });
 });

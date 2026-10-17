@@ -379,6 +379,8 @@ export interface Sound {
   fadeIn: number;
   fadeOut: number;
   muted: boolean;
+  /** Three-band equalizer, dB per band (-12..12); absent = flat. */
+  eq?: { low?: number; mid?: number; high?: number };
 }
 
 /** One point of a speed curve. */

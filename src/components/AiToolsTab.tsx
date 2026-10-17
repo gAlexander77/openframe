@@ -5,9 +5,9 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
+import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, Speech, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
-import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, removeBackground, removeSilences, splitScenes, stabilizeClip, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
+import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { LEVELS, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
@@ -16,6 +16,7 @@ type Icon = typeof Film;
 
 const RUN: Record<ToolId, () => Promise<unknown>> = {
   silences: () => removeSilences(),
+  fillers: () => removeFillers(),
   scenes: () => splitScenes(),
   beats: () => markBeats(),
   loudness: () => normalizeLoudness(),
@@ -35,6 +36,7 @@ export function AiToolsTab() {
       <TargetBanner />
       <div className="ai-cards">
         <ToolCard tool="silences" icon={AudioWaveform} title="Remove silences" blurb="Cut the pauses out of speech and close the gaps." action="Remove" settings={<SilenceSettings />} />
+        <ToolCard tool="fillers" icon={Speech} title="Remove filler words" blurb="Cut the ums out of speech and close the gaps." action="Remove" settings={<FillerSettings />} />
         <ToolCard tool="scenes" icon={Clapperboard} title="Split scenes" blurb="Find every shot change in a video." action={scenesOut === "markers" ? "Mark" : "Split"} settings={<SceneSettings />} />
         <ToolCard tool="beats" icon={Drum} title="Beat markers" blurb="Drop a marker on the beat of a music track." action="Mark" settings={<BeatSettings />} />
         <ToolCard tool="loudness" icon={Gauge} title="Normalize loudness" blurb="Even out the volume of the selected clips." action="Normalize" settings={<LoudnessSettings />} />
@@ -263,6 +265,25 @@ function SilenceSettings() {
       <Slider label="Sensitivity" value={s.sensitivity} min={0} max={1} step={0.05} show={percent} hint="Higher also cuts quiet breaths and room noise." onChange={(v) => set({ sensitivity: v })} />
       <Slider label="Shortest pause" value={s.minSilence} min={0.2} max={2} step={0.05} show={seconds} hint="Shorter pauses are the rhythm of speech; they stay." onChange={(v) => set({ minSilence: v })} />
       <Slider label="Padding" value={s.padding} min={0} max={0.5} step={0.02} show={seconds} hint="Kept on each side of speech so words are not clipped." onChange={(v) => set({ padding: v })} />
+    </>
+  );
+}
+
+function FillerSettings() {
+  const [s, set] = useSettings("fillers");
+  return (
+    <>
+      {/* Tiny is left out: it drops every filler word. */}
+      <Segmented
+        label="Speech model"
+        value={s.model}
+        options={[
+          ["onnx-community/whisper-base.en_timestamped", "Balanced · 77 MB"],
+          ["onnx-community/whisper-small.en_timestamped", "Accurate · 249 MB"],
+        ]}
+        onChange={(v) => set({ model: v })}
+      />
+      <span className="ai-hint">Whisper hears &ldquo;um&rdquo; but not &ldquo;uh&rdquo;. English; downloaded once, then runs on this computer.</span>
     </>
   );
 }

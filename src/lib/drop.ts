@@ -69,17 +69,22 @@ export function placeAsset(
   to: Id | "overlay" | undefined,
   magnet: boolean,
   range?: SourceRange,
+  /** Premiere's Insert or Overwrite edit: exactly at `start` on the target
+   * (the main track, or the first audio track), splitting what is there,
+   * instead of the timeline's own placement. */
+  mode?: ops.PlaceMode,
 ): { project: Project; clipId: Id } {
   let p = adoptSettings(p0, asset);
   let clip: Clip = clipForAsset(asset, start, p.fps);
   if (range) clip = withSourceRange(clip, asset, range, p.fps);
   const clipId = clip.id;
   if (asset.kind === "audio") {
-    let track = to && to !== "overlay" ? ops.findTrack(p, to) : p.tracks.find((t) => t.kind === "audio" && !t.locked && ops.rangeFree(t, start, clip.duration));
+    let track = to && to !== "overlay" ? ops.findTrack(p, to) : p.tracks.find((t) => t.kind === "audio" && !t.locked && (!!mode || ops.rangeFree(t, start, clip.duration)));
     if (!track || track.kind !== "audio") {
       track = createTrack("audio", "Audio");
       p = ops.addTrack(p, track);
     }
+    if (mode) return { project: ops.addClip(p, track.id, clip, mode), clipId };
     return { project: ops.placeClip(p, track.id, clip, { collision: "newTrack" }), clipId };
   }
   if (to === "overlay") {
@@ -88,6 +93,7 @@ export function placeAsset(
   }
   const target = to ? ops.findTrack(p, to) : ops.mainTrack(p);
   if (!target || target.kind !== "video") return { project: p, clipId };
+  if (mode) return { project: ops.addClip(p, target.id, clip, mode), clipId };
   if (target.main && magnet) {
     // Snap to the nearest cut so nothing is split by an insert.
     return { project: ops.addClip(p, target.id, { ...clip, start: nearestCut(target, start) }, "insert"), clipId };

@@ -56,15 +56,15 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
     ],
     "Selection & tools": [
       "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",
-      "toolRipple", "toolRoll", "toolSlip", "toolSlide",
+      "toolRipple", "toolRoll", "toolSlip", "toolSlide", "toolStretch",
     ],
     Timeline: [
       "toggleMagnet", "toggleSnapping", "toggleLinkage", "togglePreviewAxis", "toggleKeyframePanel",
       "zoomIn", "zoomOut", "zoomFit", "addMarker", "nextMarker", "prevMarker",
-      "markIn", "markOut", "rangeToClip", "clearInOut",
+      "markIn", "markOut", "rangeToClip", "clearInOut", "liftRange", "extractRange", "insertSource", "overwriteSource",
     ],
     Project: [
-      "newProject", "openProject", "saveProject", "importMedia", "export", "showShortcuts",
+      "newProject", "openProject", "saveProject", "importMedia", "export", "showShortcuts", "showPreferences",
     ],
   } as const satisfies Record<string, readonly ActionId[]>;
 
