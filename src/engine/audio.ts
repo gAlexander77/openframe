@@ -13,7 +13,7 @@ import type { AudioBufferSink } from "mediabunny";
 import { EQ_BANDS, panEnvelope, soundEnvelope, soundingClips, soundPanAt, soundSpan } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
-import type { AudioClip, Project, VideoClip } from "../lib/project/types";
+import type { AudioClip, Compressor, Project, VideoClip } from "../lib/project/types";
 import { varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
 import { mediaFor } from "./media";
@@ -112,8 +112,14 @@ export function scheduleAudio(
     pan.pan.value = soundPanAt(sounding, p.fps, lo);
     gain.connect(pan).connect(dest);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
-    // The clip's EQ sits before its gain: sources feed the first band.
+    // EQ, then compressor, then the gain (volume, fades, keyframes):
+    // sources feed the first band.
     let input: AudioNode = gain;
+    if (clip.compressor) {
+      const comp = compressorNodes(ctx, clip.compressor);
+      comp.output.connect(input);
+      input = comp.input;
+    }
     for (const b of [...EQ_BANDS].reverse()) {
       const db = clip.eq?.[b.key] ?? 0;
       if (!db) continue;
@@ -378,4 +384,18 @@ export function peakDb(a: AnalyserNode): number {
   let peak = 0;
   for (let i = 0; i < scratch.length; i++) peak = Math.max(peak, Math.abs(scratch[i]));
   return peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+}
+
+/**
+ * A clip's compressor as nodes: the platform's DynamicsCompressorNode and a
+ * makeup gain. Playback, export and loudness measurement all build it here,
+ * so what is measured is what plays.
+ * ponytail: the node's built-in 6 ms lookahead delays a compressed clip's
+ * sound by 6 ms, a fifth of a frame; compensate if sync ever needs better.
+ */
+export function compressorNodes(ctx: BaseAudioContext, c: Compressor): { input: AudioNode; output: AudioNode } {
+  const comp = new DynamicsCompressorNode(ctx, { threshold: c.threshold, ratio: c.ratio, knee: c.knee, attack: c.attack, release: c.release });
+  const makeup = new GainNode(ctx, { gain: 10 ** (c.makeup / 20) });
+  comp.connect(makeup);
+  return { input: comp, output: makeup };
 }

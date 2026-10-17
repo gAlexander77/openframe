@@ -159,6 +159,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-052 Agents read what changed and export without a dialog]] —
   edits answer with a diff, `batch` is one undo step, `export_video`
   writes only into the Videos folder.
+- [[ADR-053 One compressor everywhere, measured as it plays]] — the
+  platform's compressor in the clip chain, and in loudness measurement.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

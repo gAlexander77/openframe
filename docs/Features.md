@@ -133,6 +133,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   high shelf (8 kHz), -12 to +12 dB, on audio clips and a video's own
   sound; the same biquads in preview and export; copied by Paste
   Attributes with the rest of the sound.
+- **Compressor** (Audio tab; CapCut's Enhance voice, Premiere's Dynamics):
+  Off, Enhance voice, Gentle or Strong, then threshold, ratio and makeup;
+  after the EQ, before volume, the same node in preview and export, and
+  Normalize loudness measures through it. Evens out speech so export
+  loudness reaches its target without heavy limiting
+  ([[ADR-053 One compressor everywhere, measured as it plays]]).
 - **Sound crossfades under transitions**: a video transition between two
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,

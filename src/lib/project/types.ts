@@ -377,6 +377,24 @@ export interface Cutout {
   model: string;
 }
 
+/** CapCut's Enhance voice, Premiere's Dynamics: the platform's
+ * DynamicsCompressorNode, then a makeup gain. */
+export interface Compressor {
+  /** dBFS where compression starts, -60..0. */
+  threshold: number;
+  /** dB in over the threshold for each dB out, 1..20. */
+  ratio: number;
+  /** Soft knee, dB, 0..40. */
+  knee: number;
+  /** Seconds, 0..1. */
+  attack: number;
+  release: number;
+  /** dB added on top of the node's own makeup gain (Web Audio raises the
+   * output by about 0.6 of the full-scale reduction itself), 0..24. The
+   * presets add none: more put their peaks past full scale. */
+  makeup: number;
+}
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -388,6 +406,8 @@ export interface Sound {
   muted: boolean;
   /** Three-band equalizer, dB per band (-12..12); absent = flat. */
   eq?: { low?: number; mid?: number; high?: number };
+  /** Dynamics after the EQ, before volume (lib/audio.ts); absent = none. */
+  compressor?: Compressor;
   /** Premiere's Fill Left / Fill Right: one channel played on both (a lav
    * recorded on one side). Absent = the channels as recorded. */
   fill?: "left" | "right";

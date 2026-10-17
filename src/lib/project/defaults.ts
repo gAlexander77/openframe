@@ -3,6 +3,7 @@
 // version, a hand-written agent script with half the fields missing — leaves
 // as a complete, valid Project or as an error naming what is wrong.
 
+import { cleanCompressor } from "../compressor";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { secondsToFrames, type Rational } from "../time";
@@ -287,6 +288,9 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (raw && points) c.speedCurve = { ...(typeof raw.preset === "string" ? { preset: raw.preset } : {}), points };
     else delete c.speedCurve;
     for (const k of ["reverse", "changePitch"]) if (c[k] !== true) delete c[k];
+    const comp = cleanCompressor(c.compressor);
+    if (comp) c.compressor = comp;
+    else delete c.compressor;
   }
   // Remove BG (ADR-033): a reference to a matte file, or nothing. A broken
   // one is dropped, not refused: the clip still plays, with its background.

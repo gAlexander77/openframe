@@ -12,7 +12,8 @@ import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
 import { mediaOrigin } from "./media";
 import { LoudnessMeter } from "../lib/analysis/loudness";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
-import type { Asset } from "../lib/project/types";
+import type { Asset, Compressor } from "../lib/project/types";
+import { compressorNodes } from "./audio";
 import { platform } from "../platform";
 
 export type Progress = (fraction: number) => void;
@@ -136,7 +137,7 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
  * [from, to), streamed through a BS.1770 meter at the source's own rate
  * and channel count, so nothing is held in memory but the meter.
  */
-export async function measureLoudness(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal): Promise<{ lufs: number; peak: number }> {
+export async function measureLoudness(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal, compressor?: Compressor): Promise<{ lufs: number; peak: number }> {
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryAudioTrack();
@@ -145,6 +146,37 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
     let meter: LoudnessMeter | null = null;
     let planes: Float32Array[] = [];
     const report = throttle(onProgress);
+    // With a compressor the sound is measured as it plays: the decoded audio
+    // runs through the same nodes offline, ten seconds at a time.
+    // ponytail: each block starts the compressor afresh; it settles within
+    // milliseconds, so the reading moves by hundredths of a dB.
+    let block: { planes: Float32Array[]; n: number; rate: number } | null = null;
+    const flush = async () => {
+      if (!block?.n || !compressor) return;
+      const { planes: bp, n, rate } = block;
+      const ctx = new OfflineAudioContext({ numberOfChannels: bp.length, length: n, sampleRate: rate });
+      const buffer = new AudioBuffer({ numberOfChannels: bp.length, length: n, sampleRate: rate });
+      bp.forEach((pl, ch) => buffer.copyToChannel(pl.subarray(0, n) as Float32Array<ArrayBuffer>, ch));
+      const src = new AudioBufferSourceNode(ctx, { buffer });
+      const nodes = compressorNodes(ctx, compressor);
+      src.connect(nodes.input);
+      nodes.output.connect(ctx.destination);
+      src.start();
+      const out = await ctx.startRendering();
+      meter!.push(Array.from({ length: out.numberOfChannels }, (_, ch) => out.getChannelData(ch)), n);
+      block.n = 0;
+    };
+    const push = async (p: Float32Array[], frames: number, rate: number) => {
+      if (!compressor) return meter!.push(p, frames);
+      block ??= { planes: p.map(() => new Float32Array(rate * 10)), n: 0, rate };
+      for (let off = 0; off < frames; ) {
+        const take = Math.min(frames - off, block.planes[0].length - block.n);
+        p.forEach((pl, ch) => block!.planes[ch].set(pl.subarray(off, off + take), block!.n));
+        block.n += take;
+        off += take;
+        if (block.n === block.planes[0].length) await flush();
+      }
+    };
     for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
       try {
         signal?.throwIfAborted();
@@ -158,12 +190,13 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
         if (frames <= 0) continue;
         if (planes.length !== channels || planes[0].length < sample.numberOfFrames) planes = Array.from({ length: channels }, () => new Float32Array(sample.numberOfFrames));
         for (let ch = 0; ch < channels; ch++) sample.copyTo(planes[ch], { planeIndex: ch, format: "f32-planar" });
-        meter.push(skip ? planes.map((p) => p.subarray(skip)) : planes, frames);
+        await push(skip ? planes.map((p) => p.subarray(skip)) : planes, frames, rate);
         report((start - from) / (to - from));
       } finally {
         sample.close();
       }
     }
+    await flush();
     return { lufs: meter?.integrated() ?? -Infinity, peak: meter?.peak ?? 0 };
   } finally {
     input.dispose();

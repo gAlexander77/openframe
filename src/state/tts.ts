@@ -85,6 +85,9 @@ export interface VoiceoverOptions {
   captions?: boolean;
   captionStyle?: Partial<TextStyle>;
   captionY?: number;
+  /** The Enhance voice compressor on each voice (default true): synthetic
+   * voices peak far over their loudness. */
+  enhance?: boolean;
 }
 
 /**
@@ -130,6 +133,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
         q = runCommand(q, "add_media_clip", { asset_id: asset.id, start: times[i].start, track_id: track.id });
         placed.push({ text: lines[i].text, ...times[i], voice_clip: added(before, q)[0]?.id ?? "" });
       });
+      if (opts.enhance !== false) q = runCommand(q, "set_compressor", { clip_ids: placed.map((l) => l.voice_clip), preset: "voice" });
       if (opts.captions !== false) {
         const before = ids(q);
         q = runCommand(q, "add_captions", {

@@ -680,3 +680,13 @@ was thin. This round fixes what it found.
   share the experiment. A scan of the whole history first: no keys or
   tokens, every commit under the GitHub noreply address, the promo the only
   large file. There is still no packaged release; the docs say so.
+- **A compressor, and Enhance voice.** The promo's -15.8 LUFS came from
+  synthetic speech peaking far over its loudness. Every editor we imitate
+  evens speech out first, so OpenFrame does too: the platform's
+  DynamicsCompressorNode after the EQ, in preview, export and loudness
+  measurement alike (ADR-053), with Enhance voice, Gentle and Strong, and
+  `add_voiceover` using it by default. The promo now exports at -14.1 LUFS
+  with 1.1 dB of limiting. The first presets added 4 to 12 dB of makeup
+  and the voices measured -12.5 LUFS with peaks past full scale: Web
+  Audio's compressor already makes up about 0.6 of its own reduction, so
+  the presets add none.

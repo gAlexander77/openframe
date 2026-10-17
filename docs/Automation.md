@@ -64,6 +64,11 @@ the same way. `describe_project` is still the whole picture.
 ...]}` in order as one edit and one undo step, all or nothing: a failing
 step names its number (`step 2 (set_animation): no clip with id nope`).
 
+`set_compressor` evens out a video's or audio clip's sound: `{"clip_ids":
+[...], "preset": "voice"}` (voice, gentle, strong or off), with threshold,
+ratio, knee, attack, release and makeup to adjust it; `describe_project`
+names the preset or `custom`. `normalize_loudness` measures through it.
+
 `add_voiceover` narrates a script: `{"lines": [{"text": "Meet
 RacePulse."}, {"text": "Pick your widgets.", "at": 6}], "voice":
 "af_heart", "gap": 0.4, "caption_style": {...}}`. Each line is spoken on
@@ -71,6 +76,7 @@ this machine and placed after the one before at its real length (or at
 its `at`, never overlapping) on a new Voiceover track, with a caption per
 line, as one undo step. It answers `{"lines": [{"text", "start", "end",
 "voice_clip", "caption_clip"}], "end"}`: cut the footage to those times.
+The voices get the Enhance voice compressor unless `enhance` is false.
 
 `frame_region` shows part of a picture full screen: `region` is a
 rectangle in fractions of the source (`{"x": 0.5, "y": 0, "w": 0.5,

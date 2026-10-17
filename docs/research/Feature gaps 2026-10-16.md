@@ -185,9 +185,9 @@ in both.
 | Fade curve types | P R V F | no; linear only | P2 | A curve field on the fades. |
 | Pan keyframes | P R V F | yes | — | — |
 | EQ (parametric or graphic) | P R V F | yes: three bands (low shelf, mid bell, high shelf) | — | `BiquadFilterNode` chain per clip in `scheduleAudio`. Store bands on `Sound`. VEGAS 23's modernEQ is the model. |
-| Compressor, limiter | P R V F | no | P2 | `DynamicsCompressorNode`; true-peak limiting at export is on the [[Roadmap]]. |
+| Compressor, limiter | P R V F | yes: Compressor in the Audio tab (2026-10-17, ADR-053); a peak limiter in export loudness | - | — |
 | Noise reduction | C P R V F | yes: a spectral gate for steady noise (no ML model) | — | Local DeepFilterNet or RNNoise via ONNX or WASM in a worker (the app already ships transformers.js). Render a cleaned copy per asset and play that, so playback costs nothing. |
-| Enhance voice | C P | no | P2 | After noise reduction: EQ + compressor preset. |
+| Enhance voice | C P | yes: the Compressor's Enhance voice preset (2026-10-17); noise reduction stays its own tool | - | — |
 | Voice isolation / stems | C R F | no | P2 | A Demucs-class ONNX model; heavy. |
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
 | Pitch shift independent of speed | C P V | no; pitch only follows speed (Change pitch) | P2 | The engine's time-stretch (ADR-028) can expose a semitone offset. |

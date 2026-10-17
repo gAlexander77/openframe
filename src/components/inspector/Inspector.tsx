@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
+import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
@@ -525,6 +526,7 @@ function AudioTab({ clip }: { clip: Clip }) {
           <SliderRow key={b.key} clip={clip} path={`eq.${b.key}`} label={b.label} min={-12} max={12} step={0.5} digits={1} unit="dB" reset={0} keyframes={false} />
         ))}
       </Section>
+      {clip.type !== "compound" && <CompressorSection clip={clip} />}
       {clip.type === "video" && (
         <Section title="Sound">
           <div className="insp-actions">
@@ -538,6 +540,33 @@ function AudioTab({ clip }: { clip: Clip }) {
     </>
   );
 }
+
+/** CapCut's Enhance voice and Premiere's Dynamics: presets first, the
+ * three settings that matter most once one is on. */
+function CompressorSection({ clip }: { clip: AudioClip | VideoClip }) {
+  const c = clip.compressor;
+  const set = (preset: string) =>
+    edit(preset === "off" ? "Compressor off" : `Compressor: ${COMPRESSOR_LABELS[preset]}`, (p) => runCommand(p, "set_compressor", { clip_ids: [clip.id], preset }));
+  const voice = COMPRESSOR_PRESETS.voice;
+  return (
+    <Section title="Compressor" defaultOpen={!!c} onReset={() => set("off")}>
+      <Row label="Preset">
+        <Segmented value={c ? compressorPreset(c) : "off"} onChange={set} options={Object.entries(COMPRESSOR_LABELS).map(([value, label]) => ({ value, label }))} />
+      </Row>
+      {c ? (
+        <>
+          <SliderRow clip={clip} path="compressor.threshold" label="Threshold" min={-60} max={0} step={0.5} digits={1} unit="dB" reset={voice.threshold} keyframes={false} />
+          <SliderRow clip={clip} path="compressor.ratio" label="Ratio" min={1} max={20} step={0.5} digits={1} unit=":1" reset={voice.ratio} keyframes={false} />
+          <SliderRow clip={clip} path="compressor.makeup" label="Makeup" min={0} max={24} step={0.5} digits={1} unit="dB" reset={voice.makeup} keyframes={false} />
+        </>
+      ) : (
+        <p className="insp-hint">Evens out loud and quiet words. Enhance voice suits speech and voiceovers.</p>
+      )}
+    </Section>
+  );
+}
+
+const COMPRESSOR_LABELS: Record<string, string> = { off: "Off", voice: "Enhance voice", gentle: "Gentle", strong: "Strong" };
 
 // ---- speed -------------------------------------------------------------------
 

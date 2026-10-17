@@ -39,6 +39,7 @@ import { groupClips, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
+import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
@@ -389,6 +390,42 @@ export const COMMANDS: Command[] = [
     description: "Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.",
     input: S.obj({ clip_id: S.str("Clip id"), speed: S.num("Multiplier", { minimum: 0.05, maximum: 100 }) }, ["clip_id", "speed"]),
     run: (p, a) => ops.setSpeed(p, clipOrThrow(p, a.clip_id).clip.id, Number(a.speed)),
+  },
+  {
+    name: "set_compressor",
+    description:
+      "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        preset: S.str("Starting point", { enum: ["voice", "gentle", "strong", "off"] }),
+        threshold: S.num("dBFS where compression starts", { minimum: -60, maximum: 0 }),
+        ratio: S.num("dB in over the threshold per dB out", { minimum: 1, maximum: 20 }),
+        knee: S.num("Soft knee, dB", { minimum: 0, maximum: 40 }),
+        attack: S.num("Seconds", { minimum: 0, maximum: 1 }),
+        release: S.num("Seconds", { minimum: 0, maximum: 1 }),
+        makeup: S.num("Extra dB after the compressor's own makeup gain (presets: 0)", { minimum: 0, maximum: 24 }),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      const given = Object.fromEntries((["threshold", "ratio", "knee", "attack", "release", "makeup"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])]));
+      return ids.reduce(
+        (q, id) =>
+          ops.updateClip(q, id, (c) => {
+            if (c.type !== "video" && c.type !== "audio") throw new CommandError(`${c.type} clips have no sound to compress`);
+            if (a.preset === "off") {
+              const { compressor: _, ...rest } = c;
+              return rest as Clip;
+            }
+            const base = a.preset ? COMPRESSOR_PRESETS[a.preset as CompressorPreset] : (c.compressor ?? COMPRESSOR_PRESETS.voice);
+            return { ...c, compressor: cleanCompressor({ ...base, ...given })! };
+          }),
+        p,
+      );
+    },
   },
   {
     name: "set_channel_fill",
@@ -1368,6 +1405,7 @@ export function describeProject(p: Project) {
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
+        ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),

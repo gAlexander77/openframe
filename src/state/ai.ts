@@ -520,7 +520,8 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
     const out: { clipId: Id; lufs: number; peak: number }[] = [];
     for (const [i, { clip, asset }] of targets.entries()) {
       const [from, to] = windowOf(clip);
-      const r = await measureLoudness(asset, from, to, (x) => progress((i + x) / targets.length), signal);
+      // Measured as it plays: through the clip's compressor, if it has one.
+      const r = await measureLoudness(asset, from, to, (x) => progress((i + x) / targets.length), signal, "compressor" in clip ? clip.compressor : undefined);
       out.push({ clipId: clip.id, ...r });
     }
     return out;

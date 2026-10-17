@@ -329,13 +329,14 @@ APP_TOOLS.push(
         start: { type: "number", minimum: 0, description: "Seconds the first line starts, default 0" },
         gap: { type: "number", minimum: 0, description: "Seconds between lines, default 0.4" },
         captions: { type: "boolean", description: "A caption per line (default true)" },
+        enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true)" },
         caption_style: TEXT_STYLE_SCHEMA,
         caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36)" },
       },
       ["lines"],
     ),
     call: async (h, a) =>
-      json(await h.voiceover(a.lines as { text: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y }))),
+      json(await h.voiceover(a.lines as { text: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance }))),
   },
   {
     name: "auto_adjust",
