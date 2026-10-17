@@ -1,0 +1,16 @@
+/* Record voiceover panel (CapCut's microphone button) */
+.vo { position: relative; }
+.menu.vo-panel { left: auto; right: 0; top: calc(100% + 6px); width: 300px; padding: 12px; display: grid; gap: 10px; transform-origin: top right; }
+.vo-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); }
+.vo-row { display: grid; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
+.vo-row .field { width: 100%; }
+.vo-check { display: flex; align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); }
+.vo-meter { height: 6px; border-radius: 3px; background: var(--bg-inset); overflow: hidden; }
+.vo-meter span { display: block; height: 100%; background: linear-gradient(90deg, #3bd16f 0 70%, #f0c040 85%, #f05050); transition: width 60ms linear; }
+.vo-status { min-height: 18px; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
+.vo-rec { color: #ff5c5c; font-weight: 600; font-variant-numeric: tabular-nums; }
+.vo-count { color: var(--text-1); font-weight: 600; }
+.vo-actions { display: flex; gap: 8px; }
+.icon-btn.vo-live { color: #ff5c5c; background: rgb(255 92 92 / 14%); animation: vo-pulse 1.2s ease-in-out infinite; }
+@keyframes vo-pulse { 50% { background: rgb(255 92 92 / 28%); } }
+@media (prefers-reduced-motion: reduce) { .icon-btn.vo-live { animation: none; } }

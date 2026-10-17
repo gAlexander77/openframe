@@ -3,6 +3,7 @@
 // raster is cached by content: transform animation moves the quad, so only
 // a text or style change, or a new render size, re-rasterizes.
 
+import { setTextMeasure } from "../lib/align";
 import type { TextClip, TextStyle } from "../lib/project/types";
 import type { TextLayout } from "../lib/textBox";
 import type { SourceImage } from "./compositor";
@@ -119,3 +120,6 @@ export function rasterizeText(clip: TextClip, width: number, height: number): Te
   if (cache.size > 200) cache.delete(cache.keys().next().value!);
   return out;
 }
+
+// Align and snap measure text by the same raster the compositor draws.
+setTextMeasure(rasterizeText);

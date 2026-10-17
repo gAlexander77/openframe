@@ -65,6 +65,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
+- **Record voiceover** (the microphone in the timeline toolbar, as in
+  CapCut): pick the input, optionally mute the project, then a 3-second
+  countdown and the timeline plays from the playhead while recording.
+  Stop keeps the take as `Voiceover N.wav` on an audio track, starting on
+  the playhead's frame; Discard or Escape keeps nothing. The samples run on
+  the playback clock, so the voice lands where it was heard, corrected for
+  output latency, with the pre-roll dropped.
 - Pro trim tools: ripple (T), roll (R), slip (Y) and slide (U), with
   readouts of what moves while dragging.
 
@@ -76,13 +83,29 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
   19 effects, 20 transitions, 17 looks, adjustment layers.
-- On-canvas handles: move, scale, rotate, snapping to center guides.
+- On-canvas handles: move, scale, rotate. A moved picture snaps its edges
+  and center to the canvas's and to other visible pictures', with a guide
+  at the line; Ctrl moves freely, Shift keeps one axis.
+- **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
+  framing; `frame_clips`): fit shows the whole picture, fill covers the
+  canvas and crops the overflow, stretch covers it exactly; each centers.
+- **Flip** buttons under Transform (horizontal and vertical; `set_flip`),
+  and **arrow keys** on the viewer after clicking it nudge the selected
+  pictures 1 px (Shift: 10 px); a held key is one undo step, and the
+  arrows step frames everywhere else.
+- **Align** (CapCut's Transform row): left, center, right, top, middle,
+  bottom against the canvas; with several clips selected, against their
+  combined bounds, plus distribute for three or more
+  ([[ADR-045 Align measures the resting box, one clip to the canvas]]).
 - Frame-exact: the framecode drive proves the right source frame at 1x,
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
   shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
+- **Ratio menu** in the transport bar, as in CapCut: change the canvas
+  shape (16:9, 9:16, 1:1, 4:5, 4:3, 3:4, 21:9) without leaving the clip
+  being edited; the short side is kept, and Undo restores the size.
 - **Composition guides** in the Player header and View menu: safe margins
   (90% action / 80% title), rule of thirds, or both. Follow the canvas in
   portrait and full screen; preview only, excluded from exported pictures.
@@ -108,6 +131,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   independent effect instances and animation; preserves existing effects
   and other clip settings. A session clipboard keeps normal clip/keyframe
   copying separate ([[ADR-038 Copied effects preserve animation and get new identities]]).
+- **Uniform scale** switch under Transform, as in CapCut: off splits Scale
+  into Scale X and Scale Y (keys copied, so nothing jumps); on joins them.
+  Corner handles keep a stretched picture's proportions.
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
 - On a keyframe, an easing button beside the cluster opens the presets;
@@ -282,3 +308,4 @@ Three doors, one engine ([[Automation]]):
   (preset or bezier), `remove_keyframes`.
 - Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
+- Layout commands: `align_clips`, `distribute_clips`.

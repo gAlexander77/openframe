@@ -25,6 +25,7 @@ const same = (v: number) => v;
 
 const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number }> = {
   "transform.scale": { label: "Scale", unit: "%", digits: 0, scale: 100 },
+  "transform.scaleY": { label: "Scale Y", unit: "%", digits: 0, scale: 100 },
   "transform.rotation": { label: "Rotate", unit: "°", digits: 1 },
   opacity: { label: "Opacity", unit: "%", digits: 0, scale: 100 },
   "mask.x": { label: "Mask X", unit: "%", digits: 0, scale: 100 },

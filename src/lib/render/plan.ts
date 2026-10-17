@@ -54,6 +54,8 @@ export interface Layer {
   x: number;
   y: number;
   scale: number;
+  /** Vertical scale, when the clip's scale is not uniform. */
+  scaleY?: number;
   rotation: number;
   flipX: boolean;
   flipY: boolean;
@@ -195,6 +197,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     x: paramAt(clip, "transform.x", r) + anim.x,
     y: paramAt(clip, "transform.y", r) + anim.y,
     scale: paramAt(clip, "transform.scale", r) * anim.scale,
+    ...(clip.transform.scaleY !== undefined ? { scaleY: paramAt(clip, "transform.scaleY", r) * anim.scale } : {}),
     rotation: paramAt(clip, "transform.rotation", r) + anim.rotation,
     flipX: clip.transform.flipX,
     flipY: clip.transform.flipY,

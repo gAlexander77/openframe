@@ -152,8 +152,12 @@ export interface Transform {
    * canvas width/height. 0,0 is centered. */
   x: number;
   y: number;
-  /** 1 = fit inside the canvas (contain). */
+  /** 1 = fit inside the canvas (contain). With `scaleY` set, the
+   * horizontal scale only. */
   scale: number;
+  /** Vertical scale when it differs from `scale` (CapCut's Uniform scale
+   * off); absent means uniform. */
+  scaleY?: number;
   /** Degrees, clockwise. */
   rotation: number;
   flipX: boolean;

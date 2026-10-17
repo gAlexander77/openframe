@@ -337,6 +337,12 @@ export class Player {
     this.raf = requestAnimationFrame(tick);
   }
 
+  /** While playing with sound: timeline seconds `t0` sound at audio-clock
+   * time `ctxAt` (a voiceover take is placed with it). */
+  clock(): { t0: number; ctxAt: number } | null {
+    return this.schedule ? { t0: this.t0, ctxAt: this.ctxAt } : null;
+  }
+
   private stopClock() {
     cancelAnimationFrame(this.raf);
     this.schedule?.stop();

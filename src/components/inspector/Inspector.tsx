@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Eye, EyeOff, Plus, RotateCw, Sparkles, Trash2 } from "../../icons";
+import { ArrowDown, ArrowUp, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Plus, RotateCw, Sparkles, Trash2 } from "../../icons";
 import { fromDb, toDb } from "../../lib/audio";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
 import { runCommand } from "../../lib/commands";
@@ -7,6 +7,8 @@ import type { EffectAction } from "../../lib/effectStack";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
 import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
+import { frameClips } from "../../lib/align";
+import { canvasSize, ratioOf, RATIOS } from "../../lib/canvas";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
@@ -22,6 +24,7 @@ import { WheelsPanel } from "./WheelsPanel";
 import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
 import { AttributeClipboard } from "./AttributeClipboard";
+import { AlignBar, useMovable } from "./AlignBar";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
@@ -101,22 +104,53 @@ function ClipInspector({ id }: { id: Id }) {
 // ---- video -------------------------------------------------------------------
 
 const pct = { show: (v: number) => v * 100, store: (v: number) => v / 100 };
-const TRANSFORM_PATHS = ["transform.scale", "transform.x", "transform.y", "transform.rotation"];
 
 function TransformSection({ clip }: { clip: Clip }) {
   const w = useEditor((s) => s.project.width);
   const h = useEditor((s) => s.project.height);
   if (!("transform" in clip)) return null;
+  const stretched = clip.transform.scaleY !== undefined;
+  const paths = ["transform.scale", ...(stretched ? ["transform.scaleY"] : []), "transform.x", "transform.y", "transform.rotation"];
   return (
     <Section
       title="Transform"
-      extra={<SectionKey clip={clip} paths={TRANSFORM_PATHS} title="Transform" />}
+      extra={<SectionKey clip={clip} paths={paths} title="Transform" />}
       onReset={() => patchClip(clip.id, "Reset transform", (c) => ({ ...c, transform: { ...DEFAULT_TRANSFORM }, keyframes: stripKeys(c, "transform.") }) as Clip)}
     >
-      <SliderRow clip={clip} path="transform.scale" label="Scale" min={1} max={500} unit="%" reset={1} {...pct} />
+      <SliderRow clip={clip} path="transform.scale" label={stretched ? "Scale X" : "Scale"} min={1} max={500} unit="%" reset={1} {...pct} />
+      {stretched && <SliderRow clip={clip} path="transform.scaleY" label="Scale Y" min={1} max={500} unit="%" reset={1} {...pct} />}
+      <Row label="Uniform scale">
+        <Toggle on={!stretched} label="Uniform scale" onChange={(on) => store.edit(on ? "Uniform scale" : "Separate scale", (p) => ops.setUniformScale(p, [clip.id], on))} />
+      </Row>
       <SliderRow clip={clip} path="transform.x" label="Position X" min={-w} max={w} unit="px" reset={0} show={(v) => v * w} store={(v) => v / w} />
       <SliderRow clip={clip} path="transform.y" label="Position Y" min={-h} max={h} unit="px" reset={0} show={(v) => -v * h} store={(v) => -v / h} />
       <SliderRow clip={clip} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} />
+      <Row label="Frame">
+        <div className="frame-btns">
+          {(
+            [
+              ["fit", "Fit", "Show the whole picture"],
+              ["fill", "Fill", "Cover the canvas, cropping the overflow"],
+              ["stretch", "Stretch", "Cover the canvas, ignoring proportions"],
+            ] as const
+          ).map(([mode, label, tip]) => (
+            <button key={mode} className="btn ghost" aria-label={`${label} to canvas`} data-tip={tip} onClick={() => store.edit(label, (p) => frameClips(p, [clip.id], mode, store.get().playhead))}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </Row>
+      <Row label="Flip">
+        <div className="flip-pair">
+          <button className={`icon-btn${clip.transform.flipX ? " on" : ""}`} aria-label="Flip horizontally" aria-pressed={clip.transform.flipX} data-tip="Flip horizontally" onClick={() => store.edit("Flip horizontally", (p) => ops.setFlip(p, [clip.id], { horizontal: !clip.transform.flipX }))}>
+            <FlipHorizontal2 />
+          </button>
+          <button className={`icon-btn${clip.transform.flipY ? " on" : ""}`} aria-label="Flip vertically" aria-pressed={clip.transform.flipY} data-tip="Flip vertically" onClick={() => store.edit("Flip vertically", (p) => ops.setFlip(p, [clip.id], { vertical: !clip.transform.flipY }))}>
+            <FlipVertical2 />
+          </button>
+        </div>
+      </Row>
+      <AlignBar ids={[clip.id]} />
     </Section>
   );
 }
@@ -866,24 +900,14 @@ function TransitionTab({ clip }: { clip: Clip }) {
 
 // ---- nothing / many selected -----------------------------------------------------
 
-const RATIOS: { label: string; w: number; h: number }[] = [
-  { label: "16:9", w: 16, h: 9 },
-  { label: "9:16", w: 9, h: 16 },
-  { label: "1:1", w: 1, h: 1 },
-  { label: "4:5", w: 4, h: 5 },
-  { label: "4:3", w: 4, h: 3 },
-  { label: "21:9", w: 21, h: 9 },
-];
 const RESOLUTIONS = [720, 1080, 1440, 2160];
 
 function ProjectDetails() {
   const p = useEditor((s) => s.project);
   const short = Math.min(p.width, p.height);
-  const ratio = RATIOS.find((r) => Math.abs(r.w / r.h - p.width / p.height) < 0.01);
+  const ratio = ratioOf(p.width, p.height);
   const setCanvas = (rw: number, rh: number, res: number) => {
-    // The short side is the "p" resolution, CapCut-style (1080p 9:16 = 1080x1920).
-    const even = (n: number) => Math.round(n / 2) * 2;
-    const [w, h] = rw >= rh ? [even((res * rw) / rh), res] : [res, even((res * rh) / rw)];
+    const [w, h] = canvasSize(rw, rh, res);
     store.edit("Canvas size", (q) => ({ ...q, width: w, height: h, canvasFixed: true }));
   };
   const fpsLabel = FPS_PRESETS.find((f) => f.fps.num === p.fps.num && f.fps.den === p.fps.den)?.label ?? (p.fps.num / p.fps.den).toFixed(2);
@@ -958,6 +982,8 @@ function ProjectDetails() {
 }
 
 function MultiSelection({ count }: { count: number }) {
+  const sel = useEditor((s) => s.selection);
+  const movable = useMovable(sel);
   return (
     <>
       <nav className="insp-tabs">
@@ -973,6 +999,11 @@ function MultiSelection({ count }: { count: number }) {
           <EffectClipboard />
           <AttributeClipboard />
         </Section>
+        {movable > 0 && (
+          <Section title="Align">
+            <AlignBar ids={sel} />
+          </Section>
+        )}
       </div>
     </>
   );

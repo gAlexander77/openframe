@@ -300,6 +300,19 @@ export function masterBus(): MasterBus {
   return bus;
 }
 
+/** Hear the program or not (a voiceover take mutes it); the meters keep
+ * reading either way. */
+export function setMonitor(on: boolean) {
+  const { input } = masterBus();
+  const ctx = audioContext();
+  try {
+    if (on) input.connect(ctx.destination);
+    else input.disconnect(ctx.destination);
+  } catch {
+    /* already in that state */
+  }
+}
+
 const scratch = new Float32Array(1024);
 
 /** Peak level of an analyser's last block, in dBFS (-Infinity for silence). */

@@ -27,6 +27,7 @@ import { isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
 import { store, useEditor } from "../state/store";
 import { MenuList } from "./Menu";
+import { VoiceoverButton } from "./VoiceoverButton";
 
 /** "Split (Ctrl+B)" — CapCut's tooltip format, chord read from the keymap. */
 export function tipFor(id: ActionId, label = ACTION_LABELS[id]) {
@@ -154,6 +155,8 @@ export function TimelineToolbar() {
         </button>
       </div>
       <div className="tl-tools right">
+        <VoiceoverButton />
+        <span className="tl-sep" />
         <Tool id="toggleMagnet" icon={<Magnet />} on={magnet} label="Main track magnet" />
         <Tool id="toggleSnapping" icon={<Crosshair />} on={snapping} label="Auto snapping" />
         <Tool id="toggleLinkage" icon={<Link2 />} on={linkage} label="Linkage" />

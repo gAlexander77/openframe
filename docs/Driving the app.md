@@ -32,7 +32,9 @@ The dated [[Development pass 2026-10-16]] lists the checks and limitations.
   same files. The runner opens the app before calling the drive, so drives
   written for an attached desktop page (they start with a reload) run too
   when their fixtures are URLs: pick the source by `platform()`, as
-  `trim-preview.js` does. Drives that stub desktop platform calls
+  `trim-preview.js` does. The runner's Edge has a fake microphone
+  (`--use-fake-device-for-media-stream`, a beep a second, granted without
+  a prompt) for `voiceover.js`. Drives that stub desktop platform calls
   (`media-relink`, `desktop-session-jobs`) stay desktop-only.
 - **This page**: the desktop app over WebView2's debug port. Anything that
   crosses IPC: the `media:` protocol, projects, exports, FFmpeg proxies,

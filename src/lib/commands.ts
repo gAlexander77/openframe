@@ -35,6 +35,7 @@ import { relinkAsset } from "./project/relink";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
+import { alignClips, ALIGNS, distributeClips, frameClips, type Align, type Axis, type Frame } from "./align";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -332,7 +333,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
@@ -340,6 +341,57 @@ export const COMMANDS: Command[] = [
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
       return ops.setParam(p, ids, String(a.path), Number(a.value), rel);
+    },
+  },
+  {
+    name: "set_flip",
+    description: "Mirror pictures: horizontal flips left-right, vertical flips upside down. A direction left out keeps its state.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), horizontal: S.bool("Flipped left-right"), vertical: S.bool("Flipped upside down") }, ["clip_ids"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ops.setFlip(p, ids, { horizontal: a.horizontal as boolean | undefined, vertical: a.vertical as boolean | undefined });
+    },
+  },
+  {
+    name: "set_uniform_scale",
+    description: "CapCut's Uniform scale switch. false: the vertical scale (transform.scaleY) separates from transform.scale, starting equal; true: it goes and the picture takes transform.scale.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), uniform: S.bool("Scale both directions together") }, ["clip_ids", "uniform"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ops.setUniformScale(p, ids, a.uniform === true);
+    },
+  },
+  {
+    name: "align_clips",
+    description: "Align pictures on the canvas, as CapCut's Transform align row does: one clip against the canvas edge or center, several against their combined bounds. left, center and right move horizontally; top, middle and bottom vertically. Animated positions get a keyframe at `at` (default: each clip's first frame).",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), align: S.str("Where to align", { enum: ALIGNS }), at: S.num("Timeline seconds, for animated positions") }, ["clip_ids", "align"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return alignClips(p, ids, a.align as Align, a.at === undefined ? -Infinity : f(p, a.at));
+    },
+  },
+  {
+    name: "frame_clips",
+    description: "Frame pictures on the canvas, centered: fit shows the whole picture, fill covers the canvas and crops the overflow, stretch covers it exactly, ignoring proportions.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), mode: S.str("How to frame", { enum: ["fit", "fill", "stretch"] }), at: S.num("Timeline seconds, for animated scale") }, ["clip_ids", "mode"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return frameClips(p, ids, a.mode as Frame, a.at === undefined ? -Infinity : f(p, a.at));
+    },
+  },
+  {
+    name: "distribute_clips",
+    description: "Space three or more pictures evenly on the canvas: the outermost two stay, the rest move so the gaps between neighbors are equal.",
+    input: S.obj({ clip_ids: S.ids("Visual clips, three or more"), axis: S.str("Direction", { enum: ["horizontal", "vertical"] }), at: S.num("Timeline seconds, for animated positions") }, ["clip_ids", "axis"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      if (ids.length < 3) throw new CommandError("distribute needs three or more clips");
+      return distributeClips(p, ids, a.axis as Axis, a.at === undefined ? -Infinity : f(p, a.at));
     },
   },
   {

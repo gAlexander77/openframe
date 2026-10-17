@@ -17,7 +17,8 @@ passes through, filling defaults and rejecting what cannot be repaired.
 | `speed`, `speedCurve.points[].speed` | playback rate, 1 = normal (curves 0.1..10) |
 | `speedCurve.points[].f` | frames from the clip's start, fractional allowed |
 | `transform.x` / `.y` | fraction of canvas width/height from center (0 = centered; y grows downward) |
-| `transform.scale` | 1 = fit inside the canvas |
+| `transform.scale` | 1 = fit inside the canvas; the horizontal scale when `scaleY` is present |
+| `transform.scaleY` | optional vertical scale (CapCut's Uniform scale off); absent = uniform. Older readers ignore it and draw the picture uniform |
 | `opacity`, `volume` | 0..1 and linear gain (1 = 0 dB, up to 4 = +12 dB) |
 | `adjust.*` | -100..100 (one-sided ones 0..100), including the grade's `hsl` and `wheels` |
 | `adjust.lut.intensity`, `filter.intensity` | 0..1 |

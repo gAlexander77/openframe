@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player, topClipAt } from "../engine/player";
 import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play } from "../icons";
 import { chordText } from "../lib/keymap";
+import { boxesAt, nudgeClips } from "../lib/align";
+import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
 import { projectDuration } from "../lib/project/ops";
 import { formatTimecode } from "../lib/time";
 import { isMac } from "../platform/env";
@@ -20,9 +22,43 @@ const tip = (label: string, id: Parameters<typeof chordFor>[0]) => {
 
 /** The viewer: the composited frame, fitted to the panel at the project's
  * aspect ratio, with CapCut's transport bar underneath. */
+const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
+/** Arrow keys on the focused viewer move the selected pictures, as in
+ * CapCut and Premiere's Program monitor. A held key is one undo step. */
+function useNudge() {
+  const held = useRef<{ dx: number; dy: number } | null>(null);
+  return useRef({
+    down(e: React.KeyboardEvent) {
+      const d = ARROWS[e.key];
+      const s = store.get();
+      if (!d || e.ctrlKey || e.metaKey || e.altKey || s.playing) return;
+      if (!boxesAt(s.project, s.selection, s.playhead).length) return;
+      e.preventDefault();
+      e.stopPropagation(); // not the frame step on the same key
+      if (!held.current) {
+        held.current = { dx: 0, dy: 0 };
+        store.beginGesture();
+      }
+      const step = e.shiftKey ? 10 : 1;
+      const t = held.current;
+      t.dx += d[0] * step;
+      t.dy += d[1] * step;
+      const ids = s.selection, frame = s.playhead;
+      store.previewGesture((p) => nudgeClips(p, ids, t.dx, t.dy, frame));
+    },
+    up(e: React.KeyboardEvent | React.FocusEvent) {
+      if (!held.current || ("key" in e && !ARROWS[e.key])) return;
+      held.current = null;
+      store.endGesture("Nudge");
+    },
+  }).current;
+}
+
 export function PlayerPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const nudge = useNudge();
   const panelRef = useRef<HTMLElement>(null);
   const width = useEditor((s) => s.project.width);
   const height = useEditor((s) => s.project.height);
@@ -80,6 +116,13 @@ export function PlayerPanel() {
       <div
         className="player-stage"
         ref={stageRef}
+        // Focus follows a click on the picture, so the arrow keys nudge the
+        // selection there (1 px, Shift 10 px) and step frames elsewhere.
+        tabIndex={-1}
+        onPointerDownCapture={() => stageRef.current?.focus({ preventScroll: true })}
+        onKeyDown={nudge.down}
+        onKeyUp={nudge.up}
+        onBlur={nudge.up}
         onDoubleClick={() => run("fullscreenPreview")}
         onPointerDown={() => {
           // Click the picture to select what is on top there, as in CapCut.
@@ -133,6 +176,7 @@ function Transport() {
         </button>
       </div>
       <div className="transport-right">
+        <CanvasRatio />
         <PreviewQuality />
         <button className="icon-btn" aria-label="Full screen" data-tip={tip("Full screen", "fullscreenPreview")} onClick={() => run("fullscreenPreview")}>
           <Maximize2 />
@@ -152,6 +196,32 @@ function Timecodes() {
       <span className="tc-sep">/</span>
       <span className="tc-total">{formatTimecode(total, project.fps)}</span>
     </div>
+  );
+}
+
+/** CapCut's Ratio menu beside the preview quality: the canvas shape
+ * without leaving the clip being edited for project Details. */
+function CanvasRatio() {
+  const w = useEditor((s) => s.project.width);
+  const h = useEditor((s) => s.project.height);
+  const ratio = ratioOf(w, h);
+  return (
+    <select
+      className="quality-select"
+      aria-label="Canvas ratio"
+      data-tip="Canvas ratio"
+      value={ratio?.label ?? ""}
+      onChange={(e) => {
+        const r = RATIOS.find((r) => r.label === e.target.value)!;
+        const [nw, nh] = canvasSize(r.w, r.h, Math.min(w, h));
+        store.edit("Canvas size", (q) => ({ ...q, width: nw, height: nh, canvasFixed: true }));
+      }}
+    >
+      {!ratio && <option value="">{w}x{h}</option>}
+      {RATIOS.map((r) => (
+        <option key={r.label} value={r.label}>{r.label}</option>
+      ))}
+    </select>
   );
 }
 

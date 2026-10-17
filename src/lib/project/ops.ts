@@ -612,6 +612,40 @@ export function setParam(p: Project, clipIds: Id[], path: string, value: number,
   return p;
 }
 
+/** Mirror pictures: each given direction is set as asked, the other kept. */
+export function setFlip(p: Project, clipIds: Id[], flip: { horizontal?: boolean; vertical?: boolean }): Project {
+  for (const id of clipIds) {
+    p = updateClip(p, id, (c) => {
+      if (!("transform" in c)) return c;
+      const t = { ...c.transform, flipX: flip.horizontal ?? c.transform.flipX, flipY: flip.vertical ?? c.transform.flipY };
+      return t.flipX === c.transform.flipX && t.flipY === c.transform.flipY ? c : ({ ...c, transform: t } as Clip);
+    });
+  }
+  return p;
+}
+
+/** CapCut's Uniform scale switch. Off: the vertical scale starts as a copy
+ * of the scale, keys included, so nothing moves. On: the vertical scale
+ * and its keys go, and the picture takes the horizontal scale. */
+export function setUniformScale(p: Project, clipIds: Id[], uniform: boolean): Project {
+  for (const id of clipIds) {
+    p = updateClip(p, id, (c) => {
+      if (!("transform" in c) || (c.transform.scaleY === undefined) === uniform) return c;
+      const keys = { ...c.keyframes };
+      const transform = { ...c.transform };
+      if (uniform) {
+        delete transform.scaleY;
+        delete keys["transform.scaleY"];
+      } else {
+        transform.scaleY = transform.scale;
+        if (keys["transform.scale"]) keys["transform.scaleY"] = keys["transform.scale"].map((k) => ({ ...k }));
+      }
+      return { ...c, transform, keyframes: Object.keys(keys).length ? keys : undefined } as Clip;
+    });
+  }
+  return p;
+}
+
 /** Add a keyframe at `f` holding the current value, or remove the one there. */
 export function toggleKeyframe(p: Project, clipId: Id, path: string, f: number, current: number): Project {
   return updateClip(p, clipId, (c) => {

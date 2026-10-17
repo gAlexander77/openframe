@@ -32,7 +32,12 @@ try {
 // A drive file is one function expression: async (page, ...) => result.
 // Drives name the main checkout's server; --base swaps it for this run.
 const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base));
-const browser = await chromium.launch({ channel: "msedge", headless: true });
+// A fake microphone, granted without a prompt, for the voiceover drive.
+const browser = await chromium.launch({
+  channel: "msedge",
+  headless: true,
+  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+});
 let result;
 try {
   const page = await browser.newPage({ viewport: { width, height } });

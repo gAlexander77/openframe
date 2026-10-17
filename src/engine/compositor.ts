@@ -433,11 +433,12 @@ export class Compositor {
     }
     const { left, top, right, bottom } = layer.crop;
     const visW = sw * fit * layer.scale * (1 - left - right);
-    const visH = sh * fit * layer.scale * (1 - top - bottom);
+    const scaleY = layer.scaleY ?? layer.scale;
+    const visH = sh * fit * scaleY * (1 - top - bottom);
     // Cropping keeps the uncropped image where it was, so the visible part's
     // center shifts by half the difference of the trimmed edges.
     const shiftX = ((left - right) / 2) * sw * fit * layer.scale;
-    const shiftY = ((top - bottom) / 2) * sh * fit * layer.scale;
+    const shiftY = ((top - bottom) / 2) * sh * fit * scaleY;
     const rad = (layer.rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);

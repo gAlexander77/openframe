@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { clipForAsset, createProject, createTextClip, createTrack } from "./defaults";
+import { clipForAsset, createColorClip, createProject, createTextClip, createTrack } from "./defaults";
+import { layerAt } from "../render/plan";
 import {
   addClip,
   deleteClips,
@@ -10,6 +11,8 @@ import {
   rollEdit,
   setParam,
   setSpeed,
+  setFlip,
+  setUniformScale,
   setTransition,
   slideClip,
   slipClip,
@@ -239,5 +242,39 @@ describe("setFps", () => {
     const ntsc = setFps(project([0, 10, 0], [10, 10, 0], [20, 10, 0]), { num: 30000, den: 1001 });
     const cs = ntsc.tracks[0].clips;
     cs.forEach((c, i) => i && expect(c.start).toBeGreaterThanOrEqual(cs[i - 1].start + cs[i - 1].duration));
+  });
+});
+
+describe("setUniformScale", () => {
+  it("separates the vertical scale with its keys, and joins it back", () => {
+    const p = createProject();
+    const c = createColorClip("#fff", 0, 60);
+    c.transform.scale = 0.8;
+    c.keyframes = { "transform.scale": [{ f: 0, v: 0.5 }, { f: 30, v: 0.8 }] };
+    p.tracks[0].clips = [c];
+    const apart = setUniformScale(p, [c.id], false);
+    const a = apart.tracks[0].clips[0] as typeof c;
+    expect(a.transform.scaleY).toBe(0.8);
+    expect(a.keyframes?.["transform.scaleY"]).toEqual(c.keyframes["transform.scale"]);
+    expect(a.keyframes?.["transform.scaleY"]).not.toBe(c.keyframes["transform.scale"]);
+    expect(layerAt(apart, a, 0)?.scaleY).toBe(0.5);
+    const joined = setUniformScale(apart, [c.id], true).tracks[0].clips[0] as typeof c;
+    expect(joined.transform.scaleY).toBeUndefined();
+    expect(joined.keyframes).toEqual(c.keyframes);
+    expect(layerAt(p, c, 0)?.scaleY).toBeUndefined();
+    expect(setUniformScale(p, [c.id], true)).toEqual(p);
+  });
+});
+
+describe("setFlip", () => {
+  it("sets the directions asked and keeps the other", () => {
+    const p = createProject();
+    const c = createColorClip("#fff", 0, 60);
+    p.tracks[0].clips = [c];
+    const h = setFlip(p, [c.id], { horizontal: true }).tracks[0].clips[0] as typeof c;
+    expect(h.transform).toMatchObject({ flipX: true, flipY: false });
+    const v = setFlip({ ...p, tracks: [{ ...p.tracks[0], clips: [h] }] }, [c.id], { vertical: true }).tracks[0].clips[0] as typeof c;
+    expect(v.transform).toMatchObject({ flipX: true, flipY: true });
+    expect(setFlip(p, [c.id], { horizontal: false })).toEqual(p);
   });
 });

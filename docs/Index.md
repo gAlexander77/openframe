@@ -56,6 +56,8 @@ of the documentation and how agents use it as shared working memory.
 
 - [[CapCut desktop]] — the UX baseline: layout, every panel, shortcuts,
   export, what users complain about
+- [[Feature gaps 2026-10-16]] — what CapCut, Premiere, Resolve, VEGAS and
+  Final Cut have that we lack, with a build order
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,
@@ -138,3 +140,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
   selective attributes, animation conversion and source preview isolation
 - [[ADR-044 Trim previews read the applied edit]] — exact cut frames,
   source limits and cancellable gestures
+- [[ADR-045 Align measures the resting box, one clip to the canvas]] —
+  shared on-canvas geometry for align, distribute and edge snapping

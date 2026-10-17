@@ -510,10 +510,10 @@ function inkBox(clips: Clip[], w: number, h: number, f: number) {
     if (c.type === "text") {
       const r = rasterizeText(c, w, h);
       bw = r.width * t.scale;
-      bh = r.height * t.scale;
+      bh = r.height * (t.scaleY ?? t.scale);
     } else {
       bw = w * t.scale * (1 - c.crop.left - c.crop.right);
-      bh = h * t.scale * (1 - c.crop.top - c.crop.bottom);
+      bh = h * (t.scaleY ?? t.scale) * (1 - c.crop.top - c.crop.bottom);
     }
     const cx = w / 2 + t.x * w;
     const cy = h / 2 + t.y * h;
