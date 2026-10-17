@@ -13,6 +13,21 @@ fast, approachable editing with deep timeline, color, audio, and automation
 tools. This remains an experiment in active development; the feature map
 and roadmap distinguish implemented work from plans.
 
+## Watch: an AI agent edited this video
+
+[![OpenFrame promo, edited by an AI agent in OpenFrame](docs/media/openframe-promo.jpg)](docs/media/openframe-promo.mp4)
+
+**[▶ Watch the 53-second promo](docs/media/openframe-promo.mp4)** (GitHub plays it in its file viewer).
+
+Claude made it end to end through OpenFrame's own MCP tools. It wrote the
+script and voiced it on this computer (`add_voiceover`: Kokoro speech with
+captions timed to it), recorded OpenFrame's web build in a headless browser
+for the footage, cut the picture to the voice, pushed in on each panel
+(`frame_region`), added the titles, transitions and a music bed ducked
+under the voice, and exported it (`export_video`). Nobody touched the
+timeline by hand. What it took, and what it taught the editor, is in
+[History](docs/History.md) (2026-10-17).
+
 ## Repository and current status
 
 Repository: [gAlexander77/openframe](https://github.com/gAlexander77/openframe)
