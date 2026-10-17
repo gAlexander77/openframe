@@ -11,7 +11,8 @@ import { createProject } from "../lib/project/defaults";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
-import type { Id, Project } from "../lib/project/types";
+import type { CropRatio } from "../lib/crop";
+import type { Crop, Id, Project } from "../lib/project/types";
 import type { TrimPreviewState } from "../lib/trimPreview";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
@@ -79,6 +80,20 @@ export interface EditorState {
   /** The text clip being typed into on the canvas, else null
    * (`state/textEdit.ts`, ADR-031). */
   textEdit: Id | null;
+  /** The crop being drawn on the viewer (`state/cropEdit.ts`, ADR-048):
+   * a copy of the clip's crop until Done, while the viewer shows that clip
+   * uncropped. Never part of the project. */
+  cropEdit: CropSession | null;
+  /** The inspector's Mask tab is open: the viewer draws the selected
+   * clip's mask with its handles instead of the transform box. */
+  maskHandles: boolean;
+}
+
+export interface CropSession {
+  id: Id;
+  crop: Crop;
+  /** The shape the handles keep. */
+  ratio: CropRatio;
 }
 
 interface HistoryEntry {
@@ -116,6 +131,8 @@ let state: EditorState = {
   keyframePanel: false,
   keySel: null,
   textEdit: null,
+  cropEdit: null,
+  maskHandles: false,
 };
 
 let past: HistoryEntry[] = [];
@@ -233,6 +250,7 @@ export const store = {
       outPoint: null,
       keySel: null,
       textEdit: null,
+      cropEdit: null,
       trimPreview: null,
       markerEdit: null,
       mediaBrowser: { ...DEFAULT_MEDIA_BROWSER, view: state.mediaBrowser.view, sort: state.mediaBrowser.sort },

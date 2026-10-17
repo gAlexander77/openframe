@@ -110,3 +110,16 @@ describe("canvas fill", () => {
     expect(fill!.effects[0]).toEqual({ type: "blur", params: { amount: 60 } });
   });
 });
+
+describe("masks", () => {
+  it("animates mask parameters by their keyframes and leaves still ones as stored", () => {
+    let p = createProject({ fps: { num: 30, den: 1 } });
+    const mask = { shape: "circle" as const, x: 0, y: 0, width: 0.5, height: 0.5, rotation: 0, feather: 0.1, invert: false };
+    p = addClip(p, p.tracks[0].id, { ...createColorClip("#f00", 0, 60), id: "m", mask, keyframes: { "mask.x": [{ f: 0, v: -0.2 }, { f: 20, v: 0.2 }] } });
+    p = addClip(p, p.tracks[0].id, { ...createColorClip("#0f0", 60, 60), id: "s", mask });
+    const at = (f: number) => (planFrame(p, f)[0] as { layer: { mask?: typeof mask } }).layer.mask!;
+    expect(at(10)).toEqual({ ...mask, x: expect.closeTo(0) });
+    expect(at(30).x).toBeCloseTo(0.2);
+    expect(at(70)).toBe(mask);
+  });
+});

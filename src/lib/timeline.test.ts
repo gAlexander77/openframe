@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { fitZoom, rulerTicks, snapSpan } from "./timeline";
+import { createTrack } from "./project/defaults";
+import { fitZoom, rulerTicks, snapSpan, trackHeight } from "./timeline";
 
 describe("snapSpan", () => {
   const targets = [0, 100, 250];
@@ -29,4 +30,11 @@ describe("rulerTicks", () => {
 
 it("fits short timelines as if they were 10 s long", () => {
   expect(fitZoom(30, 1000, { num: 30, den: 1 })).toBeCloseTo(920 / 300);
+});
+
+it("sizes a track row by its kind and its chosen height", () => {
+  const a = createTrack("audio", "A");
+  expect(trackHeight(a)).toBe(46);
+  expect(trackHeight({ ...a, height: "small" })).toBe(30);
+  expect(trackHeight({ ...a, height: "large" })).toBe(78);
 });

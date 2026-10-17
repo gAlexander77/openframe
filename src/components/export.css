@@ -183,3 +183,4 @@
   .export-body { grid-template-columns: 1fr; }
   .export-frame { max-height: 160px; }
 }
+.export-section-note { margin-left: auto; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }

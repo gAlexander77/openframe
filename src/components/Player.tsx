@@ -4,12 +4,14 @@ import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play, Repeat } f
 import { chordText } from "../lib/keymap";
 import { boxesAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
+import { expandGroups } from "../lib/project/groups";
 import { projectDuration } from "../lib/project/ops";
 import { formatTimecode } from "../lib/time";
 import { isMac } from "../platform/env";
 import { chordFor, provide, run } from "../state/actions";
 import { store, useEditor } from "../state/store";
 import { Meter } from "./Meter";
+import { CropBar } from "./CropOverlay";
 import { TransformOverlay } from "./TransformOverlay";
 import { ViewerGuideControl, ViewerGuides } from "./ViewerGuides";
 import { TrimPreview } from "./TrimPreview";
@@ -63,6 +65,7 @@ export function PlayerPanel() {
   const width = useEditor((s) => s.project.width);
   const height = useEditor((s) => s.project.height);
   const trimPreview = useEditor((s) => s.trimPreview);
+  const cropping = useEditor((s) => s.cropEdit);
   const [box, setBox] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
@@ -124,11 +127,12 @@ export function PlayerPanel() {
         onKeyUp={nudge.up}
         onBlur={nudge.up}
         onDoubleClick={() => run("fullscreenPreview")}
-        onPointerDown={() => {
-          // Click the picture to select what is on top there, as in CapCut.
+        onPointerDown={(e) => {
+          // Click the picture to select what is on top there, as in CapCut;
+          // a grouped picture brings its group, as on the timeline (Alt: alone).
           const s = store.get();
           const hit = topClipAt(s.project, s.playhead);
-          store.select(hit ? [hit.id] : []);
+          store.select(hit ? (e.altKey ? [hit.id] : expandGroups(s.project, [hit.id])) : []);
         }}
       >
         <div className="player-frame" style={{ width: box.w, height: box.h }}>
@@ -139,7 +143,7 @@ export function PlayerPanel() {
         <Meter />
         {trimPreview && <TrimPreview state={trimPreview} />}
       </div>
-      <Transport />
+      {cropping ? <CropBar session={cropping} /> : <Transport />}
     </section>
   );
 }

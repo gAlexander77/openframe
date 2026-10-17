@@ -324,3 +324,42 @@ was merged up to main and finished: the four timeline findings of
 - `scripts/drive/timeline-ux.js` proves each with real pointer drags and
   compares every drop with its preview. The lessons are in the audit's
   Lessons section.
+
+## 2026-10-16 — Canvas tools: crop, masks, several pictures
+
+Build-order items 2, 9 and 18 of [[Feature gaps 2026-10-16]], on the
+`canvas-tools` branch.
+
+- **Crop on the canvas** (CapCut's Crop): the toolbar's crop button or the
+  inspector's opens a crop mode that shows the whole picture with the crop
+  over it, eight handles, the ratios and Reset/Cancel/Done under the
+  viewer, and `set_crop` for agents
+  ([[ADR-048 Crop is cut from the source and edited on a copy]]).
+- **Masks** draw on the viewer while the Mask tab is open, with handles to
+  move, size, turn, feather and round them; heart and star join the
+  shapes, rectangles get round corners, and `set_mask` covers them all
+  ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
+- **Several pictures** selected (or a group) get one box: drag to move
+  them with snapping, a corner to scale them about its center.
+- `scripts/drive/canvas-tools.js` checks every handle against the box it
+  draws and the pixels the compositor renders.
+
+Lessons:
+
+- **Crop before flip.** The compositor mirrored a flipped picture inside
+  its cropped box, so the kept part slid. Premiere crops the source and
+  then flips; doing the same keeps the kept part where the uncropped
+  picture showed it, which a crop mode that dims the rest needs.
+- **Rotate masks in pixels, not fractions.** Rotating in layer fractions
+  shears every shape on a non-square picture. Measuring in layer heights
+  and coming back to fractions along the mask's axes fixes rotation and
+  leaves every unrotated mask pixel-identical.
+- **Offered keyframes must play.** The mask sliders offered keyframes and
+  the keyframe panel named the paths, but the plan passed the stored mask
+  through; nothing caught it until handles needed the animated value.
+- **A session copy beats a long gesture.** A crop mode held open over a
+  store gesture would have had its base replaced by any other drag; a
+  copy in the store, drawn by the player as an override, cannot collide.
+- Drives: a new overlay track lands on top, so pick clips by a property
+  (their color), not by their order in `describe()`; scope a role query
+  to its toolbar when a section toggle shares the name ("Crop").

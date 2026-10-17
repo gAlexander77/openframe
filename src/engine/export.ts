@@ -149,13 +149,14 @@ export function encoderDelay(codec: "aac", bitrate: number): Promise<number> {
 /** The codecs this device can encode for a container at a size and rate,
  * in the container's preference order (for the dialog to grey out). */
 export async function encodableVideoCodecs(format: VideoFormat, width: number, height: number, fps: Rational, bitrate: number): Promise<VideoCodec[]> {
-  const found = await getEncodableVideoCodecs(VIDEO_FORMATS[format].codecs, {
+  if (format === "gif") return ["gif"];
+  const found = await getEncodableVideoCodecs(VIDEO_FORMATS[format].codecs as MediaCodec[], {
     width,
     height,
     frameRate: fps.num / fps.den,
     quality: new Quality({ bitrate }),
   });
-  return VIDEO_FORMATS[format].codecs.filter((c) => found.includes(c));
+  return VIDEO_FORMATS[format].codecs.filter((c) => found.includes(c as MediaCodec));
 }
 
 /** An in-memory export target with positional writes (MP4 patches its
@@ -179,6 +180,9 @@ export function memoryTarget() {
   return { writable, bytes: () => buf.slice(0, size) };
 }
 
+/** The codecs mediabunny encodes (a GIF has its own encoder). */
+type MediaCodec = Exclude<VideoCodec, "gif">;
+
 function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
   // MP4/MOV reserve room for the index up front ("fast start": playable
   // while downloading) - possible because the packet counts are known.
@@ -194,8 +198,9 @@ function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
       return new MkvOutputFormat();
     case "wav":
       return new WavOutputFormat();
+    case "gif": // src/engine/gif.ts writes these
     default:
-      throw new ExportError(`Unknown format ${c satisfies never} for ${plan.fileName}`);
+      throw new ExportError(`Unknown format ${c} for ${plan.fileName}`);
   }
 }
 
@@ -297,7 +302,7 @@ export async function exportProject(
     const v = plan.video;
     if (v) {
       const fmt = VIDEO_FORMATS[plan.container as VideoFormat];
-      const order = [v.codec, ...fmt.codecs.filter((c) => c !== v.codec)];
+      const order = [v.codec, ...fmt.codecs.filter((c) => c !== v.codec)] as MediaCodec[];
       videoCodec = (await guard(
         getFirstEncodableVideoCodec(order, { width: v.width, height: v.height, frameRate: v.fps.num / v.fps.den, quality: new Quality({ bitrate: v.bitrate }) }),
       )) as VideoCodec | null;
@@ -308,7 +313,7 @@ export async function exportProject(
       comp = new Compositor(new OffscreenCanvas(v.width, v.height));
       comp.resize(v.width, v.height);
       video = new CanvasSource(comp.canvas, {
-        codec: videoCodec,
+        codec: videoCodec as MediaCodec,
         quality: new Quality({ bitrate: v.bitrate, bitrateMode: "variable" }),
         keyFrameInterval: 2,
         latencyMode: "quality",

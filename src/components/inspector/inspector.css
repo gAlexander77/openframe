@@ -176,7 +176,7 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 @keyframes demo-pulse { to { transform: scale(1.12); } }
 
 /* masks */
-.mask-shapes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 8px; }
+.mask-shapes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
 .mask-shape {
   display: grid; gap: 4px; justify-items: center; padding: 6px 0;
   border: 1px solid transparent; border-radius: var(--radius); background: var(--bg-2);
@@ -230,8 +230,11 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .attribute-actions { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 
 /* CapCut's align row under Transform */
-.align-bar { display: flex; align-items: center; gap: 2px; width: fit-content; margin-top: 8px; padding: 2px; border-radius: var(--radius); background: var(--bg-inset); }
+.align-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; width: fit-content; max-width: 100%; margin-top: 8px; padding: 2px; border-radius: var(--radius); background: var(--bg-inset); }
 .align-bar-sep { width: 1px; height: 16px; margin: 0 4px; background: var(--line); }
 .flip-pair { display: flex; gap: 2px; }
 .frame-btns { display: flex; gap: 4px; }
 .frame-btns .btn { height: 24px; padding: 0 10px; font-size: var(--fs-xs); }
+.font-picker { display: grid; gap: 4px; min-width: 0; }
+.font-picker-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.font-picker-actions .btn { height: 22px; padding: 0 8px; font-size: var(--fs-xs); }

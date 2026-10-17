@@ -5,6 +5,7 @@ import {
   Bookmark,
   ChartSpline,
   ChevronDown,
+  Crop,
   Crosshair,
   FlipHorizontal2,
   Link2,
@@ -25,6 +26,8 @@ import * as ops from "../lib/project/ops";
 import { clampZoom, ZOOM_MAX, ZOOM_MIN } from "../lib/timeline";
 import { isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
+import { canCrop } from "../lib/crop";
+import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
 import { MenuList } from "./Menu";
 import { VoiceoverButton } from "./VoiceoverButton";
@@ -74,6 +77,8 @@ export function TimelineToolbar() {
     const c = ops.findClip(s.project, id)?.clip;
     return !!c && "transform" in c;
   }));
+  // CapCut's toolbar Crop: one picture at a time.
+  const croppable = useEditor((s) => s.selection.length === 1 && canCrop(s.project, s.selection[0]));
   const [toolMenu, setToolMenu] = useState(false);
   const picker = useRef<HTMLDivElement>(null);
   // The tool menu closes on a click elsewhere or Escape, like every menu.
@@ -146,6 +151,9 @@ export function TimelineToolbar() {
         <Tool id="trimEndToPlayhead" icon={<ArrowRightToLine />} />
         <Tool id="delete" icon={<Trash2 />} disabled={!hasSel} />
         <Tool id="addMarker" icon={<Bookmark />} />
+        <button className="icon-btn" aria-label="Crop" data-tip="Crop" disabled={!croppable} onClick={() => beginCrop(store.get().selection[0])}>
+          <Crop />
+        </button>
         <span className="tl-sep" />
         <Tool id="freeze" icon={<Snowflake />} disabled={!videoSel} />
         <button className="icon-btn" aria-label="Mirror" data-tip="Mirror" disabled={!visualSel} onClick={flip}>

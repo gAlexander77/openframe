@@ -8,10 +8,10 @@ import { projectDuration } from "./project/ops";
 import type { Project } from "./project/types";
 import { FPS_PRESETS, fpsValue, type Rational } from "./time";
 
-export type VideoFormat = "mp4" | "mov" | "webm" | "mkv";
+export type VideoFormat = "mp4" | "mov" | "webm" | "mkv" | "gif";
 export type AudioFormat = "wav" | "m4a";
 export type Container = VideoFormat | AudioFormat;
-export type VideoCodec = "avc" | "hevc" | "vp9" | "av1";
+export type VideoCodec = "avc" | "hevc" | "vp9" | "av1" | "gif";
 export type AudioCodec = "aac" | "opus" | "pcm-s16";
 export type QualityLevel = "lower" | "recommended" | "higher" | "custom";
 export type ResolutionId = "480p" | "720p" | "1080p" | "2k" | "4k";
@@ -23,6 +23,8 @@ export const VIDEO_FORMATS: Record<VideoFormat, { label: string; codecs: VideoCo
   mov: { label: "MOV", codecs: ["avc", "hevc"], audio: "aac", mime: "video/quicktime" },
   webm: { label: "WebM", codecs: ["vp9", "av1"], audio: "opus", mime: "video/webm" },
   mkv: { label: "MKV", codecs: ["avc", "hevc", "vp9", "av1"], audio: "opus", mime: "video/x-matroska" },
+  // Silent; its own encoder (src/engine/gif.ts). The audio entry is unused.
+  gif: { label: "GIF (animated)", codecs: ["gif"], audio: "aac", mime: "image/gif" },
 };
 
 export const AUDIO_FORMATS: Record<AudioFormat, { label: string; codec: AudioCodec; mime: string }> = {
@@ -35,6 +37,7 @@ export const CODEC_LABELS: Record<VideoCodec, string> = {
   hevc: "HEVC (H.265)",
   vp9: "VP9",
   av1: "AV1",
+  gif: "GIF",
 };
 
 /** CapCut's presets. The number names the short side, so "1080p" of a 9:16
@@ -82,6 +85,18 @@ export function defaultResolution(canvas: { width: number; height: number }): Re
 
 /** Frame rates the dialog offers: CapCut's five, plus the project's own
  * when it is another (23.976, 29.97, 59.94), in ascending order. */
+/** GIF rates: low, as GIFs are; 15 is the usual one. */
+export const GIF_FPS: { label: string; fps: Rational }[] = [10, 12, 15, 20, 25].map((n) => ({ label: String(n), fps: { num: n, den: 1 } }));
+/** GIFs are built in memory: these keep the file and the wait sane. */
+export const GIF_LIMITS = { seconds: 60, short: 720 };
+
+/** Frame delays in milliseconds whose centisecond rounding (the GIF's
+ * unit) adds up to the real time, so a 15 fps GIF does not run fast. */
+export function gifDelays(frames: number, fps: Rational): number[] {
+  const cs = (n: number) => Math.round((n * 100 * fps.den) / fps.num);
+  return Array.from({ length: frames }, (_, n) => (cs(n + 1) - cs(n)) * 10);
+}
+
 export function fpsOptions(projectFps: Rational): { label: string; fps: Rational }[] {
   const base = FPS_PRESETS.filter((p) => ["24", "25", "30", "50", "60"].includes(p.label));
   const own = FPS_PRESETS.find((p) => sameRate(p.fps, projectFps)) ?? { label: fpsLabel(projectFps), fps: projectFps };
@@ -100,7 +115,7 @@ export function fpsLabel(fps: Rational): string {
 
 /** Relative bits each codec needs for the same picture (mediabunny's codec
  * efficiency table; AVC is the reference). */
-const CODEC_EFFICIENCY: Record<VideoCodec, number> = { avc: 1, hevc: 0.6, vp9: 0.6, av1: 0.4 };
+const CODEC_EFFICIENCY: Record<VideoCodec, number> = { avc: 1, hevc: 0.6, vp9: 0.6, av1: 0.4, gif: 0 };
 
 /** "Recommended" is YouTube's upload guidance for H.264 SDR: 8 Mbps at
  * 1080p30. Lower halves it, Higher doubles it. */
@@ -267,13 +282,14 @@ export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: numb
     video = { codec, width, height, fps: s.fps, bitrate: videoBitrate(codec, width, height, s.fps, s.quality, s.customMbps) };
     container = s.format;
     mime = fmt.mime;
-    if (s.audio) audio = audioPlan(fmt.audio);
+    if (s.audio && s.format !== "gif") audio = audioPlan(fmt.audio);
   } else {
     container = s.audioFormat;
     mime = AUDIO_FORMATS[s.audioFormat].mime;
     if (s.audio) audio = audioPlan(AUDIO_FORMATS[s.audioFormat].codec);
   }
-  const bits = (video?.bitrate ?? 0) + (audio?.bitrate ?? 0);
+  // A GIF frame runs about a third of a byte per pixel after LZW.
+  const bits = (video?.bitrate ?? 0) + (audio?.bitrate ?? 0) + (video?.codec === "gif" ? video.width * video.height * 0.35 * 8 * (frames / Math.max(seconds, 1e-9)) : 0);
   return {
     fileName: `${safeFileName(s.name)}.${container}`,
     extension: container,
@@ -290,6 +306,42 @@ export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: numb
 
 const audioPlan = (codec: AudioCodec) => ({ codec, bitrate: audioBitrate(codec), sampleRate: EXPORT_SAMPLE_RATE, channels: EXPORT_CHANNELS });
 
+/** What a preset sets: the dialog's choices, never the name or range. */
+export type PresetSettings = Partial<Pick<ExportSettings, "video" | "format" | "codec" | "resolution" | "quality" | "customMbps" | "fps" | "audio" | "audioFormat">>;
+export interface ExportPreset {
+  id: string;
+  label: string;
+  settings: PresetSettings;
+  /** Saved by the viewer, not built in. */
+  own?: boolean;
+}
+
+/** Where videos usually go (CapCut's and Premiere's named presets). A
+ * preset without a frame rate keeps the project's. */
+export const EXPORT_PRESETS: ExportPreset[] = [
+  { id: "youtube-1080", label: "YouTube 1080p", settings: { video: true, format: "mp4", codec: "avc", resolution: "1080p", quality: "recommended", audio: true } },
+  { id: "youtube-4k", label: "YouTube 4K", settings: { video: true, format: "mp4", codec: "avc", resolution: "4k", quality: "recommended", audio: true } },
+  { id: "social", label: "TikTok, Reels and Shorts", settings: { video: true, format: "mp4", codec: "avc", resolution: "1080p", quality: "higher", fps: { num: 30, den: 1 }, audio: true } },
+  { id: "small", label: "Small file (720p)", settings: { video: true, format: "mp4", codec: "avc", resolution: "720p", quality: "lower", audio: true } },
+  { id: "master", label: "High quality master (HEVC)", settings: { video: true, format: "mov", codec: "hevc", resolution: "4k", quality: "higher", audio: true } },
+  { id: "gif", label: "Animated GIF", settings: { video: true, format: "gif", codec: "gif", resolution: "480p", fps: { num: 15, den: 1 }, audio: false } },
+  { id: "wav", label: "Audio only (WAV)", settings: { video: false, audio: true, audioFormat: "wav" } },
+];
+
+/** The preset the settings match, if any. */
+export function matchingPreset(s: ExportSettings, presets: ExportPreset[]): ExportPreset | undefined {
+  return presets.find((pr) =>
+    (Object.entries(pr.settings) as [keyof PresetSettings, unknown][]).every(([k, v]) => JSON.stringify(s[k]) === JSON.stringify(v)),
+  );
+}
+
+/** The settings worth keeping as a preset. */
+export function presetOf(s: ExportSettings): PresetSettings {
+  return s.video
+    ? { video: true, format: s.format, codec: s.codec, resolution: s.resolution, quality: s.quality, ...(s.quality === "custom" ? { customMbps: s.customMbps } : {}), fps: s.fps, audio: s.audio && s.format !== "gif" }
+    : { video: false, audio: true, audioFormat: s.audioFormat };
+}
+
 /** Why the Export button is disabled, in words; null when it is not. */
 export function exportBlocker(p: Project, s: ExportSettings, inOut: { inPoint: number | null; outPoint: number | null }): string | null {
   if (projectDuration(p) === 0) return "The timeline is empty. Add a clip to export.";
@@ -297,6 +349,10 @@ export function exportBlocker(p: Project, s: ExportSettings, inOut: { inPoint: n
   const r = exportRange(p, s.range, inOut.inPoint, inOut.outPoint);
   if (r.to <= r.from) return "The In and Out points mark an empty range.";
   if (s.video && outputFrameCount(r.to - r.from, p.fps, s.fps) === 0) return "The range is shorter than one frame.";
+  if (s.video && s.format === "gif") {
+    if (((r.to - r.from) * p.fps.den) / p.fps.num > GIF_LIMITS.seconds) return `GIFs are limited to ${GIF_LIMITS.seconds} seconds: mark In and Out and export that range.`;
+    if ((RESOLUTIONS.find((x) => x.id === s.resolution)?.short ?? 1080) > GIF_LIMITS.short) return `GIFs go up to ${GIF_LIMITS.short}p: choose a lower resolution.`;
+  }
   return null;
 }
 

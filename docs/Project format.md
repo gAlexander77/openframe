@@ -55,8 +55,9 @@ Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
-          muted, hidden, locked, volume }
+          muted, hidden, locked, volume, solo?, height?: small|large }
 Clip    = video | audio | image | text | color | adjustment   (see types.ts)
+          every clip may carry group?: a shared id that selects and moves together
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
@@ -111,6 +112,36 @@ Any numeric parameter can hold keyframes by path:
   "adjust.wheels.gain.y": [{ "f": 0, "v": 0 }, { "f": 45, "v": 12 }]
 }
 ```
+
+Mask numbers animate the same way (`mask.x`, `mask.y`, `mask.width`,
+`mask.height`, `mask.rotation`, `mask.feather`, `mask.radius`), as CapCut
+keys every mask parameter; crop edges do not.
+
+## Crop and masks
+
+```json
+"crop": { "left": 0.25, "top": 0, "right": 0.25, "bottom": 0.1 },
+"mask": { "shape": "rectangle", "x": 0, "y": -0.1, "width": 0.5, "height": 0.4,
+          "rotation": 15, "feather": 0.05, "invert": false, "radius": 0.3 }
+```
+
+- `crop` trims fractions of the **source** from each edge, before flips,
+  scale and rotation; the part kept stays where the uncropped picture
+  showed it, mirrored with a flip
+  ([[ADR-048 Crop is cut from the source and edited on a copy]]). Each
+  pair leaves at least 5% (`set_crop`).
+- `mask.shape` is `linear`, `mirror`, `circle`, `rectangle`, `heart` or
+  `star`. `x`/`y` move its center from the visible (cropped) picture's
+  center and `width`/`height` size it, as fractions of that picture's
+  width and height; `rotation` turns it rigidly, in degrees clockwise;
+  `feather` 0..1 softens it; `invert` keeps the outside. Linear keeps what
+  is above its line and ignores the size; mirror keeps a band `height`
+  tall.
+- `radius` is optional and only for `rectangle`: 0 (or absent) square, 1
+  rounds each corner by half the shorter side. `heart`, `star` and
+  `radius` came later and are additive: older files load unchanged, and
+  older readers draw no mask for the new shapes
+  ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
 
 `ease` shapes the curve leaving that keyframe: `linear`, `hold`, `easeIn`,
 `easeOut`, `easeInOut`, or a CSS-style bezier `[x1, y1, x2, y2]`. A missing

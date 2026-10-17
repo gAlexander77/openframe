@@ -4,13 +4,17 @@
 // time, so a second export cannot fight the first for the encoder.
 
 import { useSyncExternalStore } from "react";
-import { exportProject, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
+import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
+import { exportGif } from "../engine/gif";
 import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, type ExportPlan, type ExportSettings } from "../lib/export";
 import { toOtio } from "../lib/interchange/otio";
 import { secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { store } from "./store";
+
+/** A GIF has its own encoder; everything else goes through mediabunny. */
+const exportProject = (...a: Parameters<typeof exportVideo>) => (a[1].container === "gif" ? exportGif(...a) : exportVideo(...a));
 
 export type ExportView =
   | { phase: "closed" }

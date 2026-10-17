@@ -222,6 +222,36 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   );
 }
 
+/** CapCut's hover scrub: across a video card, the filmstrip frame under the
+ * pointer, with a line where it is. Uses the timeline's thumbnails, so it
+ * decodes nothing. */
+function HoverScrub({ asset }: { asset: Asset }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [at, setAt] = useState<number | null>(null);
+  const draw = (e: React.PointerEvent<HTMLDivElement>) => {
+    const strip = thumbs.strip(asset);
+    if (!strip || !canvas.current) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = Math.min(Math.max((e.clientX - r.left) / r.width, 0), 1);
+    const frames = strip.frames;
+    let i = Math.min(frames.length - 1, Math.floor(x * frames.length));
+    while (i > 0 && !frames[i]) i--; // still decoding: the nearest earlier one
+    const bmp = frames[i];
+    if (!bmp) return;
+    const c = canvas.current;
+    c.width = bmp.width;
+    c.height = bmp.height;
+    c.getContext("2d")!.drawImage(bmp, 0, 0);
+    setAt(x);
+  };
+  return (
+    <div className="hover-scrub" onPointerMove={draw} onPointerLeave={() => setAt(null)}>
+      <canvas ref={canvas} hidden={at === null} />
+      {at !== null && <span className="hover-scrub-line" style={{ left: `${at * 100}%` }} />}
+    </div>
+  );
+}
+
 function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
@@ -245,6 +275,7 @@ function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: Media
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
+        {!list && asset.kind === "video" && asset.hasVideo && <HoverScrub asset={asset} />}
         {!list && asset.kind !== "image" && <span className="chip num">{formatDuration(asset.duration)}</span>}
         {!list && uses.length > 0 && <span className="badge-added">Added</span>}
         {!list && add}

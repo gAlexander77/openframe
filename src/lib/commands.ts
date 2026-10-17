@@ -18,7 +18,7 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, Ease, Effect, Grade, HslBand, Id, Project, TextStyle, Track, WheelName } from "./project/types";
+import type { Adjust, Clip, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, WheelName } from "./project/types";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
@@ -34,10 +34,13 @@ import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
+import { groupClips, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
-import { alignClips, ALIGNS, distributeClips, frameClips, type Align, type Axis, type Frame } from "./align";
+import { alignClips, ALIGNS, distributeClips, frameClips, pictureAspect, type Align, type Axis, type Frame } from "./align";
+import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
+import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -214,7 +217,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "update_track",
-    description: "Mute, hide, lock, rename or set the volume of a track.",
+    description: "Mute, solo, hide, lock, rename, resize or set the volume of a track.",
     input: S.obj(
       {
         track_id: S.str("Track id"),
@@ -223,13 +226,27 @@ export const COMMANDS: Command[] = [
         hidden: S.bool("Hide the track's picture"),
         locked: S.bool("Prevent edits"),
         volume: S.num("Linear gain, 1 = unchanged", { minimum: 0, maximum: 4 }),
+        solo: S.bool("While any track is soloed, only soloed tracks sound"),
+        height: S.str("Row height on the timeline", { enum: ["small", "normal", "large"] }),
       },
       ["track_id"],
     ),
     run: (p, a) => {
-      const { track_id, ...patch } = a;
+      const { track_id, height, ...patch } = a;
       trackOrThrow(p, track_id);
-      return ops.updateTrack(p, String(track_id), patch as Partial<Track>);
+      // "normal" clears the field (undefined is dropped when saved).
+      return ops.updateTrack(p, String(track_id), { ...patch, ...(height ? { height: height === "normal" ? undefined : height } : {}) } as Partial<Track>);
+    },
+  },
+  {
+    name: "delete_track",
+    description: "Remove a track and its clips. The main track stays.",
+    input: S.obj({ track_id: S.str("Track id") }, ["track_id"]),
+    run: (p, a) => {
+      const t = trackOrThrow(p, a.track_id);
+      if (t.main) throw new CommandError("the main track cannot be deleted");
+      if (t.locked) throw new CommandError("the track is locked");
+      return { ...p, tracks: p.tracks.filter((x) => x.id !== t.id) };
     },
   },
   {
@@ -346,6 +363,27 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "group_clips",
+    description: "Group two or more clips so they select, move, copy and delete together (Premiere's Group). They keep their tracks and settings.",
+    input: S.obj({ clip_ids: S.ids("Clips, two or more") }, ["clip_ids"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      if (new Set(ids).size < 2) throw new CommandError("a group needs two or more clips");
+      return groupClips(p, ids);
+    },
+  },
+  {
+    name: "ungroup_clips",
+    description: "Break up the groups the given clips belong to.",
+    input: S.obj({ clip_ids: S.ids("Clips") }, ["clip_ids"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ungroupClips(p, ids);
+    },
+  },
+  {
     name: "replace_clip",
     description: "Put another media file of the project in a clip's place (CapCut's Replace): the clip keeps its start, length (shorter only if the new source runs out), transform, effects, animations and sound settings, and plays the new source from its start.",
     input: S.obj({ clip_id: S.str("Video, image or audio clip"), asset_id: S.str("Media in the project") }, ["clip_id", "asset_id"]),
@@ -387,6 +425,79 @@ export const COMMANDS: Command[] = [
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       return ops.setFlip(p, ids, { horizontal: a.horizontal as boolean | undefined, vertical: a.vertical as boolean | undefined });
+    },
+  },
+  {
+    name: "set_crop",
+    description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        left: S.num("Fraction trimmed from the source's left", { minimum: 0, maximum: 1 - MIN_CROP }),
+        top: S.num("Fraction trimmed from the top", { minimum: 0, maximum: 1 - MIN_CROP }),
+        right: S.num("Fraction trimmed from the right", { minimum: 0, maximum: 1 - MIN_CROP }),
+        bottom: S.num("Fraction trimmed from the bottom", { minimum: 0, maximum: 1 - MIN_CROP }),
+        ratio: S.str("Crop to this shape, centered", { enum: CROP_RATIOS.filter((r) => r !== "free") }),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      const edges = Object.fromEntries((["left", "top", "right", "bottom"] as const).filter((k) => a[k] !== undefined).map((k) => [k, Number(a[k])])) as Partial<Crop>;
+      for (const id of ids) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("crop" in clip)) throw new CommandError(`${clip.type} clips have no picture to crop`);
+        if (a.ratio === undefined && !validCrop({ ...clip.crop, ...edges })) throw new CommandError(`the crop on ${id} must leave at least ${MIN_CROP * 100}% of the picture each way`);
+      }
+      if (a.ratio !== undefined) {
+        if (Object.keys(edges).length) throw new CommandError("give either edges or a ratio, not both");
+        return cropToRatio(p, ids, a.ratio as CropRatio);
+      }
+      return cropClips(p, ids, edges);
+    },
+  },
+  {
+    name: "set_mask",
+    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height; rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). Values left out keep theirs; animated values get a keyframe at `at`.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        shape: S.str("Mask shape", { enum: ["none", ...MASK_SHAPES] }),
+        x: S.num("Center offset, fraction of the picture's width", { minimum: -1, maximum: 1 }),
+        y: S.num("Center offset, fraction of the picture's height", { minimum: -1, maximum: 1 }),
+        width: S.num("Fraction of the picture's width", { minimum: 0.01, maximum: 2 }),
+        height: S.num("Fraction of the picture's height", { minimum: 0.01, maximum: 2 }),
+        rotation: S.num("Degrees, clockwise", { minimum: -360, maximum: 360 }),
+        feather: S.num("Edge softness", { minimum: 0, maximum: 1 }),
+        radius: S.num("Rectangle corner roundness", { minimum: 0, maximum: 1 }),
+        invert: S.bool("Keep the outside instead"),
+        at: S.num("Timeline seconds, for animated values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
+        if (a.shape === "none") {
+          p = ops.updateClip(p, clip.id, (c) => {
+            const { mask: _, ...rest } = c as Clip & { mask?: unknown };
+            return rest as Clip;
+          });
+          continue;
+        }
+        const now = (clip as { mask?: Mask }).mask;
+        if (!now && a.shape === undefined) throw new CommandError(`clip ${id} has no mask yet: give a shape`);
+        const shape = (a.shape as MaskShape | undefined) ?? now!.shape;
+        let mask: Mask = now ? { ...now, shape } : newMask(shape, pictureAspect(p, clip, clip.start));
+        if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of ["x", "y", "width", "height", "rotation", "feather", "radius"] as const) {
+          if (a[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(a[k]), rel);
+        }
+      }
+      return p;
     },
   },
   {

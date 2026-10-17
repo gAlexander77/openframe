@@ -95,6 +95,43 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
 }
 
 /**
+ * Source seconds [from, to) of an asset's audio at its own rate and channel
+ * count, for tools that write sound back (noise reduction). Samples land by
+ * timestamp, so a gap in the stream stays silent rather than shifting.
+ */
+export async function decodePcm(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal): Promise<{ rate: number; channels: Float32Array[] }> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
+    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    const rate = track.sampleRate;
+    const n = Math.max(0, Math.round((to - from) * rate));
+    const channels = Array.from({ length: Math.min(2, track.numberOfChannels) }, () => new Float32Array(n));
+    const report = throttle(onProgress);
+    let plane = new Float32Array(0);
+    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+      try {
+        signal?.throwIfAborted();
+        const frames = sample.numberOfFrames;
+        if (plane.length < frames) plane = new Float32Array(frames);
+        const base = Math.round((sample.timestamp - t0 - from) * rate);
+        channels.forEach((out, ch) => {
+          sample.copyTo(plane, { planeIndex: Math.min(ch, sample.numberOfChannels - 1), format: "f32-planar" });
+          for (let j = 0; j < frames; j++) if (base + j >= 0 && base + j < n) out[base + j] = plane[j];
+        });
+        report((sample.timestamp - t0 - from) / (to - from));
+      } finally {
+        sample.close();
+      }
+    }
+    return { rate, channels };
+  } finally {
+    input.dispose();
+  }
+}
+
+/**
  * Integrated loudness (LUFS) and sample peak of an asset's source seconds
  * [from, to), streamed through a BS.1770 meter at the source's own rate
  * and channel count, so nothing is held in memory but the meter.

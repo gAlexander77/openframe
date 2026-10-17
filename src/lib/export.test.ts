@@ -5,6 +5,10 @@ import {
   defaultResolution,
   estimateBytes,
   exportBlocker,
+  EXPORT_PRESETS,
+  gifDelays,
+  matchingPreset,
+  presetOf,
   exportRange,
   formatBytes,
   formatEta,
@@ -174,5 +178,36 @@ describe("plan", () => {
     expect(safeFileName('a/b:c*?"<>|d')).toBe("a b c d");
     expect(safeFileName("  name. ")).toBe("name");
     expect(safeFileName("")).toBe("Untitled");
+  });
+});
+
+describe("GIF", () => {
+  it("rounds frame delays to centiseconds without drifting", () => {
+    const d = gifDelays(15, { num: 15, den: 1 });
+    expect(d.reduce((a, b) => a + b, 0)).toBe(1000);
+    expect(new Set(d)).toEqual(new Set([60, 70]));
+    expect(gifDelays(3, { num: 10, den: 1 })).toEqual([100, 100, 100]);
+  });
+  it("plans a silent GIF and limits its length and size", () => {
+    const p = createProject();
+    p.tracks[0].clips = [createColorClip("#fff", 0, 90)];
+    const s = { ...defaultExportSettings(p), format: "gif" as const, codec: "gif" as const, resolution: "480p" as const, fps: { num: 15, den: 1 } };
+    const plan = planExport(p, s, { inPoint: null, outPoint: null });
+    expect(plan).toMatchObject({ container: "gif", audio: null, frames: 45, mime: "image/gif" });
+    expect(plan.estimatedBytes).toBeGreaterThan(0);
+    expect(exportBlocker(p, { ...s, resolution: "1080p" }, { inPoint: null, outPoint: null })).toMatch(/720p/);
+    p.tracks[0].clips = [createColorClip("#fff", 0, 30 * 61)];
+    expect(exportBlocker(p, s, { inPoint: null, outPoint: null })).toMatch(/60 seconds/);
+  });
+});
+
+describe("export presets", () => {
+  it("matches settings to a preset and keeps what a saved one needs", () => {
+    const p = createProject();
+    const s = { ...defaultExportSettings(p), ...EXPORT_PRESETS.find((x) => x.id === "gif")!.settings };
+    expect(matchingPreset(s, EXPORT_PRESETS)?.id).toBe("gif");
+    expect(matchingPreset({ ...s, resolution: "720p" }, EXPORT_PRESETS)).toBeUndefined();
+    expect(presetOf(s)).toMatchObject({ format: "gif", audio: false });
+    expect(presetOf({ ...s, video: false, audioFormat: "m4a" })).toEqual({ video: false, audio: true, audioFormat: "m4a" });
   });
 });

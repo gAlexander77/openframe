@@ -12,6 +12,10 @@ export interface ParamDef {
   max: number;
   default: number;
   step?: number;
+  /** Shown after the number. */
+  unit?: string;
+  /** Names for the whole values min..max: a choice, not a slider. */
+  options?: string[];
 }
 
 // ---- animations --------------------------------------------------------------
@@ -90,12 +94,12 @@ export const EFFECTS: Record<string, EffectDef> = {
   invert: { label: "Invert", category: "Color", params: { amount: amount(100) } },
   posterize: { label: "Posterize", category: "Color", params: { levels: { label: "Levels", min: 2, max: 16, default: 5 } } },
   duotone: { label: "Duotone", category: "Color", params: { amount: amount(100), hue: { label: "Hue", min: 0, max: 360, default: 200 } } },
-  mirror: { label: "Mirror", category: "Distort", params: { mode: { label: "Axis (0 horizontal, 1 vertical, 2 both)", min: 0, max: 2, default: 0, step: 1 } } },
+  mirror: { label: "Mirror", category: "Distort", params: { mode: { label: "Axis", min: 0, max: 2, default: 0, step: 1, options: ["Horizontal", "Vertical", "Both"] } } },
   kaleidoscope: { label: "Kaleidoscope", category: "Distort", params: { segments: { label: "Segments", min: 2, max: 16, default: 6, step: 1 } } },
   fisheye: { label: "Fisheye", category: "Distort", params: { amount: amount(40) } },
   shake: { label: "Camera shake", category: "Motion", params: { amount: amount(40), speed: { label: "Speed", min: 0, max: 100, default: 60 } } },
-  zoomPulse: { label: "Zoom pulse", category: "Motion", params: { amount: amount(30), rate: { label: "Beats per second", min: 0.25, max: 8, default: 2, step: 0.25 } } },
-  flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Flashes per second", min: 0.5, max: 12, default: 4, step: 0.5 } } },
+  zoomPulse: { label: "Zoom pulse", category: "Motion", params: { amount: amount(30), rate: { label: "Rate", unit: "/s", min: 0.25, max: 8, default: 2, step: 0.25 } } },
+  flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 4, step: 0.5 } } },
   glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 60 } } },
   lightLeak: { label: "Light leak", category: "Light", params: { amount: amount(55), speed: { label: "Speed", min: 0, max: 100, default: 30 } } },
 };

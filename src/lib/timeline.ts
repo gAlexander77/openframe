@@ -79,10 +79,9 @@ export function rulerTicks(from: number, to: number, zoom: number, fps: Rational
 /** Lane height in px, following CapCut's sizes: the main track tallest,
  * video tracks with media next, audio, then text/effect-only tracks. */
 export function trackHeight(t: Track): number {
-  if (t.kind === "audio") return 46;
-  if (t.main) return 70;
-  const hasMedia = t.clips.some((c) => c.type === "video" || c.type === "image");
-  return hasMedia || t.clips.length === 0 ? 56 : 34;
+  const base = t.kind === "audio" ? 46 : t.main ? 70 : t.clips.some((c) => c.type === "video" || c.type === "image") || t.clips.length === 0 ? 56 : 34;
+  // Small still fits a clip's label and the header's toggles.
+  return t.height === "small" ? Math.min(base, 30) : t.height === "large" ? Math.round(base * 1.7) : base;
 }
 
 /** A zoom that fits `frames` into `width` px, with breathing room at the

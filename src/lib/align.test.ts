@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alignClips, distributeClips, frameClips, snapBox, snapLines, type Box } from "./align";
+import { alignClips, distributeClips, frameClips, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
 import { clipForAsset, createColorClip, createProject, createTrack } from "./project/defaults";
 import type { Clip, Project } from "./project/types";
 
@@ -81,6 +81,19 @@ it("snaps the nearest edge or center within tolerance", () => {
   expect(snapBox(moving, lines, 2)).toMatchObject({ dx: 0, dy: 0, gx: undefined, gy: undefined });
 });
 
+it("mirrors a crop with a flipped picture, as the compositor draws it", () => {
+  const p = createProject(), c = color(0, 1);
+  c.crop = { left: 0.5, top: 0, right: 0, bottom: 0 }; // the source's right half
+  c.transform.flipX = true; // which a mirror shows on the canvas's left
+  p.tracks[0].clips = [c];
+  // Flush right moves the visible half 960 px; unflipped it would already be there.
+  expect(at(alignClips(p, [c.id], "right", 0), c.id).transform.x).toBeCloseTo(0.5);
+  c.transform.flipX = false;
+  c.transform.flipY = true;
+  c.crop = { left: 0, top: 0.5, right: 0, bottom: 0 };
+  expect(at(alignClips(p, [c.id], "bottom", 0), c.id).transform.y).toBeCloseTo(0.5);
+});
+
 it("measures a stretched picture by its own vertical scale", () => {
   const p = createProject(), c = color(0, 1);
   c.transform.scaleY = 0.5; // full width, half height
@@ -104,4 +117,38 @@ it("fits, fills and stretches a picture to the canvas, centered", () => {
   expect(s.scale).toBeCloseTo(16 / 9, 5);
   expect(s.scaleY).toBe(1);
   expect(get(frameClips(frameClips(p, [img.id], "stretch", 0), [img.id], "fit", 0)).transform.scaleY).toBeUndefined();
+});
+
+it("boxes a multi-selection's showing pictures and scales them about its center", () => {
+  const p = createProject();
+  const [a, b, later, hidden] = [color(0, 0.1), color(0, 0.1), color(100, 0.1), color(0, 0.1)];
+  a.transform.x = -0.3;
+  b.transform.x = 0.1;
+  b.transform.y = 0.2;
+  p.tracks = [
+    { ...createTrack("video", "Main", true), clips: [a, later] },
+    { ...createTrack("video", "B"), clips: [b] },
+    { ...createTrack("video", "H"), hidden: true, clips: [hidden] },
+  ];
+  const ids = [a.id, b.id, later.id, hidden.id];
+  // 192x108 boxes centered at (384, 540) and (1152, 756); the others are not showing.
+  const g = groupBoxes(p, ids, 10)!;
+  expect(g.items.map((i) => i.clip.id)).toEqual([a.id, b.id]);
+  expect(g.box).toMatchObject({ cx: 768, cy: 648, hw: 480, hh: 162 });
+  const q = scaleClips(p, ids, 2, 10);
+  expect(at(q, a.id).transform).toMatchObject({ x: -0.5, y: expect.closeTo(-0.1), scale: 0.2 });
+  expect(at(q, b.id).transform).toMatchObject({ x: 0.3, y: expect.closeTo(0.3), scale: 0.2 });
+  expect(groupBoxes(q, ids, 10)!.box).toMatchObject({ cx: expect.closeTo(768), cy: expect.closeTo(648), hw: expect.closeTo(960), hh: expect.closeTo(324) });
+  expect(at(q, later.id)).toBe(later);
+  // Never below 1%.
+  expect(at(scaleClips(p, ids, 0.001, 10), a.id).transform).toMatchObject({ scale: 0.01 });
+  expect(groupBoxes(p, [later.id], 10)).toBeNull();
+});
+
+it("lists the other showing pictures' boxes for snapping", () => {
+  const p = createProject();
+  const [a, b] = [color(0, 0.1), color(0, 0.2)];
+  p.tracks = [{ ...createTrack("video", "Main", true), clips: [a] }, { ...createTrack("video", "B"), clips: [b] }];
+  expect(otherBoxes(p, 10, [a.id]).map((x) => x.w)).toEqual([384]);
+  expect(otherBoxes(p, 10, [a.id, b.id])).toEqual([]);
 });

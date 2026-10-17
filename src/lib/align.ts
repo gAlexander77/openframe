@@ -47,8 +47,9 @@ export interface Box {
   hh: number;
 }
 
-/** The on-canvas box of a layer: crop moves its center, rotation widens its
- * extent. */
+/** The on-canvas box of a layer: crop moves its center (mirrored by a flip,
+ * since the crop is cut from the source first: ADR-048), rotation widens
+ * its extent. */
 export function layerBox(p: Project, c: VisualClip, layer: Layer): Box {
   const src = sourceSize(p, c);
   const fit = src.native ? 1 : Math.min(p.width / src.w, p.height / src.h);
@@ -58,8 +59,8 @@ export function layerBox(p: Project, c: VisualClip, layer: Layer): Box {
   const h = Math.abs(src.h * sv * (1 - top - bottom));
   const rad = (layer.rotation * Math.PI) / 180;
   const cos = Math.cos(rad), sin = Math.sin(rad);
-  const sx = ((left - right) / 2) * src.w * s;
-  const sy = ((top - bottom) / 2) * src.h * sv;
+  const sx = ((left - right) / 2) * src.w * s * (layer.flipX ? -1 : 1);
+  const sy = ((top - bottom) / 2) * src.h * sv * (layer.flipY ? -1 : 1);
   return {
     cx: p.width / 2 + layer.x * p.width + cos * sx - sin * sy,
     cy: p.height / 2 + layer.y * p.height + sin * sx + cos * sy,
@@ -68,6 +69,14 @@ export function layerBox(p: Project, c: VisualClip, layer: Layer): Box {
     hw: (Math.abs(cos) * w + Math.abs(sin) * h) / 2,
     hh: (Math.abs(sin) * w + Math.abs(cos) * h) / 2,
   };
+}
+
+/** The visible picture's width over its height at a frame (crop and
+ * Scale Y included): what a mask's fractions are measured against. */
+export function pictureAspect(p: Project, c: VisualClip, frame: number): number {
+  const layer = layerAt(p, c, frame);
+  const b = layer && layerBox(p, c, layer);
+  return b && b.h > 0 ? b.w / b.h : p.width / p.height;
 }
 
 export interface Rect {
@@ -125,6 +134,9 @@ export function snapLines(p: Project, others: Box[]): { x: number[]; y: number[]
   return { x, y };
 }
 
+/** Screen pixels within which a dragged edge or center catches a line. */
+export const SNAP = 6;
+
 /** The nearest line within `tol` of the box's edges or center, per axis:
  * the extra shift to land on it and the line, for the guide. */
 export function snapBox(b: Box, lines: { x: number[]; y: number[] }, tol: number) {
@@ -175,10 +187,73 @@ function shift(p: Project, items: { clip: VisualClip; rel: number }[], shifts: {
   return p;
 }
 
-/** Move pictures by whole pixels (the viewer's arrow keys). */
+/** Move pictures by whole pixels (the viewer's arrow keys), or by a
+ * multi-selection's drag. */
 export function nudgeClips(p: Project, ids: Id[], dx: number, dy: number, frame: number): Project {
   const items = boxesAt(p, ids, frame);
   return shift(p, items, items.map(() => ({ dx, dy })));
+}
+
+/** Clips the viewer shows at `frame`: under it, enabled, on a shown video
+ * track. */
+function shownAt(p: Project, frame: number): Set<Id> {
+  const out = new Set<Id>();
+  for (const t of p.tracks) {
+    if (t.kind !== "video" || t.hidden) continue;
+    for (const c of t.clips) if (!c.disabled && c.start <= frame && frame < c.start + c.duration) out.add(c.id);
+  }
+  return out;
+}
+
+/** The boxes of the visible pictures other than `except` at `frame`, as
+ * drawn there: what a dragged box snaps to. */
+export function otherBoxes(p: Project, frame: number, except: Id[]): Box[] {
+  const shown = shownAt(p, frame);
+  const out: Box[] = [];
+  for (const t of p.tracks) {
+    for (const c of t.clips) {
+      if (!shown.has(c.id) || except.includes(c.id) || c.type === "audio" || c.type === "adjustment") continue;
+      const l = layerAt(p, c, frame);
+      if (l) out.push(layerBox(p, c, l));
+    }
+  }
+  return out;
+}
+
+/** A multi-selection on the viewer: the selected pictures showing at
+ * `frame`, at rest (ADR-045), and the one box around them all. */
+export function groupBoxes(p: Project, ids: Id[], frame: number) {
+  const shown = shownAt(p, frame);
+  const items = boxesAt(p, ids.filter((id) => shown.has(id)), frame);
+  if (!items.length) return null;
+  const r = items.map((i) => rectOf(i.box)).reduce((a, b) => ({
+    left: Math.min(a.left, b.left), top: Math.min(a.top, b.top), right: Math.max(a.right, b.right), bottom: Math.max(a.bottom, b.bottom),
+  }));
+  const hw = (r.right - r.left) / 2, hh = (r.bottom - r.top) / 2;
+  const box: Box = { cx: r.left + hw, cy: r.top + hh, w: 2 * hw, h: 2 * hh, hw, hh };
+  return { items, box };
+}
+
+/** Scale the showing pictures among `ids` together by `k` about their
+ * combined center: each scale grows and each position moves out from the
+ * center with it, so the arrangement scales as one (Premiere's and
+ * CapCut's multi-selection corners). No picture goes below 1%. */
+export function scaleClips(p: Project, ids: Id[], k: number, frame: number): Project {
+  const g = groupBoxes(p, ids, frame);
+  if (!g) return p;
+  const at = (c: VisualClip, rel: number, path: string) => paramAt(c, path, rel);
+  for (const { clip, rel } of g.items) k = Math.max(k, 0.01 / Math.max(1e-6, Math.min(at(clip, rel, "transform.scale"), clip.transform.scaleY === undefined ? Infinity : at(clip, rel, "transform.scaleY"))));
+  const { cx, cy } = g.box;
+  for (const { clip, rel } of g.items) {
+    // The layer's center moves out from the group's center exactly as its
+    // box's does: a crop's offset scales with the picture.
+    const lx = p.width / 2 + at(clip, rel, "transform.x") * p.width, ly = p.height / 2 + at(clip, rel, "transform.y") * p.height;
+    p = setParam(p, [clip.id], "transform.scale", +(at(clip, rel, "transform.scale") * k).toFixed(4), rel);
+    if (clip.transform.scaleY !== undefined) p = setParam(p, [clip.id], "transform.scaleY", +(at(clip, rel, "transform.scaleY") * k).toFixed(4), rel);
+    p = setParam(p, [clip.id], "transform.x", tidy((cx + k * (lx - cx) - p.width / 2) / p.width), rel);
+    p = setParam(p, [clip.id], "transform.y", tidy((cy + k * (ly - cy) - p.height / 2) / p.height), rel);
+  }
+  return p;
 }
 
 /** Align one clip to the canvas, or several to their combined bounds, as

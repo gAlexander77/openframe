@@ -185,3 +185,8 @@
 .card:hover .sticker-thumb img { transform: scale(1.12) rotate(-5deg); }
 .card:active .sticker-thumb img { transform: scale(0.94); }
 .thumb-wait { width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--bg-3); opacity: 0.6; }
+
+/* CapCut's hover scrub over video cards */
+.hover-scrub { position: absolute; inset: 0; }
+.hover-scrub canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.hover-scrub-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent); pointer-events: none; }

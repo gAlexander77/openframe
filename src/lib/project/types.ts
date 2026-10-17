@@ -103,6 +103,11 @@ export interface Track {
   locked: boolean;
   /** Linear gain, 1 = 0 dB. */
   volume: number;
+  /** Solo: while any track is soloed, only soloed tracks sound (Premiere's
+   * and Resolve's S). Absent = off. */
+  solo?: boolean;
+  /** Row height on the timeline; absent = the usual height for its kind. */
+  height?: "small" | "large";
 }
 
 export interface Marker {
@@ -140,6 +145,9 @@ interface ClipBase {
   name?: string;
   /** Kept on the timeline, skipped by preview and export. */
   disabled?: boolean;
+  /** Clips sharing a group select, move, copy and delete together
+   * (Premiere's Group). */
+  group?: Id;
   /** Animated parameters by path ("transform.x", "opacity", "volume",
    * "adjust.exposure", "adjust.hsl.red.hue", "adjust.wheels.lift.y",
    * "adjust.lut.intensity", "effects.<effectId>.<param>"). A path with
@@ -267,16 +275,24 @@ export interface Animation {
 }
 
 export interface Mask {
-  shape: "linear" | "mirror" | "circle" | "rectangle";
+  /** heart and star came later (ADR-049): readers that predate them draw
+   * no mask for them. */
+  shape: "linear" | "mirror" | "circle" | "rectangle" | "heart" | "star";
   /** Center, as an offset from the layer center in layer fractions. */
   x: number;
   y: number;
+  /** Size along the mask's own axes, as fractions of the layer's width and
+   * height. The shape turns rigidly on the layer (ADR-049). */
   width: number;
   height: number;
+  /** Degrees, clockwise. */
   rotation: number;
   /** 0..1 softness of the edge. */
   feather: number;
   invert: boolean;
+  /** Rectangle only: round corners, 0 square to 1 a radius of half the
+   * shorter side. Absent = 0. */
+  radius?: number;
 }
 
 export interface ChromaKey {

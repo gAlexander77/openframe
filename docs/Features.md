@@ -31,6 +31,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   DNxHR, MPEG-2...) gets an FFmpeg proxy when FFmpeg is installed; the web
   build refuses it with the codec named.
 - Background filmstrips and waveforms, two files at a time.
+- **Hover scrub** on video cards, as in CapCut: moving across a card shows
+  the frame under the pointer, with a line, from the timeline's
+  thumbnails (nothing extra decodes).
 - Phone footage rotation honored.
 - **Media organization:** combined name/type/used/unused filtering; import
   order, natural name and source-duration sorts; grid or compact metadata
@@ -76,6 +79,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   there, whatever is selected); a transition marks its cut. The preview is
   a dry run of the drop itself
   ([[ADR-046 A drop preview is a dry run of the drop]]).
+- **Group clips** (Ctrl+G; Ctrl+Shift+G ungroups; Edit menu and
+  right-click; `group_clips`, `ungroup_clips`): grouped clips select,
+  move, copy and delete together across tracks, each keeping its own
+  settings; Alt+click picks one alone, as in Premiere. Pasted copies form
+  their own group.
 - **Replace clip** (right-click, as in CapCut; `replace_clip`): pick a
   file and it takes the clip's place, keeping its start, length (shorter
   only if the new source runs out), transform, effects, animations and
@@ -90,6 +98,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,
   Premiere's default audio transition, in preview and export alike.
+- **Track header**: Solo on audio tracks (while any track is soloed, only
+  soloed tracks sound); right-click for Rename (or double-click), Solo,
+  Track volume (a dB fader, one undo step per drag), Small/Normal/Large
+  height and Delete track. Agents: `update_track` (solo, height) and
+  `delete_track`.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
 - **Record voiceover** (the microphone in the timeline toolbar, as in
   CapCut): pick the input, optionally mute the project, then a 3-second
@@ -104,14 +117,45 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
   clamped source times, one-step Undo and gesture cancellation.
 
+## Workspace
+
+- **Proportional panels**: library, player, inspector and timeline sizes
+  are kept as shares of the window, so a bigger screen grows them all
+  (CapCut's behavior). Drag the splitters (double-click resets one); View
+  has Default, Large preview and Large timeline layouts and Reset layout.
+
 ## Viewer
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
   19 effects, 20 transitions, 17 looks, adjustment layers.
+- **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
+  rectangle with round corners, heart and star, with feather and invert;
+  every number takes keyframes, and a rotated mask turns rigidly on any
+  picture shape ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
+  While the Mask tab is open the viewer draws the mask's outline on the
+  picture, rotated and mirrored with it: drag inside to move it, the edge
+  handles to size it, the knob to turn it (45° catches; Ctrl turns
+  freely), the arrow to feather it and a rectangle's corner dot to round
+  it. Each drag is one undo step and keys animated numbers.
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
   and center to the canvas's and to other visible pictures', with a guide
   at the line; Ctrl moves freely, Shift keeps one axis.
+- **Several pictures at once** (a multi-selection or a group): the viewer
+  draws one box around the selected pictures showing under the playhead,
+  each outlined inside it. Drag inside to move them all, with the same
+  edge and center snapping; drag a corner to scale them together about
+  the box's center, positions and sizes alike. Each drag is one undo step.
+  Clicking a grouped picture on the viewer selects its group, as on the
+  timeline (Alt picks it alone).
+- **Crop on the canvas** (CapCut's Crop): the crop button in the timeline
+  toolbar or the Crop section of the inspector shows the whole picture with
+  the crop drawn over it, dimmed outside. Drag the eight handles, or the
+  crop itself; ratios under the viewer (Free, Original, 16:9, 9:16, 1:1,
+  4:3, 3:4, 4:5, 21:9) crop the largest centered area of that shape and
+  keep it while dragging. Reset, Cancel (or Escape) and Done (or Enter);
+  Done is one undo step. Works on rotated and mirrored pictures
+  ([[ADR-048 Crop is cut from the source and edited on a copy]]).
 - **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
   framing; `frame_clips`): fit shows the whole picture, fill covers the
   canvas and crops the overflow, stretch covers it exactly; each centers.
@@ -246,6 +290,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   has settled (under reduced motion it goes straight there), so the viewer
   never shows an empty box
   ([[ADR-047 A new title shows by playing its In animation]]).
+- **Fonts**: the built-in list, **Import font…** (TTF, OTF, WOFF; kept
+  per viewer and loaded at startup, so preview, export and headless
+  renders draw it) and **Installed fonts** (the computer's families through
+  Local Font Access, asked once). A project whose font is missing here
+  says so in the picker and falls back to the system font.
 - **Word art**: 16 looks (neon, retro, comic, hollow, gold, fire, frost,
   candy, die-cut, chromatic, typewriter, highlight...) from fill, stroke,
   shadow and box combinations. Click with text selected (or drop on a
@@ -276,7 +325,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
   loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) and **Auto
-  ducking** (music dips under speech as editable volume keyframes) in the
+  ducking** (music dips under speech as editable volume keyframes) and
+  **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
+  a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
 - **Copilot**: ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
@@ -288,6 +339,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   rate, in/out range, audio-only (WAV/M4A/...) and still frames.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
+- **Presets** at the top of the dialog: YouTube 1080p and 4K, TikTok,
+  Reels and Shorts, Small file (720p), High quality master (HEVC),
+  Animated GIF and Audio only (WAV); changed settings read Custom and can
+  be saved under a name (per viewer) and deleted.
+- **Animated GIF** (Format: GIF, or the Animated GIF preset): the same
+  frames the video export draws, 256 colors per frame (gifenc), 10 to 25
+  fps with delays that add up to the real duration, silent, up to 720p
+  and 60 seconds (it is built in memory). The GIF drive reads every frame
+  back against the framecode fixture.
 - **Timeline as OpenTimelineIO** (File > Export timeline): tracks, gaps,
   transitions, speed, titles and markers for DaVinci Resolve, Premiere's
   OTIO plugin and other editors
@@ -325,6 +385,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - CapCut's in-app shortcut list, Premiere's where CapCut has none
   (`src/lib/keymap.ts`); a searchable shortcuts panel; tooltips show each
   button's chord, read from the keymap.
+- **Custom shortcuts**, as in Premiere's Keyboard Shortcuts: Change on any
+  row and press the new keys; a chord another action uses is named and
+  moves only on Replace. Remove, per-row reset and Reset all; changes are
+  per viewer and survive restarts.
 
 ## Automation
 
@@ -342,4 +406,6 @@ Three doors, one engine ([[Automation]]):
   (preset or bezier), `remove_keyframes`.
 - Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
-- Layout commands: `align_clips`, `distribute_clips`.
+- Layout commands: `align_clips`, `distribute_clips`, `set_crop`
+  (edges as source fractions, or the largest centered crop of a ratio) and
+  `set_mask` (any shape and number, or none).

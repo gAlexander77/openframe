@@ -118,6 +118,19 @@ function resolveEffects(clip: Clip & { effects: { id: Id; type: string; enabled:
     }));
 }
 
+/** The mask's numbers that animate (CapCut keys every mask parameter). */
+const MASK_PARAMS = ["x", "y", "width", "height", "rotation", "feather", "radius"] as const;
+
+/** The clip's mask at frame r, keyframes applied; the stored object when
+ * nothing on it is animated. */
+function resolveMask(clip: VisualClip, r: number): Mask | undefined {
+  const m = clip.mask;
+  if (!m || !MASK_PARAMS.some((k) => clip.keyframes?.[`mask.${k}`]?.length)) return m;
+  const out = { ...m };
+  for (const k of MASK_PARAMS) if (m[k] !== undefined || clip.keyframes?.[`mask.${k}`]?.length) out[k] = paramAt(clip, `mask.${k}`, r);
+  return out;
+}
+
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 function mixAnim(from: Partial<AnimState>, t: number): AnimState {
@@ -208,7 +221,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number): Layer | null {
     tone,
     grade: resolveGrade(p, clip, r),
     effects: resolveEffects(clip, r),
-    mask: clip.mask,
+    mask: resolveMask(clip, r),
     chromaKey: clip.chromaKey?.enabled ? clip.chromaKey : undefined,
     blur: anim.blur,
     time: framesToSeconds(r, p.fps),

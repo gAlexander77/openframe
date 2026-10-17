@@ -8,10 +8,12 @@ import "./automation";
 import { restoreAgents } from "./components/AgentsSection";
 import { installTooltips } from "./components/tooltip";
 import { runHeadlessIfAsked } from "./state/headless";
+import { loadSavedFonts } from "./state/fonts";
 
 installTooltips();
 void restoreAgents();
-void runHeadlessIfAsked();
+// A headless render draws titles in imported fonts too.
+void loadSavedFonts().finally(() => runHeadlessIfAsked());
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

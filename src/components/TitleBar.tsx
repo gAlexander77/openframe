@@ -11,6 +11,8 @@ import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { openMarkers } from "../state/markers";
+import { LAYOUT_PRESETS, type LayoutPreset } from "../lib/layout";
+import { applyLayoutPreset, currentLayout } from "../state/layout";
 import { MenuBar, type MenuItem } from "./Menu";
 import { VIEWER_GUIDES } from "./ViewerGuides";
 import { SaveCopyDialog } from "./SaveCopyDialog";
@@ -85,6 +87,9 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "selectAll" },
         { action: "deselect" },
+        "-",
+        { action: "groupClips", disabled: s().selection.length < 2 },
+        { action: "ungroupClips" },
       ],
     },
     {
@@ -124,6 +129,13 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
         { label: "Markers", checked: s().leftTab === "markers" && !s().scopes, onSelect: () => openMarkers() },
         { action: "fullscreenPreview" },
+        "-",
+        ...(Object.entries(LAYOUT_PRESETS) as [LayoutPreset, (typeof LAYOUT_PRESETS)[LayoutPreset]][]).map(([id, p]) => ({
+          label: `${p.label} layout`,
+          checked: JSON.stringify(currentLayout()) === JSON.stringify(p.layout),
+          onSelect: () => applyLayoutPreset(id),
+        })),
+        { label: "Reset layout", onSelect: () => applyLayoutPreset("default") },
       ],
     },
     { label: "Help", items: () => [{ action: "showShortcuts" }, { label: `About ${APP_NAME}`, onSelect: () => toast(`${APP_NAME} v${__APP_VERSION__}`), hint: `v${__APP_VERSION__}` }] },

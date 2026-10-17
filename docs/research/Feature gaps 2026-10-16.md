@@ -65,10 +65,10 @@ Guides are in `src/components/ViewerGuides.tsx`.
 | Snap to safe-margin and thirds lines | P | no; the guides draw but do not catch | P2 | Add the 5%/10% insets and thirds to the snap targets in `align.ts` while `viewerGuides` is on. |
 | Arrow-key nudge of the selected layer (1 px; Shift 10 px) | C P | no; arrows step frames (`stepBack`/`stepForward`) | P1 | CapCut's help confirms 1 px nudging. Scope it to viewer focus so frame stepping keeps the arrows elsewhere. Add `nudge*` actions in `keymap.ts`, written through `setParam`. One undo step per burst. |
 | Viewer zoom and pan (Fit, 25% to 400%) | C P R F | no | P1 | CapCut documents zoom up to 400%. Session state in the store, never the project. Scale the stage in `Player.tsx`; `TransformOverlay` already maps through W/H. Middle-drag or Space-drag pans. |
-| On-canvas handles for a multi-selection | C P | partial: align works on several clips, but handles draw only when `sel.length === 1` | P1 | Draw the union box of the `align.ts` boxes and apply the same delta or scale to each clip in one gesture. |
+| On-canvas handles for a multi-selection | C P | yes (`GroupOverlay.tsx`, `groupBoxes`/`scaleClips` in `align.ts`) | — | Shipped `23c1d14`: one box, move with snapping, corners scale about its center. |
 | Edge handles that stretch one axis | P R F V | partial: Scale X/Y exists (`d94ef4f`); handles are corners only | P2 | Add side handles that write `transform.scale` or `transform.scaleY` alone. |
-| Crop on the canvas | C P R V F | no; crop is four inspector sliders | P1 | Add a crop mode to `TransformOverlay` that drags edges into `crop.*`. See also crop ratio presets (§2). |
-| Mask handles on the canvas | C P R V F | no; mask is inspector sliders only | P1 | A `MaskOverlay` sibling of `TransformOverlay` for center, size, rotation and feather. The mask math is already in the compositor. |
+| Crop on the canvas | C P R V F | yes (`CropOverlay.tsx`, `state/cropEdit.ts`) | — | Shipped `e09a3f7` ([[ADR-048 Crop is cut from the source and edited on a copy]]); flips fixed in `8cd42ae`. |
+| Mask handles on the canvas | C P R V F | yes (`MaskOverlay.tsx`, `lib/mask.ts`) | — | Shipped `d89987f`: move, size, rigid rotate, feather arrow, corner radius; mask keyframes now play (`eb0f6f7`). |
 | Motion path for animated position | P R F | no | P2 | Draw `transform.x/y` keyframes as a polyline with draggable points. Spatial beziers need a new keyframe field (an ADR). |
 | Rulers, draggable guides, grid | P | partial: thirds and safe margins only | P2 | Guides stay session-only, like `viewerGuides`, and become snap targets. |
 | Transparency checkerboard | P R F | no; `Project.background` fills behind every layer | P2 | Only useful once alpha export exists (§12). |
@@ -90,7 +90,7 @@ are written with `setParam` (`src/lib/project/ops.ts`) and drawn by
 | Flip horizontal and vertical in the inspector | C P R F | partial: the toolbar Mirror flips X (`TimelineToolbar.tsx`); `flipY` has no UI; neither has a command | P1 | Two toggle buttons in `TransformSection`. Add `set_flip`, since `set_param` is numeric. |
 | Rotate dial | C | no; slider and number only | P2 | A small dial control in `controls.tsx`. |
 | Anchor point | P R V F | no; rotation and scale pivot on the layer center | P1 | Add optional `anchorX/anchorY` to `Transform` (absent = center, so old files stay valid). Pivot the matrix in `compositor.ts` and `plan.ts` around it. Add an anchor handle to the overlay and update `align.ts`. |
-| Crop with ratio presets (Free, 16:9, 9:16, 1:1, 4:3...) | C | partial: four free sliders, no lock (`Inspector.tsx` Crop section) | P0 | CapCut's toolbar Crop is a ratio-locked dialog. Put the ratio math in `src/lib/` with a test, add a ratio row to the Crop section and the canvas crop mode, and add a `set_crop` command. |
+| Crop with ratio presets (Free, 16:9, 9:16, 1:1, 4:3...) | C | yes (`lib/crop.ts`, `set_crop`) | — | Shipped `68d15cf` and `e09a3f7`: Free, Original and seven ratios under the viewer in the crop mode. |
 | Crop softness | R | no | P2 | Feather term in the crop shader. |
 | Fit, Fill and Stretch quick actions | P R F OSS | partial: media fit (scale 1 = contain); no Fill or Stretch action | P1 | Fill = cover scale from `align.ts` `sourceSize`; Stretch uses Scale X/Y. Add a `fit_clips` command (mode fit, fill or stretch). Shotcut places these next to its align buttons. |
 | Position presets (PIP corner at a set size) | R F | partial: align covers edges | P2 | Presets that call align plus a scale. |
@@ -252,7 +252,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Linear, mirror, circle and rectangle masks with feather and invert | C P R V F | yes | — | — |
-| Heart and star shapes; rounded rectangle corners | C | no | P2 | SDFs in the mask shader. S. |
+| Heart and star shapes; rounded rectangle corners | C | yes (`set_mask`) | — | Shipped `8d8417e` ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]). |
 | Bezier pen mask | P R V F | no | P2 | Polygon SDF texture; L with on-canvas editing. |
 | Several masks per clip | P R | no; `mask?` holds one | P2 | — |
 | Mask tracking | P R V | no | P2 | After the tracker (§11). |
@@ -401,14 +401,16 @@ a new panel, **L** a new model, analysis pass or engine path.
 
 1. **Land `timeline-ux`** (UX-12 overlay on drop, UX-13 truthful drop
    preview, UX-14 linkage). S. Coordinate with the branch owner.
-2. **Crop with ratio presets and on-canvas crop.** M.
+2. **Crop with ratio presets and on-canvas crop.** M. Shipped (`68d15cf`,
+   `e09a3f7`; flips `8cd42ae`).
 3. **Record voiceover.** M. Shipped (`601d895`).
 4. **System fonts in the picker, plus font file import.** M.
 5. **Arrow-key nudge in the viewer** (1 px, Shift 10 px). S.
 6. **Viewer zoom and pan.** M.
 7. **Flip H/V buttons in Transform, plus a `set_flip` command.** S.
 8. **Track solo, track volume and rename in the header.** S.
-9. **Multi-selection transform handles on the canvas.** M.
+9. **Multi-selection transform handles on the canvas.** M. Shipped
+   (`23c1d14`).
 10. **Group and ungroup (Ctrl+G).** M.
 11. **Replace clip.** S.
 12. **Clip nudge by frames, and close or delete gaps.** S.
@@ -418,6 +420,7 @@ a new panel, **L** a new model, analysis pass or engine path.
 16. **Layout presets, proportional defaults, Reset layout** (UX-30). S.
 17. **Fit / Fill / Stretch quick actions.** S.
 18. **Mask handles on the canvas, plus heart, star and rounded corners.** M.
+    Shipped (`8d8417e`, `d89987f`).
 19. **Named export presets and GIF export.** M.
 20. **Word-level captions: karaoke highlight and filler-word removal.** M.
 21. **Custom key bindings with conflict warnings.** M.

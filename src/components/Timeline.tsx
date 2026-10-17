@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { player } from "../engine/player";
-import { Blend, Eye, EyeOff, Film, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
+import { Blend, Eye, EyeOff, Film, Headphones, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
+import { fromDb, toDb } from "../lib/audio";
 import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
 import { placeOnTop } from "../lib/overlays";
 import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
 import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
+import { expandGroups } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
 import { STICKER_SECONDS } from "../lib/stickers";
@@ -316,9 +319,11 @@ export function Timeline() {
         return;
       }
       let sel = s.selection;
+      // A grouped clip brings its group; Alt picks it alone (Premiere).
+      const picked = e.altKey ? [clip.id] : expandGroups(s.project, [clip.id]);
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
-        sel = sel.includes(clip.id) ? sel.filter((x) => x !== clip.id) : [...sel, clip.id];
-      } else if (!sel.includes(clip.id)) sel = [clip.id];
+        sel = sel.includes(clip.id) ? sel.filter((x) => !picked.includes(x)) : [...new Set([...sel, ...picked])];
+      } else if (!sel.includes(clip.id)) sel = picked;
       store.select(sel);
       if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
         gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
@@ -373,7 +378,8 @@ export function Timeline() {
         if (top + row.height < box.y || top > box.y + box.h) return [];
         return row.track.clips.filter((c) => c.start < f1 && c.start + c.duration > f0).map((c) => c.id);
       });
-      store.select(g.additive ? [...new Set([...g.base, ...hit])] : hit);
+      const grouped = expandGroups(store.get().project, hit);
+      store.select(g.additive ? [...new Set([...g.base, ...grouped])] : grouped);
       return;
     }
     if (!g.started) {
@@ -631,6 +637,8 @@ export function Timeline() {
       { action: "freeze", disabled: clip.type !== "video" },
       { action: "detachAudio", disabled: clip.type !== "video" },
       { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
+      { action: "groupClips", disabled: store.get().selection.length < 2 },
+      ...(clip.group ? ([{ action: "ungroupClips" }] as MenuItem[]) : []),
       "-",
       { action: "toggleKeyframePanel", label: "Show keyframe animation", checked: store.get().keyframePanel },
       { action: "rangeToClip" },
@@ -730,7 +738,7 @@ export function Timeline() {
                     );
                   })}
                 </div>
-                <TrackHeader track={row.track} />
+                <TrackHeader track={row.track} openMenu={(x, y, items) => setMenu({ x, y, items })} />
               </div>
             ))}
             {empty && (
@@ -795,16 +803,114 @@ function DropBox({ drop, rows, rowsH, zoom }: { drop: DropView; rows: Row[]; row
   );
 }
 
-function TrackHeader({ track }: { track: Track }) {
+type OpenMenu = (x: number, y: number, items: MenuItem[]) => void;
+
+/** A track's sound level in dB, as a popover by the header (Premiere's
+ * track volume; the mixer's fader in Resolve). One undo step per drag. */
+function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y: number }; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector("input")?.focus();
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && (e.stopPropagation(), onClose());
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("keydown", esc, true);
+    };
+  }, [onClose]);
+  const db = Math.max(-40, toDb(track.volume));
+  const set = (d: number) => store.previewGesture((p) => ops.updateTrack(p, track.id, { volume: d <= -40 ? 0 : +fromDb(d).toFixed(4) }));
+  // On the body: the sticky header is its own stacking context.
+  return createPortal(
+    <div className="menu tl-vol-pop" ref={ref} style={{ left: at.x, top: at.y }} role="dialog" aria-label={`${track.name} volume`}>
+      <label>
+        <span>Track volume</span>
+        <span className="num">{db <= -40 ? "-inf" : `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`}</span>
+      </label>
+      <input
+        type="range"
+        min={-40}
+        max={12}
+        step={0.5}
+        value={db}
+        aria-label="Track volume"
+        onPointerDown={() => store.beginGesture()}
+        onPointerUp={() => store.endGesture("Track volume")}
+        onKeyDown={() => store.beginGesture()}
+        onKeyUp={() => store.endGesture("Track volume")}
+        onChange={(e) => set(Number(e.target.value))}
+        onDoubleClick={() => store.edit("Reset track volume", (p) => ops.updateTrack(p, track.id, { volume: 1 }))}
+      />
+    </div>,
+    document.body,
+  );
+}
+
+function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) {
   const kindIcon =
     track.kind === "audio" ? <Music size={13} /> : track.clips.length && track.clips.every((c) => c.type === "text") ? <Type size={13} /> : <Film size={13} />;
   const set = (patch: Partial<Track>, label: string) => store.edit(label, (p) => ops.updateTrack(p, track.id, patch));
+  const [renaming, setRenaming] = useState(false);
+  const [volumeAt, setVolumeAt] = useState<{ x: number; y: number } | null>(null);
+  const sounds = track.kind === "audio" || track.clips.some((c) => c.type === "video");
+  const solo = () => set({ solo: !track.solo || undefined }, track.solo ? "Unsolo track" : "Solo track");
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const at = { x: e.clientX, y: e.clientY };
+    const height = (h: Track["height"], label: string) => ({ label, checked: track.height === h, onSelect: () => set({ height: h }, "Track height") });
+    openMenu(at.x, at.y, [
+      { label: "Rename track…", onSelect: () => setRenaming(true) },
+      ...(sounds
+        ? ([
+            { label: "Solo", checked: !!track.solo, onSelect: solo },
+            { label: "Track volume…", onSelect: () => setVolumeAt(at) },
+          ] as MenuItem[])
+        : []),
+      "-",
+      height("small", "Small height"),
+      height(undefined, "Normal height"),
+      height("large", "Large height"),
+      "-",
+      {
+        label: "Delete track",
+        disabled: !!track.main || track.locked,
+        onSelect: () => edit("Delete track", (p) => ({ ...p, tracks: p.tracks.filter((t) => t.id !== track.id) })),
+      },
+    ]);
+  };
   return (
-    <div className="tl-header" style={{ width: HEADER_W }}>
-      <span className="tl-kind" data-tip={track.main ? "Main track" : track.name}>
-        {kindIcon}
-        {track.main && <span className="tl-main-chip">Main</span>}
-      </span>
+    <div className="tl-header" style={{ width: HEADER_W }} onContextMenu={onContextMenu} onDoubleClick={(e) => !(e.target as Element).closest("button, input") && setRenaming(true)}>
+      {renaming ? (
+        <input
+          className="field tl-rename"
+          aria-label="Track name"
+          defaultValue={track.name}
+          autoFocus
+          onFocus={(e) => e.target.select()}
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (name && name !== track.name) set({ name }, "Rename track");
+            setRenaming(false);
+          }}
+          onKeyDown={(e) => {
+            e.stopPropagation();
+            if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            if (e.key === "Escape") {
+              (e.target as HTMLInputElement).value = track.name;
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+        />
+      ) : (
+        <span className="tl-kind" data-tip={track.main ? "Main track" : track.name}>
+          {kindIcon}
+          {track.main && <span className="tl-main-chip">Main</span>}
+        </span>
+      )}
+      {volumeAt && <TrackVolume track={track} at={volumeAt} onClose={() => setVolumeAt(null)} />}
       <div className="tl-toggles">
         <button className={`tl-tog tl-tog-lock${track.locked ? " on" : ""}`} aria-label={track.locked ? "Unlock track" : "Lock track"} data-tip={track.locked ? "Unlock" : "Lock"} onClick={() => set({ locked: !track.locked }, track.locked ? "Unlock track" : "Lock track")}>
           {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
@@ -814,7 +920,12 @@ function TrackHeader({ track }: { track: Track }) {
             {track.hidden ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
         )}
-        {(track.kind === "audio" || track.clips.some((c) => c.type === "video")) && (
+        {track.kind === "audio" && (
+          <button className={`tl-tog tl-tog-eye tl-tog-solo${track.solo ? " on" : ""}`} aria-label={track.solo ? "Unsolo track" : "Solo track"} aria-pressed={!!track.solo} data-tip={track.solo ? "Unsolo" : "Solo"} onClick={solo}>
+            <Headphones size={13} />
+          </button>
+        )}
+        {sounds && (
           <button className={`tl-tog tl-tog-sound${track.muted ? " on" : ""}`} aria-label={track.muted ? "Unmute track" : "Mute track"} data-tip={track.muted ? "Unmute" : "Mute"} onClick={() => set({ muted: !track.muted }, track.muted ? "Unmute track" : "Mute track")}>
             {track.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
           </button>

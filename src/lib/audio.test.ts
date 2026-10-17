@@ -53,6 +53,12 @@ describe("sounding clips", () => {
     const got = soundingClips({ ...p, tracks: [...p.tracks, a, b] }, () => true).map((s) => s.clip.id);
     expect(got).toEqual(["c"]);
   });
+  it("play only soloed tracks while any is soloed", () => {
+    const p: Project = createProject();
+    const a = { ...createTrack("audio", "A"), clips: [clip] };
+    const b = { ...createTrack("audio", "B"), solo: true, clips: [{ ...clip, id: "s" }] };
+    expect(soundingClips({ ...p, tracks: [...p.tracks, a, b] }, () => true).map((s) => s.clip.id)).toEqual(["s"]);
+  });
 });
 
 it("converts decibels", () => {

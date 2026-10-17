@@ -217,6 +217,32 @@ pauses.
 **Gaps.** Every other audible clip counts as speech, music included; a
 speech/music classifier is the upgrade. One depth for the whole clip.
 
+## Reduce noise
+
+`src/lib/analysis/denoise.ts`. CapCut's Reduce noise and Audacity's Noise
+Reduction, as a spectral gate: 2048-point frames at a quarter hop learn
+the noise's spectrum from the quietest tenth of the frames wholly inside
+the audio (edge frames are part zero padding and would always look
+quietest, which halved the measured noise and the reduction in the first
+version). Each frame then keeps a frequency in proportion to how far it
+stands above that noise (Light, **Medium**, Strong set how far above, and
+what a noise-only frequency keeps: 1 − 0.9 × strength), smoothed over
+three bins and over time (open at once, close slowly) so it does not
+warble. One mask from the channels' mix applies to every channel, so
+stereo stays stereo.
+
+The clip then plays a new WAV of exactly its source window ("name (noise
+reduced).wav"); a video's own sound is extracted to an audio clip first,
+as CapCut does, so the picture keeps its file. One undo step ("Reduce
+noise"). Measured in the unit test: hiss in the pauses drops by more
+than 9 dB while a tone keeps over 85 % of its level.
+
+**Gaps.** Stationary noise only (hum, hiss, fans, room tone); changing
+noise wants a learned model (DeepFilterNet, MIT/Apache). Clips with a
+speed curve or reversed sound are refused. **Filler words** ("um", "uh")
+are not offered: Whisper, our caption model, leaves most of them out of
+its transcripts, so a remover built on it would miss them.
+
 ## In the app and for agents
 
 - **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).

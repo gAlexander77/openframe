@@ -4,7 +4,7 @@ import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
 import { store } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
+import { AudioLines, Group, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
 import type { Asset, Clip, Project, Track } from "../lib/project/types";
 import { PRESETS } from "../lib/speed";
@@ -222,6 +222,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         {speed && !tiny && <span className="clip-badge num">{speed}</span>}
         {reversed && !tiny && <span className="clip-badge">Reverse</span>}
         {freeze && !tiny && <Snowflake size={11} className="clip-badge-icon" />}
+        {c.group && !tiny && <Group size={11} className="clip-badge-icon" aria-label="Grouped" />}
         {fxCount > 0 && !tiny && c.type !== "adjustment" && (
           <span className="clip-badge">
             <Sparkles size={10} /> {fxCount}

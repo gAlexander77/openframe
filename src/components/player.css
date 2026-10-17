@@ -75,6 +75,8 @@
   pointer-events: auto;
   animation: fade-in var(--t-fast) ease-out;
 }
+/* A multi-selection: one box around all, each picture outlined inside. */
+.tf-member { position: absolute; border: 1px dashed rgb(255 255 255 / 70%); pointer-events: none; }
 .tf-handle {
   position: absolute; width: 10px; height: 10px;
   background: #fff; border-radius: 2px;
@@ -113,6 +115,66 @@
   user-select: text;
 }
 .te-text::selection { color: transparent; background: rgb(0 193 205 / 38%); }
+
+/* ---- crop on the canvas (ADR-048) --------------------------------------------
+   The frame is the whole picture, rotated with it. The dim layer clips a
+   huge shadow to the picture, leaving the crop's hole clear; the crop
+   rectangle and its handles sit beside it, unclipped, so a handle at the
+   picture's edge stays whole. */
+.crop-frame { position: absolute; pointer-events: none; }
+.crop-dim { position: absolute; inset: 0; overflow: hidden; pointer-events: auto; cursor: default; }
+.crop-hole { position: absolute; box-shadow: 0 0 0 100vmax rgb(0 0 0 / 58%); }
+.crop-rect {
+  position: absolute;
+  border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+  cursor: move; pointer-events: auto;
+}
+/* Rule-of-thirds lines inside the crop, as CapCut draws them. */
+.crop-rect::before, .crop-rect::after { content: ""; position: absolute; pointer-events: none; border: 0 solid rgb(255 255 255 / 40%); }
+.crop-rect::before { top: 0; bottom: 0; left: 33.333%; right: 33.333%; border-left-width: 1px; border-right-width: 1px; }
+.crop-rect::after { left: 0; right: 0; top: 33.333%; bottom: 33.333%; border-top-width: 1px; border-bottom-width: 1px; }
+.crop-handle {
+  position: absolute; z-index: 1;
+  background: #fff; border-radius: 2px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 40%);
+  pointer-events: auto;
+}
+.crop-nw, .crop-ne, .crop-sw, .crop-se { width: 12px; height: 12px; }
+.crop-nw { left: -7px; top: -7px; cursor: nwse-resize; }
+.crop-se { right: -7px; bottom: -7px; cursor: nwse-resize; }
+.crop-ne { right: -7px; top: -7px; cursor: nesw-resize; }
+.crop-sw { left: -7px; bottom: -7px; cursor: nesw-resize; }
+.crop-n, .crop-s { left: 50%; width: 22px; height: 6px; margin-left: -11px; cursor: ns-resize; }
+.crop-n { top: -4px; }
+.crop-s { bottom: -4px; }
+.crop-e, .crop-w { top: 50%; width: 6px; height: 22px; margin-top: -11px; cursor: ew-resize; }
+.crop-e { right: -4px; }
+.crop-w { left: -4px; }
+
+.crop-bar { display: flex; gap: 12px; justify-content: space-between; }
+.crop-ratios { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.crop-ratios .chip-btn { flex-shrink: 0; }
+.crop-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* ---- mask handles (ADR-049) ---------------------------------------------------
+   Zero-size frames carry the layer's rotation and flips, then the mask's
+   center and rotation; the outline and handles hang off their origin. */
+.mask-layer, .mask-frame { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.mask-outline { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.mask-outline path { fill: none; stroke: #fff; stroke-width: 1.5; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
+.mask-body { position: absolute; transform: translate(-50%, -50%); cursor: move; pointer-events: auto; }
+.mask-handle {
+  position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px;
+  background: #fff; border-radius: 2px; box-shadow: 0 0 0 1px rgb(0 0 0 / 40%);
+  pointer-events: auto;
+}
+.mask-e, .mask-w { cursor: ew-resize; }
+.mask-n, .mask-s { cursor: ns-resize; }
+.mask-center { width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; cursor: move; }
+.mask-rotate { width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; cursor: grab; }
+.mask-feather { display: grid; place-items: center; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; color: #111; cursor: ns-resize; }
+.mask-radius { width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--accent); cursor: nwse-resize; }
 
 .tf-guide { position: absolute; background: var(--accent); pointer-events: none; }
 .tf-guide-v { left: 50%; top: 0; bottom: 0; width: 1px; }

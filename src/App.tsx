@@ -16,40 +16,23 @@ import { platform } from "./platform";
 import { onHomeKeyDown, onKeyDown, provide } from "./state/actions";
 import { addToTimeline, adoptAndImport, importFiles } from "./state/media";
 import { useSession } from "./state/project";
+import { DEFAULT_LAYOUT, toPixels, type Layout } from "./lib/layout";
+import { setLayout, useLayout } from "./state/layout";
 import { useEditor } from "./state/store";
 import "./components/shell.css";
-
-interface Layout {
-  left: number;
-  right: number;
-  /** Height of the top row (library, player, inspector). */
-  top: number;
-}
-
-// CapCut's proportions (research §1.2): library ~36%, player ~40%, inspector
-// ~24% of the width; the top row ~58% of the height.
-const DEFAULT_LAYOUT: Layout = { left: 470, right: 360, top: 520 };
-
-function loadLayout(): Layout {
-  try {
-    return { ...DEFAULT_LAYOUT, ...JSON.parse(localStorage.getItem("layout") ?? "{}") };
-  } catch {
-    return DEFAULT_LAYOUT;
-  }
-}
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export default function App() {
-  const [layout, setLayout] = useState(loadLayout);
-
+  // Proportions of the window (UX-30), so a bigger screen grows the panels.
+  const shares = useLayout();
+  const [win, setWin] = useState({ w: innerWidth, h: innerHeight });
   useEffect(() => {
-    try {
-      localStorage.setItem("layout", JSON.stringify(layout));
-    } catch {
-      /* private window: layout just won't persist */
-    }
-  }, [layout]);
+    const on = () => setWin({ w: innerWidth, h: innerHeight });
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const layout = toPixels(shares, win.w, win.h);
 
   // Desktop OS drops arrive as paths, not HTML5 events: import them and add
   // each at the playhead, like the media panel's +.
@@ -61,8 +44,11 @@ export default function App() {
     [],
   );
 
-  const resize = (k: keyof Layout, d: number, lo: number, hi: number) =>
-    setLayout((l) => ({ ...l, [k]: clamp(l[k] + d, lo, hi) }));
+  const resize = (k: keyof Layout, d: number, lo: number, hi: number) => {
+    const of = k === "top" ? innerHeight : innerWidth;
+    setLayout((l) => ({ ...l, [k]: clamp(l[k] * of + d, lo, hi) / of }));
+  };
+  const reset = (k: keyof Layout) => setLayout((l) => ({ ...l, [k]: DEFAULT_LAYOUT[k] }));
 
   const { screen, saveState } = useSession();
   // Scopes take the library's place, as Premiere's Color workspace puts
@@ -126,12 +112,12 @@ export default function App() {
           style={{ gridTemplateColumns: `minmax(${Math.min(240, layout.left)}px, ${layout.left}px) var(--gap) minmax(320px, 1fr) var(--gap) minmax(${Math.min(260, layout.right)}px, ${layout.right}px)` }}
         >
           {scopes ? <ScopesPanel /> : <LibraryPanel />}
-          <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => setLayout((l) => ({ ...l, left: DEFAULT_LAYOUT.left }))} />
+          <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => reset("left")} />
           <PlayerPanel />
-          <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => setLayout((l) => ({ ...l, right: DEFAULT_LAYOUT.right }))} />
+          <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => reset("right")} />
           <InspectorPanel />
         </div>
-        <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => setLayout((l) => ({ ...l, top: DEFAULT_LAYOUT.top }))} />
+        <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => reset("top")} />
         <Timeline />
       </div>
       )}

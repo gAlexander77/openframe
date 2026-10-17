@@ -10,6 +10,7 @@
 //   silent frame playback at 2x/4x/8x; reverse is silent frame playback.
 
 import type { VideoSample } from "mediabunny";
+import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
 import { getAsset, projectDuration, sourceTimeAt } from "../lib/project/ops";
 import type { Id, Project, VisualClip } from "../lib/project/types";
@@ -239,7 +240,7 @@ export class Player {
       if (prev.project && prev.project !== s.project) this.play(this.rate, { until: this.until ?? undefined, silent: this.silent });
       return;
     }
-    if (prev.project !== s.project || prev.playhead !== s.playhead || prev.hoverFrame !== s.hoverFrame || prev.previewScale !== s.previewScale) {
+    if (prev.project !== s.project || prev.playhead !== s.playhead || prev.hoverFrame !== s.hoverFrame || prev.previewScale !== s.previewScale || prev.cropEdit?.id !== s.cropEdit?.id) {
       this.request();
     }
   }
@@ -268,7 +269,8 @@ export class Player {
     const comp = this.compositor;
     if (!comp) return;
     const s = store.get();
-    const p = s.project;
+    // The crop mode shows its clip whole, the crop drawn over it (ADR-048).
+    const p = s.cropEdit ? cropClips(s.project, [s.cropEdit.id], NO_CROP) : s.project;
     // At the end of the timeline (one past the last frame) hold the last
     // frame, as CapCut does: playback stops there and adding a clip parks
     // the playhead there, and a black viewer reads as a failed import.

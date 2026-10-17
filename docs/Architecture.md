@@ -61,6 +61,8 @@ a clock, so no frame is ever dropped
 | `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
 | `lib/textBox.ts` | Where the canvas text editor sits: a text raster's layout mapped into the viewer |
 | `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
+| `lib/crop.ts` | Crop ratios, the largest crop of a ratio, where a dragged crop handle puts the edges (ADR-048) |
+| `lib/mask.ts` | Mask shapes on the viewer: frame, outline, handles and drags, mirroring the shader's maskAlpha (ADR-049) |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
@@ -83,6 +85,7 @@ a clock, so no frame is ever dropped
 | `state/actions.ts` | Keymap action handlers, `edit()` |
 | `state/export.ts` | The export job: dialog state, `render()` for automation |
 | `state/textEdit.ts` | The typing session: live text edits from the canvas or the inspector, one undo step |
+| `state/cropEdit.ts` | The crop mode's session: a copy of one clip's crop, the viewer showing it whole, Done as one undo step (ADR-048) |
 | `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |

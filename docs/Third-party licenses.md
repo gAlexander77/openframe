@@ -89,6 +89,7 @@ would be flagged too. No compatibility conclusion is implied.
 | es-errors | 1.3.0 | MIT |
 | escape-string-regexp | 4.0.0 | MIT |
 | flatbuffers | 25.9.23 | Apache-2.0 |
+| gifenc | 1.0.3 | MIT (added 2026-10-16 for GIF export) |
 | global-agent | 4.1.3 | BSD-3-Clause |
 | globalthis | 1.0.4 | MIT |
 | gopd | 1.2.0 | MIT |

@@ -13,12 +13,13 @@ export interface SoundingClip {
 }
 
 /** Clips that produce sound: audio clips, and video clips whose own sound is
- * not muted or extracted, on unmuted tracks.
- * ponytail: no track solo yet; add it with the mixer panel. */
+ * not muted or extracted, on unmuted tracks; while any track is soloed,
+ * on soloed tracks only. */
 export function soundingClips(p: Project, hasAudio: (assetId: string) => boolean): SoundingClip[] {
   const out: SoundingClip[] = [];
+  const solo = p.tracks.some((t) => t.solo);
   for (const track of p.tracks) {
-    if (track.muted) continue;
+    if (track.muted || (solo && !track.solo)) continue;
     for (const clip of track.clips) {
       if (!isTimed(clip) || clip.disabled || clip.muted || clip.freeze) continue;
       if (!hasAudio(clip.assetId)) continue;

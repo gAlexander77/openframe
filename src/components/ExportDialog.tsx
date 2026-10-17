@@ -15,12 +15,17 @@ import {
   RESOLUTIONS,
   VIDEO_FORMATS,
   defaultExportSettings,
+  EXPORT_PRESETS,
   exportBlocker,
+  matchingPreset,
+  presetOf,
+  type ExportPreset,
   formatBytes,
   formatEta,
   formatSize,
   fpsLabel,
   fpsOptions,
+  GIF_FPS,
   outputSize,
   planExport,
   sameRate,
@@ -62,6 +67,24 @@ function saveSettings(s: ExportSettings) {
   }
 }
 
+/** Presets the viewer saved, like the remembered choices. */
+function loadOwnPresets(): ExportPreset[] {
+  try {
+    const list = JSON.parse(localStorage.getItem("export.presets") ?? "[]");
+    return Array.isArray(list) ? list.filter((x) => x && typeof x.id === "string" && typeof x.label === "string" && x.settings).map((x) => ({ ...x, own: true })) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveOwnPresets(list: ExportPreset[]) {
+  try {
+    localStorage.setItem("export.presets", JSON.stringify(list.map(({ own: _, ...x }) => x)));
+  } catch {
+    /* storage blocked: the preset lasts this session */
+  }
+}
+
 export function ExportDialog() {
   const view = useExportView();
   if (view.phase === "closed") return null;
@@ -87,6 +110,9 @@ function ExportModal({ view }: { view: Exclude<ExportView, { phase: "closed" }> 
   busyRef.current = busy;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A field that handles its own Enter and Escape (naming a preset);
+      // the app's shortcuts skip text fields anyway.
+      if ((e.target as HTMLElement).dataset?.ownEnter !== undefined && (e.key === "Enter" || e.key === "Escape")) return;
       e.stopPropagation(); // capture phase: the timeline never sees it
       if (e.key === "Escape") {
         e.preventDefault();
@@ -154,6 +180,8 @@ function SettingsView() {
   useEffect(() => {
     if (!v) return;
     let live = true;
+    // Unknown until probed: the last answer was for another format or size.
+    setCodecs(null);
     encodableVideoCodecs(s.format, v.width, v.height, s.fps, v.bitrate)
       .then((c) => live && setCodecs(c))
       .catch(() => live && setCodecs(VIDEO_FORMATS[s.format].codecs));
@@ -165,7 +193,32 @@ function SettingsView() {
     if (codecs?.length && !codecs.includes(s.codec)) set({ codec: codecs[0] });
   }, [codecs]);
 
+  const [own, setOwn] = useState(loadOwnPresets);
+  const [naming, setNaming] = useState(false);
+  const presets = [...EXPORT_PRESETS, ...own];
+  const preset = matchingPreset(s, presets);
+  const applyPreset = (pr: ExportPreset) => set({ fps: project.fps, ...pr.settings });
+  const keepPreset = (label: string) => {
+    const next = [...own, { id: `own-${Date.now()}`, label, settings: presetOf(s), own: true }];
+    setOwn(next);
+    saveOwnPresets(next);
+    setNaming(false);
+  };
+  const dropPreset = (id: string) => {
+    const next = own.filter((x) => x.id !== id);
+    setOwn(next);
+    saveOwnPresets(next);
+  };
   const formatCodecs = VIDEO_FORMATS[s.format].codecs;
+  const gif = s.video && s.format === "gif";
+  const rates = gif ? GIF_FPS : fpsOptions(project.fps);
+  // Into GIF: its usual size and rate; out of it: the project's rate.
+  const setFormat = (format: VideoFormat) =>
+    set(
+      format === "gif"
+        ? { format, fps: GIF_FPS[2].fps, ...(["1080p", "2k", "4k"].includes(s.resolution) ? { resolution: "480p" as ResolutionId } : {}) }
+        : { format, ...(s.format === "gif" ? { fps: project.fps } : {}) },
+    );
   const cannotEncode = s.video && codecs !== null && codecs.length === 0 ? `This device can't encode ${VIDEO_FORMATS[s.format].label} video at ${v?.width}×${v?.height}.` : null;
   const blocker = exportBlocker(project, s, inOut) ?? cannotEncode;
 
@@ -196,6 +249,54 @@ function SettingsView() {
           <Row label="Name" htmlFor="export-name">
             <input id="export-name" className="field" data-autofocus value={s.name} spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
           </Row>
+          <Row label="Preset" htmlFor="export-preset">
+            <div className="export-pair">
+              {naming ? (
+                <input
+                  className="field"
+                  aria-label="Preset name"
+                  placeholder="Name this preset"
+                  autoFocus
+                  data-own-enter
+                  onKeyDown={(e) => {
+                    const name = (e.target as HTMLInputElement).value.trim();
+                    if (e.key === "Enter" && name) keepPreset(name);
+                    if (e.key === "Escape") {
+                      e.stopPropagation();
+                      setNaming(false);
+                    }
+                  }}
+                  onBlur={() => setNaming(false)}
+                />
+              ) : (
+                <Select id="export-preset" value={preset?.id ?? ""} onChange={(id) => applyPreset(presets.find((x) => x.id === id)!)}>
+                  {!preset && <option value="">Custom</option>}
+                  <optgroup label="Built in">
+                    {EXPORT_PRESETS.map((x) => (
+                      <option key={x.id} value={x.id}>{x.label}</option>
+                    ))}
+                  </optgroup>
+                  {own.length > 0 && (
+                    <optgroup label="Saved">
+                      {own.map((x) => (
+                        <option key={x.id} value={x.id}>{x.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </Select>
+              )}
+              {!naming && !preset && (
+                <button className="btn ghost" onClick={() => setNaming(true)}>
+                  Save preset…
+                </button>
+              )}
+              {!naming && preset?.own && (
+                <button className="btn ghost" onClick={() => dropPreset(preset.id)}>
+                  Delete preset
+                </button>
+              )}
+            </div>
+          </Row>
           <Row label="Export to">
             <span className="export-static">
               <FolderOpen size={14} /> {platform.exportLocation ?? "Chosen when the export starts."}
@@ -215,7 +316,7 @@ function SettingsView() {
                 })}
               </Select>
             </Row>
-            <Row label="Bit rate" htmlFor="export-quality">
+            {!gif && <Row label="Bit rate" htmlFor="export-quality">
               <div className="export-pair">
                 <Select id="export-quality" value={s.quality} onChange={(x) => set({ quality: x as QualityLevel })}>
                   {QUALITY_LEVELS.map((q) => (
@@ -241,8 +342,8 @@ function SettingsView() {
                   </label>
                 )}
               </div>
-            </Row>
-            <Row label="Codec" htmlFor="export-codec">
+            </Row>}
+            {!gif && <Row label="Codec" htmlFor="export-codec">
               <Select id="export-codec" value={formatCodecs.includes(s.codec) ? s.codec : formatCodecs[0]} onChange={(x) => set({ codec: x as VideoCodec })}>
                 {formatCodecs.map((c) => {
                   const off = codecs !== null && !codecs.includes(c);
@@ -254,9 +355,9 @@ function SettingsView() {
                   );
                 })}
               </Select>
-            </Row>
+            </Row>}
             <Row label="Format" htmlFor="export-format">
-              <Select id="export-format" value={s.format} onChange={(x) => set({ format: x as VideoFormat })}>
+              <Select id="export-format" value={s.format} onChange={(x) => setFormat(x as VideoFormat)}>
                 {(Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((f) => (
                   <option key={f} value={f}>
                     {VIDEO_FORMATS[f].label}
@@ -268,9 +369,9 @@ function SettingsView() {
               <Select
                 id="export-fps"
                 value={fpsLabel(s.fps)}
-                onChange={(x) => set({ fps: fpsOptions(project.fps).find((o) => o.label === x)!.fps })}
+                onChange={(x) => set({ fps: rates.find((o) => o.label === x)!.fps })}
               >
-                {fpsOptions(project.fps).map((o) => (
+                {rates.map((o) => (
                   <option key={o.label} value={o.label}>
                     {o.label} fps{sameRate(o.fps, project.fps) ? " · project" : ""}
                   </option>
@@ -279,7 +380,7 @@ function SettingsView() {
             </Row>
           </Section>
 
-          <Section title="Audio" on={s.audio} onToggle={(on) => set({ audio: on })}>
+          <Section title="Audio" on={s.audio && !gif} onToggle={(on) => set({ audio: on })} note={gif ? "GIFs have no sound." : undefined}>
             <Row label="Format" htmlFor="export-audio">
               {s.video ? (
                 <span className="export-static">
@@ -378,13 +479,14 @@ function Row(props: { label: string; htmlFor?: string; children: ReactNode }) {
   );
 }
 
-function Section(props: { title: string; on: boolean; onToggle: (on: boolean) => void; children: ReactNode }) {
+function Section(props: { title: string; on: boolean; onToggle: (on: boolean) => void; children: ReactNode; note?: string }) {
   const id = `export-sec-${props.title.toLowerCase()}`;
   return (
     <section className={`export-section${props.on ? "" : " off"}`} aria-labelledby={id}>
       <label className="export-section-head" id={id}>
-        <input type="checkbox" checked={props.on} onChange={(e) => props.onToggle(e.target.checked)} />
+        <input type="checkbox" checked={props.on} disabled={!!props.note} onChange={(e) => props.onToggle(e.target.checked)} />
         {props.title}
+        {props.note && <span className="export-section-note">{props.note}</span>}
       </label>
       {props.on && <div className="export-section-body">{props.children}</div>}
     </section>

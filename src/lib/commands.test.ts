@@ -224,3 +224,64 @@ describe("keyframe commands", () => {
     expect(() => runCommand(p, "remove_keyframes", { clip_id: id, at: [4] })).toThrow(/no matching keyframes/);
   });
 });
+
+describe("set_crop", () => {
+  const pictured = () => {
+    const p = runCommand({ ...withAsset(), assets: [{ ...withAsset().assets[0], width: 1920, height: 1080 }] }, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    const id = p.tracks.find((t) => t.main)!.clips[0].id;
+    const crop = (q: Project) => (q.tracks.flatMap((t) => t.clips).find((c) => c.id === id) as { crop: object }).crop;
+    return { p, id, crop };
+  };
+
+  it("sets the edges given and keeps the others", () => {
+    const { p, id, crop } = pictured();
+    const q = runCommand(p, "set_crop", { clip_ids: [id], left: 0.25, bottom: 0.1 });
+    expect(crop(q)).toEqual({ left: 0.25, top: 0, right: 0, bottom: 0.1 });
+    expect(crop(runCommand(q, "set_crop", { clip_ids: [id], right: 0.25 }))).toEqual({ left: 0.25, top: 0, right: 0.25, bottom: 0.1 });
+  });
+
+  it("crops the largest centered area of a ratio", () => {
+    const { p, id, crop } = pictured();
+    expect(crop(runCommand(p, "set_crop", { clip_ids: [id], ratio: "1:1" }))).toEqual({ left: 0.21875, top: 0, right: 0.21875, bottom: 0 });
+    const square = runCommand(p, "set_crop", { clip_ids: [id], ratio: "1:1" });
+    expect(crop(runCommand(square, "set_crop", { clip_ids: [id], ratio: "original" }))).toEqual({ left: 0, top: 0, right: 0, bottom: 0 });
+  });
+
+  it("refuses crops that leave nothing, mixed arguments and clips without a picture", () => {
+    const { p, id } = pictured();
+    expect(() => runCommand(p, "set_crop", { clip_ids: [id], left: 0.6, right: 0.6 })).toThrow(/at least 5%/);
+    expect(() => runCommand(p, "set_crop", { clip_ids: [id], left: 0.1, ratio: "1:1" })).toThrow(/either edges or a ratio/);
+    expect(() => runCommand(p, "set_crop", { clip_ids: [id], ratio: "free" })).toThrow(/must be one of/);
+    const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
+    const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
+    expect(() => runCommand(q, "set_crop", { clip_ids: [adj.id], left: 0.1 })).toThrow(/no picture/);
+  });
+});
+
+describe("set_mask", () => {
+  const masked = () => {
+    const p = runCommand(createProject(), "add_color_clip", { color: "#ff0000", start: 0, duration: 4 });
+    const id = p.tracks.flatMap((t) => t.clips)[0].id;
+    const mask = (q: Project) => (q.tracks.flatMap((t) => t.clips).find((c) => c.id === id) as { mask?: Record<string, unknown> }).mask;
+    return { p, id, mask };
+  };
+
+  it("adds a shape, sets its numbers, and removes it", () => {
+    const { p, id, mask } = masked();
+    const heart = runCommand(p, "set_mask", { clip_ids: [id], shape: "heart", rotation: 30 });
+    // Square on the 16:9 color layer.
+    expect(mask(heart)).toMatchObject({ shape: "heart", width: expect.closeTo(0.6 * (1080 / 1920), 6), height: 0.6, rotation: 30 });
+    const box = runCommand(heart, "set_mask", { clip_ids: [id], shape: "rectangle", radius: 0.5, invert: true });
+    expect(mask(box)).toMatchObject({ shape: "rectangle", radius: 0.5, invert: true, rotation: 30 });
+    expect(mask(runCommand(box, "set_mask", { clip_ids: [id], shape: "none" }))).toBeUndefined();
+  });
+
+  it("needs a shape for a clip with no mask and refuses clips without a picture", () => {
+    const { p, id } = masked();
+    expect(() => runCommand(p, "set_mask", { clip_ids: [id], feather: 0.2 })).toThrow(/give a shape/);
+    expect(() => runCommand(p, "set_mask", { clip_ids: [id], shape: "triangle" })).toThrow(/must be one of/);
+    const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
+    const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
+    expect(() => runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" })).toThrow(/no picture/);
+  });
+});

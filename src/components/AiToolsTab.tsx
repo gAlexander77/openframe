@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Film, Gauge, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
-import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
+import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, removeSilences, splitScenes, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
 
@@ -19,6 +19,7 @@ const RUN: Record<ToolId, () => Promise<unknown>> = {
   beats: () => markBeats(),
   loudness: () => normalizeLoudness(),
   ducking: () => duckUnderSpeech(),
+  denoise: () => reduceNoise(),
 };
 
 export function AiToolsTab() {
@@ -35,6 +36,7 @@ export function AiToolsTab() {
         <ToolCard tool="beats" icon={Drum} title="Beat markers" blurb="Drop a marker on the beat of a music track." action="Mark" settings={<BeatSettings />} />
         <ToolCard tool="loudness" icon={Gauge} title="Normalize loudness" blurb="Even out the volume of the selected clips." action="Normalize" settings={<LoudnessSettings />} />
         <ToolCard tool="ducking" icon={Volume1} title="Auto ducking" blurb="Lower the selected music while people talk." action="Duck" settings={<DuckSettings />} />
+        <ToolCard tool="denoise" icon={AudioLines} title="Reduce noise" blurb="Take steady hiss, hum and room noise out of speech." action="Reduce" settings={<DenoiseSettings />} />
         <LinkCard icon={Captions} title="Auto captions" blurb="Turn speech into captions, on your computer." action="Open Captions" onClick={() => store.set({ leftTab: "captions" })} />
         <LinkCard icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16 or 1:1." soon />
       </div>
@@ -287,6 +289,22 @@ function LoudnessSettings() {
         [-23, "Broadcast"],
       ]}
       onChange={(v) => set({ target: v })}
+    />
+  );
+}
+
+function DenoiseSettings() {
+  const [s, set] = useSettings("denoise");
+  return (
+    <Segmented
+      label="Strength"
+      value={s.strength}
+      options={[
+        [0.5, "Light"],
+        [0.75, "Medium"],
+        [1, "Strong"],
+      ]}
+      onChange={(v) => set({ strength: v })}
     />
   );
 }

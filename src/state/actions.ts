@@ -4,10 +4,11 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
-import { ACTION_LABELS, buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
+import { ACTION_LABELS, buildIndex, chordOf, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
 import { nudgeClips } from "../lib/project/gaps";
+import { groupClips, regroupCopies, ungroupClips } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
@@ -31,8 +32,29 @@ export function run(id: ActionId) {
   else toast(`${ACTION_LABELS[id]} isn't available yet`);
 }
 
-export const keymap = DEFAULT_KEYMAP;
-const index = buildIndex(keymap);
+// The viewer's own shortcuts over the defaults (the shortcuts panel edits
+// them); per viewer, like the layout, never in the project.
+const KEYMAP_KEY = "ve.keymap";
+let keymapChanges: KeymapChanges = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(KEYMAP_KEY) ?? "{}") ?? {};
+  } catch {
+    return {};
+  }
+})();
+export let keymap = withChanges(keymapChanges);
+let index = buildIndex(keymap);
+export const currentKeymapChanges = () => keymapChanges;
+export function setKeymapChanges(next: KeymapChanges) {
+  keymapChanges = next;
+  keymap = withChanges(next);
+  index = buildIndex(keymap);
+  try {
+    localStorage.setItem(KEYMAP_KEY, JSON.stringify(next));
+  } catch {
+    /* storage blocked: the shortcuts last this session */
+  }
+}
 
 /** The first chord bound to an action, for tooltips and menus. */
 export const chordFor = (id: ActionId) => keymap[id]?.[0];
@@ -137,6 +159,11 @@ provide({
   markOut: () => store.set({ outPoint: store.get().playhead }),
   clearInOut: () => store.set({ inPoint: null, outPoint: null }),
   toggleLoop: () => store.set({ loop: !store.get().loop }),
+  groupClips: () => {
+    const ids = store.get().selection;
+    if (ids.length > 1) store.edit("Group clips", (p) => groupClips(p, ids));
+  },
+  ungroupClips: () => store.edit("Ungroup clips", (p) => ungroupClips(p, store.get().selection)),
   nudgeLeft: () => nudge(-1),
   nudgeRight: () => nudge(1),
   nudgeLeft5: () => nudge(-5),
@@ -236,7 +263,8 @@ function copyClips() {
  * track it was copied from, spilling to new tracks rather than overwriting. */
 function pasteAt(at: number, label = "Paste") {
   if (!clipboard) return;
-  const { clips, trackIds, origin } = clipboard;
+  const { trackIds, origin } = clipboard;
+  const clips = regroupCopies(clipboard.clips);
   const pasted: Id[] = [];
   edit(label, (p) => {
     clips.forEach((c, i) => {

@@ -1,13 +1,16 @@
-import { useState } from "react";
-import { ArrowDown, ArrowUp, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Plus, RotateCw, Sparkles, Trash2 } from "../../icons";
+import { useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Plus, RotateCw, Sparkles, Star, Trash2 } from "../../icons";
 import { fromDb, toDb } from "../../lib/audio";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
-import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip } from "../../lib/project/types";
-import { frameClips } from "../../lib/align";
+import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip, VisualClip } from "../../lib/project/types";
+import { frameClips, pictureAspect } from "../../lib/align";
+import { MASK_LABELS, MASK_SHAPES, newMask, type MaskShape } from "../../lib/mask";
+import { canCrop, NO_CROP } from "../../lib/crop";
+import { applyCrop, beginCrop, resetCrop } from "../../state/cropEdit";
 import { canvasSize, ratioOf, RATIOS } from "../../lib/canvas";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
@@ -25,6 +28,7 @@ import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
 import { AttributeClipboard } from "./AttributeClipboard";
 import { AlignBar, useMovable } from "./AlignBar";
+import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
 
 type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
@@ -170,6 +174,12 @@ const BLENDS: [BlendMode, string][] = [
 
 function VideoTab({ clip }: { clip: Clip }) {
   const [sub, setSub] = useState<"basic" | "mask" | "key">("basic");
+  // CapCut draws the mask on the viewer while its tab is open.
+  useEffect(() => {
+    if (sub !== "mask") return;
+    store.set({ maskHandles: true });
+    return () => store.set({ maskHandles: false });
+  }, [sub]);
   if (!("transform" in clip)) return null;
   return (
     <>
@@ -207,16 +217,35 @@ function VideoTab({ clip }: { clip: Clip }) {
             </Section>
           )}
           {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
-          <Section title="Crop" defaultOpen={false} onReset={() => patchClip(clip.id, "Reset crop", (c) => ({ ...c, crop: { left: 0, top: 0, right: 0, bottom: 0 } }) as Clip)}>
-            {(["left", "top", "right", "bottom"] as const).map((k) => (
-              <SliderRow key={k} clip={clip} path={`crop.${k}`} label={k[0].toUpperCase() + k.slice(1)} min={0} max={95} unit="%" reset={0} keyframes={false} {...pct} />
-            ))}
-          </Section>
+          <CropSection clip={clip} />
         </>
       )}
       {sub === "mask" && <MaskSection clip={clip} />}
       {sub === "key" && <ChromaSection clip={clip} />}
     </>
+  );
+}
+
+/** The four edges as sliders, and the button that opens CapCut's crop on
+ * the viewer (handles and ratios), which the sliders give way to. */
+function CropSection({ clip }: { clip: Clip }) {
+  const cropping = useEditor((s) => s.cropEdit?.id === clip.id);
+  const can = useEditor((s) => canCrop(s.project, clip.id));
+  const open = (
+    <button className={`icon-btn small${cropping ? " on" : ""}`} aria-label="Crop on the viewer" aria-pressed={cropping} data-tip={cropping ? "Done cropping" : "Crop on the viewer, with ratios"} disabled={!can} onClick={() => (cropping ? applyCrop() : beginCrop(clip.id))}>
+      <CropIcon size={13} />
+    </button>
+  );
+  return (
+    <Section title="Crop" defaultOpen={false} extra={open} onReset={() => (cropping ? resetCrop() : patchClip(clip.id, "Reset crop", (c) => ({ ...c, crop: { ...NO_CROP } }) as Clip))}>
+      {cropping ? (
+        <p className="insp-hint">Drag the handles on the viewer or pick a ratio under it. Done keeps the crop; Cancel leaves it as it was.</p>
+      ) : (
+        (["left", "top", "right", "bottom"] as const).map((k) => (
+          <SliderRow key={k} clip={clip} path={`crop.${k}`} label={k[0].toUpperCase() + k.slice(1)} min={0} max={95} unit="%" reset={0} keyframes={false} {...pct} />
+        ))
+      )}
+    </Section>
   );
 }
 
@@ -282,25 +311,27 @@ function CanvasSection({ clip }: { clip: Clip }) {
   );
 }
 
-const MASK_SHAPES: [Mask["shape"] | "none", string][] = [["none", "None"], ["linear", "Linear"], ["mirror", "Mirror"], ["circle", "Circle"], ["rectangle", "Rectangle"]];
+/** The mask's shapes as CapCut lists them; heart and star wear icons. */
+const MASK_ICONS: Partial<Record<MaskShape, React.ReactNode>> = { heart: <Heart size={16} />, star: <Star size={16} /> };
 
 function MaskSection({ clip }: { clip: Clip }) {
   if (!("transform" in clip)) return null;
   const m = clip.mask;
-  const setShape = (shape: Mask["shape"] | "none") =>
+  const setShape = (shape: MaskShape | "none") =>
     patchClip(clip.id, "Mask", (c) => {
       const next = { ...c } as Clip & { mask?: Mask };
       if (shape === "none") delete next.mask;
-      else next.mask = { x: 0, y: 0, width: 0.6, height: 0.6, rotation: 0, feather: 0.05, invert: false, ...m, shape };
+      else next.mask = m ? { ...m, shape } : newMask(shape, pictureAspect(store.get().project, c as VisualClip, store.get().playhead));
       return next;
     });
+  const sized = m && m.shape !== "linear" && m.shape !== "mirror";
   return (
     <Section title="Mask">
       <div className="mask-shapes">
-        {MASK_SHAPES.map(([v, l]) => (
-          <button key={v} className={`mask-shape ms-${v}${(m?.shape ?? "none") === v ? " on" : ""}`} onClick={() => setShape(v)}>
-            <span className="ms-icon" />
-            <span>{l}</span>
+        {(["none", ...MASK_SHAPES] as const).map((v) => (
+          <button key={v} className={`mask-shape ms-${v}${(m?.shape ?? "none") === v ? " on" : ""}`} aria-pressed={(m?.shape ?? "none") === v} onClick={() => setShape(v)}>
+            {MASK_ICONS[v as MaskShape] ?? <span className="ms-icon" />}
+            <span>{v === "none" ? "None" : MASK_LABELS[v]}</span>
           </button>
         ))}
       </div>
@@ -308,18 +339,21 @@ function MaskSection({ clip }: { clip: Clip }) {
         <>
           <SliderRow clip={clip} path="mask.x" label="Position X" min={-100} max={100} unit="%" reset={0} {...pct} />
           <SliderRow clip={clip} path="mask.y" label="Position Y" min={-100} max={100} unit="%" reset={0} {...pct} />
-          {m.shape !== "linear" && <SliderRow clip={clip} path="mask.width" label={m.shape === "mirror" ? "Width" : "Width"} min={1} max={200} unit="%" reset={0.6} {...pct} />}
-          {(m.shape === "circle" || m.shape === "rectangle" || m.shape === "mirror") && <SliderRow clip={clip} path="mask.height" label="Height" min={1} max={200} unit="%" reset={0.6} {...pct} />}
+          {sized && <SliderRow clip={clip} path="mask.width" label="Width" min={1} max={200} unit="%" reset={0.6} {...pct} />}
+          {m.shape !== "linear" && <SliderRow clip={clip} path="mask.height" label="Height" min={1} max={200} unit="%" reset={0.6} {...pct} />}
           <SliderRow clip={clip} path="mask.rotation" label="Rotate" min={-180} max={180} unit="°" reset={0} />
           <SliderRow clip={clip} path="mask.feather" label="Feather" min={0} max={100} unit="%" reset={0.05} {...pct} />
+          {m.shape === "rectangle" && <SliderRow clip={clip} path="mask.radius" label="Round corners" min={0} max={100} unit="%" reset={0} {...pct} />}
           <Row label="Invert">
             <Toggle label="Invert mask" on={m.invert} onChange={(v) => patchClip(clip.id, "Invert mask", (c) => ({ ...c, mask: { ...m, invert: v } }) as Clip)} />
           </Row>
+          <p className="insp-hint">On the viewer, drag inside the mask to move it, its edges to size it, the knob to turn it and the arrow to feather it.</p>
         </>
       )}
     </Section>
   );
 }
+
 
 function ChromaSection({ clip }: { clip: Clip }) {
   if (!("transform" in clip)) return null;
@@ -713,9 +747,19 @@ function EffectsSection({ clip }: { clip: Clip }) {
                 <Trash2 size={12} />
               </button>
             </div>
-            {Object.entries(def.params).map(([k, pd]) => (
-              <SliderRow key={k} clip={clip} path={`effects.${fx.id}.${k}`} label={pd.label} min={pd.min} max={pd.max} step={pd.step} reset={pd.default} />
-            ))}
+            {Object.entries(def.params).map(([k, pd]) =>
+              pd.options ? (
+                <Row key={k} label={pd.label}>
+                  <Segmented
+                    value={String(Math.round(fx.params[k] ?? pd.default))}
+                    options={pd.options.map((label, i) => ({ value: String(pd.min + i), label }))}
+                    onChange={(v) => store.edit(`Set ${pd.label.toLowerCase()}`, (p) => ops.setParam(p, [clip.id], `effects.${fx.id}.${k}`, Number(v)))}
+                  />
+                </Row>
+              ) : (
+                <SliderRow key={k} clip={clip} path={`effects.${fx.id}.${k}`} label={pd.label} min={pd.min} max={pd.max} step={pd.step} unit={pd.unit} reset={pd.default} />
+              ),
+            )}
           </div>
         );
       })}
@@ -725,6 +769,44 @@ function EffectsSection({ clip }: { clip: Clip }) {
 }
 
 // ---- text --------------------------------------------------------------------------
+
+/** The font list: built in, imported (CapCut's font upload) and, once
+ * asked for, the computer's installed families. */
+function FontPicker({ value, onChange }: { value: string; onChange: (font: string) => void }) {
+  const { imported, system } = useFonts();
+  const known = new Set([...FONTS, ...imported, ...system]);
+  const option = (f: string) => (
+    <option key={f} value={f} style={{ fontFamily: `"${f}"` }}>
+      {f}
+    </option>
+  );
+  return (
+    <div className="font-picker">
+      <select className="field" value={value} aria-label="Font" onChange={(e) => onChange(e.target.value)}>
+        {!known.has(value) && <option value={value}>{value} (not on this computer)</option>}
+        <optgroup label="Built in">{FONTS.map(option)}</optgroup>
+        {imported.length > 0 && <optgroup label="Imported">{imported.map(option)}</optgroup>}
+        {system.length > 0 && <optgroup label="On this computer">{system.filter((f) => !FONTS.includes(f) && !imported.includes(f)).map(option)}</optgroup>}
+      </select>
+      <div className="font-picker-actions">
+        <button
+          className="btn ghost"
+          onClick={async () => {
+            const [first] = await importFonts(await pickFontFiles());
+            if (first) onChange(first);
+          }}
+        >
+          Import font…
+        </button>
+        {canListSystemFonts() && !system.length && (
+          <button className="btn ghost" onClick={() => void loadSystemFonts()}>
+            Installed fonts
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];
 
@@ -758,13 +840,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           aria-label="Text"
         />
         <Row label="Font">
-          <select className="field" value={s.font} onChange={(e) => style({ font: e.target.value }, "Font")}>
-            {FONTS.map((f) => (
-              <option key={f} value={f} style={{ fontFamily: f }}>
-                {f}
-              </option>
-            ))}
-          </select>
+          <FontPicker value={s.font} onChange={(font) => style({ font }, "Font")} />
         </Row>
         <SliderRow clip={clip} path="style.size" label="Size" min={8} max={400} reset={96} keyframes={false} />
         <Row label="Style">

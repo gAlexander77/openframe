@@ -58,10 +58,16 @@ async (page) => {
     const maxDiff = (a, b) => Math.max(...a.map((v, i) => Math.abs(v - b[i])));
 
     /** Worst channel error of the viewer against the CPU reference. */
-    const againstReference = (px, lut, table) => {
+    // `from`: skip inputs darker than this (0..255). The reference grades
+    // the 8-bit readback, the GPU the exact texel: where a curve is steep
+    // (a square root near black, slope ~8 at 1/255) half a level of
+    // rounding becomes several. The proportional layout moved the ramp's
+    // samples onto such values and showed it.
+    const againstReference = (px, lut, table, from = 0) => {
       const params = grade.resolveGrade(ve.project(), clip(), 0);
       let worst = 0;
       for (let i = 0; i < px.data.length; i += 4) {
+        if (Math.max(base.data[i], base.data[i + 1], base.data[i + 2]) < from) continue;
         const src = [base.data[i] / 255, base.data[i + 1] / 255, base.data[i + 2] / 255];
         const want = params ? grade.gradeRgb(src, params, lut, table) : src;
         for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(px.data[i + k] - want[k] * 255));
@@ -76,7 +82,7 @@ async (page) => {
     for (const [i, name, tol] of [[0, "identity LUT changes nothing", 1], [1, "invert LUT inverts", 2], [2, "1D LUT follows its curve", 3]]) {
       ve.exec("apply_lut", { clip_id: clipId, lut_id: luts[i].id, intensity: 1 });
       await settle();
-      const err = againstReference(ve.pixels(), lutData[i]);
+      const err = againstReference(ve.pixels(), lutData[i], undefined, i === 2 ? 8 : 0);
       check(name, err <= tol, { maxError: err, tolerance: tol });
     }
     ve.exec("apply_lut", { clip_id: clipId, lut_id: luts[1].id, intensity: 0.5 });

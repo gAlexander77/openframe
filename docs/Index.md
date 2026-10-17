@@ -150,3 +150,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   the drop's own placement and draw the difference
 - [[ADR-047 A new title shows by playing its In animation]] — a silent run
   to the settled frame; reduced motion jumps there
+- [[ADR-048 Crop is cut from the source and edited on a copy]] — crop
+  before flips and transform; the crop mode's session and whole-picture view
+- [[ADR-049 Masks turn rigidly and grow shapes without new fields]] —
+  rotation in layer pixels; heart, star and round corners as additive fields

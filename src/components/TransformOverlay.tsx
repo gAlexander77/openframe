@@ -1,29 +1,15 @@
 import { useRef, useState } from "react";
-import { layerBox, snapBox, snapLines, tidy, type Box } from "../lib/align";
+import { layerBox, otherBoxes, SNAP, snapBox, snapLines, tidy, type Box } from "../lib/align";
 import { paramAt } from "../lib/keyframes";
 import { findClip, setParam } from "../lib/project/ops";
-import type { Project, VisualClip } from "../lib/project/types";
+import type { VisualClip } from "../lib/project/types";
 import { layerAt } from "../lib/render/plan";
 import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
+import { CropOverlay } from "./CropOverlay";
+import { GroupOverlay } from "./GroupOverlay";
+import { MaskOverlay } from "./MaskOverlay";
 import { TextEditor } from "./TextEditor";
-
-const SNAP = 6; // screen pixels within which an edge or center catches
-
-/** Boxes of the other visible pictures at `frame`, for snapping. */
-function otherBoxes(p: Project, frame: number, except: string): Box[] {
-  const out: Box[] = [];
-  for (const t of p.tracks) {
-    if (t.hidden || t.kind !== "video") continue;
-    for (const c of t.clips) {
-      if (c.id === except || c.disabled || c.type === "audio" || c.type === "adjustment") continue;
-      if (frame < c.start || frame >= c.start + c.duration) continue;
-      const l = layerAt(p, c, frame);
-      if (l) out.push(layerBox(p, c, l));
-    }
-  }
-  return out;
-}
 
 type Drag =
   | { kind: "move"; x0: number; y0: number; px: number; py: number; box: Box; lines: { x: number[]; y: number[] } }
@@ -45,10 +31,13 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   const frame = useEditor((s) => s.playhead);
   const playing = useEditor((s) => s.playing);
   const editing = useEditor((s) => s.textEdit);
+  const cropping = useEditor((s) => s.cropEdit);
+  const maskTab = useEditor((s) => s.maskHandles);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const drag = useRef<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
 
+  if (sel.length > 1) return playing || W === 0 ? null : <GroupOverlay ids={sel} width={W} />;
   const loc = sel.length === 1 ? findClip(project, sel[0]) : null;
   const clip = loc?.clip;
   if (!clip || playing || W === 0 || clip.type === "audio" || clip.type === "adjustment") return null;
@@ -64,6 +53,8 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
     );
   }
   const k = W / project.width;
+  if (cropping?.id === clip.id) return <CropOverlay project={project} clip={clip} layer={layer} session={cropping} k={k} />;
+  if (maskTab && layer.mask) return <MaskOverlay project={project} clip={clip as VisualClip} layer={layer} mask={layer.mask} k={k} />;
   const box = layerBox(project, clip, layer);
   const cx = box.cx * k, cy = box.cy * k, bw = box.w * k, bh = box.h * k;
   const rel = frame - clip.start;
@@ -150,7 +141,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
         style={{ left: cx, top: cy, width: Math.abs(bw), height: Math.abs(bh), transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)` }}
         onPointerDown={(e) => {
           const m = local(e);
-          const lines = snapLines(project, otherBoxes(project, frame, c.id));
+          const lines = snapLines(project, otherBoxes(project, frame, [c.id]));
           begin(e, { kind: "move", x0: paramAt(c, "transform.x", rel), y0: paramAt(c, "transform.y", rel), px: m.x, py: m.y, box, lines });
         }}
         onDoubleClick={(e) => {

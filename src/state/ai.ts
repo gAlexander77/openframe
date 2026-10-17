@@ -8,7 +8,11 @@
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
 import { useSyncExternalStore } from "react";
-import { decodeMono, frameScores, measureLoudness } from "../engine/analyze";
+import { decodeMono, decodePcm, frameScores, measureLoudness } from "../engine/analyze";
+import { denoise } from "../lib/analysis/denoise";
+import { replaceClip } from "../lib/project/replace";
+import { encodeWav } from "../lib/wav";
+import { adoptAndImport } from "./media";
 import { detectBeats } from "../lib/analysis/beats";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
@@ -24,7 +28,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking";
+export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking" | "denoise";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -58,12 +62,18 @@ export interface DuckSettings {
   depth: number;
 }
 
+export interface DenoiseSettings {
+  /** 0..1, how much of the noise goes. */
+  strength: number;
+}
+
 export interface AiSettings {
   silences: SilenceSettings;
   scenes: SceneSettings;
   beats: BeatSettings;
   loudness: LoudnessSettings;
   ducking: DuckSettings;
+  denoise: DenoiseSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -74,6 +84,7 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   loudness: { target: -14 },
   // Ducking guides put music 10-15 dB under dialogue.
   ducking: { depth: 12 },
+  denoise: { strength: 0.75 },
 };
 
 export interface AiJob {
@@ -131,6 +142,7 @@ export const NEEDS: Record<ToolId, string> = {
   beats: "a music or video clip with sound",
   loudness: "video or audio clips with sound",
   ducking: "a music clip with speech under it",
+  denoise: "a video or audio clip with sound",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
@@ -141,6 +153,9 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
   if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
+  // ponytail: the cleaned sound is a new file of the source window; a
+  // retimed clip would need the retimer's window instead.
+  if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
   return asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
 }
 
@@ -518,4 +533,51 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> =
   });
   finish("ducking", `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
   return { voices: voices.length, dips, keys: keys.length };
+}
+
+export interface DenoiseEdit {
+  /** The cleaned sound's new media. */
+  assetId: Id;
+  /** The clip that now plays it (a video's sound is extracted first). */
+  clipId: Id;
+}
+
+/**
+ * CapCut's Reduce noise: clean the clip's sound with a spectral gate
+ * (src/lib/analysis/denoise.ts) and play the cleaned copy instead, as one
+ * undoable edit. A video's own sound is extracted to an audio clip first,
+ * as CapCut does, so the picture keeps its original file. The cleaned
+ * copy is a new WAV of exactly the clip's source window.
+ */
+export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = {}): Promise<DenoiseEdit> {
+  const scope = projectWork.signal();
+  const { clip, asset } = resolve("denoise", clipId);
+  const strength = opts.strength ?? state.settings.denoise.strength;
+  const file = await job("denoise", clip, `Reducing noise in ${asset.name}`, async (progress, signal) => {
+    const [from, to] = windowOf(clip);
+    const { rate, channels } = await decodePcm(asset, from, to, (x) => progress(x * 0.7), signal);
+    if (!channels[0]?.length) throw new Error("The clip has no sound to clean");
+    progress(0.75);
+    // Let the progress paint before the (synchronous) pass.
+    await new Promise((r) => setTimeout(r, 0));
+    const clean = denoise(channels, { strength });
+    signal.throwIfAborted();
+    progress(0.95);
+    return new File([encodeWav(clean, rate)], `${asset.name.replace(/\.[^.]+$/, "")} (noise reduced).wav`, { type: "audio/wav" });
+  });
+  scope.throwIfAborted();
+  const [cleaned] = await adoptAndImport([file]);
+  scope.throwIfAborted();
+  const c = stillThere(clip.id);
+  let target = c.id;
+  edit("Reduce noise", (p) => {
+    if (c.type === "video") {
+      const before = new Set(p.tracks.flatMap((t) => t.clips.map((x) => x.id)));
+      p = ops.detachAudio(p, c.id);
+      target = p.tracks.flatMap((t) => t.clips).find((x) => !before.has(x.id))?.id ?? c.id;
+    }
+    return replaceClip(p, target, cleaned);
+  });
+  finish("denoise", `Reduced noise in ${asset.name}`);
+  return { assetId: cleaned.id, clipId: target };
 }

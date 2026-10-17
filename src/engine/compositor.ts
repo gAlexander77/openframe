@@ -54,7 +54,7 @@ interface Target {
   tex: WebGLTexture;
 }
 
-const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4 } as const;
+const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6 } as const;
 
 /** GL reads rows bottom-up; flip them to top-down in place. */
 function flipRows(out: Uint8Array, width: number, height: number): Uint8Array {
@@ -436,14 +436,18 @@ export class Compositor {
     const scaleY = layer.scaleY ?? layer.scale;
     const visH = sh * fit * scaleY * (1 - top - bottom);
     // Cropping keeps the uncropped image where it was, so the visible part's
-    // center shifts by half the difference of the trimmed edges.
-    const shiftX = ((left - right) / 2) * sw * fit * layer.scale;
-    const shiftY = ((top - bottom) / 2) * sh * fit * scaleY;
+    // center shifts by half the difference of the trimmed edges. The crop is
+    // cut from the source before the flip, so the shift mirrors with the
+    // picture (ADR-048).
+    const fx = layer.flipX ? -1 : 1;
+    const fy = layer.flipY ? -1 : 1;
+    const shiftX = ((left - right) / 2) * sw * fit * layer.scale * fx;
+    const shiftY = ((top - bottom) / 2) * sh * fit * scaleY * fy;
     const rad = (layer.rotation * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
-    const sx = visW * (layer.flipX ? -1 : 1);
-    const sy = visH * (layer.flipY ? -1 : 1);
+    const sx = visW * fx;
+    const sy = visH * fy;
     // pixel position (y down) of quad point (a, b) in 0..1:
     //   P = C + R * ((a - 0.5) * sx + shift.x, (b - 0.5) * sy + shift.y)
     const cx = W / 2 + layer.x * W;
@@ -486,12 +490,14 @@ export class Compositor {
       gl.uniform1f(u("u_keySpill"), key.spill);
     }
     const mask = layer.mask;
-    gl.uniform1i(u("u_maskShape"), mask ? MASK_SHAPES[mask.shape] : 0);
+    gl.uniform1i(u("u_maskShape"), mask ? (MASK_SHAPES[mask.shape] ?? 0) : 0);
     if (mask) {
       gl.uniform2f(u("u_maskCenter"), mask.x, mask.y);
       gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
       gl.uniform1f(u("u_maskRotation"), (mask.rotation * Math.PI) / 180);
       gl.uniform1f(u("u_maskFeather"), mask.feather);
+      gl.uniform1f(u("u_maskAspect"), Math.abs(visH) > 1e-6 ? Math.abs(visW / visH) : 1);
+      gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
       gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
     }
     this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);

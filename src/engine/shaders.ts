@@ -188,9 +188,11 @@ uniform bool u_key;
 uniform vec3 u_keyColor;
 uniform float u_keySimilarity, u_keySmoothness, u_keySpill;
 // mask
-uniform int u_maskShape;   // 0 none, 1 linear, 2 mirror, 3 circle, 4 rectangle
+uniform int u_maskShape;   // 0 none, 1 linear, 2 mirror, 3 circle, 4 rectangle, 5 heart, 6 star
 uniform vec2 u_maskCenter, u_maskSize;
 uniform float u_maskRotation, u_maskFeather;
+uniform float u_maskAspect;   // the visible layer's width over its height
+uniform float u_maskRadius;   // rectangle corners, 0..1
 uniform bool u_maskInvert;
 out vec4 outColor;
 ${COLOR_FNS}
@@ -199,22 +201,70 @@ vec2 cbcr(vec3 c) {
   return vec2(-0.1687 * c.r - 0.3313 * c.g + 0.5 * c.b, 0.5 * c.r - 0.4187 * c.g - 0.0813 * c.b);
 }
 
+// Heart and star, signed distance in the mask's box mapped to -1..1 (y
+// down), so each shape fills its box. src/lib/mask.ts draws the same
+// outlines for the viewer's handles; change both together.
+float sdHeart(vec2 u) {
+  // Inigo Quilez's exact heart: tip at the origin, lobes up to y 1.1036.
+  vec2 p = vec2(abs(u.x) * 0.603553, (1.0 - u.y) * 0.551777);
+  if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.353553;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+
+vec2 starVertex(int i) {
+  float a = -1.5707963 + 0.6283185 * float(i);   // 36 degrees apart, a point at the top
+  return vec2(cos(a), sin(a)) * (i % 2 == 0 ? 1.0 : 0.381966);
+}
+
+float sdStar(vec2 u) {
+  // A regular five-point star (inner radius 0.382 of the outer), polygon
+  // distance after Inigo Quilez.
+  vec2 p = vec2(u.x * 0.951057, u.y * 0.904508 - 0.095492);
+  float d = 1e9, sg = 1.0;
+  for (int i = 0; i < 10; i++) {
+    vec2 vi = starVertex(i), vj = starVertex(i == 0 ? 9 : i - 1);
+    vec2 e = vj - vi, w = p - vi;
+    vec2 b = w - e * clamp(dot(w, e) / dot(e, e), 0.0, 1.0);
+    d = min(d, dot(b, b));
+    bvec3 c = bvec3(p.y >= vi.y, p.y < vj.y, e.x * w.y > e.y * w.x);
+    if (all(c) || all(not(c))) sg = -sg;
+  }
+  return sg * sqrt(d);
+}
+
 float maskAlpha(vec2 p) {
   if (u_maskShape == 0) return 1.0;
-  vec2 q = p - (vec2(0.5) + u_maskCenter);
+  // Measured in layer heights, so the shape turns rigidly on a wide layer
+  // (ADR-049); unrotated, every older shape draws exactly as before.
+  vec2 d = (p - (vec2(0.5) + u_maskCenter)) * vec2(u_maskAspect, 1.0);
   float s = sin(-u_maskRotation), c = cos(-u_maskRotation);
-  q = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+  d = vec2(c * d.x - s * d.y, s * d.x + c * d.y);
+  // Back to layer fractions along the mask's own axes: the units of its
+  // size, and of the older shapes' feather.
+  vec2 q = vec2(d.x / u_maskAspect, d.y);
+  vec2 half_ = u_maskSize * 0.5;
   float f = max(u_maskFeather * 0.5, 0.001);
   float a;
   if (u_maskShape == 1) a = smoothstep(-f, f, -q.y);
-  else if (u_maskShape == 2) a = 1.0 - smoothstep(u_maskSize.y * 0.5 - f, u_maskSize.y * 0.5 + f, abs(q.y));
+  else if (u_maskShape == 2) a = 1.0 - smoothstep(half_.y - f, half_.y + f, abs(q.y));
   else if (u_maskShape == 3) {
-    float d = length(q / max(u_maskSize * 0.5, vec2(0.001)));
-    a = 1.0 - smoothstep(1.0 - f * 2.0, 1.0 + f * 2.0, d);
+    float r = length(q / max(half_, vec2(0.001)));
+    a = 1.0 - smoothstep(1.0 - f * 2.0, 1.0 + f * 2.0, r);
+  } else if (u_maskShape == 4 && u_maskRadius <= 0.0) {
+    vec2 e = abs(q) - half_;
+    a = 1.0 - smoothstep(-f, f, max(e.x, e.y));
+  } else if (u_maskShape == 4) {
+    // Round corners: a rounded box in layer heights, corners round on screen.
+    vec2 b = half_ * vec2(u_maskAspect, 1.0);
+    float r = u_maskRadius * min(b.x, b.y);
+    vec2 e = abs(d) - b + r;
+    a = 1.0 - smoothstep(-f, f, length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r);
   } else {
-    vec2 e = abs(q) - u_maskSize * 0.5;
-    float d = max(e.x, e.y);
-    a = 1.0 - smoothstep(-f, f, d);
+    // Feathered in half-sizes, like the circle.
+    vec2 u = d / max(half_ * vec2(u_maskAspect, 1.0), vec2(0.0001));
+    float sd = u_maskShape == 5 ? sdHeart(u) / 0.58 : sdStar(u) / 0.93;
+    a = 1.0 - smoothstep(-f * 2.0, f * 2.0, sd);
   }
   return u_maskInvert ? 1.0 - a : a;
 }

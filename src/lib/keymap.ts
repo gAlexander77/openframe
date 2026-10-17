@@ -64,6 +64,8 @@ export type ActionId =
   | "saveProject"
   | "export"
   | "fullscreenPreview"
+  | "groupClips"
+  | "ungroupClips"
   | "nudgeLeft"
   | "nudgeRight"
   | "nudgeLeft5"
@@ -136,6 +138,9 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   saveProject: ["Mod+S"],
   export: ["Mod+E"],
   fullscreenPreview: ["Mod+Shift+F"],
+  // Premiere's Group and Ungroup.
+  groupClips: ["Mod+G"],
+  ungroupClips: ["Mod+Shift+G"],
   // Premiere's clip nudge: Alt+arrows a frame, with Shift five.
   nudgeLeft: ["Alt+ArrowLeft"],
   nudgeRight: ["Alt+ArrowRight"],
@@ -208,6 +213,8 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   saveProject: "Save project",
   export: "Export",
   fullscreenPreview: "Full-screen preview",
+  groupClips: "Group clips",
+  ungroupClips: "Ungroup clips",
   nudgeLeft: "Nudge clips one frame left",
   nudgeRight: "Nudge clips one frame right",
   nudgeLeft5: "Nudge clips five frames left",
@@ -245,6 +252,35 @@ export function chordOf(
   if (e.altKey) mods.push("Alt");
   if (e.shiftKey) mods.push("Shift");
   return [...mods, key].join("+");
+}
+
+export type Keymap = Record<ActionId, string[]>;
+/** A viewer's changes: an action listed takes exactly those chords. */
+export type KeymapChanges = Partial<Keymap>;
+
+/** The defaults with a viewer's changes; anything unreadable is ignored. */
+export function withChanges(changes: unknown): Keymap {
+  const map = { ...DEFAULT_KEYMAP };
+  if (changes && typeof changes === "object") {
+    for (const [id, chords] of Object.entries(changes)) {
+      if (id in DEFAULT_KEYMAP && Array.isArray(chords) && chords.every((c) => typeof c === "string")) map[id as ActionId] = chords;
+    }
+  }
+  return map;
+}
+
+/** The actions besides `except` that a chord triggers. */
+export const usersOf = (map: Keymap, chord: string, except?: ActionId) =>
+  (Object.keys(map) as ActionId[]).filter((id) => id !== except && map[id].includes(chord));
+
+/** Give `id` exactly `chord`, taking it from any action that had it (the
+ * caller has asked first). A change back to the defaults is dropped. */
+export function bindChord(changes: KeymapChanges, id: ActionId, chord: string | null): KeymapChanges {
+  const map = withChanges(changes);
+  const next: KeymapChanges = { ...changes, [id]: chord ? [chord] : [] };
+  if (chord) for (const other of usersOf(map, chord, id)) next[other] = map[other].filter((c) => c !== chord);
+  for (const k of Object.keys(next) as ActionId[]) if (JSON.stringify(next[k]) === JSON.stringify(DEFAULT_KEYMAP[k])) delete next[k];
+  return next;
 }
 
 /** Reverse index: chord -> action. Later bindings for the same chord lose. */

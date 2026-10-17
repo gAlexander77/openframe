@@ -42,7 +42,7 @@ export interface McpHost {
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
 }
 
-export type AiTool = "removeSilences" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech";
+export type AiTool = "removeSilences" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise";
 
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -136,6 +136,12 @@ APP_TOOLS.push(
     description: "Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes).",
     inputSchema: obj({ clip_id: { type: "string", description: "The music clip" }, depth: { type: "number", minimum: 1, maximum: 40, description: "dB to lower, default 12" } }, ["clip_id"]),
     call: async (h, a) => json(await h.ai("duckUnderSpeech", String(a.clip_id), given({ depth: a.depth }))),
+  },
+  {
+    name: "reduce_noise",
+    description: "Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound on this computer; the clip then plays a cleaned copy (a video's sound is extracted to an audio clip first).",
+    inputSchema: obj({ clip_id: clipId, strength: { type: "number", minimum: 0, maximum: 1, description: "0.5 gentle, 0.75 default, 1 strong" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("reduceNoise", String(a.clip_id), given({ strength: a.strength }))),
   },
 );
 
