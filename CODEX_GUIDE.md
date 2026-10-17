@@ -11,9 +11,9 @@ tells you what to do, in order, and the rules that keep the project safe.
 Read all of it before you change anything.
 
 OpenFrame is a desktop-first video editor (Tauri 2 + Rust + React 19 +
-TypeScript + WebGL2) modeled on CapCut, with a client-only web build. The
-code still says "Video Editor" / `video-editor`; the rename is planned, not
-done (`docs/Renaming.md`).
+TypeScript + WebGL2) modeled on CapCut, with a client-only web build. It
+was renamed from "Video Editor" on 2026-10-17; the checkout folder, the app
+identifier and `window.videoEditor` keep the old name (`docs/Renaming.md`).
 
 ## 1. First ten minutes
 
@@ -31,13 +31,13 @@ done (`docs/Renaming.md`).
   each task. **Do not push**, do not create branches on the remote, and do
   not change repository settings. The owner pushes after review.
 - **Do not touch the parked work.** Worktrees under
-  `F:\Dev\2026\worktrees\video-editor\` and their branches belong to the
+  `F:\Dev\2026\worktrees\openframe\` and their branches belong to the
   agents working in them; none is parked at present. Do not edit, merge,
   rebase, reset or delete them. Section 6 lists any parked branch and
   what it holds, so you do not redo it.
 - **Headless only.** The owner uses this computer (for games) while you
   work. Never open a visible browser, never launch the desktop app
-  (`npm run tauri dev`, `video-editor.exe`, `tauri build`) unless a task
+  (`npm run tauri dev`, `openframe.exe`, `tauri build`) unless a task
   here says so. Run drives with `scripts/drive/run.mjs`, which is headless.
   **Owner update, 2026-10-15:** the owner requested a desktop launch for
   personal testing, then explicitly prohibited computer/desktop control
@@ -50,9 +50,9 @@ done (`docs/Renaming.md`).
   repo's Vite: reuse it. Check with
   `Get-NetTCPConnection -LocalPort 1420 -State Listen`. Start one with
   `npm run dev` only if nothing listens there.
-- **Do not rename the app, change the app identifier
-  (`com.alex.video-editor`), the license, or saved-data formats.** Those
-  need the owner and a migration plan (`docs/Renaming.md` §1).
+- **Do not change the app identifier (`com.alex.video-editor`), the
+  license, or saved-data formats.** Those need the owner and a migration
+  plan (`docs/Renaming.md` §1).
   The approved 2026-10-16 folders/favorites feature added optional schema-1
   metadata (ADR-042); identity, paths and existing render data remain compatible.
 - **No new npm or cargo dependencies.** `scratch/` (git-ignored) may hold
@@ -260,7 +260,7 @@ your findings in section 7 and stop this task.
 
 ## 6. Parked work (for Claude Code, do not touch)
 
-Each is a branch with a worktree under `F:\Dev\2026\worktrees\video-editor\`,
+Each is a branch with a worktree under `F:\Dev\2026\worktrees\openframe\`,
 committed as WIP and pushed to GitHub as backup. All type-check and pass
 their unit tests; none is finished. (`timeline-ux` was finished and merged
 into main on 2026-10-16: ADR-046, ADR-047, `scripts/drive/timeline-ux.js`;

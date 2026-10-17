@@ -80,7 +80,7 @@ export function AgentsSection() {
         <div className="agents-info">
           <CopyRow label="URL" value={info.url} />
           <CopyRow label="Token" value={info.token} secret />
-          <CopyRow label="Claude Code" value={`claude mcp add --transport http video-editor ${info.url} --header "Authorization: Bearer ${info.token}"`} secret />
+          <CopyRow label="Claude Code" value={`claude mcp add --transport http openframe ${info.url} --header "Authorization: Bearer ${info.token}"`} secret />
           <CopyRow label="stdio" value={info.stdio} />
         </div>
       )}

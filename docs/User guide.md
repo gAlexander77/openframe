@@ -1,8 +1,7 @@
 # OpenFrame user guide
 
-OpenFrame is a desktop-first video editor in active development. The
-documentation uses the chosen name; the current application still displays
-"Video Editor" until the coordinated rename is implemented.
+OpenFrame is a desktop-first video editor in active development (named
+"Video Editor" until 2026-10-17).
 
 ## Get the editor
 
@@ -10,8 +9,8 @@ The repository is currently private and no public release is announced.
 With repository access, follow the root README's source setup and run
 `npm run tauri dev`. Node.js/npm, Rust, and the platform's Tauri prerequisites
 are required. Install FFmpeg and ffprobe on `PATH` for the desktop's broader
-media-format support. `VIDEO_EDITOR_FFMPEG` is the current override; the
-rename will retain compatibility with it.
+media-format support. `OPENFRAME_FFMPEG` points the app at another FFmpeg
+(the older `VIDEO_EDITOR_FFMPEG` still works).
 
 Use `npm run dev` to try the secondary browser build at
 `http://localhost:1420`. Browser support and codecs vary by device; desktop
@@ -215,7 +214,7 @@ off and on again is instant.
 
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection, headless rendering,
-and the current `video-editor` command names. [[AI tools]] records the
+and the `openframe` command line. [[AI tools]] records the
 algorithms and limits.
 
 ## Report a problem or help improve it

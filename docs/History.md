@@ -644,3 +644,11 @@ was thin. This round fixes what it found.
   `add_voiceover` speaks the whole script first, lays the lines end to end
   at their real lengths with captions to match, and answers where each one
   landed; the picture is cut to the voice, as an editor would.
+- **Video Editor is now OpenFrame.** The owner asked for the full rename:
+  the app, window, binary (`openframe.exe`), crate, npm package, MCP
+  server name, FFmpeg override and docs, and the GitHub repository
+  (`gAlexander77/openframe`, private, new description). The app
+  identifier stays `com.alex.video-editor`: it is the folder every project
+  lives in, and every saved project was still listed after the switch.
+  `window.videoEditor`, the old FFmpeg variable, the effect-preset key and
+  OTIO metadata keep working (docs/Renaming.md lists each and why).

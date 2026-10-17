@@ -65,7 +65,7 @@ and Linux WebKitGTK do not, and have no equivalent of this page yet.
    ```json
    {
      "build": { "devUrl": "http://localhost:1430", "beforeDevCommand": "npx vite --port 1430 --strictPort" },
-     "app": { "appDirectoriesOverride": "F:/Dev/2026/worktrees/video-editor/<purpose>/scratch/appdata" }
+     "app": { "appDirectoriesOverride": "F:/Dev/2026/worktrees/openframe/<purpose>/scratch/appdata" }
    }
    ```
 
@@ -136,7 +136,7 @@ else's window.
 
 Start the page side first (the `evaluate` that awaits the dialog), then run
 the answerer alongside it. Find the pid by the exe's **path**, never by
-name: the main checkout may be running its own `video-editor.exe`.
+name: the main checkout may be running its own `openframe.exe`.
 
 ## OS drops
 

@@ -286,6 +286,8 @@ pub fn mcp_reply(state: State<'_, Mcp>, id: u64, response: Option<String>) {
 /// The app's config dir without a running Tauri app: the same place
 /// `app_config_dir()` resolves to for this identifier.
 fn config_dir_for_bridge() -> Option<PathBuf> {
+    // The identifier outlived the rename to OpenFrame: it names the folder
+    // every user's projects live in (docs/Renaming.md section 1).
     let id = "com.alex.video-editor";
     #[cfg(windows)]
     let base = std::env::var_os("APPDATA").map(PathBuf::from);
@@ -320,7 +322,7 @@ fn post(token: &str, body: &str) -> Result<(u16, String), String> {
     Ok((status, body))
 }
 
-/// `video-editor --mcp-stdio`: one JSON-RPC message per line in, one out.
+/// `openframe --mcp-stdio`: one JSON-RPC message per line in, one out.
 pub fn run_stdio_bridge() {
     let token = config_dir_for_bridge()
         .and_then(|d| std::fs::read_to_string(token_path(&d)).ok())
@@ -340,7 +342,7 @@ pub fn run_stdio_bridge() {
             Ok((202, _)) => None,
             Ok((code, body)) => id.clone().map(|id| error(id, &format!("the editor refused the request ({code}): {}", body.trim()))),
             Err(_) => id.clone().map(|id| {
-                error(id, "Video Editor is not running, or 'Allow AI agents' is off. Open the app and turn it on in the AI assistant panel.")
+                error(id, "OpenFrame is not running, or 'Allow AI agents' is off. Open the app and turn it on in the AI assistant panel.")
             }),
         };
         if let Some(r) = reply {

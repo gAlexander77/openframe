@@ -9,8 +9,8 @@ Write a project as JSON ([[Project format]]; the smallest valid file is a
 handful of lines, everything else defaults) and render it:
 
 ```
-video-editor --render project.json --out video.mp4
-video-editor --render project.json --out video.webm --resolution 720p --quality higher
+openframe --render project.json --out video.mp4
+openframe --render project.json --out video.webm --resolution 720p --quality higher
 ```
 
 Relative media paths resolve against the project file's folder. Progress
@@ -33,7 +33,8 @@ Turn on **AI assistant → Connect other AI agents → Allow AI agents**. Then:
 - **HTTP** (Streamable HTTP): `http://127.0.0.1:47280/mcp` with
   `Authorization: Bearer <token>` (the panel shows and copies it). For
   Claude Code: the panel's ready-made `claude mcp add` line.
-- **stdio**: run `video-editor --mcp-stdio` as the server command.
+- **stdio**: run `openframe --mcp-stdio` as the server command (the exe was
+  `video-editor` before 2026-10-17; the panel always shows the current path).
 
 Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
@@ -83,7 +84,7 @@ Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 footage; an empty color removes one.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
-`start`, `end`) writes to `<Videos>\Video Editor\` with no dialog and never
+`start`, `end`) writes to `<Videos>\OpenFrame\` with no dialog and never
 replaces a file, answering with the path, size and a note (what the
 loudness pass did). Past about four minutes it answers `running`; follow
 it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
@@ -130,7 +131,8 @@ the project's, times their own), and a compound clip names its `compound`.
 edit the whole project, even while the user has a compound clip open
 (`describe_project` then adds `open_compounds`, outermost first).
 
-`window.videoEditor` (`src/automation.ts`) is the same surface for scripts
+`window.openFrame` (`src/automation.ts`; `window.videoEditor` is the same
+object under its pre-rename name) is the same surface for scripts
 in the web build or over the WebView2 debug port: `exec(name, args)`,
 `describe()`, `import(...)`, `render(options)`, `still(frame)`, `pixels()`,
 `mcp(message)`, and the AI tools (`ai.removeSilences`, ...,

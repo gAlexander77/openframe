@@ -126,11 +126,13 @@ function describe() {
 
 declare global {
   interface Window {
+    openFrame: typeof automation;
+    /** The name from before the rename to OpenFrame; scripts keep working. */
     videoEditor: typeof automation;
   }
 }
 
-window.videoEditor = automation;
+window.openFrame = window.videoEditor = automation;
 
 // ---- MCP ------------------------------------------------------------------------
 // The live host behind src/lib/mcp.ts. Transports (desktop HTTP/stdio bridge,

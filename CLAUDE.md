@@ -3,8 +3,9 @@
 A desktop-first video editor (Tauri v2 + Rust + React 19 + TypeScript) with a
 client-only web build. CapCut's ease with VEGAS/Premiere depth. Everything
 runs on the user's hardware; there is no server of ours (ADR-003). The owner
-selected **OpenFrame** on 2026-10-14; the implementation still uses the old
-"Video Editor" identity. Read `docs/Renaming.md` before touching identity
+selected **OpenFrame** on 2026-10-14 and the app, binary, packages and repo
+were renamed on 2026-10-17; the app identifier and saved-data keys keep the
+old name on purpose. Read `docs/Renaming.md` before touching identity
 strings.
 
 ## Read before resuming — 2026-10-14 owner handoff
@@ -12,8 +13,9 @@ strings.
 Read `AGENTS.md` and `docs/Next agent handoff.md` before continuing previous
 work. The owner reaffirmed **desktop first**, selected **GPL-3.0-only**, and
 asked for the coordinated rename to be documented for the next pickup.
-The repository remains private at `gAlexander77/video-editor`; public release,
-remote renaming, and deployment need a separate owner instruction.
+The repository remains private at `gAlexander77/openframe` (renamed from
+`video-editor` on 2026-10-17); public release and deployment need a separate
+owner instruction.
 
 This handoff changes documentation/licensing only. Preserve the paused
 Claude Code work, other agents' worktrees, and any pending changes.
@@ -43,7 +45,7 @@ work; they do not mean the app has already been renamed or released.
    the Playwright MCP tools, the desktop app over WebView2's debug port
    (`docs/Driving the app.md`). Playwright is for the product, never for
    research.
-5. **Worktrees** live in `F:\Dev\2026\worktrees\video-editor\<purpose>` and
+5. **Worktrees** live in `F:\Dev\2026\worktrees\openframe\<purpose>` and
    are removed (`git worktree remove`) when their work lands.
 6. Open-source projects are consulted only if widely used, only for lessons,
    never as the product model.

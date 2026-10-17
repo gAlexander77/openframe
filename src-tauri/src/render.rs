@@ -1,4 +1,4 @@
-//! Headless rendering (ADR-029): `video-editor --render project.json --out
+//! Headless rendering (ADR-029): `openframe --render project.json --out
 //! video.mp4` opens the app with its window hidden, the webview exports the
 //! project with the same engine as the export dialog, progress goes to
 //! stdout as JSON lines, and the process exits 0 on success. This is the

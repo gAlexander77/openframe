@@ -1,4 +1,4 @@
-# Video Editor task runner — run `just` to list recipes.
+# OpenFrame task runner — run `just` to list recipes.
 # Windows: winget install casey.just · macOS: brew install just
 
 # -ExecutionPolicy Bypass: Windows PowerShell 5.1 refuses npm.ps1 under the

@@ -520,7 +520,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 Three doors, one engine ([[Automation]]):
 
-- **Headless render**: `video-editor --render project.json --out file`,
+- **Headless render**: `openframe --render project.json --out file`,
   JSON-line progress, exit codes.
 - **MCP for agents** (opt-in, token-locked, local only): every editing
   command plus `preview_frame` and `preview_frames` (a contact sheet) so

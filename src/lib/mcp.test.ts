@@ -8,7 +8,7 @@ function host() {
   const start: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "a.mp4", src: "a.mp4", duration: 10, hasVideo: true, hasAudio: true }] };
   const h = {
     project: start,
-    name: "Video Editor",
+    name: "OpenFrame",
     version: "0.1.0",
     exec(name: string, args: unknown) {
       h.project = runCommand(h.project, name, args);
@@ -30,7 +30,7 @@ function host() {
     exports: [] as unknown[],
     async exportVideo(o: unknown) {
       h.exports.push(o);
-      return { state: "done", path: "C:/Users/me/Videos/Video Editor/x.mp4" };
+      return { state: "done", path: "C:/Users/me/Videos/OpenFrame/x.mp4" };
     },
     exportStatus: () => null,
     voiced: [] as unknown[][],
@@ -89,7 +89,7 @@ describe("MCP projects", () => {
 describe("MCP", () => {
   it("initializes with tools and resources", async () => {
     const r = await call(host(), "initialize", { protocolVersion: "2025-06-18" });
-    expect(r?.result).toMatchObject({ capabilities: { tools: {}, resources: {} }, serverInfo: { name: "Video Editor" } });
+    expect(r?.result).toMatchObject({ capabilities: { tools: {}, resources: {} }, serverInfo: { name: "OpenFrame" } });
   });
 
   it("lists every registry command and the app tools, each with an object schema", () => {

@@ -63,8 +63,8 @@ and source references instead of copying entire agent conversations.
 
 ## Current owner decisions - 2026-10-14
 
-- Product name: **OpenFrame**. The coordinated implementation rename is
-  pending; the current repository is `gAlexander77/video-editor`.
+- Product name: **OpenFrame**. The app, binary, packages and repository
+  (`gAlexander77/openframe`) were renamed on 2026-10-17.
 - License: **GPL-3.0-only** for original project code and documentation.
 - Development: **desktop first**, with browser support verified separately.
 - Visibility: keep the repository private until the owner requests release.

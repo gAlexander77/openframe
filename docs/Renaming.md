@@ -1,5 +1,34 @@
 # Renaming the application
 
+## Done - 2026-10-17
+
+The owner asked for the full rename and it is done: the window, title bar,
+`APP_NAME`, `index.html`, `productName` (so agent exports land in
+`<Videos>\OpenFrame\`), the binary (`openframe.exe`; `openframe --render`,
+`openframe --mcp-stdio`), the crate (`openframe`, lib `openframe_lib`), the
+npm package, the MCP server name and the generated `claude mcp add ...
+openframe` line, the FFmpeg override (`OPENFRAME_FFMPEG`), the living docs,
+and the GitHub repository: `gAlexander77/openframe`, still private, with a
+new description (GitHub redirects the old URL; `origin` points at the new
+one).
+
+Kept on purpose, each a piece of data or an interface rather than a name:
+
+| Kept | Why |
+|---|---|
+| `identifier` `com.alex.video-editor` (and the stdio bridge's copy in `mcp.rs`) | It is the folder every project, setting and token lives in (§1). Moving it needs a migration with backup; nothing gained yet. |
+| `VIDEO_EDITOR_FFMPEG` | Read after `OPENFRAME_FFMPEG`, so existing setups keep their FFmpeg. |
+| `window.videoEditor` | The same object as `window.openFrame`; every drive script and outside client uses it. |
+| `video-editor.effect-presets.v1` (localStorage) | Renaming the key would lose saved presets. |
+| `metadata.video_editor` in exported OTIO | Files already written carry it; a future importer reads it. |
+| The checkout folder `F:\Dev\video-editor` | Renaming it under running tools and agents gains nothing; clones get `openframe`. |
+| History, ADRs, research notes | They record what was true when written. |
+
+`PROJECT_EXT` became `ofproj`: nothing was ever saved as `.vedproj`.
+Checked: the gates, the desktop app running as `openframe.exe` with the
+window titled OpenFrame, the MCP server answering as OpenFrame, and every
+saved project listed and unchanged.
+
 ## Owner decision - 2026-10-14
 
 The owner selected **OpenFrame** as the product name and asked for a

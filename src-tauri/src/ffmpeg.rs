@@ -19,13 +19,15 @@ use std::{
 use tauri::{ipc::Channel, Manager};
 
 /// Where the binaries come from, first match wins:
-/// 1. `VIDEO_EDITOR_FFMPEG`: the ffmpeg executable or its folder (ffprobe
-///    is looked up beside it);
+/// 1. `OPENFRAME_FFMPEG` (or, from before the rename, `VIDEO_EDITOR_FFMPEG`):
+///    the ffmpeg executable or its folder (ffprobe is looked up beside it);
 /// 2. a bundled copy: `<resources>/ffmpeg/` or beside the app's exe;
 /// 3. `PATH` (development machines).
 pub fn tool(app: &tauri::AppHandle, name: &str) -> PathBuf {
     let exe = format!("{name}{}", std::env::consts::EXE_SUFFIX);
-    if let Some(v) = std::env::var_os("VIDEO_EDITOR_FFMPEG") {
+    if let Some(v) =
+        std::env::var_os("OPENFRAME_FFMPEG").or_else(|| std::env::var_os("VIDEO_EDITOR_FFMPEG"))
+    {
         let v = PathBuf::from(v);
         if v.is_dir() {
             return v.join(&exe);
@@ -67,7 +69,7 @@ fn command(program: &Path) -> Command {
 fn spawn_error(program: &Path, e: std::io::Error) -> String {
     if e.kind() == std::io::ErrorKind::NotFound {
         format!(
-            "{} was not found. Install FFmpeg or set VIDEO_EDITOR_FFMPEG to its location.",
+            "{} was not found. Install FFmpeg or set OPENFRAME_FFMPEG to its location.",
             program.display()
         )
     } else {

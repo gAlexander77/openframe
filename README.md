@@ -15,13 +15,13 @@ and roadmap distinguish implemented work from plans.
 
 ## Repository and current status
 
-Current repository: [gAlexander77/video-editor](https://github.com/gAlexander77/video-editor).
+Repository: [gAlexander77/openframe](https://github.com/gAlexander77/openframe)
+(formerly `video-editor`; GitHub redirects the old URL).
 
-The owner has chosen **OpenFrame** as the product name. Runtime strings,
-packages, binaries, and the repository still use the earlier identity;
-the coordinated rename is the next agent's task. See
-[the rename plan](docs/Renaming.md) and
-[the handoff](docs/Next%20agent%20handoff.md).
+The project was renamed **OpenFrame** on 2026-10-17: the app, its window,
+binary (`openframe`), packages and repository. The app's data folder keeps
+its old identifier so every saved project stays where it is; see
+[the rename notes](docs/Renaming.md).
 
 The repository is being kept private while it is prepared for an open-source
 release. Access currently requires permission; this README does not announce
@@ -32,8 +32,8 @@ a public release, hosted service, or downloadable installer.
 With repository access, clone the current URL:
 
 ```sh
-git clone https://github.com/gAlexander77/video-editor.git
-cd video-editor
+git clone https://github.com/gAlexander77/openframe.git
+cd openframe
 npm ci
 npm run tauri dev
 ```

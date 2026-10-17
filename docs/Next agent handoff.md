@@ -7,8 +7,9 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
 
 - The chosen product name is **OpenFrame**, spelled as one word with capital
   O and F. Use `openframe` for the intended package/binary/repository slug.
-- Current repository: [gAlexander77/video-editor](https://github.com/gAlexander77/video-editor).
-  A future `gAlexander77/openframe` repository name is planned, not completed.
+- Repository: [gAlexander77/openframe](https://github.com/gAlexander77/openframe),
+  renamed from `video-editor` on 2026-10-17 at the owner's instruction,
+  together with the app, binary and packages (docs/Renaming.md).
 - The owner selected GPL-3.0. The root LICENSE and README apply
   **GPL-3.0-only** to original code and documentation.
 - **Desktop first** remains the priority. The owner explicitly clarified

@@ -4,7 +4,7 @@ OpenFrame is an AI-developed, desktop-first video editor intended for an
 open-source community. The repository currently remains private; request
 access from the owner before expecting GitHub issues or pull requests to be
 available. Its current home is
-[gAlexander77/video-editor](https://github.com/gAlexander77/video-editor).
+[gAlexander77/openframe](https://github.com/gAlexander77/openframe).
 
 ## Useful contributions
 

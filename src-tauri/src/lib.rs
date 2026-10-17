@@ -10,7 +10,7 @@ mod render;
 use std::sync::Arc;
 use tauri::Manager;
 
-/// `video-editor --mcp-stdio`: be an MCP stdio server that forwards to the
+/// `openframe --mcp-stdio`: be an MCP stdio server that forwards to the
 /// running app (ADR-009), instead of opening a window.
 pub fn run_mcp_stdio_bridge() {
     mcp::run_stdio_bridge()
