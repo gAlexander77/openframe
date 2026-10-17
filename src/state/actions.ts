@@ -7,6 +7,7 @@
 import { ACTION_LABELS, buildIndex, chordOf, DEFAULT_KEYMAP, type ActionId } from "../lib/keymap";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
+import { nudgeClips } from "../lib/project/gaps";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project } from "../lib/project/types";
 import { isMac } from "../platform/env";
@@ -57,6 +58,12 @@ export const edit = (label: string, fn: (p: Project) => Project) =>
     const next = fn(p);
     return next === p ? p : ops.settle(p, next, settleOptions());
   });
+
+/** Premiere's Alt+arrow: the selected clips by frames, when they fit. */
+function nudge(frames: number) {
+  const ids = store.get().selection;
+  if (ids.length) edit("Nudge", (p) => nudgeClips(p, ids, frames));
+}
 
 /** Frames to move per arrow press when nothing is playing. */
 function stepBy(n: number) {
@@ -129,6 +136,11 @@ provide({
   markIn: () => store.set({ inPoint: store.get().playhead }),
   markOut: () => store.set({ outPoint: store.get().playhead }),
   clearInOut: () => store.set({ inPoint: null, outPoint: null }),
+  toggleLoop: () => store.set({ loop: !store.get().loop }),
+  nudgeLeft: () => nudge(-1),
+  nudgeRight: () => nudge(1),
+  nudgeLeft5: () => nudge(-5),
+  nudgeRight5: () => nudge(5),
 
   stepBack: () => stepBy(-1),
   stepForward: () => stepBy(1),

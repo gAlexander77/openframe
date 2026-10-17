@@ -38,6 +38,8 @@ of the documentation and how agents use it as shared working memory.
 - [[Automation]] — headless render, MCP for agents, Copilot: the three doors
 - [[UX audit 2026-10-14]] — 38 ranked findings from a first-time CapCut
   user's walk, what was fixed, and what to keep
+- [[UI polish 2026-10-16]] — styling audit at three window sizes and the
+  splitter extremes: what clipped or overflowed, why, and rules of thumb
 - [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
 - [[Driving the app]] — the web build through Playwright, the desktop app over
   WebView2's debug port; native dialogs, OS drops, the drive scripts
@@ -126,6 +128,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   one undo step, ended by any press outside (capture phase)
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven
   with the reference library; our clip rides in metadata
+- [[ADR-035 Linkage binds a clip to the shot under most of it]] — a clip
+  follows the main clip under more than half of it; beds stay put
 - [[ADR-038 Copied effects preserve animation and get new identities]] —
   stack reuse, independent IDs, timing conversion and undo
 - [[ADR-039 Project navigation waits for current edits]] — save in-flight
@@ -142,3 +146,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   source limits and cancellable gestures
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
+- [[ADR-046 A drop preview is a dry run of the drop]] — library drags run
+  the drop's own placement and draw the difference
+- [[ADR-047 A new title shows by playing its In animation]] — a silent run
+  to the settled frame; reduced motion jumps there

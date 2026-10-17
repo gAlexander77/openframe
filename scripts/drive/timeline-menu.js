@@ -10,7 +10,7 @@ async (page) => {
     const x = b.x + 412, y = b.y + b.height - 24;
     const frame = await page.evaluate((x) => {
       const el = document.querySelector(".tl-scroll");
-      return Math.max(0, Math.round((x - el.getBoundingClientRect().left + el.scrollLeft - 112) / window.videoEditor.state().zoom));
+      return Math.max(0, Math.round((x - el.getBoundingClientRect().left + el.scrollLeft - document.querySelector(".tl-corner").offsetWidth) / window.videoEditor.state().zoom));
     }, x);
     await page.mouse.click(x, y, { button: "right" });
     await page.locator(".ctx-anchor .menu").waitFor();

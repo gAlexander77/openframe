@@ -48,8 +48,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 ## Timeline
 
 - CapCut's toggles: main track **magnet** (gapless, reorders on drag),
-  **snapping** with a cyan guide, **linkage** (overlays follow their shot
-  through ripples), **preview axis** (hover to preview).
+  **snapping** with a cyan guide, **linkage** (titles, overlays and sound
+  effects follow the shot under most of them through ripples and
+  reorders; music beds spanning several shots stay put), **preview axis**
+  (hover to preview).
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
@@ -64,6 +66,30 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
+- **Library drags land where the preview shows**, by CapCut's rules: video
+  and images dropped above the tracks become a picture-in-picture overlay
+  on a new track at the drop time; on the magnetic main track they insert
+  at the nearest cut, never splitting a shot, and the later shots (with
+  what linkage carries) slide aside to open the gap, with a bar at the
+  cut. A busy row opens a new track, shown where it goes in; effects and
+  filters outline the clip they attach to (on empty timeline, a layer
+  there, whatever is selected); a transition marks its cut. The preview is
+  a dry run of the drop itself
+  ([[ADR-046 A drop preview is a dry run of the drop]]).
+- **Replace clip** (right-click, as in CapCut; `replace_clip`): pick a
+  file and it takes the clip's place, keeping its start, length (shorter
+  only if the new source runs out), transform, effects, animations and
+  sound settings; video and pictures swap freely, sound for sound.
+- **Close gap**: right-click an empty stretch of a track for Close gap
+  (ripple the clips after it left) or Close all gaps on this track
+  (Premiere's ripple delete of a gap, Resolve's Delete gaps; `close_gaps`).
+- **Nudge clips** by a frame with Alt+Left/Right, five with Shift
+  (Premiere's keys; `nudge_clips`), all or nothing: never past the start or
+  over another clip.
+- **Sound crossfades under transitions**: a video transition between two
+  clips with sound overlaps their audio across the cut by half the
+  transition each way (as far as both have handles) at constant power,
+  Premiere's default audio transition, in preview and export alike.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
 - **Record voiceover** (the microphone in the timeline toolbar, as in
   CapCut): pick the input, optionally mute the project, then a 3-second
@@ -101,7 +127,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
-  shuttle; preview resolution Full/½/¼ (auto ½ above 1080p while playing).
+  shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
+  in/out range when it holds the playhead, else the whole timeline; **Play
+  in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
+  preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
 - **Ratio menu** in the transport bar, as in CapCut: change the canvas
   shape (16:9, 9:16, 1:1, 4:5, 4:3, 3:4, 21:9) without leaving the clip
@@ -212,6 +241,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations.
+- **A new title shows when added**: a title, template or sticker added at
+  the playhead plays its In animation once, silently, and stops where it
+  has settled (under reduced motion it goes straight there), so the viewer
+  never shows an empty box
+  ([[ADR-047 A new title shows by playing its In animation]]).
 - **Word art**: 16 looks (neon, retro, comic, hollow, gold, fire, frost,
   candy, die-cut, chromatic, typewriter, highlight...) from fill, stroke,
   shadow and box combinations. Click with text selected (or drop on a

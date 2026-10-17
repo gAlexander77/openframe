@@ -31,8 +31,8 @@ done (`docs/Renaming.md`).
   each task. **Do not push**, do not create branches on the remote, and do
   not change repository settings. The owner pushes after review.
 - **Do not touch the parked work.** The worktrees under
-  `F:\Dev\2026\worktrees\video-editor\` (`bg-removal`, `compound-clips`,
-  `timeline-ux`) and their branches belong to Claude Code, who will finish
+  `F:\Dev\2026\worktrees\video-editor\` (`bg-removal`, `compound-clips`)
+  and their branches belong to Claude Code, who will finish
   them. Do not edit, merge, rebase, reset or delete them. Section 6 says
   what they hold, so you do not redo it.
 - **Headless only.** The owner uses this computer (for games) while you
@@ -261,11 +261,11 @@ your findings in section 7 and stop this task.
 
 Each is a branch with a worktree under `F:\Dev\2026\worktrees\video-editor\`,
 committed as WIP and pushed to GitHub as backup. All type-check and pass
-their unit tests; none is finished.
+their unit tests; none is finished. (`timeline-ux` was finished and merged
+into main on 2026-10-16: ADR-046, ADR-047, `scripts/drive/timeline-ux.js`.)
 
 | Branch | What is done | What is left |
 | --- | --- | --- |
-| `timeline-ux` | UX-14 (linkage follows the shot under most of a clip), UX-12 (drop above the tracks makes an overlay) | UX-13 drop preview (in progress), UX-15 (new title invisible), the drive |
 | `compound-clips` | research note, format and ops, plan and audio resolution (in progress) | UI (open, breadcrumb, break apart), commands, ADR-037, drive |
 | `bg-removal` | matte pipeline and tests, worker, compositor and plan support, inspector toggle, AI tools card, commands | ADR-032/033 (model choice and license), running the drive, desktop check |
 

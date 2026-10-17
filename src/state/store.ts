@@ -60,6 +60,9 @@ export interface EditorState {
   mediaBrowser: MediaBrowser;
   /** Marker opened in the library editor; independent of clip selection. */
   markerEdit: Id | null;
+  /** Playback starts over at the end: of the in/out range when it holds
+   * the playhead, else of the timeline. Per session, never saved. */
+  loop: boolean;
   /** In/out range for export and three-point edits, frames. */
   inPoint: number | null;
   outPoint: number | null;
@@ -104,6 +107,7 @@ let state: EditorState = {
   leftTab: "media",
   mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },
   markerEdit: null,
+  loop: false,
   inPoint: null,
   outPoint: null,
   undoLabel: null,

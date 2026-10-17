@@ -15,12 +15,12 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
     Playback: [
       "playPause", "stepBack", "stepForward", "stepBack10", "stepForward10",
       "prevEdit", "nextEdit", "goStart", "goEnd", "shuttleBack", "shuttleStop",
-      "shuttleForward", "fullscreenPreview",
+      "shuttleForward", "toggleLoop", "playInToOut", "fullscreenPreview",
     ],
     Editing: [
       "split", "splitAll", "trimStartToPlayhead", "trimEndToPlayhead", "delete",
       "rippleDelete", "duplicate", "copy", "cut", "paste", "freeze", "detachAudio",
-      "toggleClipEnabled", "editText", "undo", "redo",
+      "toggleClipEnabled", "editText", "nudgeLeft", "nudgeRight", "nudgeLeft5", "nudgeRight5", "undo", "redo",
     ],
     "Selection & tools": [
       "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",

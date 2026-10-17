@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player, topClipAt } from "../engine/player";
-import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play } from "../icons";
+import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play, Repeat } from "../icons";
 import { chordText } from "../lib/keymap";
 import { boxesAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
@@ -161,6 +161,7 @@ function ScopesToggle() {
 
 function Transport() {
   const playing = useEditor((s) => s.playing);
+  const loop = useEditor((s) => s.loop);
   return (
     <div className="transport">
       <Timecodes />
@@ -173,6 +174,9 @@ function Transport() {
         </button>
         <button className="icon-btn" aria-label="Next frame" data-tip={tip("Next frame", "stepForward")} onClick={() => run("stepForward")}>
           <ChevronRight />
+        </button>
+        <button className={`icon-btn loop-btn${loop ? " on" : ""}`} aria-label="Loop playback" aria-pressed={loop} data-tip={tip("Loop playback", "toggleLoop")} onClick={() => run("toggleLoop")}>
+          <Repeat />
         </button>
       </div>
       <div className="transport-right">

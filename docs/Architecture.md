@@ -65,7 +65,7 @@ a clock, so no frame is ever dropped
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
-| `engine/player.ts` | Preview loop, transport, shuttle |
+| `engine/player.ts` | Preview loop, transport, shuttle, a silent bounded run (`preview`) |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |
@@ -74,7 +74,8 @@ a clock, so no frame is ever dropped
 | `lib/templates.ts` | Word art and title templates as data, turned into text and box clips |
 | `lib/markers.ts`, `lib/markerText.ts` | Marker edits/navigation/search and read-only notes/chapter formatting |
 | `lib/mediaLibrary.ts` | Derived media filters, stable sorts and timeline reference counts; session preferences live in the store |
-| `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time |
+| `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time; what to play so it shows once added (ADR-047) |
+| `lib/drop.ts` | Where a library drop lands (`placeAsset`, magnet cuts, overlays) and `landing`, which the drop preview draws from a dry run (ADR-046) |
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
 | `state/store.ts` | App state, undo, gestures |
 | `state/project.ts` | Autosave drains changed revisions; one navigation transition at a time (ADR-039) |

@@ -10,6 +10,7 @@
 //   silent frame playback at 2x/4x/8x; reverse is silent frame playback.
 
 import type { VideoSample } from "mediabunny";
+import { exportRange } from "../lib/export";
 import { getAsset, projectDuration, sourceTimeAt } from "../lib/project/ops";
 import type { Id, Project, VisualClip } from "../lib/project/types";
 import { planFrame, type Layer, type PlanItem } from "../lib/render/plan";
@@ -153,6 +154,11 @@ export class Player {
   private ctxAt = 0;
   private wallAt = 0;
   private raf = 0;
+  /** Where Loop starts over, while looping. */
+  private loopFrom: number | null = null;
+  /** A bounded, silent run (preview): stop on this frame. */
+  private until: number | null = null;
+  private silent = false;
   /** Last frame actually drawn, for the dropped-frame counter. */
   drawn = { frame: -1, dropped: 0 };
 
@@ -163,6 +169,14 @@ export class Player {
       shuttleForward: () => this.play(this.rate <= 0 ? 1 : Math.min(this.rate * 2, 8)),
       shuttleBack: () => this.play(this.rate >= 0 ? -1 : Math.max(this.rate * 2, -8)),
       shuttleStop: () => this.pause(),
+      // Premiere's Play In to Out: the range once, or round with Loop on.
+      playInToOut: () => {
+        const { project, inPoint, outPoint } = store.get();
+        const r = exportRange(project, "inout", inPoint, outPoint);
+        if (r.to <= r.from) return;
+        store.seek(r.from);
+        void this.play(1, { until: r.to });
+      },
     });
   }
 
@@ -222,7 +236,7 @@ export class Player {
     if (this.rate !== 0) {
       // An edit during playback restarts it from the current frame so sound
       // matches what is now on the timeline.
-      if (prev.project && prev.project !== s.project) this.play(this.rate);
+      if (prev.project && prev.project !== s.project) this.play(this.rate, { until: this.until ?? undefined, silent: this.silent });
       return;
     }
     if (prev.project !== s.project || prev.playhead !== s.playhead || prev.hoverFrame !== s.hoverFrame || prev.previewScale !== s.previewScale) {
@@ -296,20 +310,34 @@ export class Player {
 
   // ---- transport ---------------------------------------------------------------
 
-  async play(rate: number) {
+  /** Play from the playhead at `rate`. `until` stops on that frame, and
+   * `silent` leaves the sound off: preview() uses both. */
+  async play(rate: number, opts: { until?: number; silent?: boolean; once?: boolean } = {}) {
     this.stopClock();
+    this.until = opts.until ?? null;
+    this.silent = !!opts.silent;
     const s = store.get();
     const p = s.project;
     const end = projectDuration(p);
     if (end === 0) return;
     let start = s.playhead;
-    if (rate > 0 && start >= end - 1) start = 0;
+    // Loop: forward, audible playback goes round the in/out range when it
+    // holds the playhead, else the whole timeline (a voiceover take and the
+    // silent title preview play once).
+    this.loopFrom = null;
+    if (s.loop && rate > 0 && !this.silent && !opts.once) {
+      const r = exportRange(p, "inout", s.inPoint, s.outPoint);
+      const ranged = (s.inPoint !== null || s.outPoint !== null) && r.to > r.from && start >= r.from && start < r.to;
+      this.loopFrom = ranged ? r.from : 0;
+      this.until = ranged ? r.to : (this.until ?? end);
+    }
+    if (rate > 0 && start >= end - 1) start = this.loopFrom ?? 0;
     if (start !== s.playhead) store.set({ playhead: start });
     this.rate = rate;
     this.t0 = framesToSeconds(start, p.fps);
     this.wallAt = performance.now();
     store.set({ playing: true, hoverFrame: null });
-    if (rate === 1) {
+    if (rate === 1 && !this.silent) {
       const ctx = audioContext();
       await ctx.resume();
       if (this.rate !== rate) return; // paused while resuming
@@ -325,6 +353,18 @@ export class Player {
       else t = this.t0 + ((performance.now() - this.wallAt) / 1000) * this.rate;
       const f = frameAt(t, proj.fps);
       const last = projectDuration(proj);
+      if (this.loopFrom !== null && f >= Math.min(this.until ?? last, last)) {
+        const from = this.loopFrom, until = this.until ?? undefined;
+        store.set({ playhead: from });
+        void this.play(rate, { until });
+        return;
+      }
+      if (this.until !== null && f >= this.until) {
+        const stop = this.until;
+        this.pause();
+        store.seek(stop);
+        return;
+      }
       if (f >= last || f < 0) {
         this.pause();
         store.seek(f < 0 ? 0 : last);
@@ -349,10 +389,20 @@ export class Player {
     this.schedule = null;
   }
 
+  /** Play [from, to) once without sound and stop on `to`, the frame where
+   * a new title's In animation has settled (UX-15). Any transport command
+   * takes over, as it does from playback. */
+  preview(from: number, to: number) {
+    store.seek(from);
+    void this.play(1, { until: to, silent: true });
+  }
+
   pause() {
     if (this.rate === 0) return;
     this.stopClock();
     this.rate = 0;
+    this.until = null;
+    this.silent = false;
     store.set({ playing: false });
     this.request();
   }

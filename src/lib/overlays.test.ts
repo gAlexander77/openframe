@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { placeOnTop } from "./overlays";
+import { placeOnTop, revealSpan } from "./overlays";
 import { createProject, createTextClip, createTrack } from "./project/defaults";
 import { addClip, addTrack, findClip } from "./project/ops";
 import type { Project } from "./project/types";
@@ -56,5 +56,22 @@ describe("placeOnTop", () => {
     for (const id of ["box", "name", "role"]) p = placeOnTop(p, text(0, 60, id), "Template");
     expect(trackOf(p, "role")).toBeLessThan(trackOf(p, "name"));
     expect(trackOf(p, "name")).toBeLessThan(trackOf(p, "box"));
+  });
+});
+
+describe("revealSpan", () => {
+  const title = { ...createTextClip("Title", 100, 90), animIn: { type: "rise", duration: 15 } };
+  it("plays a new clip's In animation when the playhead is inside it", () => {
+    expect(revealSpan([title], 100)).toEqual({ from: 100, to: 115 });
+    expect(revealSpan([title], 110)).toEqual({ from: 100, to: 115 });
+  });
+  it("leaves the playhead alone when the clip already shows there", () => {
+    expect(revealSpan([title], 115)).toBeNull();
+    expect(revealSpan([title], 40)).toBeNull();
+    expect(revealSpan([createTextClip("Plain", 100, 90)], 100)).toBeNull();
+  });
+  it("covers every layer of a template, to the last one settled", () => {
+    const late = { ...createTextClip("Sub", 108, 60), animIn: { type: "fade", duration: 20 } };
+    expect(revealSpan([title, late, createTextClip("Plain", 100, 90)], 100)).toEqual({ from: 100, to: 128 });
   });
 });

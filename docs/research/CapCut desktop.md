@@ -337,6 +337,7 @@ On/off state is shown by color only: cyan when on, grey or white when off. All f
 - Text, stickers, effects, filters, and adjustment clips (and probably overlay video) placed over a main-track clip are bound to it.
 - When the main clip moves or ripples, the attached clips move with it, keeping their relative offset.
 - Deleting the main clip does not necessarily delete the attached clips (unverified).
+- Community answers (2025-2026, unverified) say sound placed on a shot follows it too, and that with linkage off "overlays, audio and text stay frozen" while main clips move. No source states the rule for "placed over"; CapCut's help pages only name the kinds. We bind a clip to the main clip under more than half of it, so a bed spanning shots never belongs to the first one ([[ADR-035 Linkage binds a clip to the shot under most of it]]).
 
 **Preview axis (预览轴)**
 - When on, a **yellow vertical line** follows the mouse over the timeline and the player shows that frame (hover-scrub).

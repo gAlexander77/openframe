@@ -22,6 +22,8 @@
   transition: color var(--t-fast), background var(--t-fast);
 }
 .lib-tab:hover { color: var(--text-1); background: var(--bg-2); }
+/* Inset: the strip scrolls (overflow-x), which clipped the ring's bottom. */
+.lib-tab:focus-visible { outline-offset: -2px; }
 .lib-tab.on { color: var(--accent); }
 .lib-tab.on::after {
   content: ""; position: absolute; left: 30%; right: 30%; bottom: -1px; height: 2px;
@@ -37,8 +39,10 @@
   padding: 10px 6px; border-right: 1px solid var(--line);
   overflow-y: auto;
 }
+/* min-height, not height: a two-word category ("Black & white") wraps in
+   the 92 px column and spilled out of a fixed 26 px button. */
 .lib-subnav button {
-  height: 26px; padding: 0 8px; border: 0; border-radius: var(--radius-sm);
+  flex: none; min-height: 26px; padding: 5px 8px; line-height: 1.3; border: 0; border-radius: var(--radius-sm);
   background: transparent; color: var(--text-2); font-size: var(--fs-xs); text-align: left;
   transition: background var(--t-fast), color var(--t-fast);
 }

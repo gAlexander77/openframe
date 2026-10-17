@@ -133,6 +133,7 @@ export function TimelineToolbar() {
                 { action: "selectRight" },
               ]}
               onDone={() => setToolMenu(false)}
+              anchor={picker.current}
             />
           )}
         </div>

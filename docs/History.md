@@ -302,3 +302,25 @@ with a check that fails without the fix where one could be built:
   The fix (an `onCloseRequested` handler that awaits `saveNow`) needs the
   `core:window:allow-destroy` permission and a desktop run; a handler that
   fails would leave a window that cannot close.
+
+## 2026-10-16 — Timeline UX finished
+
+The `timeline-ux` branch, parked on 2026-10-14 with UX-14 and UX-12 done,
+was merged up to main and finished: the four timeline findings of
+[[UX audit 2026-10-14]] are fixed.
+
+- **Linkage** binds a clip to the shot under most of it, so a music bed no
+  longer follows the first shot
+  ([[ADR-035 Linkage binds a clip to the shot under most of it]]).
+- **Drops** above the tracks make a picture-in-picture overlay, and every
+  library drag previews where it lands by drawing a dry run of the drop
+  itself: the magnet's cut with the later shots sliding aside, the new
+  track a busy row opens, the clip an effect attaches to, the cut a
+  transition takes ([[ADR-046 A drop preview is a dry run of the drop]]).
+  Drops no longer fall back to the selection or the playhead.
+- **A new title shows**: adding one at the playhead plays its In animation
+  once, silently, and parks where it has settled
+  ([[ADR-047 A new title shows by playing its In animation]]).
+- `scripts/drive/timeline-ux.js` proves each with real pointer drags and
+  compares every drop with its preview. The lessons are in the audit's
+  Lessons section.

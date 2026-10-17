@@ -21,14 +21,18 @@
 .marker-palette button[aria-pressed="true"] { outline: 2px solid var(--text-1); outline-offset: 2px; }
 
 .marker-export-open { align-self: flex-start; flex-shrink: 0; }
-.marker-export { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 18px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: var(--bg-1); color: var(--text-1); box-shadow: 0 16px 60px rgb(0 0 0 / 50%); }
+/* Matches the shared Dialog (dialog.css): same padding, title size, close
+   button and a right-aligned Cancel-then-primary footer. It had a small
+   title, a small close button and its actions on the left, reversed. */
+.marker-export { width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 32px); margin: auto; padding: 20px; border: 1px solid var(--line-strong); border-radius: var(--radius-panel); background: var(--bg-1); color: var(--text-1); box-shadow: 0 16px 60px rgb(0 0 0 / 50%); }
 .marker-export::backdrop { background: rgb(0 0 0 / 65%); }
 .marker-export header, .marker-export footer { display: flex; align-items: center; gap: 8px; }
 .marker-export header { justify-content: space-between; margin-bottom: 16px; }
+.marker-export header strong { font-size: var(--fs-lg); }
 .marker-export-format { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: var(--fs-sm); }
 .marker-export-format select { flex: 1; min-width: 0; height: 30px; }
 .marker-export textarea { display: block; width: 100%; height: 160px; padding: 8px; resize: vertical; font-size: var(--fs-sm); line-height: 1.6; white-space: pre; }
 .marker-export-checks { margin-top: 12px; font-size: var(--fs-sm); color: var(--text-2); }
 .marker-export-checks ul { padding-left: 18px; line-height: 1.6; margin: 6px 0; }
 .marker-export-checks .lib-hint { margin-top: 8px; }
-.marker-export footer { margin-top: 14px; }
+.marker-export footer { justify-content: flex-end; margin-top: 14px; }

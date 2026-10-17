@@ -119,7 +119,7 @@ export function Home() {
                     {confirm === p.id && <span>Delete?</span>}
                   </button>
                 </div>
-                <strong className="project-name">{p.name}</strong>
+                <strong className="project-card-name">{p.name}</strong>
                 <span className="project-meta num">
                   {p.width}×{p.height} · {ago(p.updatedAt)}
                 </span>

@@ -144,7 +144,7 @@ export async function startVoiceover(opts: { deviceId?: string; mute: boolean })
   t.source.connect(t.tap).connect(t.sink).connect(ctx.destination);
   if (opts.mute) setMonitor(false);
   t.startSec = framesToSeconds(store.get().playhead, store.get().project.fps);
-  await player.play(1);
+  await player.play(1, { once: true });
   t.clock = player.clock();
   setPhase({ kind: "recording", since: performance.now() });
 }

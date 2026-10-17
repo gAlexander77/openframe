@@ -91,6 +91,9 @@ export function MenuList(props: {
   autoFocus?: boolean;
   /** Left/Right: move to the neighboring menu of a menubar. */
   onNav?: (dir: -1 | 1) => void;
+  /** The button a dropdown hangs from: a menu that has to open upward
+   * goes above it instead of covering it. */
+  anchor?: Element | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
@@ -108,7 +111,8 @@ export function MenuList(props: {
     const h = el.offsetHeight;
     const room = 8;
     let dy = 0;
-    if (top + h > innerHeight - room) dy = top - h >= room ? -h : Math.max(room - top, innerHeight - room - top - h);
+    const above = props.anchor ? props.anchor.getBoundingClientRect().top - 4 : top;
+    if (top + h > innerHeight - room) dy = above - h >= room ? above - h - top : Math.max(room - top, innerHeight - room - top - h);
     const dx = Math.min(0, innerWidth - room - left - el.offsetWidth);
     if (dx || dy) el.style.translate = `${dx}px ${dy}px`;
     // eslint-disable-next-line react-hooks/exhaustive-deps

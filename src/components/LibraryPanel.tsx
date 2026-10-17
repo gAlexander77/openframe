@@ -73,9 +73,7 @@ function useTabStrip(tab: string) {
       // Scroll only this strip. scrollIntoView can also move clipped panels.
       const active = el.querySelector(".lib-tab.on");
       if (active) {
-        const r = active.getBoundingClientRect(), strip = el.getBoundingClientRect();
-        if (r.left < strip.left) el.scrollLeft += r.left - strip.left;
-        else if (r.right > strip.right) el.scrollLeft += r.right - strip.right;
+        el.scrollLeft += clearOfFade(active, el);
       }
       edges();
     });
@@ -91,11 +89,18 @@ function useTabStrip(tab: string) {
   useEffect(() => {
     const el = ref.current, active = el?.querySelector(".lib-tab.on");
     if (!el || !active) return;
-    const r = active.getBoundingClientRect(), strip = el.getBoundingClientRect();
-    const delta = r.left < strip.left ? r.left - strip.left : r.right > strip.right ? r.right - strip.right : 0;
-    el.scrollBy({ left: delta, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    el.scrollBy({ left: clearOfFade(active, el), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }, [tab]);
   return ref;
+}
+
+/** How far to scroll the strip so the active tab clears the edge fades
+ * (.lib-tabs mask, 36 px): stopping at the strip's edge left "AI tools"
+ * half faded out after it was picked. */
+function clearOfFade(tab: Element, strip: Element) {
+  const FADE = 36;
+  const r = tab.getBoundingClientRect(), s = strip.getBoundingClientRect();
+  return r.left < s.left + FADE ? r.left - s.left - FADE : r.right > s.right - FADE ? r.right - s.right + FADE : 0;
 }
 
 export function LibraryPanel() {

@@ -101,6 +101,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "markIn" },
         { action: "markOut" },
         { action: "clearInOut" },
+        { action: "playInToOut" },
+        { action: "toggleLoop", checked: s().loop },
         "-",
         { action: "toggleSnapping", checked: s().snapping },
         { action: "toggleMagnet", checked: s().magnet },

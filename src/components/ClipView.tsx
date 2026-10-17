@@ -26,6 +26,9 @@ interface Props {
   visFrom: number;
   visTo: number;
   playheadRel: number | null;
+  /** Px the clip slides right to make room for a drop that will insert
+   * before it on the magnetic main track. */
+  shift?: number;
   onDown: (e: React.PointerEvent, clip: Clip, zone: ClipZone) => void;
   onContext: (e: React.MouseEvent, clip: Clip) => void;
 }
@@ -204,7 +207,7 @@ export const ClipView = memo(function ClipView(p: Props) {
   return (
     <div
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
-      style={{ transform: `translateX(${c.start * zoom}px)`, width: Math.max(2, w), height }}
+      style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height }}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       onContextMenu={(e) => p.onContext(e, c)}
       // CapCut: double-click a caption (or title) on the timeline to edit its

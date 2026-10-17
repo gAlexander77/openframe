@@ -131,9 +131,9 @@ type Gesture =
   | { kind: "handle"; clip0: Clip; seg: KeyRef; which: "out" | "in"; started: boolean }
   | { kind: "box"; x0: number; y0: number; graph: boolean; additive: boolean; base: KeyRef[]; moved: boolean };
 
-/** A 1-2-5 step that gives about four grid lines over `span`. */
-function niceStep(span: number): number {
-  const raw = span / 4;
+/** A 1-2-5 step that gives about `lines` grid lines over `span`. */
+function niceStep(span: number, lines = 4): number {
+  const raw = span / lines;
   const mag = 10 ** Math.floor(Math.log10(raw));
   const n = raw / mag;
   return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
@@ -379,7 +379,9 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
   }
   const curveD = curve.length ? `M${curve.join("L")}` : "";
   const fillD = curve.length ? `${curveD}L${curve.at(-1)!.split(",")[0]},${gTop + gH}L${curve[0].split(",")[0]},${gTop + gH}Z` : "";
-  const step = niceStep(range.max - range.min);
+  // Fewer lines when the graph is short: in a 720 px window four value
+  // labels sat 11 px apart and ran into each other.
+  const step = niceStep(range.max - range.min, Math.max(1, Math.min(4, Math.floor((gH - 2 * PAD_Y) / 24))));
   const digits = Math.max(0, -Math.floor(Math.log10(step) + 1e-9));
   const ticks: number[] = [];
   for (let v = Math.ceil(range.min / step) * step; v <= range.max; v += step) ticks.push(+v.toFixed(6));

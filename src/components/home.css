@@ -52,7 +52,9 @@
 /* Absolutely placed so a tall image cannot override the card's aspect ratio
    (a grid item's intrinsic height wins over aspect-ratio otherwise). */
 .project-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
-.project-name { font-size: var(--fs-md); font-weight: 500; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Not .project-name: that is the title bar's rename button, whose padding
+   and border indented the card title 11 px from its thumbnail. */
+.project-card-name { font-size: var(--fs-md); font-weight: 500; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .project-meta { font-size: var(--fs-xs); color: var(--text-3); }
 .project-delete {
   position: absolute; top: 6px; left: 6px;

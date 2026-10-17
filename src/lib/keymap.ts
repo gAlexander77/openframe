@@ -64,6 +64,12 @@ export type ActionId =
   | "saveProject"
   | "export"
   | "fullscreenPreview"
+  | "nudgeLeft"
+  | "nudgeRight"
+  | "nudgeLeft5"
+  | "nudgeRight5"
+  | "toggleLoop"
+  | "playInToOut"
   | "showShortcuts";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
@@ -130,6 +136,15 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   saveProject: ["Mod+S"],
   export: ["Mod+E"],
   fullscreenPreview: ["Mod+Shift+F"],
+  // Premiere's clip nudge: Alt+arrows a frame, with Shift five.
+  nudgeLeft: ["Alt+ArrowLeft"],
+  nudgeRight: ["Alt+ArrowRight"],
+  nudgeLeft5: ["Alt+Shift+ArrowLeft"],
+  nudgeRight5: ["Alt+Shift+ArrowRight"],
+  // Resolve loops with Ctrl+/ (ours is the shortcut list); Mod+L is free.
+  // Play In to Out is Premiere's Ctrl+Shift+Space.
+  toggleLoop: ["Mod+L"],
+  playInToOut: ["Mod+Shift+Space"],
   showShortcuts: ["Mod+/"],
 };
 
@@ -193,6 +208,12 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   saveProject: "Save project",
   export: "Export",
   fullscreenPreview: "Full-screen preview",
+  nudgeLeft: "Nudge clips one frame left",
+  nudgeRight: "Nudge clips one frame right",
+  nudgeLeft5: "Nudge clips five frames left",
+  nudgeRight5: "Nudge clips five frames right",
+  toggleLoop: "Loop playback",
+  playInToOut: "Play in to out",
   showShortcuts: "Keyboard shortcuts",
 };
 

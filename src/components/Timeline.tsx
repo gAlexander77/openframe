@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { player } from "../engine/player";
 import { Blend, Eye, EyeOff, Film, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
-import { createTrack, uid } from "../lib/project/defaults";
+import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
+import { placeOnTop } from "../lib/overlays";
+import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
+import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
+import { STICKER_SECONDS } from "../lib/stickers";
+import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
 import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition } from "../state/apply";
-import { registerDropZone, type DragState } from "../state/drag";
-import { addToTimeline, importFiles } from "../state/media";
+import {
+  addAdjustmentLayer,
+  addTextPreset,
+  applyEffect,
+  applyFilter,
+  applyTemplate,
+  applyTransition,
+  LAYER_SECONDS,
+  placeTextPreset,
+  TRANSITION_SECONDS,
+} from "../state/apply";
+import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
+import { addToTimeline, importFiles, pickAndImport } from "../state/media";
+import { replaceClip } from "../lib/project/replace";
+import { toast } from "../state/toast";
 import { addSticker } from "../state/stickers";
 import { store, useEditor } from "../state/store";
 import { openMarkers } from "../state/markers";
@@ -21,7 +38,9 @@ import { MenuList, type MenuItem } from "./Menu";
 import { TimelineToolbar } from "./TimelineToolbar";
 import "./timeline.css";
 
-const HEADER_W = 112;
+// Wide enough for the Main chip plus lock, eye and speaker side by side: at
+// 112 px the main track's speaker was cut off at the column edge.
+const HEADER_W = 136;
 const RULER_H = 28;
 const ROW_GAP = 4;
 const SNAP_PX = 10;
@@ -51,6 +70,17 @@ type Gesture =
   | { kind: "scrub" }
   | { kind: "marquee"; x0: number; y0: number; additive: boolean; base: Id[] };
 
+/** CapCut's Replace clip: pick a file, import it, swap it in. */
+async function replaceFromPicker(id: Id) {
+  const [asset] = await pickAndImport();
+  if (!asset) return;
+  try {
+    edit("Replace clip", (p) => replaceClip(p, id, asset));
+  } catch (e) {
+    toast((e as Error).message, "error");
+  }
+}
+
 function layoutRows(p: Project): { rows: Row[]; height: number } {
   let y = 0;
   const rows = p.tracks.map((track) => {
@@ -61,6 +91,87 @@ function layoutRows(p: Project): { rows: Row[]; height: number } {
   });
   return { rows, height: y };
 }
+
+/** What the timeline draws for a library drag over it. */
+interface DropView extends Landing {
+  label: string;
+  /** An insert at a cut on the magnetic main track: a bar marks the cut. */
+  insert: boolean;
+  /** It goes onto something already there: a clip (an effect, a filter,
+   * word art on text) or a cut (a transition). */
+  attach: boolean;
+}
+
+/**
+ * A library item dropped on row `row` at `frame`: what the preview draws
+ * and what the drop does. The preview is a dry run of the same placement
+ * the drop commits (src/lib/drop.ts), so the item lands where the preview
+ * shows, neighbors included (UX-12, UX-13).
+ */
+function planDrop(payload: DragPayload, row: number, frame: number): { view: DropView | null; run: () => void } {
+  const s = store.get();
+  const p = s.project;
+  const tracks = p.tracks;
+  const label = payload.kind === "asset" ? payload.asset.name : payload.label;
+  const none = new Map<Id, number>();
+  const show = (l: Landing | null, insert = false): DropView | null => (l ? { ...l, label, insert, attach: false } : null);
+  const under = tracks[row]?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
+  const onto = (c: Clip): DropView => ({ row, newTrack: false, frame: c.start, duration: c.duration, shifts: none, label, insert: false, attach: true });
+  // Effect, filter and adjustment layers go on a new top track.
+  const layer: DropView = { row: 0, newTrack: true, frame, duration: secondsToFrames(LAYER_SECONDS, p.fps), shifts: none, label, insert: false, attach: false };
+  switch (payload.kind) {
+    case "asset": {
+      const a = payload.asset;
+      let at = frame;
+      let to: Id | "overlay" | undefined;
+      let insert = false;
+      if (a.kind === "audio") {
+        const t = tracks[row];
+        to = t?.kind === "audio" && !t.locked ? t.id : undefined;
+      } else {
+        const v = visualDrop(tracks, row, frame, s.magnet);
+        ({ frame: at, insert } = v);
+        to = v.row < 0 ? "overlay" : tracks[v.row].id;
+      }
+      // addToTimeline commits placeAsset through edit(), which settles.
+      const r = placeAsset(p, a, at, to, s.magnet);
+      return { view: show(landing(p, ops.settle(p, r.project, settleOptions()), r.clipId), insert), run: () => addToTimeline(a, at, to) };
+    }
+    case "text": {
+      const r = placeTextPreset(p, payload.preset, frame);
+      return { view: r && show(landing(p, r.project, r.clipId)), run: () => addTextPreset(payload.preset, frame) };
+    }
+    case "template": {
+      const t = TEXT_TEMPLATES[payload.id];
+      if (t?.category === "Word art" && under?.type === "text") return { view: onto(under), run: () => applyTemplate(payload.id, frame, under.id) };
+      const r = t && addTemplate(p, t, frame);
+      return { view: r ? show(landing(p, r.project, r.clipIds[0])) : null, run: () => applyTemplate(payload.id, frame) };
+    }
+    case "sticker": {
+      // Its clip waits on the sticker's rendered image; a stand-in with the
+      // same span lands where addStickerClip will put it.
+      const c = createAdjustmentClip(frame, secondsToFrames(STICKER_SECONDS, p.fps));
+      return { view: show(landing(p, placeOnTop(p, c, "Sticker"), c.id)), run: () => void addSticker(payload.id, frame) };
+    }
+    case "effect":
+    case "filter": {
+      const target = under && under.type !== "audio" ? under : undefined;
+      const apply = payload.kind === "effect" ? applyEffect : applyFilter;
+      return { view: target ? onto(target) : layer, run: () => apply(payload.type, target?.id, frame) };
+    }
+    case "adjustment":
+      return { view: layer, run: () => addAdjustmentLayer(frame) };
+    case "transition": {
+      const cut = transitionCut(tracks, row, frame);
+      const d = secondsToFrames(TRANSITION_SECONDS, p.fps);
+      const view = cut && { row: cut.row, newTrack: false, frame: cut.frame - Math.round(d / 2), duration: d, shifts: none, label, insert: false, attach: true };
+      return { view, run: () => applyTransition(payload.type, cut?.clipId, true) };
+    }
+  }
+}
+
+/** Equal previews draw the same; skip the re-render on every pointer move. */
+const viewKey = (v: DropView | null) => (v ? `${v.row}|${v.newTrack}|${v.frame}|${v.duration}|${v.insert}|${v.attach}|${v.label}|${[...v.shifts].join()}` : "");
 
 export function Timeline() {
   const project = useEditor((s) => s.project);
@@ -74,7 +185,10 @@ export function Timeline() {
   const [view, setView] = useState({ left: 0, width: 1000 });
   const [snapLine, setSnapLine] = useState<number | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const [drop, setDrop] = useState<{ frame: number; row: number; label: string; clipId?: Id; width: number } | null>(null);
+  /** The library drop preview (planDrop). */
+  const [drop, setDrop] = useState<DropView | null>(null);
+  const dropKey = useRef("");
+  const dragging = useDragging();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
@@ -439,45 +553,18 @@ export function Timeline() {
           return !!r && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
         },
         hover: (d: DragState | null) => {
-          if (!d) return setDrop(null);
-          const s = store.get();
-          const { rows: rs } = layoutRows(s.project);
-          const frame = Math.max(0, Math.round(frameAtX(d.x)));
-          const row = rowAtY(d.y, rs);
-          const track = rs[row]?.track;
-          const clip = track?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
-          const p = d.payload;
-          const width = p.kind === "asset" ? Math.max(1, (p.asset.kind === "image" ? 5 : p.asset.duration) * fpsN) : 3 * fpsN;
-          setDrop({ frame, row, label: p.kind === "asset" ? p.asset.name : p.label, clipId: clip?.id, width });
+          const view = d ? planDrop(d.payload, rowAtY(d.y, layoutRows(store.get().project).rows), Math.max(0, Math.round(frameAtX(d.x)))).view : null;
+          const key = viewKey(view);
+          if (key === dropKey.current) return;
+          dropKey.current = key;
+          setDrop(view);
         },
         drop: (d: DragState) => {
-          const s = store.get();
-          const { rows: rs } = layoutRows(s.project);
-          const frame = Math.max(0, Math.round(frameAtX(d.x)));
-          const row = rowAtY(d.y, rs);
-          const track = rs[row]?.track;
-          const clip = track?.clips.find((c) => c.start <= frame && frame < c.start + c.duration);
-          const p = d.payload;
-          if (p.kind === "asset") {
-            const fits = track && (track.kind === "audio") === (p.asset.kind === "audio") && !track.locked;
-            addToTimeline(p.asset, frame, fits ? track.id : undefined);
-          } else if (p.kind === "text") addTextPreset(p.preset, frame);
-          else if (p.kind === "sticker") void addSticker(p.id, frame);
-          else if (p.kind === "template") applyTemplate(p.id, frame, clip?.type === "text" ? clip.id : undefined);
-          else if (p.kind === "effect") applyEffect(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
-          else if (p.kind === "filter") applyFilter(p.type, clip && clip.type !== "audio" ? clip.id : undefined, frame);
-          else if (p.kind === "adjustment") addAdjustmentLayer(frame);
-          else if (p.kind === "transition") {
-            const t = track ?? ops.mainTrack(s.project);
-            const cut = t.clips
-              .filter((c, i) => t.clips[i + 1]?.start === c.start + c.duration)
-              .sort((a, b) => Math.abs(a.start + a.duration - frame) - Math.abs(b.start + b.duration - frame))[0];
-            applyTransition(p.type, cut?.id);
-          }
+          planDrop(d.payload, rowAtY(d.y, layoutRows(store.get().project).rows), Math.max(0, Math.round(frameAtX(d.x)))).run();
           return true;
         },
       }),
-    [frameAtX, rowAtY, fpsN],
+    [frameAtX, rowAtY],
   );
 
   const onOsDrop = async (e: React.DragEvent) => {
@@ -508,11 +595,19 @@ export function Timeline() {
     // Background actions can target empty time beyond the last clip; playback
     // would move the playhead off it before the menu item runs.
     player.pause();
-    store.set({ playhead: Math.max(0, Math.round(frameAtX(e.clientX))) });
+    const frame = Math.max(0, Math.round(frameAtX(e.clientX)));
+    store.set({ playhead: frame });
+    // On a track's empty stretch: Premiere's ripple delete of the gap.
+    const track = layoutRows(store.get().project).rows[rowAtY(e.clientY, layoutRows(store.get().project).rows)]?.track;
+    const gap = track && !track.locked ? gapAt(track, frame) : null;
+    const gaps = !!track && !track.locked && track.clips.some((c) => gapAt(track, c.start - 1) !== null);
     setMenu({ x: e.clientX, y: e.clientY, items: [
       { action: "paste", disabled: !canPaste() },
       { action: "addMarker" },
       { action: "selectAll" },
+      ...(track && (gap || gaps) ? (["-"] as MenuItem[]) : []),
+      ...(track && gap ? [{ label: "Close gap", onSelect: () => edit("Close gap", (p) => closeGap(p, track.id, frame)) }] : []),
+      ...(track && gaps ? [{ label: "Close all gaps on this track", onSelect: () => edit("Close all gaps", (p) => closeAllGaps(p, track.id)) }] : []),
     ] });
   };
 
@@ -528,6 +623,11 @@ export function Timeline() {
       { action: "delete" },
       "-",
       { action: "split" },
+      {
+        label: "Replace clip…",
+        disabled: clip.type !== "video" && clip.type !== "image" && clip.type !== "audio",
+        onSelect: () => void replaceFromPicker(clip.id),
+      },
       { action: "freeze", disabled: clip.type !== "video" },
       { action: "detachAudio", disabled: clip.type !== "video" },
       { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
@@ -565,7 +665,7 @@ export function Timeline() {
     <section className="panel timeline-panel" aria-label="Timeline">
       <TimelineToolbar />
       <div
-        className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}`}
+        className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}${dragging ? " lib-drag" : ""}`}
         ref={scrollRef}
         onContextMenu={onBackgroundContext}
         onDragOver={(e) => {
@@ -581,7 +681,7 @@ export function Timeline() {
       >
         <div className="tl-content" style={{ width: contentW, height: RULER_H + rowsH + 40 }}>
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
-          <div className="tl-corner" />
+          <div className="tl-corner" style={{ width: HEADER_W }} />
           <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown}>
             {rows.map((row) => (
               <div key={row.track.id} className={`tl-row${row.track.main ? " main" : ""}`} style={{ top: row.top, height: row.height }}>
@@ -603,6 +703,7 @@ export function Timeline() {
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
                         playheadRel={selected.has(c.id) ? playheadRel(c, playhead) : null}
+                        shift={(drop?.shifts.get(c.id) ?? 0) * zoom}
                         onDown={onClipDown}
                         onContext={onContext}
                       />
@@ -617,7 +718,7 @@ export function Timeline() {
                       <button
                         key={`tr-${c.id}`}
                         className="tl-transition"
-                        style={{ left: (c.start + c.duration) * zoom - w / 2, width: w, height: Math.min(22, row.height - 8), top: (row.height - Math.min(22, row.height - 8)) / 2 }}
+                        style={{ left: (c.start + c.duration + (drop?.shifts.get(c.id) ?? 0)) * zoom - w / 2, width: w, height: Math.min(22, row.height - 8), top: (row.height - Math.min(22, row.height - 8)) / 2 }}
                         data-tip="Transition: select the clip before it to edit"
                         onPointerDown={(e) => {
                           e.stopPropagation();
@@ -641,19 +742,7 @@ export function Timeline() {
                 <span>Drag media here to start creating</span>
               </div>
             )}
-            {drop && (
-              <div
-                className={`tl-drop${drop.clipId ? " on-clip" : ""}`}
-                style={{
-                  left: HEADER_W + drop.frame * zoom,
-                  width: Math.max(40, drop.width * zoom),
-                  top: drop.row < 0 ? -6 : rows[drop.row]?.top ?? rowsH,
-                  height: drop.row < 0 ? 4 : rows[drop.row]?.height ?? 40,
-                }}
-              >
-                <span>{drop.label}</span>
-              </div>
-            )}
+            {drop && <DropBox drop={drop} rows={rows} rowsH={rowsH} zoom={zoom} />}
           </div>
           <MarkersLayer zoom={zoom} />
           <InOutRange zoom={zoom} />
@@ -680,6 +769,32 @@ export function Timeline() {
 
 // ---- pieces -----------------------------------------------------------------------------------
 
+/** The drop preview: a box where the item lands, sized to it. A new track
+ * shows where it will be inserted: above everything, a chip in the ruler
+ * band; between two rows, a band in the gap; below everything, a row. */
+function DropBox({ drop, rows, rowsH, zoom }: { drop: DropView; rows: Row[]; rowsH: number; zoom: number }) {
+  const row = rows[drop.row];
+  const [top, height] = !drop.newTrack
+    ? [row?.top ?? rowsH, row?.height ?? 40]
+    : drop.row === 0
+      ? [4 - RULER_H, RULER_H - 8]
+      : row
+        ? [row.top - ROW_GAP / 2 - 8, 16]
+        : [rowsH, 40];
+  const left = HEADER_W + drop.frame * zoom;
+  return (
+    <>
+      <div
+        className={`tl-drop${drop.attach ? " on-clip" : ""}${drop.insert ? " insert" : ""}${drop.newTrack ? " new-track" : ""}`}
+        style={{ left, width: Math.max(2, drop.duration * zoom), top, height }}
+      >
+        <span>{drop.label}</span>
+      </div>
+      {drop.insert && row && <div className="tl-insert" style={{ left, top: row.top - 3, height: row.height + 6 }} />}
+    </>
+  );
+}
+
 function TrackHeader({ track }: { track: Track }) {
   const kindIcon =
     track.kind === "audio" ? <Music size={13} /> : track.clips.length && track.clips.every((c) => c.type === "text") ? <Type size={13} /> : <Film size={13} />;
@@ -691,16 +806,16 @@ function TrackHeader({ track }: { track: Track }) {
         {track.main && <span className="tl-main-chip">Main</span>}
       </span>
       <div className="tl-toggles">
-        <button className={`tl-tog${track.locked ? " on" : ""}`} aria-label={track.locked ? "Unlock track" : "Lock track"} data-tip={track.locked ? "Unlock" : "Lock"} onClick={() => set({ locked: !track.locked }, track.locked ? "Unlock track" : "Lock track")}>
+        <button className={`tl-tog tl-tog-lock${track.locked ? " on" : ""}`} aria-label={track.locked ? "Unlock track" : "Lock track"} data-tip={track.locked ? "Unlock" : "Lock"} onClick={() => set({ locked: !track.locked }, track.locked ? "Unlock track" : "Lock track")}>
           {track.locked ? <Lock size={13} /> : <LockOpen size={13} />}
         </button>
         {track.kind === "video" && (
-          <button className={`tl-tog${track.hidden ? " on" : ""}`} aria-label={track.hidden ? "Show track" : "Hide track"} data-tip={track.hidden ? "Show" : "Hide"} onClick={() => set({ hidden: !track.hidden }, track.hidden ? "Show track" : "Hide track")}>
+          <button className={`tl-tog tl-tog-eye${track.hidden ? " on" : ""}`} aria-label={track.hidden ? "Show track" : "Hide track"} data-tip={track.hidden ? "Show" : "Hide"} onClick={() => set({ hidden: !track.hidden }, track.hidden ? "Show track" : "Hide track")}>
             {track.hidden ? <EyeOff size={13} /> : <Eye size={13} />}
           </button>
         )}
         {(track.kind === "audio" || track.clips.some((c) => c.type === "video")) && (
-          <button className={`tl-tog${track.muted ? " on" : ""}`} aria-label={track.muted ? "Unmute track" : "Mute track"} data-tip={track.muted ? "Unmute" : "Mute"} onClick={() => set({ muted: !track.muted }, track.muted ? "Unmute track" : "Mute track")}>
+          <button className={`tl-tog tl-tog-sound${track.muted ? " on" : ""}`} aria-label={track.muted ? "Unmute track" : "Mute track"} data-tip={track.muted ? "Unmute" : "Mute"} onClick={() => set({ muted: !track.muted }, track.muted ? "Unmute track" : "Mute track")}>
             {track.muted ? <VolumeX size={13} /> : <Volume2 size={13} />}
           </button>
         )}

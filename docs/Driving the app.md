@@ -188,6 +188,11 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     dev build loads from the same Vite on :1420, so hot updates (and full
     reloads, for non-component modules) land in their window too. Keep
     edits off `src/` while they test, or give your run its own port.
+12. **Unlink a worktree's junctions before removing it.** Agent worktrees
+    junction `fixtures/media` and `scratch/node_modules` to the main
+    checkout. Remove them with `cmd /c rmdir <junction>` (which deletes the
+    link, not the target) before `git worktree remove --force`, so no
+    recursive delete can walk into the main checkout's files.
 
 ## Header interaction check — 2026-10-15
 

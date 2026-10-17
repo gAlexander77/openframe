@@ -21,6 +21,7 @@ import {
   type StickerDef,
 } from "../lib/stickers";
 import { platform, type ImportedFile } from "../platform";
+import { revealAdded } from "./apply";
 import { store } from "./store";
 import { toast } from "./toast";
 import { projectWork } from "./projectWork";
@@ -107,5 +108,6 @@ export async function addSticker(id: string, at?: number): Promise<Id | null> {
   });
   prepare(asset);
   store.select([clipId]);
+  revealAdded([clipId]);
   return clipId;
 }

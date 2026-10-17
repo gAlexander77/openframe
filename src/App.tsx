@@ -112,7 +112,10 @@ export default function App() {
       ) : (
       <div
         className="workspace"
-        style={{ gridTemplateRows: `${layout.top}px var(--gap) minmax(180px, 1fr)` }}
+        // The top row gives way the same way the side panels do: a fixed
+        // 520 px pushed the timeline 26 px below a 720 px tall window,
+        // cutting off its scrollbar and last track.
+        style={{ gridTemplateRows: `minmax(${Math.min(260, layout.top)}px, ${layout.top}px) var(--gap) minmax(180px, 1fr)` }}
       >
         <div
           className="top-row"

@@ -25,3 +25,18 @@ export function placeOnTop(p: Project, clip: Clip, name: string): Project {
   const track = createTrack("video", name);
   return ops.addClip(ops.addTrack(p, track, top), track.id, clip);
 }
+
+/**
+ * What to play so a just-added overlay shows (UX-15): an In animation
+ * starts invisible (a title rising from below, a sticker popping from
+ * nothing), so with the playhead inside one the viewer shows an empty
+ * box. Returns the span from the earliest animated clip's start to where
+ * the last In has settled, when the playhead sits inside it; else null.
+ */
+export function revealSpan(clips: Clip[], playhead: number): { from: number; to: number } | null {
+  const ins = clips.flatMap((c) => ("animIn" in c && c.animIn && c.animIn.duration > 0 ? [{ start: c.start, end: c.start + Math.min(c.animIn.duration, c.duration) }] : []));
+  if (!ins.length) return null;
+  const from = Math.min(...ins.map((c) => c.start));
+  const to = Math.max(...ins.map((c) => c.end));
+  return playhead >= from && playhead < to ? { from, to } : null;
+}

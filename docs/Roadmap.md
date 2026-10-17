@@ -17,10 +17,6 @@ items move to [[Features]] when they ship.
   log browser import/persistence/export/codec/model capability checks with
   revision and platform evidence before promising web parity. The process
   uncertainty and pickup plan are in [[Next agent handoff]].
-- **Open UX audit findings** ([[UX audit 2026-10-14]]): dropping above
-  the main track makes an overlay (UX-12) with a drop preview that shows the
-  magnet's insertion point (UX-13), linkage that leaves music beds alone
-  (UX-14), a new title visible when added (UX-15).
 - **Pro trim monitor**: the two-up view while rolling/slipping (the trim
   tools themselves shipped).
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).

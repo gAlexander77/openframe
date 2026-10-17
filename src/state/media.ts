@@ -3,17 +3,17 @@
 
 import { isImageName, probe } from "../engine/media";
 import { prepare } from "../engine/thumbs";
-import { clipForAsset, createTrack, uid } from "../lib/project/defaults";
+import { uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
-import type { Asset, Clip, Id, Project } from "../lib/project/types";
-import { FPS_PRESETS, fpsValue } from "../lib/time";
+import type { Asset, Id } from "../lib/project/types";
+import { placeAsset } from "../lib/drop";
 import { platform, type ImportedFile } from "../platform";
 import { edit, provide } from "./actions";
 import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
-import { withSourceRange, type SourceRange } from "../lib/sourceMonitor";
+import type { SourceRange } from "../lib/sourceMonitor";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
 const CODEC_NAMES: Record<string, string> = {
@@ -105,56 +105,20 @@ async function convert(f: ImportedFile, signal?: AbortSignal): Promise<string> {
   }
 }
 
-/** CapCut: the first clip on an empty timeline sets the canvas size and
- * frame rate, so phone footage gets a vertical project automatically —
- * unless the user already chose a canvas, which then only takes the
- * clip's frame rate (UX-02). */
-function adoptSettings(p: Project, a: Asset): Project {
-  const empty = p.tracks.every((t) => t.clips.length === 0);
-  if (!empty || a.kind === "audio" || !a.width || !a.height) return p;
-  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
-  let fps = p.fps;
-  if (a.fps) {
-    const nearest = FPS_PRESETS.reduce((b, x) => (Math.abs(fpsValue(x.fps) - a.fps!) < Math.abs(fpsValue(b.fps) - a.fps!) ? x : b));
-    if (Math.abs(fpsValue(nearest.fps) - a.fps) < 0.5) fps = nearest.fps;
-  }
-  return p.canvasFixed ? { ...p, fps } : { ...p, width: even(a.width), height: even(a.height), fps };
-}
-
 /**
- * Put an asset on the timeline (the media card's + button, or a drop).
- * Video and images go on the main track at the playhead — with the magnet
- * on, at the nearest cut, since CapCut never overwrites the main track —
- * and audio goes on the first audio track with room, or a new one.
+ * Put an asset on the timeline (the media card's + button, or a drop), by
+ * placeAsset's rules (src/lib/drop.ts), at the playhead unless `at` says
+ * otherwise. The playhead moves after the clip only for an add at the
+ * playhead, so repeated adds line up.
  */
-export function addToTimeline(asset: Asset, at?: number, trackId?: Id, range?: SourceRange): Id {
+export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay", range?: SourceRange): Id {
   if (projectWork.signal().aborted || !store.get().project.assets.some((a) => a.id === asset.id)) return "";
   let id = "";
   edit(`Add ${asset.name}`, (p0) => {
-    let p = adoptSettings(p0, asset);
     const s = store.get();
-    let start = at ?? s.playhead;
-    let clip: Clip = clipForAsset(asset, start, p.fps);
-    if (range) clip = withSourceRange(clip, asset, range, p.fps);
-    id = clip.id;
-    if (asset.kind === "audio") {
-      let track = trackId ? ops.findTrack(p, trackId) : p.tracks.find((t) => t.kind === "audio" && !t.locked && ops.rangeFree(t, start, clip.duration));
-      if (!track || track.kind !== "audio") {
-        track = createTrack("audio", "Audio");
-        p = ops.addTrack(p, track);
-      }
-      return ops.placeClip(p, track.id, clip, { collision: "newTrack" });
-    }
-    const target = trackId ? ops.findTrack(p, trackId) : ops.mainTrack(p);
-    if (!target || target.kind !== "video") return p;
-    if (target.main && s.magnet) {
-      // Snap to the nearest cut so nothing is split by an insert.
-      const cuts = [0, ...target.clips.map((c) => c.start + c.duration)];
-      start = cuts.reduce((b, x) => (Math.abs(x - start) < Math.abs(b - start) ? x : b), cuts[cuts.length - 1]);
-      clip = { ...clip, start };
-      return ops.addClip(p, target.id, clip, "insert");
-    }
-    return ops.placeClip(p, target.id, clip, { collision: "newTrack" });
+    const r = placeAsset(p0, asset, at ?? s.playhead, trackId, s.magnet, range);
+    id = r.clipId;
+    return r.project;
   });
   if (id) {
     // Leave the playhead after the new clip so repeated adds line up in

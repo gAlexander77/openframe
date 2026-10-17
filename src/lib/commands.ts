@@ -32,6 +32,8 @@ import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
+import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
+import { replaceClip } from "./project/replace";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
@@ -341,6 +343,40 @@ export const COMMANDS: Command[] = [
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
       return ops.setParam(p, ids, String(a.path), Number(a.value), rel);
+    },
+  },
+  {
+    name: "replace_clip",
+    description: "Put another media file of the project in a clip's place (CapCut's Replace): the clip keeps its start, length (shorter only if the new source runs out), transform, effects, animations and sound settings, and plays the new source from its start.",
+    input: S.obj({ clip_id: S.str("Video, image or audio clip"), asset_id: S.str("Media in the project") }, ["clip_id", "asset_id"]),
+    run: (p, a) => {
+      const c = clipOrThrow(p, a.clip_id).clip;
+      const asset = p.assets.find((x) => x.id === a.asset_id);
+      if (!asset) throw new CommandError(`no media with id ${a.asset_id}`);
+      try {
+        return replaceClip(p, c.id, asset);
+      } catch (e) {
+        throw new CommandError((e as Error).message);
+      }
+    },
+  },
+  {
+    name: "nudge_clips",
+    description: "Move clips by whole frames on their tracks (negative is earlier). Nothing moves when a clip would pass the start, cover another clip or sits on a locked track.",
+    input: S.obj({ clip_ids: S.ids("Clips"), frames: S.num("Frames to move", { minimum: -100000, maximum: 100000 }) }, ["clip_ids", "frames"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return nudgeClips(p, ids, Math.round(Number(a.frames)));
+    },
+  },
+  {
+    name: "close_gaps",
+    description: "Close empty space on a track by rippling later clips left: the gap at `at` seconds, or every gap (packing the track from 0) when `at` is left out.",
+    input: S.obj({ track_id: S.str("Track id"), at: S.num("Timeline seconds inside the gap") }, ["track_id"]),
+    run: (p, a) => {
+      const t = trackOrThrow(p, a.track_id);
+      return a.at === undefined ? closeAllGaps(p, t.id) : closeGap(p, t.id, f(p, a.at));
     },
   },
   {

@@ -2,12 +2,14 @@
 // transition) is clicked or dropped. CapCut's rules: an effect or filter
 // dropped on a clip attaches to that clip; dropped on empty timeline (or
 // added with nothing selected) it becomes its own layer clip that affects
-// everything below for its duration.
+// everything below for its duration. A drop (`at` given) always acts where
+// it lands, never on the selection, so it does what its preview shows.
 
+import { player } from "../engine/player";
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { createAdjustmentClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
-import { placeOnTop } from "../lib/overlays";
+import { placeOnTop, revealSpan } from "../lib/overlays";
 import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
 import { addTemplate, TEXT_TEMPLATES, wordArtStyle } from "../lib/templates";
 import { secondsToFrames, type Rational } from "../lib/time";
@@ -49,6 +51,11 @@ const visualSelection = (p: Project): Clip[] =>
     .map((id) => ops.findClip(p, id)?.clip)
     .filter((c): c is Clip => !!c && c.type !== "audio");
 
+/** Seconds a new effect, filter or adjustment layer lasts. */
+export const LAYER_SECONDS = 3;
+/** Seconds a new transition lasts (shorter when a clip beside it is). */
+export const TRANSITION_SECONDS = 0.5;
+
 /** A new top video track (CapCut stacks the newest layer on top). */
 function topTrack(p: Project, name: string): [Project, Id] {
   const t = createTrack("video", name);
@@ -65,19 +72,44 @@ export function presetClip(preset: TextPreset, start: number, fps: Rational): Cl
   };
 }
 
+/** A text preset added at `at`, above whatever shows then, like stickers
+ * and templates. Pure: the timeline's drop preview runs it too. */
+export function placeTextPreset(p: Project, key: string, at: number): { project: Project; clipId: Id } | null {
+  const preset = TEXT_PRESETS[key];
+  if (!preset) return null;
+  const clip = presetClip(preset, at, p.fps);
+  return { project: placeOnTop(p, clip, "Text"), clipId: clip.id };
+}
+
 export function addTextPreset(key: string, at?: number) {
   const preset = TEXT_PRESETS[key];
   if (!preset) return;
-  const s = store.get();
-  const f = at ?? s.playhead;
+  const f = at ?? store.get().playhead;
   let id = "";
   store.edit(`Add ${preset.label.toLowerCase()}`, (p0) => {
-    const clip = presetClip(preset, f, p0.fps);
-    id = clip.id;
-    // Above whatever shows then, like stickers and templates.
-    return placeOnTop(p0, clip, "Text");
+    const r = placeTextPreset(p0, key, f)!;
+    id = r.clipId;
+    return r.project;
   });
   store.select([id]);
+  revealAdded([id]);
+}
+
+/**
+ * UX-15: a title added at the playhead starts on the first frame of its In
+ * animation, where nothing shows yet. Play the animation once, silently,
+ * and stop where it has settled, so the user sees what they added; with
+ * reduced motion, go straight to the settled frame. Leaves playback, and
+ * a playhead the clips already show at, alone.
+ */
+export function revealAdded(ids: Id[]) {
+  const s = store.get();
+  if (s.playing) return;
+  const clips = ids.map((id) => ops.findClip(s.project, id)?.clip).filter((c): c is Clip => !!c);
+  const span = revealSpan(clips, s.playhead);
+  if (!span) return;
+  if (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches) store.seek(span.to);
+  else player.preview(span.from, span.to);
 }
 
 /** A word art or title template from the Text tab. Word art restyles text
@@ -103,12 +135,18 @@ export function applyTemplate(key: string, at?: number, clipId?: Id) {
     return r.project;
   });
   store.select(ids);
+  revealAdded(ids);
 }
+
+/** The clips an effect or filter attaches to: `clipId` when it was dropped
+ * on one, the selection on a click, none for a drop on empty timeline. */
+const attachTargets = (p: Project, clipId?: Id, at?: number): Clip[] =>
+  clipId ? [ops.findClip(p, clipId)?.clip].filter((c): c is Clip => !!c && c.type !== "audio") : at === undefined ? visualSelection(p) : [];
 
 /** Attach an effect to `clipId`, or to the selection, or add it as a layer. */
 export function applyEffect(type: string, clipId?: Id, at?: number) {
   const s = store.get();
-  const targets = clipId ? [ops.findClip(s.project, clipId)?.clip].filter((c): c is Clip => !!c && c.type !== "audio") : visualSelection(s.project);
+  const targets = attachTargets(s.project, clipId, at);
   if (targets.length) {
     store.edit("Add effect", (p) => {
       for (const c of targets) {
@@ -124,7 +162,7 @@ export function applyEffect(type: string, clipId?: Id, at?: number) {
   let id = "";
   store.edit("Add effect layer", (p0) => {
     const [p, tid] = topTrack(p0, "Effect");
-    const clip = { ...createAdjustmentClip(f, secondsToFrames(3, p.fps)), effects: [{ id: uid("fx"), type, enabled: true, params: effectDefaults(type) }] };
+    const clip = { ...createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps)), effects: [{ id: uid("fx"), type, enabled: true, params: effectDefaults(type) }] };
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });
@@ -134,7 +172,7 @@ export function applyEffect(type: string, clipId?: Id, at?: number) {
 export function applyFilter(type: string, clipId?: Id, at?: number) {
   if (!FILTERS[type]) return;
   const s = store.get();
-  const targets = clipId ? [ops.findClip(s.project, clipId)?.clip].filter((c): c is Clip => !!c && c.type !== "audio") : visualSelection(s.project);
+  const targets = attachTargets(s.project, clipId, at);
   if (targets.length) {
     store.edit("Apply filter", (p) => {
       for (const c of targets) p = ops.updateClip(p, c.id, (x) => ("adjust" in x ? ({ ...x, filter: { type, intensity: 1 } } as Clip) : x));
@@ -146,22 +184,23 @@ export function applyFilter(type: string, clipId?: Id, at?: number) {
   let id = "";
   store.edit("Add filter layer", (p0) => {
     const [p, tid] = topTrack(p0, "Filter");
-    const clip = { ...createAdjustmentClip(f, secondsToFrames(3, p.fps)), filter: { type, intensity: 1 } };
+    const clip = { ...createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps)), filter: { type, intensity: 1 } };
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });
   store.select([id]);
 }
 
-/** Put a transition on a cut: the one after `clipId`, or the cut nearest the
- * playhead on the main track. */
-export function applyTransition(type: string, clipId?: Id) {
+/** Put a transition on a cut: the one after `clipId`, or on a click (not
+ * `dropped`) the selected clip's or the one nearest the playhead on the
+ * main track. */
+export function applyTransition(type: string, clipId?: Id, dropped = false) {
   if (!TRANSITIONS[type]) return;
   const s = store.get();
   const p = s.project;
   let left: Clip | undefined;
   if (clipId) left = ops.findClip(p, clipId)?.clip;
-  else {
+  else if (!dropped) {
     const sel = s.selection.length === 1 ? ops.findClip(p, s.selection[0]) : null;
     const track = sel?.track ?? ops.mainTrack(p);
     const cuts = track.clips.filter((c, i) => track.clips[i + 1]?.start === c.start + c.duration);
@@ -172,7 +211,7 @@ export function applyTransition(type: string, clipId?: Id) {
     return;
   }
   const before = store.get().project;
-  store.edit(`Add ${TRANSITIONS[type].label.toLowerCase()}`, (q) => ops.setTransition(q, left!.id, { type, duration: secondsToFrames(0.5, q.fps) }));
+  store.edit(`Add ${TRANSITIONS[type].label.toLowerCase()}`, (q) => ops.setTransition(q, left!.id, { type, duration: secondsToFrames(TRANSITION_SECONDS, q.fps) }));
   if (store.get().project === before) toast("Transitions go between two touching clips on the same track");
 }
 
@@ -182,7 +221,7 @@ export function addAdjustmentLayer(at?: number) {
   let id = "";
   store.edit("Add adjustment layer", (p0) => {
     const [p, tid] = topTrack(p0, "Adjustment");
-    const clip = createAdjustmentClip(f, secondsToFrames(3, p.fps));
+    const clip = createAdjustmentClip(f, secondsToFrames(LAYER_SECONDS, p.fps));
     id = clip.id;
     return ops.addClip(p, tid, clip);
   });
