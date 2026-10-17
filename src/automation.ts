@@ -21,6 +21,7 @@ import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
+import { currentScreen, newProject, openProject } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -97,6 +98,8 @@ const automation = {
 /** describeProject of the whole document, plus the compound clips the user
  * has open, outermost first. */
 function describe() {
+  // On the home screen the store still holds the last project: say so.
+  if (currentScreen() === "home") return { screen: "home", note: "No project is open. list_projects and open_project, or new_project." };
   const nest = store.get().nest;
   return { ...describeProject(store.document()), ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
 }
@@ -153,4 +156,17 @@ const mcpHost: McpHost = {
     return btoa(bin);
   },
   ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
+  listProjects: async () => {
+    const open = currentScreen() === "editor" ? store.document().id : null;
+    return (await platform.listProjects()).map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));
+  },
+  openProject: async (id) => {
+    // false: a navigation was already under way, or it failed (with a toast).
+    if (!(await openProject(id))) throw new Error("The project could not be opened; the app shows why.");
+    return automation.describe();
+  },
+  newProject: async (name) => {
+    if (!(await newProject(name ? { name } : {}))) throw new Error("A new project could not be started; the app shows why.");
+    return automation.describe();
+  },
 };

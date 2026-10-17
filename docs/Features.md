@@ -322,9 +322,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Auto adjust** (Adjust > Basic, CapCut's): corrects exposure, levels
   and white balance from the clip's own frame at the playhead, measured
   with its adjustments off. Exposure only moves a median outside
-  0.35-0.65; white balance reads the near-neutral pixels and leaves a
-  frame of saturated color alone; every value stays within moderate
-  limits. One undo step; `auto_adjust` for agents.
+  0.35-0.65 and never brightens the brightest 0.2% past white, so a frame
+  dark by design (a dark-theme app, a night scene) is left as shot; white
+  balance reads the midtone neutral pixels and leaves a frame of saturated
+  color alone; every value stays within moderate limits. One undo step;
+  `auto_adjust` for agents.
 - The grade runs on clips and adjustment layers alike, every number is
   keyframeable, and preview and export render it with the same shader.
 - Agents: `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, and
@@ -513,8 +515,9 @@ Three doors, one engine ([[Automation]]):
 - **Headless render**: `video-editor --render project.json --out file`,
   JSON-line progress, exit codes.
 - **MCP for agents** (opt-in, token-locked, local only): every editing
-  command plus `preview_frame` so an agent can look at its work; HTTP or
-  `--mcp-stdio`.
+  command plus `preview_frame` so an agent can look at its work, and
+  `list_projects`, `open_project` and `new_project` to move between
+  projects as the home screen does; HTTP or `--mcp-stdio`.
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.

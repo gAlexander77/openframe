@@ -39,7 +39,10 @@ Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
-PNG, so an agent can look at its work), and the local AI tools:
+PNG, so an agent can look at its work), the project tools
+`list_projects`, `open_project` (by id or name; it saves the open project
+first) and `new_project` (a scratch project, so an agent's experiments
+leave the user's projects alone), and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
 `duck_under_speech`, `reduce_noise`, `stabilize_clip` and
 `remove_background` ([[AI tools]]); the `set_background_removal` command

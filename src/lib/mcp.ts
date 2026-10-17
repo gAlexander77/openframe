@@ -40,6 +40,34 @@ export interface McpHost {
   frame(seconds: number, maxWidth: number): Promise<string>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
+  /** The saved projects, as the home screen lists them; `open` marks the
+   * one in the editor. */
+  listProjects(): Promise<SavedProject[]>;
+  /** Save the open project and open this one; resolves to its description. */
+  openProject(id: string): Promise<unknown>;
+  /** Save the open project and start an empty one; resolves to its description. */
+  newProject(name?: string): Promise<unknown>;
+}
+
+export interface SavedProject {
+  id: string;
+  name: string;
+  updatedAt: number;
+  /** Seconds. */
+  duration: number;
+  width: number;
+  height: number;
+  open?: boolean;
+}
+
+/** A project by id, or by name (any case; the most recently edited of
+ * several with that name), for open_project. */
+export function findProject(all: SavedProject[], key: string): SavedProject {
+  const recent = [...all].sort((a, b) => b.updatedAt - a.updatedAt);
+  const hit = recent.find((p) => p.id === key) ?? recent.find((p) => p.name.toLowerCase() === key.trim().toLowerCase());
+  if (hit) return hit;
+  const names = recent.slice(0, 10).map((p) => `"${p.name}"`).join(", ");
+  throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
 export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip";
@@ -93,6 +121,29 @@ export const APP_TOOLS: AppTool[] = [
     description: "Move the playhead to a time in seconds.",
     inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" } }, ["at"]),
     call: (h, a) => json(h.seek(Number(a.at))),
+  },
+  {
+    name: "list_projects",
+    description: "The saved projects, most recently edited first, with ids for open_project. The one open in the editor is marked open: true; none is when the app shows its home screen.",
+    inputSchema: obj(),
+    call: async (h) =>
+      json(
+        [...(await h.listProjects())]
+          .sort((a, b) => b.updatedAt - a.updatedAt)
+          .map((p) => ({ id: p.id, name: p.name, updated: new Date(p.updatedAt).toISOString(), duration: +p.duration.toFixed(2), canvas: `${p.width}x${p.height}`, ...(p.open ? { open: true } : {}) })),
+      ),
+  },
+  {
+    name: "open_project",
+    description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Returns its description, as describe_project does.",
+    inputSchema: obj({ project: { type: "string", description: "Project id or name" } }, ["project"]),
+    call: async (h, a) => json(await h.openProject(findProject(await h.listProjects(), String(a.project)).id)),
+  },
+  {
+    name: "new_project",
+    description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched.",
+    inputSchema: obj({ name: { type: "string", description: "Project name; default: the date and time" } }),
+    call: async (h, a) => json(await h.newProject(a.name === undefined ? undefined : String(a.name))),
   },
   {
     name: "preview_frame",

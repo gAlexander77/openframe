@@ -18,6 +18,8 @@ export interface FrameStats {
   p1: number;
   p50: number;
   p99: number;
+  /** The brightest 0.2%: text and highlights a dark design keeps white. */
+  p998: number;
 }
 
 /** Statistics of RGBA pixels (8-bit). Fully transparent pixels are left out. */
@@ -30,22 +32,24 @@ export function frameStats(rgba: Uint8ClampedArray | Uint8Array): FrameStats {
     const l = 0.2126 * R + 0.7152 * G + 0.0722 * B;
     hist[Math.round(l)]++;
     n++;
-    // Near-neutral and neither black nor clipped: a cast shows there.
-    if (Math.max(R, G, B) - Math.min(R, G, B) < 40 && l > 25 && l < 240) {
+    // Near-neutral, midtone or brighter, not clipped: a cast shows there.
+    // Dark grays are left out: their small differences read as big ratios,
+    // and a dark interface's cool grays are its design, not a cast.
+    if (Math.max(R, G, B) - Math.min(R, G, B) < 40 && l > 64 && l < 240) {
       r += R;
       g += G;
       b += B;
       m++;
     }
   }
-  if (!n) return { r: 0.5, g: 0.5, b: 0.5, neutral: 0, p1: 0, p50: 0.5, p99: 1 };
+  if (!n) return { r: 0.5, g: 0.5, b: 0.5, neutral: 0, p1: 0, p50: 0.5, p99: 1, p998: 1 };
   const pct = (q: number) => {
     let acc = 0;
     for (let v = 0; v < 256; v++) if ((acc += hist[v]) >= q * n) return v / 255;
     return 1;
   };
   const k = m ? m * 255 : 1;
-  return { r: m ? r / k : 0.5, g: m ? g / k : 0.5, b: m ? b / k : 0.5, neutral: m / n, p1: pct(0.01), p50: pct(0.5), p99: pct(0.99) };
+  return { r: m ? r / k : 0.5, g: m ? g / k : 0.5, b: m ? b / k : 0.5, neutral: m / n, p1: pct(0.01), p50: pct(0.5), p99: pct(0.99), p998: pct(0.998) };
 }
 
 export interface AutoAdjust {
@@ -64,12 +68,19 @@ export function autoAdjust(s: FrameStats, strength = 0.8): AutoAdjust {
   // Exposure first (the pass applies it first): a median outside 0.35-0.65
   // moves toward that band; inside it a frame is left as shot.
   const want = s.p50 < 0.35 ? 0.4 : s.p50 > 0.65 ? 0.55 : s.p50;
-  const e = clamp((Math.log2(want / Math.max(s.p50, 0.02)) / 2) * strength, -0.5, 0.5);
+  let e = clamp((Math.log2(want / Math.max(s.p50, 0.02)) / 2) * strength, -0.5, 0.5);
+  // Brightening never pushes the brightest 0.2% past white. A frame dark
+  // by design (an app's dark theme, a night scene) already has white text
+  // or lights there; an underexposed one does not. A dark-theme screen
+  // recording had every slider at its limit before this.
+  if (e > 0) e = Math.max(0, Math.min(e, Math.log2(0.98 / Math.max(s.p998, 0.02)) / 2));
   const k = 2 ** (2 * e);
   // Levels on the exposed values, c' = (c - 0.15 b) / (1 + 0.25 w - 0.15 b):
   // a lifted black point comes down, highlights short of white reach 0.98.
-  const lo = s.p1 * k, hi = Math.min(1.5, s.p99 * k);
-  const blacks = lo > 0.04 ? clamp((lo / 0.15) * strength, 0, 0.4) : 0;
+  // Highlights are the brightest 0.2%, as above: the 99th percentile of a
+  // dark design is an accent color, which stretching would turn white.
+  const lo = s.p1 * k, hi = Math.min(1.5, s.p998 * k);
+  const blacks = lo > 0.1 ? clamp((lo / 0.15) * strength, 0, 0.4) : 0;
   const whites = hi < 0.94 || hi > 1.02 ? clamp(((hi - 0.98) / 0.25) * strength, -0.5, 0.3) : 0;
   // White balance on the neutral pixels: red and blue meet (temperature),
   // green meets their mean (tint), as the pass scales them. Under 3 %

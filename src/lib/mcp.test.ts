@@ -4,7 +4,7 @@ import { handleMcp, listTools, type McpHost } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
-function host(): McpHost & { project: Project } {
+function host() {
   const start: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "a.mp4", src: "a.mp4", duration: 10, hasVideo: true, hasAudio: true }] };
   const h = {
     project: start,
@@ -27,11 +27,48 @@ function host(): McpHost & { project: Project } {
       h.aiCalls.push([tool, target, options]);
       return { removed: 2 };
     },
+    saved: [
+      { id: "p1", name: "Race demo", updatedAt: 100, duration: 23.3, width: 1920, height: 1080, open: true },
+      { id: "p2", name: "Race Demo", updatedAt: 300, duration: 5, width: 1080, height: 1920 },
+      { id: "p3", name: "Trip", updatedAt: 200, duration: 60, width: 1920, height: 1080 },
+    ],
+    opened: [] as string[],
+    listProjects: async () => h.saved,
+    async openProject(id: string) {
+      h.opened.push(id);
+      return { name: h.saved.find((p) => p.id === id)!.name };
+    },
+    newProject: async (name?: string) => ({ name: name ?? "Untitled" }),
   };
   return h;
 }
 
 const call = (h: McpHost, method: string, params?: Record<string, unknown>) => handleMcp({ jsonrpc: "2.0", id: 1, method, params }, h);
+
+const text = (r: Awaited<ReturnType<typeof call>>) => (r!.result as { content: { text: string }[] }).content[0].text;
+
+describe("MCP projects", () => {
+  it("lists saved projects newest first, marking the open one", async () => {
+    const list = JSON.parse(text(await call(host(), "tools/call", { name: "list_projects", arguments: {} })));
+    expect(list.map((p: { id: string }) => p.id)).toEqual(["p2", "p3", "p1"]);
+    expect(list[2]).toMatchObject({ name: "Race demo", canvas: "1920x1080", open: true });
+    expect(list[0].open).toBeUndefined();
+  });
+
+  it("opens by id, or by name in any case with the newest winning a tie", async () => {
+    const h = host();
+    await call(h, "tools/call", { name: "open_project", arguments: { project: "p3" } });
+    await call(h, "tools/call", { name: "open_project", arguments: { project: "race DEMO" } });
+    expect(h.opened).toEqual(["p3", "p2"]);
+    const miss = await call(h, "tools/call", { name: "open_project", arguments: { project: "Nope" } });
+    expect(miss!.result).toMatchObject({ isError: true });
+    expect(text(miss)).toContain('Recent: "Race Demo", "Trip", "Race demo"');
+  });
+
+  it("starts a new project with an optional name", async () => {
+    expect(JSON.parse(text(await call(host(), "tools/call", { name: "new_project", arguments: { name: "Agent scratch" } })))).toEqual({ name: "Agent scratch" });
+  });
+});
 
 describe("MCP", () => {
   it("initializes with tools and resources", async () => {

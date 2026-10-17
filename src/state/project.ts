@@ -36,6 +36,9 @@ const set = (patch: Partial<Session>) => {
   listeners.forEach((l) => l());
 };
 
+/** Home or editor, for automation (describe and list_projects). */
+export const currentScreen = () => session.screen;
+
 export function useSession(): Session {
   return useSyncExternalStore(
     (l) => {

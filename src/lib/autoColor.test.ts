@@ -16,8 +16,9 @@ it("measures channel means and luma percentiles", () => {
   expect(s.p1).toBeCloseTo(0.01, 1);
   expect(s.p50).toBeCloseTo(0.5, 1);
   expect(s.p99).toBeCloseTo(0.99, 1);
-  // The neutral mean leaves out near-black and clipped pixels.
-  expect(s.r).toBeCloseTo(0.5, 1);
+  // The neutral mean is of midtone-or-brighter, unclipped pixels: here
+  // the gradient's 0.25..0.94 part.
+  expect(s.r).toBeCloseTo(0.6, 1);
 });
 
 it("brightens a dark frame, warms a blue one, and leaves a good one alone", () => {
@@ -40,4 +41,12 @@ it("balances on the neutral pixels and leaves a frame of saturated color alone",
   const green = new Uint8ClampedArray(64 * 4);
   for (let i = 0; i < 64; i++) green.set([20, 200, 30, 255], i * 4);
   expect(autoAdjust(frameStats(green)).tint).toBe(0);
+});
+
+it("leaves a frame that is dark by design alone (a dark-theme app recording)", () => {
+  // 97% cool dark gray, 2% red accents, 1% white text.
+  const px = new Uint8ClampedArray(1000 * 4);
+  for (let i = 0; i < 1000; i++) px.set(i < 970 ? [20, 22, 28, 255] : i < 990 ? [200, 30, 40, 255] : [250, 250, 250, 255], i * 4);
+  const a = autoAdjust(frameStats(px));
+  expect(a).toEqual({ exposure: 0, temperature: 0, tint: 0, blacks: 0, whites: 0 });
 });

@@ -1250,6 +1250,10 @@ export function describeProject(p: Project) {
       ...(t.main ? { main: true } : {}),
       ...(t.muted ? { muted: true } : {}),
       ...(t.hidden ? { hidden: true } : {}),
+      ...(t.locked ? { locked: true } : {}),
+      ...(t.solo ? { solo: true } : {}),
+      ...(t.volume !== 1 ? { volume: +t.volume.toFixed(4) } : {}),
+      ...(t.pan ? { pan: t.pan } : {}),
       clips: t.clips.map((c) => ({
         id: c.id,
         type: c.type,
@@ -1266,6 +1270,14 @@ export function describeProject(p: Project) {
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
+        // What else departs from the defaults, so an agent can check its work.
+        ...(c.labelColor ? { label: c.labelColor } : {}),
+        ...("pan" in c && c.pan ? { pan: c.pan } : {}),
+        ...("fill" in c && c.fill ? { fill: c.fill } : {}),
+        ...("eq" in c && c.eq ? { eq: c.eq } : {}),
+        ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
+        ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
+        ...(c.keyframes && Object.values(c.keyframes).some((k) => k.length) ? { keyframed: Object.keys(c.keyframes).filter((k) => c.keyframes![k].length) } : {}),
       })),
     };
   }
@@ -1274,7 +1286,10 @@ export function describeProject(p: Project) {
 /** Which grade parts a clip uses, for describeProject. */
 function gradeSummary(a: Graded) {
   const parts = (["hsl", "curves", "wheels"] as const).filter((k) => a[k]);
+  // The Basic sliders that are not at zero (exposure, temperature...).
+  const basic = Object.fromEntries(Object.entries(a).filter(([, v]) => typeof v === "number" && v !== 0));
   return {
+    ...(Object.keys(basic).length ? { adjust: basic } : {}),
     ...(parts.length ? { grade: parts } : {}),
     ...(a.lut ? { lut: { id: a.lut.id, intensity: a.lut.intensity } } : {}),
   };

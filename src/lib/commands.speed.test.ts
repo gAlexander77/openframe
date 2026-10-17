@@ -70,3 +70,20 @@ describe("speed commands", () => {
     expect(clip(runCommand(p, "set_preserve_pitch", { clip_id: id, preserve: true }), id)).not.toHaveProperty("changePitch");
   });
 });
+
+describe("describe_project", () => {
+  it("reports what departs from the defaults, so an agent can check its edits", () => {
+    const [p0, id] = timeline();
+    let p = runCommand(p0, "set_clip_label", { clip_ids: [id], label: "blue" });
+    p = runCommand(p, "set_channel_fill", { clip_ids: [id], fill: "left" });
+    p = runCommand(p, "set_frame_blending", { clip_ids: [id], on: true });
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "adjust.exposure", value: 20 });
+    p = runCommand(p, "update_track", { track_id: p.tracks[0].id, pan: -0.5 });
+    const d = describeProject(p).tracks[0];
+    expect(d).toMatchObject({ pan: -0.5 });
+    expect(d.clips[0]).toMatchObject({ label: "blue", fill: "left", frame_blend: true, adjust: { exposure: 20 } });
+    // The other clip, untouched, gains none of these keys.
+    expect(Object.keys(d.clips[1])).not.toContain("label");
+    expect(Object.keys(d.clips[1])).not.toContain("adjust");
+  });
+});
