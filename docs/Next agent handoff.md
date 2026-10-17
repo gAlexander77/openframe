@@ -123,10 +123,14 @@ from the earlier implementation and its historical test results.
   evening"); the [[UX audit 2026-10-14]] has no open items and
   [[Feature gaps 2026-10-16]] is current (a note at its top lists what is
   still open at P0/P1).
-- **Since then:** transcript editing (Captions tab, `get_transcript`) and
-  frame blending (ADR-051) landed too; a full run of every web drive
-  passed apart from the two desktop-only drives (`desktop-session-jobs`,
-  `media-relink`, which import from `F:/` paths).
+- **Since then:** transcript editing (Captions tab, `get_transcript`),
+  frame blending (ADR-051), caption find and replace, an undo history
+  list (right-click Undo or Redo), text case, loudness-normalized export,
+  channel fill and keyframed pan landed too. A full run of all 72 web
+  drives against a freshly started server passed, apart from the two
+  desktop-only drives (`desktop-session-jobs`, `media-relink`, which
+  import from `F:/` paths); `project-jobs.js` still imports store-backed
+  modules plainly (trap 14) but passes on a fresh server.
 - **Next candidates**, in rough value order: border and shadow on
   pictures (layer shader, not an effect), auto reframe and motion
   tracking (both need a tracker in a worker), optical flow (ADR-051's

@@ -65,8 +65,11 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           every clip may carry labelColor?: red | orange | yellow | green | cyan
             | blue | purple | pink (a timeline color label)
           video and audio clips may carry eq?: { low?, mid?, high? } (dB)
+          video and audio clips may carry fill?: left | right (one channel on both)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
+          text styles may carry case?: upper | lower | title (shown so; the
+            text itself is kept as typed)
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)

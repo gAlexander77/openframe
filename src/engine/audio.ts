@@ -10,7 +10,7 @@
 // (lib/stretch.ts) and schedules each block at rate 1 (ADR-028).
 
 import type { AudioBufferSink } from "mediabunny";
-import { EQ_BANDS, soundEnvelope, soundingClips, soundSpan } from "../lib/audio";
+import { EQ_BANDS, panEnvelope, soundEnvelope, soundingClips, soundPanAt, soundSpan } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Project, VideoClip } from "../lib/project/types";
@@ -109,7 +109,7 @@ export function scheduleAudio(
 
     const gain = ctx.createGain();
     const pan = ctx.createStereoPanner();
-    pan.pan.value = Math.max(-1, Math.min(1, clip.pan));
+    pan.pan.value = soundPanAt(sounding, p.fps, lo);
     gain.connect(pan).connect(dest);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
     // The clip's EQ sits before its gain: sources feed the first band.
@@ -125,6 +125,20 @@ export function scheduleAudio(
       f.connect(input);
       input = f;
     }
+    // Fill: one channel to both sides, ahead of the EQ. A splitter is
+    // always "discrete", so a stereo gain in front upmixes a mono file to
+    // both channels first ("speakers"), making a fill from it harmless.
+    if (clip.fill) {
+      const up = new GainNode(ctx, { channelCount: 2, channelCountMode: "explicit", channelInterpretation: "speakers" });
+      const split = ctx.createChannelSplitter(2);
+      const merge = ctx.createChannelMerger(2);
+      const ch = clip.fill === "left" ? 0 : 1;
+      up.connect(split);
+      split.connect(merge, ch, 0);
+      split.connect(merge, ch, 1);
+      merge.connect(input);
+      input = up;
+    }
     const env = soundEnvelope(sounding, p.fps, lo, hi);
     const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
     const envDur = toCtx(hi) - envAt;
@@ -132,6 +146,9 @@ export function scheduleAudio(
       // Trim the envelope's head if we start late (realtime only).
       const skip = Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length);
       gain.gain.setValueCurveAtTime(env.subarray(Math.min(skip, env.length - 2)), envAt, envDur);
+      // Keyframed pan rides the same span.
+      const panCurve = panEnvelope(sounding, p.fps, lo, hi);
+      if (panCurve) pan.pan.setValueCurveAtTime(panCurve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * panCurve.length), panCurve.length - 2)), envAt, envDur);
     }
 
     if (needsRetime(clip)) {

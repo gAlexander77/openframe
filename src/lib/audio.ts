@@ -47,7 +47,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
         for (const s of collect(p, k.tracks, hasAudio, depth + 1)) {
           const moved = throughCompound(s.clip, clip, p.fps);
           out.push({
-            clip: { ...moved, pan: Math.max(-1, Math.min(1, s.clip.pan + clip.pan + (track.pan ?? 0))) },
+            clip: moved,
             track: s.track,
             ...(s.overlap ? { overlap: { pre: s.overlap.pre / clip.speed, post: s.overlap.post / clip.speed } } : {}),
             via: [...(s.via ?? []).map((v) => ({ ...v, clip: throughCompound(v.clip, clip, p.fps) })), { clip, track }],
@@ -57,9 +57,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
       }
       if (!hasAudio(clip.assetId)) continue;
       const o = overlaps.get(clip.id);
-      // The track's pan adds to the clip's, as a track panner after it.
-      const panned = track.pan ? { ...clip, pan: Math.max(-1, Math.min(1, clip.pan + track.pan)) } : clip;
-      out.push({ clip: panned, track, ...(o ? { overlap: o } : {}) });
+      out.push({ clip, track, ...(o ? { overlap: o } : {}) });
     }
   }
   return out;
@@ -177,6 +175,29 @@ export function soundGainAt(s: SoundingClip, fps: Rational, t: number): number {
   let g = clipGainAt(s.clip, s.track, fps, t, s.overlap);
   for (const v of s.via ?? []) g *= clipGainAt(v.clip, v.track, fps, t);
   return g;
+}
+
+/** Pan at timeline second t: the clip's own (keyframed) pan plus its
+ * track's, and those of the compound clips it plays through and their
+ * tracks, as panners in a row; within -1..1. */
+export function soundPanAt(s: SoundingClip, fps: Rational, t: number): number {
+  const at = (c: Gained, track: Track) => {
+    const r = Math.min(Math.max(Math.floor((t - framesToSeconds(c.start, fps)) * (fps.num / fps.den) + 1e-6), 0), c.duration - 1);
+    return paramAt(c as Clip, "pan", r) + (track.pan ?? 0);
+  };
+  let pan = at(s.clip, s.track);
+  for (const v of s.via ?? []) pan += at(v.clip, v.track);
+  return Math.max(-1, Math.min(1, pan));
+}
+
+/** Pan sampled over [from, to) for setValueCurveAtTime, or null when no
+ * clip in the chain animates its pan (one value then holds). */
+export function panEnvelope(s: SoundingClip, fps: Rational, from: number, to: number, rate = 50): Float32Array | null {
+  if (![s.clip, ...(s.via ?? []).map((v) => v.clip)].some((c) => (c as Clip).keyframes?.pan?.length)) return null;
+  const n = Math.max(2, Math.ceil((to - from) * rate) + 1);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) out[i] = soundPanAt(s, fps, Math.min(from + i / rate, to - 1e-6));
+  return out;
 }
 
 /** Timeline seconds a sounding clip can be heard in: its own span with its

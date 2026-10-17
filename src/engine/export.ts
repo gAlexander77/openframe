@@ -49,6 +49,7 @@ import type { Project } from "../lib/project/types";
 import { planFrame, planLayers } from "../lib/render/plan";
 import { formatTimecode, type Rational } from "../lib/time";
 import { scheduleAudio } from "./audio";
+import { LoudnessMeter, normalizeGain } from "../lib/analysis/loudness";
 import { Compositor } from "./compositor";
 import { CursorPool, resolveSources, sourceImages, type Resolved } from "./player";
 
@@ -357,15 +358,40 @@ export async function exportProject(
     const sounding = a ? hasSound(p) : false;
     let fed = 0; // samples handed to the encoder
     let slice: { buffer: AudioBuffer; offset: number } | null = null;
+    let gain = 1; // loudness normalization, set by the measuring pass below
     const renderWindow = (i: number): Promise<AudioBuffer> => {
       const w = windows[i];
       const sr = a!.sampleRate;
       if (!sounding) return Promise.resolve(new AudioBuffer({ length: w.length, numberOfChannels: a!.channels, sampleRate: sr }));
       const ctx = new OfflineAudioContext({ numberOfChannels: a!.channels, length: w.length, sampleRate: sr });
       const t0 = fromSec + w.start / sr;
-      const sched = scheduleAudio(ctx, ctx.destination, p, t0, t0 + w.length / sr, 0);
+      let out: AudioNode = ctx.destination;
+      if (gain !== 1) {
+        const g = ctx.createGain();
+        g.gain.value = gain;
+        g.connect(ctx.destination);
+        out = g;
+      }
+      const sched = scheduleAudio(ctx, out, p, t0, t0 + w.length / sr, 0);
       return sched.done.then(() => ctx.startRendering());
     };
+    // Loudness normalization (Premiere's): a first pass renders and measures
+    // the whole mix (BS.1770), then every window is rendered again through
+    // the gain that meets the target without a sample peak over -1 dBFS.
+    if (a && sounding && plan.loudness !== null) {
+      const meter = new LoudnessMeter(a.sampleRate, a.channels);
+      for (let i = 0; i < windows.length; i++) {
+        const b = await wait("audio", renderWindow(i));
+        meter.push(Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c)), b.length);
+      }
+      const measured = meter.integrated();
+      const n = normalizeGain(measured, plan.loudness, meter.peak);
+      gain = n.gain;
+      if (Number.isFinite(measured))
+        notes.push(
+          `Loudness ${measured.toFixed(1)} LUFS, ${n.limitedBy === "peak" ? `raised as far as the -1 dB peak allows (${(measured + 20 * Math.log10(gain)).toFixed(1)} LUFS)` : `set to ${plan.loudness} LUFS`}.`,
+        );
+    }
     /** Next rendered window, starting the one after it in the background. */
     const nextWindow = async (i: number): Promise<AudioBuffer> => {
       const job = windowJob?.index === i ? windowJob.buffer : renderWindow(i);

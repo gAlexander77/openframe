@@ -30,6 +30,7 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   "transform.anchorY": { label: "Anchor Y", unit: "%", digits: 0, scale: 100 },
   "transform.rotation": { label: "Rotate", unit: "°", digits: 1 },
   opacity: { label: "Opacity", unit: "%", digits: 0, scale: 100 },
+  pan: { label: "Pan", unit: "", digits: 0, scale: 100 },
   "mask.x": { label: "Mask X", unit: "%", digits: 0, scale: 100 },
   "mask.y": { label: "Mask Y", unit: "%", digits: 0, scale: 100 },
   "mask.width": { label: "Mask width", unit: "%", digits: 0, scale: 100 },

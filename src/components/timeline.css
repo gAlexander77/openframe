@@ -266,3 +266,6 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 /* Keyboard focus on a clip (UX-33). */
 .clip:focus { outline: none; }
 .clip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 2; }
+/* Right-click Undo or Redo: the history list hangs from the buttons. */
+.history-anchor { display: contents; }
+.history-anchor > span { display: contents; }

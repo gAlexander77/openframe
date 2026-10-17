@@ -295,6 +295,9 @@ export const store = {
     set({ trimPreview: null });
   },
 
+  /** The undo and redo steps, nearest first (Premiere's History panel). */
+  history: () => ({ undo: past.map((e) => e.label).reverse(), redo: future.map((e) => e.label).reverse() }),
+
   undo() {
     const entry = past.pop();
     if (!entry) return;

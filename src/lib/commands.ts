@@ -155,6 +155,7 @@ const TEXT_STYLE_SCHEMA = S.obj({
   italic: S.bool("Italic"),
   align: S.str("Alignment", { enum: ["left", "center", "right"] }),
   highlight: S.str("Captions: color of the word being spoken; an empty string turns it off"),
+  case: S.str("Letter case as shown (the text is kept): none, upper, lower or title", { enum: ["none", "upper", "lower", "title"] }),
 });
 
 // ---- the registry ------------------------------------------------------------------
@@ -352,6 +353,25 @@ export const COMMANDS: Command[] = [
     description: "Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.",
     input: S.obj({ clip_id: S.str("Clip id"), speed: S.num("Multiplier", { minimum: 0.05, maximum: 100 }) }, ["clip_id", "speed"]),
     run: (p, a) => ops.setSpeed(p, clipOrThrow(p, a.clip_id).clip.id, Number(a.speed)),
+  },
+  {
+    name: "set_channel_fill",
+    description: "Play one channel of a video's or audio clip's sound on both sides (Premiere's Fill Left / Fill Right), e.g. a lav mic recorded on one channel. both = as recorded.",
+    input: S.obj({ clip_ids: S.ids("Video or audio clips"), fill: S.str("Which channel fills both", { enum: ["both", "left", "right"] }) }, ["clip_ids", "fill"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ids.reduce(
+        (q, id) =>
+          ops.updateClip(q, id, (c) => {
+            if (c.type !== "video" && c.type !== "audio") return c;
+            if (a.fill === "left" || a.fill === "right") return { ...c, fill: a.fill };
+            const { fill: _, ...rest } = c;
+            return rest as Clip;
+          }),
+        p,
+      );
+    },
   },
   {
     name: "set_frame_blending",
@@ -661,6 +681,7 @@ export const COMMANDS: Command[] = [
         if (c.type !== "text") throw new CommandError("not a text clip");
         const style: TextStyle = { ...c.style, ...((a.style ?? {}) as Partial<TextStyle>) };
         if (style.highlight === "") delete style.highlight;
+        if ((style.case as string) === "none") delete style.case;
         return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style };
       }),
   },

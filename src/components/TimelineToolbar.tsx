@@ -82,24 +82,13 @@ export function TimelineToolbar() {
   const croppable = useEditor((s) => s.selection.length === 1 && canCrop(s.project, s.selection[0]));
   const [toolMenu, setToolMenu] = useState(false);
   const picker = useRef<HTMLDivElement>(null);
-  // The tool menu closes on a click elsewhere or Escape, like every menu.
-  useEffect(() => {
-    if (!toolMenu) return;
-    const close = (e: PointerEvent) => {
-      if (!picker.current?.contains(e.target as Node)) setToolMenu(false);
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopImmediatePropagation();
-      setToolMenu(false);
-    };
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", esc, true);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("keydown", esc, true);
-    };
-  }, [toolMenu]);
+  useDismiss(toolMenu, picker, () => setToolMenu(false));
+  // Right-click Undo or Redo: the steps to go back or forward to (VEGAS's
+  // undo list, Premiere's History panel).
+  const [history, setHistory] = useState<{ kind: "undo" | "redo"; x: number; y: number } | null>(null);
+  const historyAt = useRef<HTMLDivElement>(null);
+  useDismiss(!!history, historyAt, () => setHistory(null));
+  const steps = history ? store.history()[history.kind].slice(0, 20) : [];
 
   const flip = () =>
     store.edit("Mirror", (p) => {
@@ -145,8 +134,36 @@ export function TimelineToolbar() {
           )}
         </div>
         <span className="tl-sep" />
-        <Tool id="undo" icon={<Undo2 />} disabled={!undo} label={undo ? `Undo ${undo}` : "Undo"} />
-        <Tool id="redo" icon={<Redo2 />} disabled={!redo} label={redo ? `Redo ${redo}` : "Redo"} />
+        <div
+          className="history-anchor"
+          ref={historyAt}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const kind = (e.target as HTMLElement).closest("[data-history]")?.getAttribute("data-history") as "undo" | "redo" | null;
+            if (kind && store.history()[kind].length) setHistory({ kind, x: e.clientX, y: e.clientY });
+          }}
+        >
+          <span data-history="undo">
+            <Tool id="undo" icon={<Undo2 />} disabled={!undo} label={undo ? `Undo ${undo}` : "Undo"} />
+          </span>
+          <span data-history="redo">
+            <Tool id="redo" icon={<Redo2 />} disabled={!redo} label={redo ? `Redo ${redo}` : "Redo"} />
+          </span>
+          {history && (
+            <MenuList
+              autoFocus
+              items={steps.map((label, i) => ({
+                label: `${history.kind === "undo" ? "Undo" : "Redo"} ${label}`,
+                hint: i ? `${i + 1} steps` : undefined,
+                onSelect: () => {
+                  for (let k = 0; k <= i; k++) store[history.kind]();
+                },
+              }))}
+              onDone={() => setHistory(null)}
+              style={{ position: "fixed", left: history.x, top: history.y }}
+            />
+          )}
+        </div>
         <span className="tl-sep" />
         <Tool id="split" icon={<Scissors />} />
         <Tool id="trimStartToPlayhead" icon={<ArrowLeftToLine />} />
@@ -192,4 +209,26 @@ export function TimelineToolbar() {
       </div>
     </div>
   );
+}
+
+/** Close a dropdown on a click outside `ref` or on Escape, like every menu. */
+function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) close();
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      close();
+    };
+    window.addEventListener("pointerdown", away);
+    window.addEventListener("keydown", esc, true);
+    return () => {
+      window.removeEventListener("pointerdown", away);
+      window.removeEventListener("keydown", esc, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 }

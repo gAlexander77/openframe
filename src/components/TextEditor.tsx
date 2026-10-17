@@ -96,6 +96,8 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
           fontStyle: s.italic ? "italic" : "normal",
           lineHeight: `${b.lineHeight}px`,
           letterSpacing: `${b.letterSpacing}px`,
+          // The typed text shows in the style's case, as the canvas draws it.
+          textTransform: clip.style.case === "upper" ? "uppercase" : clip.style.case === "lower" ? "lowercase" : clip.style.case === "title" ? "capitalize" : undefined,
           textAlign: s.align,
         }}
       />

@@ -221,7 +221,17 @@ export interface ExportSettings {
   audio: boolean;
   audioFormat: AudioFormat;
   range: "all" | "inout";
+  /** Premiere's export Loudness Normalization: the integrated LUFS the
+   * mix is brought to (never over a -1 dBFS peak). null = as mixed. */
+  loudness: number | null;
 }
+
+/** Targets platforms normalize to, as the export dialog offers them. */
+export const LOUDNESS_TARGETS: [number, string][] = [
+  [-14, "-14 LUFS · YouTube, Spotify, TikTok"],
+  [-16, "-16 LUFS · Apple Music, podcasts"],
+  [-23, "-23 LUFS · EBU R128 broadcast"],
+];
 
 export interface ExportPlan {
   fileName: string;
@@ -232,6 +242,8 @@ export interface ExportPlan {
   audio: { codec: AudioCodec; bitrate: number; sampleRate: number; channels: number } | null;
   /** Timeline frames [from, to). */
   range: { from: number; to: number };
+  /** Integrated LUFS to bring the mix to, or null for as mixed. */
+  loudness: number | null;
   /** Output video frames; 0 for audio-only. */
   frames: number;
   seconds: number;
@@ -254,6 +266,7 @@ export function defaultExportSettings(p: Project): ExportSettings {
     audio: true,
     audioFormat: "m4a",
     range: "all",
+    loudness: null,
   };
 }
 
@@ -298,6 +311,7 @@ export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: numb
     video,
     audio,
     range,
+    loudness: audio ? (s.loudness ?? null) : null,
     frames,
     seconds,
     estimatedBytes: estimateBytes(bits, seconds),

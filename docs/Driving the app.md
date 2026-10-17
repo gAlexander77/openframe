@@ -206,9 +206,18 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     does not reach the app. Simulate failures at the network instead, with
     `page.context().route(...)`. The context also routes a worker's
     fetches (`scripts/drive/bg-removal.js` blocks Hugging Face that way).
+    To use a stateful module (the store, actions), import it by the URL the
+    app loaded: the `mod()` helper in `scripts/drive/speed.js` reads it
+    from `performance.getEntriesByType("resource")`.
 15. **A bare specifier does not resolve in `page.evaluate`.** Read the
     optimized-dependency URL (`/node_modules/.vite/deps/…`) out of a
     module the app already serves and import that.
+16. **Stopping a background `npx vite` can leave Vite running.** The task
+    stop ended the npx wrapper; its `node vite.js` child kept port 1480,
+    and the next start failed with the port taken while the old server,
+    full of hot updates, still answered. Find the listener
+    (`Get-NetTCPConnection -LocalPort <port>`), check its command line is
+    yours, and stop that process.
 
 ## Header interaction check — 2026-10-15
 

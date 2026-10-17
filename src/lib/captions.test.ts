@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, wordsToCaptions, type Word } from "./captions";
+import { casedText, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, wordsToCaptions, type Word } from "./captions";
 
 const words = (s: string, step = 0.3, gapAfter: Record<number, number> = {}): Word[] => {
   let t = 0;
@@ -97,4 +97,11 @@ it("finds and replaces in caption text, whole words and case as asked", () => {
   expect(replaceText("a.b a+b don't", "a.b", "x")).toEqual(["x a+b don't", 1]);
   expect(replaceText("don't do it", "don", "will", { wholeWord: true })).toEqual(["don't do it", 0]);
   expect(replaceText("anything", "", "x")).toEqual(["anything", 0]);
+});
+
+it("shows text in a style's case and keeps the typed text", () => {
+  expect(casedText("hello wörld, it's me", "upper")).toBe("HELLO WÖRLD, IT'S ME");
+  expect(casedText("Hello World", "lower")).toBe("hello world");
+  expect(casedText("hello wörld\nnew LINE", "title")).toBe("Hello Wörld\nNew LINE");
+  expect(casedText("as typed", undefined)).toBe("as typed");
 });

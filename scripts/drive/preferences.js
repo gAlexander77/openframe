@@ -25,8 +25,12 @@ async (page) => {
   const lens = await page.evaluate(async () => {
     const api = window.videoEditor;
     const [ph] = await api.import([{ name: "photo.jpg", src: location.origin + "/fixtures/media/photo.jpg" }]);
-    const { addToTimeline } = await import("/src/state/media.ts");
-    const { addTextPreset, applyTransition } = await import("/src/state/apply.ts");
+    // The app's own module instances (a plain import after a hot update
+    // would get copies acting on a store the app never sees).
+    const loaded = performance.getEntriesByType("resource").map((e) => e.name);
+    const mod = (path) => import(loaded.find((n) => new URL(n).pathname === path) ?? path);
+    const { addToTimeline } = await mod("/src/state/media.ts");
+    const { addTextPreset, applyTransition } = await mod("/src/state/apply.ts");
     api.seek(0);
     addToTimeline(api.project().assets.find((a) => a.id === ph.id));
     addToTimeline(api.project().assets.find((a) => a.id === ph.id));

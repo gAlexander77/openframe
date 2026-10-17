@@ -167,7 +167,7 @@ binding in `src/lib/keymap.ts`.
 | Audio scrubbing while dragging the playhead | P R V F | no (not found in `src/engine/player.ts`) | P2 | Short grain playback in `src/engine/audio.ts`. |
 | Extend edit (E), edit-point selection | P R F | no | P2 | — |
 | Timeline index / find clips | P R F | partial: a marker list only | P2 | A clip list beside Markers. |
-| Undo history list | P V | partial: Undo/Redo show their names | P2 | Read the store's `past` labels. |
+| Undo history list | P V | yes: right-click Undo or Redo | — | — |
 
 ## 5. Audio
 
@@ -183,7 +183,7 @@ in both.
 | Record a voiceover | C P R V F | yes: microphone button in the timeline toolbar | — | CapCut's mic button sits in the timeline toolbar. Use `getUserMedia` plus `MediaRecorder` (WAV/Opus), then save through `src/platform/` as an asset at the playhead on a new audio track. Offer "mute project while recording" and a level meter (reuse `Meter.tsx`). Check WebView2 mic permission handling on desktop. |
 | Crossfade at a cut or under a video transition | P R V F | yes: sound crossfades under transitions | — | Equal power by default and linear for the same source (see the pitfall in [[Professional NLE features]]). Compute it in `clipGainAt` so preview and export agree. |
 | Fade curve types | P R V F | no; linear only | P2 | A curve field on the fades. |
-| Pan keyframes | P R V F | partial: pan is static (`keyframes={false}`) | P2 | Path `pan` through `paramAt` in `scheduleAudio`. |
+| Pan keyframes | P R V F | yes | — | — |
 | EQ (parametric or graphic) | P R V F | yes: three bands (low shelf, mid bell, high shelf) | — | `BiquadFilterNode` chain per clip in `scheduleAudio`. Store bands on `Sound`. VEGAS 23's modernEQ is the model. |
 | Compressor, limiter | P R V F | no | P2 | `DynamicsCompressorNode`; true-peak limiting at export is on the [[Roadmap]]. |
 | Noise reduction | C P R V F | yes: a spectral gate for steady noise (no ML model) | — | Local DeepFilterNet or RNNoise via ONNX or WASM in a worker (the app already ships transformers.js). Render a cleaned copy per asset and play that, so playback costs nothing. |
@@ -191,7 +191,7 @@ in both.
 | Voice isolation / stems | C R F | no | P2 | A Demucs-class ONNX model; heavy. |
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
 | Pitch shift independent of speed | C P V | no; pitch only follows speed (Change pitch) | P2 | The engine's time-stretch (ADR-028) can expose a semitone offset. |
-| Fill channel (left or right to both) | C | partial: mono plays on both; a one-sided stereo file cannot be fixed | P2 | A `ChannelSplitter`/`ChannelMerger` option on `Sound`. |
+| Fill channel (left or right to both) | C | yes (`set_channel_fill`) | — | — |
 | Loudness meter (LUFS M/S/I) | P R V F | yes (`Meter.tsx`, `public/loudness-tap.js`) | — | Integrated resets on each play; no Reset button, loudness range or true peak yet (P2). |
 | Track mixer with per-track meters | P R V F | no | P2 | After solo and track volume. Add buses and inserts later. |
 | Stretch music to fit (Premiere Remix) | P | no | P2 | Beat analysis already exists; L. |
@@ -206,7 +206,7 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 |---|---|---|---|---|
 | Installed system fonts in the picker | C P R V F | yes where the webview offers `queryLocalFonts` | — | Desktop: list fonts in Rust (e.g. DirectWrite via `font-kit`) or with WebView2's Local Font Access (`queryLocalFonts`). Web: `queryLocalFonts` where it exists, the fixed list otherwise. Add a preview and search. |
 | Import a font file (.ttf/.otf) | C R | yes | — | `FontFace` from the file; keep a reference in the project like `luts[]` (ADR-021 pattern), so headless render and export find it. |
-| Text case (Aa / AA / aa), vertical text | C | no | P2 | Style fields read by `rasterizeText`. |
+| Text case (Aa / AA / aa), vertical text | C | partial: case (`style.case`); no vertical text | P2 | Style fields read by `rasterizeText`. |
 | Glow, gradient fill | C | no; word art fakes glow with shadow | P2 | Raster passes in `engine/text.ts`. |
 | Curved or path text | C R | no | P2 | Per-glyph placement in `engine/text.ts`. |
 | Bubble and callout frames behind text | C | partial: bubble stickers exist | P2 | — |
@@ -309,7 +309,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | ProRes or DNxHR via FFmpeg | P R V F | no | P2 | Desktop only, through `src-tauri/src/ffmpeg.rs`. |
 | Alpha export (ProRes 4444, VP9 alpha, PNG sequence) | P R V F | no | P2 | — |
 | Cover / thumbnail designer | C | no | P2 | A still export with text layers. |
-| Loudness-normalized export, true-peak limiter | P R V | no ([[Roadmap]]) | P2 | — |
+| Loudness-normalized export, true-peak limiter | P R V | partial: normalization to a target (sample peak held at -1 dBFS); no true-peak limiter | P2 | — |
 | Smart render (stream copy of untouched GOPs) | P V | no | P2 | — |
 | Several aspect versions in one go | C | no | P2 | After auto reframe. |
 

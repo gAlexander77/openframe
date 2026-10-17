@@ -187,7 +187,7 @@ function FindReplace() {
         <span>Whole words</span>
         <Toggle label="Whole words" on={wholeWord} onChange={setWholeWord} />
       </label>
-      <button className="btn primary cap-go" disabled={!hits} onClick={run}>
+      <button className="btn primary cap-wide" disabled={!hits} onClick={run}>
         {find ? (hits ? `Replace ${hits} ${hits === 1 ? "match" : "matches"}` : "No matches") : "Replace"}
       </button>
     </div>

@@ -500,7 +500,18 @@ function AudioTab({ clip }: { clip: Clip }) {
         <SliderRow clip={clip} path="volume" label="Volume" min={-60} max={12} step={0.1} digits={1} unit="dB" reset={1} show={(v) => Math.max(-60, toDb(v))} store={(db) => (db <= -60 ? 0 : fromDb(db))} />
         <SliderRow clip={clip} path="fadeIn" label="Fade in" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
         <SliderRow clip={clip} path="fadeOut" label="Fade out" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
-        <SliderRow clip={clip} path="pan" label="Pan" min={-100} max={100} reset={0} keyframes={false} {...pct} />
+        <SliderRow clip={clip} path="pan" label="Pan" min={-100} max={100} reset={0} {...pct} />
+        <Row label="Channels">
+          <Segmented
+            value={clip.fill ?? "both"}
+            onChange={(v) => edit(v === "both" ? "Channels as recorded" : `Fill from ${v}`, (p) => runCommand(p, "set_channel_fill", { clip_ids: [clip.id], fill: v }))}
+            options={[
+              { value: "both", label: "Stereo" },
+              { value: "left", label: "Left to both" },
+              { value: "right", label: "Right to both" },
+            ]}
+          />
+        </Row>
       </Section>
       <Section
         title="Equalizer"
@@ -1036,6 +1047,18 @@ function TextTab({ clip }: { clip: TextClip }) {
             <button className={`chip-btn underline${s.underline ? " on" : ""}`} aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}>U</button>
             <Segmented value={s.align} onChange={(v) => style({ align: v }, "Align")} options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]} />
           </div>
+        </Row>
+        <Row label="Case">
+          <Segmented
+            value={s.case ?? "none"}
+            onChange={(v) => style({ case: v === "none" ? undefined : v }, "Text case")}
+            options={[
+              { value: "none", label: "As typed" },
+              { value: "upper", label: "AA" },
+              { value: "lower", label: "aa" },
+              { value: "title", label: "Aa" },
+            ]}
+          />
         </Row>
         <Row label="Color">
           <ColorInput label="Text color" value={s.color} onChange={(v) => style({ color: v }, "Text color")} />

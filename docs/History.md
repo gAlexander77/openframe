@@ -587,9 +587,16 @@ left, and the survey's stale rows were brought up to date.
   the dialog's own job (the source monitor's , and .) must be resolved
   inside it; `actionFor(e)` reads the keymap there.
 - **A probe drive can import the app's own modules**: `await
-  import("/src/engine/transcribe.ts")` inside `page.evaluate` reaches the
-  same module instance Vite serves the app, which made the Whisper
-  experiment a ten-line throwaway.
+  import("/src/engine/transcribe.ts")` inside `page.evaluate` made the
+  Whisper experiment a ten-line throwaway. But once a file has been hot
+  updated, Vite serves the app `/src/x.ts?t=...`, and a plain import gets
+  a second copy with its own state: the undo-history drive's edits went to
+  a store the app never saw. Stateful modules must be imported by the URL
+  the app loaded (the `mod()` helper in `speed.js` and `undo-history.js`).
+- **A ChannelSplitter is always "discrete".** Setting its interpretation
+  to "speakers" throws, which the channel-fill drive's first export hit.
+  A stereo GainNode in front (explicit, "speakers") upmixes a mono file so
+  filling from either side keeps it whole.
 - **Effects cannot draw a layer's border**: they run on the layer after it
   is placed on the canvas and never see its rectangle. Rounded corners
   already exist through the rectangle mask's radius, and border and

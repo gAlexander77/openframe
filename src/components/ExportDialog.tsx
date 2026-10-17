@@ -26,6 +26,7 @@ import {
   fpsLabel,
   fpsOptions,
   GIF_FPS,
+  LOUDNESS_TARGETS,
   outputSize,
   planExport,
   sameRate,
@@ -46,7 +47,7 @@ import "./export.css";
 
 /** Choices remembered between exports (not the name, rate or range, which
  * belong to the project). */
-const REMEMBERED = ["video", "format", "codec", "resolution", "quality", "customMbps", "audio", "audioFormat"] as const;
+const REMEMBERED = ["video", "format", "codec", "resolution", "quality", "customMbps", "audio", "audioFormat", "loudness"] as const;
 
 function loadSettings(p: Project): ExportSettings {
   const base = defaultExportSettings(p);
@@ -395,6 +396,16 @@ function SettingsView() {
                   ))}
                 </Select>
               )}
+            </Row>
+            <Row label="Loudness" htmlFor="export-loudness">
+              <Select id="export-loudness" value={String(s.loudness ?? "off")} onChange={(x) => set({ loudness: x === "off" ? null : Number(x) })}>
+                <option value="off">As mixed</option>
+                {LOUDNESS_TARGETS.map(([v, label]) => (
+                  <option key={v} value={v}>
+                    {label}
+                  </option>
+                ))}
+              </Select>
             </Row>
           </Section>
 

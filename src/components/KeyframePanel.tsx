@@ -103,7 +103,7 @@ const relOf = (c: Clip, playhead: number) => Math.min(Math.max(playhead - c.star
 function QuickAdd({ clip }: { clip: Clip }) {
   const w = useEditor((s) => s.project.width);
   const h = useEditor((s) => s.project.height);
-  const paths = "transform" in clip ? ["transform.scale", "transform.x", "transform.y", "transform.rotation", "opacity"] : "volume" in clip ? ["volume"] : "opacity" in clip ? ["opacity"] : [];
+  const paths = "transform" in clip ? ["transform.scale", "transform.x", "transform.y", "transform.rotation", "opacity"] : "volume" in clip ? ["volume", "pan"] : "opacity" in clip ? ["opacity"] : [];
   const add = (path: string) => {
     const f = relOf(clip, store.get().playhead);
     store.edit("Add keyframe", (p) => toggleKeyframe(p, clip.id, path, f, paramAt(clip, path, f)));

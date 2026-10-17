@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clipGainAt, fromDb, gainEnvelope, soundingClips, soundOverlaps, toDb } from "./audio";
+import { clipGainAt, fromDb, gainEnvelope, panEnvelope, soundingClips, soundOverlaps, soundPanAt, toDb } from "./audio";
 import { clipForAsset, createProject, createTrack } from "./project/defaults";
 import type { AudioClip, Project, VideoClip } from "./project/types";
 
@@ -63,7 +63,21 @@ describe("sounding clips", () => {
   it("adds the track's pan to each clip's, within -1..1", () => {
     const p: Project = createProject();
     const t = { ...createTrack("audio", "A"), pan: 0.5, clips: [{ ...clip, pan: 0.25 }, { ...clip, id: "far", pan: 0.75 }] };
-    expect(soundingClips({ ...p, tracks: [...p.tracks, t] }, () => true).map((s) => s.clip.pan)).toEqual([0.75, 1]);
+    const s = soundingClips({ ...p, tracks: [...p.tracks, t] }, () => true);
+    expect(s.map((x) => soundPanAt(x, p.fps, 0.1))).toEqual([0.75, 1]);
+    expect(panEnvelope(s[0], p.fps, 0, 1)).toBeNull(); // nothing animated: one value holds
+  });
+
+  it("follows keyframed pan, plus the track's", () => {
+    const p: Project = createProject(); // 30 fps
+    const swept = { ...clip, start: 0, duration: 60, pan: 0, keyframes: { pan: [{ f: 0, v: -1 }, { f: 30, v: 0.6 }] } };
+    const t = { ...createTrack("audio", "A"), pan: 0.4, clips: [swept] };
+    const [s] = soundingClips({ ...p, tracks: [...p.tracks, t] }, () => true);
+    expect(soundPanAt(s, p.fps, 0)).toBeCloseTo(-0.6, 5);
+    expect(soundPanAt(s, p.fps, 1.5)).toBe(1); // 0.6 + 0.4, held after the last key
+    const env = panEnvelope(s, p.fps, 0, 1, 10)!;
+    expect(env[0]).toBeCloseTo(-0.6, 5);
+    expect(env[5]).toBeGreaterThan(env[0]);
   });
 });
 

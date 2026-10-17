@@ -74,6 +74,10 @@ const jobs = {
   // Stereo with the right channel 8 dB down: loudness must sum channels.
   "music-stereo.m4a": () =>
     ff("-f", "lavfi", "-i", "aevalsrc='0.4*sin(2*PI*(220+110*floor(mod(t,4)))*t)*(0.6+0.4*sin(2*PI*2*t))|0.16*sin(2*PI*(220+110*floor(mod(t,4)))*t)*(0.6+0.4*sin(2*PI*2*t))':s=48000:d=12", "-c:a", "aac", "-b:a", "160k", join(out, "music-stereo.m4a")),
+  // A lav recorded on one side: a tone on the left, silence on the right
+  // (the channel fill drive).
+  "left-only.wav": () =>
+    ff("-f", "lavfi", "-i", "aevalsrc='0.4*sin(2*PI*440*t)|0':s=48000:d=3", "-c:a", "pcm_s16le", join(out, "left-only.wav")),
   "voice-8s.wav": () =>
     ff("-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*180*t)*gt(sin(2*PI*0.5*t),0)':s=48000:d=8", "-c:a", "pcm_s16le", join(out, "voice-8s.wav")),
   "speech-gaps.m4a": () =>

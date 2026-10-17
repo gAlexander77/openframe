@@ -78,7 +78,7 @@ export function TranscriptCard() {
             Cancel
           </button>
         ) : (
-          <button className="btn primary cap-go" onClick={() => void transcribeTrack(track.id)}>
+          <button className="btn primary cap-wide" onClick={() => void transcribeTrack(track.id)}>
             <ScrollText size={15} /> Transcribe {unheard === 1 ? "1 clip" : `${unheard} clips`}
           </button>
         ))}

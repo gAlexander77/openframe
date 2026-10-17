@@ -7,7 +7,7 @@ import { framesToSeconds, secondsToFrames, type Rational } from "./time";
 export const ATTRIBUTE_GROUPS = ["transform", "color", "audio", "effects"] as const;
 export type AttributeGroup = typeof ATTRIBUTE_GROUPS[number];
 export const ATTRIBUTE_LABELS: Record<AttributeGroup, string> = { transform: "Transform, crop and opacity", color: "Color adjustments and filter", audio: "Volume, pan, mute, fades and EQ", effects: "Effects and effect animation" };
-const fields = { transform: ["transform", "crop", "opacity", "blend"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "eq"], effects: ["effects"] } as const;
+const fields = { transform: ["transform", "crop", "opacity", "blend"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "eq", "fill"], effects: ["effects"] } as const;
 export const supportsAttributes = (c: Clip, group: AttributeGroup) => fields[group][0] in c;
 export interface AttributeClipboard { clip: Clip; fps: Rational; luts: LutFile[] }
 export function copyAttributes(p: Project, id: string): AttributeClipboard {

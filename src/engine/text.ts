@@ -4,6 +4,7 @@
 // a text or style change, or a new render size, re-rasterizes.
 
 import { setTextMeasure } from "../lib/align";
+import { casedText } from "../lib/captions";
 import type { TextClip, TextStyle } from "../lib/project/types";
 import type { TextLayout } from "../lib/textBox";
 import type { SourceImage } from "./compositor";
@@ -57,7 +58,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   ctx.font = font;
   ctx.letterSpacing = `${s.letterSpacing * k}px`;
   const wrapWidth = s.maxWidth * width;
-  const lines = wrap(ctx, clip.text || " ", wrapWidth);
+  const lines = wrap(ctx, casedText(clip.text, s.case) || " ", wrapWidth);
   const lineH = size * s.lineHeight;
   const textW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
   const stroke = s.stroke && s.stroke.width > 0 ? s.stroke.width * k : 0;

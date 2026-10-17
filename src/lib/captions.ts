@@ -186,3 +186,12 @@ export function replaceText(text: string, find: string, replace: string, o: { ma
   const out = text.replace(re, () => (n++, replace));
   return [out, n];
 }
+
+/** Text as a style's case shows it (TextStyle.case): the typed text is
+ * kept; title raises each word's first letter, as CSS capitalize does. */
+export function casedText(text: string, c: "upper" | "lower" | "title" | undefined): string {
+  if (c === "upper") return text.toUpperCase();
+  if (c === "lower") return text.toLowerCase();
+  if (c === "title") return text.replace(/(^|\s)(\p{L})/gu, (_, a: string, b: string) => a + b.toUpperCase());
+  return text;
+}

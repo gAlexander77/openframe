@@ -388,6 +388,9 @@ export interface Sound {
   muted: boolean;
   /** Three-band equalizer, dB per band (-12..12); absent = flat. */
   eq?: { low?: number; mid?: number; high?: number };
+  /** Premiere's Fill Left / Fill Right: one channel played on both (a lav
+   * recorded on one side). Absent = the channels as recorded. */
+  fill?: "left" | "right";
 }
 
 /** One point of a speed curve. */
@@ -450,6 +453,9 @@ export interface TextStyle {
   /** Karaoke: the word being spoken (wordTimes) drawn in this color, as
    * CapCut's caption highlight does. Absent: no highlight. */
   highlight?: string;
+  /** CapCut's Aa / AA / aa: shown in this case, the typed text kept as is.
+   * Absent: as typed. Title capitalizes each word's first letter. */
+  case?: "upper" | "lower" | "title";
 }
 
 /** Stabilization's per-frame corrections (src/lib/analysis/stabilize.ts). */

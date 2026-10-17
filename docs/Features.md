@@ -58,6 +58,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   effects follow the shot under most of them through ripples and
   reorders; music beds spanning several shots stay put), **preview axis**
   (hover to preview).
+- **Undo history**: right-click the toolbar's Undo or Redo for the last 20
+  steps by name, nearest first; choosing one goes back (or forward) to it
+  (VEGAS's undo list, Premiere's History panel).
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
@@ -120,6 +123,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Nudge clips** by a frame with Alt+Left/Right, five with Shift
   (Premiere's keys; `nudge_clips`), all or nothing: never past the start or
   over another clip.
+- **Keyframed pan**: the Audio tab's Pan row (and the keyframe panel)
+  animates pan like volume; a track's pan and a compound clip's add to it.
+- **Channels** (Audio tab; `set_channel_fill`; Premiere's Fill Left and
+  Fill Right): play one channel on both sides, for a lav recorded on one
+  side; a mono file is upmixed first, so either choice keeps it whole.
+  Paste Attributes copies it with the sound.
 - **Equalizer** (Audio tab): low shelf (120 Hz), mid bell (1 kHz) and
   high shelf (8 kHz), -12 to +12 dB, on audio clips and a video's own
   sound; the same biquads in preview and export; copied by Paste
@@ -347,7 +356,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
-  stroke, shadow, background box, in/out/loop animations.
+  stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
+  Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
+  kept, on the canvas and in the inline editor alike.
 - **A new title shows when added**: a title, template or sticker added at
   the playhead plays its In animation once, silently, and stops where it
   has settled (under reduced motion it goes straight there), so the viewer
@@ -439,6 +450,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   rate, in/out range, audio-only (WAV/M4A/...) and still frames.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
+- **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring
+  the mix to -14, -16 or -23 LUFS. A first pass measures the whole mix
+  (BS.1770), then it is rendered through the gain that meets the target,
+  never past a -1 dBFS sample peak; the result notes what it measured and
+  what it set. Read back, a -14 target measures -14.00.
 - **Presets** at the top of the dialog: YouTube 1080p and 4K, TikTok,
   Reels and Shorts, Small file (720p), High quality master (HEVC),
   Animated GIF and Audio only (WAV); changed settings read Custom and can
