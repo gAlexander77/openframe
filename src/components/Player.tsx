@@ -66,6 +66,8 @@ export function PlayerPanel() {
   const height = useEditor((s) => s.project.height);
   const trimPreview = useEditor((s) => s.trimPreview);
   const cropping = useEditor((s) => s.cropEdit);
+  const zoom = useEditor((s) => s.viewerZoom);
+  const pan = useEditor((s) => s.viewerPan);
   const [box, setBox] = useState({ w: 0, h: 0 });
 
   useEffect(() => {
@@ -96,7 +98,9 @@ export function PlayerPanel() {
         width: stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
         height: stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
       };
-      const k = Math.max(0, Math.min(r.width / width, r.height / height));
+      const fitK = Math.max(0, Math.min(r.width / width, r.height / height));
+      fitRef.current = fitK;
+      const k = zoom ?? fitK;
       const w = Math.floor(width * k);
       const h = Math.floor(height * k);
       setBox({ w, h });
@@ -107,7 +111,37 @@ export function PlayerPanel() {
     const ro = new ResizeObserver(fit);
     ro.observe(stage);
     return () => ro.disconnect();
-  }, [width, height]);
+  }, [width, height, zoom]);
+
+  // Premiere's Program monitor zoom: Ctrl+wheel magnifies at the pointer,
+  // the wheel (Shift: sideways) or a middle-button drag pans once zoomed.
+  const fitRef = useRef(1);
+  useEffect(() => {
+    const stage = stageRef.current!;
+    const onWheel = (e: WheelEvent) => {
+      const s = store.get();
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const k = s.viewerZoom ?? fitRef.current;
+        const next = Math.min(8, Math.max(0.05, k * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+        // Keep the point under the pointer still: it sits d from the
+        // picture's center now and d * ratio after, so the pan takes the rest.
+        const r = stage.querySelector(".player-frame")!.getBoundingClientRect();
+        const dx = e.clientX - (r.left + r.width / 2);
+        const dy = e.clientY - (r.top + r.height / 2);
+        const ratio = next / k;
+        if (next <= fitRef.current * 1.001) store.set({ viewerZoom: null, viewerPan: { x: 0, y: 0 } });
+        else store.set({ viewerZoom: next, viewerPan: { x: s.viewerPan.x + dx * (1 - ratio), y: s.viewerPan.y + dy * (1 - ratio) } });
+      } else if (s.viewerZoom !== null) {
+        e.preventDefault();
+        const sideways = e.shiftKey ? e.deltaY : e.deltaX;
+        store.set({ viewerPan: { x: s.viewerPan.x - sideways, y: s.viewerPan.y - (e.shiftKey ? 0 : e.deltaY) } });
+      }
+    };
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => stage.removeEventListener("wheel", onWheel);
+  }, []);
+  const panFrom = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
   return (
     <section className="panel player-panel" aria-label="Player" ref={panelRef}>
@@ -127,7 +161,21 @@ export function PlayerPanel() {
         onKeyUp={nudge.up}
         onBlur={nudge.up}
         onDoubleClick={() => run("fullscreenPreview")}
+        onPointerMove={(e) => {
+          const d = panFrom.current;
+          if (d) store.set({ viewerPan: { x: d.x + e.clientX - d.px, y: d.y + e.clientY - d.py } });
+        }}
+        onPointerUp={() => (panFrom.current = null)}
         onPointerDown={(e) => {
+          // The middle button pans a zoomed-in viewer.
+          if (e.button === 1) {
+            const s = store.get();
+            if (s.viewerZoom === null) return;
+            e.preventDefault();
+            e.currentTarget.setPointerCapture(e.pointerId);
+            panFrom.current = { ...s.viewerPan, px: e.clientX, py: e.clientY };
+            return;
+          }
           // Click the picture to select what is on top there, as in CapCut;
           // a grouped picture brings its group, as on the timeline (Alt: alone).
           const s = store.get();
@@ -135,7 +183,7 @@ export function PlayerPanel() {
           store.select(hit ? (e.altKey ? [hit.id] : expandGroups(s.project, [hit.id])) : []);
         }}
       >
-        <div className="player-frame" style={{ width: box.w, height: box.h }}>
+        <div className="player-frame" style={{ width: box.w, height: box.h, ...(zoom !== null ? { transform: `translate(${pan.x}px, ${pan.y}px)` } : {}) }}>
           <canvas ref={canvasRef} className="player-canvas" />
           <ViewerGuides />
           <TransformOverlay width={box.w} height={box.h} />
@@ -184,6 +232,7 @@ function Transport() {
         </button>
       </div>
       <div className="transport-right">
+        <ViewerZoom />
         <CanvasRatio />
         <PreviewQuality />
         <button className="icon-btn" aria-label="Full screen" data-tip={tip("Full screen", "fullscreenPreview")} onClick={() => run("fullscreenPreview")}>
@@ -204,6 +253,31 @@ function Timecodes() {
       <span className="tc-sep">/</span>
       <span className="tc-total">{formatTimecode(total, project.fps)}</span>
     </div>
+  );
+}
+
+const ZOOMS = [0.25, 0.5, 1, 2, 4];
+
+/** The viewer's magnification: Fit, or a share of the project's own
+ * pixels (100% shows one project pixel per screen pixel). */
+function ViewerZoom() {
+  const zoom = useEditor((s) => s.viewerZoom);
+  const dpr = window.devicePixelRatio || 1;
+  const value = zoom === null ? "fit" : String(Math.round(zoom * dpr * 100));
+  return (
+    <select
+      className="quality-select"
+      aria-label="Viewer zoom"
+      data-tip="Viewer zoom (Ctrl+wheel; wheel or middle-drag pans)"
+      value={value}
+      onChange={(e) => store.set(e.target.value === "fit" ? { viewerZoom: null, viewerPan: { x: 0, y: 0 } } : { viewerZoom: Number(e.target.value) / 100 / dpr, viewerPan: { x: 0, y: 0 } })}
+    >
+      <option value="fit">Fit</option>
+      {zoom !== null && !ZOOMS.some((z) => String(z * 100) === value) && <option value={value}>{value}%</option>}
+      {ZOOMS.map((z) => (
+        <option key={z} value={String(z * 100)}>{z * 100}%</option>
+      ))}
+    </select>
   );
 }
 

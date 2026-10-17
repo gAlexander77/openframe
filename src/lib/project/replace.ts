@@ -6,6 +6,7 @@ import { clipForAsset } from "./defaults";
 import { findClip, updateClip } from "./ops";
 import type { Asset, Clip, Id, Project } from "./types";
 
+// Not `cutout`: a Remove BG matte was made from the old shot's pixels.
 const VISUAL_KEYS = ["transform", "opacity", "blend", "crop", "adjust", "filter", "effects", "mask", "chromaKey", "animIn", "animOut", "animLoop", "transitionOut", "canvas"] as const;
 const SOUND_KEYS = ["volume", "pan", "fadeIn", "fadeOut"] as const;
 

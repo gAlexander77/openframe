@@ -290,6 +290,7 @@ async function grabClip(key: string): Promise<Scene> {
     filter: undefined,
     mask: undefined,
     chromaKey: undefined,
+    cutout: undefined,
     canvas: undefined,
     animIn: undefined,
     animOut: undefined,

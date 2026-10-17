@@ -28,6 +28,7 @@ import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
 import type { Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
+import { breakCompound, breakProblem, compoundProblem, compoundView, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 import { deleteMarkers, updateMarker } from "./markers";
@@ -153,6 +154,7 @@ const TEXT_STYLE_SCHEMA = S.obj({
   bold: S.bool("Bold"),
   italic: S.bool("Italic"),
   align: S.str("Alignment", { enum: ["left", "center", "right"] }),
+  highlight: S.str("Captions: color of the word being spoken; an empty string turns it off"),
 });
 
 // ---- the registry ------------------------------------------------------------------
@@ -615,7 +617,9 @@ export const COMMANDS: Command[] = [
     run: (p, a) =>
       ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (c.type !== "text") throw new CommandError("not a text clip");
-        return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style: { ...c.style, ...((a.style ?? {}) as Partial<TextStyle>) } };
+        const style: TextStyle = { ...c.style, ...((a.style ?? {}) as Partial<TextStyle>) };
+        if (style.highlight === "") delete style.highlight;
+        return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style };
       }),
   },
   {
@@ -675,7 +679,7 @@ export const COMMANDS: Command[] = [
         captions: {
           type: "array",
           description: "The captions, in order",
-          items: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), text: S.str("Words shown") }, ["start", "end", "text"]),
+          items: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), text: S.str("Words shown"), words: { type: "array", items: { type: "number" }, description: "Seconds each word of text starts, for the spoken-word highlight" } }, ["start", "end", "text"]),
         },
         style: TEXT_STYLE_SCHEMA,
         y: S.num("Vertical offset from center as a canvas fraction; 0.36 sits near the bottom"),
@@ -894,6 +898,19 @@ export const COMMANDS: Command[] = [
       }),
   },
   {
+    name: "set_background_removal",
+    description:
+      "Turn Remove background on or off for video clips that already have a background matte (the person stays, everything behind them becomes see-through, so lower tracks show). The remove_background tool (window.videoEditor.ai.removeBackground) makes the matte on this machine; turning it off keeps the matte, so turning it back on is instant.",
+    input: S.obj({ clip_ids: S.ids("Video clips"), enabled: S.bool("On or off") }, ["clip_ids", "enabled"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const c = clipOrThrow(q, id).clip;
+        if (c.type !== "video") throw new CommandError(`clip ${id} is a ${c.type} clip; Remove background works on video clips`);
+        if (!c.cutout) throw new CommandError(`clip ${id} has no background matte yet; make one with the remove_background tool (window.videoEditor.ai.removeBackground)`);
+        return ops.setCutout(q, id, { ...c.cutout, enabled: a.enabled === true });
+      }, p),
+  },
+  {
     name: "apply_lut",
     description: "Apply a .cube LUT to a visual or adjustment clip, mixed in at intensity 0..1 (default 1). lut_id is from the project's luts (describeProject lists them; files are imported with window.videoEditor.importLuts or by dropping a .cube on the app). lut_id 'none' removes it. Animate with add_keyframe on adjust.lut.intensity.",
     input: S.obj({ clip_id: S.str("Visual or adjustment clip id"), lut_id: S.str("LUT id, or 'none'"), intensity: S.num("0..1", { minimum: 0, maximum: 1 }) }, ["clip_id", "lut_id"]),
@@ -995,6 +1012,7 @@ export const COMMANDS: Command[] = [
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips have no speed`);
+      if (clip.type === "compound" && a.preset !== "none") throw new CommandError("compound clips take a constant speed only; ramp the clips inside with edit_compound");
       if (a.preset === "none") return ops.setSpeedCurve(p, clip.id, null);
       if (a.preset !== undefined) return ops.setSpeedCurve(p, clip.id, PRESETS[String(a.preset)].points, String(a.preset));
       const pts = cleanPoints((a.points ?? []) as { t: number; speed: number }[], (x) => x.t);
@@ -1012,6 +1030,7 @@ export const COMMANDS: Command[] = [
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips cannot play backward`);
       if (clip.freeze) throw new CommandError("a freeze frame has no direction");
+      if (clip.type === "compound") throw new CommandError("compound clips cannot play backward yet; reverse the clips inside with edit_compound");
       return ops.setReverse(p, clip.id, a.reverse === true);
     },
   },
@@ -1023,6 +1042,64 @@ export const COMMANDS: Command[] = [
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips have no sound`);
       return ops.setChangePitch(p, [clip.id], a.preserve !== true);
+    },
+  },
+  {
+    name: "create_compound_clip",
+    description:
+      "Put clips into one compound clip (CapCut's Create compound clip, Premiere's Nest), on the lowest of their video tracks, spanning them all. The clips move into a nested timeline (describeProject lists it under compounds) at the same times relative to each other; the compound clip then plays it like a video clip plays a file, and its own transform, opacity, blend, color, effects, speed and volume act on the whole. Needs a clip on a video track, and nothing else on that track inside the span.",
+    input: S.obj({ clip_ids: S.ids("Clips to put inside, on any tracks"), name: S.str("Name shown on the clip (default Compound clip N)") }, ["clip_ids"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      const problem = compoundProblem(p, ids);
+      if (problem) throw new CommandError(problem);
+      return createCompound(p, ids, a.name === undefined ? undefined : String(a.name)).project;
+    },
+  },
+  {
+    name: "break_compound_clip",
+    description:
+      "Break a compound clip apart (Resolve's Decompose in place, CapCut's Undo compound clip): the clips inside go back on this timeline at the frames the compound clip showed them, trimmed to what it showed, on its track and the tracks above. The compound clip's own settings go with it. Needs speed 1.",
+    input: S.obj({ clip_id: S.str("Compound clip id") }, ["clip_id"]),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      const problem = breakProblem(p, clip.id);
+      if (problem) throw new CommandError(problem);
+      return breakCompound(p, clip.id);
+    },
+  },
+  {
+    name: "edit_compound",
+    description:
+      "Run another command inside a compound's nested timeline (compound_id from compounds in describeProject, not the compound clip's id). Clip and track ids, and times, are the nested timeline's own. Every compound clip that plays it shows the change.",
+    input: S.obj(
+      {
+        compound_id: S.str("Compound id"),
+        command: S.str("Command to run inside, e.g. move_clip or set_param"),
+        args: { type: "object", description: "That command's arguments" },
+      },
+      ["compound_id", "command"],
+    ),
+    run: (p, a) => {
+      const id = String(a.compound_id);
+      if (!ops.findCompound(p, id)) throw new CommandError(`no compound with id ${id}`);
+      const view = compoundView(p, id);
+      const inside = runCommand(view, String(a.command), a.args ?? {});
+      if (inside === view) return p;
+      const out = withCompoundView(p, id, inside);
+      if (out === p) throw new CommandError("a compound clip cannot contain itself");
+      return out;
+    },
+  },
+  {
+    name: "rename_compound",
+    description: "Rename a compound; every compound clip that plays it shows the new name.",
+    input: S.obj({ compound_id: S.str("Compound id"), name: S.str("New name") }, ["compound_id", "name"]),
+    run: (p, a) => {
+      const id = String(a.compound_id);
+      if (!ops.findCompound(p, id)) throw new CommandError(`no compound with id ${id}`);
+      return { ...p, compounds: p.compounds!.map((k) => (k.id === id ? { ...k, name: String(a.name) } : k)) };
     },
   },
 ];
@@ -1075,7 +1152,16 @@ export function describeProject(p: Project) {
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
     assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio })),
-    tracks: p.tracks.map((t) => ({
+    tracks: p.tracks.map(track),
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
+    ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
+    // Nested timelines, described like the project's (times their own).
+    ...(p.compounds?.length
+      ? { compounds: p.compounds.map((k) => ({ id: k.id, name: k.name, duration: s(ops.timelineEnd(k.tracks)), tracks: k.tracks.map(track), ...(k.markers.length ? { markers: k.markers.map((m) => ({ id: m.id, at: s(m.frame), label: m.label })) } : {}) })) }
+      : {}),
+  };
+  function track(t: Track) {
+    return {
       id: t.id,
       kind: t.kind,
       name: t.name,
@@ -1092,15 +1178,15 @@ export function describeProject(p: Project) {
         ...("reverse" in c && c.reverse ? { reverse: true } : {}),
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
         ...(c.type === "text" ? { text: c.text } : {}),
+        ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
+        ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
       })),
-    })),
-    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
-    ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
-  };
+    };
+  }
 }
 
 /** Which grade parts a clip uses, for describeProject. */
@@ -1135,8 +1221,13 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
     const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
     lastEnd = end;
-    let clip: Clip = { ...createTextClip(cap.text, start, end - start, { ...CAPTION_STYLE, ...style }), caption: true };
-    clip = { ...clip, transform: { ...clip.transform, y } } as Clip;
+    const text = createTextClip(cap.text, start, end - start, { ...CAPTION_STYLE, ...style });
+    const clip: Clip = {
+      ...text,
+      caption: true,
+      transform: { ...text.transform, y },
+      ...(cap.words?.length ? { wordTimes: cap.words.map((s) => Math.max(0, secondsToFrames(s, p.fps) - start)) } : {}),
+    };
     p = ops.addClip(p, track.id, clip);
   }
   return p;

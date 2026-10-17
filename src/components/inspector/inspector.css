@@ -119,6 +119,7 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 }
 .toggle.on { background: var(--accent); }
 .toggle.on span { transform: translateX(13px); }
+.toggle:disabled { opacity: 0.4; cursor: default; }
 .chip-btn {
   height: 24px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 999px;
   background: var(--bg-2); color: var(--text-2); font-size: var(--fs-xs);
@@ -238,3 +239,12 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .font-picker { display: grid; gap: 4px; min-width: 0; }
 .font-picker-actions { display: flex; flex-wrap: wrap; gap: 4px; }
 .font-picker-actions .btn { height: 22px; padding: 0 8px; font-size: var(--fs-xs); }
+
+/* Remove BG > Auto removal: processing progress */
+.cutout-stage { margin: 0 0 4px; }
+.cutout-progress { display: flex; align-items: center; gap: 8px; min-height: 28px; animation: fade-in var(--t-med) ease-out; }
+.cutout-bar { flex: 1; height: 4px; border-radius: 4px; background: var(--bg-3); overflow: hidden; }
+.cutout-bar span { display: block; height: 100%; border-radius: 4px; transform-origin: left; background: var(--accent); transition: transform 150ms linear; }
+.cutout-pct { display: inline-flex; align-items: center; gap: 5px; min-width: 52px; color: var(--text-2); font-size: var(--fs-xs); }
+.cutout-pct svg { color: var(--accent); }
+.spoken-word { display: flex; align-items: center; gap: 8px; }

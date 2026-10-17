@@ -3,7 +3,7 @@ import { layerBox, otherBoxes, SNAP, snapBox, snapLines, tidy, type Box } from "
 import { paramAt } from "../lib/keyframes";
 import { findClip, setParam } from "../lib/project/ops";
 import type { VisualClip } from "../lib/project/types";
-import { layerAt } from "../lib/render/plan";
+import { anchorShift, layerAt } from "../lib/render/plan";
 import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { CropOverlay } from "./CropOverlay";
@@ -57,12 +57,18 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   if (maskTab && layer.mask) return <MaskOverlay project={project} clip={clip as VisualClip} layer={layer} mask={layer.mask} k={k} />;
   const box = layerBox(project, clip, layer);
   const cx = box.cx * k, cy = box.cy * k, bw = box.w * k, bh = box.h * k;
+  // Scale and rotation turn about the anchor point (the center unless set).
+  const anchor = { ax: paramAt(clip, "transform.anchorX", frame - clip.start), ay: paramAt(clip, "transform.anchorY", frame - clip.start) };
+  const sh = anchorShift(project, clip, { ...anchor, scale: layer.scale, scaleY: layer.scaleY, rotation: layer.rotation });
+  const px = W / 2 + (layer.x - sh.dx) * W, py = H / 2 + (layer.y - sh.dy) * H;
   const rel = frame - clip.start;
   const c = clip as VisualClip;
 
   const set = (path: string, v: number) => store.previewGesture((p) => setParam(p, [c.id], path, v, rel));
 
   const begin = (e: React.PointerEvent, d: Drag) => {
+    // Only the primary button moves pictures; the middle one pans the viewer.
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = d;
@@ -92,7 +98,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
       const x = tidy(d.x0 + dx / project.width), y = tidy(d.y0 + dy / project.height);
       store.previewGesture((p) => setParam(setParam(p, [c.id], "transform.x", x, rel), [c.id], "transform.y", y, rel));
     } else if (d.kind === "scale") {
-      const dist = Math.hypot(m.x - cx, m.y - cy);
+      const dist = Math.hypot(m.x - px, m.y - py);
       let s = Math.max(0.01, d.s0 * (dist / d.d0));
       if (!free && Math.abs(s - 1) < 0.02) s = 1;
       // A stretched picture keeps its proportions while a corner scales it.
@@ -102,7 +108,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
         return sy === undefined ? p : setParam(p, [c.id], "transform.scaleY", sy, rel);
       });
     } else {
-      const a = (Math.atan2(m.y - cy, m.x - cx) * 180) / Math.PI;
+      const a = (Math.atan2(m.y - py, m.x - px) * 180) / Math.PI;
       let r = d.r0 + (a - d.a0);
       if (!free) {
         const snapped = Math.round(r / 45) * 45;
@@ -127,7 +133,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
       onPointerDown={(e) => {
         const m = local(e);
         const sy0 = c.transform.scaleY === undefined ? undefined : paramAt(c, "transform.scaleY", rel);
-        begin(e, { kind: "scale", s0: paramAt(c, "transform.scale", rel), sy0, d0: Math.max(1, Math.hypot(m.x - cx, m.y - cy)) });
+        begin(e, { kind: "scale", s0: paramAt(c, "transform.scale", rel), sy0, d0: Math.max(1, Math.hypot(m.x - px, m.y - py)) });
       }}
     />
   );
@@ -135,6 +141,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   return (
     <div className="tf-layer" ref={frameRef} onPointerMove={onMove} onPointerUp={end} onPointerCancel={end}>
       {guides.x !== undefined && <div className="tf-guide tf-guide-v" style={{ left: guides.x * k }} />}
+      {(anchor.ax || anchor.ay) && <div className="tf-anchor" style={{ left: px, top: py }} aria-hidden />}
       {guides.y !== undefined && <div className="tf-guide tf-guide-h" style={{ top: guides.y * k }} />}
       <div
         className="tf-box"
@@ -155,7 +162,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
           className="tf-rotate"
           onPointerDown={(e) => {
             const m = local(e);
-            begin(e, { kind: "rotate", r0: paramAt(c, "transform.rotation", rel), a0: (Math.atan2(m.y - cy, m.x - cx) * 180) / Math.PI });
+            begin(e, { kind: "rotate", r0: paramAt(c, "transform.rotation", rel), a0: (Math.atan2(m.y - py, m.x - px) * 180) / Math.PI });
           }}
         />
       </div>

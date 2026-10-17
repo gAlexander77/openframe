@@ -43,6 +43,7 @@ describe("MCP", () => {
     const names = listTools().map((t) => t.name);
     expect(names).toContain("add_media_clip");
     expect(names).toContain("preview_frame");
+    expect(names).toContain("remove_background");
     expect(new Set(names).size).toBe(names.length);
     expect(listTools().every((t) => t.inputSchema.type === "object")).toBe(true);
   });
@@ -78,9 +79,11 @@ describe("MCP AI tools", () => {
     const r = await call(h, "tools/call", { name: "remove_silences", arguments: { clip_id: "c1", padding: 0.2 } });
     expect(r?.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ removed: 2 }) }] });
     await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c1", "c2"] } });
+    await call(h, "tools/call", { name: "remove_background", arguments: { clip_id: "c3" } });
     expect(h.aiCalls).toEqual([
       ["removeSilences", "c1", { padding: 0.2 }],
       ["normalizeLoudness", ["c1", "c2"], {}],
+      ["removeBackground", "c3", {}],
     ]);
     expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech"]));
   });

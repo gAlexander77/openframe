@@ -1,12 +1,13 @@
-import { memo, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fromDb, toDb } from "../lib/audio";
 import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
 import { store } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
+import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, Group, Image, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
+import { AudioLines, Group, Image, Layers, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { EFFECTS, FILTERS } from "../lib/catalog";
-import type { Asset, Clip, Project, Track } from "../lib/project/types";
+import type { Asset, Clip, Compound, Project, Track } from "../lib/project/types";
 import { PRESETS } from "../lib/speed";
 import { formatDuration, framesToSeconds } from "../lib/time";
 import { ClipKeys } from "./ClipKeys";
@@ -17,6 +18,8 @@ interface Props {
   clip: Clip;
   track: Track;
   asset?: Asset;
+  /** What a compound clip plays (ADR-037). */
+  compound?: Compound;
   fps: Project["fps"];
   zoom: number;
   /** Lane height in px. */
@@ -25,12 +28,13 @@ interface Props {
   /** Visible content range in px relative to the clip's left edge. */
   visFrom: number;
   visTo: number;
-  playheadRel: number | null;
   /** Px the clip slides right to make room for a drop that will insert
    * before it on the magnetic main track. */
   shift?: number;
   onDown: (e: React.PointerEvent, clip: Clip, zone: ClipZone) => void;
   onContext: (e: React.MouseEvent, clip: Clip) => void;
+  /** Double-click on a compound clip: edit what is inside. */
+  onOpen?: (clip: Clip) => void;
 }
 
 const LABEL_H = 16;
@@ -48,11 +52,16 @@ function sourceAt(c: Clip, r: number, fps: Project["fps"]): number {
   return c.in + (c.reverse ? -1 : 1) * sourceOffset(c, r, fps);
 }
 
+/** A media clip's thumbnails and peaks come from its file; a compound
+ * clip's from its nested timeline. Both are indexed by source seconds. */
+const stripOf = (p: Props) => (p.asset ? thumbs.strip(p.asset) : p.compound ? compoundStrip(store.get().project, p.compound) : undefined);
+const peaksOf = (p: Props) => (p.asset ? thumbs.peaks(p.asset) : p.compound ? compoundPeaks(store.get().project, p.compound) : undefined);
+
 /** Paint a filmstrip into the visible slice of the clip. */
 function paintStrip(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: number) {
   const ctx = cv.getContext("2d")!;
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const strip = p.asset && thumbs.strip(p.asset);
+  const strip = stripOf(p);
   if (!strip) return;
   const dpr = cv.width / Math.max(1, w);
   const tileW = h * strip.aspect;
@@ -73,7 +82,7 @@ function paintStrip(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: n
 function paintWave(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: number, color: string) {
   const ctx = cv.getContext("2d")!;
   ctx.clearRect(0, 0, cv.width, cv.height);
-  const peaks = p.asset && thumbs.peaks(p.asset);
+  const peaks = peaksOf(p);
   if (!peaks) return;
   const dpr = cv.width / Math.max(1, w);
   const c = p.clip;
@@ -184,19 +193,21 @@ export const ClipView = memo(function ClipView(p: Props) {
   const x1 = Math.min(w, p.visTo);
   const visW = Math.max(0, x1 - x0);
   const dpr = window.devicePixelRatio || 1;
-  const isVideo = c.type === "video" || c.type === "image";
-  const showWave = (c.type === "video" && !c.muted && p.asset?.hasAudio) || c.type === "audio";
-  const bodyH = c.type === "audio" ? height - LABEL_H : height - LABEL_H - (showWave && c.type === "video" ? WAVE_H : 0);
+  const isVideo = c.type === "video" || c.type === "image" || c.type === "compound";
+  const compoundSound = useMemo(() => !!p.compound && compoundHasSound(store.get().project, p.compound), [p.compound]);
+  const showWave = (c.type === "video" && !c.muted && p.asset?.hasAudio) || c.type === "audio" || (c.type === "compound" && !c.muted && compoundSound);
+  const bodyH = c.type === "audio" ? height - LABEL_H : height - LABEL_H - (showWave ? WAVE_H : 0);
 
-  const strip = useCanvas((cv) => isVideo && paintStrip(cv, p, bodyH, x0, visW), [v, x0, visW, zoom, c, bodyH]);
+  const strip = useCanvas((cv) => isVideo && paintStrip(cv, p, bodyH, x0, visW), [v, x0, visW, zoom, c, bodyH, p.compound]);
   const waveH = c.type === "audio" ? bodyH : WAVE_H;
   const wave = useCanvas(
     (cv) => showWave && paintWave(cv, p, waveH, x0, visW, c.type === "audio" ? "#3f95d6" : "rgb(170 230 235 / 55%)"),
-    [v, x0, visW, zoom, c, waveH],
+    [v, x0, visW, zoom, c, waveH, p.compound],
   );
 
-  const name = c.type === "video" || c.type === "image" || c.type === "audio" ? (c.name ?? p.asset?.name ?? "") : describe(c);
-  const Icon = c.type === "text" ? Type : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? Image : null;
+  const name =
+    c.type === "video" || c.type === "image" || c.type === "audio" ? (c.name ?? p.asset?.name ?? "") : c.type === "compound" ? (c.name ?? p.compound?.name ?? "Compound clip") : describe(c);
+  const Icon = c.type === "text" ? Type : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? Image : c.type === "compound" ? Layers : null;
   const fxCount = "effects" in c ? c.effects.length + ("filter" in c && c.filter ? 1 : 0) : 0;
   const curve = isTimed(c) && c.speedCurve ? (PRESETS[c.speedCurve.preset ?? ""]?.label ?? "Curve") : null;
   const speed = curve ?? ("speed" in c && c.speed !== 1 ? `${+c.speed.toFixed(2)}x` : null);
@@ -212,7 +223,9 @@ export const ClipView = memo(function ClipView(p: Props) {
       onContextMenu={(e) => p.onContext(e, c)}
       // CapCut: double-click a caption (or title) on the timeline to edit its
       // words; ours opens the canvas editor. The blade's double-click just cuts.
-      onDoubleClick={c.type === "text" ? () => store.get().tool === "select" && editOnCanvas(c.id) : undefined}
+      onDoubleClick={
+        c.type === "text" ? () => store.get().tool === "select" && editOnCanvas(c.id) : c.type === "compound" ? () => store.get().tool === "select" && p.onOpen?.(c) : undefined
+      }
       data-clip={c.id}
     >
       <div className="clip-label" style={{ height: LABEL_H }}>
@@ -242,7 +255,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         />
       )}
       {c.type === "audio" && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={bodyH} top={LABEL_H} fps={p.fps} />}
-      {p.selected && <ClipKeys clip={c} zoom={zoom} playheadRel={p.playheadRel} locked={p.track.locked} />}
+      {p.selected && <ClipKeys clip={c} zoom={zoom} locked={p.track.locked} />}
       {!tiny && !p.track.locked && (
         <>
           <div className="trim trim-start" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />

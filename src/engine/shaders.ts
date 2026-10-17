@@ -160,15 +160,19 @@ in vec2 a_pos;
 uniform mat3 u_matrix;     // unit quad -> clip space
 uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
 uniform int u_rotation;    // container rotation: 0, 1, 2, 3 quarter turns clockwise
+uniform bool u_fbo;        // the source is a rendered texture (a compound clip): rows bottom-up
 out vec2 v_uv;             // source texture uv
 out vec2 v_local;          // 0..1 across the visible layer, top-left origin
+out vec2 v_disp;           // display-space uv of the whole source (the matte's space)
 void main() {
   v_local = a_pos;
   vec2 d = mix(u_crop.xy, u_crop.zw, a_pos);   // display-space uv
+  v_disp = d;
   if (u_rotation == 1) v_uv = vec2(d.y, 1.0 - d.x);
   else if (u_rotation == 2) v_uv = vec2(1.0 - d.x, 1.0 - d.y);
   else if (u_rotation == 3) v_uv = vec2(1.0 - d.y, d.x);
   else v_uv = d;
+  if (u_fbo) v_uv.y = 1.0 - v_uv.y;
   vec3 p = u_matrix * vec3(a_pos, 1.0);
   gl_Position = vec4(p.xy, 0.0, 1.0);
 }`;
@@ -177,8 +181,13 @@ export const LAYER_FS = `#version 300 es
 precision highp float;
 in vec2 v_uv;
 in vec2 v_local;
+in vec2 v_disp;
 uniform sampler2D u_tex;
+// remove background: a grayscale matte video, luma = alpha (ADR-033)
+uniform bool u_matteOn;
+uniform sampler2D u_matte;
 uniform bool u_solid;
+uniform bool u_fbo;        // premultiplied (a compound clip's composite)
 uniform vec4 u_color;
 uniform vec2 u_texel;
 uniform float u_sharpen;
@@ -271,6 +280,7 @@ float maskAlpha(vec2 p) {
 
 void main() {
   vec4 src = u_solid ? u_color : texture(u_tex, v_uv);
+  if (u_fbo) src.rgb = src.a > 0.0 ? src.rgb / src.a : vec3(0.0);
   vec3 c = src.rgb;
   float a = src.a;
   if (u_sharpen > 0.0 && !u_solid) {
@@ -285,6 +295,9 @@ void main() {
     float spill = (1.0 - smoothstep(0.0, u_keySimilarity * 0.4 + 0.25, d)) * u_keySpill;
     c = mix(c, vec3(luma(c)), spill);
   }
+  // The matte went through a lossy codec and back (16..235 luma): the
+  // outer 2% are codec noise, so flat areas land on exactly 0 and 1.
+  if (u_matteOn) a *= clamp((texture(u_matte, v_disp).r - 0.02) / 0.96, 0.0, 1.0);
   c = adjustColor(c, v_local);
   a *= u_opacity * maskAlpha(v_local);
   outColor = vec4(c * a, a);
@@ -498,6 +511,49 @@ export const EFFECT_SHADERS: Record<string, string> = {
     }
     acc /= 49.0;
     outColor = vec4(c.rgb + acc.rgb * u_amount * 0.04, max(c.a, acc.a));`),
+  // An edge-preserving blur: neighbors count by distance and by how alike
+  // their colors are, so noise averages out and edges do not.
+  denoise: effect(["amount"], `
+    vec4 c = texture(u_tex, v_uv);
+    float sr = 0.015 + u_amount * 0.0015;
+    vec2 px = 1.5 * u_scale / u_res;
+    vec4 acc = vec4(0.0); float ws = 0.0;
+    for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {
+      vec4 s = texture(u_tex, v_uv + vec2(float(x), float(y)) * px);
+      vec3 d = s.rgb - c.rgb;
+      float w = exp(-float(x * x + y * y) / 8.0) * exp(-dot(d, d) / (2.0 * sr * sr));
+      acc += s * w; ws += w;
+    }
+    outColor = acc / ws;`),
+  motionBlur: effect(["amount", "angle"], `
+    float a = radians(u_angle);
+    vec2 dir = vec2(cos(a), sin(a)) * u_amount * 0.4 * u_scale / u_res;
+    vec4 acc = vec4(0.0);
+    for (int i = -12; i <= 12; i++) acc += texture(u_tex, v_uv + dir * float(i) / 12.0);
+    outColor = acc / 25.0;`),
+  // Pencil lines on paper from the picture's edges (Sobel on luma).
+  sketch: effect(["amount", "mix"], `
+    vec2 px = u_scale / u_res;
+    float l[9];
+    for (int i = 0; i < 9; i++) {
+      vec4 s = texture(u_tex, v_uv + vec2(float(i % 3 - 1), float(i / 3 - 1)) * px);
+      l[i] = s.a > 0.0 ? luma(s.rgb / s.a) : 0.0;
+    }
+    float gx = (l[2] + 2.0 * l[5] + l[8]) - (l[0] + 2.0 * l[3] + l[6]);
+    float gy = (l[6] + 2.0 * l[7] + l[8]) - (l[0] + 2.0 * l[1] + l[2]);
+    float e = clamp(length(vec2(gx, gy)) * (0.5 + u_amount * 0.06), 0.0, 1.0);
+    vec4 c = texture(u_tex, v_uv);
+    outColor = vec4(mix(c.rgb, vec3(1.0 - e) * c.a, u_mix * 0.01), c.a);`),
+  // Print dots: each cell's dot grows with how dark the cell is.
+  halftone: effect(["size"], `
+    float size = max(u_size * u_scale, 2.0);
+    vec2 p = v_uv * u_res;
+    vec2 cell = (floor(p / size) + 0.5) * size;
+    vec4 s = texture(u_tex, cell / u_res);
+    float l = s.a > 0.0 ? luma(s.rgb / s.a) : 1.0;
+    float r = sqrt(1.0 - l) * size * 0.7;
+    float inDot = 1.0 - smoothstep(r - 0.75, r + 0.75, length(p - cell));
+    outColor = vec4(mix(vec3(s.a), s.rgb, inDot), s.a);`),
   lightLeak: effect(["amount", "speed"], `
     vec4 c = texture(u_tex, v_uv);
     float t = u_time * (0.2 + u_speed * 0.02);

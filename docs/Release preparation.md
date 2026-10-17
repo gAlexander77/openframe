@@ -85,6 +85,10 @@ The AAC extension describes a libavcodec-based encoder; its package-level
 MPL declaration is not a substitute for inspecting the embedded codec/WASM
 notices. Whisper model weights, downloaded tools, optional local model
 servers, and their models also need separate attribution and license checks.
+Remove BG's two models are recorded in [[Third-party licenses]] (both
+Apache-2.0, downloaded on first use, not bundled). For owner review: ormbg's
+card lists training sets with their own release terms (P3M-10K, AIM-500,
+PPM-100); see [[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]].
 Research notes describe many possible providers and models; listing one in
 research does not mean it is a shipped dependency.
 

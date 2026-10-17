@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { alignClips, distributeClips, frameClips, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
 import { clipForAsset, createColorClip, createProject, createTrack } from "./project/defaults";
 import type { Clip, Project } from "./project/types";
+import { layerAt } from "./render/plan";
 
 const at = (p: Project, id: string) => p.tracks.flatMap((t) => t.clips).find((c) => c.id === id) as Clip & { transform: { x: number; y: number } };
 const color = (start = 0, scale = 0.5) => {
@@ -151,4 +152,18 @@ it("lists the other showing pictures' boxes for snapping", () => {
   p.tracks = [{ ...createTrack("video", "Main", true), clips: [a] }, { ...createTrack("video", "B"), clips: [b] }];
   expect(otherBoxes(p, 10, [a.id]).map((x) => x.w)).toEqual([384]);
   expect(otherBoxes(p, 10, [a.id, b.id])).toEqual([]);
+});
+
+it("places a picture by its anchor point, which scale and rotation turn about", () => {
+  const p = createProject(), c = color(0, 0.5); // 960x540
+  c.transform.anchorX = 0.5; // the right edge sits at the position
+  p.tracks[0].clips = [c];
+  // Centering the picture puts its anchor (right edge) a quarter right.
+  expect(at(alignClips(p, [c.id], "center", 0), c.id).transform.x).toBeCloseTo(0.25);
+  expect(at(alignClips(p, [c.id], "right", 0), c.id).transform.x).toBeCloseTo(0.5);
+  // Turned 90 degrees about that edge's middle, it stands above the center.
+  c.transform.rotation = 90;
+  const turned = layerAt(p, c, 0)!;
+  expect(turned.x).toBeCloseTo(0);
+  expect(turned.y * p.height).toBeCloseTo(-480);
 });

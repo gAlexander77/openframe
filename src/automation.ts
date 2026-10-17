@@ -11,7 +11,8 @@ import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { renderToUrl, stillToUrl } from "./state/export";
-import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeSilences, splitScenes } from "./state/ai";
+import { textToSpeech } from "./state/tts";
+import { analyzeBeats, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
@@ -36,14 +37,17 @@ const automation = {
   /** Run one command as an undoable edit. Throws with every problem named.
    * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
-    if (name === "add_sticker") return execAddSticker(args).then(() => describeProject(store.get().project));
-    store.edit(name.replace(/_/g, " "), (p) => runCommand(p, name, args));
-    return describeProject(store.get().project);
+    if (name === "add_sticker") return execAddSticker(args).then(() => describe());
+    // Agents see and edit the whole document, whichever timeline the user
+    // has open; edit_compound reaches inside compound clips (ADR-037).
+    store.editDocument(name.replace(/_/g, " "), (p) => runCommand(p, name, args));
+    return describe();
   },
   /** The sticker library, for add_sticker's name. */
   stickers: () => STICKERS.map(({ id, label, category }) => ({ id, label, category })),
-  describe: () => describeProject(store.get().project),
-  project: () => store.get().project,
+  describe: () => describe(),
+  /** The whole document (with a compound clip open, too). */
+  project: () => store.document(),
   state: () => {
     const { project: _p, ...rest } = store.get();
     return rest;
@@ -80,11 +84,20 @@ const automation = {
   /** Local analysis without editing; times are source seconds (ADR-017).
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
-  /** The AI tools: analyze, then apply as one undoable edit. */
-  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise },
+  /** The AI tools: analyze, then apply as one undoable edit.
+   * removeBackground(clipId?) makes the clip's matte and turns it on; the
+   * set_background_removal command toggles it afterwards. */
+  ai: { removeSilences, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech },
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
-  otio: () => toOtio(store.get().project),
+  otio: () => toOtio(store.document()),
 };
+
+/** describeProject of the whole document, plus the compound clips the user
+ * has open, outermost first. */
+function describe() {
+  const nest = store.get().nest;
+  return { ...describeProject(store.document()), ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
+}
 
 declare global {
   interface Window {
@@ -103,7 +116,7 @@ const mcpHost: McpHost = {
   version: __APP_VERSION__,
   exec: (name, args) => automation.exec(name, args),
   describe: () => automation.describe(),
-  projectJson: () => store.get().project,
+  projectJson: () => store.document(),
   catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
   importMedia: async (files) => {
     const assets = await automation.import(files.map((f) => ({ name: f.name ?? f.src.split(/[\\/]/).pop()!, src: f.src })));

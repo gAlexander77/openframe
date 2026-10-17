@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
-import { Blend, Eye, EyeOff, Film, Headphones, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
+import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { fromDb, toDb } from "../lib/audio";
 import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
 import { placeOnTop } from "../lib/overlays";
@@ -211,6 +211,17 @@ export function Timeline() {
   }, [focusedFrame]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
+  const compounds = useMemo(() => new Map((project.compounds ?? []).map((k) => [k.id, k])), [project.compounds]);
+  // Into or out of a compound clip: bring the playhead into view, since
+  // the frame it lands on can be anywhere on the other timeline.
+  const depth = useEditor((s) => s.nest.length);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const s = store.get();
+    const x = HEADER_W + s.playhead * s.zoom;
+    if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 80);
+  }, [depth]);
   const empty = duration === 0;
 
   // ---- coordinates -----------------------------------------------------------------
@@ -640,6 +651,11 @@ export function Timeline() {
       { action: "groupClips", disabled: store.get().selection.length < 2 },
       ...(clip.group ? ([{ action: "ungroupClips" }] as MenuItem[]) : []),
       "-",
+      { action: "createCompound" },
+      ...(clip.type === "compound"
+        ? ([{ label: "Open compound clip", onSelect: () => openCompound(clip.id) }, { action: "breakCompound", label: "Break apart" }] as MenuItem[])
+        : []),
+      "-",
       { action: "toggleKeyframePanel", label: "Show keyframe animation", checked: store.get().keyframePanel },
       { action: "rangeToClip" },
     ];
@@ -666,12 +682,11 @@ export function Timeline() {
   // ---- render --------------------------------------------------------------------------------
   const visFrom = view.left - HEADER_W - 200;
   const visTo = view.left + view.width + 200;
-  const playheadRel = (c: Clip, f: number) => (f >= c.start && f < c.start + c.duration ? f - c.start : null);
-  const playhead = useEditor((s) => s.playhead);
 
   return (
     <section className="panel timeline-panel" aria-label="Timeline">
       <TimelineToolbar />
+      <CompoundPath />
       <div
         className={`tl-scroll tool-${tool}${tool === "blade" ? " blade" : ""}${osDrop ? " os-drop" : ""}${dragging ? " lib-drag" : ""}`}
         ref={scrollRef}
@@ -704,16 +719,17 @@ export function Timeline() {
                         clip={c}
                         track={row.track}
                         asset={"assetId" in c ? assets.get(c.assetId) : undefined}
+                        compound={c.type === "compound" ? compounds.get(c.compoundId) : undefined}
                         fps={project.fps}
                         zoom={zoom}
                         height={row.height}
                         selected={selected.has(c.id)}
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
-                        playheadRel={selected.has(c.id) ? playheadRel(c, playhead) : null}
                         shift={(drop?.shifts.get(c.id) ?? 0) * zoom}
                         onDown={onClipDown}
                         onContext={onContext}
+                        onOpen={onOpenClip}
                       />
                     );
                   })}
@@ -776,6 +792,58 @@ export function Timeline() {
 }
 
 // ---- pieces -----------------------------------------------------------------------------------
+
+/** Open a compound clip for editing (ADR-037); playback stops, as it
+ * would for any change of timeline. */
+function openCompound(clipId: Id) {
+  player.pause();
+  store.openCompound(clipId);
+}
+const onOpenClip = (c: Clip) => openCompound(c.id);
+
+/** Back out to nesting level `depth` (0: the project's timeline). */
+function closeCompound(depth: number) {
+  player.pause();
+  store.closeCompound(depth);
+}
+
+/**
+ * Where the timeline is while compound clips are open: the project, then
+ * each compound clip opened inside it, the last being the one edited.
+ * Each earlier step goes back out to it; the arrow goes back one.
+ */
+function CompoundPath() {
+  const nest = useEditor((s) => s.nest);
+  const projectName = useEditor((s) => s.project.name);
+  const compounds = useEditor((s) => s.project.compounds);
+  if (!nest.length) return null;
+  const name = (id: Id) => compounds?.find((k) => k.id === id)?.name ?? "Compound clip";
+  return (
+    <nav className="tl-path" aria-label="Compound clip path">
+      <button className="icon-btn small" aria-label="Back out of the compound clip" data-tip="Back out of the compound clip" onClick={() => closeCompound(nest.length - 1)}>
+        <ChevronLeft size={14} />
+      </button>
+      <button className="tl-crumb" onClick={() => closeCompound(0)}>
+        {projectName}
+      </button>
+      {nest.map((e, i) => (
+        <Fragment key={`${i}:${e.id}`}>
+          <ChevronRight size={12} className="tl-crumb-sep" aria-hidden />
+          {i === nest.length - 1 ? (
+            <span className="tl-crumb current" aria-current="location">
+              <Layers size={12} /> {name(e.id)}
+            </span>
+          ) : (
+            <button className="tl-crumb" onClick={() => closeCompound(i + 1)}>
+              {name(e.id)}
+            </button>
+          )}
+        </Fragment>
+      ))}
+      <span className="tl-path-hint">Changes here show everywhere this compound clip plays.</span>
+    </nav>
+  );
+}
 
 /** The drop preview: a box where the item lands, sized to it. A new track
  * shows where it will be inserted: above everything, a chip in the ruler

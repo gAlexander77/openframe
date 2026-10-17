@@ -11,7 +11,14 @@ import { toOtio } from "../lib/interchange/otio";
 import { secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { provide } from "./actions";
-import { store } from "./store";
+import { rootInPoint, rootOutPoint, store } from "./store";
+
+/** What Export renders: the whole project with its own range, even while a
+ * compound clip is open (CapCut exports the project; ADR-037). */
+function exportSubject() {
+  const s = store.get();
+  return { project: store.document(), inPoint: rootInPoint(s), outPoint: rootOutPoint(s) };
+}
 
 /** A GIF has its own encoder; everything else goes through mediabunny. */
 const exportProject = (...a: Parameters<typeof exportVideo>) => (a[1].container === "gif" ? exportGif(...a) : exportVideo(...a));
@@ -69,7 +76,7 @@ const isAbort = (e: unknown) => e instanceof DOMException && e.name === "AbortEr
  */
 export async function startExport(settings: ExportSettings) {
   if (job) return;
-  const s = store.get();
+  const s = exportSubject();
   const plan = planExport(s.project, settings, s);
   const project = s.project;
   const controller = new AbortController();
@@ -102,7 +109,7 @@ export type RenderOptions = Partial<ExportSettings> & { start?: number; end?: nu
  */
 export async function renderToUrl(options: RenderOptions = {}) {
   if (job) throw new Error("An export is already running.");
-  const s = store.get();
+  const s = exportSubject();
   const p = s.project;
   const { start, end, ...rest } = options;
   const settings: ExportSettings = { ...defaultExportSettings(p), ...rest };
@@ -148,7 +155,7 @@ export async function saveStill(name: string, resolution: ExportSettings["resolu
  * file's name, or null when the save dialog was canceled.
  */
 export async function saveOtio(): Promise<string | null> {
-  const p = store.get().project;
+  const p = store.document();
   const target = await platform.createExportTarget(safeFileName(p.name), "otio");
   if (!target) return null;
   const w = target.writable.getWriter();

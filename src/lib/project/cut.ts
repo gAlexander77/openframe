@@ -34,7 +34,9 @@ export function framesOfRanges(c: TimedClip, ranges: SourceRange[], fps: Rationa
   return out;
 }
 
-const cuttable = (c: Clip | undefined): c is TimedClip => !!c && isTimed(c) && !c.freeze;
+/** Media clips only: analysis reports seconds of a file, and a compound
+ * clip's source is a nested timeline. */
+const cuttable = (c: Clip | undefined): c is TimedClip => !!c && isTimed(c) && c.type !== "compound" && !c.freeze;
 
 /** Clips lined up with `c` on other unlocked tracks: same media, same
  * position, same source window (a video and the audio detached from it).

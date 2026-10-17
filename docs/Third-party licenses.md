@@ -33,6 +33,25 @@ would be flagged too. No compatibility conclusion is implied.
 - **Cargo: winapi-util 0.1.11** — Unlicense OR MIT
 - **Cargo: wit-bindgen 0.57.1** — Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT
 
+## Downloaded model weights
+
+Fetched from Hugging Face by the user's machine on first use and cached by
+the browser or WebView2; not part of the npm or Cargo graphs and not
+bundled. Licenses read from each model card on 2026-10-16.
+
+| Model | Used for | License | Source |
+|---|---|---|---|
+| `onnx-community/ormbg-ONNX` (`model_fp16.onnx`, 88 MB), from `schirrmacher/ormbg` | Remove BG where WebGPU has fp16 | Apache-2.0 | https://huggingface.co/schirrmacher/ormbg |
+| `onnx-community/mediapipe_selfie_segmentation` (`model.onnx`, 0.5 MB), Google's MediaPipe Selfie Segmentation | Remove BG elsewhere | Apache-2.0 (Google's model card) | https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf |
+
+ormbg's training data has its own terms; see
+[[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]]. Whisper's
+weights (captions) are not yet listed here.
+
+Test media downloaded by `scripts/make-fixtures.mjs` (not shipped):
+`person-pan.mp4` is made from "Siva Vaidhyanathan.jpg" by Siva
+Vaidhyanathan, CC0, Wikimedia Commons.
+
 ## Scope and reproduction
 
 - npm: `npm ls --omit=dev --all --json --long`, recursively reading each
@@ -90,6 +109,7 @@ would be flagged too. No compatibility conclusion is implied.
 | escape-string-regexp | 4.0.0 | MIT |
 | flatbuffers | 25.9.23 | Apache-2.0 |
 | gifenc | 1.0.3 | MIT (added 2026-10-16 for GIF export) |
+| kokoro-js | 1.2.1 | Apache-2.0 (added 2026-10-16 for text to speech; brings @huggingface/transformers 3 and phonemizer, Apache-2.0; downloads Kokoro-82M weights, Apache-2.0, on first use) |
 | global-agent | 4.1.3 | BSD-3-Clause |
 | globalthis | 1.0.4 | MIT |
 | gopd | 1.2.0 | MIT |

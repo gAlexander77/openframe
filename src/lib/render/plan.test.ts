@@ -111,6 +111,43 @@ describe("canvas fill", () => {
   });
 });
 
+describe("remove background", () => {
+  const withCutout = (enabled: boolean) => {
+    let p = createProject({ width: 1080, height: 1920, fps: { num: 30, den: 1 } });
+    p = { ...p, assets: [{ id: "a", kind: "video", name: "v", src: "v", duration: 10, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    const clip = { ...clipForAsset(p.assets[0], 0, p.fps), id: "v", in: 2, canvas: { type: "blur" as const, amount: 60 }, cutout: { enabled, src: "matte.mp4", from: 1.5, to: 8, model: "m" } };
+    return addClip(p, p.tracks[0].id, clip);
+  };
+
+  it("gives the layer the matte at the source time less the matte's start", () => {
+    const [fill, item] = planFrame(withCutout(true), 30);
+    const layer = item.kind === "layer" ? item.layer : null;
+    const t = layer?.source.kind === "video" ? layer.source.time : NaN;
+    expect(layer?.matte?.src).toBe("matte.mp4");
+    expect(layer?.matte?.time).toBeCloseTo(t - 1.5, 9);
+    expect(t).toBeGreaterThan(3);
+    // The canvas fill behind stays whole.
+    expect(fill.kind === "layer" && fill.layer.matte).toBeUndefined();
+  });
+
+  it("keeps the matte off the layer while the toggle is off", () => {
+    const item = planFrame(withCutout(false), 30)[1];
+    expect(item.kind === "layer" && item.layer.matte).toBeUndefined();
+  });
+
+  it("shows the picture whole past the matte's end rather than holding its last frame", () => {
+    const p = withCutout(true);
+    const at = (f: number) => {
+      const item = planFrame(p, f)[1];
+      return item.kind === "layer" ? item.layer : null;
+    };
+    // Source 2 + 179/30 s is inside the matte (it ends at 8); 2 + 181/30 is past it.
+    expect(at(179)?.matte).toBeDefined();
+    expect(at(181)?.matte).toBeUndefined();
+    expect(at(181)?.source.kind).toBe("video");
+  });
+});
+
 describe("masks", () => {
   it("animates mask parameters by their keyframes and leaves still ones as stored", () => {
     let p = createProject({ fps: { num: 30, den: 1 } });

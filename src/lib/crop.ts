@@ -123,7 +123,8 @@ const out = (x0: number, y0: number, x1: number, y1: number): Crop => ({
 export function canCrop(p: Project, id: Id): boolean {
   const loc = findClip(p, id);
   const t = loc?.clip.type;
-  return !!loc && !loc.track.locked && (t === "video" || t === "image" || t === "color");
+  // A compound clip crops its nested timeline's picture, as a video clip does.
+  return !!loc && !loc.track.locked && (t === "video" || t === "image" || t === "color" || t === "compound");
 }
 
 const croppable = (c: Clip): c is Clip & { crop: Crop } => "crop" in c;

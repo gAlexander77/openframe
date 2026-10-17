@@ -40,7 +40,7 @@ import type { Project } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { platform } from "../platform";
 import { backToSettings, cancelExport, closeExportDialog, saveStill, startExport, stillToUrl, useExportView, type ExportView } from "../state/export";
-import { store, useEditor } from "../state/store";
+import { documentOf, rootInPoint, rootOutPoint, store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import "./export.css";
 
@@ -160,9 +160,9 @@ function ExportModal({ view }: { view: Exclude<ExportView, { phase: "closed" }> 
 // ---- settings ------------------------------------------------------------------------
 
 function SettingsView() {
-  const project = useEditor((s) => s.project);
-  const inPoint = useEditor((s) => s.inPoint);
-  const outPoint = useEditor((s) => s.outPoint);
+  const project = useEditor(documentOf);
+  const inPoint = useEditor(rootInPoint);
+  const outPoint = useEditor(rootOutPoint);
   const [s, setS] = useState(() => loadSettings(project));
   const set = (patch: Partial<ExportSettings>) =>
     setS((prev) => {

@@ -18,6 +18,7 @@ passes through, filling defaults and rejecting what cannot be repaired.
 | `speedCurve.points[].f` | frames from the clip's start, fractional allowed |
 | `transform.x` / `.y` | fraction of canvas width/height from center (0 = centered; y grows downward) |
 | `transform.scale` | 1 = fit inside the canvas; the horizontal scale when `scaleY` is present |
+| `transform.anchorX` / `.anchorY` | optional anchor point, shares of the picture's width/height from its center (absent = center); the position places it, scale and rotation turn about it |
 | `transform.scaleY` | optional vertical scale (CapCut's Uniform scale off); absent = uniform. Older readers ignore it and draw the picture uniform |
 | `opacity`, `volume` | 0..1 and linear gain (1 = 0 dB, up to 4 = +12 dB) |
 | `adjust.*` | -100..100 (one-sided ones 0..100), including the grade's `hsl` and `wheels` |
@@ -49,22 +50,61 @@ Everything not given gets its default. This is a complete file:
 
 ```
 Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, background,
-          assets: Asset[], mediaFolders?: string[], tracks: Track[], markers: Marker[], luts?: LutFile[] }
+          assets: Asset[], mediaFolders?: string[], tracks: Track[], markers: Marker[], luts?: LutFile[],
+          compounds?: Compound[] }
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
           sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
           muted, hidden, locked, volume, solo?, height?: small|large }
-Clip    = video | audio | image | text | color | adjustment   (see types.ts)
+Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
+Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together
+          text clips may carry wordTimes?: number[] (frames from the clip's start
+            each word is spoken) and style.highlight?: color of the spoken word
+          video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
+            (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
 overlap; audio clips only on audio tracks and nothing else on them; every
 `assetId` exists; exactly one video track is `main` (the bottom one if
 none is marked). Tracks are listed top to bottom; the top video track draws
-last.
+last. The same rules hold inside every compound's `tracks`; every
+`compoundId` exists, and no compound plays itself, even through others.
+
+## Compound clips
+
+A compound clip (CapCut's Create compound clip, Premiere's nested sequence)
+plays a nested timeline from `compounds` the way a video clip plays a file
+([[ADR-037 Compound clips are nested timelines composited to a texture]]):
+
+```json
+"tracks": [{ "kind": "video", "main": true, "clips": [
+  { "type": "compound", "compoundId": "k1", "start": 60, "duration": 90, "in": 0.5, "speed": 1,
+    "opacity": 0.8, "volume": 1, "pan": 0, "fadeIn": 0, "fadeOut": 0, "muted": false } ] }],
+"compounds": [{ "id": "k1", "name": "Intro", "markers": [], "tracks": [
+  { "kind": "video", "main": true, "clips": [ { "type": "video", "assetId": "a1", "start": 0, "duration": 150, "in": 4 } ] },
+  { "kind": "audio", "clips": [ { "type": "audio", "assetId": "a2", "start": 0, "duration": 150, "in": 0 } ] } ] }]
+```
+
+- `in` is seconds into the nested timeline and `speed` its rate, so the
+  clip above shows the compound's frames 15 to 104. Frames past the nested
+  timeline's end show nothing.
+- A compound clip has every visual and sound setting a video clip has
+  (transform, crop, opacity, blend, adjust, effects, mask, key, animations,
+  transitions, volume, pan, fades). They apply to the nested timeline's
+  composited picture and mix.
+- Speed curves, `reverse` and `freeze` are not supported on compound clips
+  yet; they are dropped when a project is opened.
+- Compounds share the project's frame rate and canvas; their frames,
+  keyframes and markers are their own timeline's. A compound may hold
+  compound clips of other compounds, never of itself.
+- Several compound clips may play one compound: editing it changes them
+  all. A compound nothing plays is dropped when the editor saves an edit.
+- Absent `compounds` means none, so projects from before compound clips
+  open unchanged.
 
 ## Media organization
 
@@ -177,6 +217,30 @@ replaces that with a rate that varies, CapCut's Curve speed
   pitch); absent, the pitch is kept at any speed.
 - `preset` names the tile it came from (`custom`, `montage`, `hero`,
   `bullet`, `jumpCut`, `flashIn`, `flashOut`); it does not change playback.
+
+## Remove BG
+
+A video clip whose background was removed (CapCut's Video > Remove BG >
+Auto removal) carries a reference to its matte
+([[ADR-033 Mattes are made once and stored as grayscale video]]):
+
+```json
+{ "type": "video", "assetId": "a1", "start": 0, "duration": 180, "in": 0,
+  "cutout": { "enabled": true, "src": "934da601-matte-talk.mp4", "from": 0, "to": 6,
+              "model": "onnx-community/ormbg-ONNX" } }
+```
+
+- `src` is a grayscale video (luma = alpha) stored like imported media: an
+  OPFS key on the web, an app-data path on desktop. It is not embedded.
+- `from`/`to` are the source seconds the matte covers; matte time 0 is
+  source time `from`. Frames outside it play with their background.
+- `enabled: false` keeps the matte for an instant On again.
+- `model` names the model that made it (a Hugging Face id), for the record.
+- Absent means no background removal. `normalizeProject` drops a broken
+  reference (no `src`, `to` not after `from`), and on any clip that is not
+  video. Files without it load unchanged. Making a matte needs the app
+  (`remove_background` over MCP, `window.videoEditor.ai.removeBackground`);
+  `set_background_removal` turns an existing one off and on.
 
 ## Catalog names
 

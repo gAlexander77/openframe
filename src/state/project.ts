@@ -91,7 +91,9 @@ export async function saveNow(): Promise<boolean> {
     let saved = false;
     do {
       again = false;
-      const { project: p, revision } = store.get();
+      // The whole document, even with a compound clip open.
+      const p = store.document();
+      const { revision } = store.get();
       set({ saveState: "Saving…" });
       try {
         await platform.saveProject(p, summaryOf(p));
@@ -191,7 +193,7 @@ export function closeProject(focusSearch = false) {
 export function saveProjectCopy(name: string, openCopy: boolean, id?: string) {
   return navigate(async () => {
     if (session.screen !== "editor" || !await saveNow()) return false;
-    const copy = copyProject(store.get().project, name, id);
+    const copy = copyProject(store.document(), name, id);
     await platform.saveProject(copy, summaryOf(copy));
     if (openCopy) {
       // The original may have received an automation edit during the write.

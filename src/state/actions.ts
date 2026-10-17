@@ -5,6 +5,7 @@
 // call run(id) — one path, so they cannot disagree.
 
 import { ACTION_LABELS, buildIndex, chordOf, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
+import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
 import { nudgeClips } from "../lib/project/gaps";
@@ -150,6 +151,29 @@ provide({
   },
   detachAudio: () => {
     for (const id of store.get().selection) edit("Extract audio", (p) => ops.detachAudio(p, id));
+  },
+  // CapCut's Alt+G: the selection becomes one clip playing a nested
+  // timeline (ADR-037).
+  createCompound: () => {
+    const s = store.get();
+    const problem = compoundProblem(s.project, s.selection);
+    if (problem) return void toast(problem);
+    let made: Id | null = null;
+    edit(ACTION_LABELS.createCompound, (p) => {
+      const r = createCompound(p, s.selection);
+      made = r.clipId;
+      return r.project;
+    });
+    if (made) store.select([made]);
+  },
+  breakCompound: () => {
+    const s = store.get();
+    const ids = s.selection.filter((id) => ops.findClip(s.project, id)?.clip.type === "compound");
+    const problem = ids.length ? ids.map((id) => breakProblem(s.project, id)).find(Boolean) : "Select a compound clip to break apart.";
+    if (problem) return void toast(problem);
+    const before = s.project;
+    edit("Break apart", (p) => ids.reduce((q, id) => breakCompound(q, id), p));
+    if (store.get().project !== before) store.select(newClipIds(before, store.get().project));
   },
   addMarker: () => {
     const f = store.get().playhead;

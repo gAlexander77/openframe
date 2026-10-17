@@ -15,7 +15,12 @@
 .player-stage:focus { outline: none; }
 .player-stage {
   position: relative;
-  display: grid; place-items: center;
+  /* A zoomed-in picture wider than the stage stays centered: the tracks
+     keep the stage's size (an auto track grew to the picture and started
+     at the left edge, so Ctrl+wheel zoomed away from the pointer), and
+     unsafe centering lets it overflow both sides evenly. */
+  display: grid; place-items: unsafe center;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   /* 24px sides: the meter (right: 8px, 9px wide) sits in the right gutter */
   min-height: 0; padding: 14px 24px 36px;
   overflow: hidden;
@@ -193,3 +198,6 @@
 .viewer-thirds i { position: absolute; background: rgb(255 255 255 / 65%); box-shadow: 0 0 0 1px rgb(0 0 0 / 35%); }
 .viewer-third-v { top: 0; bottom: 0; width: 1px; }
 .viewer-third-h { left: 0; right: 0; height: 1px; }
+
+/* The anchor point: what scale and rotation turn about. */
+.tf-anchor { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 1.5px solid var(--accent); border-radius: 50%; pointer-events: none; background: linear-gradient(var(--accent), var(--accent)) center / 1.5px 100% no-repeat, linear-gradient(var(--accent), var(--accent)) center / 100% 1.5px no-repeat; }

@@ -37,6 +37,8 @@ export type ActionId =
   | "redo"
   | "freeze"
   | "detachAudio"
+  | "createCompound"
+  | "breakCompound"
   | "editText"
   | "toolSelect"
   | "toolBlade"
@@ -110,6 +112,10 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   redo: ["Mod+Shift+Z", "Mod+Y"],
   freeze: ["Alt+F"],
   detachAudio: ["Mod+Shift+S"],
+  // CapCut's Create compound clip and Undo compound clip; Premiere's Nest
+  // has no default chord.
+  createCompound: ["Alt+G"],
+  breakCompound: ["Alt+Shift+G"],
   // Not in CapCut's list (it double-clicks); Figma's and Keynote's key for
   // typing into the selected text box, and Enter is free here.
   editText: ["Enter"],
@@ -189,6 +195,8 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   redo: "Redo",
   freeze: "Freeze frame",
   detachAudio: "Extract audio",
+  createCompound: "Create compound clip",
+  breakCompound: "Break apart compound clip",
   editText: "Edit text",
   toolSelect: "Selection tool",
   toggleClipEnabled: "Activate / deactivate clip",

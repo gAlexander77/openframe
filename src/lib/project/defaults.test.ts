@@ -64,6 +64,24 @@ describe("normalizeProject", () => {
     ).toThrow(/lut gone is not in luts/);
   });
 
+  it("keeps a clip's background matte, drops a broken one, and loads older files unchanged", () => {
+    const load = (cutout: unknown) => {
+      const p = normalizeProject({
+        assets: [{ id: "a1", src: "talk.mp4", duration: 10 }],
+        tracks: [{ kind: "video", clips: [{ type: "video", assetId: "a1", start: 0, duration: 30, ...(cutout === undefined ? {} : { cutout }) }] }],
+      });
+      return p.tracks[0].clips[0] as { cutout?: unknown };
+    };
+    expect(load(undefined)).not.toHaveProperty("cutout");
+    expect(load({ src: "matte-talk.mp4", from: 0, to: 1, model: "m" }).cutout).toEqual({ enabled: true, src: "matte-talk.mp4", from: 0, to: 1, model: "m" });
+    expect(load({ enabled: false, src: "matte-talk.mp4", from: 2, to: 4 }).cutout).toEqual({ enabled: false, src: "matte-talk.mp4", from: 2, to: 4, model: "" });
+    for (const broken of [true, { from: 0, to: 1 }, { src: "", from: 0, to: 1 }, { src: "m.mp4", from: 1, to: 1 }, { src: "m.mp4", from: "0", to: 1 }]) {
+      expect(load(broken)).not.toHaveProperty("cutout");
+    }
+    const color = normalizeProject({ tracks: [{ kind: "video", clips: [{ type: "color", start: 0, duration: 5, cutout: { src: "m.mp4", from: 0, to: 1 } }] }] });
+    expect(color.tracks[0].clips[0]).not.toHaveProperty("cutout");
+  });
+
   it("gives an empty document a main track", () => {
     const p = normalizeProject({});
     expect(p.tracks).toHaveLength(1);

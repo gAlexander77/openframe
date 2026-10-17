@@ -4,7 +4,7 @@
 // compositor pass runs, lutFor(src) has the table ready to upload.
 
 import { parseCube, type Lut } from "../lib/lut";
-import type { PlanItem } from "../lib/render/plan";
+import { walkPlan, type PlanItem } from "../lib/render/plan";
 import { platform } from "../platform";
 
 const pending = new Map<string, Promise<Lut>>();
@@ -42,7 +42,7 @@ export function primeLut(src: string, lut: Lut) {
  * with one console warning, rather than failing the frame. */
 export async function loadPlanLuts(plan: PlanItem[]): Promise<void> {
   const srcs = new Set<string>();
-  for (const i of plan) {
+  for (const i of walkPlan(plan)) {
     const grades = i.kind === "adjust" ? [i.grade] : i.kind === "layer" ? [i.layer.grade] : [i.from.grade, i.to.grade];
     for (const g of grades) if (g?.lut) srcs.add(g.lut.src);
   }

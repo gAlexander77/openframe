@@ -55,9 +55,10 @@ a clock, so no frame is ever dropped
 |---|---|
 | `lib/project/types.ts` | The document schema (also `docs/Project format.md`, planned) |
 | `lib/project/ops.ts` | Every edit: place, split, trims, speed, freeze, detach, settle |
+| `lib/project/compound.ts` | Compound clips: create, break apart, a compound's timeline as a view and back (ADR-037) |
 | `lib/commands.ts` | Named commands + JSON Schemas; `describeProject` |
 | `lib/analysis/*` | Silence, scene and beat detection, pure ([[AI tools]]) |
-| `lib/render/plan.ts` | What is visible at a frame, fully resolved |
+| `lib/render/plan.ts` | What is visible at a frame, fully resolved; a compound clip's layer carries its nested plan |
 | `lib/export.ts` | Export settings to plan: sizes, rates, bitrates, estimate |
 | `lib/textBox.ts` | Where the canvas text editor sits: a text raster's layout mapped into the viewer |
 | `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
@@ -65,13 +66,15 @@ a clock, so no frame is ever dropped
 | `lib/mask.ts` | Mask shapes on the viewer: frame, outline, handles and drags, mirroring the shader's maskAlpha (ADR-049) |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
-| `engine/compositor.ts` | WebGL2 passes; `shaders.ts` holds the GLSL |
+| `engine/compositor.ts` | WebGL2 passes, nested compound plans one framebuffer level deeper; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
 | `engine/player.ts` | Preview loop, transport, shuttle, a silent bounded run (`preview`) |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
+| `engine/compoundThumbs.ts` | Compound clips' filmstrips (the nested timeline rendered offscreen) and mixed peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |
 | `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
+| `engine/cutout.ts`, `engine/matte.worker.ts`, `lib/matte.ts` | Remove BG: the clip's frames through a segmentation model in a worker, steadied over time, stored as a grayscale matte video the compositor samples (ADR-032, ADR-033) |
 | `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |
 | `lib/templates.ts` | Word art and title templates as data, turned into text and box clips |
 | `lib/markers.ts`, `lib/markerText.ts` | Marker edits/navigation/search and read-only notes/chapter formatting |
@@ -79,7 +82,7 @@ a clock, so no frame is ever dropped
 | `lib/overlays.ts` | Where a new overlay lands: above whatever shows at that time; what to play so it shows once added (ADR-047) |
 | `lib/drop.ts` | Where a library drop lands (`placeAsset`, magnet cuts, overlays) and `landing`, which the drop preview draws from a dry run (ADR-046) |
 | `engine/previews.ts` | Library card previews through an offscreen compositor |
-| `state/store.ts` | App state, undo, gestures |
+| `state/store.ts` | App state, undo (whole-document snapshots), gestures; the open compound clips (`nest`) and `document()` |
 | `state/project.ts` | Autosave drains changed revisions; one navigation transition at a time (ADR-039) |
 | `state/projectWork.ts`, `lib/taskScope.ts` | Abortable document-session ownership for delayed imports, captions, stickers and analysis |
 | `state/actions.ts` | Keymap action handlers, `edit()` |

@@ -30,11 +30,11 @@ done (`docs/Renaming.md`).
 - **Work only in `F:\Dev\video-editor`, on `main`.** Commit locally after
   each task. **Do not push**, do not create branches on the remote, and do
   not change repository settings. The owner pushes after review.
-- **Do not touch the parked work.** The worktrees under
-  `F:\Dev\2026\worktrees\video-editor\` (`bg-removal`, `compound-clips`)
-  and their branches belong to Claude Code, who will finish
-  them. Do not edit, merge, rebase, reset or delete them. Section 6 says
-  what they hold, so you do not redo it.
+- **Do not touch the parked work.** Worktrees under
+  `F:\Dev\2026\worktrees\video-editor\` and their branches belong to the
+  agents working in them; none is parked at present. Do not edit, merge,
+  rebase, reset or delete them. Section 6 lists any parked branch and
+  what it holds, so you do not redo it.
 - **Headless only.** The owner uses this computer (for games) while you
   work. Never open a visible browser, never launch the desktop app
   (`npm run tauri dev`, `video-editor.exe`, `tauri build`) unless a task
@@ -262,12 +262,12 @@ your findings in section 7 and stop this task.
 Each is a branch with a worktree under `F:\Dev\2026\worktrees\video-editor\`,
 committed as WIP and pushed to GitHub as backup. All type-check and pass
 their unit tests; none is finished. (`timeline-ux` was finished and merged
-into main on 2026-10-16: ADR-046, ADR-047, `scripts/drive/timeline-ux.js`.)
+into main on 2026-10-16: ADR-046, ADR-047, `scripts/drive/timeline-ux.js`;
+so was `compound-clips`: ADR-037, `scripts/drive/compound-clips.js`; and
+`bg-removal` was finished on 2026-10-16 as CapCut's Remove BG: ADR-032,
+ADR-033, `scripts/drive/bg-removal.js`.)
 
-| Branch | What is done | What is left |
-| --- | --- | --- |
-| `compound-clips` | research note, format and ops, plan and audio resolution (in progress) | UI (open, breadcrumb, break apart), commands, ADR-037, drive |
-| `bg-removal` | matte pipeline and tests, worker, compositor and plan support, inspector toggle, AI tools card, commands | ADR-032/033 (model choice and license), running the drive, desktop check |
+No branch is parked at present.
 
 ## 7. Codex log
 

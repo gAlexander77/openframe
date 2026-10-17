@@ -40,8 +40,10 @@ Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
 PNG, so an agent can look at its work), and the local AI tools:
-`remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness` and
-`duck_under_speech` ([[AI tools]]). Every agent edit is undoable and
+`remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
+`duck_under_speech`, `reduce_noise`, `stabilize_clip` and
+`remove_background` ([[AI tools]]); the `set_background_removal` command
+turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
 [[ADR-009 Agents reach the app over local MCP, opt-in]])
 
@@ -75,8 +77,21 @@ visual/adjustment clip on an unlocked track; invalid targets reject the
 command before any change. The UI's multi-selection filters ineligible clips
 and shows the receiving count before calling the same pure paste operation.
 
+Compound clips ([[ADR-037 Compound clips are nested timelines composited to a texture]]):
+`create_compound_clip` takes `clip_ids` (any tracks, at least one on a video
+track) and an optional `name`; `break_compound_clip` takes the compound
+clip's `clip_id` (at speed 1). `describe_project` lists nested timelines
+under `compounds` (`id`, `name`, `duration`, `tracks` in the same shape as
+the project's, times their own), and a compound clip names its `compound`.
+`edit_compound` runs any other command inside one: `compound_id`,
+`command`, `args`, with the nested timeline's ids and times;
+`rename_compound` takes `compound_id` and `name`. Agents always see and
+edit the whole project, even while the user has a compound clip open
+(`describe_project` then adds `open_compounds`, outermost first).
+
 `window.videoEditor` (`src/automation.ts`) is the same surface for scripts
 in the web build or over the WebView2 debug port: `exec(name, args)`,
 `describe()`, `import(...)`, `render(options)`, `still(frame)`, `pixels()`,
-`mcp(message)`, and the AI tools (`ai.removeSilences`, ...). See
+`mcp(message)`, and the AI tools (`ai.removeSilences`, ...,
+`ai.removeBackground`). See
 [[Driving the app]].

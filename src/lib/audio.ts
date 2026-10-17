@@ -3,29 +3,91 @@
 // so the envelope that Web Audio plays is the one the tests check.
 
 import { paramAt } from "./keyframes";
-import { isTimed } from "./project/ops";
-import type { AudioClip, Id, Project, Track, VideoClip } from "./project/types";
-import { framesToSeconds } from "./time";
+import { findCompound, isTimed } from "./project/ops";
+import type { AudioClip, Clip, CompoundClip, Id, Keyframe, Project, Sound, Track, VideoClip } from "./project/types";
+import { framesToSeconds, type Rational } from "./time";
 
+/** A clip that makes sound, in the frames of the timeline being mixed. */
 export interface SoundingClip {
+  /** Inside a compound clip, moved to the outer timeline through it: its
+   * start and length may then be fractional frames, and a sped-up compound
+   * clip speeds it up too (ADR-037). */
   clip: VideoClip | AudioClip;
   track: Track;
+  /** Under a transition, how far its sound runs past its edges
+   * (soundOverlaps), in seconds of the timeline being mixed. */
+  overlap?: Overlap;
+  /** Compound clips it plays through, innermost first, in the same frames:
+   * their volume, fades and tracks scale it, and it is silent outside them. */
+  via?: { clip: CompoundClip; track: Track }[];
 }
 
+/** Compound clips nest at most this deep (plan.ts has the same bound). */
+const MAX_DEPTH = 16;
+
 /** Clips that produce sound: audio clips, and video clips whose own sound is
- * not muted or extracted, on unmuted tracks; while any track is soloed,
- * on soloed tracks only. */
+ * not muted or extracted, on unmuted tracks; while any track of a timeline
+ * is soloed, on its soloed tracks only. Through compound clips, the clips
+ * of their nested timelines, by the same rules. */
 export function soundingClips(p: Project, hasAudio: (assetId: string) => boolean): SoundingClip[] {
+  return collect(p, p.tracks, hasAudio, 0);
+}
+
+function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boolean, depth: number): SoundingClip[] {
   const out: SoundingClip[] = [];
-  const solo = p.tracks.some((t) => t.solo);
-  for (const track of p.tracks) {
+  const solo = tracks.some((t) => t.solo);
+  const overlaps = soundOverlaps({ ...p, tracks });
+  for (const track of tracks) {
     if (track.muted || (solo && !track.solo)) continue;
     for (const clip of track.clips) {
       if (!isTimed(clip) || clip.disabled || clip.muted || clip.freeze) continue;
+      if (clip.type === "compound") {
+        const k = findCompound(p, clip.compoundId);
+        if (!k || depth >= MAX_DEPTH) continue;
+        for (const s of collect(p, k.tracks, hasAudio, depth + 1)) {
+          const moved = throughCompound(s.clip, clip, p.fps);
+          out.push({
+            clip: { ...moved, pan: Math.max(-1, Math.min(1, s.clip.pan + clip.pan)) },
+            track: s.track,
+            ...(s.overlap ? { overlap: { pre: s.overlap.pre / clip.speed, post: s.overlap.post / clip.speed } } : {}),
+            via: [...(s.via ?? []).map((v) => ({ ...v, clip: throughCompound(v.clip, clip, p.fps) })), { clip, track }],
+          });
+        }
+        continue;
+      }
       if (!hasAudio(clip.assetId)) continue;
-      out.push({ clip, track });
+      const o = overlaps.get(clip.id);
+      out.push({ clip, track, ...(o ? { overlap: o } : {}) });
     }
   }
+  return out;
+}
+
+/**
+ * A clip of a nested timeline in the outer timeline's frames, through the
+ * compound clip `k` that plays it at constant speed s: inner frame u shows
+ * at outer frame k.start + (u - k.in in frames) / s. Lengths, fades,
+ * keyframes and speed-curve points scale by 1/s, the rate by s, so the
+ * clip reads the same source at the same moments the picture shows it.
+ * ponytail: through a sped-up compound clip, its pitch follows the
+ * compound clip's Change pitch, not its own.
+ */
+export function throughCompound<T extends Clip & { speed: number }>(c: T, k: CompoundClip, fps: Rational): T {
+  const s = k.speed;
+  const inFrames = (k.in * fps.num) / fps.den;
+  const moved = { ...c, start: k.start + (c.start - inFrames) / s } as T;
+  if (s === 1) return moved;
+  const scaleKeys = (keys: Record<string, Keyframe[]>) =>
+    Object.fromEntries(Object.entries(keys).map(([path, list]) => [path, list.map((x) => ({ ...x, f: x.f / s }))]));
+  const out = moved as T & Partial<Sound> & { speedCurve?: VideoClip["speedCurve"]; changePitch?: boolean };
+  out.duration = c.duration / s;
+  out.speed = c.speed * s;
+  if (out.fadeIn !== undefined) out.fadeIn /= s;
+  if (out.fadeOut !== undefined) out.fadeOut /= s;
+  if (c.keyframes) out.keyframes = scaleKeys(c.keyframes);
+  if (out.speedCurve) out.speedCurve = { ...out.speedCurve, points: out.speedCurve.points.map((x) => ({ f: x.f / s, speed: x.speed * s })) };
+  if (k.changePitch) out.changePitch = true;
+  else delete out.changePitch;
   return out;
 }
 
@@ -45,7 +107,8 @@ export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
  * handles, and crossfades at constant power (Premiere's default audio
  * transition). A hard cut under a dissolve popped. Clips with retimed
  * sound (speed, curves, reverse) or a freeze keep the hard cut;
- * ponytail: extend the retimer's window to cover them too.
+ * ponytail: extend the retimer's window to cover them too. So do compound
+ * clips (their sound is many clips, cut where the compound clip is).
  */
 export function soundOverlaps(p: Project): Map<Id, Overlap> {
   const out = new Map<Id, Overlap>();
@@ -66,19 +129,22 @@ export function soundOverlaps(p: Project): Map<Id, Overlap> {
   return out;
 }
 
+/** What clipGainAt reads: a clip's sound settings and where it is. */
+type Gained = Sound & { start: number; duration: number; keyframes?: Clip["keyframes"] };
+
 /**
  * Gain of a clip at timeline second `t` (absolute). Fades are linear in
  * amplitude, as CapCut's are; keyframed volume interpolates by its curve.
  * A side that overlaps its neighbor (soundOverlaps) crossfades instead of
  * fading: sin over the whole overlap, so the two sides' powers sum to one.
  */
-export function clipGainAt(c: VideoClip | AudioClip, track: Track, fps: Project["fps"], t: number, o: Overlap = NO_OVERLAP): number {
+export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: number, o: Overlap = NO_OVERLAP): number {
   const start = framesToSeconds(c.start, fps);
   const end = framesToSeconds(c.start + c.duration, fps);
   if (t < start - o.pre || t >= end + o.post) return 0;
   const rel = t - start;
   const r = Math.min(Math.max(Math.floor(rel * (fps.num / fps.den) + 1e-6), 0), c.duration - 1);
-  let g = paramAt(c, "volume", r) * track.volume;
+  let g = paramAt(c as Clip, "volume", r) * track.volume;
   if (o.pre > 0) {
     if (t < start + o.pre) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / (2 * o.pre)));
   } else {
@@ -94,6 +160,27 @@ export function clipGainAt(c: VideoClip | AudioClip, track: Track, fps: Project[
   return Math.max(0, g);
 }
 
+/** A sounding clip's gain at timeline second `t`: its own, times every
+ * compound clip's it plays through. */
+export function soundGainAt(s: SoundingClip, fps: Rational, t: number): number {
+  let g = clipGainAt(s.clip, s.track, fps, t, s.overlap);
+  for (const v of s.via ?? []) g *= clipGainAt(v.clip, v.track, fps, t);
+  return g;
+}
+
+/** Timeline seconds a sounding clip can be heard in: its own span with its
+ * overlaps, cut to the compound clips it plays through. Empty when lo >= hi. */
+export function soundSpan(s: SoundingClip, fps: Rational): [number, number] {
+  const o = s.overlap ?? NO_OVERLAP;
+  let lo = framesToSeconds(s.clip.start, fps) - o.pre;
+  let hi = framesToSeconds(s.clip.start + s.clip.duration, fps) + o.post;
+  for (const v of s.via ?? []) {
+    lo = Math.max(lo, framesToSeconds(v.clip.start, fps));
+    hi = Math.min(hi, framesToSeconds(v.clip.start + v.clip.duration, fps));
+  }
+  return [lo, hi];
+}
+
 /** The envelope sampled at `rate` points per second over [from, to), for
  * Web Audio's setValueCurveAtTime. Always at least two points. */
 export function gainEnvelope(
@@ -105,11 +192,16 @@ export function gainEnvelope(
   rate = 200,
   o: Overlap = NO_OVERLAP,
 ): Float32Array {
+  return soundEnvelope({ clip: c, track, overlap: o }, fps, from, to, rate);
+}
+
+/** gainEnvelope for a sounding clip, through its compound clips too. */
+export function soundEnvelope(s: SoundingClip, fps: Project["fps"], from: number, to: number, rate = 200): Float32Array {
   const n = Math.max(2, Math.ceil((to - from) * rate) + 1);
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const t = Math.min(from + i / rate, to - 1e-6);
-    out[i] = clipGainAt(c, track, fps, t, o);
+    out[i] = soundGainAt(s, fps, t);
   }
   return out;
 }

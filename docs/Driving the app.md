@@ -193,6 +193,22 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     checkout. Remove them with `cmd /c rmdir <junction>` (which deletes the
     link, not the target) before `git worktree remove --force`, so no
     recursive delete can walk into the main checkout's files.
+13. **Vite can miss a file replaced by rename.** Writing a temp file and
+    renaming it over the original (to dodge trap 10) left Vite serving the
+    old `player.css`: a new rule never reached the page until the file was
+    rewritten in place. Write each file once, in place, and never twice in
+    quick succession (a second write can be read half-done).
+13. **Never remove React's DOM nodes from a drive.** Clearing toasts with
+    `el.remove()` made React throw `removeChild` and stop rendering. Filter
+    old toasts by their text instead.
+14. **After a hot update, `import("/src/x.ts")` in a drive is a new module
+    instance** (the app's importers carry `?t=`), so patching its exports
+    does not reach the app. Simulate failures at the network instead, with
+    `page.context().route(...)`. The context also routes a worker's
+    fetches (`scripts/drive/bg-removal.js` blocks Hugging Face that way).
+15. **A bare specifier does not resolve in `page.evaluate`.** Read the
+    optimized-dependency URL (`/node_modules/.vite/deps/…`) out of a
+    module the app already serves and import that.
 
 ## Header interaction check — 2026-10-15
 

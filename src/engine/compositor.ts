@@ -10,6 +10,11 @@
 //     adjust:     accum -> color pass -> effects -> mix by opacity -> accum
 //   present: accum over the project background -> canvas
 //
+// A compound clip's layer (ADR-037) first composites its nested plan the
+// same way, one level of framebuffers deeper, into a texture of its own;
+// that texture is then the layer's source, so the clip's transform,
+// opacity, blend, color and effects act on the nested timeline's picture.
+//
 // Preview and export share this class; only the canvas and size differ.
 
 import { bakeCurves } from "../lib/curves";
@@ -45,6 +50,9 @@ export interface SourceImage {
   /** Stable key for sources that do not change between frames (images,
    * text). Unkeyed sources (video frames) re-upload every draw. */
   key?: string;
+  /** Remove background: this frame's matte (luma = alpha), covering the
+   * whole source in display orientation (ADR-033). */
+  matte?: TexImageSource;
 }
 
 type Program = { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
@@ -53,6 +61,14 @@ interface Target {
   fb: WebGLFramebuffer;
   tex: WebGLTexture;
 }
+
+/** A compound clip's composited picture: canvas-sized, premultiplied, rows
+ * bottom-up, already on the GPU. */
+interface RenderedSource {
+  rendered: Target;
+}
+type DrawSource = SourceImage | RenderedSource;
+const isRendered = (s: DrawSource | null): s is RenderedSource => !!s && "rendered" in s;
 
 const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6 } as const;
 
@@ -82,12 +98,18 @@ export class Compositor {
   private quad: WebGLBuffer;
   private vao: WebGLVertexArrayObject;
   private programs = new Map<string, Program>();
-  private targets: Target[] = [];
+  /** Framebuffers per nesting level: [0] for the project's own timeline,
+   * [n] for compound clips n deep. Each level is accum A/B, layer L1/L2,
+   * temp T1/T2. Levels past 0 are made on first use. */
+  private levels: Target[][] = [];
+  /** Finished compound pictures, per level, reused every frame. */
+  private baked: Target[][] = [];
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
   private sourceTextures = new Map<string, WebGLTexture>();
   private slotTextures: WebGLTexture[] = [];
+  private matteTextures: WebGLTexture[] = [];
   /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
    * when a grade part is off so no sampler is ever left without one. */
   private curveTextures = new Map<string, WebGLTexture>();
@@ -210,24 +232,44 @@ export class Compositor {
     width = Math.max(2, Math.round(width));
     height = Math.max(2, Math.round(height));
     if (width === this.width && height === this.height) return;
-    const gl = this.gl;
     this.width = width;
     this.height = height;
     this.canvas.width = width;
     this.canvas.height = height;
-    for (const t of this.targets) {
+    this.freeTargets();
+    this.level(0);
+  }
+
+  private makeTarget(): Target {
+    const gl = this.gl;
+    const tex = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    return { fb, tex };
+  }
+
+  private freeTargets() {
+    const gl = this.gl;
+    for (const t of [...this.levels.flat(), ...this.baked.flat()]) {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
-    // accum A/B, layer L1/L2, temp T1/T2
-    this.targets = Array.from({ length: 6 }, () => {
-      const tex = this.makeTexture();
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      const fb = gl.createFramebuffer()!;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-      return { fb, tex };
-    });
+    this.levels = [];
+    this.baked = [];
+  }
+
+  /** Nesting level `depth`'s framebuffers (accum A/B, layer L1/L2, temp
+   * T1/T2), made on first use. */
+  private level(depth: number): Target[] {
+    return (this.levels[depth] ??= Array.from({ length: 6 }, () => this.makeTarget()));
+  }
+
+  /** The `i`th finished-compound texture of level `depth`. */
+  private bakedTarget(depth: number, i: number): Target {
+    const list = (this.baked[depth] ??= []);
+    return (list[i] ??= this.makeTarget());
   }
 
   private bindTarget(t: Target | null) {
@@ -412,7 +454,7 @@ export class Compositor {
   }
 
   /** Draw one layer's source into `out` (cleared first). */
-  private drawLayer(layer: Layer, src: SourceImage | null, out: Target, slot: number) {
+  private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number) {
     const gl = this.gl;
     this.clear(out);
     const p = this.program("layer", LAYER_VS, LAYER_FS);
@@ -422,7 +464,8 @@ export class Compositor {
 
     let sw: number, sh: number, fit: number;
     const solid = layer.source.kind === "color";
-    if (solid || !src) {
+    if (solid || !src || isRendered(src)) {
+      // A compound's picture is the canvas itself.
       sw = W;
       sh = H;
       fit = 1;
@@ -467,18 +510,33 @@ export class Compositor {
     ]);
     gl.uniformMatrix3fv(u("u_matrix"), false, mat);
     gl.uniform4f(u("u_crop"), left, top, 1 - right, 1 - bottom);
-    gl.uniform1i(u("u_rotation"), src?.rotation ?? 0);
+    gl.uniform1i(u("u_rotation"), src && !isRendered(src) ? src.rotation : 0);
+    gl.uniform1i(u("u_fbo"), isRendered(src) ? 1 : 0);
     gl.uniform1i(u("u_solid"), solid || !src ? 1 : 0);
     if (layer.source.kind === "color") {
       const [r, g, b] = hexToRgb(layer.source.color);
       gl.uniform4f(u("u_color"), r, g, b, 1);
     } else gl.uniform4f(u("u_color"), 0, 0, 0, 0);
-    if (src && !solid) {
+    if (isRendered(src)) {
+      this.bindTex(0, src.rendered.tex, u("u_tex"));
+      gl.uniform2f(u("u_texel"), 1 / W, 1 / H);
+    } else if (src && !solid) {
       this.bindTex(0, this.sourceTexture(src, slot), u("u_tex"));
       const tw = src.rotation % 2 ? src.height : src.width;
       const th = src.rotation % 2 ? src.width : src.height;
       gl.uniform2f(u("u_texel"), 1 / tw, 1 / th);
     }
+    // Unit 4: the matte (units 1..3 are the grade's tables). A compound's
+    // picture has none.
+    const matte = src && !isRendered(src) ? src.matte : undefined;
+    gl.uniform1i(u("u_matteOn"), matte ? 1 : 0);
+    gl.activeTexture(gl.TEXTURE4);
+    if (matte) {
+      gl.bindTexture(gl.TEXTURE_2D, (this.matteTextures[slot] ??= this.makeTexture()));
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, matte);
+    } else gl.bindTexture(gl.TEXTURE_2D, this.blank());
+    gl.uniform1i(u("u_matte"), 4);
+    gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(u("u_sharpen"), layer.adjust.sharpen / 100);
     gl.uniform1f(u("u_opacity"), layer.opacity);
     const key = layer.chromaKey;
@@ -552,19 +610,49 @@ export class Compositor {
    */
   render(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, background: string) {
     const gl = this.gl;
-    const [A, B, L1, L2, T1, T2] = this.targets;
+    const accum = this.composite(plan, sources, 0, { n: 0 });
+    this.bindTarget(null);
+    const u = this.use(this.program("present", FULLSCREEN_VS, PRESENT_FS));
+    this.bindTex(0, accum.tex, u("u_tex"));
+    gl.uniform3fv(u("u_background"), hexToRgb(background));
+    this.draw();
+  }
+
+  /** Composite a plan with nesting level `depth`'s framebuffers. Returns
+   * the target holding the premultiplied result, transparent where nothing
+   * was drawn. `slot` numbers the unkeyed source uploads of the frame. */
+  private composite(plan: PlanItem[], sources: (l: Layer) => SourceImage | null, depth: number, slot: { n: number }): Target {
+    const gl = this.gl;
+    // Compound clips' pictures first, each copied into a texture of its
+    // own: the next one reuses the deeper level's framebuffers.
+    const rendered = new Map<Layer, RenderedSource>();
+    let baked = 0;
+    for (const item of plan) {
+      const layers = item.kind === "layer" ? [item.layer] : item.kind === "transition" ? [item.from, item.to] : [];
+      for (const l of layers) {
+        if (l.source.kind !== "compound") continue;
+        const result = this.composite(l.source.items, sources, depth + 1, slot);
+        const own = this.bakedTarget(depth, baked++);
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, result.fb);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, own.fb);
+        gl.blitFramebuffer(0, 0, this.width, this.height, 0, 0, this.width, this.height, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        rendered.set(l, { rendered: own });
+      }
+    }
+    const [A, B, L1, L2, T1, T2] = this.level(depth);
     let accum = A;
     let spare = B;
     this.clear(accum);
-    let slot = 0;
 
-    const layerToTarget = (layer: Layer, src: SourceImage | null, target: Target, temps: [Target, Target]): Target => {
-      this.drawLayer(layer, src, target, slot++);
+    const layerToTarget = (layer: Layer, src: DrawSource | null, target: Target, temps: [Target, Target]): Target => {
+      this.drawLayer(layer, src, target, slot.n++);
       // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
       const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
       return fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
     };
-    const sourceOf = (l: Layer) => (l.source.kind === "color" ? null : sources(l));
+    const sourceOf = (l: Layer): DrawSource | null =>
+      l.source.kind === "color" ? null : l.source.kind === "compound" ? (rendered.get(l) ?? null) : sources(l);
 
     for (const item of plan) {
       if (item.kind === "layer") {
@@ -608,12 +696,7 @@ export class Compositor {
         [accum, spare] = [spare, accum];
       }
     }
-
-    this.bindTarget(null);
-    const u = this.use(this.program("present", FULLSCREEN_VS, PRESENT_FS));
-    this.bindTex(0, accum.tex, u("u_tex"));
-    gl.uniform3fv(u("u_background"), hexToRgb(background));
-    this.draw();
+    return accum;
   }
 
   /** Read the presented frame back as RGBA rows, top row first. For scopes,
@@ -669,11 +752,8 @@ export class Compositor {
    * a re-mounted viewer (React StrictMode mounts twice) with a dead one. */
   dispose() {
     const gl = this.gl;
-    for (const t of this.targets) {
-      gl.deleteFramebuffer(t.fb);
-      gl.deleteTexture(t.tex);
-    }
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    this.freeTargets();
+    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
     if (this.blank2d) gl.deleteTexture(this.blank2d);
     if (this.blank3d) gl.deleteTexture(this.blank3d);
@@ -686,9 +766,9 @@ export class Compositor {
       this.small = null;
     }
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
-    this.targets = [];
     this.sourceTextures.clear();
     this.slotTextures = [];
+    this.matteTextures = [];
     this.programs.clear();
     this.width = this.height = 0;
   }

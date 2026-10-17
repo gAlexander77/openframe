@@ -7,9 +7,11 @@
 
 import { useSyncExternalStore } from "react";
 import { projectWork } from "./projectWork";
+import { toast } from "./toast";
+import { closePath, compoundView, innerFrameAt, nestsItself, openPath, pruneCompounds, withCompoundView, type NestLevel } from "../lib/project/compound";
 import { createProject } from "../lib/project/defaults";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
-import { projectDuration } from "../lib/project/ops";
+import { clipEnd, findClip, findCompound, projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
 import type { CropRatio } from "../lib/crop";
 import type { Crop, Id, Project } from "../lib/project/types";
@@ -31,8 +33,24 @@ export type LeftTab =
   | "markers"
   | "ai";
 
+/** A compound clip opened for editing (ADR-037): the level the document
+ * needs back, and what the timeline above was showing. */
+export interface NestEntry extends NestLevel {
+  /** The compound clip that was opened, selected again on the way out. */
+  clipId: Id;
+  playhead: number;
+  inPoint: number | null;
+  outPoint: number | null;
+}
+
 export interface EditorState {
+  /** The timeline being edited: the document itself, or inside compound
+   * clips (`nest`) a view of it whose tracks and markers are the innermost
+   * compound's. Every edit applies to it; `store.document()` is the whole. */
   project: Project;
+  /** Compound clips opened for editing, outermost first; empty on the
+   * project's own timeline. */
+  nest: NestEntry[];
   selection: Id[];
   /** Current frame. */
   playhead: number;
@@ -64,6 +82,11 @@ export interface EditorState {
   /** Playback starts over at the end: of the in/out range when it holds
    * the playhead, else of the timeline. Per session, never saved. */
   loop: boolean;
+  /** Viewer magnification in screen pixels per project pixel (null: fit
+   * the stage), and how far the picture is panned from center. Per
+   * session, never saved. */
+  viewerZoom: number | null;
+  viewerPan: { x: number; y: number };
   /** In/out range for export and three-point edits, frames. */
   inPoint: number | null;
   outPoint: number | null;
@@ -96,6 +119,8 @@ export interface CropSession {
   ratio: CropRatio;
 }
 
+/** Undo snapshots hold the whole document, whichever timeline was open, so
+ * one history covers every level and undo never depends on where it is. */
 interface HistoryEntry {
   project: Project;
   label: string;
@@ -105,6 +130,7 @@ const HISTORY_LIMIT = 200;
 
 let state: EditorState = {
   project: createProject(),
+  nest: [],
   selection: [],
   playhead: 0,
   playing: false,
@@ -123,6 +149,8 @@ let state: EditorState = {
   mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },
   markerEdit: null,
   loop: false,
+  viewerZoom: null,
+  viewerPan: { x: 0, y: 0 },
   inPoint: null,
   outPoint: null,
   undoLabel: null,
@@ -139,6 +167,24 @@ let past: HistoryEntry[] = [];
 let future: HistoryEntry[] = [];
 /** Project at the start of a drag gesture; previews derive from it. */
 let gestureBase: Project | null = null;
+/** The document at the start of the gesture, for its undo entry. */
+let gestureDoc: Project | null = null;
+
+/** The whole document, put back together from the open view (memoized). */
+let docCache: { project: Project; nest: NestEntry[]; doc: Project } | null = null;
+export function documentOf(s: EditorState): Project {
+  if (!s.nest.length) return s.project;
+  if (docCache?.project !== s.project || docCache.nest !== s.nest) docCache = { project: s.project, nest: s.nest, doc: closePath(s.project, s.nest) };
+  return docCache.doc;
+}
+
+/** The view of `doc` at the open compounds, as deep as they still exist. */
+function reopen(doc: Project): Pick<EditorState, "project" | "nest"> {
+  if (!state.nest.length) return { project: doc, nest: state.nest };
+  const { view, levels } = openPath(doc, state.nest.map((e) => e.id));
+  const nest = levels.map((l, i) => ({ ...state.nest[i], ...l }));
+  return { project: view, nest };
+}
 
 const listeners = new Set<() => void>();
 
@@ -186,15 +232,40 @@ export const store = {
   },
   set,
 
+  /** The whole document: what is saved, exported and described to agents,
+   * whichever timeline is open. */
+  document: () => documentOf(state),
+
   /** Apply an edit with undo. `fn` returns the same object for a no-op,
-   * which records nothing. */
+   * which records nothing. Inside a compound clip, an edit that would make
+   * an open compound play itself is refused. */
   edit(label: string, fn: (p: Project) => Project, extra: Partial<EditorState> = {}) {
-    const next = fn(state.project);
+    let next = fn(state.project);
     if (next === state.project) return;
-    past.push({ project: state.project, label });
+    if (state.nest.length && nestsItself(next, state.nest)) {
+      toast("A compound clip can't contain itself.", "error");
+      return;
+    }
+    past.push({ project: documentOf(state), label });
     if (past.length > HISTORY_LIMIT) past.shift();
     future = [];
+    // Compounds nothing plays any more go, judged on the whole document:
+    // a view cannot see the timelines above it.
+    if (!state.nest.length) next = pruneCompounds(next);
     setProject({ ...next, updatedAt: Date.now() }, extra);
+  },
+
+  /** An edit of the whole document rather than the open timeline (media
+   * that every level uses), with undo. */
+  editDocument(label: string, fn: (doc: Project) => Project) {
+    const doc = documentOf(state);
+    const next = fn(doc);
+    if (next === doc) return;
+    past.push({ project: doc, label });
+    if (past.length > HISTORY_LIMIT) past.shift();
+    future = [];
+    const { project, nest } = reopen(pruneCompounds({ ...next, updatedAt: Date.now() }));
+    setProject(project, { nest });
   },
 
   /** Drags: every pointer move recomputes from the gesture's starting
@@ -202,6 +273,7 @@ export const store = {
    * step when it ends. */
   beginGesture() {
     gestureBase = state.project;
+    gestureDoc = documentOf(state);
   },
   previewGesture(fn: (p: Project) => Project) {
     if (!gestureBase) return;
@@ -209,40 +281,83 @@ export const store = {
   },
   endGesture(label: string) {
     const base = gestureBase;
-    gestureBase = null;
-    if (!base || base === state.project) return;
-    past.push({ project: base, label });
+    const doc = gestureDoc;
+    gestureBase = gestureDoc = null;
+    if (!base || !doc || base === state.project) return;
+    past.push({ project: doc, label });
     if (past.length > HISTORY_LIMIT) past.shift();
     future = [];
     setProject({ ...state.project, updatedAt: Date.now() });
   },
   cancelGesture() {
     if (gestureBase) setProject(gestureBase);
-    gestureBase = null;
+    gestureBase = gestureDoc = null;
     set({ trimPreview: null });
   },
 
   undo() {
     const entry = past.pop();
     if (!entry) return;
-    future.push({ project: state.project, label: entry.label });
-    setProject(entry.project);
+    future.push({ project: documentOf(state), label: entry.label });
+    restore(entry.project);
   },
   redo() {
     const entry = future.pop();
     if (!entry) return;
-    past.push({ project: state.project, label: entry.label });
-    setProject(entry.project);
+    past.push({ project: documentOf(state), label: entry.label });
+    restore(entry.project);
+  },
+
+  /**
+   * Open a compound clip for editing (double-click, CapCut's Edit compound
+   * clip): the timeline shows its nested timeline, the playhead on the
+   * inner frame it was showing. Returns false when `clipId` is not one.
+   */
+  openCompound(clipId: Id): boolean {
+    const loc = findClip(state.project, clipId);
+    if (!loc || loc.clip.type !== "compound" || !findCompound(state.project, loc.clip.compoundId)) return false;
+    const c = loc.clip;
+    const p = state.project;
+    const entry: NestEntry = { id: c.compoundId, tracks: p.tracks, markers: p.markers, fps: p.fps, clipId, playhead: state.playhead, inPoint: state.inPoint, outPoint: state.outPoint };
+    const view = compoundView(p, c.compoundId);
+    const at = state.playhead >= c.start && state.playhead < clipEnd(c) ? innerFrameAt(c, state.playhead, p.fps) : 0;
+    set({ ...away, project: view, nest: [...state.nest, entry], selection: [], playhead: Math.max(0, Math.min(at, projectDuration(view))) });
+    return true;
+  },
+
+  /** Go back out to nesting level `depth` (0: the project's own timeline),
+   * the breadcrumb's job. The level left gets its playhead, range and the
+   * compound clip selected back. */
+  closeCompound(depth = state.nest.length - 1) {
+    if (depth < 0 || depth >= state.nest.length) return;
+    let view = state.project;
+    for (let i = state.nest.length - 1; i >= depth; i--) {
+      const l = state.nest[i];
+      view = withCompoundView({ ...view, tracks: l.tracks, markers: l.markers, fps: l.fps }, l.id, view);
+    }
+    const back = state.nest[depth];
+    const doc = depth === 0 ? pruneCompounds(view) : view;
+    set({
+      ...away,
+      project: doc,
+      nest: state.nest.slice(0, depth),
+      selection: [back.clipId],
+      playhead: back.playhead,
+      inPoint: back.inPoint,
+      outPoint: back.outPoint,
+      ...(doc !== view ? { revision: state.revision + 1 } : {}),
+    });
   },
 
   /** Replace the document wholesale (open, new). History starts over. */
   load(project: Project) {
     projectWork.open();
-    gestureBase = null;
+    gestureBase = gestureDoc = null;
     past = [];
     future = [];
     set({
       project,
+      nest: [],
       selection: [],
       playhead: 0,
       playing: false,
@@ -269,6 +384,24 @@ export const store = {
     set({ selection: ids, keySel: null });
   },
 };
+
+/** The project's own timeline's in and out points, wherever the editor is:
+ * export renders the project, not the compound clip open in it. */
+export const rootInPoint = (s: EditorState) => (s.nest.length ? s.nest[0].inPoint : s.inPoint);
+export const rootOutPoint = (s: EditorState) => (s.nest.length ? s.nest[0].outPoint : s.outPoint);
+
+/** Editor state that belongs to one timeline: moving between levels drops it. */
+const away: Partial<EditorState> = { keySel: null, textEdit: null, trimPreview: null, markerEdit: null, hoverFrame: null, inPoint: null, outPoint: null };
+
+/** Put a document from history back, staying as deep in compound clips as
+ * it still allows (an undone Create compound clip takes you out). */
+function restore(doc: Project) {
+  const depth = state.nest.length;
+  const { project, nest } = reopen(doc);
+  if (nest.length === depth) return setProject(project, { nest });
+  const back = state.nest[nest.length];
+  setProject(project, { ...away, nest, playhead: back.playhead, inPoint: back.inPoint, outPoint: back.outPoint });
+}
 
 export function useEditor<T>(selector: (s: EditorState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(state));

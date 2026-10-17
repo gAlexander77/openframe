@@ -40,6 +40,8 @@ const bump = () => {
   version++;
   for (const l of listeners) l();
 };
+/** Repaint what shows thumbnails: compound clips' strips arrive this way. */
+export const notifyThumbs = bump;
 export const thumbs = {
   subscribe(l: () => void) {
     listeners.add(l);

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { COMMANDS, CommandError, describeProject, runCommand, validate } from "./commands";
 import { createProject } from "./project/defaults";
+import * as ops from "./project/ops";
 import type { Project } from "./project/types";
 
 const withAsset = (): Project => ({
@@ -222,6 +223,33 @@ describe("keyframe commands", () => {
     expect(Object.keys(keys(runCommand(p, "remove_keyframes", { clip_id: id, path: "transform.x" }))!)).toEqual(["opacity"]);
     expect(keys(runCommand(p, "remove_keyframes", { clip_id: id }))).toBeUndefined();
     expect(() => runCommand(p, "remove_keyframes", { clip_id: id, at: [4] })).toThrow(/no matching keyframes/);
+  });
+});
+
+describe("set_background_removal", () => {
+  const cutout = { enabled: true, src: "matte.mp4", from: 0, to: 8, model: "m" };
+  const placed = () => {
+    let p = runCommand(withAsset(), "add_media_clip", { asset_id: "a1", start: 0, duration: 8 });
+    p = runCommand(p, "add_color_clip", { color: "#00ff00", start: 0, duration: 8 });
+    const clips = p.tracks.flatMap((t) => t.clips);
+    return { p, video: clips.find((c) => c.type === "video")!.id, color: clips.find((c) => c.type === "color")!.id };
+  };
+
+  it("toggles a clip's matte and keeps it while off", () => {
+    const { p, video } = placed();
+    const withMatte = ops.setCutout(p, video, cutout);
+    const off = runCommand(withMatte, "set_background_removal", { clip_ids: [video], enabled: false });
+    const clip = ops.findClip(off, video)!.clip;
+    expect(clip.type === "video" && clip.cutout).toEqual({ ...cutout, enabled: false });
+    expect(describeProject(off).tracks.flatMap((t) => t.clips).find((c) => c.id === video)).toMatchObject({ removeBackground: false });
+    const on = runCommand(off, "set_background_removal", { clip_ids: [video], enabled: true });
+    expect(ops.findClip(on, video)!.clip).toMatchObject({ cutout });
+  });
+
+  it("refuses clips with no matte and clips that are not video", () => {
+    const { p, video, color } = placed();
+    expect(() => runCommand(p, "set_background_removal", { clip_ids: [video], enabled: true })).toThrow(/no background matte yet/);
+    expect(() => runCommand(ops.setCutout(p, video, cutout), "set_background_removal", { clip_ids: [color], enabled: true })).toThrow(/color clip/);
   });
 });
 

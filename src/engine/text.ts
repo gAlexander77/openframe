@@ -43,9 +43,9 @@ const cache = new Map<string, TextRaster>();
  * Rasterize a text clip for a canvas `width` x `height` render target.
  * Sizes in the style are pixels at a 1080-pixel-tall canvas.
  */
-export function rasterizeText(clip: TextClip, width: number, height: number): TextRaster {
+export function rasterizeText(clip: TextClip, width: number, height: number, word?: number): TextRaster {
   const s: TextStyle = clip.style;
-  const key = `text:${height}:${width}:${clip.text}:${JSON.stringify(s)}`;
+  const key = `text:${height}:${width}:${clip.text}:${JSON.stringify(s)}${word !== undefined && s.highlight ? `:w${word}` : ""}`;
   const hit = cache.get(key);
   if (hit) return hit;
 
@@ -88,8 +88,10 @@ export function rasterizeText(clip: TextClip, width: number, height: number): Te
     ctx.roundRect(pad - bgPad, pad - bgPad, textW + bgPad * 2, lineH * lines.length + bgPad * 2, r);
     ctx.fill();
   }
+  let firstWord = 0; // index of each line's first word in the whole text
   lines.forEach((line, i) => {
     const y = pad + lineH * (i + 0.5);
+    const lineWords = [...line.matchAll(/\S+/g)];
     if (s.shadow) {
       ctx.shadowColor = s.shadow.color;
       ctx.shadowBlur = s.shadow.blur * k;
@@ -111,6 +113,18 @@ export function rasterizeText(clip: TextClip, width: number, height: number): Te
       const left = s.align === "left" ? x : s.align === "right" ? x - lw : x - lw / 2;
       ctx.fillRect(left, y + size * 0.42, lw, Math.max(1, size * 0.06));
     }
+    // The spoken word, over the line in the highlight color.
+    const j = word !== undefined && s.highlight ? word - firstWord : -1;
+    if (j >= 0 && j < lineWords.length) {
+      const m = lineWords[j];
+      const lw = ctx.measureText(line).width;
+      const left = s.align === "left" ? x : s.align === "right" ? x - lw : x - lw / 2;
+      ctx.textAlign = "left";
+      ctx.fillStyle = s.highlight!;
+      ctx.fillText(m[0], left + ctx.measureText(line.slice(0, m.index)).width, y);
+      ctx.textAlign = s.align;
+    }
+    firstWord += lineWords.length;
   });
 
   const layout = { width: w, height: h, pad, textWidth: textW, wrapWidth, size, lineHeight: lineH, letterSpacing: s.letterSpacing * k, baselineShift };

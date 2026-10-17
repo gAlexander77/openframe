@@ -206,6 +206,13 @@ tools need a separate download or installation; local inference can still
 require network access to obtain model files. The current Copilot uses a
 local model server such as Ollama or LM Studio.
 
+**Remove a background:** select a video clip, open Video > Remove BG and
+turn on Auto removal (or use the AI tools card). The first time downloads
+the model (88 MB, or 0.5 MB on a computer without a capable GPU); after
+that it works offline. A bar shows progress and Cancel stops it. When it
+finishes, the person plays over whatever is on the tracks below. Turning it
+off and on again is instant.
+
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection, headless rendering,
 and the current `video-editor` command names. [[AI tools]] records the
@@ -240,6 +247,19 @@ clip-edge frames and their times. Roll compares the outgoing and incoming
 frames; Slide compares neighboring clips. Other tracks and transitions are
 excluded so the cut is clear. Release to keep the edit; cancel the gesture to
 restore it. The whole drag is one Undo step.
+
+## Nest clips in a compound clip
+
+Select the clips (any tracks: video, titles, sound), then choose **Create
+compound clip** from the right-click menu or the **Timeline** menu (Alt+G).
+They become one green clip that plays them as they were. Its speed,
+position, scale, opacity, blend mode, color, effects and volume act on the
+whole group, so a fade or a filter covers every layer at once.
+Double-click it to edit what is inside; the bar above the timeline shows
+where you are, and its first name takes you back. A change inside shows in
+every copy of that compound clip. **Break apart** (Alt+Shift+G) puts the
+clips back where they were. Undo works the same inside and out, and saving
+or exporting always takes the whole project.
 
 ## Preview sources
 

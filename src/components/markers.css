@@ -1,4 +1,6 @@
-.markers-tab { display: flex; flex-direction: column; gap: 10px; overflow: hidden; }
+/* Scrolls when the top row is short (proportional layout, small windows):
+   hidden clipped the editor's buttons under the timeline. */
+.markers-tab { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .marker-toolbar, .marker-search, .marker-actions { display: flex; align-items: center; gap: 6px; }
 .marker-count { margin-left: auto; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
 .marker-search .lib-search { min-width: 0; }

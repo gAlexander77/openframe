@@ -10,7 +10,7 @@
 // (lib/stretch.ts) and schedules each block at rate 1 (ADR-028).
 
 import type { AudioBufferSink } from "mediabunny";
-import { gainEnvelope, NO_OVERLAP, soundingClips, soundOverlaps } from "../lib/audio";
+import { soundEnvelope, soundingClips, soundSpan } from "../lib/audio";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Project, VideoClip } from "../lib/project/types";
 import { varispeed, wsola } from "../lib/stretch";
@@ -87,14 +87,14 @@ export function scheduleAudio(
   const toCtx = (timelineSec: number) => at + (timelineSec - from);
   const hasAudio = (id: string) => getAsset(p, id)?.hasAudio ?? false;
 
-  const overlaps = soundOverlaps(p);
-  const pumps = soundingClips(p, hasAudio).map(async ({ clip, track }) => {
+  const pumps = soundingClips(p, hasAudio).map(async (sounding) => {
+    const { clip } = sounding;
     const clipStart = framesToSeconds(clip.start, p.fps);
-    const clipEnd = framesToSeconds(clip.start + clip.duration, p.fps);
-    // Under a transition the sound runs into its handles to crossfade.
-    const o = overlaps.get(clip.id) ?? NO_OVERLAP;
-    const lo = Math.max(from, clipStart - o.pre);
-    const hi = Math.min(to, clipEnd + o.post);
+    // Under a transition the sound runs into its handles to crossfade;
+    // inside a compound clip, only while the compound clip lasts.
+    const [spanLo, spanHi] = soundSpan(sounding, p.fps);
+    const lo = Math.max(from, spanLo);
+    const hi = Math.min(to, spanHi);
     if (hi <= lo) return;
     // Wait until the clip is near before opening its decoder.
     if (realtime) {
@@ -111,7 +111,7 @@ export function scheduleAudio(
     pan.pan.value = Math.max(-1, Math.min(1, clip.pan));
     gain.connect(pan).connect(dest);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
-    const env = gainEnvelope(clip, track, p.fps, lo, hi, 200, o);
+    const env = soundEnvelope(sounding, p.fps, lo, hi);
     const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
     const envDur = toCtx(hi) - envAt;
     if (envDur > 0.01) {

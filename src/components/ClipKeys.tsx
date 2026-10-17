@@ -36,7 +36,10 @@ export function toggleRefs(sel: KeyRef[], refs: KeyRef[]): KeyRef[] {
  * retime with snapping, Delete removes, right-click for easing, and the
  * tooltip names what is keyed at that frame.
  */
-export function ClipKeys({ clip, zoom, playheadRel, locked }: { clip: Clip; zoom: number; playheadRel: number | null; locked: boolean }) {
+export function ClipKeys({ clip, zoom, locked }: { clip: Clip; zoom: number; locked: boolean }) {
+  // Only this strip of diamonds follows the playhead: the timeline above
+  // re-rendering every track on every frame cost playback its frames.
+  const playheadRel = useEditor((s) => (s.playhead >= clip.start && s.playhead < clip.start + clip.duration ? s.playhead - clip.start : null));
   const keySel = useEditor((s) => (s.keySel?.clipId === clip.id ? s.keySel.keys : null));
   const fps = useEditor((s) => s.project.fps);
   const w = useEditor((s) => s.project.width);

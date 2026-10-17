@@ -99,3 +99,20 @@ The root README explains the AI experiment and current repository status.
 use it. [[User guide]] helps users get started; `CONTRIBUTING.md` explains
 how people and agents can help. [[History]] records this handoff separately
 from the earlier implementation and its historical test results.
+
+## State at 2026-10-16, evening (Claude Code)
+
+- **No parked work.** `timeline-ux`, `compound-clips` and `bg-removal`
+  are finished and merged; their worktrees and local branches are gone
+  (the remote backup branches remain). No agent worktree is open.
+- **What landed** is listed in [[History]] ("CapCut parity pass") and
+  marked in the build order of [[Feature gaps 2026-10-16]]; [[Roadmap]]
+  holds what is next, starting with a desktop check of these features.
+- **Verification:** type-check, unit tests and every web drive pass on
+  main; the desktop app was not driven.
+- **For the owner:** `origin/main` was pushed from this clone at 18:50 to
+  `1e0dbe9`, not by an agent; nothing since is pushed. The background
+  model's training-data terms are flagged in [[Release preparation]].
+- **Traps added today** (see [[Driving the app]]): unlink worktree
+  junctions before removing a worktree (12), and Vite can miss a file
+  replaced by rename, so write files in place, once (13).

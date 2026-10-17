@@ -40,6 +40,8 @@ export interface Project {
   /** .cube LUTs clips can use (Grade.lut). The table stays in its file;
    * only the reference lives here. Absent = none imported. */
   luts?: LutFile[];
+  /** Nested timelines that compound clips play (ADR-037). Absent = none. */
+  compounds?: Compound[];
   createdAt: number;
   updatedAt: number;
 }
@@ -110,6 +112,19 @@ export interface Track {
   height?: "small" | "large";
 }
 
+/** A nested timeline (CapCut's compound clip, Premiere's nested sequence):
+ * tracks and markers like the project's own, at the project's frame rate
+ * and canvas. Compound clips play it; editing it changes every one of them.
+ * Stored flat in Project.compounds, so a compound inside a compound is just
+ * a compound clip on one of these tracks (never, even indirectly, itself). */
+export interface Compound {
+  id: Id;
+  name: string;
+  /** Top to bottom, one main video track, as Project.tracks. */
+  tracks: Track[];
+  markers: Marker[];
+}
+
 export interface Marker {
   id: Id;
   frame: number;
@@ -166,6 +181,11 @@ export interface Transform {
   /** Vertical scale when it differs from `scale` (CapCut's Uniform scale
    * off); absent means uniform. */
   scaleY?: number;
+  /** Premiere's anchor point: the point of the picture, as fractions of its
+   * own width and height from its center, that sits at the position and
+   * that scale and rotation turn about. Absent: the center. */
+  anchorX?: number;
+  anchorY?: number;
   /** Degrees, clockwise. */
   rotation: number;
   flipX: boolean;
@@ -333,6 +353,23 @@ export interface Visual {
 
 export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
 
+/** CapCut's Remove background (ADR-032, ADR-033): a matte a segmentation
+ * model made once on this machine, multiplied into the clip's alpha. The
+ * matte is a file beside the media, not data in the project, and can be
+ * made again from the asset at any time. */
+export interface Cutout {
+  /** Off keeps the matte, so turning it back on is instant. */
+  enabled: boolean;
+  /** The matte: a grayscale video (luma = alpha) stored like imported
+   * media, an app-data path on desktop or an OPFS key on the web. */
+  src: string;
+  /** Source seconds the matte covers; its time 0 is `from`. */
+  from: number;
+  to: number;
+  /** The model that made it (a Hugging Face id). */
+  model: string;
+}
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -401,9 +438,26 @@ export interface TextStyle {
   background?: { color: string; padding: number; radius: number };
   /** Text is laid out within this fraction of the canvas width. */
   maxWidth: number;
+  /** Karaoke: the word being spoken (wordTimes) drawn in this color, as
+   * CapCut's caption highlight does. Absent: no highlight. */
+  highlight?: string;
 }
 
-export type VideoClip = ClipBase & Visual & Sound & Timed & { type: "video" };
+/** Stabilization's per-frame corrections (src/lib/analysis/stabilize.ts). */
+export interface Stabilize {
+  level: "least-crop" | "recommended" | "most-stable";
+  /** Source second of the first analyzed frame; analyzed frames per second. */
+  from: number;
+  rate: number;
+  /** Moves onto the smooth camera path, fractions of the picture's width
+   * and height, one per analyzed frame. */
+  x: number[];
+  y: number[];
+  /** Scale that hides the edges the moves uncover. */
+  zoom: number;
+}
+
+export type VideoClip = ClipBase & Visual & Sound & Timed & { type: "video"; stabilize?: Stabilize; cutout?: Cutout };
 export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id };
 export type TextClip = ClipBase &
@@ -414,6 +468,10 @@ export type TextClip = ClipBase &
     /** Captions are text clips that came from speech, kept separate so they
      * export as SRT/VTT and restyle together. */
     caption?: boolean;
+    /** Frames from the clip's start at which each word of `text` (split on
+     * whitespace) is spoken, from speech recognition. Ignored when the word
+     * count no longer matches the text. */
+    wordTimes?: number[];
   };
 export type ColorClip = ClipBase & Visual & { type: "color"; color: string };
 /** Applies its color, filter and effects to everything composited below it
@@ -423,13 +481,20 @@ export type AdjustmentClip = ClipBase &
     type: "adjustment";
   };
 
+/** Plays a compound (Project.compounds) the way a video clip plays a file:
+ * `in` is seconds into the inner timeline, `speed` its rate. Its visual and
+ * sound settings apply to the inner timeline's composited picture and mix.
+ * Speed curves, reverse and freeze are not supported on it yet. */
+export type CompoundClip = ClipBase & Visual & Sound & Omit<Timed, "assetId"> & { type: "compound"; compoundId: Id };
+
 export type Clip =
   | VideoClip
   | AudioClip
   | ImageClip
   | TextClip
   | ColorClip
-  | AdjustmentClip;
+  | AdjustmentClip
+  | CompoundClip;
 
 export type ClipType = Clip["type"];
 export type VisualClip = Exclude<Clip, AudioClip | AdjustmentClip>;

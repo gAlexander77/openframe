@@ -13,6 +13,18 @@ export interface Caption {
   start: number;
   end: number;
   text: string;
+  /** Seconds at which each word of `text` starts, when recognized. */
+  words?: number[];
+}
+
+/** The word of a caption showing at clip-relative frame `r`: the last one
+ * already started, or -1. Undefined when the times no longer fit the text
+ * (it was edited) or there are none. */
+export function spokenWord(text: string, times: number[] | undefined, r: number): number | undefined {
+  if (!times?.length || text.trim().split(/\s+/).length !== times.length) return undefined;
+  let i = -1;
+  while (i + 1 < times.length && times[i + 1] <= r) i++;
+  return i;
 }
 
 export interface LineOptions {
@@ -45,7 +57,9 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
   const flush = () => {
     if (!cur.length) return;
     const text = cur.map((w) => w.text.trim()).join(" ").replace(/\s+([,.!?;:…])/g, "$1").trim();
-    if (text) out.push({ start: cur[0].start, end: cur[cur.length - 1].end, text });
+    // A word that is only punctuation joins the one before, as in the text.
+    const words = cur.filter((w) => w.text.trim() && !/^[,.!?;:…]/.test(w.text.trim())).map((w) => w.start);
+    if (text) out.push({ start: cur[0].start, end: cur[cur.length - 1].end, text, ...(words.length ? { words } : {}) });
     cur = [];
   };
   const chars = (ws: Word[]) => ws.reduce((n, x) => n + x.text.trim().length + 1, 0);

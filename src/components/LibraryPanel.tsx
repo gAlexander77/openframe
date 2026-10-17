@@ -152,6 +152,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [source, setSource] = useState<Asset | null>(null);
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
+  const compounds = useEditor((s) => s.project.compounds);
   const options = useEditor((s) => s.mediaBrowser);
   const folders = useEditor((s) => s.project.mediaFolders);
   useEffect(() => {
@@ -160,7 +161,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const change = (patch: Partial<MediaBrowser>) => store.set({ mediaBrowser: { ...store.get().mediaBrowser, ...patch } });
   const clearFilters = () => change({ query: "", kind: "all", usage: "all", folder: null, favorites: false });
   useThumbs();
-  const usage = useMemo(() => mediaUsage(tracks), [tracks]);
+  const usage = useMemo(() => mediaUsage(tracks, compounds), [tracks, compounds]);
   const list = filterMedia(assets, usage, kind === "audio" ? { ...options, kind: "audio" } : options);
   const total = assets.filter((a) => !a.sticker && (kind === "all" || a.kind === "audio")).length;
   const filtered = !!options.query || options.usage !== "all" || options.folder !== null || options.favorites || (kind === "all" && options.kind !== "all");

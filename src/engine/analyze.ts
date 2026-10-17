@@ -182,6 +182,42 @@ export interface FrameScores {
  * reduced to its content score against the previous frame. Only the scores
  * are kept, so memory does not grow with the video.
  */
+/**
+ * Every frame of source seconds [from, to) as `width` x `height` gray, for
+ * motion analysis (stabilization). The picture is squeezed to that size;
+ * callers scale what they measure back by the axes' own factors.
+ */
+export async function frameGrays(
+  asset: Asset,
+  from: number,
+  to: number,
+  width: number,
+  height: number,
+  onFrame: (time: number, gray: Uint8Array) => void,
+  onProgress?: Progress,
+  signal?: AbortSignal,
+): Promise<void> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
+    const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+    const sink = new CanvasSink(track, { width, height, fit: "fill" });
+    const report = throttle(onProgress);
+    for await (const wrapped of sink.canvases(t0 + from, t0 + to)) {
+      signal?.throwIfAborted();
+      const ctx = wrapped.canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+      const rgba = ctx.getImageData(0, 0, width, height).data;
+      const gray = new Uint8Array(width * height);
+      for (let i = 0, j = 0; i < gray.length; i++, j += 4) gray[i] = (rgba[j] * 77 + rgba[j + 1] * 150 + rgba[j + 2] * 29) >> 8;
+      onFrame(wrapped.timestamp - t0, gray);
+      report((wrapped.timestamp - t0 - from) / (to - from));
+    }
+  } finally {
+    input.dispose();
+  }
+}
+
 export async function frameScores(
   asset: Asset,
   from: number,

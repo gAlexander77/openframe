@@ -42,7 +42,7 @@ export interface McpHost {
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
 }
 
-export type AiTool = "removeSilences" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise";
+export type AiTool = "removeSilences" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech";
 
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -142,6 +142,25 @@ APP_TOOLS.push(
     description: "Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound on this computer; the clip then plays a cleaned copy (a video's sound is extracted to an audio clip first).",
     inputSchema: obj({ clip_id: clipId, strength: { type: "number", minimum: 0, maximum: 1, description: "0.5 gentle, 0.75 default, 1 strong" } }, ["clip_id"]),
     call: async (h, a) => json(await h.ai("reduceNoise", String(a.clip_id), given({ strength: a.strength }))),
+  },
+  {
+    name: "stabilize_clip",
+    description: "Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the camera's shake and moves each frame onto a smooth path, zooming slightly to hide the edges. level: least-crop, recommended (default), most-stable, or off to remove it.",
+    inputSchema: obj({ clip_id: clipId, level: { type: "string", enum: ["least-crop", "recommended", "most-stable", "off"], description: "How strongly to smooth" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("stabilizeClip", String(a.clip_id), given({ level: a.level }))),
+  },
+  {
+    name: "remove_background",
+    description:
+      "Remove the background of a video clip of a person or object (CapCut's Remove BG): a segmentation model on this machine makes a matte for every frame (seconds to minutes; the first run downloads the model), then the subject plays over whatever is on the tracks below. One undoable edit; set_background_removal turns it off and on again instantly.",
+    inputSchema: obj({ clip_id: { type: "string", description: "Video clip id" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("removeBackground", String(a.clip_id), {})),
+  },
+  {
+    name: "text_to_speech",
+    description: "Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB).",
+    inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: { type: "string", description: "Voice id, default af_heart" }, speed: { type: "number", minimum: 0.5, maximum: 2, description: "1 is natural" } }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, speed: a.speed }))),
   },
 );
 

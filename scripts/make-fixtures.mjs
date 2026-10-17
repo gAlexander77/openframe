@@ -7,7 +7,7 @@
 //   node scripts/make-fixtures.mjs
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const out = join(import.meta.dirname, "..", "fixtures", "media");
@@ -115,10 +115,33 @@ const jobs = {
     const hat = `0.5*(2*random(0)-1)*exp(-mod(t-0.25-${b / 2},${b})/0.015)*gte(t,0.25+${b / 2})`;
     ff("-f", "lavfi", "-i", `aevalsrc='${kick}':s=44100:d=20`, "-f", "lavfi", "-i", `aevalsrc='${hat}':s=44100:d=20`, "-filter_complex", "[1]highpass=f=6000[h];[0][h]amix=inputs=2:normalize=0", "-c:a", "aac", "-b:a", "160k", join(out, "beat-128.m4a"));
   },
+  // Handheld shake for stabilization (scripts/drive/stabilize.js): a still
+  // photo seen through a window that jitters 40 x 30 px every frame, so
+  // the true motion is known; needs photo.jpg (made above).
+  "shaky.mp4": () =>
+    ff("-loop", "1", "-i", join(out, "photo.jpg"), "-vf", "scale=1600:-2,crop=1280:720:x='160+40*sin(n*1.9)':y='(ih-720)/2+30*cos(n*2.3)',format=yuv420p", "-t", "4", "-r", "30", "-c:v", "libx264", "-g", "30", join(out, "shaky.mp4")),
   // A talking-head stand-in: picture plus the speech-gaps pattern (1.6 s of
   // tone every 3 s), for removing silences from a video with its sound.
   "talk-gaps.mp4": () =>
     ff("-f", "lavfi", "-i", burn(640, 360, 30), "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*300*t)*lt(mod(t,3),1.6)':s=48000:d=12", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-shortest", join(out, "talk-gaps.mp4")),
+  // Remove background (scripts/drive/bg-removal.js) needs a real person:
+  // the segmentation model is trained on portraits. The photo is CC0
+  // ("Siva Vaidhyanathan.jpg", Wikimedia Commons, by Siva Vaidhyanathan,
+  // https://commons.wikimedia.org/wiki/File:Siva_Vaidhyanathan.jpg), a man
+  // in a checked jacket against yellow foliage and a white column. It is
+  // scaled to 1215x810 and a 960x540 window pans across it one pixel a
+  // frame (x = 255 - n, y = 135), so the drive knows where every point of
+  // the photo is on every frame: face and jacket must stay, foliage and
+  // column must go.
+  "person-pan.mp4": async () => {
+    const photo = join(out, "_cc0-portrait.jpg");
+    if (!existsSync(photo)) {
+      const res = await fetch("https://upload.wikimedia.org/wikipedia/commons/f/fb/Siva_Vaidhyanathan.jpg", { headers: { "User-Agent": "video-editor-fixtures/0.1" } });
+      if (!res.ok) throw new Error(`download failed (${res.status})`);
+      writeFileSync(photo, Buffer.from(await res.arrayBuffer()));
+    }
+    ff("-loop", "1", "-framerate", "30", "-i", photo, "-vf", "scale=1215:810,crop=960:540:'255-n':135,format=yuv420p", "-frames:v", "180", "-c:v", "libx264", "-g", "30", "-crf", "18", join(out, "person-pan.mp4"));
+  },
 };
 
 const only = process.argv.slice(2);
@@ -126,7 +149,7 @@ for (const [name, make] of Object.entries(jobs)) {
   if (only.length && !only.some((o) => name.includes(o))) continue;
   process.stdout.write(`${name} ... `);
   try {
-    make();
+    await make();
     console.log("ok");
   } catch (e) {
     console.log(`FAILED (${e.message.split("\n")[0]})`);

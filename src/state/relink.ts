@@ -32,6 +32,7 @@ export function applyReplacement(original: Asset, replacement: Asset, signal: Ab
   if (signal.aborted) throw new Error("The project changed. Reopen the media manager.");
   const current = store.get().project.assets.find((a) => a.id === original.id);
   if (!current || current.src !== original.src || current.proxy !== original.proxy) throw new Error("This media changed while choosing a replacement. Check it again.");
-  store.edit(`Relink ${original.name}`, (p) => relinkAsset(p, original.id, replacement));
+  // The whole document: clips on every timeline use the file.
+  store.editDocument(`Relink ${original.name}`, (p) => relinkAsset(p, original.id, replacement));
   prepare(store.get().project.assets.find((a) => a.id === original.id)!);
 }

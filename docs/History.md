@@ -363,3 +363,199 @@ Lessons:
 - Drives: a new overlay track lands on top, so pick clips by a property
   (their color), not by their order in `describe()`; scope a role query
   to its toolbar when a section toggle shares the name ("Crop").
+
+## 2026-10-16 — Compound clips finished
+
+The `compound-clips` branch, parked on 2026-10-14 with the format and ops,
+was merged up to main as it moved and finished
+([[ADR-037 Compound clips are nested timelines composited to a texture]]).
+Select clips on any tracks and press Alt+G (CapCut's chord; main's Ctrl+G
+is Group): they become one green clip playing a nested timeline, whose own
+speed, transform, opacity, blend, color, effects and volume act on the
+whole. Double-click opens it, a breadcrumb leads back out, Alt+Shift+G
+breaks it apart, one undo history covers every level, and save, export,
+OTIO (a nested Stack) and agents (`create_compound_clip`,
+`break_compound_clip`, `edit_compound`) take the whole project.
+`scripts/drive/compound-clips.js` proves the viewer, scopes and export are
+pixel- and sample-identical to the un-nested timeline.
+
+### Lessons paid for in this round
+
+- **A rendered texture is not an uploaded image.** A framebuffer's rows
+  run bottom-up and its pixels are premultiplied; an image uploaded with
+  `UNPACK_FLIP_Y` off runs top-down, straight alpha. Reading the nested
+  composite as a layer source takes a V flip and an un-premultiply in the
+  layer shader (`u_fbo`), or the nest draws upside down with dark edges.
+  Done right, the nested and flat composites match to the bit at full
+  opacity.
+- **Undo must snapshot the document, not the view.** With the store's
+  `project` as the open compound's view, every op and panel worked
+  unchanged, but undo entries of views would restore the wrong timeline
+  after moving between levels. Whole-document entries, with the view
+  re-derived on undo, make one history; only an undo that removes the open
+  compound steps out.
+- **A view cannot judge what the document no longer uses.** Pruning
+  compounds nothing plays must run on the whole document (root edits,
+  leaving a compound): inside one, the view cannot see the timelines above,
+  so everything outside it looks unused.
+- **Per-timeline rules must be per timeline.** Main's solo and transition
+  crossfades arrived during the work, computed over `p.tracks`. Inside a
+  compound clip they apply to the nested timeline's own tracks, and an
+  overlap measured in its seconds shrinks through a sped-up compound clip;
+  the sounding clip now carries its overlap, so the mixer needs no lookup.
+- **A fixed grid row count is a layout contract.** The timeline panel is
+  `grid-template-rows: 38px 1fr auto`; adding a breadcrumb row gave it the
+  `1fr` and squeezed the tracks. `:has(> .tl-path)` adds the row only when
+  the breadcrumb is there.
+- **The session scratchpad is shared between agents.** A helper script
+  with a generic name (`ed.py`) replaced another agent's; prefix scratch
+  files per branch (`cc_`).
+
+## 2026-10-16 — CapCut parity pass (Claude Code)
+
+The owner compared our Transform section with CapCut's (no align row),
+asked for every missing feature to be found and built, styling fixed
+across the app, and everything merged into main. The survey is
+[[Feature gaps 2026-10-16]]; three agents finished the parked branches
+and the canvas tools in their own worktrees while this session built the
+rest on main. Shipped here: align and distribute
+([[ADR-045 Align measures the resting box, one clip to the canvas]]),
+edge and layer snapping, arrow nudge, flip, Fit/Fill/Stretch, Uniform
+scale, the player's Ratio and zoom menus, Loop and Play in to out,
+voiceover recording, Close gap and frame nudges, Replace clip, sound
+crossfades under transitions, track solo/rename/volume/height, grouping,
+proportional panels with layout presets (UX-30), custom shortcuts, GIF
+export and export presets, imported and installed fonts, hover scrub on
+media cards, Reduce noise and Stabilize. Merged from the agents: the
+styling pass ([[UI polish 2026-10-16]]), timeline UX (ADR-046, ADR-047),
+canvas tools (ADR-048, ADR-049) and compound clips (ADR-037).
+
+### Lessons paid for in this round
+
+- **Clipping one axis needs `overflow-x: clip`.** The timeline toolbar
+  had `overflow: hidden` to keep narrow windows tidy, which also hid the
+  tool picker's menu (Select, Blade, Ripple, Roll, Slip, Slide) since the
+  day it was written. `clip` on one axis leaves the other visible.
+- **A grid's auto track grows to its item.** The viewer centered the
+  picture with `place-items: center`; zoomed past the stage, the track
+  grew to the picture and started at the left edge, so Ctrl+wheel zoomed
+  away from the pointer. `grid-template: minmax(0, 1fr) / minmax(0, 1fr)`
+  plus `unsafe center` keeps it centered while it overflows.
+- **Per-frame data is looked up per frame.** Stabilization first
+  interpolated its corrections at the plan's quarter-frame-ahead source
+  time, blending a quarter of the next frame's move into every frame; a
+  shake that reverses each frame kept half its amplitude. Nearest frame:
+  6.16 px of jitter became 0.06.
+- **Zero padding looks like silence.** The noise gate learned the noise
+  from the quietest frames, which were the half-empty edge frames, and
+  took out half as much as it should; only frames wholly inside the audio
+  count now.
+- **A steep curve amplifies the reference's rounding.** The color drive
+  grades the 8-bit readback on the CPU and compares it with the GPU's
+  exact texels; through a square root near black that is four levels.
+  The proportional layout resized the viewer, sampled the ramp there and
+  failed a check that had passed by luck.
+- **A capture-phase key handler that stops propagation silences its own
+  fields.** The export dialog stops every key at the window; the preset
+  name field's Enter and Escape never reached it until it opted out.
+- **Write watched files atomically, and retry the rename.** Python's
+  `open("w")` truncates before writing, and Vite served the empty module
+  (trap 10 again); a temp file plus `os.replace` fixes that, and on
+  Windows the rename fails while Vite has the file open, so it retries.
+- **Shell traps on Windows.** Git Bash heredocs choke on non-ASCII ("…")
+  and collapse `\`; backticks inside a double-quoted `python -c` are
+  command substitution and silently ate command names in Features.md.
+  Edits with symbols go in a script file or through the editor tools.
+- **Agents share the session scratchpad.** One agent's `ed.py` replaced
+  this session's; scratch files carry a per-agent prefix now.
+- **The remote moved without this session.** `origin/main` was updated by
+  a push from this clone at 18:50 (to `1e0dbe9`), not by Claude Code;
+  nothing else was pushed.
+
+## 2026-10-16 — Remove BG finished
+
+The `bg-removal` branch, parked on 2026-10-14 with the matte pipeline
+written but never run, was merged up to main and finished as CapCut's
+Video > Remove BG > Auto removal (also an AI tools card, the
+`remove_background` MCP tool and the `set_background_removal` command).
+
+- **Model** ([[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]]):
+  ormbg (Apache-2.0) where WebGPU has fp16 shaders, MediaPipe Selfie
+  (Apache-2.0) elsewhere and as the fallback when ormbg cannot run. BRIA's
+  RMBG models were rejected because their weights are non-commercial.
+  BiRefNet_lite (MIT) exceeded this GPU's storage-buffer limit under
+  WebGPU.
+- **Mattes** ([[ADR-033 Mattes are made once and stored as grayscale video]]):
+  made once per clip, steadied over time, and stored as a grayscale MP4
+  beside the media. Preview and export read the matte through the same
+  cursors, so they agree. A broken reference is dropped on load, and frames
+  past the matte show whole.
+- **Proof**: `scripts/drive/bg-removal.js`, 11 checks, all passing
+  headless in Edge. With Hugging Face blocked, the first use fails with a
+  message to check the connection. Then it downloads (3 s), processes 180
+  frames (13 fps on WebGPU), and puts magenta exactly where the photo's
+  background was in the viewer, an exported still and a rendered MP4.
+  Off/on and undo work, playback drops no frames, the card cancels, and
+  the project survives save, reload and reopen; opening another project
+  mid-matte cancels the job and leaves the new one untouched. MediaPipe
+  forced onto WASM ran at 75 fps with the same score. Run once outside the
+  drive: Edge with no GPU chose MediaPipe on WASM (94 fps), and corrupt
+  ormbg weights fell back to it with a toast that says so. The regression
+  drives (framecode, export, align, keyframes, color, effect-stack,
+  timeline-ux, ai-tools, web-capabilities, and main's compound-clips,
+  stabilize, reduce-noise and canvas-tools) pass on the merged branch.
+
+### Lessons paid for in this round
+
+- **transformers.js chains sessions as `chain = chain.then(next)`**: one
+  failed session creation fails every later load in that worker with the
+  same error. The fallback model failed with ormbg's protobuf error until
+  the page started a fresh worker after any model failure.
+- **Weight download progress by bytes, not by file**: the config JSON
+  finishes first, and averaging files read 100% before the weights had
+  started, then fell to 51%.
+- **A decode cursor holds its last frame past the end**. That is right for
+  a source, but wrong for a matte on a clip trimmed longer: the plan has to
+  decide coverage, not the cursor.
+- **`edit()` is for timing edits, again**: the parked switch went through
+  it, so with the magnet on, turning Remove BG on or off closed every gap
+  on the main track. Look changes use `store.edit`, like the inspector's
+  `patchClip`. The drive now puts a gap on the main track and checks that
+  it survives (the check fails on the old code).
+- **`normalizeClip` keeps unknown keys**, so every new optional clip field
+  needs its own check at the trust boundary, or an agent's half-written
+  field reaches the engine.
+- **Drives must not remove React's DOM nodes** (clearing toasts by hand
+  threw `removeChild` and stopped the app rendering). Filter old toasts by
+  text instead.
+- **A module imported from a drive after HMR is a different instance**
+  (`?t=`), so changing its exports does not reach the app. Simulate
+  failures at the network (`context.route`) instead: a 4 KB body where the
+  weights go is a corrupt model, and an aborted request is an offline
+  first use. Routing on the context catches the worker's fetches.
+- **`page.evaluate` cannot import a bare specifier** under Vite. Take the
+  optimized-dependency URL from a module the app already serves.
+- **ormbg handles a clear object, MediaPipe only people**: one run on four
+  object photos cut out the apple, the cat and the teapot cleanly with
+  ormbg. MediaPipe missed the teapot entirely. Neither handled a scene
+  with no subject.
+
+### Later the same evening
+
+Background removal landed from its branch (ADR-032, ADR-033: ormbg on
+WebGPU, MediaPipe Selfie as the fallback, both Apache-2.0), with text to
+speech (Kokoro-82M, ADR-050), the spoken-word caption highlight, the
+anchor point, and four effects (Reduce image noise, Motion blur, Sketch,
+Halftone). All 50 web drives passed on main.
+
+- **Bisect the merge, then profile.** After the compound-clips merge,
+  reversed 1080p ramp playback dropped 5 to 9 frames (0 before). `git
+  bisect run` with the speed drive found the merge that combined the
+  branch with main's later features, neither of which failed alone; a CPU
+  profile over CDP then showed React rebuilding the timeline every frame.
+  The timeline component had subscribed to the playhead since day one only
+  to hand the selected clip's keyframe diamonds their frame; moving that
+  subscription into the diamonds brought drops back to 0.
+- **Install while a dev server runs: add, never clean.** `npm ci` deletes
+  `node_modules` first; with two Vite servers holding files it stopped
+  half way and left `vite/client` missing. `npm install` restored it.

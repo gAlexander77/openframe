@@ -1,7 +1,7 @@
 ---
-tags: [ai, analysis, silence, scenes, beats, loudness, ducking]
+tags: [ai, analysis, silence, scenes, beats, loudness, ducking, matting]
 created: 2026-10-13
-updated: 2026-10-14
+updated: 2026-10-16
 status: living
 ---
 
@@ -13,6 +13,8 @@ classic signal processing that runs on the user's machine, in the webview,
 with no model download, no key and no network. Choices and sources are in
 [[AI and automation]] §2.3, §2.5 and §2.6; this note is what we actually
 built, its parameters and defaults, and where each idea came from.
+**Remove background** is the exception: a segmentation model, downloaded
+once and run on this machine (see its section).
 
 Code: the algorithms are pure TypeScript in `src/lib/analysis/` (tested on
 synthetic signals), the decoding is `src/engine/analyze.ts`, and the app
@@ -217,6 +219,33 @@ pauses.
 **Gaps.** Every other audible clip counts as speech, music included; a
 speech/music classifier is the upgrade. One depth for the whole clip.
 
+## Stabilize
+
+`src/lib/analysis/stabilize.ts`. CapCut's Stabilize (Video > Basic, or the
+AI tools card): every frame of the clip's source range is shrunk to
+128 x 64 gray and compared with the one before by phase correlation
+(windowed FFT, sub-pixel peak), which gives how far the picture moved.
+The camera's path is the sum of those moves; a Gaussian smooths it
+(Least cropping 8, **Recommended** 20, Most stable 45 frames at 30 fps,
+scaled to the footage's rate; past the ends the path is reflected
+through its end point so a steady pan carries on straight), and each
+frame stores the move onto the smooth path with just enough zoom to hide
+the edges it uncovers, capped per level (8, 15, 30 %); past the cap a
+correction is held at the margin.
+
+The render plan applies the stored move in the picture's own axes (it
+turns and mirrors with the clip) to preview and export alike. Corrections
+are looked up per source frame, never blended: shake can reverse every
+frame, and the first version, which interpolated a quarter frame ahead,
+left half the shake. Measured by the drive on `shaky.mp4` (a photo behind
+a window jittering 40 x 30 px each frame): the rendered picture's
+frame-to-frame movement fell from 6.16 to 0.06 px.
+
+**Gaps.** Translation only: roll and zoom wobble stay (a feature-based
+similarity fit is the upgrade). The analysis covers the clip's range;
+lengthening the clip later needs Stabilize again. Variable-frame-rate
+footage is indexed by its average rate.
+
 ## Reduce noise
 
 `src/lib/analysis/denoise.ts`. CapCut's Reduce noise and Audacity's Noise
@@ -243,6 +272,44 @@ speed curve or reversed sound are refused. **Filler words** ("um", "uh")
 are not offered: Whisper, our caption model, leaves most of them out of
 its transcripts, so a remover built on it would miss them.
 
+## Remove background
+
+CapCut's Video > Remove BG > Auto removal: the person (or the main subject)
+stays and everything behind them shows the tracks below. The inspector's
+Video tab has it as the **Remove BG** sub-tab, with Chroma key under it,
+and the AI tools tab has a card for it.
+
+- **Model** ([[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]]):
+  ormbg (1024², Apache-2.0, 88 MB) where WebGPU has fp16 shaders, else
+  MediaPipe Selfie Segmentation (256², Apache-2.0, 0.5 MB). It is
+  downloaded on first use with its own progress stage and works offline
+  after that. If ormbg cannot run on the GPU, the light model takes over
+  and the toast says so.
+- **Once per clip** ([[ADR-033 Mattes are made once and stored as grayscale video]]):
+  the clip's source window is decoded at the model's size, each frame runs
+  in `src/engine/matte.worker.ts`, and the mattes are steadied over time.
+  A per-pixel median of three frames removes one-frame pops with no lag;
+  then changes under 24/255 are held back by up to 60%, which damps edge
+  shimmer without ghosting a moving edge (`src/lib/matte.ts`). The result
+  is encoded as a grayscale MP4 stored like imported media. The clip
+  references it as `cutout` ([[Project format]]); preview and export read
+  it beside the source and multiply it into alpha.
+- **Switch behavior**: On makes the matte, or reuses one that covers the
+  clip (its own, a split half's, or one made this session). Off keeps it,
+  so On again is instant. A clip trimmed past its matte shows those frames
+  whole and the inspector offers **Update**.
+- **Measured** in Edge on 2026-10-16 (bg-removal drive; the fixture is a
+  CC0 portrait panned one pixel a frame, `person-pan.mp4`): 180 frames in
+  15 s with ormbg on WebGPU (13 fps), or 3.4 s with MediaPipe forced onto
+  WASM (75 fps). The first use added a 3 s download. Both models got every
+  scored face, jacket, foliage and column point right, and the viewer,
+  an exported still and the rendered MP4 agree point for point. Playback
+  with the matte dropped no frames. While ormbg worked, the longest gap
+  between animation frames was 75 ms.
+- **Limits**: ormbg is trained on people. It handles one clear object (an
+  apple, a cat, a teapot) but not a scene without a subject. MediaPipe
+  finds people only.
+
 ## In the app and for agents
 
 - **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).
@@ -263,9 +330,15 @@ its transcripts, so a remover built on it would miss them.
   `ai.normalizeLoudness(clipIds?, { target })` takes a list and returns
   each clip's measured LUFS, gain and whether the peak held it back;
   `ai.duckUnderSpeech(clipId?, { depth })` returns the dips and keys made.
-- **MCP:** the same five as tools for external agents — `remove_silences`,
-  `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`
-  (snake_case options; unset ones keep the panel's defaults).
+  `ai.reduceNoise(clipId?, { strength })` and `ai.stabilizeClip(clipId?,
+  { level })` clean the sound and stabilize the picture.
+  `ai.removeBackground(clipId?)` makes (or reuses) the matte and turns it
+  on, returning the frames, speed, model and device, or `cached: true`;
+  the `set_background_removal` command turns an existing matte off and on.
+- **MCP:** the same eight as tools for external agents — `remove_silences`,
+  `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`,
+  `reduce_noise`, `stabilize_clip`, `remove_background` (snake_case
+  options; unset ones keep the panel's defaults).
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

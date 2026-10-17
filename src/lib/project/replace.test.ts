@@ -42,3 +42,12 @@ it("shortens to a shorter source, keeps a still's length, and checks the kind", 
   expect(replaceProblem(c, audio)).toMatch(/video or a picture/);
   expect(() => replaceClip(p, c.id, audio)).toThrow();
 });
+
+it("drops the removed background: the matte was made from the old shot", () => {
+  const p = createProject();
+  const a = video("a", 10);
+  const c = { ...(clipForAsset(a, 0, p.fps) as VideoClip), cutout: { enabled: true, src: "matte-a.mp4", from: 0, to: 10, model: "m" } };
+  p.assets = [a];
+  p.tracks[0].clips = [c];
+  expect(replaceClip(p, c.id, video("b", 20)).tracks[0].clips[0]).not.toHaveProperty("cutout");
+});

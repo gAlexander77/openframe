@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Plus, RotateCw, Sparkles, Star, Trash2 } from "../../icons";
-import { fromDb, toDb } from "../../lib/audio";
+import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
+import { fromDb, soundingClips, toDb } from "../../lib/audio";
+import { MATTE_MODELS } from "../../engine/cutout";
+import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
+import { compoundView } from "../../lib/project/compound";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
 import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip, VisualClip } from "../../lib/project/types";
@@ -28,6 +31,10 @@ import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
 import { AttributeClipboard } from "./AttributeClipboard";
 import { AlignBar, useMovable } from "./AlignBar";
+import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
+import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
+import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
+import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
 
@@ -61,6 +68,8 @@ function tabsFor(c: Clip, p: Project): Tab[] {
       return ["audio", "speed"];
     case "adjustment":
       return ["adjust", "effects"];
+    case "compound":
+      return ["video", "audio", "speed", "animation", "adjust", "effects", ...tr];
   }
 }
 
@@ -93,7 +102,7 @@ function ClipInspector({ id }: { id: Id }) {
         <AttributeClipboard clip={clip} />
         {active === "video" && <VideoTab clip={clip} />}
         {active === "audio" && <AudioTab clip={clip} />}
-        {active === "speed" && <SpeedTab clip={clip as VideoClip | AudioClip} />}
+        {active === "speed" && <SpeedTab clip={clip as ops.TimedClip} />}
         {active === "animation" && <AnimationTab clip={clip} />}
         {active === "adjust" && <AdjustTab clip={clip} />}
         {active === "effects" && <EffectsSection clip={clip} />}
@@ -129,6 +138,8 @@ function TransformSection({ clip }: { clip: Clip }) {
       <SliderRow clip={clip} path="transform.x" label="Position X" min={-w} max={w} unit="px" reset={0} show={(v) => v * w} store={(v) => v / w} />
       <SliderRow clip={clip} path="transform.y" label="Position Y" min={-h} max={h} unit="px" reset={0} show={(v) => -v * h} store={(v) => -v / h} />
       <SliderRow clip={clip} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} />
+      <SliderRow clip={clip} path="transform.anchorX" label="Anchor X" min={-100} max={100} unit="%" reset={0} {...pct} />
+      <SliderRow clip={clip} path="transform.anchorY" label="Anchor Y" min={-100} max={100} unit="%" reset={0} show={(v) => -v * 100} store={(v) => -v / 100} />
       <Row label="Frame">
         <div className="frame-btns">
           {(
@@ -173,7 +184,8 @@ const BLENDS: [BlendMode, string][] = [
 ];
 
 function VideoTab({ clip }: { clip: Clip }) {
-  const [sub, setSub] = useState<"basic" | "mask" | "key">("basic");
+  // CapCut's order: Basic / Remove BG / Mask (research §3.0, §3.3).
+  const [sub, setSub] = useState<"basic" | "removebg" | "mask">("basic");
   // CapCut draws the mask on the viewer while its tab is open.
   useEffect(() => {
     if (sub !== "mask") return;
@@ -189,8 +201,8 @@ function VideoTab({ clip }: { clip: Clip }) {
           onChange={setSub}
           options={[
             { value: "basic", label: "Basic" },
+            { value: "removebg", label: "Remove BG" },
             { value: "mask", label: "Mask" },
-            { value: "key", label: "Chroma key" },
           ]}
         />
       </div>
@@ -218,11 +230,105 @@ function VideoTab({ clip }: { clip: Clip }) {
           )}
           {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
           <CropSection clip={clip} />
+          {clip.type === "video" && <StabilizeSection clip={clip} />}
+        </>
+      )}
+      {sub === "removebg" && (
+        <>
+          <AutoRemovalSection clip={clip} />
+          <ChromaSection clip={clip} />
         </>
       )}
       {sub === "mask" && <MaskSection clip={clip} />}
-      {sub === "key" && <ChromaSection clip={clip} />}
     </>
+  );
+}
+
+/** CapCut's Auto removal: a switch that makes the background matte once
+ * (with progress, cancelable) and then just turns it on and off. */
+function AutoRemovalSection({ clip }: { clip: Clip }) {
+  const running = useAi((s) => s.jobs.cutout);
+  const job = running?.clipId === clip.id ? running : undefined;
+  // One matte at a time: the model and the GPU are shared.
+  const busy = !!running && !job;
+  const fps = useEditor((s) => s.project.fps);
+  const video = clip.type === "video" ? clip : null;
+  const cut = video?.cutout;
+  const on = !!cut?.enabled;
+  // A clip trimmed longer than its matte: the new frames need processing.
+  const short = on && video && !covers(cut!, ...clipWindow(video, fps));
+  const toggle = (v: boolean) => (job ? aiStore.cancel("cutout") : void setBackgroundRemoval(clip.id, v).catch(() => {}));
+  const stage = job?.stage ?? "Removing the background";
+  return (
+    <Section title="Auto removal" extra={video && <Toggle label="Remove background" on={on || !!job} onChange={toggle} disabled={busy} />}>
+      {job ? (
+        <>
+          <p className="insp-hint cutout-stage">{stage}</p>
+          <div className="cutout-progress" role="progressbar" aria-label={stage} aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+            <span className="cutout-bar">
+              <span style={{ transform: `scaleX(${job.progress})` }} />
+            </span>
+            <span className="cutout-pct num">
+              <Loader2 size={13} className="spin" /> {Math.round(job.progress * 100)}%
+            </span>
+            <button className="icon-btn small" aria-label="Cancel" data-tip="Cancel" onClick={() => aiStore.cancel("cutout")}>
+              <X size={13} />
+            </button>
+          </div>
+        </>
+      ) : !video ? (
+        <p className="insp-hint">Works on video clips.</p>
+      ) : busy ? (
+        <p className="insp-hint">Another clip's background is being removed. This one can start when it is done.</p>
+      ) : short ? (
+        <>
+          <p className="insp-hint">Part of this clip was added after its background was removed.</p>
+          <div className="insp-actions">
+            <button className="btn" onClick={() => void setBackgroundRemoval(clip.id, true).catch(() => {})}>
+              Update
+            </button>
+          </div>
+        </>
+      ) : on ? (
+        <p className="insp-hint">The subject stays and everything behind it shows the tracks below. Made on this computer.</p>
+      ) : (
+        <p className="insp-hint">
+          Finds the person or main subject in every frame and removes everything behind it. Runs on this computer; the first time downloads the model ({MATTE_MODELS.quality.size}).
+        </p>
+      )}
+    </Section>
+  );
+}
+
+/** CapCut's Stabilize in Video > Basic: a switch and a level. Turning it on
+ * (or changing the level) measures the shake; the switch shows progress. */
+function StabilizeSection({ clip }: { clip: VideoClip }) {
+  const job = useAi((s) => (s.jobs.stabilize?.clipId === clip.id ? s.jobs.stabilize : null));
+  const preferred = useAi((s) => s.settings.stabilize.level);
+  const level = clip.stabilize?.level ?? preferred;
+  const run = (l: StabilizeLevel) => {
+    aiStore.setSettings("stabilize", { level: l });
+    void stabilizeClip(clip.id, { level: l }).catch(() => undefined);
+  };
+  // The switch sits in the header, as CapCut's checkbox does, so it works
+  // with the section closed.
+  const toggle = <Toggle on={!!clip.stabilize || !!job} label="Stabilize" onChange={(on) => (on ? run(level) : job ? aiStore.cancel("stabilize") : void stabilizeClip(clip.id, { level: "off" }))} />;
+  return (
+    // Turning it on opens the section, to show the progress and the zoom.
+    <Section key={String(!!clip.stabilize || !!job)} title="Stabilize" defaultOpen={!!clip.stabilize || !!job} extra={toggle}>
+      <Row label="Level">
+        <select className="field" aria-label="Stabilize level" value={level} disabled={!!job} onChange={(e) => (clip.stabilize ? run(e.target.value as StabilizeLevel) : aiStore.setSettings("stabilize", { level: e.target.value as StabilizeLevel }))}>
+          {(Object.keys(LEVELS) as StabilizeLevel[]).map((k) => (
+            <option key={k} value={k}>{LEVELS[k].label}</option>
+          ))}
+        </select>
+      </Row>
+      {job ? (
+        <p className="insp-hint" role="status">Measuring the shake… {Math.round(job.progress * 100)}%</p>
+      ) : clip.stabilize ? (
+        <p className="insp-hint">Zoomed {Math.round((clip.stabilize.zoom - 1) * 100)}% to hide the edges. Measured on this clip's range; stabilize again after lengthening it.</p>
+      ) : null}
+    </Section>
   );
 }
 
@@ -416,9 +522,31 @@ const fromLog = (v: number) => SPEED_MIN * (SPEED_MAX / SPEED_MIN) ** v;
 
 /** CapCut's Speed tab: Standard (one rate) or Curve (presets and a graph),
  * plus direction and pitch, which apply to either. */
-function SpeedTab({ clip }: { clip: VideoClip | AudioClip }) {
+function SpeedTab({ clip }: { clip: ops.TimedClip }) {
   const [mode, setMode] = useState<"standard" | "curve">(clip.speedCurve ? "curve" : "standard");
-  const hasSound = useEditor((s) => (clip.type === "audio" || !clip.muted) && (ops.getAsset(s.project, clip.assetId)?.hasAudio ?? false));
+  const hasSound = useEditor((s) =>
+    clip.type === "compound"
+      ? !clip.muted && soundingClips(compoundView(s.project, clip.compoundId), (id) => ops.getAsset(s.project, id)?.hasAudio ?? false).length > 0
+      : (clip.type === "audio" || !clip.muted) && (ops.getAsset(s.project, clip.assetId)?.hasAudio ?? false),
+  );
+  // ponytail: a compound clip's sound is mixed through linear time maps
+  // (lib/audio.ts), so it has one speed; curves and reverse need composed
+  // maps there first (ADR-037).
+  if (clip.type === "compound") {
+    return (
+      <>
+        <StandardSpeed clip={clip} />
+        <Section title="Playback">
+          {hasSound && (
+            <Row label="Change pitch">
+              <Toggle label="Change pitch" on={!!clip.changePitch} onChange={(v) => edit(v ? "Change pitch with speed" : "Keep pitch", (p) => ops.setChangePitch(p, [clip.id], v))} />
+            </Row>
+          )}
+          <p className="insp-hint">Speed curves and reverse work inside the compound clip: open it and set them on its clips.</p>
+        </Section>
+      </>
+    );
+  }
   return (
     <>
       <div className="insp-sub">
@@ -472,7 +600,7 @@ function CurveSpeed({ clip }: { clip: VideoClip | AudioClip }) {
   );
 }
 
-function StandardSpeed({ clip }: { clip: VideoClip | AudioClip }) {
+function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
   const fps = useEditor((s) => s.project.fps);
   const [text, setText] = useState<string | null>(null);
   const apply = (speed: number) => {
@@ -854,6 +982,14 @@ function TextTab({ clip }: { clip: TextClip }) {
         <Row label="Color">
           <ColorInput label="Text color" value={s.color} onChange={(v) => style({ color: v }, "Text color")} />
         </Row>
+        {clip.caption && (
+          <Row label="Spoken word">
+            <div className="spoken-word">
+              <Toggle on={!!s.highlight} label="Highlight the spoken word" onChange={(on) => style({ highlight: on ? (s.highlight ?? "#ffe14d") : undefined }, on ? "Highlight spoken word" : "No spoken-word highlight")} />
+              {s.highlight && <ColorInput label="Spoken word color" value={s.highlight} onChange={(v) => style({ highlight: v }, "Spoken word color")} />}
+            </div>
+          </Row>
+        )}
         <SliderRow clip={clip} path="style.letterSpacing" label="Spacing" min={-20} max={100} reset={0} keyframes={false} />
         <SliderRow clip={clip} path="style.lineHeight" label="Line height" min={0.6} max={3} step={0.05} digits={2} reset={1.2} keyframes={false} />
       </Section>
@@ -894,7 +1030,44 @@ function TextTab({ clip }: { clip: TextClip }) {
       <Section title="Opacity" defaultOpen={false}>
         <SliderRow clip={clip} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} {...pct} />
       </Section>
+      {!clip.caption && <SpeechSection clip={clip} />}
     </>
+  );
+}
+
+/** CapCut's Text to speech: the title read aloud in a chosen voice, made on
+ * this computer and placed under it (ADR-050). */
+function SpeechSection({ clip }: { clip: TextClip }) {
+  const speaking = useSpeaking();
+  const [voice, setVoice] = useState(DEFAULT_VOICE);
+  const [speed, setSpeed] = useState(1);
+  const busy = speaking?.clipId === clip.id;
+  return (
+    <Section title="Text to speech" defaultOpen={false}>
+      <Row label="Voice">
+        <select className="field" aria-label="Voice" value={voice} disabled={busy} onChange={(e) => setVoice(e.target.value)}>
+          {VOICES.map((v) => (
+            <option key={v.id} value={v.id}>{v.label}</option>
+          ))}
+        </select>
+      </Row>
+      <Row label="Speed">
+        <Segmented value={String(speed)} onChange={(v) => setSpeed(Number(v))} options={[{ value: "0.85", label: "Slow" }, { value: "1", label: "Normal" }, { value: "1.2", label: "Fast" }]} />
+      </Row>
+      <div className="insp-actions">
+        {busy ? (
+          <>
+            <span className="insp-hint" role="status">Making the voice… {Math.round((speaking?.progress ?? 0) * 100)}%</span>
+            <button className="btn ghost" onClick={cancelSpeech}>Cancel</button>
+          </>
+        ) : (
+          <button className="btn" disabled={!!speaking || !clip.text.trim()} onClick={() => void textToSpeech(clip.id, { voice, speed }).catch(() => undefined)}>
+            Add voice
+          </button>
+        )}
+      </div>
+      <p className="insp-hint">Made on this computer. The first voice downloads the speech model (about 90 MB) once.</p>
+    </Section>
   );
 }
 

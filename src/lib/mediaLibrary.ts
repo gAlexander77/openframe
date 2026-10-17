@@ -1,4 +1,4 @@
-import type { Asset, AssetKind, Track } from "./project/types";
+import type { Asset, AssetKind, Compound, Track } from "./project/types";
 
 export interface MediaBrowser {
   query: string;
@@ -13,14 +13,27 @@ export interface MediaBrowser {
 export const DEFAULT_MEDIA_BROWSER: MediaBrowser = { query: "", kind: "all", usage: "all", sort: "import", view: "grid", folder: null, favorites: false };
 export interface MediaUse { clipId: string; start: number }
 
-/** References count even on disabled clips or hidden/locked/muted tracks. */
-export function mediaUsage(tracks: Track[]): Map<string, MediaUse[]> {
+/** References count even on disabled clips or hidden/locked/muted tracks.
+ * A file used inside a compound clip is used at the compound clip that
+ * plays it, the clip on these tracks that shows it (ADR-037). */
+export function mediaUsage(tracks: Track[], compounds: Compound[] = []): Map<string, MediaUse[]> {
   const result = new Map<string, MediaUse[]>();
+  const add = (assetId: string, use: MediaUse) => {
+    const uses = result.get(assetId) ?? [];
+    if (!uses.some((u) => u.clipId === use.clipId)) uses.push(use);
+    result.set(assetId, uses);
+  };
+  const inside = (id: string, use: MediaUse, seen: Set<string>) => {
+    const k = compounds.find((x) => x.id === id);
+    if (!k || seen.has(id)) return;
+    for (const t of k.tracks) for (const c of t.clips) {
+      if ("assetId" in c) add(c.assetId, use);
+      else if (c.type === "compound") inside(c.compoundId, use, new Set([...seen, id]));
+    }
+  };
   for (const track of tracks) for (const clip of track.clips) {
-    if (!("assetId" in clip)) continue;
-    const uses = result.get(clip.assetId) ?? [];
-    uses.push({ clipId: clip.id, start: clip.start });
-    result.set(clip.assetId, uses);
+    if ("assetId" in clip) add(clip.assetId, { clipId: clip.id, start: clip.start });
+    else if (clip.type === "compound") inside(clip.compoundId, { clipId: clip.id, start: clip.start }, new Set());
   }
   for (const uses of result.values()) uses.sort((a, b) => a.start - b.start);
   return result;

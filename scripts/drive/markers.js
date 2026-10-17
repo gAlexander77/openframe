@@ -82,7 +82,9 @@ async (page) => {
     return r.left >= strip.left && r.right <= strip.right + 1;
   });
   details.activeTabVisible = { ok: true };
+  // Reachable and uncovered: a short panel scrolls, so bring each into view.
   const controls = await panel.evaluate(el => [...el.querySelectorAll(".marker-toolbar button, .marker-search input, .marker-actions button")].map(b => {
+    b.scrollIntoView({ block: "nearest" });
     const r = b.getBoundingClientRect(), hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return { name: b.getAttribute("aria-label") || b.textContent, y: r.y, height: r.height, hit: hit?.tagName + "." + hit?.className,
       ok: r.top >= 0 && r.bottom <= innerHeight && (b.disabled || b.contains(hit)) };

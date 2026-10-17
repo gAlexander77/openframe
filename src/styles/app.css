@@ -36,6 +36,7 @@
   --clip-text: #9c4937;     --clip-text-edge: #e08a6e;
   --clip-color: #4b4fa8;    --clip-color-edge: #8d90f0;
   --clip-adjust: #826190;   --clip-adjust-edge: #c79ad8;
+  --clip-compound: #2f5a32; --clip-compound-edge: #6cc070;
   --clip-caption: #9c4937;  --clip-caption-edge: #e08a6e;
 
   --radius-panel: 8px;

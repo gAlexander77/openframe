@@ -102,6 +102,12 @@ export const EFFECTS: Record<string, EffectDef> = {
   flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 4, step: 0.5 } } },
   glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 60 } } },
   lightLeak: { label: "Light leak", category: "Light", params: { amount: amount(55), speed: { label: "Speed", min: 0, max: 100, default: 30 } } },
+  // CapCut's Reduce image noise: smooths grain and sensor noise but not
+  // edges (a bilateral filter), so detail survives.
+  denoise: { label: "Reduce image noise", category: "Blur", params: { amount: amount(50) } },
+  motionBlur: { label: "Motion blur", category: "Blur", params: { amount: amount(30), angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
+  sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 } } },
+  halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10 } } },
 };
 
 export function effectDefaults(type: string): Record<string, number> {

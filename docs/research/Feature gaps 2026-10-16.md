@@ -30,7 +30,8 @@ edge and layer snapping in the viewer (`e4dfc91`), the player's Ratio menu
 (`40561e4`) and the Uniform scale switch with Scale X/Y (`d94ef4f`).
 
 **In flight elsewhere.** Three parked branches already hold work. Do not
-duplicate it: `bg-removal` (background removal), `compound-clips`
+duplicate it: `bg-removal` (background removal; **shipped 2026-10-16** as
+Remove BG, ADR-032 and ADR-033), `compound-clips`
 (nesting) and `timeline-ux` (UX-12 drop above main as an overlay, UX-13
 drop preview, UX-14 linkage). See [[Next agent handoff]]. When this note
 was written, a voiceover recorder was in progress; it shipped in
@@ -256,7 +257,8 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Bezier pen mask | P R V F | no | P2 | Polygon SDF texture; L with on-canvas editing. |
 | Several masks per clip | P R | no; `mask?` holds one | P2 | — |
 | Mask tracking | P R V | no | P2 | After the tracker (§11). |
-| AI subject cutout / object mask | C P R V F OSS | no on main; parked `bg-removal` | P1 | Resume the branch. Kdenlive 25.04 runs SAM2 locally, which shows a local model path. |
+| AI subject cutout (Remove BG) | C P R V F | yes: the person or main subject, per frame (ADR-032, ADR-033) | — | — |
+| Click-to-select object mask | P R V F OSS | no | P2 | Kdenlive 25.04 runs SAM2 locally, which shows a local model path; its masks could reuse the Remove BG matte pipeline. |
 | Chroma key with spill | C P R V F | yes | — | — |
 | Luma key | P R V F | no | P2 | One shader branch beside the chroma key. S. |
 | Matte or alpha view | P R | no | P2 | — |
@@ -272,7 +274,7 @@ The AI tools tab is `src/components/AiToolsTab.tsx`, with state in
 | Auto reframe (follow the subject into 9:16 or 1:1) | C P R V F | no ("Coming soon" card) | P1 | A face or saliency model, then a smoothed crop path written as `transform` keyframes. That needs no new render path. See [[AI and automation]] §2.8. L. |
 | Motion tracking: pin text or a sticker to a subject | C R V F | no | P1 | Box tracker (template matching or KLT on downscaled frames) in a worker; results become `transform.x/y` keyframes on the text clip. L. |
 | Stabilize | C P R V F | no | P1 | See §2. |
-| Remove background | C P R V F | parked | P1 | See §10. |
+| Remove background | C P R V F | yes (shipped 2026-10-16) | — | See §10. |
 | Transcript or visual search over media | C P R F | no; name search only | P2 | Transcript search reuses Whisper (M). Visual search needs local CLIP-class embeddings at import (L). Final Cut 12.0 and Premiere's Media Intelligence both run this on the device. |
 | Long video to shorts / highlight finder | C | partial: Copilot plus remove silences | P2 | A Copilot recipe over captions, scenes and reframe. |
 | Prompt-driven first cut (CapCut EditPilot) | C | partial: Copilot with a local model | P2 | — |
@@ -400,41 +402,46 @@ Sizes: **S** is about one small commit with a test, **M** a few commits or
 a new panel, **L** a new model, analysis pass or engine path.
 
 1. **Land `timeline-ux`** (UX-12 overlay on drop, UX-13 truthful drop
-   preview, UX-14 linkage). S. Coordinate with the branch owner.
+   preview, UX-14 linkage). S. Shipped (merged `b45c1f8`).
 2. **Crop with ratio presets and on-canvas crop.** M. Shipped (`68d15cf`,
    `e09a3f7`; flips `8cd42ae`).
 3. **Record voiceover.** M. Shipped (`601d895`).
-4. **System fonts in the picker, plus font file import.** M.
-5. **Arrow-key nudge in the viewer** (1 px, Shift 10 px). S.
-6. **Viewer zoom and pan.** M.
-7. **Flip H/V buttons in Transform, plus a `set_flip` command.** S.
-8. **Track solo, track volume and rename in the header.** S.
+4. **System fonts in the picker, plus font file import.** M. Shipped (`8b0feed`).
+5. **Arrow-key nudge in the viewer** (1 px, Shift 10 px). S. Shipped (`212dab1`).
+6. **Viewer zoom and pan.** M. Shipped (`c9eec5a`).
+7. **Flip H/V buttons in Transform, plus a `set_flip` command.** S. Shipped (`2ee3e94`).
+8. **Track solo, track volume and rename in the header.** S. Shipped (`1edafde`).
 9. **Multi-selection transform handles on the canvas.** M. Shipped
    (`23c1d14`).
-10. **Group and ungroup (Ctrl+G).** M.
-11. **Replace clip.** S.
-12. **Clip nudge by frames, and close or delete gaps.** S.
-13. **Loop playback and play In to Out.** S.
-14. **Audio crossfades at cuts and under transitions.** M.
-15. **Track height (S/M/L and drag).** S.
+10. **Group and ungroup (Ctrl+G).** M. Shipped (`6c49fea`).
+11. **Replace clip.** S. Shipped (`aef4b95`).
+12. **Clip nudge by frames, and close or delete gaps.** S. Shipped (`953f1c0`).
+13. **Loop playback and play In to Out.** S. Shipped (`8d1c03b`).
+14. **Audio crossfades at cuts and under transitions.** M. Shipped under
+    transitions (`e0fb7fd`); plain cuts keep their 4 ms click guard.
+15. **Track height (S/M/L and drag).** S. Shipped as S/M/L (`1edafde`).
 16. **Layout presets, proportional defaults, Reset layout** (UX-30). S.
-17. **Fit / Fill / Stretch quick actions.** S.
+    Shipped (`c8d42c8`).
+17. **Fit / Fill / Stretch quick actions.** S. Shipped (`2932ff5`).
 18. **Mask handles on the canvas, plus heart, star and rounded corners.** M.
     Shipped (`8d8417e`, `d89987f`).
-19. **Named export presets and GIF export.** M.
+19. **Named export presets and GIF export.** M. Shipped (`77a5a81`).
 20. **Word-level captions: karaoke highlight and filler-word removal.** M.
-21. **Custom key bindings with conflict warnings.** M.
-22. **Local noise reduction** (DeepFilterNet/RNNoise). M.
-23. **Anchor point.** M.
-24. **Local text to speech** (Kokoro/Piper). L.
-25. **Stabilize.** L.
+    Highlight shipped; filler removal open: Whisper leaves most fillers out
+    of its transcripts (see [[AI tools]]).
+21. **Custom key bindings with conflict warnings.** M. Shipped (`c6a8bef`).
+22. **Local noise reduction** (DeepFilterNet/RNNoise). M. Shipped as a
+    spectral gate (`057d298`); a learned model is the upgrade.
+23. **Anchor point.** M. Shipped (this round, `anchorX`/`anchorY`).
+24. **Local text to speech** (Kokoro/Piper). L. Shipped (`7a40079`).
+25. **Stabilize.** L. Shipped, translation only (`33a2da0`).
 
 Next after these: rate stretch tool (S), insert/overwrite buttons and keys
 (S), lift/extract (S), LUFS meter (S), preferences (S), picture border and
 shadow (M), frame blending (M), EQ (M), auto adjust (M), proxies on demand
 (M), keyboard clip focus (M), transcript editing (L), auto reframe (L),
-motion tracking (L). The parked `compound-clips` and `bg-removal` branches
-come back when their owners resume them.
+motion tracking (L). The parked `compound-clips` branch comes back when
+its owner resumes it; `bg-removal` shipped on 2026-10-16.
 
 ## Items not confirmed in the code
 

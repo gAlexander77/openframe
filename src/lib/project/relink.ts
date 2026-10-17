@@ -1,4 +1,4 @@
-import { isTimed, sourceRange } from "./ops";
+import { allTracks, isTimed, sourceRange } from "./ops";
 import type { Asset, Project } from "./types";
 
 /** Keep the entire original source range, including unused trim handles. */
@@ -18,7 +18,8 @@ export function relinkAsset(p: Project, id: string, replacement: Asset): Project
   if (problem) throw new Error(problem);
   // A hand-written project may omit the duration (0): the clips still say
   // how much source they need.
-  const used = Math.max(0, ...p.tracks.flatMap((t) => t.clips).filter(isTimed).filter((c) => c.assetId === id).map((c) => Math.max(...sourceRange(c, p.fps))));
+  // Clips inside compound clips use the file too.
+  const used = Math.max(0, ...allTracks(p).flatMap((t) => t.clips).filter(isTimed).filter((c) => "assetId" in c && c.assetId === id).map((c) => Math.max(...sourceRange(c, p.fps))));
   if (replacement.kind !== "image" && replacement.duration + 0.001 < used) throw new Error(`The replacement must be at least ${used.toFixed(3)} seconds long to cover the clips that use it.`);
   // Identity, label and library annotations belong to the original asset.
   const { src, proxy, duration, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } = replacement;

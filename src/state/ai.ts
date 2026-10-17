@@ -8,27 +8,31 @@
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
 import { useSyncExternalStore } from "react";
-import { decodeMono, decodePcm, frameScores, measureLoudness } from "../engine/analyze";
+import { decodeMono, decodePcm, frameGrays, frameScores, measureLoudness } from "../engine/analyze";
+import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { denoise } from "../lib/analysis/denoise";
 import { replaceClip } from "../lib/project/replace";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
+import { makeMatte } from "../engine/cutout";
 import { detectBeats } from "../lib/analysis/beats";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { runCommand } from "../lib/commands";
+import { clipWindow, covers } from "../lib/matte";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Id, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Cutout, Id, VideoClip } from "../lib/project/types";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
+import { platform } from "../platform";
 import { edit } from "./actions";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking" | "denoise";
+export type ToolId = "silences" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -67,6 +71,10 @@ export interface DenoiseSettings {
   strength: number;
 }
 
+export interface StabilizeSettings {
+  level: StabilizeLevel;
+}
+
 export interface AiSettings {
   silences: SilenceSettings;
   scenes: SceneSettings;
@@ -74,6 +82,7 @@ export interface AiSettings {
   loudness: LoudnessSettings;
   ducking: DuckSettings;
   denoise: DenoiseSettings;
+  stabilize: StabilizeSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -85,12 +94,16 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   // Ducking guides put music 10-15 dB under dialogue.
   ducking: { depth: 12 },
   denoise: { strength: 0.75 },
+  stabilize: { level: "recommended" },
 };
 
 export interface AiJob {
   clipId: Id;
-  /** 0..1 */
+  /** 0..1, within the current stage. */
   progress: number;
+  /** What the job is doing now, when it has stages ("Downloading the
+   * background model"); the progress restarts with each. */
+  stage?: string;
   abort: AbortController;
 }
 
@@ -116,10 +129,10 @@ export const aiStore = {
       listeners.delete(l);
     };
   },
-  setSettings<T extends ToolId>(tool: T, patch: Partial<AiSettings[T]>) {
+  setSettings<T extends keyof AiSettings>(tool: T, patch: Partial<AiSettings[T]>) {
     set({ settings: { ...state.settings, [tool]: { ...state.settings[tool], ...patch } } });
   },
-  resetSettings(tool: ToolId) {
+  resetSettings(tool: keyof AiSettings) {
     set({ settings: { ...state.settings, [tool]: DEFAULT_AI_SETTINGS[tool] } });
   },
   cancel(tool: ToolId) {
@@ -143,13 +156,15 @@ export const NEEDS: Record<ToolId, string> = {
   loudness: "video or audio clips with sound",
   ducking: "a music clip with speech under it",
   denoise: "a video or audio clip with sound",
+  stabilize: "a video clip",
+  cutout: "a video clip with a person or subject",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
 function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | null {
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
-  if (tool === "scenes") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS.scenes}`;
+  if (tool === "scenes" || tool === "stabilize" || tool === "cutout") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
   if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
@@ -202,19 +217,20 @@ function windowOf(clip: MediaClip): [number, number] {
 // ---- running a job ---------------------------------------------------------------
 
 /** Run `work` as `tool`'s job: one at a time per tool, with a progress
- * toast and the card's progress, cancelable, errors shown as toasts. */
-async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
+ * toast and the card's progress, cancelable, errors shown as toasts. A
+ * stage of the work can retitle the toast. */
+async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number, label?: string) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
   if (state.jobs[tool]) throw new Error("Already running");
   const abort = new AbortController();
   const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
   const tid = toast(label, "progress");
   updateToast(tid, { progress: 0 });
-  const progress = (x: number) => {
-    updateToast(tid, { progress: x });
+  const progress = (x: number, text?: string) => {
+    updateToast(tid, { progress: x, ...(text ? { text } : {}) });
     const j = state.jobs[tool];
-    if (j) set({ jobs: { ...state.jobs, [tool]: { ...j, progress: x } } });
+    if (j) set({ jobs: { ...state.jobs, [tool]: { ...j, progress: x, ...(text ? { stage: text } : {}) } } });
   };
-  set({ jobs: { ...state.jobs, [tool]: { clipId: clip.id, progress: 0, abort } } });
+  set({ jobs: { ...state.jobs, [tool]: { clipId: clip.id, progress: 0, stage: label, abort } } });
   try {
     const result = await work(progress, signal);
     signal.throwIfAborted();
@@ -580,4 +596,136 @@ export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = 
   });
   finish("denoise", `Reduced noise in ${asset.name}`);
   return { assetId: cleaned.id, clipId: target };
+}
+
+export interface StabilizeEdit {
+  frames: number;
+  /** The zoom that hides the uncovered edges. */
+  zoom: number;
+}
+
+/**
+ * CapCut's Stabilize: measure the camera's shake across the clip's source
+ * window, then store per-frame corrections (src/lib/analysis/stabilize.ts)
+ * that preview and export apply. Level "off" removes them. One undo step.
+ */
+export async function stabilizeClip(clipId?: Id, opts: { level?: StabilizeLevel | "off" } = {}): Promise<StabilizeEdit> {
+  const scope = projectWork.signal();
+  const { clip, asset } = resolve("stabilize", clipId);
+  const level = opts.level ?? state.settings.stabilize.level;
+  if (level === "off") {
+    store.edit("Remove stabilization", (p) => ops.updateClip(p, clip.id, (c) => {
+      const { stabilize: _, ...rest } = c as VideoClip;
+      return rest as VideoClip;
+    }));
+    return { frames: 0, zoom: 1 };
+  }
+  const data = await job("stabilize", clip, `Stabilizing ${asset.name}`, async (progress, signal) => {
+    const [a, b] = windowOf(clip);
+    const from = Math.min(a, b), to = Math.max(a, b);
+    const times: number[] = [];
+    const moves: { dx: number; dy: number }[] = [];
+    let prev: ReturnType<typeof spectrum> | null = null;
+    await frameGrays(asset, from, to, AW, AH, (t, gray) => {
+      const s = spectrum(gray);
+      if (prev) moves.push(shiftBetween(prev, s));
+      prev = s;
+      times.push(t);
+    }, progress, signal);
+    if (times.length < 2) throw new Error("The clip is too short to stabilize");
+    // ponytail: a constant rate; variable-frame-rate phone footage is
+    // indexed by its average rate, close enough for a smooth path.
+    const rate = (times.length - 1) / (times[times.length - 1] - times[0]);
+    return { level, from: times[0], rate, ...stabilization(moves, level, rate) };
+  });
+  scope.throwIfAborted();
+  const c = stillThere(clip.id);
+  store.edit("Stabilize", (p) => ops.updateClip(p, c.id, (x) => ({ ...x, stabilize: data }) as VideoClip));
+  finish("stabilize", `Stabilized ${asset.name}, zoomed ${Math.round((data.zoom - 1) * 100)}%`);
+  return { frames: data.x.length, zoom: data.zoom };
+}
+
+// ---- remove background -----------------------------------------------------------
+
+/** Mattes made this session, so undoing past one and turning Remove
+ * background on again does not process the clip again. */
+const madeMattes: (Cutout & { asset: string })[] = [];
+
+/** An existing matte of this asset that covers [from, to]: on any clip of
+ * the project, or made earlier this session. */
+function findMatte(asset: Asset, from: number, to: number): Cutout | undefined {
+  const p = store.get().project;
+  const onClips = p.tracks.flatMap((t) => t.clips).flatMap((c) => (c.type === "video" && c.assetId === asset.id && c.cutout ? [c.cutout] : []));
+  const key = asset.proxy ?? asset.src;
+  const m = [...onClips, ...madeMattes.filter((x) => x.asset === key)].find((x) => covers(x, from, to));
+  return m && { enabled: true, src: m.src, from: m.from, to: m.to, model: m.model };
+}
+
+export interface CutoutResult {
+  clipId: Id;
+  /** True when an existing matte was reused (instant). */
+  cached: boolean;
+  frames?: number;
+  /** Frames processed per second. */
+  fps?: number;
+  /** Wall-clock seconds, the model download included. */
+  seconds?: number;
+  /** Why the light model made the matte, when the quality one couldn't run. */
+  fellBack?: string;
+  model: string;
+  device?: string;
+  matte: string;
+}
+
+/**
+ * CapCut's Remove background: make the clip's background matte on this
+ * machine (once; progress and cancel like the other tools) and turn it
+ * on, as one undoable edit. A clip whose matte already exists, or whose
+ * asset has one covering it, turns on instantly.
+ */
+export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+  const { clip, asset } = resolve("cutout", clipId);
+  const fps = store.get().project.fps;
+  const [from, to] = clipWindow(clip as VideoClip, fps, asset.fps);
+  const own = (clip as VideoClip).cutout;
+  const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
+  if (ready) {
+    // A look change, like the inspector's: store.edit, because edit()'s
+    // settle would let the magnet close gaps on the main track.
+    store.edit("Remove background", (p) => ops.setCutout(p, clip.id, ready));
+    finish("cutout", "Background removed");
+    return { clipId: clip.id, cached: true, model: ready.model, matte: ready.src };
+  }
+  const started = performance.now();
+  // Starting the model takes a moment even when it is cached.
+  const made = await job("cutout", clip, "Starting the background model", async (progress, signal) => {
+    const m = await makeMatte(
+      asset,
+      from,
+      to,
+      (s) => (s.stage === "downloading" ? progress(s.progress, `Downloading the background model (${s.model.size})`) : progress(s.progress, `Removing the background of ${asset.name}`)),
+      signal,
+    );
+    // Stored like imported media: OPFS on the web, app data on desktop.
+    const [file] = await platform.adoptFiles([new File([m.bytes as Uint8Array<ArrayBuffer>], `matte-${asset.name.replace(/\.[^.]+$/, "")}.mp4`, { type: "video/mp4" })]);
+    return { ...m, src: file.src };
+  });
+  const cutout: Cutout = { enabled: true, src: made.src, from: made.from, to: made.to, model: made.model };
+  madeMattes.push({ ...cutout, asset: asset.proxy ?? asset.src });
+  const c = stillThere(clip.id);
+  store.edit("Remove background", (p) => ops.setCutout(p, c.id, cutout));
+  const seconds = (performance.now() - started) / 1000;
+  // The light model's edge is coarser: say why it was used.
+  const light = made.fellBack ? " with the light model (this computer's graphics couldn't run the detailed one)" : "";
+  finish("cutout", `Background removed${light} · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`);
+  return { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src, ...(made.fellBack ? { fellBack: made.fellBack } : {}) };
+}
+
+/** The inspector's switch: on makes or reuses the matte, off keeps it. */
+export async function setBackgroundRemoval(clipId: Id, on: boolean): Promise<void> {
+  if (on) {
+    await removeBackground(clipId);
+    return;
+  }
+  store.edit("Remove background off", (p) => runCommand(p, "set_background_removal", { clip_ids: [clipId], enabled: false }));
 }

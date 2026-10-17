@@ -14,7 +14,7 @@ import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
 import { getAsset, projectDuration, sourceTimeAt } from "../lib/project/ops";
 import type { Id, Project, VisualClip } from "../lib/project/types";
-import { planFrame, type Layer, type PlanItem } from "../lib/render/plan";
+import { layerAt, planFrame, planLayers, type Layer, type PlanItem } from "../lib/render/plan";
 import { frameAt, framesToSeconds } from "../lib/time";
 import { provide } from "../state/actions";
 import { store, type EditorState } from "../state/store";
@@ -22,7 +22,7 @@ import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } fr
 import { Compositor, type SourceImage } from "./compositor";
 import { ReverseCursor, VideoCursor, type HeldFrame, type ReverseOptions } from "./cursor";
 import { loadPlanLuts } from "./luts";
-import { imageFor, mediaFor } from "./media";
+import { imageFor, mediaFor, mediaForSrc, type MediaFile } from "./media";
 import { rasterizeText } from "./text";
 
 interface CursorEntry {
@@ -30,11 +30,10 @@ interface CursorEntry {
   used: number;
 }
 
-/** Resolved pixels for one plan, ready for a synchronous compositor pass. */
-type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; bitmap?: ImageBitmap; key?: string }>;
-
-const layersOf = (plan: PlanItem[]): Layer[] =>
-  plan.flatMap((i) => (i.kind === "layer" ? [i.layer] : i.kind === "transition" ? [i.from, i.to] : []));
+/** Resolved pixels for one plan, ready for a synchronous compositor pass.
+ * `matte` is the clip's background matte frame (Remove BG, ADR-033): a
+ * borrowed sample, or a held frame for a reversed clip. */
+export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?: VideoSample | HeldFrame; bitmap?: ImageBitmap; key?: string }>;
 
 /** Decode cursors keyed by clip, shared shape for preview and export.
  * Reversed clips get a ReverseCursor; `reverse` sets the size it holds
@@ -45,24 +44,34 @@ export class CursorPool {
   constructor(private reverse: ReverseOptions = {}) {}
 
   get(p: Project, clipId: Id, assetId: Id): Promise<VideoCursor | null> {
-    return this.open(p, clipId, assetId, false) as Promise<VideoCursor | null>;
+    return this.forAsset(p, clipId, assetId, false) as Promise<VideoCursor | null>;
   }
 
   getReverse(p: Project, clipId: Id, assetId: Id): Promise<ReverseCursor | null> {
-    return this.open(p, clipId, assetId, true) as Promise<ReverseCursor | null>;
+    return this.forAsset(p, clipId, assetId, true) as Promise<ReverseCursor | null>;
   }
 
-  private open(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
+  /** The cursor over a clip's background matte, read backward for a
+   * reversed clip; a matte made again (a new file) gets a new cursor. */
+  matte(clipId: Id, src: string, reverse: boolean): Promise<VideoCursor | ReverseCursor | null> {
+    return this.open(JSON.stringify([clipId, "matte", src, reverse]), () => mediaForSrc(src), reverse);
+  }
+
+  private forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
     const asset = getAsset(p, assetId);
     // Relinking and undo can change a clip's source without changing its ID.
-    const key = JSON.stringify([clipId, asset?.proxy ?? asset?.src, reverse]);
+    return this.open(JSON.stringify([clipId, asset?.proxy ?? asset?.src, reverse]), () => (asset ? mediaFor(asset) : null), reverse);
+  }
+
+  private open(key: string, media: () => Promise<MediaFile> | null, reverse: boolean) {
     let e = this.map.get(key);
     if (!e) {
-      const cursor = asset
-        ? mediaFor(asset).then((m) => {
-            if (!m.videoSink || !m.keySink) return null;
-            if (!reverse) return new VideoCursor(m.videoSink, m.keySink, m.videoStart);
-            return new ReverseCursor(m.videoSink, m.keySink, m.videoStart, { width: m.width, height: m.height }, this.reverse);
+      const m = media();
+      const cursor = m
+        ? m.then((f) => {
+            if (!f.videoSink || !f.keySink) return null;
+            if (!reverse) return new VideoCursor(f.videoSink, f.keySink, f.videoStart);
+            return new ReverseCursor(f.videoSink, f.keySink, f.videoStart, { width: f.width, height: f.height }, this.reverse);
           })
         : Promise.resolve(null);
       e = { cursor: cursor.catch(() => null), used: 0 };
@@ -95,16 +104,19 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
   const out: Resolved = new Map();
   await Promise.all([
     loadPlanLuts(plan),
-    ...layersOf(plan).map(async (l) => {
+    // Compound clips' nested layers too: their sources draw first (ADR-037).
+    ...planLayers(plan).map(async (l) => {
       const src = l.source;
-      if (src.kind === "video" && src.reverse) {
-        const cursor = await pool.getReverse(p, l.clipId, src.assetId);
-        const frame = cursor ? await cursor.frameAt(src.time) : null;
-        if (frame) out.set(l.clipId, { frame });
-      } else if (src.kind === "video") {
-        const cursor = await pool.get(p, l.clipId, src.assetId);
-        const sample = cursor ? await cursor.frameAt(src.time) : null;
-        if (sample) out.set(l.clipId, { sample });
+      if (src.kind === "video") {
+        const m = l.matte;
+        const reverse = !!src.reverse;
+        const [picture, matte] = await Promise.all([
+          reverse
+            ? pool.getReverse(p, l.clipId, src.assetId).then((c) => c?.frameAt(src.time) ?? null)
+            : pool.get(p, l.clipId, src.assetId).then((c) => c?.frameAt(src.time) ?? null),
+          m ? pool.matte(l.clipId, m.src, reverse).then((c): Promise<VideoSample | HeldFrame | null> | null => c?.frameAt(m.time) ?? null) : null,
+        ]);
+        if (picture) out.set(l.clipId, { ...(reverse ? { frame: picture as HeldFrame } : { sample: picture as VideoSample }), matte: matte ?? undefined });
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
@@ -121,18 +133,19 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
  * the synchronous render: a sample's canvas image may close next microtask. */
 export function sourceImages(resolved: Resolved, width: number, height: number) {
   return (l: Layer): SourceImage | null => {
-    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height);
+    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height, l.source.word);
     const r = resolved.get(l.clipId);
     if (!r) return null;
     if (r.bitmap) return { image: r.bitmap, width: r.bitmap.width, height: r.bitmap.height, rotation: 0, key: r.key };
-    if (r.frame) return { image: r.frame.image, width: r.frame.width, height: r.frame.height, rotation: r.frame.rotation };
+    const matte = r.matte && ("image" in r.matte ? r.matte.image : r.matte.toCanvasImageSource());
+    if (r.frame) return { image: r.frame.image, width: r.frame.width, height: r.frame.height, rotation: r.frame.rotation, matte };
     const s = r.sample!;
     const image = s.toCanvasImageSource();
     // A raw VideoFrame is in coded orientation: rotate it in the quad. A
     // canvas from mediabunny already has rotation applied.
     const raw = typeof VideoFrame !== "undefined" && image instanceof VideoFrame;
     const turns = raw ? (((s.rotation / 90) % 4) as 0 | 1 | 2 | 3) : 0;
-    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns };
+    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns, matte };
   };
 }
 
@@ -296,12 +309,24 @@ export class Player {
   }
 
   /** Warm up decoders for clips that start within the next 0.75 s, so the
-   * first frame after a cut is not late. */
+   * first frame after a cut is not late. A compound clip warms the video
+   * its first frame shows.
+   * ponytail: cuts inside a compound clip that is already playing are not
+   * warmed; plan ahead through it if playback shows them late. */
   private preroll(p: Project, f: number) {
     const ahead = f + Math.round(0.75 * (p.fps.num / p.fps.den));
     for (const t of p.tracks) {
       if (t.kind !== "video" || t.hidden) continue;
       for (const c of t.clips) {
+        if (c.type === "compound" && c.start > f && c.start <= ahead) {
+          const l = layerAt(p, c, c.start);
+          if (l?.source.kind !== "compound") continue;
+          for (const x of planLayers(l.source.items)) {
+            const src = x.source;
+            if (src.kind === "video" && !src.reverse) void this.pool.get(p, x.clipId, src.assetId).then((cur) => cur?.frameAt(src.time));
+          }
+          continue;
+        }
         if (c.type !== "video" || c.start <= f || c.start > ahead) continue;
         const t = sourceTimeAt(c, c.start, p.fps);
         if (c.reverse && !c.freeze) void this.pool.getReverse(p, c.id, c.assetId).then((cur) => cur?.frameAt(t));

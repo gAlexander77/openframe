@@ -84,6 +84,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   move, copy and delete together across tracks, each keeping its own
   settings; Alt+click picks one alone, as in Premiere. Pasted copies form
   their own group.
+- **Compound clips** (Alt+G, as in CapCut; Alt+Shift+G breaks one apart;
+  Timeline menu and right-click; `create_compound_clip`,
+  `break_compound_clip`, `edit_compound`): the selected clips, on any
+  tracks, become one green clip that plays them as a nested timeline. Its
+  own speed, transform, opacity, blend, color, effects, mask, animations,
+  transitions and volume act on the whole, the way Premiere's nests do;
+  its filmstrip and waveform show what is inside. Double-click it to edit
+  inside, with a breadcrumb above the timeline to go back out; every
+  compound clip that plays it changes. Break apart puts the clips back
+  where they were. One undo history covers every level, saving and export
+  take the whole project wherever you are, and OTIO carries it as a nested
+  stack ([[ADR-037 Compound clips are nested timelines composited to a texture]]).
 - **Replace clip** (right-click, as in CapCut; `replace_clip`): pick a
   file and it takes the clip's place, keeping its start, length (shorter
   only if the new source runs out), transform, effects, animations and
@@ -128,7 +140,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  19 effects, 20 transitions, 17 looks, adjustment layers.
+  23 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  and Halftone), 20 transitions, 17 looks, adjustment layers.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
   rectangle with round corners, heart and star, with feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
@@ -176,6 +189,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter.
+- **Viewer zoom** (Premiere's Program monitor zoom): Fit or 25 to 400 %
+  of the project's own pixels from the transport, Ctrl+wheel to zoom at
+  the pointer, the wheel (Shift: sideways) or a middle-button drag to pan;
+  the handles, guides and crop and mask tools follow.
 - **Ratio menu** in the transport bar, as in CapCut: change the canvas
   shape (16:9, 9:16, 1:1, 4:5, 4:3, 3:4, 21:9) without leaving the clip
   being edited; the short side is kept, and Undo restores the size.
@@ -191,7 +208,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Inspector
 
-- CapCut's tab matrix per clip type: Video (Basic, Mask, Chroma key),
+- CapCut's tab matrix per clip type: Video (Basic, Remove BG, Mask),
   Audio, Speed, Animation (In/Out/Combo or Loop), Adjust (filter and color),
   **Effects** (applied stack with its count), Text, Captions, Transition; project Details when nothing is
   selected.
@@ -204,6 +221,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   independent effect instances and animation; preserves existing effects
   and other clip settings. A session clipboard keeps normal clip/keyframe
   copying separate ([[ADR-038 Copied effects preserve animation and get new identities]]).
+- **Anchor point** (Premiere's): Anchor X/Y under Transform, as shares of
+  the picture's size from its center. The anchor sits at the position, and
+  scale and rotation (inspector, handles, keyframes) turn about it; the
+  viewer marks it with a crosshair. Align still lines up the picture.
 - **Uniform scale** switch under Transform, as in CapCut: off splits Scale
   into Scale X and Scale Y (keys copied, so nothing jumps); on joins them.
   Corner handles keep a stretched picture's proportions.
@@ -316,6 +337,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-030 The canvas text editor is a transparent textarea over the
   engine's text]], [[ADR-031 Typing into a text clip is one live session]]).
 - The inspector's Text box is live too, and mirrors typing on the canvas.
+- **Spoken-word highlight** (a caption's Text tab > Spoken word, CapCut's
+  caption highlight): the word being said draws in its own color. Auto
+  captions keep each word's start time (`wordTimes`), trims and splits
+  carry them, and an edited caption whose word count changed simply
+  stops highlighting. `add_captions` takes `words`; `set_text` takes
+  `highlight`.
+- **Text to speech on this machine** (Text tab > Text to speech, as in
+  CapCut): eight English voices from Kokoro-82M (Apache-2.0), Slow/Normal/
+  Fast; the voice lands on an audio track at the title's start, one undo
+  step. The first voice downloads the model (about 90 MB) once
+  ([[ADR-050 Text to speech runs Kokoro on the user's machine]]).
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks; caption list editing; apply style to all; SRT/VTT import and
@@ -326,9 +358,20 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
   loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) and **Auto
   ducking** (music dips under speech as editable volume keyframes) and
+  **Stabilize** (Video > Basic, as in CapCut, or the AI tools card: three
+  levels, translation only, measured on this computer) and
   **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
   a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
+- **Remove background** (CapCut's Video > Remove BG > Auto removal, also an
+  AI tools card): a segmentation model on this computer cuts the person or
+  main subject out of every frame, once, with progress and cancel; the
+  clip then plays and exports over the tracks below in real time. Off
+  keeps the matte, so On again is instant. ormbg on WebGPU, MediaPipe
+  Selfie on WASM, both Apache-2.0, downloaded on first use
+  ([[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]],
+  [[ADR-033 Mattes are made once and stored as grayscale video]]).
+  Chroma key sits under it on the same sub-tab.
 - **Copilot**: ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
 
@@ -349,8 +392,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and 60 seconds (it is built in memory). The GIF drive reads every frame
   back against the framecode fixture.
 - **Timeline as OpenTimelineIO** (File > Export timeline): tracks, gaps,
-  transitions, speed, titles and markers for DaVinci Resolve, Premiere's
-  OTIO plugin and other editors
+  transitions, speed, titles, compound clips (nested stacks) and markers
+  for DaVinci Resolve, Premiere's OTIO plugin and other editors
   ([[ADR-034 Timelines leave as OpenTimelineIO]]).
 ## Library
 

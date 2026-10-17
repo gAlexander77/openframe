@@ -8,12 +8,14 @@
 
 import { setPath, upsertKey } from "../keyframes";
 import { areaTo, frameForArea, meanSpeed, toFrames, type NormPoint } from "../speed";
-import type { Rational } from "../time";
+import { framesToSeconds, type Rational } from "../time";
 import { createTrack, uid } from "./defaults";
 import type {
   Asset,
   AudioClip,
   Clip,
+  CompoundClip,
+  Cutout,
   Id,
   Keyframe,
   Marker,
@@ -52,17 +54,36 @@ export const findTrack = (p: Project, id: Id) => p.tracks.find((t) => t.id === i
 
 export const mainTrack = (p: Project) => p.tracks.find((t) => t.main)!;
 
-/** Last frame any clip occupies, exclusive. */
-export function projectDuration(p: Project): number {
+/** Last frame any clip on these tracks occupies, exclusive. */
+export function timelineEnd(tracks: Track[]): number {
   let end = 0;
-  for (const t of p.tracks) for (const c of t.clips) end = Math.max(end, clipEnd(c));
+  for (const t of tracks) for (const c of t.clips) end = Math.max(end, clipEnd(c));
   return end;
 }
 
-export const isTimed = (c: Clip): c is VideoClip | AudioClip =>
-  c.type === "video" || c.type === "audio";
+export const projectDuration = (p: Project) => timelineEnd(p.tracks);
 
-type TimedClip = VideoClip | AudioClip;
+/** Clips that play a source through a time map (in, speed): media clips,
+ * and compound clips, whose source is a nested timeline (ADR-037). */
+export const isTimed = (c: Clip): c is TimedClip => c.type === "video" || c.type === "audio" || c.type === "compound";
+
+export type TimedClip = VideoClip | AudioClip | CompoundClip;
+
+export const findCompound = (p: Project, id: Id) => p.compounds?.find((k) => k.id === id);
+
+/** Every timeline's tracks: the project's, then each compound's (ADR-037). */
+export const allTracks = (p: Project): Track[] => [...p.tracks, ...(p.compounds ?? []).flatMap((k) => k.tracks)];
+
+/** Seconds of source a timed clip can read: the file's length, or the
+ * nested timeline's for a compound. Infinity when unknown. */
+export function sourceSeconds(p: Project, c: TimedClip): number {
+  if (c.type === "compound") {
+    const k = findCompound(p, c.compoundId);
+    return k ? framesToSeconds(timelineEnd(k.tracks), p.fps) : 0;
+  }
+  const a = getAsset(p, c.assetId);
+  return a && a.duration > 0 ? a.duration : Infinity;
+}
 
 /** Seconds of source a constant-speed clip consumes per timeline frame;
  * for a curve, the mean over the clip. */
@@ -111,10 +132,9 @@ export function sourceRange(c: TimedClip, fps: Rational): [number, number] {
  * source. Stills, text and freezes are unlimited. */
 export function roomRight(p: Project, c: Clip): number {
   if (!isTimed(c) || c.freeze) return Infinity;
-  const a = getAsset(p, c.assetId);
   // Reading forward, the end eats into what is after `in`; reversed, into
   // what is before it.
-  const avail = c.reverse ? c.in : a && a.duration > 0 ? a.duration - c.in : Infinity;
+  const avail = c.reverse ? c.in : sourceSeconds(p, c) - c.in;
   if (avail === Infinity) return Infinity;
   const total = Math.floor(framesForSource(c, avail, p.fps) + 1e-6);
   return Math.max(0, total - c.duration);
@@ -124,8 +144,7 @@ export function roomRight(p: Project, c: Clip): number {
  * out (source frame 0, or the source's end for a reversed clip). */
 export function roomLeft(p: Project, c: Clip): number {
   if (!isTimed(c) || c.freeze) return Infinity;
-  const a = getAsset(p, c.assetId);
-  const avail = c.reverse ? (a && a.duration > 0 ? a.duration - c.in : Infinity) : c.in;
+  const avail = c.reverse ? sourceSeconds(p, c) - c.in : c.in;
   if (avail === Infinity) return Infinity;
   return Math.max(0, Math.floor(-framesForSource(c, -avail, p.fps) + 1e-6));
 }
@@ -176,6 +195,7 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
     if (c.speedCurve) out = { ...out, speedCurve: { ...c.speedCurve, points: shiftPoints(c.speedCurve.points, -d) } } as Clip;
   }
   if (c.keyframes) out = { ...out, keyframes: shiftKeys(c.keyframes, -d) };
+  if (c.type === "text" && c.wordTimes) out = { ...out, wordTimes: c.wordTimes.map((f) => f - d) } as Clip;
   return out;
 }
 
@@ -447,9 +467,8 @@ export function slipClip(p: Project, clipId: Id, deltaFrames: number): Project {
   const c = loc.clip;
   const per = sourcePerFrame(c, p.fps);
   const [lo, hi] = sourceRange(c, p.fps);
-  const a = getAsset(p, c.assetId);
   const earlier = Math.max(0, Math.floor(lo / per + 1e-6));
-  const later = a && a.duration > 0 ? Math.max(0, Math.floor((a.duration - hi) / per + 1e-6)) : Infinity;
+  const later = Math.max(0, Math.floor((sourceSeconds(p, c) - hi) / per + 1e-6));
   const d = Math.min(Math.max(Math.round(deltaFrames), -earlier), later);
   if (d === 0) return p;
   return updateClip(p, clipId, (x) => ({ ...x, in: (x as VideoClip).in + d * per }) as Clip);
@@ -513,6 +532,9 @@ export function setSpeed(p: Project, clipId: Id, speed: number): Project {
  */
 export function setSpeedCurve(p: Project, clipId: Id, norm: NormPoint[] | null, preset?: string): Project {
   if (norm && !norm.length) return p;
+  // ponytail: a compound's sound is mixed through linear time maps
+  // (lib/audio.ts); a curve on one needs a composed map there first.
+  if (norm && findClip(p, clipId)?.clip.type === "compound") return p;
   return retime(p, clipId, (c) => {
     if (!norm) {
       if (!c.speedCurve) return c;
@@ -527,7 +549,7 @@ export function setSpeedCurve(p: Project, clipId: Id, norm: NormPoint[] | null, 
  * `in` moves to the other end, since it is where playback begins. */
 export function setReverse(p: Project, clipId: Id, reverse: boolean): Project {
   const loc = findClip(p, clipId);
-  if (!loc || !isTimed(loc.clip) || loc.clip.freeze || !!loc.clip.reverse === reverse) return p;
+  if (!loc || !isTimed(loc.clip) || loc.clip.type === "compound" || loc.clip.freeze || !!loc.clip.reverse === reverse) return p;
   const c = loc.clip;
   const [lo, hi] = sourceRange(c, p.fps);
   return updateClip(p, clipId, () => (reverse ? { ...c, reverse: true, in: hi } : { ...omit(c, ["reverse"]), in: lo }));
@@ -672,6 +694,15 @@ export function setTransition(p: Project, clipId: Id, tr: Transition | null): Pr
   });
 }
 
+/** Attach, change or remove a video clip's background removal (the
+ * matte reference; the matte file itself stays where it is). */
+export function setCutout(p: Project, clipId: Id, cutout: Cutout | undefined): Project {
+  return updateClip(p, clipId, (c) => {
+    if (c.type !== "video") return c;
+    return cutout ? { ...c, cutout } : omit(c, ["cutout"]);
+  });
+}
+
 // ---- tracks and markers -----------------------------------------------------
 
 export function addTrack(p: Project, track: Track, index?: number): Project {
@@ -777,7 +808,7 @@ export function setFps(p: Project, fps: Rational): Project {
   const keys = (k: Clip["keyframes"]) =>
     k ? Object.fromEntries(Object.entries(k).map(([path, list]) => [path, list.map((x) => ({ ...x, f: f(x.f) }))])) : k;
   const anim = <T extends { duration: number } | undefined>(a: T): T => (a ? { ...a, duration: Math.max(1, f(a.duration)) } : a);
-  const tracks = p.tracks.map((t) => {
+  const scale = (tracks: Track[]) => tracks.map((t) => {
     let prevEnd = 0;
     const clips = t.clips.map((c) => {
       const start = Math.max(f(c.start), prevEnd);
@@ -786,10 +817,14 @@ export function setFps(p: Project, fps: Rational): Project {
       const out: Record<string, unknown> = { ...c, start, duration: end - start, keyframes: keys(c.keyframes) };
       if (isTimed(c) && c.speedCurve) out.speedCurve = { ...c.speedCurve, points: c.speedCurve.points.map((x) => ({ ...x, f: x.f * r })) };
       for (const k of ["fadeIn", "fadeOut"]) if (typeof out[k] === "number") out[k] = f(out[k] as number);
+      if (Array.isArray(out.wordTimes)) out.wordTimes = (out.wordTimes as number[]).map(f);
       for (const k of ["animIn", "animOut", "animLoop", "transitionOut"]) if (out[k]) out[k] = anim(out[k] as { duration: number });
       return out as unknown as Clip;
     });
     return { ...t, clips };
   });
-  return { ...p, fps, tracks, markers: p.markers.map((m) => ({ ...m, frame: f(m.frame) })) };
+  const marks = (list: Marker[]) => list.map((m) => ({ ...m, frame: f(m.frame) }));
+  // Nested timelines share the project's rate (ADR-037), so they rescale too.
+  const compounds = p.compounds?.map((k) => ({ ...k, tracks: scale(k.tracks), markers: marks(k.markers) }));
+  return { ...p, fps, tracks: scale(p.tracks), markers: marks(p.markers), ...(compounds ? { compounds } : {}) };
 }

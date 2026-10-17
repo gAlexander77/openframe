@@ -100,6 +100,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "trimEndToPlayhead" },
         { action: "freeze" },
         { action: "detachAudio" },
+        { action: "createCompound" },
+        { action: "breakCompound" },
         "-",
         { action: "addMarker" },
         { label: "Manage markers", onSelect: () => openMarkers() },

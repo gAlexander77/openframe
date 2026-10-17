@@ -8,8 +8,10 @@
 // freeze a FreezeFrame. A video clip's own sound goes on a companion audio
 // track, the way NLEs link picture and sound. Titles, color clips and
 // adjustment layers have no media file: they are Clips with a
-// GeneratorReference that keeps their content. Every clip carries its full
-// definition under metadata.video_editor for a future importer.
+// GeneratorReference that keeps their content. A compound clip (ADR-037)
+// is a nested Stack of its timeline's tracks, trimmed by source_range, the
+// way OTIO nests sequences. Every clip carries its full definition under
+// metadata.video_editor for a future importer.
 // ponytail: markers are all RED (OTIO's palette is eight names); effects,
 // keyframes and text styling ride only in metadata.
 
@@ -38,12 +40,25 @@ function mediaRef(a: Asset, rate: number): Json {
   };
 }
 
-function clip(c: Clip, p: Project, rate: number, sound: boolean): Json {
+function clip(c: Clip, p: Project, rate: number, sound: boolean, depth: number): Json {
   const asset = "assetId" in c ? p.assets.find((a) => a.id === c.assetId) : undefined;
   const effects: Json[] = [];
   if ("speed" in c && c.freeze) effects.push({ OTIO_SCHEMA: "FreezeFrame.1", name: "Freeze", effect_name: "FreezeFrame", time_scalar: 0, metadata: {} });
   else if ("speed" in c && c.speed !== 1) effects.push({ OTIO_SCHEMA: "LinearTimeWarp.1", name: "Speed", effect_name: "LinearTimeWarp", time_scalar: c.speed, metadata: {} });
   const start = "in" in c ? c.in * rate : 0;
+  const k = c.type === "compound" ? p.compounds?.find((x) => x.id === c.compoundId) : undefined;
+  if (c.type === "compound") {
+    return {
+      OTIO_SCHEMA: "Stack.1",
+      name: c.name ?? k?.name ?? "Compound clip",
+      source_range: range(start, c.duration, rate),
+      children: k && depth < 16 ? layers(k.tracks, p, rate, depth + 1) : [],
+      effects,
+      markers: [],
+      enabled: !c.disabled,
+      metadata: { video_editor: c },
+    };
+  }
   return {
     OTIO_SCHEMA: "Clip.1",
     name: c.name ?? (c.type === "text" ? c.text : asset?.name ?? c.type),
@@ -60,13 +75,13 @@ function clip(c: Clip, p: Project, rate: number, sound: boolean): Json {
 
 const gap = (frames: number, rate: number): Json => ({ OTIO_SCHEMA: "Gap.1", name: "", source_range: range(0, frames, rate), effects: [], markers: [], metadata: {} });
 
-function track(t: Track, clips: Clip[], kind: "Video" | "Audio", p: Project, rate: number): Json {
+function track(t: Track, clips: Clip[], kind: "Video" | "Audio", p: Project, rate: number, depth: number): Json {
   const children: Json[] = [];
   let at = 0;
   const sorted = [...clips].sort((a, b) => a.start - b.start);
   sorted.forEach((c, i) => {
     if (c.start > at) children.push(gap(c.start - at, rate));
-    children.push(clip(c, p, rate, kind === "Audio"));
+    children.push(clip(c, p, rate, kind === "Audio", depth));
     at = c.start + c.duration;
     const tr = "transitionOut" in c ? c.transitionOut : undefined;
     const next = sorted[i + 1];
@@ -85,21 +100,27 @@ function track(t: Track, clips: Clip[], kind: "Video" | "Audio", p: Project, rat
   return { OTIO_SCHEMA: "Track.1", name: kind === "Audio" && t.kind === "video" ? `${t.name} audio` : t.name, kind, children, source_range: null, effects: [], markers: [], enabled: kind === "Audio" ? !t.muted : !t.hidden, metadata: {} };
 }
 
-/** The project as an OTIO Timeline, ready for JSON.stringify. */
-export function toOtio(p: Project): Json {
-  const rate = p.fps.num / p.fps.den;
+/** One timeline's tracks as a Stack's children: video bottom to top, the
+ * video clips' own sound, then the audio tracks. */
+function layers(tracks: Track[], p: Project, rate: number, depth: number): Json[] {
   const hasSound = (c: Clip) => {
     if (c.type !== "video") return false;
     const a = p.assets.find((x) => x.id === c.assetId);
     return !!a?.hasAudio && c.volume > 0;
   };
   // Our tracks list the topmost first; OTIO stacks list the lowest first.
-  const bottomUp = [...p.tracks].reverse();
-  const video = bottomUp.filter((t) => t.kind === "video").map((t) => track(t, t.clips, "Video", p, rate));
+  const bottomUp = [...tracks].reverse();
+  const video = bottomUp.filter((t) => t.kind === "video").map((t) => track(t, t.clips, "Video", p, rate, depth));
   const linked = bottomUp
     .filter((t) => t.kind === "video" && t.clips.some(hasSound))
-    .map((t) => track(t, t.clips.filter(hasSound), "Audio", p, rate));
-  const audio = bottomUp.filter((t) => t.kind === "audio").map((t) => track(t, t.clips, "Audio", p, rate));
+    .map((t) => track(t, t.clips.filter(hasSound), "Audio", p, rate, depth));
+  const audio = bottomUp.filter((t) => t.kind === "audio").map((t) => track(t, t.clips, "Audio", p, rate, depth));
+  return [...video, ...linked, ...audio];
+}
+
+/** The project as an OTIO Timeline, ready for JSON.stringify. */
+export function toOtio(p: Project): Json {
+  const rate = p.fps.num / p.fps.den;
   return {
     OTIO_SCHEMA: "Timeline.1",
     name: p.name,
@@ -107,7 +128,7 @@ export function toOtio(p: Project): Json {
     tracks: {
       OTIO_SCHEMA: "Stack.1",
       name: "tracks",
-      children: [...video, ...linked, ...audio],
+      children: layers(p.tracks, p, rate, 0),
       source_range: null,
       effects: [],
       markers: p.markers.map((m) => ({ OTIO_SCHEMA: "Marker.2", name: m.label, marked_range: range(m.frame, 0, rate), color: "RED", comment: "", metadata: {} })),

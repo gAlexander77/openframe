@@ -5,35 +5,17 @@
 // Everything is in project pixels.
 
 import { paramAt } from "./keyframes";
-import { findClip, getAsset, setParam, setUniformScale } from "./project/ops";
-import type { Id, Project, TextClip, VisualClip } from "./project/types";
-import { layerAt, type Layer } from "./render/plan";
+import { findClip, setParam, setUniformScale } from "./project/ops";
+import type { Id, Project, VisualClip } from "./project/types";
+import { anchorShift, layerAt, type Layer } from "./render/plan";
 
 export type Align = "left" | "center" | "right" | "top" | "middle" | "bottom";
 export const ALIGNS: Align[] = ["left", "center", "right", "top", "middle", "bottom"];
 export type Axis = "horizontal" | "vertical";
 
-/** A text clip's raster size. The engine registers its rasterizer at load;
- * without one (unit tests) a box from the style stands in. */
-let measureText = (c: TextClip, w: number, h: number) => ({
-  width: c.style.maxWidth * w,
-  height: ((c.style.size * h) / 1080) * c.style.lineHeight * Math.max(1, c.text.split("\n").length),
-});
-export function setTextMeasure(fn: typeof measureText) {
-  measureText = fn;
-}
-
-/** Size of a clip's source in project pixels before transform, and whether
- * it keeps its native size (text, color) or fits the canvas (media). */
-export function sourceSize(p: Project, c: VisualClip): { w: number; h: number; native: boolean } {
-  if (c.type === "color") return { w: p.width, h: p.height, native: true };
-  if (c.type === "text") {
-    const r = measureText(c, p.width, p.height);
-    return { w: r.width, h: r.height, native: true };
-  }
-  const a = getAsset(p, c.assetId);
-  return { w: a?.width || p.width, h: a?.height || p.height, native: false };
-}
+// The picture's own size lives with the render plan, which also needs it.
+export { setTextMeasure, sourceSize } from "./render/size";
+import { sourceSize } from "./render/size";
 
 export interface Box {
   /** Center. */
@@ -167,6 +149,9 @@ export function boxesAt(p: Project, ids: Id[], frame: number) {
     const at = (path: string) => paramAt(c, path, rel);
     const rest = { ...layer, x: at("transform.x"), y: at("transform.y"), scale: at("transform.scale"), rotation: at("transform.rotation") };
     if (c.transform.scaleY !== undefined) rest.scaleY = at("transform.scaleY");
+    const sh = anchorShift(p, c, { ax: at("transform.anchorX"), ay: at("transform.anchorY"), scale: rest.scale, scaleY: rest.scaleY, rotation: rest.rotation });
+    rest.x += sh.dx;
+    rest.y += sh.dy;
     out.push({ clip: c, rel, box: layerBox(p, c, rest) });
   }
   return out;

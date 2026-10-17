@@ -126,10 +126,18 @@ Every non-obvious choice gets a short Architecture Decision Record in
   — the engine keeps drawing; the textarea shows only caret and selection
 - [[ADR-031 Typing into a text clip is one live session]] — live keystrokes,
   one undo step, ended by any press outside (capture phase)
+- [[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]] — two
+  Apache-2.0 models by device; download on first use; fall back when the
+  GPU can't
+- [[ADR-033 Mattes are made once and stored as grayscale video]] — process
+  once, play and export beside the source; reuse, smoothing, coverage
 - [[ADR-034 Timelines leave as OpenTimelineIO]] — OTIO JSON first, proven
   with the reference library; our clip rides in metadata
 - [[ADR-035 Linkage binds a clip to the shot under most of it]] — a clip
   follows the main clip under more than half of it; beds stay put
+- [[ADR-037 Compound clips are nested timelines composited to a texture]] —
+  nested timelines in `project.compounds`, drawn one framebuffer level deeper
+  so a compound clip's settings act on the composite; one undo history.
 - [[ADR-038 Copied effects preserve animation and get new identities]] —
   stack reuse, independent IDs, timing conversion and undo
 - [[ADR-039 Project navigation waits for current edits]] — save in-flight
@@ -144,6 +152,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   selective attributes, animation conversion and source preview isolation
 - [[ADR-044 Trim previews read the applied edit]] — exact cut frames,
   source limits and cancellable gestures
+- [[ADR-050 Text to speech runs Kokoro on the user's machine]] — Kokoro-82M
+  in a worker, downloaded once, placed under the title
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run
