@@ -107,8 +107,15 @@ export function distributeShifts(boxes: Box[], axis: Axis): { dx: number; dy: nu
 
 /** Lines a moving box catches on: the canvas edges and center, and the
  * edges and centers of the other boxes. */
-export function snapLines(p: Project, others: Box[]): { x: number[]; y: number[] } {
+export function snapLines(p: Project, others: Box[], guides: "off" | "safe" | "thirds" | "both" = "off"): { x: number[]; y: number[] } {
   const x = [0, p.width / 2, p.width], y = [0, p.height / 2, p.height];
+  // The viewer's guides catch too while they show (Premiere snaps to its
+  // guides): the action (90%) and title (80%) safe edges, and the thirds.
+  const at = (fs: number[]) => {
+    for (const f of fs) x.push(p.width * f), y.push(p.height * f);
+  };
+  if (guides === "safe" || guides === "both") at([0.05, 0.1, 0.9, 0.95]);
+  if (guides === "thirds" || guides === "both") at([1 / 3, 2 / 3]);
   for (const b of others) {
     x.push(b.cx - b.hw, b.cx, b.cx + b.hw);
     y.push(b.cy - b.hh, b.cy, b.cy + b.hh);

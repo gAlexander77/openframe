@@ -92,7 +92,7 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
         style={{ left: (box.cx - box.hw) * k, top: (box.cy - box.hh) * k, width: 2 * box.hw * k, height: 2 * box.hh * k }}
         onPointerDown={(e) => {
           const m = local(e);
-          begin(e, { kind: "move", px: m.x, py: m.y, box, lines: snapLines(project, otherBoxes(project, frame, ids)) });
+          begin(e, { kind: "move", px: m.x, py: m.y, box, lines: snapLines(project, otherBoxes(project, frame, ids), store.get().viewerGuides) });
         }}
       >
         {["nw", "ne", "sw", "se"].map(corner)}

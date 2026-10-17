@@ -59,6 +59,12 @@ describe("sounding clips", () => {
     const b = { ...createTrack("audio", "B"), solo: true, clips: [{ ...clip, id: "s" }] };
     expect(soundingClips({ ...p, tracks: [...p.tracks, a, b] }, () => true).map((s) => s.clip.id)).toEqual(["s"]);
   });
+
+  it("adds the track's pan to each clip's, within -1..1", () => {
+    const p: Project = createProject();
+    const t = { ...createTrack("audio", "A"), pan: 0.5, clips: [{ ...clip, pan: 0.25 }, { ...clip, id: "far", pan: 0.75 }] };
+    expect(soundingClips({ ...p, tracks: [...p.tracks, t] }, () => true).map((s) => s.clip.pan)).toEqual([0.75, 1]);
+  });
 });
 
 it("converts decibels", () => {

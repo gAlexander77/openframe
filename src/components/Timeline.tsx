@@ -10,7 +10,9 @@ import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
 import { stretchClip } from "../lib/project/stretch";
 import { expandGroups } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
-import type { Clip, Id, Project, Track } from "../lib/project/types";
+import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
+import { CLIP_LABELS } from "../lib/catalog";
+import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
 import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
@@ -713,6 +715,16 @@ export function Timeline() {
       "-",
       { action: "toggleKeyframePanel", label: "Show keyframe animation", checked: store.get().keyframePanel },
       { action: "rangeToClip" },
+      "-",
+      {
+        title: "Label",
+        current: clip.labelColor ?? null,
+        swatches: [{ value: null, label: "No label" }, ...Object.entries(CLIP_LABELS).map(([value, l]) => ({ value, label: l.label, color: l.color }))],
+        onPick: (v) => {
+          const ids = store.get().selection;
+          edit(v ? `Label ${CLIP_LABELS[v as ClipLabel].label.toLowerCase()}` : "Remove label", (p) => runCommand(p, "set_clip_label", { clip_ids: ids, label: v ?? "none" }));
+        },
+      },
     ];
     setMenu({ x: e.clientX, y: e.clientY, items });
   }, []);
@@ -945,10 +957,11 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
     };
   }, [onClose]);
   const db = Math.max(-40, toDb(track.volume));
+  const pan = track.pan ?? 0;
   const set = (d: number) => store.previewGesture((p) => ops.updateTrack(p, track.id, { volume: d <= -40 ? 0 : +fromDb(d).toFixed(4) }));
   // On the body: the sticky header is its own stacking context.
   return createPortal(
-    <div className="menu tl-vol-pop" ref={ref} style={{ left: at.x, top: at.y }} role="dialog" aria-label={`${track.name} volume`}>
+    <div className="menu tl-vol-pop" ref={ref} style={{ left: at.x, top: at.y }} role="dialog" aria-label={`${track.name} volume and pan`}>
       <label>
         <span>Track volume</span>
         <span className="num">{db <= -40 ? "-inf" : `${db > 0 ? "+" : ""}${db.toFixed(1)} dB`}</span>
@@ -966,6 +979,24 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
         onKeyUp={() => store.endGesture("Track volume")}
         onChange={(e) => set(Number(e.target.value))}
         onDoubleClick={() => store.edit("Reset track volume", (p) => ops.updateTrack(p, track.id, { volume: 1 }))}
+      />
+      <label>
+        <span>Track pan</span>
+        <span className="num">{pan === 0 ? "Center" : `${Math.round(Math.abs(pan) * 100)} ${pan < 0 ? "L" : "R"}`}</span>
+      </label>
+      <input
+        type="range"
+        min={-100}
+        max={100}
+        step={1}
+        value={Math.round(pan * 100)}
+        aria-label="Track pan"
+        onPointerDown={() => store.beginGesture()}
+        onPointerUp={() => store.endGesture("Track pan")}
+        onKeyDown={() => store.beginGesture()}
+        onKeyUp={() => store.endGesture("Track pan")}
+        onChange={(e) => store.previewGesture((p) => ops.updateTrack(p, track.id, { pan: Number(e.target.value) / 100 || undefined }))}
+        onDoubleClick={() => store.edit("Reset track pan", (p) => ops.updateTrack(p, track.id, { pan: undefined }))}
       />
     </div>,
     document.body,
@@ -990,7 +1021,7 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
       ...(sounds
         ? ([
             { label: "Solo", checked: !!track.solo, onSelect: solo },
-            { label: "Track volume…", onSelect: () => setVolumeAt(at) },
+            { label: "Track volume and pan…", onSelect: () => setVolumeAt(at) },
           ] as MenuItem[])
         : []),
       "-",

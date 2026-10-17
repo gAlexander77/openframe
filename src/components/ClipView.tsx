@@ -6,7 +6,7 @@ import { editOnCanvas } from "../state/textEdit";
 import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, Group, Image, Layers, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
-import { EFFECTS, FILTERS } from "../lib/catalog";
+import { CLIP_LABELS, EFFECTS, FILTERS } from "../lib/catalog";
 import type { Asset, Clip, Compound, Project, Track } from "../lib/project/types";
 import { PRESETS } from "../lib/speed";
 import { formatDuration, framesToSeconds } from "../lib/time";
@@ -220,7 +220,8 @@ export const ClipView = memo(function ClipView(p: Props) {
   return (
     <div
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
-      style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height }}
+      style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height, ...(c.labelColor ? ({ "--label": CLIP_LABELS[c.labelColor].color } as React.CSSProperties) : {}) }}
+      data-label={c.labelColor}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       // Keyboard reach (UX-33): Tab focuses one clip, arrows move between
       // them. A click must not focus it, or the arrows would stop stepping

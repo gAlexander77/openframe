@@ -4,7 +4,7 @@
 // list_catalog. Adding an entry here (plus its shader, for effects and
 // transitions) is the whole job of adding one.
 
-import type { Adjust } from "./project/types";
+import type { Adjust, ClipLabel } from "./project/types";
 
 export interface ParamDef {
   label: string;
@@ -71,6 +71,20 @@ export const ANIMATIONS: Record<string, AnimationDef> = {
 };
 
 export const isLoopAnimation = (type: string) => !!ANIMATIONS[type]?.loop;
+
+// ---- clip labels -------------------------------------------------------------------
+
+/** Clip label colors: muted, as Premiere's, so white clip names stay legible. */
+export const CLIP_LABELS: Record<ClipLabel, { label: string; color: string }> = {
+  red: { label: "Red", color: "#a83c3c" },
+  orange: { label: "Orange", color: "#b0612a" },
+  yellow: { label: "Yellow", color: "#9c8424" },
+  green: { label: "Green", color: "#3f8a46" },
+  cyan: { label: "Cyan", color: "#25838c" },
+  blue: { label: "Blue", color: "#3a5fb0" },
+  purple: { label: "Purple", color: "#7a4aa8" },
+  pink: { label: "Pink", color: "#a8467f" },
+};
 
 // ---- effects ---------------------------------------------------------------------
 

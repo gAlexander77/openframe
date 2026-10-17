@@ -33,7 +33,7 @@ const STAGE: Record<TranscribeProgress["stage"], string> = {
   transcribing: "Recognizing speech",
 };
 
-export async function generateCaptions(opts: { model: string; language: string | null; replace: boolean }, onProgress?: (s: TranscribeProgress) => void) {
+export async function generateCaptions(opts: { model: string; language: string | null; replace: boolean; oneWord?: boolean }, onProgress?: (s: TranscribeProgress) => void) {
   if (running) return;
   running = new AbortController();
   const signal = AbortSignal.any([running.signal, projectWork.signal()]);
@@ -49,7 +49,8 @@ export async function generateCaptions(opts: { model: string; language: string |
       signal,
     );
     signal.throwIfAborted();
-    const caps = wordsToCaptions(words, DEFAULT_LINES);
+    // One word at a time (CapCut's short-form style): no line can hold two.
+    const caps = wordsToCaptions(words, opts.oneWord ? { ...DEFAULT_LINES, maxChars: 1, minDuration: 0.25 } : DEFAULT_LINES);
     if (!caps.length) {
       toast("No speech found in the timeline's audio", "info");
       return;

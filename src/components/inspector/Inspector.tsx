@@ -31,6 +31,7 @@ import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
 import { AttributeClipboard } from "./AttributeClipboard";
 import { AlignBar, useMovable } from "./AlignBar";
+import { stretchClip } from "../../lib/project/stretch";
 import { autoAdjustClip } from "../../state/autoColor";
 import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
@@ -617,6 +618,10 @@ function CurveSpeed({ clip }: { clip: VideoClip | AudioClip }) {
 function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
   const fps = useEditor((s) => s.project.fps);
   const [text, setText] = useState<string | null>(null);
+  const [dur, setDur] = useState<string | null>(null);
+  // CapCut's Speed > Duration: type a length and the speed follows, the
+  // same source filling it (Rate stretch by the numbers).
+  const fit = (seconds: number) => edit(`Duration ${seconds}s`, (p) => stretchClip(p, clip.id, "end", clip.start + Math.max(1, secondsToFrames(seconds, fps))));
   const apply = (speed: number) => {
     const s = Math.min(SPEED_MAX, Math.max(SPEED_MIN, +speed.toFixed(2)));
     edit(`Speed ${s}x`, (p) => ops.setSpeed(p, clip.id, s));
@@ -665,8 +670,31 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
           </button>
         ))}
       </div>
+      {!clip.speedCurve && !clip.freeze && (
+        <div className="insp-row">
+          <label className="insp-label">Duration</label>
+          <span />
+          <span className="insp-num">
+            <input
+              className="field num"
+              value={dur ?? framesToSeconds(clip.duration, fps).toFixed(2)}
+              onChange={(e) => setDur(e.target.value)}
+              onBlur={(e) => {
+                const typed = dur !== null;
+                setDur(null);
+                const v = Number(e.target.value.replace(/s/i, ""));
+                if (typed && v > 0) fit(v);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+              aria-label="Duration value"
+            />
+            <span className="insp-unit">s</span>
+          </span>
+          <span className="insp-keys" />
+        </div>
+      )}
       <p className="insp-hint num">
-        Duration {formatDuration(framesToSeconds(clip.duration, fps))}. {clip.speedCurve ? "A speed here replaces the curve." : "Later clips on the track move with the change."}
+        {clip.speedCurve ? `Duration ${formatDuration(framesToSeconds(clip.duration, fps))}. A speed here replaces the curve.` : "Later clips on the track move with the change."}
       </p>
     </Section>
   );

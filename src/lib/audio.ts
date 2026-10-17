@@ -47,7 +47,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
         for (const s of collect(p, k.tracks, hasAudio, depth + 1)) {
           const moved = throughCompound(s.clip, clip, p.fps);
           out.push({
-            clip: { ...moved, pan: Math.max(-1, Math.min(1, s.clip.pan + clip.pan)) },
+            clip: { ...moved, pan: Math.max(-1, Math.min(1, s.clip.pan + clip.pan + (track.pan ?? 0))) },
             track: s.track,
             ...(s.overlap ? { overlap: { pre: s.overlap.pre / clip.speed, post: s.overlap.post / clip.speed } } : {}),
             via: [...(s.via ?? []).map((v) => ({ ...v, clip: throughCompound(v.clip, clip, p.fps) })), { clip, track }],
@@ -57,7 +57,9 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
       }
       if (!hasAudio(clip.assetId)) continue;
       const o = overlaps.get(clip.id);
-      out.push({ clip, track, ...(o ? { overlap: o } : {}) });
+      // The track's pan adds to the clip's, as a track panner after it.
+      const panned = track.pan ? { ...clip, pan: Math.max(-1, Math.min(1, clip.pan + track.pan)) } : clip;
+      out.push({ clip: panned, track, ...(o ? { overlap: o } : {}) });
     }
   }
   return out;

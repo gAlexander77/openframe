@@ -36,6 +36,7 @@ export function CaptionsTab() {
   const [language, setLanguage] = useState("english");
   const [model, setModel] = useState(ASR_MODELS[1].id);
   const [replace, setReplace] = useState(true);
+  const [oneWord, setOneWord] = useState(false);
   const [busy, setBusy] = useState<TranscribeProgress | null>(null);
   const file = useRef<HTMLInputElement>(null);
 
@@ -45,7 +46,7 @@ export function CaptionsTab() {
 
   const run = async () => {
     setBusy({ stage: "mixing", progress: 0 });
-    await generateCaptions({ model: chosen.id, language: chosen.englishOnly ? null : language || null, replace }, setBusy);
+    await generateCaptions({ model: chosen.id, language: chosen.englishOnly ? null : language || null, replace, oneWord }, setBusy);
     setBusy(null);
   };
 
@@ -76,6 +77,10 @@ export function CaptionsTab() {
               </option>
             ))}
           </select>
+        </label>
+        <label className="cap-field row">
+          <span>One word at a time</span>
+          <Toggle label="One word at a time" on={oneWord} onChange={setOneWord} />
         </label>
         {count > 0 && (
           <label className="cap-field row">

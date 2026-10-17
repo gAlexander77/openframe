@@ -148,7 +148,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
         style={{ left: cx, top: cy, width: Math.abs(bw), height: Math.abs(bh), transform: `translate(-50%, -50%) rotate(${layer.rotation}deg)` }}
         onPointerDown={(e) => {
           const m = local(e);
-          const lines = snapLines(project, otherBoxes(project, frame, [c.id]));
+          const lines = snapLines(project, otherBoxes(project, frame, [c.id]), store.get().viewerGuides);
           begin(e, { kind: "move", x0: paramAt(c, "transform.x", rel), y0: paramAt(c, "transform.y", rel), px: m.x, py: m.y, box, lines });
         }}
         onDoubleClick={(e) => {

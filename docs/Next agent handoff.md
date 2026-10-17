@@ -116,3 +116,23 @@ from the earlier implementation and its historical test results.
 - **Traps added today** (see [[Driving the app]]): unlink worktree
   junctions before removing a worktree (12), and Vite can miss a file
   replaced by rename, so write files in place, once (13).
+
+## Late evening, 2026-10-16 (Claude Code)
+
+- **Sixteen more features landed on main**, listed in [[History]] ("Late
+  evening"); the [[UX audit 2026-10-14]] has no open items and
+  [[Feature gaps 2026-10-16]] is current (a note at its top lists what is
+  still open at P0/P1).
+- **Next candidates**, in rough value order: frame blending for slow
+  motion (two decoders per slowed clip and a second texture in the layer
+  shader; see the gaps note), link/unlink A/V with one-side trims for J/L
+  cuts, transcript editing (the filler tool already has the transcription
+  and `cut_ranges`), border and shadow on pictures (layer shader, not an
+  effect), auto reframe and motion tracking.
+- **Translated captions are blocked on a fixture**, not on code: Whisper's
+  translate task exists, but Kokoro speaks English only, so nothing local
+  can produce non-English speech to check it against.
+- **Still for the owner:** push (main is well ahead of `origin/main`), and
+  a desktop check of the microphone, speech models, fonts and the new
+  LUFS worklet (the desktop CSP allows same-origin worklets, as the
+  voiceover's already proves, but it was not driven).

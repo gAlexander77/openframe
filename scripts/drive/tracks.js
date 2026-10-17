@@ -1,5 +1,6 @@
 // Track header drive: Solo on an audio track's header, and the header's
-// right-click menu (Rename, Solo, Track volume, height, Delete track);
+// right-click menu (Rename, Solo, Track volume and pan, height, Delete
+// track); a track panned fully left renders silence on the right;
 // double-click renames too. Each edit is one undo step.
 async (page) => {
   await page.setViewportSize({ width: 1600, height: 950 });
@@ -40,7 +41,7 @@ async (page) => {
   details.renameEscape = { ok: (await track()).name === "Narration" };
 
   await header.click({ button: "right", position: { x: 20, y: 10 } });
-  await page.getByRole("menuitem", { name: "Track volume…" }).click();
+  await page.getByRole("menuitem", { name: "Track volume and pan…" }).click();
   const slider = page.getByRole("slider", { name: "Track volume" });
   await slider.focus();
   for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowLeft"); // -6 dB
@@ -52,7 +53,7 @@ async (page) => {
   });
   // A drag is one undo step.
   await header.click({ button: "right", position: { x: 20, y: 10 } });
-  await page.getByRole("menuitem", { name: "Track volume…" }).click();
+  await page.getByRole("menuitem", { name: "Track volume and pan…" }).click();
   const box = await slider.boundingBox();
   await page.mouse.move(box.x + box.width * 0.77, box.y + box.height / 2);
   await page.mouse.down();
@@ -64,6 +65,27 @@ async (page) => {
   await page.keyboard.press("Escape");
   await page.evaluate(() => window.videoEditor.action("undo"));
   details.volumeUndo = { ok: dragged < 0.5 && (await track()).volume === 1, dragged };
+
+  // Pan: Home sends the track fully left; the right channel goes quiet.
+  await header.click({ button: "right", position: { x: 20, y: 10 } });
+  await page.getByRole("menuitem", { name: "Track volume and pan…" }).click();
+  await page.getByRole("slider", { name: "Track pan" }).focus();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Escape");
+  const rms = await page.evaluate(async () => {
+    const r = await window.videoEditor.render({ video: false, audioFormat: "wav", start: 0.5, end: 2.5 });
+    const buf = await (await fetch(r.url)).arrayBuffer();
+    URL.revokeObjectURL(r.url);
+    const v = new DataView(buf);
+    let l = 0, rr = 0;
+    for (let i = 44; i + 3 < buf.byteLength; i += 4) {
+      l += (v.getInt16(i, true) / 32768) ** 2;
+      rr += (v.getInt16(i + 2, true) / 32768) ** 2;
+    }
+    return { l, r: rr };
+  });
+  details.pan = { ok: (await track()).pan === -1 && rms.l > 0 && rms.r < rms.l * 0.01, pan: (await track()).pan, ...rms };
+  await page.evaluate(() => window.videoEditor.action("undo"));
 
   await header.click({ button: "right", position: { x: 20, y: 10 } });
   await page.getByRole("menuitem", { name: "Delete track" }).click();

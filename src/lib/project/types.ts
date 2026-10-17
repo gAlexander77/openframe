@@ -105,6 +105,8 @@ export interface Track {
   locked: boolean;
   /** Linear gain, 1 = 0 dB. */
   volume: number;
+  /** -1 (left) .. 1 (right), added to each clip's pan; absent = center. */
+  pan?: number;
   /** Solo: while any track is soloed, only soloed tracks sound (Premiere's
    * and Resolve's S). Absent = off. */
   solo?: boolean;
@@ -151,6 +153,8 @@ export interface Keyframe {
   ease?: Ease;
 }
 
+export type ClipLabel = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "pink";
+
 interface ClipBase {
   id: Id;
   /** Timeline frame where the clip begins. */
@@ -163,6 +167,9 @@ interface ClipBase {
   /** Clips sharing a group select, move, copy and delete together
    * (Premiere's Group). */
   group?: Id;
+  /** A color label (Premiere's Label, Resolve's Clip Color), for sorting
+   * an edit by eye; the timeline paints the clip with it. */
+  labelColor?: ClipLabel;
   /** Animated parameters by path ("transform.x", "opacity", "volume",
    * "adjust.exposure", "adjust.hsl.red.hue", "adjust.wheels.lift.y",
    * "adjust.lut.intensity", "effects.<effectId>.<param>"). A path with

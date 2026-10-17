@@ -57,10 +57,13 @@ Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
-          muted, hidden, locked, volume, solo?, height?: small|large }
+          muted, hidden, locked, volume, pan? (-1..1, added to each clip's),
+          solo?, height?: small|large }
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
 Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together
+          every clip may carry labelColor?: red | orange | yellow | green | cyan
+            | blue | purple | pink (a timeline color label)
           video and audio clips may carry eq?: { low?, mid?, high? } (dB)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word

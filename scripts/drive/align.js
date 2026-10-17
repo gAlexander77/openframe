@@ -136,6 +136,23 @@ async (page) => {
     await page.keyboard.up("Control");
     details.ctrlFree = { ok: guide === 0 && (await tx(ids.pic)).x !== 0, guide };
   }
+  // With the thirds showing, the left third catches the center too; with
+  // the guides off it does not.
+  for (const guides of ["thirds", "off"]) {
+    await page.getByLabel("Viewer guides", { exact: true }).selectOption(guides);
+    const { canvas, box } = await rects();
+    const sx = box.left + box.width / 2, sy = box.top + box.height / 2;
+    const target = canvas.left + canvas.width / 3 + 3;
+    await page.mouse.move(sx, sy);
+    await page.mouse.down();
+    await page.mouse.move((sx + target) / 2, sy, { steps: 4 });
+    await page.mouse.move(target, sy, { steps: 4 });
+    const guideX = await page.locator(".tf-guide-v").evaluate((g) => g.getBoundingClientRect().left).catch(() => null);
+    await page.mouse.up();
+    const x = (await tx(ids.pic)).x;
+    const onThird = Math.abs(x + 1 / 6) < 1e-3;
+    details[`thirds_${guides}`] = { ok: guides === "thirds" ? onThird && guideX !== null && near(guideX, canvas.left + canvas.width / 3) : !onThird, x, guideX };
+  }
   // Uniform scale off: Scale Y halves the picture's height only, in the
   // handles and in the rendered frame.
   {

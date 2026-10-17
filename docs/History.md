@@ -559,3 +559,38 @@ Halftone). All 50 web drives passed on main.
 - **Install while a dev server runs: add, never clean.** `npm ci` deletes
   `node_modules` first; with two Vite servers holding files it stopped
   half way and left `vite/client` missing. `npm install` restored it.
+
+### Late evening: the rest of the survey's P1 list
+
+Sixteen more features, each its own commit with a drive: Rate stretch
+(Shift+R), a three-band EQ, Auto adjust, Lift and Extract (; and '),
+keyboard reach for timeline clips (UX-33), Remove filler words, a LUFS
+line under the meter, Insert and Overwrite from the source monitor (, and
+.), bigger hit targets (UX-31), Preferences for default lengths, snapping
+to the visible guides, a typed Duration in the Speed tab, clip color
+labels, one-word captions, and track pan. The UX audit has no open items
+left, and the survey's stale rows were brought up to date.
+
+- **Measure the recognizer before building on it.** Kokoro spoke a line
+  full of fillers and every Whisper size transcribed it: tiny drops all of
+  them, base and small keep "um" but never write "uh", "hmm" comes back as
+  "hum" and "er" as "or". The tool says so instead of promising them all
+  ([[Filler words]]).
+- **Cut between words with a margin.** Cutting a filler right up to the
+  next word's stamped start nipped "well" into "while"; a 40 ms guard on
+  each side fixed it, and consecutive fillers must be bounded by the
+  nearest real words, not by each other.
+- **A stopped filter has a long tail.** The live LUFS meter read
+  "M -1221.2" after a stop: the K-weighting's decaying output squared to
+  tiny numbers. Anything under BS.1770's -70 LUFS gate is shown as a dash.
+- **Dialogs keep the app's shortcuts out on purpose**, so keys meant for
+  the dialog's own job (the source monitor's , and .) must be resolved
+  inside it; `actionFor(e)` reads the keymap there.
+- **A probe drive can import the app's own modules**: `await
+  import("/src/engine/transcribe.ts")` inside `page.evaluate` reaches the
+  same module instance Vite serves the app, which made the Whisper
+  experiment a ten-line throwaway.
+- **Effects cannot draw a layer's border**: they run on the layer after it
+  is placed on the canvas and never see its rectangle. Rounded corners
+  already exist through the rectangle mask's radius, and border and
+  shadow belong in the layer shader.

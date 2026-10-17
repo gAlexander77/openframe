@@ -37,6 +37,16 @@ drop preview, UX-14 linkage). See [[Next agent handoff]]. When this note
 was written, a voiceover recorder was in progress; it shipped in
 `601d895`, so build-order item 3 is done.
 
+**Updated the same evening.** Rows shipped later on 2026-10-16 now read
+"yes" with a dash for priority (about 50 of them, from track solo and
+height to Lift/Extract, EQ, filler-word removal and the LUFS meter; git
+log has each). Open at P0/P1: frame blending and optical flow for slow
+motion, link/unlink A/V with one-side trims, transcript editing,
+translated captions, auto reframe, motion
+tracking, proxies on demand and a solo key. Translated
+captions wait on a non-English speech fixture: Kokoro speaks English
+only, so the result could not be checked in the product.
+
 **Legend.**
 - Apps: **C** CapCut desktop, **P** Premiere, **R** Resolve Edit/Cut,
   **V** VEGAS Pro, **F** Final Cut Pro, **OSS** Shotcut/Kdenlive/OpenShot.
@@ -63,9 +73,9 @@ Guides are in `src/components/ViewerGuides.tsx`.
 | Distribute three or more layers | C P | yes (`distribute_clips`) | — | Same commit. |
 | Snap a dragged layer to canvas edges and center | C P | yes | — | Shipped `e4dfc91`. |
 | Snap to other layers' edges and centers | C P | yes | — | Same commit. |
-| Snap to safe-margin and thirds lines | P | no; the guides draw but do not catch | P2 | Add the 5%/10% insets and thirds to the snap targets in `align.ts` while `viewerGuides` is on. |
-| Arrow-key nudge of the selected layer (1 px; Shift 10 px) | C P | no; arrows step frames (`stepBack`/`stepForward`) | P1 | CapCut's help confirms 1 px nudging. Scope it to viewer focus so frame stepping keeps the arrows elsewhere. Add `nudge*` actions in `keymap.ts`, written through `setParam`. One undo step per burst. |
-| Viewer zoom and pan (Fit, 25% to 400%) | C P R F | no | P1 | CapCut documents zoom up to 400%. Session state in the store, never the project. Scale the stage in `Player.tsx`; `TransformOverlay` already maps through W/H. Middle-drag or Space-drag pans. |
+| Snap to safe-margin and thirds lines | P | yes, while those guides show (`snapLines`) | — | — |
+| Arrow-key nudge of the selected layer (1 px; Shift 10 px) | C P | yes: arrows nudge a selected layer in the viewer (`useNudge`) | — | CapCut's help confirms 1 px nudging. Scope it to viewer focus so frame stepping keeps the arrows elsewhere. Add `nudge*` actions in `keymap.ts`, written through `setParam`. One undo step per burst. |
+| Viewer zoom and pan (Fit, 25% to 400%) | C P R F | yes: zoom menu, Ctrl+wheel at the pointer, wheel and middle-drag pan | — | CapCut documents zoom up to 400%. Session state in the store, never the project. Scale the stage in `Player.tsx`; `TransformOverlay` already maps through W/H. Middle-drag or Space-drag pans. |
 | On-canvas handles for a multi-selection | C P | yes (`GroupOverlay.tsx`, `groupBoxes`/`scaleClips` in `align.ts`) | — | Shipped `23c1d14`: one box, move with snapping, corners scale about its center. |
 | Edge handles that stretch one axis | P R F V | partial: Scale X/Y exists (`d94ef4f`); handles are corners only | P2 | Add side handles that write `transform.scale` or `transform.scaleY` alone. |
 | Crop on the canvas | C P R V F | yes (`CropOverlay.tsx`, `state/cropEdit.ts`) | — | Shipped `e09a3f7` ([[ADR-048 Crop is cut from the source and edited on a copy]]); flips fixed in `8cd42ae`. |
@@ -75,7 +85,7 @@ Guides are in `src/components/ViewerGuides.tsx`.
 | Transparency checkerboard | P R F | no; `Project.background` fills behind every layer | P2 | Only useful once alpha export exists (§12). |
 | Before/after or reference-frame compare | P R F | no (a candidate in [[Navigation and composition]]) | P2 | A second compositor pass of a held frame; mind GPU memory. |
 | Ratio menu under the player | C | yes (`40561e4`) | — | — |
-| Loop playback and play In to Out | P R V F | no | P1 | A `loop` flag in the store; `src/engine/player.ts` seeks back at the out point. Add keymap actions. |
+| Loop playback and play In to Out | P R V F | yes: Loop (Ctrl+L) and Play In to Out | — | A `loop` flag in the store; `src/engine/player.ts` seeks back at the out point. Add keymap actions. |
 | Timecode or clip-name overlay on the viewer | P R | no | P2 | DOM overlay; never exported. |
 | Second-monitor full-screen output | P R V F | partial: full-screen preview only | P2 | A second Tauri window that mirrors the canvas. |
 
@@ -88,17 +98,17 @@ are written with `setParam` (`src/lib/project/ops.ts`) and drawn by
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Uniform scale switch, Scale X / Scale Y | C P R V F | yes (`d94ef4f`, `set_uniform_scale`) | — | Shipped during the survey. |
-| Flip horizontal and vertical in the inspector | C P R F | partial: the toolbar Mirror flips X (`TimelineToolbar.tsx`); `flipY` has no UI; neither has a command | P1 | Two toggle buttons in `TransformSection`. Add `set_flip`, since `set_param` is numeric. |
+| Flip horizontal and vertical in the inspector | C P R F | yes: Flip buttons in Transform | — | Two toggle buttons in `TransformSection`. Add `set_flip`, since `set_param` is numeric. |
 | Rotate dial | C | no; slider and number only | P2 | A small dial control in `controls.tsx`. |
-| Anchor point | P R V F | no; rotation and scale pivot on the layer center | P1 | Add optional `anchorX/anchorY` to `Transform` (absent = center, so old files stay valid). Pivot the matrix in `compositor.ts` and `plan.ts` around it. Add an anchor handle to the overlay and update `align.ts`. |
+| Anchor point | P R V F | yes: Anchor X/Y; rotation and scale pivot on it | — | Add optional `anchorX/anchorY` to `Transform` (absent = center, so old files stay valid). Pivot the matrix in `compositor.ts` and `plan.ts` around it. Add an anchor handle to the overlay and update `align.ts`. |
 | Crop with ratio presets (Free, 16:9, 9:16, 1:1, 4:3...) | C | yes (`lib/crop.ts`, `set_crop`) | — | Shipped `68d15cf` and `e09a3f7`: Free, Original and seven ratios under the viewer in the crop mode. |
 | Crop softness | R | no | P2 | Feather term in the crop shader. |
-| Fit, Fill and Stretch quick actions | P R F OSS | partial: media fit (scale 1 = contain); no Fill or Stretch action | P1 | Fill = cover scale from `align.ts` `sourceSize`; Stretch uses Scale X/Y. Add a `fit_clips` command (mode fit, fill or stretch). Shotcut places these next to its align buttons. |
+| Fit, Fill and Stretch quick actions | P R F OSS | yes (`frame_clips`) | — | Fill = cover scale from `align.ts` `sourceSize`; Stretch uses Scale X/Y. Add a `fit_clips` command (mode fit, fill or stretch). Shotcut places these next to its align buttons. |
 | Position presets (PIP corner at a set size) | R F | partial: align covers edges | P2 | Presets that call align plus a scale. |
 | Opacity, 13 blend modes | all | yes | — | Hue, Saturation, Color and Luminosity modes are missing (P2, compositor). |
 | Border, drop shadow and rounded corners on a picture layer | C R F V | partial: rounded corners through Mask > Rectangle's corner radius, as CapCut users do; no border or shadow | P2 | Effects run in canvas space and cannot see the layer's box; both belong in `LAYER_FS` (border inset) and a padded quad (shadow). |
 | Canvas fill: blur or color | C | yes | — | An image or pattern fill is missing (P2). |
-| Stabilize | C P R V F | no | P1 | Desktop first: run FFmpeg `vidstabdetect` where the build has libvidstab, or a phase-correlation pass in a worker. Store a per-frame offset track beside the asset; `plan.ts` applies it as an extra transform with a crop-to-hide. Analysis belongs in `src/lib/analysis/`. |
+| Stabilize | C P R V F | yes: three levels, translation only, measured locally | — | Desktop first: run FFmpeg `vidstabdetect` where the build has libvidstab, or a phase-correlation pass in a worker. Store a per-frame offset track beside the asset; `plan.ts` applies it as an extra transform with a crop-to-hide. Analysis belongs in `src/lib/analysis/`. |
 | Optical flow / smooth slow-mo | C P R V F | no | P1 | See §9 (frame blending first). |
 | Enhance quality (upscale) | C R V | no | P2 | Local ESRGAN-class ONNX at export only; slow. |
 | Video denoise, deflicker | C R | no | P2 | Temporal shader with the previous frame held by the cursor. |
@@ -114,14 +124,14 @@ heights come from `trackHeight()` in `src/lib/timeline.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Lock, hide, mute | C P R V F | yes | — | — |
-| Solo | P R V F | no (a `ponytail:` note in `src/lib/audio.ts`) | P1 | Add `solo?: boolean` on `Track`; `soundingClips` plays only soloed tracks when any is soloed. Add a header button and `update_track` support. |
-| Track volume and pan in the header | P R V | partial: `Track.volume` is in the model and `update_track`; there is no UI | P1 | A small dB slider or popover in `TrackHeader`. |
-| Rename a track in the UI | P R V F | partial: `update_track` renames; the header shows only a kind icon | P1 | Double-click the header to rename. |
-| Track height control | P R V F | no; fixed per type (`trackHeight()`) | P1 | CapCut lacks this too, but long edits need it. Add `height?: number` per track (a view preference, not project data; decide in an ADR) plus a timeline-wide S/M/L toggle. |
+| Solo | P R V F | yes (`Track.solo`, header menu) | — | Add `solo?: boolean` on `Track`; `soundingClips` plays only soloed tracks when any is soloed. Add a header button and `update_track` support. |
+| Track volume and pan in the header | P R V | yes: header menu > Track volume and pan | — | A small dB slider or popover in `TrackHeader`. |
+| Rename a track in the UI | P R V F | yes: header menu > Rename track | — | Double-click the header to rename. |
+| Track height control | P R V F | yes: small, normal, large per track | — | CapCut lacks this too, but long edits need it. Add `height?: number` per track (a view preference, not project data; decide in an ADR) plus a timeline-wide S/M/L toggle. |
 | Track color | R F | no | P2 | Optional `color` on `Track`, tinting clip bodies. |
 | Collapse tracks, folder tracks | R | no | P2 | — |
 | Track targeting, source patching, sync lock | P R | no | P2 | Matters once insert/overwrite exist. The magnet covers the CapCut case. |
-| Add or delete a track from a menu | C P R V | partial: `add_track`; tracks appear on drop; empty ones are pruned | P2 | Header context menu. |
+| Add or delete a track from a menu | C P R V | partial: header menu > Delete track; tracks are added by drops and `add_track` | P2 | Header context menu. |
 | Cover button and cover designer | C | no | P2 | See §12. |
 | Global mute | P | no | P2 | A store flag in the master bus. |
 | Timeline view options: thumbnail mode, waveform size, clip names | P R F | no | P2 | Session preferences read by `ClipView.tsx`. |
@@ -136,21 +146,21 @@ binding in `src/lib/keymap.ts`.
 |---|---|---|---|---|
 | Split, split all, delete left/right, ripple delete, freeze, reverse, extract audio, deactivate | C P R V F | yes | — | — |
 | Ripple, roll, slip, slide with two-up preview | P R V F | yes | — | — |
-| Drop above the main track makes an overlay (UX-12) | C | no on main; done on `timeline-ux` (`2f87b2c`) | P0 | Land the parked branch. |
-| Drop preview shows the magnet's insertion point (UX-13) | C | no on main; WIP on `timeline-ux` | P0 | Same. |
-| Linkage leaves music beds alone (UX-14) | C | no on main; done on `timeline-ux` (`2205f1b`) | P0 | Same. |
-| Group and ungroup (Ctrl+G) | C P V | no | P1 | Add `group?: Id` on `ClipBase`. `store.select` expands to the group; move and delete act on all members. Add `group_clips` and `ungroup_clips`. |
-| Compound clip / nested sequence | C P R V F | no on main; parked `compound-clips` | P1 | Resume the branch. |
-| Replace clip, keeping timing and effects | C P R F | no | P1 | Per-clip asset swap, reusing the checks in `src/lib/project/relink.ts`. Add a context-menu item and `replace_clip`. |
-| Rate stretch tool (drag an edge to change speed) | P R V F | no | P1 | A trim variant that calls `setSpeed` so the source range stays fixed. Add a tool in `TimelineToolbar.tsx`. |
+| Drop above the main track makes an overlay (UX-12) | C | yes (landed from `timeline-ux`) | — | Land the parked branch. |
+| Drop preview shows the magnet's insertion point (UX-13) | C | yes (landed from `timeline-ux`) | — | Same. |
+| Linkage leaves music beds alone (UX-14) | C | yes (landed from `timeline-ux`) | — | Same. |
+| Group and ungroup (Ctrl+G) | C P V | yes (`group_clips`) | — | Add `group?: Id` on `ClipBase`. `store.select` expands to the group; move and delete act on all members. Add `group_clips` and `ungroup_clips`. |
+| Compound clip / nested sequence | C P R V F | yes (landed from `compound-clips`) | — | Resume the branch. |
+| Replace clip, keeping timing and effects | C P R F | yes: right-click > Replace clip | — | Per-clip asset swap, reusing the checks in `src/lib/project/relink.ts`. Add a context-menu item and `replace_clip`. |
+| Rate stretch tool (drag an edge to change speed) | P R V F | yes (Shift+R) | — | A trim variant that calls `setSpeed` so the source range stays fixed. Add a tool in `TimelineToolbar.tsx`. |
 | Insert, overwrite and replace edits from the source monitor | P R V F | yes: Insert (,) and Overwrite (.) in the source monitor | — | Replace edit and track targeting remain (P2). |
-| Lift and extract the In/Out range | P R V F | no; the range drives export only | P1 | A pure `extractRange(p, in, out, ripple)` over unlocked tracks, with a test. Add commands and keys. |
+| Lift and extract the In/Out range | P R V F | yes (; and ', `lift_range`) | — | A pure `extractRange(p, in, out, ripple)` over unlocked tracks, with a test. Add commands and keys. |
 | Three- and four-point editing, fit to fill | P R F | partial: source In/Out only | P2 | After insert/overwrite. |
 | Link/unlink A/V; Alt-trim one side for J/L cuts | P R V F | partial: `detach_audio` splits sound off for good; no relink, no one-side trim, no out-of-sync badge | P1 | Add `linkId` on the detached pair so moves stay together. Alt bypasses the link. Draw a ±N badge when offsets drift. |
-| Close a gap; select a gap and delete it | P R V F | partial: the magnet packs the main track; ripple delete | P1 | Click a gap to select it; Delete calls the ripple path (`compactTrack` exists). |
-| Nudge clips by 1 or 10 frames from the keyboard | P R V F | no | P1 | `moveClip` by ±1/±10 with snapping off. Add keymap actions (Premiere uses Alt+←/→). |
-| Clip color labels | P R V | no | P2 | Optional `label` color on `ClipBase`, drawn in `ClipView.tsx`. |
-| Type a clip's duration | C P R F | partial: the Speed tab shows the duration read-only | P2 | Editing it sets the speed (CapCut) or trims it (Premiere). |
+| Close a gap; select a gap and delete it | P R V F | yes: right-click a gap > Close gap, or Close all gaps | — | Click a gap to select it; Delete calls the ripple path (`compactTrack` exists). |
+| Nudge clips by 1 or 10 frames from the keyboard | P R V F | yes (Alt+arrows) | — | `moveClip` by ±1/±10 with snapping off. Add keymap actions (Premiere uses Alt+←/→). |
+| Clip color labels | P R V | yes (`labelColor`, `set_clip_label`) | — | — |
+| Type a clip's duration | C P R F | yes: the Speed tab's Duration sets the speed (CapCut's way) | — | Premiere's trim-to-length variant is not offered. |
 | Default transition key; add to the selected cuts | P R F | partial: "Apply to all cuts" | P2 | Add a keymap action. |
 | Multicam | C P R V F | no | P2 | Sync by audio reuses the `src/lib/analysis/` cross-correlation; an angle grid needs one cursor per angle. |
 | Audio scrubbing while dragging the playhead | P R V F | no (not found in `src/engine/player.ts`) | P2 | Short grain playback in `src/engine/audio.ts`. |
@@ -169,13 +179,13 @@ in both.
 |---|---|---|---|---|
 | Volume, fades, volume keyframes, pan | C P R V F | yes | — | — |
 | Normalize loudness, auto ducking, beat markers | C P R V F | yes | — | — |
-| Record a voiceover | C P R V F | no (no `getUserMedia` in `src/`) | P0 | CapCut's mic button sits in the timeline toolbar. Use `getUserMedia` plus `MediaRecorder` (WAV/Opus), then save through `src/platform/` as an asset at the playhead on a new audio track. Offer "mute project while recording" and a level meter (reuse `Meter.tsx`). Check WebView2 mic permission handling on desktop. |
-| Crossfade at a cut or under a video transition | P R V F | no (`src/lib/audio.ts` ignores `transitionOut`) | P1 | Equal power by default and linear for the same source (see the pitfall in [[Professional NLE features]]). Compute it in `clipGainAt` so preview and export agree. |
+| Record a voiceover | C P R V F | yes: microphone button in the timeline toolbar | — | CapCut's mic button sits in the timeline toolbar. Use `getUserMedia` plus `MediaRecorder` (WAV/Opus), then save through `src/platform/` as an asset at the playhead on a new audio track. Offer "mute project while recording" and a level meter (reuse `Meter.tsx`). Check WebView2 mic permission handling on desktop. |
+| Crossfade at a cut or under a video transition | P R V F | yes: sound crossfades under transitions | — | Equal power by default and linear for the same source (see the pitfall in [[Professional NLE features]]). Compute it in `clipGainAt` so preview and export agree. |
 | Fade curve types | P R V F | no; linear only | P2 | A curve field on the fades. |
 | Pan keyframes | P R V F | partial: pan is static (`keyframes={false}`) | P2 | Path `pan` through `paramAt` in `scheduleAudio`. |
-| EQ (parametric or graphic) | P R V F | no | P1 | `BiquadFilterNode` chain per clip in `scheduleAudio`. Store bands on `Sound`. VEGAS 23's modernEQ is the model. |
+| EQ (parametric or graphic) | P R V F | yes: three bands (low shelf, mid bell, high shelf) | — | `BiquadFilterNode` chain per clip in `scheduleAudio`. Store bands on `Sound`. VEGAS 23's modernEQ is the model. |
 | Compressor, limiter | P R V F | no | P2 | `DynamicsCompressorNode`; true-peak limiting at export is on the [[Roadmap]]. |
-| Noise reduction | C P R V F | no | P1 | Local DeepFilterNet or RNNoise via ONNX or WASM in a worker (the app already ships transformers.js). Render a cleaned copy per asset and play that, so playback costs nothing. |
+| Noise reduction | C P R V F | yes: a spectral gate for steady noise (no ML model) | — | Local DeepFilterNet or RNNoise via ONNX or WASM in a worker (the app already ships transformers.js). Render a cleaned copy per asset and play that, so playback costs nothing. |
 | Enhance voice | C P | no | P2 | After noise reduction: EQ + compressor preset. |
 | Voice isolation / stems | C R F | no | P2 | A Demucs-class ONNX model; heavy. |
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
@@ -193,16 +203,16 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
-| Installed system fonts in the picker | C P R V F | partial: 13 fixed families (`FONTS` in `Inspector.tsx`) | P0 | Desktop: list fonts in Rust (e.g. DirectWrite via `font-kit`) or with WebView2's Local Font Access (`queryLocalFonts`). Web: `queryLocalFonts` where it exists, the fixed list otherwise. Add a preview and search. |
-| Import a font file (.ttf/.otf) | C R | no | P1 | `FontFace` from the file; keep a reference in the project like `luts[]` (ADR-021 pattern), so headless render and export find it. |
+| Installed system fonts in the picker | C P R V F | yes where the webview offers `queryLocalFonts` | — | Desktop: list fonts in Rust (e.g. DirectWrite via `font-kit`) or with WebView2's Local Font Access (`queryLocalFonts`). Web: `queryLocalFonts` where it exists, the fixed list otherwise. Add a preview and search. |
+| Import a font file (.ttf/.otf) | C R | yes | — | `FontFace` from the file; keep a reference in the project like `luts[]` (ADR-021 pattern), so headless render and export find it. |
 | Text case (Aa / AA / aa), vertical text | C | no | P2 | Style fields read by `rasterizeText`. |
 | Glow, gradient fill | C | no; word art fakes glow with shadow | P2 | Raster passes in `engine/text.ts`. |
 | Curved or path text | C R | no | P2 | Per-glyph placement in `engine/text.ts`. |
 | Bubble and callout frames behind text | C | partial: bubble stickers exist | P2 | — |
 | Text templates, word art, in/out/loop animations | C P R F | yes | — | — |
-| Local text to speech | C R V | no | P1 | Kokoro-82M or Piper ONNX in a worker (transformers.js), writing a WAV asset aligned to the text clip. Add `add_speech` and "update speech when text changes". Voices download once, like the Whisper models. |
+| Local text to speech | C R V | yes: Kokoro in a worker | — | Kokoro-82M or Piper ONNX in a worker (transformers.js), writing a WAV asset aligned to the text clip. Add `add_speech` and "update speech when text changes". Voices download once, like the Whisper models. |
 | Auto captions (local Whisper), SRT/VTT, list editing | C P R F | yes | — | — |
-| Word-by-word highlight (karaoke) and single-word captions | C P R | no; word timings are dropped after grouping (`wordsToCaptions`) | P1 | Keep `words: {f, d}[]` on caption clips; `engine/text.ts` highlights the active word; add caption templates. Premiere 26.3 added single-word captions and Resolve 20 added animated subtitles, so this is now table stakes. |
+| Word-by-word highlight (karaoke) and single-word captions | C P R | yes: word highlight, and One word at a time in the Captions tab | — | Keep `words: {f, d}[]` on caption clips; `engine/text.ts` highlights the active word; add caption templates. Premiere 26.3 added single-word captions and Resolve 20 added animated subtitles, so this is now table stakes. |
 | Filler-word detection and removal | C P | yes: "um", "hmm", "ah" (Whisper drops "uh"; [[Filler words]]) | — | Whisper words plus a filler list, removed with `cut_ranges`. Add it as a card in the AI tools tab. |
 | Transcript-based editing | C P R V | no | P1 | A transcript panel; deleting words maps to `cut_ranges`. L. |
 | Translate captions / bilingual captions | C P | no | P1 | Whisper `task: "translate"` gives English cheaply (S). Other targets need a local MT model (NLLB/Marian ONNX, L). Bilingual = a second caption track. |
@@ -230,7 +240,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Basic, HSL, curves, wheels, LUT, scopes | C P R V F | yes | — | — |
-| Auto adjust / auto balance | C P R F | no | P1 | Read the scopes' downscaled frame (ADR-022), then set `adjust.exposure`, `temperature` and `tint` from percentiles and gray-world. A pure function in `src/lib/grade.ts` with a test. |
+| Auto adjust / auto balance | C P R F | yes: Adjust > Auto adjust | — | Read the scopes' downscaled frame (ADR-022), then set `adjust.exposure`, `temperature` and `tint` from percentiles and gray-world. A pure function in `src/lib/grade.ts` with a test. |
 | Match color to a reference clip | C P R F | no | P2 | Final Cut 12.3 added Match Color. Histogram match on the same readback. |
 | Skin-tone protection | C | no | P2 | — |
 | Mask that limits the grade | C P R | no | P2 | Reuse the mask shader on the adjust pass. |
@@ -245,7 +255,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Standard, curve, reverse, pitch | C P R V F | yes | — | — |
 | Frame blending for slow motion | C P R V F | no | P1 | Mix the two neighboring source frames by phase in the compositor; the cursor already holds one frame. M. |
 | Optical flow interpolation | C P R V F | no | P2 | A local RIFE-class model at export only. L. |
-| Rate stretch tool | P R V F | no | P1 | See §4. |
+| Rate stretch tool | P R V F | yes (see §4) | — | See §4. |
 | Editable duration field | C | partial (read-only) | P2 | See §4. |
 
 ## 10. Masks and keying
@@ -273,7 +283,7 @@ The AI tools tab is `src/components/AiToolsTab.tsx`, with state in
 | Remove silences, split scenes, beat markers, normalize, ducking, captions, Copilot | C P R V F | yes | — | — |
 | Auto reframe (follow the subject into 9:16 or 1:1) | C P R V F | no ("Coming soon" card) | P1 | A face or saliency model, then a smoothed crop path written as `transform` keyframes. That needs no new render path. See [[AI and automation]] §2.8. L. |
 | Motion tracking: pin text or a sticker to a subject | C R V F | no | P1 | Box tracker (template matching or KLT on downscaled frames) in a worker; results become `transform.x/y` keyframes on the text clip. L. |
-| Stabilize | C P R V F | no | P1 | See §2. |
+| Stabilize | C P R V F | yes: three levels, translation only, measured locally | — | See §2. |
 | Remove background | C P R V F | yes (shipped 2026-10-16) | — | See §10. |
 | Transcript or visual search over media | C P R F | no; name search only | P2 | Transcript search reuses Whisper (M). Visual search needs local CLIP-class embeddings at import (L). Final Cut 12.0 and Premiere's Media Intelligence both run this on the device. |
 | Long video to shorts / highlight finder | C | partial: Copilot plus remove silences | P2 | A Copilot recipe over captions, scenes and reframe. |
@@ -290,8 +300,8 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | MP4/MOV/WebM/MKV; H.264, HEVC, VP9, AV1; 480p to 4K; bitrate; fps; range; audio-only; stills | C P R V F | yes | — | — |
-| Named export presets (YouTube, Shorts/Reels/TikTok, archive) | P R V F | partial: the last settings are remembered (`export.settings` in localStorage) | P1 | Presets are data in `src/lib/export.ts`; user presets go beside effect presets. VEGAS 23 groups them by delivery use. |
-| GIF export | C P OSS | no | P1 | Desktop: FFmpeg `palettegen`/`paletteuse` on the rendered frames. Web: a small encoder in a worker. Cap at 640p as CapCut does. |
+| Named export presets (YouTube, Shorts/Reels/TikTok, archive) | P R V F | yes | — | Presets are data in `src/lib/export.ts`; user presets go beside effect presets. VEGAS 23 groups them by delivery use. |
+| GIF export | C P OSS | yes | — | Desktop: FFmpeg `palettegen`/`paletteuse` on the rendered frames. Web: a small encoder in a worker. Cap at 640p as CapCut does. |
 | MP3 and FLAC audio-only | C | partial: AAC (M4A) and WAV only (`AUDIO_FORMATS`) | P2 | Check mediabunny's encoders first; FFmpeg on desktop. |
 | Export queue / batch | P R F OSS | no | P2 | One jobs list (Shotcut's Jobs panel is the model) that also shows proxies and analysis. |
 | MP4 chapters from markers | P F | partial: marker text export gives YouTube timestamps | P2 | Chapter atoms in the muxer, if mediabunny supports them; otherwise desktop FFmpeg. |
@@ -320,7 +330,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
-| Voiceover from a microphone | C P R V F | no | P0 | See §5. |
+| Voiceover from a microphone | C P R V F | yes (see §5) | — | See §5. |
 | Screen recording | C V | no | P2 | `getDisplayMedia` + `MediaRecorder`; confirm WebView2 support. |
 | Webcam recording | C | no | P2 | Shares the voiceover recorder. |
 | Teleprompter while recording | R | no | P2 | — |
@@ -330,17 +340,17 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | CapCut keymap, searchable shortcuts panel, chords in tooltips | C P R V F | yes | — | — |
-| Rebind keys with conflict warnings and Reset to default | C P R V F | no (`keymap = DEFAULT_KEYMAP` in `actions.ts`) | P1 | Store overrides outside the project; `buildIndex` already resolves conflicts. Edit them in `ShortcutsDialog.tsx`. |
+| Rebind keys with conflict warnings and Reset to default | C P R V F | yes: the shortcuts panel edits the keymap | — | Store overrides outside the project; `buildIndex` already resolves conflicts. Edit them in `ShortcutsDialog.tsx`. |
 | Premiere and Final Cut keymap presets | C | no | P2 | Data files once rebinding exists. |
-| Keys for actions with no binding yet: group, insert, overwrite, nudge, lift, extract, loop, solo | P R F | no | P1 | Add them with each feature. |
+| Keys for actions with no binding yet: group, insert, overwrite, nudge, lift, extract, loop, solo | P R F | partial: all bound but solo | P1 | Add them with each feature. |
 
 ## 16. Accessibility
 
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Keyboard-operable menus, text contrast, reduced motion in previews | — | yes (UX-11, UX-19 fixed) | — | — |
-| Reach timeline clips from the keyboard (UX-33) | P R F | no | P1 | Roving focus over clips in `Timeline.tsx`. |
-| 24 px minimum hit targets (UX-31) | — | no | P2 | Same visuals, larger hit areas. |
+| Reach timeline clips from the keyboard (UX-33) | P R F | yes | — | Roving focus over clips in `Timeline.tsx`. |
+| 24 px minimum hit targets (UX-31) | — | yes (the keyframe arrows are 18 x 24) | — | Same visuals, larger hit areas. |
 | UI scale setting | P R F | no | P2 | Ctrl+= is timeline zoom, so it has to be a preference. |
 | Light theme or brightness | P V | no; tokens exist on `:root` (`src/styles/app.css`) | P2 | Some colors are hard-coded (e.g. the ruler canvas in `Timeline.tsx`). M. |
 | Interface languages | C P R V F | no | P2 | L. |
@@ -350,7 +360,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Resizable panels, remembered; double-click a splitter to reset it | C P R V F | yes (`App.tsx` layout in localStorage) | — | — |
-| Proportional defaults, layout presets, Reset layout (UX-30) | C P R V F | no; sizes are pixels | P1 | Store fractions; add presets (Default, Media first, Player first, Timeline first) under View. S. |
+| Proportional defaults, layout presets, Reset layout (UX-30) | C P R V F | yes | — | Store fractions; add presets (Default, Media first, Player first, Timeline first) under View. S. |
 | Floating or docked panels, a second viewer window | P R V | no | P2 | VEGAS 23 docks on all four sides. L. |
 
 ## 18. Interchange

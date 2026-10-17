@@ -76,3 +76,15 @@ describe("quietCuts", () => {
     expect(quietCuts(new Float32Array(2000), 20)).toEqual([]);
   });
 });
+
+it("one word at a time: a caption per word, each at its own time", () => {
+  const ws = [
+    { text: " So", start: 0, end: 0.2 },
+    { text: " we", start: 0.25, end: 0.4 },
+    { text: " go.", start: 0.45, end: 0.9 },
+  ];
+  const caps = wordsToCaptions(ws, { ...DEFAULT_LINES, maxChars: 1, minDuration: 0.25 });
+  expect(caps.map((c) => [c.text, c.start])).toEqual([["So", 0], ["we", 0.25], ["go.", 0.45]]);
+  // Too short to read, extended into the gap only up to the next word.
+  expect(caps[0].end).toBe(0.25);
+});

@@ -18,8 +18,8 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, WheelName } from "./project/types";
-import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, WheelName } from "./project/types";
+import { ANIMATIONS, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
@@ -219,7 +219,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "update_track",
-    description: "Mute, solo, hide, lock, rename, resize or set the volume of a track.",
+    description: "Mute, solo, hide, lock, rename, resize, or set the volume or pan of a track.",
     input: S.obj(
       {
         track_id: S.str("Track id"),
@@ -228,6 +228,7 @@ export const COMMANDS: Command[] = [
         hidden: S.bool("Hide the track's picture"),
         locked: S.bool("Prevent edits"),
         volume: S.num("Linear gain, 1 = unchanged", { minimum: 0, maximum: 4 }),
+        pan: S.num("-1 left .. 1 right, added to each clip's pan", { minimum: -1, maximum: 1 }),
         solo: S.bool("While any track is soloed, only soloed tracks sound"),
         height: S.str("Row height on the timeline", { enum: ["small", "normal", "large"] }),
       },
@@ -362,6 +363,22 @@ export const COMMANDS: Command[] = [
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
       return ops.setParam(p, ids, String(a.path), Number(a.value), rel);
+    },
+  },
+  {
+    name: "set_clip_label",
+    description: "Color-label clips (Premiere's Label): the timeline paints them with it. \"none\" removes the label.",
+    input: S.obj({ clip_ids: S.ids("Clips to label"), label: S.str("A label color, or none", { enum: [...Object.keys(CLIP_LABELS), "none"] }) }, ["clip_ids", "label"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      const label = a.label === "none" ? null : (a.label as ClipLabel);
+      if (label !== null && !(label in CLIP_LABELS)) throw new CommandError(`unknown label ${String(a.label)}`);
+      return ids.reduce((q, id) => ops.updateClip(q, id, (c) => {
+        if (label) return { ...c, labelColor: label } as Clip;
+        const { labelColor: _, ...rest } = c;
+        return rest as Clip;
+      }), p);
     },
   },
   {

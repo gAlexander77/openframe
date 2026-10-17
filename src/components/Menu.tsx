@@ -6,6 +6,8 @@ import { Check } from "../icons";
 
 export type MenuItem =
   | { action: ActionId; label?: string; disabled?: boolean; checked?: boolean }
+  /** A row of color swatches (a clip's label); `null` is the "none" swatch. */
+  | { swatches: { value: string | null; label: string; color?: string }[]; current?: string | null; title: string; onPick: (v: string | null) => void }
   | { label: string; onSelect: () => void; disabled?: boolean; checked?: boolean; hint?: string }
   | "-";
 
@@ -138,6 +140,27 @@ export function MenuList(props: {
     <div className="menu" role="menu" style={props.style} ref={ref} onKeyDown={onKeyDown}>
       {props.items.map((item, i) => {
         if (item === "-") return <div key={i} className="menu-sep" role="separator" />;
+        if ("swatches" in item)
+          return (
+            <div key={i} className="menu-swatches" role="group" aria-label={item.title}>
+              <span className="menu-swatches-title">{item.title}</span>
+              {item.swatches.map((s) => (
+                <button
+                  key={s.value ?? "none"}
+                  role="menuitemradio"
+                  aria-checked={item.current === s.value}
+                  aria-label={s.label}
+                  data-tip={s.label}
+                  className={`menu-item menu-swatch${s.value ? "" : " none"}`}
+                  style={s.color ? { background: s.color } : undefined}
+                  onClick={() => {
+                    props.onDone();
+                    item.onPick(s.value);
+                  }}
+                />
+              ))}
+            </div>
+          );
         const label = "action" in item ? (item.label ?? ACTION_LABELS[item.action]) : item.label;
         const chord = "action" in item ? chordFor(item.action) : undefined;
         const hint = chord ? chordText(chord, isMac) : "hint" in item ? item.hint : undefined;

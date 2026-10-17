@@ -87,6 +87,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   move, copy and delete together across tracks, each keeping its own
   settings; Alt+click picks one alone, as in Premiere. Pasted copies form
   their own group.
+- **Clip labels** (right-click > Label; `set_clip_label`; Premiere's
+  Label, Resolve's Clip Color): eight muted colors paint the selected
+  clips' body and name strip, so an edit can be sorted by eye. Splits and
+  copies keep the label.
 - **Compound clips** (Alt+G, as in CapCut; Alt+Shift+G breaks one apart;
   Timeline menu and right-click; `create_compound_clip`,
   `break_compound_clip`, `edit_compound`): the selected clips, on any
@@ -126,9 +130,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Premiere's default audio transition, in preview and export alike.
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
-  Track volume (a dB fader, one undo step per drag), Small/Normal/Large
-  height and Delete track. Agents: `update_track` (solo, height) and
-  `delete_track`.
+  Track volume and pan (a dB fader and a pan slider added to each clip's
+  pan, one undo step per drag), Small/Normal/Large height and Delete
+  track. Agents: `update_track` (solo, height, pan) and `delete_track`.
 - Audio clips: draggable volume line (Shift for fine) and fade knobs.
 - **Record voiceover** (the microphone in the timeline toolbar, as in
   CapCut): pick the input, optionally mute the project, then a 3-second
@@ -174,8 +178,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   freely), the arrow to feather it and a rectangle's corner dot to round
   it. Each drag is one undo step and keys animated numbers.
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
-  and center to the canvas's and to other visible pictures', with a guide
-  at the line; Ctrl moves freely, Shift keeps one axis.
+  and center to the canvas's and to other visible pictures', and to the
+  safe margins and thirds while those viewer guides show, with a guide at
+  the line; Ctrl moves freely, Shift keeps one axis.
 - **Several pictures at once** (a multi-selection or a group): the viewer
   draws one box around the selected pictures showing under the playhead,
   each outlined inside it. Drag inside to move them all, with the same
@@ -319,7 +324,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 ## Speed
 
 - **Standard**: one rate, 0.1x to 100x, with quick picks; the clip keeps
-  its source and later clips move with the new length.
+  its source and later clips move with the new length. Or type the
+  **Duration** (CapCut's) and the speed follows, the same source filling it.
 - **Curve** (CapCut's curve speed): None, Custom, Montage, Hero time,
   Bullet time, Jump cut, Flash in, Flash out, and a graph editor. The graph
   has a log speed axis from 0.1x to 10x, draggable points, add at the
@@ -382,8 +388,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-050 Text to speech runs Kokoro on the user's machine]]).
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
-  breaks; caption list editing; apply style to all; SRT/VTT import and
-  export.
+  breaks, or **one word at a time** (CapCut's short-form style); caption
+  list editing; apply style to all; SRT/VTT import and export.
 
 ## AI tools (all on this machine)
 
