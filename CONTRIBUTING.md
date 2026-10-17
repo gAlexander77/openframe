@@ -51,7 +51,8 @@ Install Rust and the appropriate Tauri build prerequisites for your OS.
 FFmpeg/ffprobe enable additional desktop formats. The secondary browser
 development loop is `npm run dev`.
 
-Before proposing an implementation change, run `just check`:
+Before proposing an implementation change, run `just check`. CI
+(`.github/workflows/ci.yml`) runs the same gates on every pull request:
 
 ```sh
 npm run build

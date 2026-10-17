@@ -144,3 +144,20 @@ from the earlier implementation and its historical test results.
   a desktop check of the microphone, speech models, fonts and the new
   LUFS worklet (the desktop CSP allows same-origin worklets, as the
   voiceover's already proves, but it was not driven).
+
+## 2026-10-17 (Claude Code)
+
+- **Renamed and public.** The app, binary, packages and repository are
+  OpenFrame (`gAlexander77/openframe`), public at the owner's request; the
+  identifier and saved-data keys keep the old name ([[Renaming]]).
+  Machine-specific paths live in the git-ignored `CLAUDE.local.md`; never
+  commit personal data, paths or tokens (the owner's standing rule).
+- **The agent surface grew from two videos made over MCP** (RacePulse and
+  OpenFrame promos, [[History]]): change summaries, `batch`,
+  `frame_region`, `export_video`, `preview_frames`, `add_voiceover`, text
+  boxes, `align_clips` margins, a limiter in export loudness, mono measured
+  as it plays, and a compressor with Enhance voice (ADR-052, ADR-053).
+- **CI** (`.github/workflows/ci.yml`) runs the gates on every push and pull
+  request: type check and unit tests on Linux, Rust fmt, clippy and tests
+  on Windows.
+- **Next**: [[Roadmap]] holds the order.

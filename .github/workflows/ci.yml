@@ -1,0 +1,53 @@
+# The gates from CLAUDE.md on every push to main and every pull request:
+# type check and unit tests for the editor, fmt, clippy and tests for the
+# desktop shell. Windows for Rust: the desktop target, and it needs no
+# extra system libraries for Tauri.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Type check and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  rust:
+    name: Desktop shell (Rust)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      # Tauri's build script wants the web build's folder to exist; the
+      # checks need only the Rust.
+      - run: New-Item -ItemType Directory -Force ../dist | Out-Null
+        shell: pwsh
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
