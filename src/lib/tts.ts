@@ -28,3 +28,21 @@ export function speechText(text: string): string {
     .map((l) => (/[.!?…:;,]$/.test(l) ? l : `${l}.`))
     .join(" ");
 }
+
+/** A voice file's name: the first words it says. */
+export const speechFileName = (text: string) => `Speech - ${text.slice(0, 32).replace(/[^\w ,.'-]+/g, "").trim() || "title"}.wav`;
+
+/**
+ * Where each line of a voiceover goes, in seconds: at its own `at` when
+ * given, otherwise `gap` after the line before (the first at `start`); a
+ * line never starts before the previous one ends, so voices never overlap.
+ */
+export function layoutLines(lines: { at?: number; seconds: number }[], start = 0, gap = 0.4): { start: number; end: number }[] {
+  let next = start, end = 0;
+  return lines.map((l) => {
+    const s = Math.max(l.at ?? next, end);
+    end = s + l.seconds;
+    next = end + gap;
+    return { start: +s.toFixed(3), end: +end.toFixed(3) };
+  });
+}

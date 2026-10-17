@@ -11,7 +11,7 @@ import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, renderToUrl, stillToUrl, type RenderOptions } from "./state/export";
-import { textToSpeech } from "./state/tts";
+import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
@@ -90,7 +90,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover },
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
   otio: () => toOtio(store.document()),
 };
@@ -190,6 +190,7 @@ const mcpHost: McpHost = {
     return exportForAgent(options as RenderOptions);
   },
   exportStatus: () => agentExportStatus(),
+  voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
   ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;

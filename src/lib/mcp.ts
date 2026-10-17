@@ -5,7 +5,7 @@
 // window API all hand messages to handleMcp, so agents see one surface
 // however they connect (ADR-008).
 
-import { COMMANDS, type JsonSchema } from "./commands";
+import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -44,6 +44,8 @@ export interface McpHost {
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
   /** The last export_video: running (with progress), done or failed. */
   exportStatus(): unknown;
+  /** Speak a script's lines and place them with captions (add_voiceover). */
+  voiceover(lines: { text: string; at?: number }[], options: Record<string, unknown>): Promise<unknown>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
   /** The saved projects, as the home screen lists them; `open` marks the
@@ -316,6 +318,26 @@ APP_TOOLS.push(
     call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, speed: a.speed }))),
   },
   {
+    name: "add_voiceover",
+    description:
+      "Narrate a script: every line is spoken on this computer (Kokoro) and placed one after another at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step. A line's at pins it to a time. Answers each line's start, end and clip ids, so the footage can be cut to the voice. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB); a line takes a second or two.",
+    inputSchema: obj(
+      {
+        lines: { type: "array", description: "The script, one sentence or two per line", items: obj({ text: { type: "string", description: "Words to say (and show)" }, at: { type: "number", minimum: 0, description: "Timeline seconds; default right after the line before" } }, ["text"]) },
+        voice: { type: "string", description: "Voice id, default af_heart" },
+        speed: { type: "number", minimum: 0.5, maximum: 2, description: "1 is natural" },
+        start: { type: "number", minimum: 0, description: "Seconds the first line starts, default 0" },
+        gap: { type: "number", minimum: 0, description: "Seconds between lines, default 0.4" },
+        captions: { type: "boolean", description: "A caption per line (default true)" },
+        caption_style: TEXT_STYLE_SCHEMA,
+        caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36)" },
+      },
+      ["lines"],
+    ),
+    call: async (h, a) =>
+      json(await h.voiceover(a.lines as { text: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y }))),
+  },
+  {
     name: "auto_adjust",
     description: "Correct a video or picture clip's exposure, white balance and levels from its frame at the playhead (CapCut's Auto adjust), setting its Basic adjustment sliders.",
     inputSchema: obj({ clip_id: { type: "string", description: "Video or image clip" } }, ["clip_id"]),
@@ -331,12 +353,13 @@ Start with describe_project. Times are seconds; ids are stable. Edits answer wit
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them).
 2. import_media the footage, music and pictures by absolute path.
-3. Lay shots with add_media_clip; frame_region zooms a shot onto the part that matters (a screen recording's panel, a face) and can move between two regions.
-4. Titles: add_text (style.background makes a box that reads over busy footage), then set_animation in and out.
-5. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
-6. Make many small edits at once with batch: one call, one undo step.
-7. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
-8. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
+3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters (a screen recording's panel, a face) and can move between two regions.
+5. Titles: add_text (style.background makes a box that reads over busy footage), then set_animation in and out.
+6. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
+7. Make many small edits at once with batch: one call, one undo step.
+8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
+9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {

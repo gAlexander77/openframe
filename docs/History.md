@@ -638,3 +638,9 @@ was thin. This round fixes what it found.
   it anyway, so the limiter sees every peak in advance and starts each
   reduction before it (the ponytail comment had named this upgrade). The
   promo now measures -14.3 LUFS in ffmpeg with peaks at -0.9 dBTP.
+- **The voice sets the timing now.** In the promo, each line was planned
+  into a slot, and the generated voices came out longer (5.07 s for a
+  4.5 s slot), so every voice and caption had to be moved by hand.
+  `add_voiceover` speaks the whole script first, lays the lines end to end
+  at their real lengths with captions to match, and answers where each one
+  landed; the picture is cut to the voice, as an editor would.

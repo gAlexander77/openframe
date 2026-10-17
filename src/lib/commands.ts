@@ -147,7 +147,7 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   return [ops.addTrack(p, fresh), fresh.id];
 }
 
-const TEXT_STYLE_SCHEMA = S.obj({
+export const TEXT_STYLE_SCHEMA = S.obj({
   font: S.str("Font family"),
   size: S.num("Pixels at 1080p canvas height", { minimum: 4 }),
   color: S.str("CSS color"),

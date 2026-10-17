@@ -403,6 +403,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Fast; the voice lands on an audio track at the title's start, one undo
   step. The first voice downloads the model (about 90 MB) once
   ([[ADR-050 Text to speech runs Kokoro on the user's machine]]).
+- **Voiceover from a script** (agents: `add_voiceover`): every line spoken,
+  laid one after another at its real length on a new Voiceover track (a
+  line can be pinned to a time), with a caption per line timed to its
+  voice, as one undo step; the answer says where each line landed so the
+  footage can be cut to it. Two lines take about five seconds.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption

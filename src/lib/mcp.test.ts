@@ -33,6 +33,11 @@ function host() {
       return { state: "done", path: "C:/Users/me/Videos/Video Editor/x.mp4" };
     },
     exportStatus: () => null,
+    voiced: [] as unknown[][],
+    async voiceover(lines: unknown, options: unknown) {
+      h.voiced.push([lines, options]);
+      return { lines: [], end: 0 };
+    },
     aiCalls: [] as unknown[][],
     async ai(tool: string, target: unknown, options: unknown) {
       h.aiCalls.push([tool, target, options]);
@@ -192,4 +197,11 @@ describe("MCP edits answer with what changed", () => {
     expect((r!.result as { content: { type: string }[] }).content[0]).toMatchObject({ type: "image" });
     expect(h.sheets).toEqual([[[1, 2, 3], 320, 4]]);
   });
+});
+
+it("passes a voiceover script through with the options given, in the app's names", async () => {
+  const h = host();
+  const lines = [{ text: "Meet RacePulse." }, { text: "Pick your widgets.", at: 6 }];
+  await call(h, "tools/call", { name: "add_voiceover", arguments: { lines, voice: "am_michael", caption_y: 0.4 } });
+  expect(h.voiced).toEqual([[lines, { voice: "am_michael", captionY: 0.4 }]]);
 });

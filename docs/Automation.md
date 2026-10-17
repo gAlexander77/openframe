@@ -63,6 +63,14 @@ the same way. `describe_project` is still the whole picture.
 ...]}` in order as one edit and one undo step, all or nothing: a failing
 step names its number (`step 2 (set_animation): no clip with id nope`).
 
+`add_voiceover` narrates a script: `{"lines": [{"text": "Meet
+RacePulse."}, {"text": "Pick your widgets.", "at": 6}], "voice":
+"af_heart", "gap": 0.4, "caption_style": {...}}`. Each line is spoken on
+this machine and placed after the one before at its real length (or at
+its `at`, never overlapping) on a new Voiceover track, with a caption per
+line, as one undo step. It answers `{"lines": [{"text", "start", "end",
+"voice_clip", "caption_clip"}], "end"}`: cut the footage to those times.
+
 `frame_region` shows part of a picture full screen: `region` is a
 rectangle in fractions of the source (`{"x": 0.5, "y": 0, "w": 0.5,
 "h": 1}` is the right half), `fill` (default) covers the canvas, `fit`
