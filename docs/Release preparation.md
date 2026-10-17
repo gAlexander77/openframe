@@ -7,7 +7,7 @@ prepares.
 
 ## Licensing decision
 
-Copyright (C) 2026 Alex Martinez and OpenFrame contributors.
+Copyright (C) 2026 The OpenFrame contributors.
 
 Original project code and documentation are offered under the GNU General
 Public License, version 3 only (`GPL-3.0-only`). The owner selected GPL-3.0

@@ -31,7 +31,7 @@ overlapping work. Do not discard someone else's edits or stop their app,
 browser, dev server, or agent session.
 
 Every worktree belongs under
-`F:\Dev\2026\worktrees\<repo>\<branch-or-purpose>`. Keep that work's preview
+a worktrees folder outside the checkout, as `<worktrees>\<repo>\<branch-or-purpose>`. Keep that work's preview
 builds, logs, browser profiles, and scratch inside it. Use
 `git worktree remove` to remove your own worktree after the work lands.
 

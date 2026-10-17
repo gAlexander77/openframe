@@ -102,7 +102,7 @@ Coding agents should begin with [AGENTS.md](AGENTS.md), the shared
 
 ## License
 
-Copyright (C) 2026 Alex Martinez and OpenFrame contributors.
+Copyright (C) 2026 The OpenFrame contributors.
 
 OpenFrame's original project code and documentation are licensed under the
 **GNU General Public License, version 3 only** (`GPL-3.0-only`). You may use,

@@ -65,7 +65,7 @@ and Linux WebKitGTK do not, and have no equivalent of this page yet.
    ```json
    {
      "build": { "devUrl": "http://localhost:1430", "beforeDevCommand": "npx vite --port 1430 --strictPort" },
-     "app": { "appDirectoriesOverride": "F:/Dev/2026/worktrees/openframe/<purpose>/scratch/appdata" }
+     "app": { "appDirectoriesOverride": "<worktree>/scratch/appdata" }
    }
    ```
 

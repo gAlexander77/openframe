@@ -35,7 +35,7 @@ Do not stop agent sessions, dev servers, browser sessions, or desktop apps
 to make room for unrelated work. Do not reset, merge, commit, delete, or clean
 another worktree without coordinating its ownership and current state.
 Keep your own worktree and all scratch under
-`F:\Dev\2026\worktrees\<repo>\<purpose>` and remove it when its work lands.
+`<worktrees>\<repo>\<purpose>` (the folder is in `CLAUDE.local.md`) and remove it when its work lands.
 
 ## Codex pickup (added 2026-10-14 by Claude Code)
 

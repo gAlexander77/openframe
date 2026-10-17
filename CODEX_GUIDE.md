@@ -19,7 +19,8 @@ identifier and `window.videoEditor` keep the old name (`docs/Renaming.md`).
 
 1. Read `AGENTS.md`, `CLAUDE.md` and `docs/Next agent handoff.md`. They
    outrank this guide where they differ.
-2. Run, in `F:\Dev\video-editor`:
+2. Read `CLAUDE.local.md` (git-ignored: this machine's folders), then run,
+   in the main checkout:
    - `git status` (must be clean before you start)
    - `git log --oneline -15`
    - `git worktree list`
@@ -27,16 +28,15 @@ identifier and `window.videoEditor` keep the old name (`docs/Renaming.md`).
 
 ## 2. Rules (do not break these)
 
-- **Work only in `F:\Dev\video-editor`, on `main`.** Commit locally after
+- **Work only in the main checkout, on `main`.** Commit locally after
   each task. **Do not push**, do not create branches on the remote, and do
   not change repository settings. The owner pushes after review.
 - **Do not touch the parked work.** Worktrees under
-  `F:\Dev\2026\worktrees\openframe\` and their branches belong to the
+  `<worktrees>\openframe\` and their branches belong to the
   agents working in them; none is parked at present. Do not edit, merge,
   rebase, reset or delete them. Section 6 lists any parked branch and
   what it holds, so you do not redo it.
-- **Headless only.** The owner uses this computer (for games) while you
-  work. Never open a visible browser, never launch the desktop app
+- **Headless only.** The machine stays in use while you work. Never open a visible browser, never launch the desktop app
   (`npm run tauri dev`, `openframe.exe`, `tauri build`) unless a task
   here says so. Run drives with `scripts/drive/run.mjs`, which is headless.
   **Owner update, 2026-10-15:** the owner requested a desktop launch for
@@ -260,7 +260,7 @@ your findings in section 7 and stop this task.
 
 ## 6. Parked work (for Claude Code, do not touch)
 
-Each is a branch with a worktree under `F:\Dev\2026\worktrees\openframe\`,
+Each is a branch with a worktree under `<worktrees>\openframe\`,
 committed as WIP and pushed to GitHub as backup. All type-check and pass
 their unit tests; none is finished. (`timeline-ux` was finished and merged
 into main on 2026-10-16: ADR-046, ADR-047, `scripts/drive/timeline-ux.js`;

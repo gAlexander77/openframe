@@ -5,14 +5,14 @@ async page => {
   const details = {};
   await page.evaluate(async () => {
     const api = window.videoEditor;
-    const [a] = await api.import([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]);
+    const [a] = await api.import([{ name: "framecode-30.mp4", src: "__REPO__/fixtures/media/framecode-30.mp4" }]);
     api.exec("add_media_clip", { asset_id: a.id, start: 0, in: 1, duration: 2 });
     const { store } = await import(performance.getEntriesByType("resource").find((e) => /\/src\/state\/store\.ts(?:\?|$)/.test(e.name)).name);
-    store.edit("Missing fixture", (p) => ({ ...p, name: "__QA_20261016_relink", assets: p.assets.map((a) => ({ ...a, src: "F:/Dev/video-editor/scratch/does-not-exist.mp4" })) }));
+    store.edit("Missing fixture", (p) => ({ ...p, name: "__QA_20261016_relink", assets: p.assets.map((a) => ({ ...a, src: "__REPO__/scratch/does-not-exist.mp4" })) }));
     window.__beforeRelink = api.project();
     const { platform } = await import(performance.getEntriesByType("resource").find((e) => /\/src\/platform\/index\.ts(?:\?|$)/.test(e.name)).name);
     window.__pickKind = "cancel";
-    platform.pickMedia = async () => window.__pickKind === "cancel" ? [] : [{ name: window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4", src: `F:/Dev/video-editor/fixtures/media/${window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4"}` }];
+    platform.pickMedia = async () => window.__pickKind === "cancel" ? [] : [{ name: window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4", src: `__REPO__/fixtures/media/${window.__pickKind === "bad" ? "color-bars.png" : "framecode-30.mp4"}` }];
   });
   await page.getByRole("button", { name: "Manage media", exact: true }).click();
   await page.getByText("Unavailable — locate file", { exact: true }).waitFor();

@@ -7,6 +7,8 @@ node_modules
 dist
 dist-ssr
 *.local
+# This machine's folders and habits, for agents (see CLAUDE.md)
+CLAUDE.local.md
 
 # Editor directories and files
 .vscode/*

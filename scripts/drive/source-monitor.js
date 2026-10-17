@@ -4,8 +4,8 @@ async page => {
   await page.locator(".create-card").click(); await page.locator(".timeline-panel").waitFor();
   await page.locator(".project-name").click(); await page.locator(".project-name-input").fill("__QA_20261016_source"); await page.locator(".project-name-input").press("Enter");
   await page.evaluate(async () => { await window.videoEditor.import([
-    { name: "framecode-30.mp4", src: (window.videoEditor.platform() === "desktop" ? "F:/Dev/video-editor" : location.origin) + "/fixtures/media/framecode-30.mp4" },
-    { name: "music-30s.mp3", src: (window.videoEditor.platform() === "desktop" ? "F:/Dev/video-editor" : location.origin) + "/fixtures/media/music-30s.mp3" },
+    { name: "framecode-30.mp4", src: (window.videoEditor.platform() === "desktop" ? "__REPO__" : location.origin) + "/fixtures/media/framecode-30.mp4" },
+    { name: "music-30s.mp3", src: (window.videoEditor.platform() === "desktop" ? "__REPO__" : location.origin) + "/fixtures/media/music-30s.mp3" },
   ]); });
   const details = {};
   await page.getByRole("button", { name: "Preview framecode-30.mp4", exact: true }).click();

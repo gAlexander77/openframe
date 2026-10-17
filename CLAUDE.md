@@ -45,7 +45,8 @@ work; they do not mean the app has already been renamed or released.
    the Playwright MCP tools, the desktop app over WebView2's debug port
    (`docs/Driving the app.md`). Playwright is for the product, never for
    research.
-5. **Worktrees** live in `F:\Dev\2026\worktrees\openframe\<purpose>` and
+5. **Worktrees** live in `<worktrees>\openframe\<purpose>` (the folder is in
+   the git-ignored `CLAUDE.local.md`, with this machine's other paths) and
    are removed (`git worktree remove`) when their work lands.
 6. Open-source projects are consulted only if widely used, only for lessons,
    never as the product model.
@@ -91,8 +92,9 @@ inspector, timeline. Full map: `docs/Architecture.md`.
   (`async (page) => ({ ok, details })`). Run one headless with
   `node scripts/drive/run.mjs scripts/drive/<name>.js` (once:
   `npm i --prefix scratch playwright-core`), or through the Playwright MCP
-  tool's `filename` parameter. Browsers run headless: the owner uses this
-  machine while agents work. The app opens on the home screen: click
+  tool's `filename` parameter (drives name the checkout `__REPO__`, which
+  run.mjs fills in; replace it yourself there). Browsers run headless: the
+  machine stays in use while agents work. The app opens on the home screen: click
   `.create-card` before touching the editor.
 - Parallel agents: one Vite port each (1420 is main's), at most one dev
   server and one browser per agent — the machine runs out of memory with

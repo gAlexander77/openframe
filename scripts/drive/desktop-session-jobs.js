@@ -13,7 +13,7 @@ async page => {
       return source(...args);
     };
     window.__holdSource = true;
-    window.__pendingJob = window.videoEditor.import([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]);
+    window.__pendingJob = window.videoEditor.import([{ name: "framecode-30.mp4", src: "__REPO__/fixtures/media/framecode-30.mp4" }]);
   });
   await page.waitForFunction(() => !!window.__releaseSource);
   const old = await page.evaluate(() => window.videoEditor.project().id);
@@ -34,12 +34,12 @@ async page => {
   await page.waitForFunction((id) => !!document.querySelector(".timeline-panel") && window.videoEditor.project().id === id, current);
   details.sameIdReopenInvalidates = { ok: await page.evaluate(async () => {
     const before = JSON.stringify(window.videoEditor.project());
-    window.__releasePicker([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]);
+    window.__releasePicker([{ name: "framecode-30.mp4", src: "__REPO__/fixtures/media/framecode-30.mp4" }]);
     await window.__pendingJob;
     return before === JSON.stringify(window.videoEditor.project());
   }) };
   await page.evaluate(async () => {
-    const [a] = await window.videoEditor.import([{ name: "beat-128.m4a", src: "F:/Dev/video-editor/fixtures/media/beat-128.m4a" }]);
+    const [a] = await window.videoEditor.import([{ name: "beat-128.m4a", src: "__REPO__/fixtures/media/beat-128.m4a" }]);
     window.videoEditor.exec("add_media_clip", { asset_id: a.id, start: 0 });
     const c = window.videoEditor.project().tracks.flatMap((t) => t.clips).find((c) => c.assetId === a.id);
     window.__holdSource = true; window.__releaseSource = null;
@@ -50,7 +50,7 @@ async page => {
   await page.waitForFunction((id) => window.videoEditor.project().id !== id, current);
   await page.evaluate(() => window.videoEditor.exec("set_project", { name: "__QA_20261016_jobs_final" }));
   details.analysisCanceled = { ok: await page.evaluate(async () => { const before = JSON.stringify(window.videoEditor.project()); window.__releaseSource(); const result = await window.__pendingJob; return result === "AbortError" && before === JSON.stringify(window.videoEditor.project()); }) };
-  await page.evaluate(async () => { const [a] = await window.videoEditor.import([{ name: "framecode-30.mp4", src: "F:/Dev/video-editor/fixtures/media/framecode-30.mp4" }]); window.videoEditor.exec("add_media_clip", { asset_id: a.id, start: 0, duration: 1 }); });
+  await page.evaluate(async () => { const [a] = await window.videoEditor.import([{ name: "framecode-30.mp4", src: "__REPO__/fixtures/media/framecode-30.mp4" }]); window.videoEditor.exec("add_media_clip", { asset_id: a.id, start: 0, duration: 1 }); });
   details.newSessionWorks = { ok: await page.evaluate(() => window.videoEditor.project().assets.length === 1 && window.videoEditor.project().tracks.some((t) => t.clips.length === 1)) };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

@@ -1,6 +1,6 @@
 // Run one drive (scripts/drive/*.js) headless in the system Edge against
-// the web dev server (npm run dev, :1420). Headless always: the owner uses
-// this machine while agents work, so no window may pop up.
+// the web dev server (npm run dev, :1420). Headless always: the machine
+// stays in use while agents work, so no window may pop up.
 //
 // One-time setup (scratch/ is git-ignored):  npm i --prefix scratch playwright-core
 // Usage:  node scripts/drive/run.mjs scripts/drive/framecode.js [--size 1600x950] [--base http://localhost:1430]
@@ -31,7 +31,10 @@ try {
 
 // A drive file is one function expression: async (page, ...) => result.
 // Drives name the main checkout's server; --base swaps it for this run.
-const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base));
+// __REPO__ is this checkout (desktop imports take real paths), so no
+// drive carries a machine's folder layout.
+const repo = resolve(".").replace(/\\/g, "/");
+const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base).replaceAll("__REPO__", repo));
 // A fake microphone, granted without a prompt, for the voiceover drive.
 const browser = await chromium.launch({
   channel: "msedge",

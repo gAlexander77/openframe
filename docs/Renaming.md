@@ -24,7 +24,7 @@ Kept on purpose, each a piece of data or an interface rather than a name:
 | `window.videoEditor` | The same object as `window.openFrame`; every drive script and outside client uses it. |
 | `video-editor.effect-presets.v1` (localStorage) | Renaming the key would lose saved presets. |
 | `metadata.video_editor` in exported OTIO | Files already written carry it; a future importer reads it. |
-| The checkout folder `F:\Dev\video-editor` | Renaming it under running tools and agents gains nothing; clones get `openframe`. |
+| The local checkout's folder name, `video-editor` | Renaming it under running tools and agents gains nothing; clones get `openframe`. |
 | History, ADRs, research notes | They record what was true when written. |
 
 `PROJECT_EXT` became `ofproj`: nothing was ever saved as `.vedproj`.

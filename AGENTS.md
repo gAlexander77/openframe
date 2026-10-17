@@ -22,7 +22,7 @@ Claude Code and Codex.
   coordinate before overlapping edits, and do not stop their processes,
   reset their changes, or remove their worktrees.
 - Every git worktree goes in
-  `F:\Dev\2026\worktrees\<repo>\<branch-or-purpose>` (`<repo>` is `openframe`). Preview builds, source
+  the worktrees folder named in `CLAUDE.local.md` (git-ignored, on this machine only), as `<worktrees>\openframe\<branch-or-purpose>`. Preview builds, source
   copies, logs, browser profiles, and other scratch for that work stay inside
   its worktree. Remove only your own worktree with `git worktree remove`
   after its work lands; never place one beside the repositories or in `%TEMP%`.
