@@ -1,9 +1,13 @@
 import { useRef, useState } from "react";
 import { ASR_MODELS, type TranscribeProgress } from "../engine/transcribe";
-import { Captions, Download, Upload, WandSparkles } from "../icons";
+import { Captions, Download, Search, Upload, WandSparkles } from "../icons";
+import { replaceText } from "../lib/captions";
+import { runCommand } from "../lib/commands";
 import { cancelCaptions, captionClips, exportCaptions, generateCaptions, importCaptions } from "../state/captions";
-import { useEditor } from "../state/store";
+import { store, useEditor } from "../state/store";
+import { toast } from "../state/toast";
 import { Toggle } from "./inspector/controls";
+import { TranscriptCard } from "./TranscriptCard";
 
 const LANGUAGES: [string, string][] = [
   ["", "Detect automatically"],
@@ -140,6 +144,52 @@ export function CaptionsTab() {
         />
         <p className="lib-hint">Select any caption on the timeline to edit its words, or restyle every caption at once from its Text tab.</p>
       </div>
+
+      {count > 0 && <FindReplace />}
+
+      <TranscriptCard />
+    </div>
+  );
+}
+
+/** CapCut's caption Find and replace: fix a misheard name everywhere. */
+function FindReplace() {
+  const project = useEditor((s) => s.project);
+  const [find, setFind] = useState("");
+  const [replace, setReplace] = useState("");
+  const [matchCase, setMatchCase] = useState(false);
+  const [wholeWord, setWholeWord] = useState(true);
+  const o = { matchCase, wholeWord };
+  const hits = find ? captionClips(project).reduce((n, c) => n + replaceText(c.text, find, replace, o)[1], 0) : 0;
+  const run = () => {
+    store.edit(`Replace "${find}"`, (p) => runCommand(p, "replace_caption_text", { find, replace, match_case: matchCase, whole_word: wholeWord }));
+    toast(`Replaced ${hits} ${hits === 1 ? "match" : "matches"}`);
+  };
+  return (
+    <div className="cap-card">
+      <header className="cap-head">
+        <Search size={16} />
+        <strong>Find and replace</strong>
+      </header>
+      <label className="cap-field">
+        <span>Find</span>
+        <input className="field" value={find} onChange={(e) => setFind(e.target.value)} onKeyDown={(e) => e.key === "Enter" && hits && run()} />
+      </label>
+      <label className="cap-field">
+        <span>Replace with</span>
+        <input className="field" value={replace} onChange={(e) => setReplace(e.target.value)} onKeyDown={(e) => e.key === "Enter" && hits && run()} />
+      </label>
+      <label className="cap-field row">
+        <span>Match case</span>
+        <Toggle label="Match case" on={matchCase} onChange={setMatchCase} />
+      </label>
+      <label className="cap-field row">
+        <span>Whole words</span>
+        <Toggle label="Whole words" on={wholeWord} onChange={setWholeWord} />
+      </label>
+      <button className="btn primary cap-go" disabled={!hits} onClick={run}>
+        {find ? (hits ? `Replace ${hits} ${hits === 1 ? "match" : "matches"}` : "No matches") : "Replace"}
+      </button>
     </div>
   );
 }

@@ -40,12 +40,13 @@ was written, a voiceover recorder was in progress; it shipped in
 **Updated the same evening.** Rows shipped later on 2026-10-16 now read
 "yes" with a dash for priority (about 50 of them, from track solo and
 height to Lift/Extract, EQ, filler-word removal and the LUFS meter; git
-log has each). Open at P0/P1: frame blending and optical flow for slow
-motion, link/unlink A/V with one-side trims, transcript editing,
-translated captions, auto reframe, motion
-tracking, proxies on demand and a solo key. Translated
+log has each). Open at P0/P1: link/unlink A/V with one-side trims,
+translated captions, auto reframe, motion tracking, proxies on demand
+and a solo key. Translated
 captions wait on a non-English speech fixture: Kokoro speaks English
-only, so the result could not be checked in the product.
+only, so the result could not be checked in the product. Link/unlink is
+mostly covered the CapCut way: detached sound under a main-track shot
+follows it through linkage, and Group links any clips for moves.
 
 **Legend.**
 - Apps: **C** CapCut desktop, **P** Premiere, **R** Resolve Edit/Cut,
@@ -109,7 +110,7 @@ are written with `setParam` (`src/lib/project/ops.ts`) and drawn by
 | Border, drop shadow and rounded corners on a picture layer | C R F V | partial: rounded corners through Mask > Rectangle's corner radius, as CapCut users do; no border or shadow | P2 | Effects run in canvas space and cannot see the layer's box; both belong in `LAYER_FS` (border inset) and a padded quad (shadow). |
 | Canvas fill: blur or color | C | yes | — | An image or pattern fill is missing (P2). |
 | Stabilize | C P R V F | yes: three levels, translation only, measured locally | — | Desktop first: run FFmpeg `vidstabdetect` where the build has libvidstab, or a phase-correlation pass in a worker. Store a per-frame offset track beside the asset; `plan.ts` applies it as an extra transform with a crop-to-hide. Analysis belongs in `src/lib/analysis/`. |
-| Optical flow / smooth slow-mo | C P R V F | no | P1 | See §9 (frame blending first). |
+| Optical flow / smooth slow-mo | C P R V F | partial: frame blending (ADR-051); no optical flow | P2 | See §9 (frame blending first). |
 | Enhance quality (upscale) | C R V | no | P2 | Local ESRGAN-class ONNX at export only; slow. |
 | Video denoise, deflicker | C R | no | P2 | Temporal shader with the previous frame held by the cursor. |
 | Motion blur | P R | no | P2 | Sub-frame accumulation of the transform in the compositor. |
@@ -214,9 +215,9 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 | Auto captions (local Whisper), SRT/VTT, list editing | C P R F | yes | — | — |
 | Word-by-word highlight (karaoke) and single-word captions | C P R | yes: word highlight, and One word at a time in the Captions tab | — | Keep `words: {f, d}[]` on caption clips; `engine/text.ts` highlights the active word; add caption templates. Premiere 26.3 added single-word captions and Resolve 20 added animated subtitles, so this is now table stakes. |
 | Filler-word detection and removal | C P | yes: "um", "hmm", "ah" (Whisper drops "uh"; [[Filler words]]) | — | Whisper words plus a filler list, removed with `cut_ranges`. Add it as a card in the AI tools tab. |
-| Transcript-based editing | C P R V | no | P1 | A transcript panel; deleting words maps to `cut_ranges`. L. |
+| Transcript-based editing | C P R V | yes: Captions tab > Edit by transcript, `get_transcript` | — | A transcript panel; deleting words maps to `cut_ranges`. L. |
 | Translate captions / bilingual captions | C P | no | P1 | Whisper `task: "translate"` gives English cheaply (S). Other targets need a local MT model (NLLB/Marian ONNX, L). Bilingual = a second caption track. |
-| Caption find and replace | C P R | no | P2 | Pure function in `lib/captions.ts`. |
+| Caption find and replace | C P R | yes (`replace_caption_text`) | — | Pure function in `lib/captions.ts`. |
 | Keyword highlight, AI emojis | C | no | P2 | — |
 | Captions in the export dialog (sidecar or embedded track) | C P R F | partial: SRT/VTT from the Captions tab; captions burn in because they are text clips | P2 | A Captions section in `ExportDialog.tsx`; an embedded track needs muxer support. |
 | Lyrics recognition | C | no | P2 | The same Whisper path on music. |
@@ -253,7 +254,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Standard, curve, reverse, pitch | C P R V F | yes | — | — |
-| Frame blending for slow motion | C P R V F | no | P1 | Mix the two neighboring source frames by phase in the compositor; the cursor already holds one frame. M. |
+| Frame blending for slow motion | C P R V F | yes (ADR-051) | — | Mix the two neighboring source frames by phase in the compositor; the cursor already holds one frame. M. |
 | Optical flow interpolation | C P R V F | no | P2 | A local RIFE-class model at export only. L. |
 | Rate stretch tool | P R V F | yes (see §4) | — | See §4. |
 | Editable duration field | C | partial (read-only) | P2 | See §4. |
@@ -320,7 +321,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Proxies on demand for heavy decodable media (4K HEVC, long GOP) | C P R V F | partial: desktop proxies only for codecs the webview cannot decode (`Asset.proxy`); web proxies on the [[Roadmap]] | P1 | A "Make proxy" action and a project toggle, using the existing FFmpeg path and the planned mediabunny `Conversion`. |
 | Preferences: default still length, step size, cache location, hardware acceleration | C P R V F | partial: default lengths of pictures, titles and effects, and transitions (Edit > Preferences) | P2 | Step size, cache location and hardware acceleration remain; the step actions are named for 10 frames. |
 | Project trash / restore a deleted project | C | no; delete asks twice | P2 | Move to a trash folder in the platform layer. |
-| Hover-scrub on media cards | C P V F | no (not found in `LibraryPanel.tsx`) | P2 | The thumbnail sprite already exists. |
+| Hover-scrub on media cards | C P V F | yes (`HoverScrub` in `LibraryPanel.tsx`) | — | The thumbnail sprite already exists. |
 | Collect or archive a project with its media | P R F V | no | P2 | Copy sources beside the JSON and rewrite paths. |
 | Tags, metadata columns, smart bins | P R F | partial: list view and folders | P2 | — |
 | Image sequence import | P R | no | P2 | — |
@@ -458,8 +459,8 @@ its owner resumes it; `bg-removal` shipped on 2026-10-16.
 - **Audio scrubbing:** nothing in `src/engine/player.ts` or
   `src/engine/audio.ts` plays sound while scrubbing, but a drive should
   confirm it.
-- **Hover-scrub on media cards:** no pointer-move scrub found in
-  `LibraryPanel.tsx`.
+- **Hover-scrub on media cards:** shipped later the same day (`HoverScrub`
+  in `LibraryPanel.tsx`).
 - **Transitions on overlay tracks:** `set_transition` only needs adjacent
   clips on one track, so overlays probably work; not driven.
 - **Mono-to-both playback:** assumed from Web Audio's default upmix, not

@@ -170,3 +170,19 @@ export function rms10ms(pcm: Float32Array, rate: number): Float32Array {
   }
   return out;
 }
+
+// ---- find and replace -------------------------------------------------------------
+
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** CapCut's caption Find and replace: every match of `find` in `text`
+ * (any case unless `matchCase`; whole words only when `wholeWord`), and
+ * how many there were. */
+export function replaceText(text: string, find: string, replace: string, o: { matchCase?: boolean; wholeWord?: boolean } = {}): [string, number] {
+  if (!find) return [text, 0];
+  const body = escapeRe(find);
+  const re = new RegExp(o.wholeWord ? `(?<![\\p{L}\\p{N}'])${body}(?![\\p{L}\\p{N}'])` : body, o.matchCase ? "gu" : "giu");
+  let n = 0;
+  const out = text.replace(re, () => (n++, replace));
+  return [out, n];
+}

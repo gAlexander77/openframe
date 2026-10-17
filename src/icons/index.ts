@@ -77,6 +77,7 @@ export {
   RotateCw,
   ScanLine,
   Scissors,
+  ScrollText,
   Search,
   Settings,
   SkipBack,

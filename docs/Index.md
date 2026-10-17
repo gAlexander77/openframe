@@ -154,6 +154,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   source limits and cancellable gestures
 - [[ADR-050 Text to speech runs Kokoro on the user's machine]] — Kokoro-82M
   in a worker, downloaded once, placed under the title
+- [[ADR-051 Frame blending draws the layer twice from two cursors]] — a
+  second cursor lane and a constant-alpha second draw mix slow motion.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

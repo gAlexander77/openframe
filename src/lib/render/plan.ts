@@ -36,6 +36,8 @@ export type LayerSource =
       /** Successive frames walk backward through the source: the engine
        * decodes GOP windows forward and hands them out in reverse. */
       reverse?: true;
+      /** Frame blending: the following source frame and its share, 0..1. */
+      next?: { time: number; w: number };
     }
   | { kind: "image"; assetId: Id }
   | { kind: "text"; clip: TextClip; word?: number }
@@ -215,9 +217,23 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     // the previous frame (found by the framecode drive). A quarter frame
     // clears both and still lands inside the intended frame at any speed,
     // which keeps 2x showing frames 0, 2, 4... as Premiere does.
-    const t = sourceTimeAt(clip, f, p.fps) + 0.25 / (asset?.fps || 60);
+    const raw = sourceTimeAt(clip, f, p.fps);
+    let t = raw + 0.25 / (asset?.fps || 60);
     const max = asset && asset.duration > 0 ? asset.duration - 1e-3 : Infinity;
-    source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max), ...(clip.reverse && !clip.freeze ? { reverse: true as const } : {}) };
+    // Frame blending: frame i, and i + 1 by the fraction past i. The look-up
+    // then lands a quarter into frame i itself, since past three quarters the
+    // usual lookahead would already reach i + 1.
+    let next: { time: number; w: number } | undefined;
+    if (clip.frameBlend && !clip.reverse && !clip.freeze && asset?.fps) {
+      const pos = raw * asset.fps;
+      const i = Math.floor(pos + 1e-6);
+      const w = pos - i;
+      if (w > 0.01 && w < 0.99 && (i + 1.25) / asset.fps < max) {
+        t = (i + 0.25) / asset.fps;
+        next = { time: (i + 1.25) / asset.fps, w: +w.toFixed(4) };
+      }
+    }
+    source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max), ...(clip.reverse && !clip.freeze ? { reverse: true as const } : {}), ...(next ? { next } : {}) };
   } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
   else if (clip.type === "text") {
     const word = clip.style.highlight ? spokenWord(clip.text, clip.wordTimes, r) : undefined;

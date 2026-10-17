@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LINES, parseSubtitles, quietCuts, rms10ms, toSrt, toVtt, wordsToCaptions, type Word } from "./captions";
+import { DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, wordsToCaptions, type Word } from "./captions";
 
 const words = (s: string, step = 0.3, gapAfter: Record<number, number> = {}): Word[] => {
   let t = 0;
@@ -87,4 +87,14 @@ it("one word at a time: a caption per word, each at its own time", () => {
   expect(caps.map((c) => [c.text, c.start])).toEqual([["So", 0], ["we", 0.25], ["go.", 0.45]]);
   // Too short to read, extended into the gap only up to the next word.
   expect(caps[0].end).toBe(0.25);
+});
+
+it("finds and replaces in caption text, whole words and case as asked", () => {
+  expect(replaceText("Jon met jon and Jonathan", "jon", "John")).toEqual(["John met John and Johnathan", 3]);
+  expect(replaceText("Jon met jon and Jonathan", "jon", "John", { wholeWord: true })).toEqual(["John met John and Jonathan", 2]);
+  expect(replaceText("Jon met jon", "jon", "John", { matchCase: true, wholeWord: true })).toEqual(["Jon met John", 1]);
+  // Regex characters are literal; "don't" is one word.
+  expect(replaceText("a.b a+b don't", "a.b", "x")).toEqual(["x a+b don't", 1]);
+  expect(replaceText("don't do it", "don", "will", { wholeWord: true })).toEqual(["don't do it", 0]);
+  expect(replaceText("anything", "", "x")).toEqual(["anything", 0]);
 });

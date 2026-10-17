@@ -39,8 +39,12 @@ async (page) => {
     m.push(planes, n);
     return m.integrated();
   });
-  // After the stop, momentary has fallen to silence and shows a dash.
-  details.reading = { ok: Number.isFinite(live.s) && Number.isFinite(live.i) && /M —/.test(text), text };
+  // After the stop the line keeps the last readings. Momentary may show a
+  // dash (silence) or a value, depending on whether its last 400 ms caught
+  // the stop; never a value under the -70 LUFS gate (a stopped filter's
+  // tail once read -1221).
+  const shown = (text.match(/-?\d+\.\d/g) ?? []).map(Number);
+  details.reading = { ok: Number.isFinite(live.s) && Number.isFinite(live.i) && shown.every((v) => v > -70) && /M (—|-?\d)/.test(text), text };
   details.agrees = { ok: Math.abs(live.i - offline) < 1, live: live.i, offline };
   const geo = await page.evaluate(() => {
     const l = document.querySelector(".lufs").getBoundingClientRect();

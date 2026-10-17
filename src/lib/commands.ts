@@ -26,7 +26,7 @@ import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
-import type { Caption } from "./captions";
+import { replaceText, type Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { breakCompound, breakProblem, compoundProblem, compoundView, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
@@ -352,6 +352,25 @@ export const COMMANDS: Command[] = [
     description: "Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.",
     input: S.obj({ clip_id: S.str("Clip id"), speed: S.num("Multiplier", { minimum: 0.05, maximum: 100 }) }, ["clip_id", "speed"]),
     run: (p, a) => ops.setSpeed(p, clipOrThrow(p, a.clip_id).clip.id, Number(a.speed)),
+  },
+  {
+    name: "set_frame_blending",
+    description: "Frame blending (Premiere's): a slowed video clip, or one whose source rate differs from the project's, mixes neighboring source frames instead of repeating them, so slow motion looks smoother.",
+    input: S.obj({ clip_ids: S.ids("Video clips"), on: S.bool("Blend frames") }, ["clip_ids", "on"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ids.reduce(
+        (q, id) =>
+          ops.updateClip(q, id, (c) => {
+            if (c.type !== "video") return c;
+            if (a.on) return { ...c, frameBlend: true };
+            const { frameBlend: _, ...rest } = c;
+            return rest as Clip;
+          }),
+        p,
+      );
+    },
   },
   {
     name: "set_param",
@@ -693,6 +712,25 @@ export const COMMANDS: Command[] = [
     description: "Delete the specified timeline markers together. Unknown ids reject the whole edit.",
     input: S.obj({ marker_ids: S.ids("Marker ids") }, ["marker_ids"]),
     run: (p, a) => deleteMarkers(p, a.marker_ids as Id[]),
+  },
+  {
+    name: "replace_caption_text",
+    description: "Find and replace in every caption's text (CapCut's caption Find and replace), e.g. to fix a name speech recognition misspelled. Any case unless match_case; whole_word skips matches inside longer words.",
+    input: S.obj({ find: S.str("Text to find"), replace: S.str("Replacement (may be empty)"), match_case: S.bool("Match case"), whole_word: S.bool("Whole words only") }, ["find", "replace"]),
+    run: (p, a) => {
+      const o = { matchCase: a.match_case === true, wholeWord: a.whole_word === true };
+      return {
+        ...p,
+        tracks: p.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c) => {
+            if (c.type !== "text" || !c.caption) return c;
+            const [text, n] = replaceText(c.text, String(a.find), String(a.replace), o);
+            return n ? { ...c, text } : c;
+          }),
+        })),
+      };
+    },
   },
   {
     name: "add_captions",

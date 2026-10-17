@@ -68,6 +68,7 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
+          video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
 ```
 

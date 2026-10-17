@@ -53,9 +53,15 @@ export interface SourceImage {
   /** Remove background: this frame's matte (luma = alpha), covering the
    * whole source in display orientation (ADR-033). */
   matte?: TexImageSource;
+  /** Frame blending: the following frame (same size and turn) and its
+   * share, drawn over this one as (1 - w) * this + w * next. */
+  next?: { image: TexImageSource; w: number };
 }
 
 type Program = { prog: WebGLProgram; loc: Map<string, WebGLUniformLocation | null> };
+
+/** Upload slots for frame blending's next frames sit past the frame's own. */
+const NEXT_SLOTS = 1 << 12;
 
 interface Target {
   fb: WebGLFramebuffer;
@@ -561,6 +567,17 @@ export class Compositor {
     this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
     gl.disable(gl.BLEND);
     this.draw();
+    // Frame blending: the same quad and pass with the next frame, mixed in
+    // by a constant share (alpha included, so edges and keys mix too).
+    const next = src && !isRendered(src) ? src.next : undefined;
+    if (next) {
+      this.bindTex(0, this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS), u("u_tex"));
+      gl.enable(gl.BLEND);
+      gl.blendColor(0, 0, 0, next.w);
+      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+      this.draw();
+      gl.disable(gl.BLEND);
+    }
   }
 
   /** Run effects over `t`, ping-ponging between two temps (both distinct

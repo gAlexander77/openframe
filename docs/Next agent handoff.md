@@ -123,12 +123,15 @@ from the earlier implementation and its historical test results.
   evening"); the [[UX audit 2026-10-14]] has no open items and
   [[Feature gaps 2026-10-16]] is current (a note at its top lists what is
   still open at P0/P1).
-- **Next candidates**, in rough value order: frame blending for slow
-  motion (two decoders per slowed clip and a second texture in the layer
-  shader; see the gaps note), link/unlink A/V with one-side trims for J/L
-  cuts, transcript editing (the filler tool already has the transcription
-  and `cut_ranges`), border and shadow on pictures (layer shader, not an
-  effect), auto reframe and motion tracking.
+- **Since then:** transcript editing (Captions tab, `get_transcript`) and
+  frame blending (ADR-051) landed too; a full run of every web drive
+  passed apart from the two desktop-only drives (`desktop-session-jobs`,
+  `media-relink`, which import from `F:/` paths).
+- **Next candidates**, in rough value order: border and shadow on
+  pictures (layer shader, not an effect), auto reframe and motion
+  tracking (both need a tracker in a worker), optical flow (ADR-051's
+  `next` is where it hooks in), one-side trims of a linked pair for J/L
+  cuts.
 - **Translated captions are blocked on a fixture**, not on code: Whisper's
   translate task exists, but Kokoro speaks English only, so nothing local
   can produce non-English speech to check it against.

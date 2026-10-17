@@ -466,7 +466,18 @@ export interface Stabilize {
   zoom: number;
 }
 
-export type VideoClip = ClipBase & Visual & Sound & Timed & { type: "video"; stabilize?: Stabilize; cutout?: Cutout };
+export type VideoClip = ClipBase &
+  Visual &
+  Sound &
+  Timed & {
+    type: "video";
+    stabilize?: Stabilize;
+    cutout?: Cutout;
+    /** Premiere's Frame Blending: between two source frames (slow motion,
+     * or a source rate unlike the project's), mix them by where the frame
+     * falls instead of repeating one. */
+    frameBlend?: boolean;
+  };
 export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id };
 export type TextClip = ClipBase &

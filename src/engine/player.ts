@@ -33,7 +33,7 @@ interface CursorEntry {
 /** Resolved pixels for one plan, ready for a synchronous compositor pass.
  * `matte` is the clip's background matte frame (Remove BG, ADR-033): a
  * borrowed sample, or a held frame for a reversed clip. */
-export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?: VideoSample | HeldFrame; bitmap?: ImageBitmap; key?: string }>;
+export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?: VideoSample | HeldFrame; bitmap?: ImageBitmap; key?: string; next?: { sample: VideoSample; w: number } }>;
 
 /** Decode cursors keyed by clip, shared shape for preview and export.
  * Reversed clips get a ReverseCursor; `reverse` sets the size it holds
@@ -43,8 +43,10 @@ export class CursorPool {
 
   constructor(private reverse: ReverseOptions = {}) {}
 
-  get(p: Project, clipId: Id, assetId: Id): Promise<VideoCursor | null> {
-    return this.forAsset(p, clipId, assetId, false) as Promise<VideoCursor | null>;
+  /** `lane` 1 is a clip's second cursor, for frame blending's next frame:
+   * one cursor holds one sample, so two frames need two. */
+  get(p: Project, clipId: Id, assetId: Id, lane = 0): Promise<VideoCursor | null> {
+    return this.forAsset(p, lane ? `${clipId}#${lane}` : clipId, assetId, false) as Promise<VideoCursor | null>;
   }
 
   getReverse(p: Project, clipId: Id, assetId: Id): Promise<ReverseCursor | null> {
@@ -110,13 +112,20 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
       if (src.kind === "video") {
         const m = l.matte;
         const reverse = !!src.reverse;
-        const [picture, matte] = await Promise.all([
+        const n = src.next;
+        const [picture, matte, next] = await Promise.all([
           reverse
             ? pool.getReverse(p, l.clipId, src.assetId).then((c) => c?.frameAt(src.time) ?? null)
             : pool.get(p, l.clipId, src.assetId).then((c) => c?.frameAt(src.time) ?? null),
           m ? pool.matte(l.clipId, m.src, reverse).then((c): Promise<VideoSample | HeldFrame | null> | null => c?.frameAt(m.time) ?? null) : null,
+          n ? pool.get(p, l.clipId, src.assetId, 1).then((c) => c?.frameAt(n.time) ?? null) : null,
         ]);
-        if (picture) out.set(l.clipId, { ...(reverse ? { frame: picture as HeldFrame } : { sample: picture as VideoSample }), matte: matte ?? undefined });
+        if (picture)
+          out.set(l.clipId, {
+            ...(reverse ? { frame: picture as HeldFrame } : { sample: picture as VideoSample }),
+            matte: matte ?? undefined,
+            ...(next && n ? { next: { sample: next, w: n.w } } : {}),
+          });
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
@@ -145,7 +154,8 @@ export function sourceImages(resolved: Resolved, width: number, height: number) 
     // canvas from mediabunny already has rotation applied.
     const raw = typeof VideoFrame !== "undefined" && image instanceof VideoFrame;
     const turns = raw ? (((s.rotation / 90) % 4) as 0 | 1 | 2 | 3) : 0;
-    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns, matte };
+    const next = r.next ? { image: r.next.sample.toCanvasImageSource(), w: r.next.w } : undefined;
+    return { image, width: s.displayWidth, height: s.displayHeight, rotation: turns, matte, ...(next ? { next } : {}) };
   };
 }
 

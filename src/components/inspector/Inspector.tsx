@@ -573,6 +573,15 @@ function SpeedTab({ clip }: { clip: ops.TimedClip }) {
           <Row label="Reverse">
             <Toggle label="Reverse" on={!!clip.reverse} onChange={(v) => edit(v ? "Reverse" : "Play forward", (p) => ops.setReverse(p, clip.id, v))} />
           </Row>
+          {clip.type === "video" && !clip.reverse && (
+            <Row label="Frame blending">
+              <Toggle
+                label="Frame blending"
+                on={!!clip.frameBlend}
+                onChange={(v) => edit(v ? "Frame blending" : "No frame blending", (p) => runCommand(p, "set_frame_blending", { clip_ids: [clip.id], on: v }))}
+              />
+            </Row>
+          )}
           {hasSound && (
             <Row label="Change pitch">
               <Toggle label="Change pitch" on={!!clip.changePitch} onChange={(v) => edit(v ? "Change pitch with speed" : "Keep pitch", (p) => ops.setChangePitch(p, [clip.id], v))} />

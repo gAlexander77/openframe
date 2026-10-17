@@ -326,6 +326,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Standard**: one rate, 0.1x to 100x, with quick picks; the clip keeps
   its source and later clips move with the new length. Or type the
   **Duration** (CapCut's) and the speed follows, the same source filling it.
+- **Frame blending** (Speed > Playback; `set_frame_blending`; Premiere's
+  Time Interpolation): slow motion, or a source rate unlike the project's,
+  mixes neighboring source frames instead of repeating them, in preview
+  and export ([[ADR-051 Frame blending draws the layer twice from two cursors]]).
 - **Curve** (CapCut's curve speed): None, Custom, Montage, Hero time,
   Bullet time, Jump cut, Flash in, Flash out, and a graph editor. The graph
   has a log speed axis from 0.1x to 10x, draggable points, add at the
@@ -390,6 +394,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption
   list editing; apply style to all; SRT/VTT import and export.
+- **Find and replace** in captions (Captions tab; CapCut's;
+  `replace_caption_text`): fix a misheard name everywhere, whole words
+  and case as chosen, with a live match count; titles are left alone.
+- **Edit by transcript** (Captions tab; Premiere's Text-Based Editing):
+  the selected clip's track as text, clip by clip; select words and press
+  Delete to cut them with the pause around them, gaps closed, one undo
+  step; click a word to go there; the word under the playhead lights up.
+  Pieces of a cut clip read on without hearing it again. Agents:
+  `get_transcript` then `cut_ranges`. The words are kept for the session,
+  not in the project; clips with a speed curve or reversed are left out.
 
 ## AI tools (all on this machine)
 

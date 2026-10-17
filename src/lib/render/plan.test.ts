@@ -94,6 +94,26 @@ describe("source time", () => {
     expect(t).toBeGreaterThan(59 / 30);
     expect(t).toBeLessThan(59 / 30 + 0.5 / 30);
   });
+
+  it("frame blending at half speed: odd frames mix two source frames half and half", () => {
+    let p = createProject({ fps: { num: 30, den: 1 } });
+    p = { ...p, assets: [{ id: "a", kind: "video", name: "v", src: "v", duration: 10, fps: 30, hasVideo: true, hasAudio: false }] };
+    const clip = { ...clipForAsset(p.assets[0], 0, p.fps), id: "v", speed: 0.5, frameBlend: true };
+    p = addClip(p, p.tracks[0].id, clip);
+    const src = (f: number) => {
+      const item = planFrame(p, f)[0];
+      return item.kind === "layer" && item.layer.source.kind === "video" ? item.layer.source : null;
+    };
+    // Frame 21 sits halfway between source frames 10 and 11.
+    expect(src(21)?.next?.w).toBeCloseTo(0.5, 3);
+    expect(src(21)!.time * 30).toBeCloseTo(10.25, 3);
+    expect(src(21)!.next!.time * 30).toBeCloseTo(11.25, 3);
+    // Even frames land on a source frame: nothing to mix.
+    expect(src(20)?.next).toBeUndefined();
+    // Off, the clip repeats frames as before.
+    p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => ({ ...c, frameBlend: undefined })) })) };
+    expect(src(21)?.next).toBeUndefined();
+  });
 });
 
 describe("canvas fill", () => {

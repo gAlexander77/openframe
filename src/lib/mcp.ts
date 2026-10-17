@@ -42,7 +42,7 @@ export interface McpHost {
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip";
 
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -112,6 +112,12 @@ APP_TOOLS.push(
     description: "Find the pauses in a clip's speech and cut them out, closing the gaps (one undo step). Returns the silent source ranges and seconds saved.",
     inputSchema: obj({ clip_id: clipId, sensitivity, min_silence: { type: "number", minimum: 0, description: "Shortest pause to cut, seconds (default 0.4)" }, padding: { type: "number", minimum: 0, description: "Kept around speech, seconds (default 0.1)" } }, ["clip_id"]),
     call: async (h, a) => json(await h.ai("removeSilences", String(a.clip_id), given({ sensitivity: a.sensitivity, minSilence: a.min_silence, padding: a.padding }))),
+  },
+  {
+    name: "get_transcript",
+    description: "Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).",
+    inputSchema: obj({ clip_id: clipId }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("clipTranscript", String(a.clip_id), {})),
   },
   {
     name: "remove_filler_words",
