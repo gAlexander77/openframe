@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runTurn, stripThinking, toFunctionTools, type ChatMessage } from "./copilot";
+import { runTurn, stripThinking, toFunctionTools, type ChatMessage } from "./assistant";
 
 const toolMsg = (name: string, args: unknown, id = "t1"): ChatMessage => ({
   role: "assistant",
@@ -7,7 +7,7 @@ const toolMsg = (name: string, args: unknown, id = "t1"): ChatMessage => ({
   tool_calls: [{ id, type: "function", function: { name, arguments: typeof args === "string" ? args : JSON.stringify(args) } }],
 });
 
-describe("copilot loop", () => {
+describe("assistant loop", () => {
   it("calls tools until the model answers in text", async () => {
     const script: ChatMessage[] = [toolMsg("describe_project", {}), toolMsg("add_text", { text: "Hi", start: 1, duration: 2 }), { role: "assistant", content: "<think>done</think>Added a title." }];
     const called: string[] = [];

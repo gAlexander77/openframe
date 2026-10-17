@@ -96,7 +96,7 @@ and original media references on the secondary browser target.
 - Open a pre-rename desktop project, find its home-screen entry, retain
   its media/proxies, save, restart, reopen, and export. Verify backups and
   migration recovery as well as a fresh install.
-- Verify Copilot, local MCP HTTP and stdio, and headless rendering against
+- Verify the AI assistant, local MCP HTTP and stdio, and headless rendering against
   the renamed release. Check token discovery and existing client scripts.
 - Verify old FFmpeg override names, automation aliases, and project-file
   extensions still work where those interfaces exist.

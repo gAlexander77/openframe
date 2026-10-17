@@ -35,7 +35,7 @@ of the documentation and how agents use it as shared working memory.
 - [[Features]] — everything the app does today, with the intent behind each
 - [[Roadmap]] — what is in flight and next, in priority order
 - [[Project format]] — the open JSON schema agents and pipelines write
-- [[Automation]] — headless render, MCP for agents, Copilot: the three doors
+- [[Automation]] — headless render, MCP for agents, AI assistant: the three doors
 - [[UX audit 2026-10-14]] — 38 ranked findings from a first-time CapCut
   user's walk, what was fixed, and what to keep
 - [[UI polish 2026-10-16]] — styling audit at three window sizes and the

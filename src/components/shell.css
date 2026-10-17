@@ -175,8 +175,8 @@
 .drop-overlay-card svg { color: var(--accent); }
 .drop-overlay-card strong { color: var(--text-1); font-size: var(--fs-lg); }
 
-.copilot-btn { height: 28px; gap: 5px; color: var(--text-1); }
-.copilot-btn svg { color: var(--accent); }
+.assistant-btn { height: 28px; gap: 5px; color: var(--text-1); }
+.assistant-btn svg { color: var(--accent); }
 /* A row of label swatches in a menu: arrows reach each, like any item. */
 .menu-swatches { display: flex; align-items: center; gap: 4px; padding: 4px 8px 4px 26px; }
 .menu-swatches-title { margin-right: auto; font-size: var(--fs-xs); color: var(--text-2); }

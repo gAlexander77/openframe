@@ -54,7 +54,7 @@ One project document (`src/lib/project/types.ts`, ADR-004: integer frames,
 rational fps) edited by pure ops (`ops.ts`) through one store with snapshot
 undo (`src/state/store.ts`, ADR-005). Every edit is also a named command with
 a JSON Schema (`src/lib/commands.ts`, ADR-006) — the surface for the AI
-Copilot, `window.videoEditor` (`src/automation.ts`), the MCP server
+assistant, `window.videoEditor` (`src/automation.ts`), the MCP server
 (`src/lib/mcp.ts` + `src-tauri/src/mcp.rs`, ADR-008/009) and the headless
 renderer (`--render`, ADR-029); see `docs/Automation.md`.
 The media engine lives in the webview (ADR-002): `src/lib/render/plan.ts`

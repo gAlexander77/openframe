@@ -1,5 +1,5 @@
 // Editing operations: pure functions Project -> Project. The store applies
-// them (with undo), automation and the AI copilot call them by name through
+// them (with undo), automation and the AI assistant call them by name through
 // commands.ts, and the tests pin each one's semantics. Trim modes follow the
 // definitions in docs/research/Professional NLE features.md.
 //

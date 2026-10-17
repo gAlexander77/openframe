@@ -1,4 +1,4 @@
-// The copilot's agent loop, provider-agnostic and pure: the model sees the
+// The AI assistant's agent loop, provider-agnostic and pure: the model sees the
 // same MCP tools external agents do (ADR-008), as OpenAI-style function
 // definitions that local servers (Ollama, LM Studio, llama.cpp) understand.
 // The host supplies chat() and callTool(); tests supply fakes.
@@ -27,7 +27,7 @@ export function toFunctionTools(tools: { name: string; description: string; inpu
   return tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } }));
 }
 
-export const COPILOT_SYSTEM = `You are the editing assistant inside a video editor. You change the user's timeline by calling tools.
+export const ASSISTANT_SYSTEM = `You are the editing assistant inside a video editor. You change the user's timeline by calling tools.
 Rules:
 - The current timeline is given to you below (times in seconds). Use clip and asset ids exactly as it reports them.
 - Call describe_project only if you need to re-check after several edits.

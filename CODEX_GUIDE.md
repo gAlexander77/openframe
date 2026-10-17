@@ -121,7 +121,7 @@ grading with LUTs, HSL, curves, wheels, scopes), text (presets, word art,
 templates, typing on the canvas), stickers, auto captions (Whisper, local),
 AI tools (remove silences, split scenes, beat markers, normalize loudness,
 auto ducking), export (MP4/MOV/WebM/MKV, frame-exact), OpenTimelineIO
-export, Copilot (local Ollama/LM Studio), an MCP server for outside agents,
+export, the AI assistant (local Ollama/LM Studio), an MCP server for outside agents,
 and headless rendering (`--render`). `docs/Features.md` is the full list;
 `docs/History.md` records every round and lesson.
 
@@ -516,7 +516,7 @@ small local commits (`0c20bbf`..HEAD); see the 2026-10-16 entry in
 `docs/History.md`. Highlights: automation imports on Home now throw
 instead of returning `[]` (the export drive had broken), effect edits keep
 timeline gaps, the preset library survives an unreadable entry, autosave
-no longer chains saves, and Copilot turns stop at a project switch. The
+no longer chains saves, and AI assistant turns stop at a project switch. The
 runner opens the app before a drive, so `source-monitor`, `media-folders`
 and `trim-preview` run headless on the web too. Still open: save on window
 close (needs a desktop test), and Copy/Paste effects overlaps Paste

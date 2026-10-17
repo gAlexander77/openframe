@@ -69,7 +69,7 @@ remains uncertain.
 - [Architecture](docs/Architecture.md) and
   [project format](docs/Project%20format.md): how the editor works and how
   projects are represented.
-- [Automation](docs/Automation.md): headless rendering, MCP, and Copilot.
+- [Automation](docs/Automation.md): headless rendering, MCP, and the AI assistant.
 
 ## Contribute
 

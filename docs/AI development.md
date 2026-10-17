@@ -15,7 +15,7 @@ and runs on the user's device. Third-party dependencies and models remain
 the work of their respective authors, with their own licenses.
 
 AI used to develop the project is separate from AI inside the editor.
-Copilot, local analysis, captions, and agent automation are product features
+The AI assistant, local analysis, captions, and agent automation are product features
 documented in [[AI tools]] and [[Automation]]. Users do not need Claude Code
 or Codex to perform ordinary manual editing.
 

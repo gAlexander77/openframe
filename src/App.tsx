@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExportDialog } from "./components/ExportDialog";
-import { CopilotPanel } from "./components/CopilotPanel";
+import { AssistantPanel } from "./components/AssistantPanel";
 import { Home } from "./components/Home";
 import { InspectorPanel } from "./components/inspector/Inspector";
 import { LibraryPanel } from "./components/LibraryPanel";
@@ -132,7 +132,7 @@ export default function App() {
           </div>
         </div>
       )}
-      {screen === "editor" && <CopilotPanel />}
+      {screen === "editor" && <AssistantPanel />}
       <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
       {prefs && <PreferencesDialog onClose={() => setPrefs(false)} />}
       <DragGhost />

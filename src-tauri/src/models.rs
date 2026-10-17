@@ -1,4 +1,4 @@
-//! Requests to the local model servers Copilot uses (Ollama on 11434, LM
+//! Requests to the local model servers the AI assistant uses (Ollama on 11434, LM
 //! Studio on 1234). The release webview's origin is http://tauri.localhost,
 //! which Ollama's CORS rules refuse, so the page cannot fetch them itself;
 //! Rust can. Only those two loopback ports are reachable this way.

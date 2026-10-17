@@ -601,3 +601,19 @@ left, and the survey's stale rows were brought up to date.
   is placed on the canvas and never see its rectangle. Rounded corners
   already exist through the rectangle mask's radius, and border and
   shadow belong in the layer shader.
+
+## 2026-10-17 — An agent makes a whole video
+
+Claude made a 36-second promo for RacePulse (a sim racing overlay app)
+entirely over MCP: screen recordings framed and zoomed, seven voice lines
+with matching captions, titles with animations, dissolves, a music bed
+ducked under the voice. It worked, and it showed where the agent surface
+was thin. This round fixes what it found.
+
+- **Copilot is now the AI assistant.** The owner renamed it: Microsoft and
+  GitHub both ship products called Copilot. The panel, the title bar
+  button, the code (`AssistantPanel`, `state/assistant.ts`,
+  `lib/assistant.ts`) and the living docs changed; History, ADRs and
+  research notes keep the old word because they record what was true then.
+  The model choice moved to the `assistant` storage key, still reading
+  `copilot` so nobody has to pick it again.

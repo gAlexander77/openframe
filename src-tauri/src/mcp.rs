@@ -340,7 +340,7 @@ pub fn run_stdio_bridge() {
             Ok((202, _)) => None,
             Ok((code, body)) => id.clone().map(|id| error(id, &format!("the editor refused the request ({code}): {}", body.trim()))),
             Err(_) => id.clone().map(|id| {
-                error(id, "Video Editor is not running, or 'Allow AI agents' is off. Open the app and turn it on in the Copilot panel.")
+                error(id, "Video Editor is not running, or 'Allow AI agents' is off. Open the app and turn it on in the AI assistant panel.")
             }),
         };
         if let Some(r) = reply {

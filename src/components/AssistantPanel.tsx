@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Undo2, WandSparkles, X } from "../icons";
-import { ask, PROVIDERS, resetChat, setModel, setProvider, toggleCopilot, undoTurn, useCopilot, discoverModels } from "../state/copilot";
+import { ask, PROVIDERS, resetChat, setModel, setProvider, toggleAssistant, undoTurn, useAssistant, discoverModels } from "../state/assistant";
 import { AgentsSection } from "./AgentsSection";
-import "./copilot.css";
+import "./assistant.css";
 
 const EXAMPLES = ["Add a title that says “Welcome” for the first 3 seconds", "Cut the first clip in half and add a dissolve between the halves", "Make every clip slightly warmer and add a vignette"];
 
 /** A drawer over the inspector where a local model edits the timeline. */
-export function CopilotPanel() {
-  const c = useCopilot();
+export function AssistantPanel() {
+  const c = useAssistant();
   const [text, setText] = useState("");
   const listRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -20,20 +20,20 @@ export function CopilotPanel() {
     setText("");
   };
   return (
-    <aside className="copilot" aria-label="Copilot">
-      <header className="copilot-head">
+    <aside className="assistant" aria-label="AI assistant">
+      <header className="assistant-head">
         <WandSparkles size={15} />
-        <strong>Copilot</strong>
-        <span className={`copilot-dot ${c.status}`} data-tip={c.status === "offline" ? "No local model server found" : "Runs on this computer"} />
-        <span className="copilot-spacer" />
+        <strong>AI assistant</strong>
+        <span className={`assistant-dot ${c.status}`} data-tip={c.status === "offline" ? "No local model server found" : "Runs on this computer"} />
+        <span className="assistant-spacer" />
         <button className="icon-btn small" aria-label="New conversation" data-tip="New conversation" onClick={resetChat}>
           <Undo2 size={13} />
         </button>
-        <button className="icon-btn small" aria-label="Close Copilot" onClick={() => toggleCopilot(false)}>
+        <button className="icon-btn small" aria-label="Close AI assistant" onClick={() => toggleAssistant(false)}>
           <X size={14} />
         </button>
       </header>
-      <div className="copilot-config">
+      <div className="assistant-config">
         <select className="field" value={c.provider} onChange={(e) => setProvider(e.target.value)} aria-label="Model server">
           {PROVIDERS.map((p) => (
             <option key={p.id} value={p.id}>
@@ -50,10 +50,10 @@ export function CopilotPanel() {
           ))}
         </select>
       </div>
-      <div className="copilot-list" ref={listRef}>
+      <div className="assistant-list" ref={listRef}>
         {c.status === "offline" && (
-          <div className="copilot-note">
-            Copilot uses a model on this computer — nothing is uploaded. Start Ollama or LM Studio with a model that can call tools (for example <b>qwen3.5</b>), then{" "}
+          <div className="assistant-note">
+            The AI assistant uses a model on this computer — nothing is uploaded. Start Ollama or LM Studio with a model that can call tools (for example <b>qwen3.5</b>), then{" "}
             <button className="link-btn" onClick={() => void discoverModels()}>
               look again
             </button>
@@ -61,7 +61,7 @@ export function CopilotPanel() {
           </div>
         )}
         {c.entries.length === 0 && c.status !== "offline" && (
-          <div className="copilot-examples">
+          <div className="assistant-examples">
             <span>Ask for an edit, for example:</span>
             {EXAMPLES.map((e) => (
               <button key={e} className="chip-btn" onClick={() => setText(e.replace(/[“”]/g, '"'))}>
@@ -104,11 +104,11 @@ export function CopilotPanel() {
           </div>
         )}
       </div>
-      <details className="copilot-agents">
+      <details className="assistant-agents">
         <summary>Connect other AI agents</summary>
         <AgentsSection />
       </details>
-      <div className="copilot-input">
+      <div className="assistant-input">
         <textarea
           className="field"
           rows={2}
@@ -121,7 +121,7 @@ export function CopilotPanel() {
               send();
             }
           }}
-          aria-label="Ask Copilot"
+          aria-label="Ask the AI assistant"
         />
         <button className="btn primary" disabled={!text.trim() || c.status === "thinking"} onClick={send}>
           Send

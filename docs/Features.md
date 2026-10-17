@@ -442,7 +442,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-032 Remove BG runs ormbg on WebGPU, MediaPipe on WASM]],
   [[ADR-033 Mattes are made once and stored as grayscale video]]).
   Chroma key sits under it on the same sub-tab.
-- **Copilot**: ask for an edit in words; a model on this computer (Ollama
+- **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
 
 ## Export

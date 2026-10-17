@@ -201,9 +201,9 @@ is in [[Renaming]]. The project format itself is documented in
 ## AI features and automation
 
 Manual editing does not require an AI coding agent. The editor's optional
-features include auto captions, local analysis, and Copilot. Some models or
+features include auto captions, local analysis, and the AI assistant. Some models or
 tools need a separate download or installation; local inference can still
-require network access to obtain model files. The current Copilot uses a
+require network access to obtain model files. The current AI assistant uses a
 local model server such as Ollama or LM Studio.
 
 **Remove a background:** select a video clip, open Video > Remove BG and

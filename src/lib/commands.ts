@@ -1,6 +1,6 @@
 // The command registry: every edit an agent can make, by name, with a JSON
 // Schema for its arguments (ADR-006). One surface serves the in-app AI
-// copilot (as LLM tool definitions), the automation API, recipes/pipelines,
+// AI assistant (as LLM tool definitions), the automation API, recipes/pipelines,
 // and a future MCP server, which only has to list these and forward calls.
 //
 // Times in command arguments are SECONDS (what people and LLMs think in);

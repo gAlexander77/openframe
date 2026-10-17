@@ -1,11 +1,11 @@
-// The in-app copilot: a model running on the user's own machine (Ollama or
+// The in-app AI assistant: a model running on the user's own machine (Ollama or
 // LM Studio, both OpenAI-compatible) edits the timeline through the same MCP
 // tools external agents use (ADR-008, ADR-009). Nothing leaves the
 // computer. Each tool call is an ordinary undoable edit; "Undo all" rewinds
 // a whole turn.
 
 import { useSyncExternalStore } from "react";
-import { COPILOT_SYSTEM, runTurn, toFunctionTools, type ChatMessage, type Step } from "../lib/copilot";
+import { ASSISTANT_SYSTEM, runTurn, toFunctionTools, type ChatMessage, type Step } from "../lib/assistant";
 import { listTools } from "../lib/mcp";
 import { platform } from "../platform";
 import { projectWork } from "./projectWork";
@@ -31,7 +31,7 @@ export interface Entry {
   edits?: number;
 }
 
-interface CopilotState {
+interface AssistantState {
   open: boolean;
   provider: string;
   model: string;
@@ -43,26 +43,26 @@ interface CopilotState {
 
 const saved = (() => {
   try {
-    return JSON.parse(localStorage.getItem("copilot") ?? "{}") as Partial<CopilotState>;
+    return JSON.parse(localStorage.getItem("assistant") ?? localStorage.getItem("copilot") ?? "{}") as Partial<AssistantState>;
   } catch {
     return {};
   }
 })();
 
-let state: CopilotState = { open: false, provider: saved.provider ?? "ollama", model: saved.model ?? "", models: [], status: "idle", entries: [], live: [] };
-let history: ChatMessage[] = [{ role: "system", content: COPILOT_SYSTEM }];
+let state: AssistantState = { open: false, provider: saved.provider ?? "ollama", model: saved.model ?? "", models: [], status: "idle", entries: [], live: [] };
+let history: ChatMessage[] = [{ role: "system", content: ASSISTANT_SYSTEM }];
 const listeners = new Set<() => void>();
-const set = (patch: Partial<CopilotState>) => {
+const set = (patch: Partial<AssistantState>) => {
   state = { ...state, ...patch };
   try {
-    localStorage.setItem("copilot", JSON.stringify({ provider: state.provider, model: state.model }));
+    localStorage.setItem("assistant", JSON.stringify({ provider: state.provider, model: state.model }));
   } catch {
     /* settings just won't persist */
   }
   listeners.forEach((l) => l());
 };
 
-export function useCopilot(): CopilotState {
+export function useAssistant(): AssistantState {
   return useSyncExternalStore(
     (l) => {
       listeners.add(l);
@@ -111,20 +111,20 @@ export function setModel(model: string) {
   set({ model });
 }
 
-export function toggleCopilot(open = !state.open) {
+export function toggleAssistant(open = !state.open) {
   set({ open });
   if (open && !state.models.length) void discoverModels();
 }
 
 // A small local model loses its way among all 30 tools (the first live run
 // with a 9B model called freeze, marker and transition tools instead of
-// adding a title). The copilot gets the everyday edits; external agents
+// adding a title). The assistant gets the everyday edits; external agents
 // still see everything over MCP.
-const COPILOT_TOOLS = new Set([
+const ASSISTANT_TOOLS = new Set([
   "describe_project", "add_text", "add_media_clip", "add_color_clip", "split", "delete_clips", "move_clip",
   "trim_clip", "set_speed", "set_param", "set_transition", "add_effect", "set_filter", "set_animation", "undo",
 ]);
-const TOOLS = toFunctionTools(listTools().filter((t) => COPILOT_TOOLS.has(t.name)));
+const TOOLS = toFunctionTools(listTools().filter((t) => ASSISTANT_TOOLS.has(t.name)));
 
 /** The timeline as it is right now, so the model starts with the ids
  * instead of spending a step (or getting lost) looking them up. */
@@ -198,7 +198,7 @@ export async function ask(text: string) {
   // runs and the next model round trip stops the turn.
   const session = projectWork.signal();
   try {
-    const r = await runTurn(history, q, (m) => (session.aborted ? Promise.reject(new Error("The project changed during this request, so the Copilot stopped.")) : chat(m)), async (name, args) => {
+    const r = await runTurn(history, q, (m) => (session.aborted ? Promise.reject(new Error("The project changed during this request, so the AI assistant stopped.")) : chat(m)), async (name, args) => {
       if (session.aborted) return { text: "The project was closed; nothing was changed.", isError: true };
       const out = await callTool(name, args);
       if (!out.isError && store.get().undoLabel !== before) edits++;
@@ -225,13 +225,13 @@ store.subscribe(() => {
   resetChat();
 });
 
-/** Undo every edit a copilot turn made. */
+/** Undo every edit an assistant turn made. */
 export function undoTurn(entry: Entry) {
   for (let i = 0; i < (entry.edits ?? 0); i++) store.undo();
   set({ entries: state.entries.map((e) => (e === entry ? { ...e, edits: 0 } : e)) });
 }
 
 export function resetChat() {
-  history = [{ role: "system", content: COPILOT_SYSTEM }];
+  history = [{ role: "system", content: ASSISTANT_SYSTEM }];
   set({ entries: [] });
 }

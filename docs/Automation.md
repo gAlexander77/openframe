@@ -28,7 +28,7 @@ line says why); 2 bad arguments. Try it with `scripts/render-example/`.
 
 ## 2. Drive the running editor (agents, MCP)
 
-Turn on **Copilot → Connect other AI agents → Allow AI agents**. Then:
+Turn on **AI assistant → Connect other AI agents → Allow AI agents**. Then:
 
 - **HTTP** (Streamable HTTP): `http://127.0.0.1:47280/mcp` with
   `Authorization: Bearer <token>` (the panel shows and copies it). For
@@ -50,9 +50,9 @@ turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
 [[ADR-009 Agents reach the app over local MCP, opt-in]])
 
-## 3. Ask in plain words (Copilot)
+## 3. Ask in plain words (AI assistant)
 
-The Copilot panel runs a model on this computer (Ollama or LM Studio,
+The AI assistant panel runs a model on this computer (Ollama or LM Studio,
 found automatically) over the same tools. With qwen3.5:9b, "add a title
 Welcome from 1 to 4 seconds" takes about 10 s; "split at 5 s and put a
 dissolve between the parts" about 2 s. Each answer can be undone as a whole.

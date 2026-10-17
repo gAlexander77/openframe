@@ -5,7 +5,7 @@ import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
-import { toggleCopilot } from "../state/copilot";
+import { toggleAssistant } from "../state/assistant";
 import { saveOtio } from "../state/export";
 import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
@@ -185,8 +185,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
       </div>
       <div className="titlebar-right">
         {!props.home && (
-          <button className="btn ghost copilot-btn" data-tip="Ask a model on this computer to make edits" onClick={() => toggleCopilot()}>
-            <WandSparkles size={14} /> Copilot
+          <button className="btn ghost assistant-btn" data-tip="Ask a model on this computer to make edits" onClick={() => toggleAssistant()}>
+            <WandSparkles size={14} /> AI assistant
           </button>
         )}
         <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip="Keyboard shortcuts" onClick={props.onShortcuts}>

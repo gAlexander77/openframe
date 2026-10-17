@@ -50,7 +50,7 @@ export function AgentsSection() {
   const [error, setError] = useState("");
   useEffect(() => setInfo(endpoint), []);
   if (!platform.agents) {
-    return <p className="agents-note">External AI agents connect to the desktop app over MCP. In the browser, Copilot works with a model on this computer.</p>;
+    return <p className="agents-note">External AI agents connect to the desktop app over MCP. In the browser, the AI assistant works with a model on this computer.</p>;
   }
   const toggle = async (on: boolean) => {
     setError("");
