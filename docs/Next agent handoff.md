@@ -14,9 +14,9 @@ Claude Code or Codex pickup. Read it before resuming previous tasks.
   **GPL-3.0-only** to original code and documentation.
 - **Desktop first** remains the priority. The owner explicitly clarified
   this after discussing the web development process. ADR-003 still applies.
-- Keep the repository private. Do not publish, deploy a hosted app, change
-  GitHub visibility, rename the remote repository, or create a public release
-  without a separate owner instruction.
+- The owner made the repository public on 2026-10-17. Do not deploy a
+  hosted app, change GitHub settings, or create a release without a separate
+  owner instruction.
 - This handoff was a documentation/licensing pass. App code, configuration,
   manifests, locks, automation names, saved data, and existing agent work were
   left untouched. The owner subsequently authorized local commits of this

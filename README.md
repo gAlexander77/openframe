@@ -38,9 +38,9 @@ binary (`openframe`), packages and repository. The app's data folder keeps
 its old identifier so every saved project stays where it is; see
 [the rename notes](docs/Renaming.md).
 
-The repository is being kept private while it is prepared for an open-source
-release. Access currently requires permission; this README does not announce
-a public release, hosted service, or downloadable installer.
+The source is public (since 2026-10-17) under GPL-3.0-only. There is no
+packaged release, hosted service, or downloadable installer yet: run it from
+source as below.
 
 ## Run from source
 
@@ -90,9 +90,9 @@ remains uncertain.
 
 Bug reports, usability feedback, documentation, accessibility work, tests,
 and code contributions are welcome. Start with
-[CONTRIBUTING.md](CONTRIBUTING.md). During private development, contributors
-need repository access from the owner. AI-assisted contributions are welcome
-when their author can explain and validate the result.
+[CONTRIBUTING.md](CONTRIBUTING.md); issues and pull requests are the way in.
+AI-assisted contributions are welcome when their author can explain and
+validate the result.
 
 Coding agents should begin with [AGENTS.md](AGENTS.md), the shared
 [CLAUDE.md](CLAUDE.md) manual, and the

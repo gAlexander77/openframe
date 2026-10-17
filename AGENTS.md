@@ -15,8 +15,9 @@ Claude Code and Codex.
   its capabilities separately. See ADR-003 and the handoff.
 - The project uses **GPL-3.0-only**. Preserve third-party notices and follow
   [CONTRIBUTING.md](CONTRIBUTING.md).
-- Keep the repository private. Publication and deployment require a
-  separate owner instruction. The remote is `gAlexander77/openframe`.
+- The repository is public (the owner opened it on 2026-10-17) at
+  `gAlexander77/openframe`. Releases, installers and deployment still
+  require a separate owner instruction.
 - Respect existing work and active agents. Inspect status and worktrees,
   coordinate before overlapping edits, and do not stop their processes,
   reset their changes, or remove their worktrees.

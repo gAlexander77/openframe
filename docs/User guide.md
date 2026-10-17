@@ -5,8 +5,8 @@ OpenFrame is a desktop-first video editor in active development (named
 
 ## Get the editor
 
-The repository is currently private and no public release is announced.
-With repository access, follow the root README's source setup and run
+The source is public at github.com/gAlexander77/openframe; there is no
+packaged release yet. Follow the root README's source setup and run
 `npm run tauri dev`. Node.js/npm, Rust, and the platform's Tauri prerequisites
 are required. Install FFmpeg and ffprobe on `PATH` for the desktop's broader
 media-format support. `OPENFRAME_FFMPEG` points the app at another FFmpeg
@@ -222,7 +222,7 @@ algorithms and limits.
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md). Include the revision, OS,
 desktop/browser target, steps, expected result, and actual result. Share only
 media you have permission to share and remove private paths and tokens from
-logs. During the private phase, use the review channel agreed with the owner.
+logs. Report it as an issue on the repository.
 
 ## Reuse settings
 

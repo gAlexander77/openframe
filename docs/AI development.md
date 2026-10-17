@@ -67,7 +67,8 @@ and source references instead of copying entire agent conversations.
   (`gAlexander77/openframe`) were renamed on 2026-10-17.
 - License: **GPL-3.0-only** for original project code and documentation.
 - Development: **desktop first**, with browser support verified separately.
-- Visibility: keep the repository private until the owner requests release.
+- Visibility: the repository is public since 2026-10-17 (the owner's call);
+  packaged releases still wait for the owner.
 - Continuity: leave paused Claude Code work and existing worktrees intact.
 
 See [[Renaming]] and [[Release preparation]] for the concrete remaining work.

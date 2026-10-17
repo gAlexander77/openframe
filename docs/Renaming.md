@@ -8,7 +8,8 @@ The owner asked for the full rename and it is done: the window, title bar,
 `openframe --mcp-stdio`), the crate (`openframe`, lib `openframe_lib`), the
 npm package, the MCP server name and the generated `claude mcp add ...
 openframe` line, the FFmpeg override (`OPENFRAME_FFMPEG`), the living docs,
-and the GitHub repository: `gAlexander77/openframe`, still private, with a
+and the GitHub repository: `gAlexander77/openframe` (made public by the
+owner the same day), with a
 new description and twenty topics for the About box (open-source, oss,
 video-editor, nle, tauri, rust, mcp, local-ai and the like; GitHub shows
 the GPL-3.0 license from LICENSE). GitHub redirects the old URL; `origin`

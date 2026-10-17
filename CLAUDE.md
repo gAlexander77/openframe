@@ -13,9 +13,9 @@ strings.
 Read `AGENTS.md` and `docs/Next agent handoff.md` before continuing previous
 work. The owner reaffirmed **desktop first**, selected **GPL-3.0-only**, and
 asked for the coordinated rename to be documented for the next pickup.
-The repository remains private at `gAlexander77/openframe` (renamed from
-`video-editor` on 2026-10-17); public release and deployment need a separate
-owner instruction.
+The repository is public at `gAlexander77/openframe` (renamed from
+`video-editor` and opened by the owner on 2026-10-17); packaged releases and
+deployment need a separate owner instruction.
 
 This handoff changes documentation/licensing only. Preserve the paused
 Claude Code work, other agents' worktrees, and any pending changes.

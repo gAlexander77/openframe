@@ -1,8 +1,9 @@
 # Open-source release preparation
 
 **Status:** GPL-3.0-only adopted in LICENSE and README on 2026-10-14.
-The repository remains private by owner instruction. Publication and the
-implementation rename are pending; this document is preparation work.
+The rename landed and the owner made the repository public on 2026-10-17;
+packaged releases (installers, signing) are what this document still
+prepares.
 
 ## Licensing decision
 

@@ -1,10 +1,9 @@
 # Contributing to OpenFrame
 
 OpenFrame is an AI-developed, desktop-first video editor intended for an
-open-source community. The repository currently remains private; request
-access from the owner before expecting GitHub issues or pull requests to be
-available. Its current home is
-[gAlexander77/openframe](https://github.com/gAlexander77/openframe).
+open-source community. Its home is
+[gAlexander77/openframe](https://github.com/gAlexander77/openframe), public
+since 2026-10-17; issues and pull requests there are the way in.
 
 ## Useful contributions
 
@@ -80,9 +79,8 @@ tradeoffs, and validation. Update feature documentation for shipped behavior,
 the roadmap for plans, an ADR for non-obvious decisions, and history for
 lessons future contributors should not have to rediscover.
 
-Respect the owner's current commit and publishing instructions. During the
-private phase, agree on the review channel with the owner. Once public,
-issues and pull requests at the repository will be the normal entry points.
+Respect the owner's current commit and publishing instructions. Issues and
+pull requests at the repository are the normal entry points.
 
 ## AI-assisted contributions
 

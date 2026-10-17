@@ -676,3 +676,7 @@ was thin. This round fixes what it found.
   - **One move per frame_region** made the assistant shot (a tall, narrow
     panel) two clips: onto the panel's header, then down to the prompt as
     it is typed. A split costs nothing visible in continuous footage.
+- **Public.** After the rename the owner made the repository public, to
+  share the experiment. A scan of the whole history first: no keys or
+  tokens, every commit under the GitHub noreply address, the promo the only
+  large file. There is still no packaged release; the docs say so.
