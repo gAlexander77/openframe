@@ -39,8 +39,9 @@ describe("loudness (BS.1770)", () => {
     expect(measure(44100, 2, [0, 1], -20).integrated()).toBeCloseTo(-20, 1);
   });
 
-  it("counts mono twice, as it plays on both speakers", () => {
-    expect(measure(48000, 1, [0], -10).integrated()).toBeCloseTo(-10, 1);
+  it("counts mono once, as the mix's equal-power center pan plays it", () => {
+    // -3 dB in each speaker: the same power as the one channel at full level.
+    expect(measure(48000, 1, [0], -10).integrated()).toBeCloseTo(-13.01, 1);
   });
 
   it("gates out silence and is -Infinity when there is only silence", () => {

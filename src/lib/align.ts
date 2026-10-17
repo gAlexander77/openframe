@@ -250,11 +250,12 @@ export function scaleClips(p: Project, ids: Id[], k: number, frame: number): Pro
 
 /** Align one clip to the canvas, or several to their combined bounds, as
  * Premiere's Essential Graphics does. */
-export function alignClips(p: Project, ids: Id[], edge: Align, frame: number): Project {
+export function alignClips(p: Project, ids: Id[], edge: Align, frame: number, margin = 0): Project {
   const items = boxesAt(p, ids, frame);
   if (!items.length) return p;
+  const mx = margin * p.width, my = margin * p.height;
   const to: Rect = items.length === 1
-    ? { left: 0, top: 0, right: p.width, bottom: p.height }
+    ? { left: mx, top: my, right: p.width - mx, bottom: p.height - my }
     : items.map((i) => rectOf(i.box)).reduce((a, r) => ({
         left: Math.min(a.left, r.left), top: Math.min(a.top, r.top), right: Math.max(a.right, r.right), bottom: Math.max(a.bottom, r.bottom),
       }));

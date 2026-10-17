@@ -613,11 +613,19 @@ export const COMMANDS: Command[] = [
   {
     name: "align_clips",
     description: "Align pictures on the canvas, as CapCut's Transform align row does: one clip against the canvas edge or center, several against their combined bounds. left, center and right move horizontally; top, middle and bottom vertically. Animated positions get a keyframe at `at` (default: each clip's first frame).",
-    input: S.obj({ clip_ids: S.ids("Visual clips"), align: S.str("Where to align", { enum: ALIGNS }), at: S.num("Timeline seconds, for animated positions") }, ["clip_ids", "align"]),
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        align: S.str("Where to align", { enum: ALIGNS }),
+        at: S.num("Timeline seconds, for animated positions"),
+        margin: S.num("One clip: stop this far inside the canvas edge, a fraction of its size (0.05 is the title-safe inset), so titles of any width share one left edge", { minimum: 0, maximum: 0.4 }),
+      },
+      ["clip_ids", "align"],
+    ),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
-      return alignClips(p, ids, a.align as Align, a.at === undefined ? -Infinity : f(p, a.at));
+      return alignClips(p, ids, a.align as Align, a.at === undefined ? -Infinity : f(p, a.at), Number(a.margin ?? 0));
     },
   },
   {

@@ -19,6 +19,9 @@ it("aligns one clip against each canvas edge and center", () => {
   expect(at(alignClips(p, [c.id], "right", 0), c.id).transform.x).toBeCloseTo(0.25);
   expect(at(alignClips(p, [c.id], "top", 0), c.id).transform.y).toBeCloseTo(-0.25);
   expect(at(alignClips(p, [c.id], "bottom", 0), c.id).transform.y).toBeCloseTo(0.25);
+  // A margin stops it inside the edge: the title-safe inset.
+  expect(at(alignClips(p, [c.id], "left", 0, 0.05), c.id).transform.x).toBeCloseTo(-0.2);
+  expect(at(alignClips(p, [c.id], "top", 0, 0.05), c.id).transform.y).toBeCloseTo(-0.2);
   c.transform.x = 0.3; c.transform.y = -0.1;
   expect(at(alignClips(p, [c.id], "center", 0), c.id).transform).toMatchObject({ x: 0, y: -0.1 });
   expect(at(alignClips(p, [c.id], "middle", 0), c.id).transform).toMatchObject({ x: 0.3, y: 0 });

@@ -426,7 +426,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 ## AI tools (all on this machine)
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
-  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping) and **Auto
+  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping; a mono clip
+  is measured as it plays through the mix's equal-power center pan, -3 dB
+  each side) and **Auto
   ducking** (music dips under speech as editable volume keyframes) and
   **Stabilize** (Video > Basic, as in CapCut, or the AI tools card: three
   levels, translation only, measured on this computer) and
@@ -537,6 +539,7 @@ Three doors, one engine ([[Automation]]):
   (preset or bezier), `remove_keyframes`.
 - Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
-- Layout commands: `align_clips`, `distribute_clips`, `set_crop`
+- Layout commands: `align_clips` (with a `margin`, so titles of any width
+  share one left edge inside the safe area), `distribute_clips`, `set_crop`
   (edges as source fractions, or the largest centered crop of a ratio) and
   `set_mask` (any shape and number, or none).

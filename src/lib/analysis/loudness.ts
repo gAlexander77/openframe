@@ -48,10 +48,14 @@ export class LoudnessMeter {
   constructor(rate: number, channels: number) {
     this.filters = kWeighting(rate);
     this.z = Array.from({ length: channels }, () => new Float64Array(4));
-    // A mono source plays on both speakers, so it counts twice (dual mono).
+    // Every channel counts once, mono included: a mono clip reaches the mix
+    // through an equal-power pan, -3 dB in each speaker at center, so it
+    // plays as loud as one channel at full level. Counting it twice (EBU's
+    // dual mono, for mono at full level on both speakers) judged mono
+    // voices 3 dB louder than they sound, so normalize fell 3 dB short.
     // ponytail: surround is weighted 1 per channel; BS.1770's 1.41 for the
     // rear pair and LFE exclusion need the channel layout, add with 5.1.
-    this.weights = channels === 1 ? [2] : Array(channels).fill(1);
+    this.weights = Array(channels).fill(1);
     this.hop = Math.round(rate / 10);
   }
 

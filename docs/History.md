@@ -652,3 +652,27 @@ was thin. This round fixes what it found.
   lives in, and every saved project was still listed after the switch.
   `window.videoEditor`, the old FFmpeg variable, the effect-preset key and
   OTIO metadata keep working (docs/Renaming.md lists each and why).
+- **A second video, made with the new tools: an OpenFrame promo.** The
+  footage is OpenFrame itself: the web build in headless Edge, recorded
+  through the page's own screencast (JPEG frames with their timestamps,
+  assembled by ffmpeg at 30 fps), with the RacePulse promo open in it.
+  `add_voiceover` set the timing (eight lines, 52 s, in ten seconds); the
+  whole cut, framing, titles, transitions and mix went in through MCP in
+  under a second of tool time. It found three more things:
+  - **A title is placed by its center**, so section tags of different
+    lengths never shared a left edge. `align_clips` takes a `margin` now:
+    it already measured the real box, and now stops inside the edge.
+  - **Mono was measured twice.** The meter counted a mono clip as EBU's
+    dual mono (full level in both speakers), but the mix pans mono through
+    Web Audio's equal-power panner, -3 dB each side. `normalize_loudness`
+    judged every mono voice and mic recording 3 dB louder than it plays;
+    the export's mix came out 3 dB under the voices' "level". Every channel
+    counts once now.
+  - **A peaky voice stops export loudness short.** Kokoro's male voice
+    runs about 20 dB from peak to loudness; reaching -14 LUFS under a -1 dB
+    peak needs 7.5 dB of limiting, past the limiter's 6 dB cap, so the
+    promo exported at -15.8 LUFS (the note says so). A speech compressor
+    before the limiter is the fix when it matters.
+  - **One move per frame_region** made the assistant shot (a tall, narrow
+    panel) two clips: onto the panel's header, then down to the prompt as
+    it is typed. A split costs nothing visible in continuous footage.
