@@ -1,5 +1,9 @@
 # OpenFrame
 
+![OpenFrame with the promo an AI agent made in it, open on its timeline](docs/media/openframe-editor.png)
+
+*OpenFrame, open on the promo an AI agent edited in it (below).*
+
 OpenFrame began as an experiment: **autonomously develop a fully open video
 editor using Claude Code and Codex**. The project's implementation was
 developed using AI coding agents, with a human owner setting the direction,
@@ -15,9 +19,7 @@ and roadmap distinguish implemented work from plans.
 
 ## Watch: an AI agent edited this video
 
-[![OpenFrame promo, edited by an AI agent in OpenFrame](docs/media/openframe-promo.jpg)](docs/media/openframe-promo.mp4)
-
-**[▶ Watch the 53-second promo](docs/media/openframe-promo.mp4)** (GitHub plays it in its file viewer).
+**[▶ Download the 53-second promo](docs/media/openframe-promo.mp4)** (7 MB MP4; too large for GitHub to play in the page).
 
 Claude made it end to end through OpenFrame's own MCP tools. It wrote the
 script and voiced it on this computer (`add_voiceover`: Kokoro speech with
