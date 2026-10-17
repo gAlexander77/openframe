@@ -28,7 +28,7 @@ export interface McpHost {
   name: string;
   version: string;
   /** Run a registry command as an undoable edit; returns the new summary. */
-  exec(name: string, args: unknown): unknown;
+  exec(name: string, args: unknown): unknown | Promise<unknown>;
   describe(): unknown;
   projectJson(): unknown;
   catalog(): unknown;
@@ -38,6 +38,12 @@ export interface McpHost {
   seek(seconds: number): unknown;
   /** PNG of the frame at `seconds`, base64 without the data: prefix. */
   frame(seconds: number, maxWidth: number): Promise<string>;
+  /** One PNG of several frames in a grid, each stamped with its time. */
+  sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** Export without a dialog (desktop); resolves when the file is done. */
+  exportVideo(options: Record<string, unknown>): Promise<unknown>;
+  /** The last export_video: running (with progress), done or failed. */
+  exportStatus(): unknown;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
   /** The saved projects, as the home screen lists them; `open` marks the
@@ -71,6 +77,46 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
 }
 
 export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip";
+
+type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
+
+const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
+
+/**
+ * What an edit changed, from describe_project before and after: clips and
+ * tracks added, changed (as they are now) and removed, assets added and
+ * removed, and any other part that differs. Agents get this after each
+ * edit instead of the whole timeline, which cost thousands of tokens a
+ * call while building the RacePulse promo; describe_project still has all.
+ */
+export function describeChanges(before: unknown, after: unknown): unknown {
+  const b = before as Desc, a = after as Desc;
+  if (!a?.tracks || !b?.tracks) return after;
+  const out: Record<string, unknown> = { duration: a.duration };
+  const diff = <T extends { id: string }>(was: Map<string, T>, now: Map<string, T>, key: string) => {
+    const added = [...now.values()].filter((x) => !was.has(x.id));
+    const changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
+    const removed = [...was.keys()].filter((id) => !now.has(id));
+    if (added.length) out[`added_${key}`] = added;
+    if (changed.length) out[`changed_${key}`] = changed;
+    if (removed.length) out[`removed_${key}`] = removed;
+  };
+  const clips = (d: Desc) => new Map(d.tracks!.flatMap((t) => t.clips.map((c) => [c.id, { ...c, track: t.id }] as const)));
+  const tracks = (d: Desc) => new Map(d.tracks!.map(({ clips: _, ...t }) => [t.id, t] as const));
+  diff(clips(b), clips(a), "clips");
+  diff(tracks(b), tracks(a), "tracks");
+  const order = (d: Desc) => d.tracks!.map((t) => t.id);
+  const kept = (x: Desc, y: Desc) => order(x).filter((id) => order(y).includes(id));
+  if (!same(kept(b, a), kept(a, b))) out.track_order = order(a);
+  const assets = (d: Desc) => new Map((d.assets ?? []).map((x) => [x.id, x] as const));
+  const ba = assets(b), aa = assets(a);
+  if ([...aa.keys()].some((id) => !ba.has(id))) out.added_assets = [...aa.values()].filter((x) => !ba.has(x.id));
+  if ([...ba.keys()].some((id) => !aa.has(id))) out.removed_assets = [...ba.keys()].filter((id) => !aa.has(id));
+  for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+    if (!["duration", "tracks", "assets"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
+  }
+  return Object.keys(out).length === 1 ? { unchanged: true, duration: a.duration } : out;
+}
 
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
@@ -114,8 +160,8 @@ export const APP_TOOLS: AppTool[] = [
     ),
     call: async (h, a) => json(await h.importMedia(a.files as { src: string; name?: string }[])),
   },
-  { name: "undo", description: "Undo the last edit.", inputSchema: obj(), call: (h) => json(h.undo()) },
-  { name: "redo", description: "Redo the last undone edit.", inputSchema: obj(), call: (h) => json(h.redo()) },
+  { name: "undo", description: "Undo the last edit; returns what that changed back.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.undo())) },
+  { name: "redo", description: "Redo the last undone edit; returns what changed.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.redo())) },
   {
     name: "seek",
     description: "Move the playhead to a time in seconds.",
@@ -150,6 +196,50 @@ export const APP_TOOLS: AppTool[] = [
     description: "See the composited picture at a time: returns a PNG image of the frame exactly as it would export.",
     inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" }, max_width: { type: "integer", minimum: 64, maximum: 1920, description: "Image width, default 640" } }, ["at"]),
     call: async (h, a) => ({ content: [{ type: "image", data: await h.frame(Number(a.at), Number(a.max_width ?? 640)), mimeType: "image/png" }] }),
+  },
+  {
+    name: "preview_frames",
+    description: "See several moments at once: one PNG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.",
+    inputSchema: obj(
+      {
+        times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
+        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Width of each frame, default 320" },
+      },
+      ["times"],
+    ),
+    call: async (h, a) => {
+      const times = (a.times as number[]).slice(0, 24);
+      if (!times.length) throw new Error("times needs at least one time");
+      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
+    },
+  },
+  {
+    name: "export_video",
+    description:
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS (-14 for YouTube, TikTok and Spotify). Exports that take over about four minutes answer state running: follow them with export_status.",
+    inputSchema: obj({
+      name: { type: "string", description: "File name without extension; default the project's name" },
+      format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif"], description: "Default mp4 (H.264 + AAC)" },
+      resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
+      quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
+      loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for the mix; default as mixed" },
+      start: { type: "number", minimum: 0, description: "Export from this second" },
+      end: { type: "number", minimum: 0, description: "Export to this second" },
+    }),
+    call: async (h, a) => {
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end }));
+      done.catch(() => {}); // after the wait below, export_status reports a failure
+      // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
+      const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
+      return json(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+    },
+  },
+  {
+    name: "export_status",
+    description: "The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).",
+    inputSchema: obj(),
+    call: (h) => json(h.exportStatus() ?? { state: "none" }),
   },
 ];
 
@@ -235,6 +325,19 @@ APP_TOOLS.push(
 
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
+/** What an agent reads first: the moves, in the order a video gets made. */
+const INSTRUCTIONS = `You are editing a video in the user's video editor; every edit shows live and is undoable (undo).
+Start with describe_project. Times are seconds; ids are stable. Edits answer with only what they changed; describe_project has the whole timeline.
+To make a video:
+1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them).
+2. import_media the footage, music and pictures by absolute path.
+3. Lay shots with add_media_clip; frame_region zooms a shot onto the part that matters (a screen recording's panel, a face) and can move between two regions.
+4. Titles: add_text (style.background makes a box that reads over busy footage), then set_animation in and out.
+5. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
+6. Make many small edits at once with batch: one call, one undo step.
+7. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
+8. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
+
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {
   return [
@@ -260,8 +363,7 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false }, resources: {} },
         serverInfo: { name: host.name, version: host.version },
-        instructions:
-          "You are editing a video timeline. Call describe_project first. Times are seconds. Import media with import_media, place it with add_media_clip, check your work with preview_frame. Every edit is undoable with undo.",
+        instructions: INSTRUCTIONS,
       });
     case "ping":
       return ok(req.id, {});
@@ -274,7 +376,8 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         const app = APP_INDEX.get(name);
         if (app) return ok(req.id, await app.call(host, args));
         if (!COMMANDS.some((c) => c.name === name)) return fail(req.id, -32602, `unknown tool ${name}`);
-        return ok(req.id, json(host.exec(name, args)));
+        const before = host.describe();
+        return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
       } catch (e) {
         return ok(req.id, { content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true });
       }

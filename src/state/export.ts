@@ -6,12 +6,13 @@
 import { useSyncExternalStore } from "react";
 import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { exportGif } from "../engine/gif";
-import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, type ExportPlan, type ExportSettings } from "../lib/export";
+import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, VIDEO_FORMATS, type ExportPlan, type ExportSettings } from "../lib/export";
 import { toOtio } from "../lib/interchange/otio";
 import { secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { rootInPoint, rootOutPoint, store } from "./store";
+import { dismiss, toast, updateToast } from "./toast";
 
 /** What Export renders: the whole project with its own range, even while a
  * compound clip is open (CapCut exports the project; ADR-037). */
@@ -127,6 +128,59 @@ export async function renderToUrl(options: RenderOptions = {}) {
     return { url: URL.createObjectURL(blob), size: blob.size, type: plan.mime, fileName: plan.fileName, plan, ...result };
   } finally {
     job = null;
+  }
+}
+
+/** An export an agent started (MCP export_video), for export_status. */
+export type AgentExport =
+  | { state: "running"; path: string; fraction: number; eta: number | null }
+  | ({ state: "done"; path: string } & ExportResult)
+  | { state: "failed"; message: string };
+
+let agentExport: AgentExport | null = null;
+export const agentExportStatus = () => agentExport;
+
+/**
+ * Export for an agent: no dialog, into the platform's agent folder under a
+ * name that replaces nothing. Resolves when the file is complete; a toast
+ * shows the user it is happening, agentExportStatus() follows it.
+ */
+export async function exportForAgent(options: RenderOptions = {}): Promise<AgentExport> {
+  const make = platform.createAgentExportTarget;
+  if (!make) throw new Error("Agents can export from the desktop app only.");
+  if (job) throw new Error("An export is already running.");
+  const s = exportSubject();
+  const p = s.project;
+  const { start, end, ...rest } = options;
+  const settings: ExportSettings = { ...defaultExportSettings(p), ...rest };
+  // A container takes only some codecs (WebM: VP9 or AV1).
+  const codecs = VIDEO_FORMATS[settings.format].codecs;
+  if (!codecs.includes(settings.codec)) settings.codec = codecs[0];
+  const ranged = start !== undefined || end !== undefined;
+  const inOut = ranged
+    ? { inPoint: start !== undefined ? secondsToFrames(start, p.fps) : null, outPoint: end !== undefined ? secondsToFrames(end, p.fps) : null }
+    : { inPoint: null, outPoint: null };
+  if (ranged) settings.range = "inout";
+  const plan = planExport(p, settings, inOut);
+  job = new AbortController();
+  const tid = toast("Exporting for an AI agent", "progress");
+  try {
+    const target = await make.call(platform, safeFileName(settings.name), plan.extension);
+    const path = target.displayName;
+    agentExport = { state: "running", path, fraction: 0, eta: null };
+    const result = await exportProject(p, plan, target, (pr) => {
+      agentExport = { state: "running", path, fraction: +pr.fraction.toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1) };
+      updateToast(tid, { progress: pr.fraction });
+    }, job.signal);
+    agentExport = { state: "done", path, ...result };
+    toast(`Exported ${path.split(/[\\/]/).pop()}`);
+    return agentExport;
+  } catch (e) {
+    agentExport = { state: "failed", message: e instanceof Error ? e.message : String(e) };
+    throw e;
+  } finally {
+    job = null;
+    dismiss(tid);
   }
 }
 

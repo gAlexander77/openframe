@@ -42,13 +42,43 @@ Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 PNG, so an agent can look at its work), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
-leave the user's projects alone), and the local AI tools:
+leave the user's projects alone), `preview_frames` (one contact sheet of
+up to 24 moments, each stamped with its time), `export_video` and
+`export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
 `duck_under_speech`, `reduce_noise`, `stabilize_clip` and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
 [[ADR-009 Agents reach the app over local MCP, opt-in]])
+
+Edits answer with what they changed, not the whole timeline:
+`{"duration": 6, "added_clips": [...], "changed_clips": [...],
+"removed_clips": ["c_..."]}` (and `*_tracks`, `added_assets`, any other
+part that differs), each clip as `describe_project` shows it plus its
+`track`; `{"unchanged": true}` when nothing did. `undo` and `redo` answer
+the same way. `describe_project` is still the whole picture.
+
+`batch` runs `{"commands": [{"command": "set_animation", "args": {...}},
+...]}` in order as one edit and one undo step, all or nothing: a failing
+step names its number (`step 2 (set_animation): no clip with id nope`).
+
+`frame_region` shows part of a picture full screen: `region` is a
+rectangle in fractions of the source (`{"x": 0.5, "y": 0, "w": 0.5,
+"h": 1}` is the right half), `fill` (default) covers the canvas, `fit`
+shows the whole region; the picture slides back where it would uncover
+empty canvas. `to_region` (with optional `from`/`to` seconds) eases from
+one to the other: the push-in on a screen recording.
+
+Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
+16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
+footage; an empty color removes one.
+
+`export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
+`start`, `end`) writes to `<Videos>\Video Editor\` with no dialog and never
+replaces a file, answering with the path, size and a note (what the
+loudness pass did). Past about four minutes it answers `running`; follow
+it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
 
 ## 3. Ask in plain words (AI assistant)
 

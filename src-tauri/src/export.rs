@@ -124,6 +124,45 @@ pub async fn export_begin(
     }))
 }
 
+/// Start an export into `<Videos>/<app name>/` without a dialog: an agent
+/// exporting over MCP has no one to answer one. The page names only the
+/// file, never the folder, and an existing file is never replaced (" (2)",
+/// " (3)"...). `display_name` is the whole path, which the agent reports.
+#[tauri::command]
+pub async fn export_begin_auto(
+    app: tauri::AppHandle,
+    suggested_name: String,
+    extension: String,
+    exports: tauri::State<'_, Exports>,
+) -> Result<Begun, String> {
+    let plain = |s: &str| {
+        !s.is_empty()
+            && !s.contains(['/', '\\', ':'])
+            && Path::new(s).file_name() == Some(std::ffi::OsStr::new(s))
+    };
+    if !plain(&suggested_name) || !plain(&extension) {
+        return Err("an export needs a plain file name".into());
+    }
+    let dir = app
+        .path()
+        .video_dir()
+        .map_err(|e| e.to_string())?
+        .join(&app.package_info().name);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let taken = |p: &Path| p.exists() || p.with_extension(format!("{extension}.part")).exists();
+    let dest = (1..)
+        .map(|n| match n {
+            1 => dir.join(format!("{suggested_name}.{extension}")),
+            n => dir.join(format!("{suggested_name} ({n}).{extension}")),
+        })
+        .find(|p| !taken(p))
+        .expect("some numbered name is free");
+    Ok(Begun {
+        id: exports.open(dest.clone())?,
+        display_name: dest.display().to_string(),
+    })
+}
+
 #[derive(serde::Serialize)]
 pub struct Adopted {
     id: u32,

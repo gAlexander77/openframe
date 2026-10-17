@@ -18,7 +18,7 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, WheelName } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, Transform, WheelName } from "./project/types";
 import { ANIMATIONS, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
@@ -39,7 +39,7 @@ import { groupClips, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
-import { alignClips, ALIGNS, distributeClips, frameClips, pictureAspect, type Align, type Axis, type Frame } from "./align";
+import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 
@@ -156,7 +156,43 @@ const TEXT_STYLE_SCHEMA = S.obj({
   align: S.str("Alignment", { enum: ["left", "center", "right"] }),
   highlight: S.str("Captions: color of the word being spoken; an empty string turns it off"),
   case: S.str("Letter case as shown (the text is kept): none, upper, lower or title", { enum: ["none", "upper", "lower", "title"] }),
+  // Readable over busy footage: a box behind, an outline, a drop shadow.
+  // Sizes are pixels at 1080p; an empty color removes the part.
+  background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"]),
+  stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"]),
+  shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"]),
 });
+
+const REGION_SCHEMA = S.obj(
+  {
+    x: S.num("Left edge, a fraction of the picture's width", { minimum: 0, maximum: 1 }),
+    y: S.num("Top edge, a fraction of its height", { minimum: 0, maximum: 1 }),
+    w: S.num("Width, a fraction of the picture's width", { minimum: 0.01, maximum: 1 }),
+    h: S.num("Height, a fraction of its height", { minimum: 0.01, maximum: 1 }),
+  },
+  ["x", "y", "w", "h"],
+);
+
+function regionOf(v: unknown): Region {
+  const r = v as Region;
+  if (r.x + r.w > 1.0001 || r.y + r.h > 1.0001) throw new CommandError("a region must lie inside the picture: x + w and y + h at most 1");
+  return r;
+}
+
+/** A style from an agent: the box parts get defaults, and an empty color
+ * removes one, as an empty highlight does. */
+function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial<TextStyle> {
+  const s: Partial<TextStyle> = { ...base, ...given };
+  // An agent may send only a color; the rest keeps its size or a default.
+  const g = given as { background?: object; stroke?: object; shadow?: object };
+  if (g.background) s.background = { padding: 16, radius: 8, ...base.background, ...g.background } as TextStyle["background"];
+  if (g.stroke) s.stroke = { width: 4, ...base.stroke, ...g.stroke } as TextStyle["stroke"];
+  if (g.shadow) s.shadow = { blur: 8, x: 0, y: 3, ...base.shadow, ...g.shadow } as TextStyle["shadow"];
+  for (const k of ["background", "stroke", "shadow"] as const) if (s[k]?.color === "") delete s[k];
+  if (s.highlight === "") delete s.highlight;
+  if ((s.case as string) === "none") delete s.case;
+  return s;
+}
 
 // ---- the registry ------------------------------------------------------------------
 
@@ -295,7 +331,7 @@ export const COMMANDS: Command[] = [
       ["text", "start", "duration"],
     ),
     run: (p, a) => {
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), (a.style ?? {}) as Partial<TextStyle>);
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), styleFrom({}, (a.style ?? {}) as Partial<TextStyle>));
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
@@ -679,9 +715,7 @@ export const COMMANDS: Command[] = [
     run: (p, a) =>
       ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (c.type !== "text") throw new CommandError("not a text clip");
-        const style: TextStyle = { ...c.style, ...((a.style ?? {}) as Partial<TextStyle>) };
-        if (style.highlight === "") delete style.highlight;
-        if ((style.case as string) === "none") delete style.case;
+        const style = styleFrom(c.style, (a.style ?? {}) as Partial<TextStyle>) as TextStyle;
         return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style };
       }),
   },
@@ -769,7 +803,7 @@ export const COMMANDS: Command[] = [
       },
       ["captions"],
     ),
-    run: (p, a) => addCaptions(p, a.captions as Caption[], { ...((a.style ?? {}) as Partial<TextStyle>) }, a.y === undefined ? undefined : Number(a.y), a.replace === true),
+    run: (p, a) => addCaptions(p, a.captions as Caption[], styleFrom({}, (a.style ?? {}) as Partial<TextStyle>), a.y === undefined ? undefined : Number(a.y), a.replace === true),
   },
   {
     name: "cut_ranges",
@@ -1184,6 +1218,57 @@ export const COMMANDS: Command[] = [
       return { ...p, compounds: p.compounds!.map((k) => (k.id === id ? { ...k, name: String(a.name) } : k)) };
     },
   },
+  {
+    name: "frame_region",
+    description:
+      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.",
+    input: S.obj(
+      {
+        clip_id: S.str("Video or image clip id"),
+        region: REGION_SCHEMA,
+        to_region: REGION_SCHEMA,
+        mode: S.str("How the region meets the canvas", { enum: ["fill", "fit"] }),
+        from: S.num("Timeline seconds the move starts; default the clip's start"),
+        to: S.num("Timeline seconds the move ends; default the clip's end"),
+      },
+      ["clip_id", "region"],
+    ),
+    run: (p, a) => {
+      const { clip, track } = clipOrThrow(p, a.clip_id);
+      if (clip.type !== "video" && clip.type !== "image") throw new CommandError(`${clip.type} clips have no picture to frame`);
+      if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+      const mode = a.mode === "fit" ? "fit" : "fill";
+      const rel = (s: unknown, fallback: number) => (s === undefined ? fallback : Math.max(0, Math.min(clip.duration - 1, f(p, s) - clip.start)));
+      const from = rel(a.from, 0), to = rel(a.to, clip.duration - 1);
+      if (a.to_region && to <= from) throw new CommandError("to must come after from, inside the clip");
+      return frameRegion(p, clip.id, regionOf(a.region), a.to_region ? { region: regionOf(a.to_region), from, to } : undefined, mode);
+    },
+  },
+  {
+    name: "batch",
+    description:
+      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes.",
+    input: S.obj(
+      {
+        commands: {
+          type: "array",
+          description: "The steps, in order",
+          items: S.obj({ command: S.str("Command name, e.g. set_animation"), args: { type: "object", description: "That command's arguments" } }, ["command"]),
+        },
+      },
+      ["commands"],
+    ),
+    run: (p, a) =>
+      (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
+        // add_sticker draws its picture outside the registry first.
+        if (step.command === "batch" || step.command === "add_sticker") throw new CommandError(`step ${i + 1}: ${step.command} cannot run inside a batch`);
+        try {
+          return runCommand(q, step.command, step.args ?? {});
+        } catch (e) {
+          throw new CommandError(`step ${i + 1} (${step.command}): ${e instanceof Error ? e.message : e}`);
+        }
+      }, p),
+  },
 ];
 
 /** The keyframes a command names: on `path` (or every path) at the given
@@ -1277,10 +1362,30 @@ export function describeProject(p: Project) {
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
+        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),
+        ...("transform" in c ? placement(c.transform) : {}),
+        ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
+        ...("animIn" in c && (c.animIn || c.animOut || c.animLoop)
+          ? { animation: { ...(c.animIn ? { in: c.animIn.type } : {}), ...(c.animOut ? { out: c.animOut.type } : {}), ...(c.animLoop ? { loop: c.animLoop.type } : {}) } }
+          : {}),
         ...(c.keyframes && Object.values(c.keyframes).some((k) => k.length) ? { keyframed: Object.keys(c.keyframes).filter((k) => c.keyframes![k].length) } : {}),
       })),
     };
   }
+}
+
+/** Where a picture sits, when not centered at its fitted size, for
+ * describeProject: the values at rest (keyframed paths say so apart). */
+function placement(t: Transform) {
+  const r = (v: number) => +v.toFixed(4);
+  const out = {
+    ...(t.x ? { x: r(t.x) } : {}),
+    ...(t.y ? { y: r(t.y) } : {}),
+    ...(t.scale !== 1 ? { scale: r(t.scale) } : {}),
+    ...(t.scaleY !== undefined ? { scale_y: r(t.scaleY) } : {}),
+    ...(t.rotation ? { rotation: r(t.rotation) } : {}),
+  };
+  return Object.keys(out).length ? { transform: out } : {};
 }
 
 /** Which grade parts a clip uses, for describeProject. */

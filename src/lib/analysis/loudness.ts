@@ -140,6 +140,64 @@ export interface Normalization {
  * can exceed the ceiling by a fraction of a dB. A true-peak limiter is the
  * upgrade for broadcast deliverables.
  */
+/** Samples in a limiter block: 1 ms at 48 kHz. */
+export const LIMIT_BLOCK = 48;
+
+/** The most export's limiter takes off a peak to reach a loudness target:
+ * past this a mix sounds squashed, so the target is missed instead. */
+export const MAX_LIMITING_DB = 6;
+
+/** Each LIMIT_BLOCK's highest absolute sample, over every channel, into
+ * `into` (indexed by the block's absolute position, from `start`). */
+export function blockPeaks(planes: Float32Array[], start: number, into: Float32Array): void {
+  for (const d of planes) {
+    for (let j = 0; j < d.length; j++) {
+      const b = Math.floor((start + j) / LIMIT_BLOCK);
+      const x = Math.abs(d[j]);
+      if (x > into[b]) into[b] = x;
+    }
+  }
+}
+
+/**
+ * An offline peak limiter's gain at every block boundary, for a mix whose
+ * block peaks are known in full (export measures the whole mix first, so
+ * looking ahead is free). After `gain`, no block passes `ceiling`; a
+ * reduction ramps in over `attack` blocks before its peak and recovers
+ * over about `release` blocks, so peaks are held without clicks or pumping.
+ * ponytail: block (1 ms) sample peaks, not true peak; inter-sample peaks
+ * can pass the ceiling by a fraction of a dB.
+ */
+export function limiterGains(peaks: Float32Array, gain: number, ceiling: number, attack = 5, release = 150): Float32Array {
+  const n = peaks.length;
+  const e = new Float32Array(n);
+  for (let i = 0; i < n; i++) e[i] = peaks[i] * gain > ceiling ? ceiling / (peaks[i] * gain) : 1;
+  for (let i = n - 2; i >= 0; i--) e[i] = Math.min(e[i], e[i + 1] + 1 / attack);
+  const k = 1 - Math.exp(-1 / release);
+  for (let i = 1; i < n; i++) e[i] = Math.min(e[i], e[i - 1] + (1 - e[i - 1]) * k);
+  // A block's samples interpolate between its two boundaries; each
+  // boundary is the lower of its neighbors, so no sample gets more than
+  // its own block allows.
+  const b = new Float32Array(n + 1);
+  b[0] = e[0] ?? 1;
+  b[n] = e[n - 1] ?? 1;
+  for (let i = 1; i < n; i++) b[i] = Math.min(e[i - 1], e[i]);
+  return b;
+}
+
+/** Multiply samples starting at absolute sample `start` by `gain` and the
+ * limiter's gains (from limiterGains), in place. */
+export function applyLimiter(planes: Float32Array[], start: number, gain: number, gains: Float32Array): void {
+  for (const d of planes) {
+    for (let j = 0; j < d.length; j++) {
+      const at = (start + j) / LIMIT_BLOCK;
+      const b = Math.floor(at);
+      const g0 = gains[b] ?? 1, g1 = gains[b + 1] ?? g0;
+      d[j] *= gain * (g0 + (g1 - g0) * (at - b));
+    }
+  }
+}
+
 export function normalizeGain(measured: number, target: number, peak: number, { ceilingDb = -1, minDb = -60, maxDb = 12 } = {}): Normalization {
   if (!Number.isFinite(measured)) return { gain: 1, limitedBy: null };
   let db = target - measured;

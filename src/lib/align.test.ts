@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alignClips, distributeClips, frameClips, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
+import { alignClips, distributeClips, frameClips, frameRegion, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
 import { clipForAsset, createColorClip, createProject, createTrack } from "./project/defaults";
 import type { Clip, Project } from "./project/types";
 import { layerAt } from "./render/plan";
@@ -175,4 +175,31 @@ it("places a picture by its anchor point, which scale and rotation turn about", 
   const turned = layerAt(p, c, 0)!;
   expect(turned.x).toBeCloseTo(0);
   expect(turned.y * p.height).toBeCloseTo(-480);
+});
+
+it("frames a region of a screen recording full screen, never uncovering the canvas", () => {
+  const p = createProject();
+  // The RacePulse recordings: 1600x1176 on a 1920x1080 canvas.
+  const asset = { id: "r", src: "r.mp4", name: "r", kind: "video" as const, duration: 10, width: 1600, height: 1176, hasAudio: false, hasVideo: true };
+  const clip = clipForAsset(asset, 0, p.fps) as Clip & { transform: { x: number; y: number; scale: number } };
+  p.assets = [asset];
+  p.tracks[0].clips = [clip];
+  const get = (q: Project) => at(q, clip.id) as typeof clip;
+  // The right half fills the canvas: 2.613x, slid left by half the canvas.
+  const half = get(frameRegion(p, clip.id, { x: 0.5, y: 0, w: 0.5, h: 1 }, undefined, "fill")).transform;
+  expect(half.scale).toBeCloseTo(2.6133, 3);
+  expect(half.x).toBeCloseTo(-0.5, 5);
+  expect(half.y).toBeCloseTo(0, 5);
+  // Fit a narrow strip at the right edge: centering it would uncover the
+  // canvas, so the picture stops with its right edge on the canvas's.
+  const strip = get(frameRegion(p, clip.id, { x: 0.9, y: 0, w: 0.1, h: 0.5 }, undefined, "fit")).transform;
+  expect(strip.scale).toBeCloseTo(2, 5);
+  const shownW = (1600 * (1080 / 1176) * 2) / 1920;
+  expect(strip.x).toBeCloseTo(-(shownW - 1) / 2, 5);
+  expect(strip.y).toBeCloseTo(0.5, 5);
+  // A move becomes eased keyframes from the first region to the second.
+  const moved = frameRegion(p, clip.id, { x: 0, y: 0, w: 1, h: 1 }, { region: { x: 0.5, y: 0, w: 0.5, h: 1 }, from: 0, to: 59 }, "fill");
+  const keys = at(moved, clip.id).keyframes!;
+  expect(keys["transform.scale"]).toEqual([{ f: 0, v: expect.any(Number), ease: "easeInOut" }, { f: 59, v: half.scale }]);
+  expect(keys["transform.x"][1].v).toBeCloseTo(-0.5, 5);
 });

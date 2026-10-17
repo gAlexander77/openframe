@@ -221,4 +221,8 @@ export const desktop: Platform = {
       reveal: () => invoke<void>("export_reveal", { id: begun.id }),
     };
   },
+  async createAgentExportTarget(suggestedName, extension) {
+    const begun = await invoke<{ id: number; displayName: string }>("export_begin_auto", { suggestedName, extension });
+    return { writable: writeJob(begun.id), displayName: begun.displayName, reveal: () => invoke<void>("export_reveal", { id: begun.id }) };
+  },
 };

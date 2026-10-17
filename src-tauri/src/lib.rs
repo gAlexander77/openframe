@@ -74,6 +74,7 @@ pub fn run() {
             project::project_save,
             project::project_delete,
             export::export_begin,
+            export::export_begin_auto,
             export::adopt_begin,
             export::export_write,
             export::export_finish,

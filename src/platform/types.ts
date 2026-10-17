@@ -81,6 +81,10 @@ export interface Platform {
   exportLocation?: string;
   /** Ask where to save an export; null when the user cancels. */
   createExportTarget(suggestedName: string, extension: string): Promise<ExportTarget | null>;
+  /** Desktop: start an export without a dialog, for agents (export_video),
+   * in the user's Videos folder under a name that replaces nothing.
+   * displayName is the whole path. */
+  createAgentExportTarget?(suggestedName: string, extension: string): Promise<ExportTarget>;
 }
 
 export interface AgentEndpoint {

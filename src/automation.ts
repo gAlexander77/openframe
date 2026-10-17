@@ -10,7 +10,7 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { renderToUrl, stillToUrl } from "./state/export";
+import { agentExportStatus, exportForAgent, renderToUrl, stillToUrl, type RenderOptions } from "./state/export";
 import { textToSpeech } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { clipTranscript } from "./state/transcript";
@@ -95,6 +95,26 @@ const automation = {
   otio: () => toOtio(store.document()),
 };
 
+/** The viewer's picture at `seconds`, exactly as it draws. */
+async function grab(seconds: number): Promise<OffscreenCanvas> {
+  store.seek(secondsToFrames(seconds, store.get().project.fps));
+  await new Promise((r) => setTimeout(r, 20));
+  await player.idle();
+  const px = player.pixels();
+  if (!px) throw new Error("the viewer is not showing (open a project first)");
+  const c = new OffscreenCanvas(px.width, px.height);
+  c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0);
+  return c;
+}
+
+/** A canvas as base64 PNG, for MCP image content. */
+async function png(c: OffscreenCanvas): Promise<string> {
+  const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
 /** describeProject of the whole document, plus the compound clips the user
  * has open, outermost first. */
 function describe() {
@@ -140,21 +160,36 @@ const mcpHost: McpHost = {
     return { playhead: seconds };
   },
   frame: async (seconds, maxWidth) => {
-    store.seek(secondsToFrames(seconds, store.get().project.fps));
-    await new Promise((r) => setTimeout(r, 20));
-    await player.idle();
-    const px = player.pixels();
-    if (!px) throw new Error("the viewer is not showing (open a project first)");
-    const src = new OffscreenCanvas(px.width, px.height);
-    src.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0);
-    const k = Math.min(1, maxWidth / px.width);
-    const out = new OffscreenCanvas(Math.round(px.width * k), Math.round(px.height * k));
+    const src = await grab(seconds);
+    const k = Math.min(1, maxWidth / src.width);
+    const out = new OffscreenCanvas(Math.round(src.width * k), Math.round(src.height * k));
     out.getContext("2d")!.drawImage(src, 0, 0, out.width, out.height);
-    const bytes = new Uint8Array(await (await out.convertToBlob({ type: "image/png" })).arrayBuffer());
-    let bin = "";
-    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-    return btoa(bin);
+    return png(out);
   },
+  sheet: async (times, tileWidth, columns) => {
+    const cols = Math.min(columns, times.length), rows = Math.ceil(times.length / cols), gap = 6;
+    let out: OffscreenCanvas | null = null;
+    for (const [i, t] of times.entries()) {
+      const src = await grab(t);
+      const w = tileWidth, h = Math.round((src.height * w) / src.width);
+      out ??= new OffscreenCanvas(cols * (w + gap) + gap, rows * (h + gap) + gap);
+      const ctx = out.getContext("2d")!;
+      const x = gap + (i % cols) * (w + gap), y = gap + Math.floor(i / cols) * (h + gap);
+      ctx.drawImage(src, x, y, w, h);
+      const label = `${+t.toFixed(2)} s`;
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+      ctx.fillRect(x + 4, y + 4, ctx.measureText(label).width + 10, 19);
+      ctx.fillStyle = "#fff";
+      ctx.fillText(label, x + 9, y + 18);
+    }
+    return png(out!);
+  },
+  exportVideo: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return exportForAgent(options as RenderOptions);
+  },
+  exportStatus: () => agentExportStatus(),
   ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { kWeighting, LiveLoudness, LoudnessMeter, normalizeGain } from "./loudness";
+import { applyLimiter, blockPeaks, kWeighting, LIMIT_BLOCK, limiterGains, LiveLoudness, LoudnessMeter, normalizeGain } from "./loudness";
 
 /** `seconds` of a 997 Hz sine at `dbfs` peak on the channels in `on`. */
 function measure(rate: number, channels: number, on: number[], dbfs: number, seconds = 5, silenceAfter = 0) {
@@ -93,5 +93,39 @@ describe("LiveLoudness", () => {
     expect(Math.abs(live.integrated() + 23)).toBeLessThan(0.2);
     live.reset();
     expect(live.integrated()).toBe(-Infinity);
+  });
+});
+
+describe("export's limiter", () => {
+  // One second at 48 kHz: a quiet tone with a loud burst in the middle, the
+  // shape of speech over a soft bed. Rendered in two windows, as export does.
+  const rate = 48000, ceiling = 10 ** (-1 / 20);
+  const tone = () => {
+    const d = new Float32Array(rate);
+    for (let i = 0; i < rate; i++) d[i] = (i >= 24000 && i < 24480 ? 0.9 : 0.1) * Math.sin((2 * Math.PI * 440 * i) / rate);
+    return d;
+  };
+
+  it("raises the mix by the whole gain and holds every sample under the ceiling", () => {
+    const peaks = new Float32Array(Math.ceil(rate / LIMIT_BLOCK) + 1);
+    const whole = tone();
+    blockPeaks([whole.subarray(0, 20000)], 0, peaks);
+    blockPeaks([whole.subarray(20000)], 20000, peaks);
+    const gain = 2; // the burst would reach 1.8: 6 dB over the ceiling
+    const gains = limiterGains(peaks, gain, ceiling);
+    const out = tone();
+    applyLimiter([out.subarray(0, 20000)], 0, gain, gains);
+    applyLimiter([out.subarray(20000)], 20000, gain, gains);
+    expect(Math.max(...out.map(Math.abs))).toBeLessThanOrEqual(ceiling + 1e-6);
+    // Away from the burst the quiet part gets the full gain untouched.
+    expect(Math.max(...out.subarray(0, 20000).map(Math.abs))).toBeCloseTo(0.2, 2);
+    expect(Math.max(...out.subarray(40000).map(Math.abs))).toBeCloseTo(0.2, 2);
+    // The reduction starts before the burst: the lookahead the offline pass allows.
+    expect(gains[Math.floor(24000 / LIMIT_BLOCK) - 1]).toBeLessThan(1);
+  });
+
+  it("leaves a mix alone when nothing reaches the ceiling", () => {
+    const peaks = new Float32Array(10).fill(0.3);
+    expect([...limiterGains(peaks, 2, ceiling)].every((g) => g === 1)).toBe(true);
   });
 });

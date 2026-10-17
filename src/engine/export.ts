@@ -49,7 +49,7 @@ import type { Project } from "../lib/project/types";
 import { planFrame, planLayers } from "../lib/render/plan";
 import { formatTimecode, type Rational } from "../lib/time";
 import { scheduleAudio } from "./audio";
-import { LoudnessMeter, normalizeGain } from "../lib/analysis/loudness";
+import { applyLimiter, blockPeaks, LIMIT_BLOCK, limiterGains, LoudnessMeter, MAX_LIMITING_DB, normalizeGain } from "../lib/analysis/loudness";
 import { Compositor } from "./compositor";
 import { CursorPool, resolveSources, sourceImages, type Resolved } from "./player";
 
@@ -358,39 +358,51 @@ export async function exportProject(
     const sounding = a ? hasSound(p) : false;
     let fed = 0; // samples handed to the encoder
     let slice: { buffer: AudioBuffer; offset: number } | null = null;
-    let gain = 1; // loudness normalization, set by the measuring pass below
+    // Loudness normalization, set by the measuring pass below: a gain and
+    // the limiter's gains that hold the peaks it raises.
+    let limit: { gain: number; gains: Float32Array } | null = null;
+    const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
     const renderWindow = (i: number): Promise<AudioBuffer> => {
       const w = windows[i];
       const sr = a!.sampleRate;
       if (!sounding) return Promise.resolve(new AudioBuffer({ length: w.length, numberOfChannels: a!.channels, sampleRate: sr }));
       const ctx = new OfflineAudioContext({ numberOfChannels: a!.channels, length: w.length, sampleRate: sr });
       const t0 = fromSec + w.start / sr;
-      let out: AudioNode = ctx.destination;
-      if (gain !== 1) {
-        const g = ctx.createGain();
-        g.gain.value = gain;
-        g.connect(ctx.destination);
-        out = g;
-      }
-      const sched = scheduleAudio(ctx, out, p, t0, t0 + w.length / sr, 0);
-      return sched.done.then(() => ctx.startRendering());
+      const sched = scheduleAudio(ctx, ctx.destination, p, t0, t0 + w.length / sr, 0);
+      return sched.done
+        .then(() => ctx.startRendering())
+        .then((b) => {
+          if (limit) applyLimiter(planesOf(b), w.start, limit.gain, limit.gains);
+          return b;
+        });
     };
     // Loudness normalization (Premiere's): a first pass renders and measures
-    // the whole mix (BS.1770), then every window is rendered again through
-    // the gain that meets the target without a sample peak over -1 dBFS.
+    // the whole mix (BS.1770) and its peaks, then every window is rendered
+    // again through the gain that meets the target, with a limiter holding
+    // the raised peaks under -1 dBFS. Gain alone stopped the RacePulse promo
+    // at -17 LUFS of -14: speech peaks far above its loudness.
+    let finalMeter: LoudnessMeter | null = null;
+    let loudnessNote: ((reached: number) => string) | null = null;
     if (a && sounding && plan.loudness !== null) {
       const meter = new LoudnessMeter(a.sampleRate, a.channels);
+      const peaks = new Float32Array(Math.ceil(totalSamples / LIMIT_BLOCK) + 1);
       for (let i = 0; i < windows.length; i++) {
         const b = await wait("audio", renderWindow(i));
-        meter.push(Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c)), b.length);
+        meter.push(planesOf(b), b.length);
+        blockPeaks(planesOf(b), windows[i].start, peaks);
       }
       const measured = meter.integrated();
-      const n = normalizeGain(measured, plan.loudness, meter.peak);
-      gain = n.gain;
-      if (Number.isFinite(measured))
-        notes.push(
-          `Loudness ${measured.toFixed(1)} LUFS, ${n.limitedBy === "peak" ? `raised as far as the -1 dB peak allows (${(measured + 20 * Math.log10(gain)).toFixed(1)} LUFS)` : `set to ${plan.loudness} LUFS`}.`,
-        );
+      // Up to MAX_LIMITING_DB over the ceiling goes to the limiter.
+      const n = normalizeGain(measured, plan.loudness, meter.peak, { ceilingDb: -1 + MAX_LIMITING_DB });
+      if (n.gain !== 1) {
+        const gains = limiterGains(peaks, n.gain, 10 ** (-1 / 20));
+        limit = { gain: n.gain, gains };
+        finalMeter = new LoudnessMeter(a.sampleRate, a.channels);
+        const held = -20 * Math.log10(gains.reduce((m, g) => Math.min(m, g), 1));
+        loudnessNote = (reached) =>
+          `Loudness ${measured.toFixed(1)} LUFS, ${n.limitedBy === "peak" ? `raised as far as ${MAX_LIMITING_DB} dB of limiting allows` : "normalized"} to ${reached.toFixed(1)} LUFS` +
+          (held > 0.1 ? ` (a limiter held the peaks under -1 dB, at most ${held.toFixed(1)} dB).` : ".");
+      } else if (Number.isFinite(measured)) notes.push(`Loudness ${measured.toFixed(1)} LUFS, already at the target.`);
     }
     /** Next rendered window, starting the one after it in the background. */
     const nextWindow = async (i: number): Promise<AudioBuffer> => {
@@ -406,6 +418,7 @@ export async function exportProject(
       while (fed < until) {
         if (!slice || slice.offset >= slice.buffer.length) {
           const buffer = await wait("audio", nextWindow(windowIndex++), timelineAtSample(fed));
+          finalMeter?.push(planesOf(buffer), buffer.length);
           slice = { buffer, offset: 0 };
         }
         const n = Math.min(a.sampleRate, slice.buffer.length - slice.offset, until - fed);
@@ -473,6 +486,7 @@ export async function exportProject(
 
     onProgress({ phase: "finalizing", done: total, total, fraction: 1, fps: 0, eta: 0 });
     await wait("encoder", output.finalize());
+    if (loudnessNote && finalMeter) notes.push(loudnessNote(finalMeter.integrated()));
     return {
       frames: plan.frames,
       seconds: plan.seconds,

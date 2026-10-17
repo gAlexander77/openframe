@@ -156,6 +156,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   in a worker, downloaded once, placed under the title
 - [[ADR-051 Frame blending draws the layer twice from two cursors]] — a
   second cursor lane and a constant-alpha second draw mix slow motion.
+- [[ADR-052 Agents read what changed and export without a dialog]] —
+  edits answer with a diff, `batch` is one undo step, `export_video`
+  writes only into the Videos folder.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

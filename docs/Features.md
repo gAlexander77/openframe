@@ -454,9 +454,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   back); a canceled export never leaves a partial file.
 - **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring
   the mix to -14, -16 or -23 LUFS. A first pass measures the whole mix
-  (BS.1770), then it is rendered through the gain that meets the target,
-  never past a -1 dBFS sample peak; the result notes what it measured and
-  what it set. Read back, a -14 target measures -14.00.
+  (BS.1770) and its peaks, then it is rendered through the gain that meets
+  the target, with a limiter holding the raised peaks under -1 dBFS (up to
+  6 dB of limiting; the whole mix is known, so it looks ahead for free).
+  The result notes what it measured, what it reached and how much the
+  limiter held. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
+  with the limiter it measures -14.3 in ffmpeg, peaks at -0.9 dBTP.
 - **Presets** at the top of the dialog: YouTube 1080p and 4K, TikTok,
   Reels and Shorts, Small file (720p), High quality master (HEVC),
   Animated GIF and Audio only (WAV); changed settings read Custom and can
@@ -515,9 +518,13 @@ Three doors, one engine ([[Automation]]):
 - **Headless render**: `video-editor --render project.json --out file`,
   JSON-line progress, exit codes.
 - **MCP for agents** (opt-in, token-locked, local only): every editing
-  command plus `preview_frame` so an agent can look at its work, and
-  `list_projects`, `open_project` and `new_project` to move between
-  projects as the home screen does; HTTP or `--mcp-stdio`.
+  command plus `preview_frame` and `preview_frames` (a contact sheet) so
+  an agent can look at its work, `list_projects`, `open_project` and
+  `new_project` to move between projects as the home screen does, and
+  `export_video` / `export_status` to make the file; HTTP or
+  `--mcp-stdio`. Edits answer with only what they changed; `batch` runs
+  many as one undo step; `frame_region` zooms a shot onto a rectangle of
+  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.

@@ -617,3 +617,24 @@ was thin. This round fixes what it found.
   research notes keep the old word because they record what was true then.
   The model choice moved to the `assistant` storage key, still reading
   `copilot` so nobody has to pick it again.
+- **What the promo taught the agent surface** (ADR-052). Each edit
+  answered with the whole timeline (about 8 KB, some 40 times); now it
+  answers with what changed, usually under 300 bytes. Nine animations took
+  nine calls; `batch` makes them one call and one undo step. Checking the
+  cut took a dozen single frames; `preview_frames` is one contact sheet.
+  Framing a screen recording's panel meant working out scale and offsets
+  by hand, right-aligning so no black band showed; `frame_region` takes a
+  rectangle of the picture and does that math, still or as a push-in.
+  Captions over busy footage needed a box the agent could not ask for;
+  `style.background` (and stroke, shadow) now can. And the agent could not
+  export at all: the dialog wants a person. `export_video` writes into the
+  Videos folder, choosing only the file name, never replacing a file.
+- **`describe_project` was silent about animations, positions and text
+  styles**, found when a `batch` of `set_animation` answered "unchanged".
+  It reports them now, so the change summary does too.
+- **Export loudness missed its target by 3 dB.** The promo's mix measured
+  -20 LUFS and gain alone stopped at -17.1, held by speech peaks. A limiter
+  now holds the raised peaks: export renders the whole mix once to measure
+  it anyway, so the limiter sees every peak in advance and starts each
+  reduction before it (the ponytail comment had named this upgrade). The
+  promo now measures -14.3 LUFS in ffmpeg with peaks at -0.9 dBTP.

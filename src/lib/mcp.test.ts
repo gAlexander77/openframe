@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand } from "./commands";
-import { handleMcp, listTools, type McpHost } from "./mcp";
+import { describeChanges, handleMcp, listTools, type McpHost } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -22,6 +22,17 @@ function host() {
     redo: () => ({}),
     seek: () => ({}),
     frame: async () => "iVBOR",
+    sheets: [] as unknown[][],
+    async sheet(times: number[], width: number, columns: number) {
+      h.sheets.push([times, width, columns]);
+      return "iVBOR";
+    },
+    exports: [] as unknown[],
+    async exportVideo(o: unknown) {
+      h.exports.push(o);
+      return { state: "done", path: "C:/Users/me/Videos/Video Editor/x.mp4" };
+    },
+    exportStatus: () => null,
     aiCalls: [] as unknown[][],
     async ai(tool: string, target: unknown, options: unknown) {
       h.aiCalls.push([tool, target, options]);
@@ -123,5 +134,62 @@ describe("MCP AI tools", () => {
       ["removeBackground", "c3", {}],
     ]);
     expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech"]));
+  });
+});
+
+describe("MCP edits answer with what changed", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+
+  it("names added, changed and removed clips with their track, never the whole timeline", async () => {
+    const h = host();
+    const added = await run(h, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    expect(added.duration).toBe(4);
+    expect(added.added_clips).toHaveLength(1);
+    expect(added.added_clips[0]).toMatchObject({ type: "video", start: 0, end: 4, track: h.project.tracks[0].id });
+    expect(added.tracks).toBeUndefined();
+    expect(added.assets).toBeUndefined();
+    const id = added.added_clips[0].id;
+    const changed = await run(h, "set_param", { clip_ids: [id], path: "volume", value: 0.5 });
+    expect(changed.changed_clips).toEqual([expect.objectContaining({ id, volume: 0.5 })]);
+    expect(changed.added_clips).toBeUndefined();
+    const removed = await run(h, "delete_clips", { clip_ids: [id] });
+    expect(removed).toMatchObject({ removed_clips: [id], duration: 0 });
+  });
+
+  it("says when nothing changed, and passes other parts through", () => {
+    const before = { name: "A", duration: 1, assets: [], tracks: [{ id: "t", clips: [] }], markers: [] };
+    expect(describeChanges(before, before)).toEqual({ unchanged: true, duration: 1 });
+    const after = { ...before, markers: [{ id: "m", at: 0.5 }], assets: [{ id: "x" }] };
+    expect(describeChanges(before, after)).toEqual({ duration: 1, markers: [{ id: "m", at: 0.5 }], added_assets: [{ id: "x" }] });
+    expect(describeChanges(before, { screen: "home" })).toEqual({ screen: "home" });
+  });
+
+  it("runs a batch as one edit, all or nothing, naming the failing step", async () => {
+    const h = host();
+    const r = await run(h, "batch", {
+      commands: [
+        { command: "add_media_clip", args: { asset_id: "a1", start: 0, duration: 4 } },
+        { command: "add_text", args: { text: "Hi", start: 0, duration: 2, style: { background: { color: "rgba(0,0,0,0.6)" } } } },
+      ],
+    });
+    expect(r.added_clips).toHaveLength(2);
+    const title = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
+    expect(title.type === "text" && title.style.background).toEqual({ color: "rgba(0,0,0,0.6)", padding: 16, radius: 8 });
+    const before = h.project;
+    const bad = await call(h, "tools/call", { name: "batch", arguments: { commands: [{ command: "split", args: { at: 1 } }, { command: "split", args: { at: "soon" } }] } });
+    expect(bad!.result).toMatchObject({ isError: true });
+    expect(text(bad)).toContain("step 2 (split): args.at must be a number");
+    expect(h.project).toBe(before);
+  });
+
+  it("exports through the host and makes a contact sheet", async () => {
+    const h = host();
+    const done = await run(h, "export_video", { name: "Promo", loudness: -14 });
+    expect(done).toMatchObject({ state: "done" });
+    expect(h.exports).toEqual([{ name: "Promo", loudness: -14 }]);
+    expect(await run(h, "export_status", {})).toEqual({ state: "none" });
+    const r = await call(h, "tools/call", { name: "preview_frames", arguments: { times: [1, 2, 3] } });
+    expect((r!.result as { content: { type: string }[] }).content[0]).toMatchObject({ type: "image" });
+    expect(h.sheets).toEqual([[[1, 2, 3], 320, 4]]);
   });
 });
