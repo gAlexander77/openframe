@@ -536,6 +536,25 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
 
+## Ads and deliverables
+
+- **Kinetic typography** (After Effects' text animators, CapCut's
+  per-character text animations): a title's in, out or loop animation can
+  play by each letter, word or line, with a stagger (0 all together, 1 one
+  after another) and an order (first to last, last to first, from the
+  center, random, the same on every render). Presets: Typewriter (letters
+  typed behind a caret; as an out it deletes from the end), Letter rise,
+  Letter fade, Word pop, Word rise, Word slide, Line rise, and two sweeps,
+  Highlight (a marker box drawn behind the words) and Underline, in the
+  title's accent color; a finished sweep stays drawn. Any other animation
+  moves per unit too (Rise by word, Float by letter is a wave). The
+  rasterizer draws each unit, so the viewer and the export agree; the
+  Animation tab lists the presets for titles only and adds Moves by,
+  Stagger and Order (`set_animation` `unit`, `stagger`, `order`).
+- **Ad looks for titles**: a glow (neon, three strengths), a gradient fill
+  (two colors at an angle) and a second outline (sticker style), in the
+  Text tab and in every text style an agent sends.
+
 ## Export
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what

@@ -93,7 +93,18 @@ one to the other: the push-in on a screen recording.
 
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
-footage; an empty color removes one.
+footage; an empty color removes one. Ad looks: `glow` (`{"color":
+"#00e5ff", "blur": 24, "strength": 2}`), `gradient` (`{"from": "#ffffff",
+"to": "#ff3d7f", "angle": 0}`), `stroke2` (a second outline) and `accent`
+(the kinetic sweeps' color).
+
+`set_animation` plays kinetic typography on titles: the presets
+`typewriter`, `letterRise`, `letterFade`, `wordPop`, `wordRise`,
+`wordSlide`, `lineRise`, `highlightSweep` and `underlineWipe`, or any
+animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
+`order` (`forward`, `backward`, `center`, `random`): `{"clip_id": "c_...",
+"slot": "in", "type": "rise", "unit": "word", "stagger": 0.6, "duration":
+0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
 `start`, `end`) writes to `<Videos>\OpenFrame\` with no dialog and never

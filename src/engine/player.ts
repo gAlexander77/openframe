@@ -142,7 +142,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
  * the synchronous render: a sample's canvas image may close next microtask. */
 export function sourceImages(resolved: Resolved, width: number, height: number) {
   return (l: Layer): SourceImage | null => {
-    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height, l.source.word);
+    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height, l.source.word, l.source.kinetic);
     const r = resolved.get(l.clipId);
     if (!r) return null;
     if (r.bitmap) return { image: r.bitmap, width: r.bitmap.width, height: r.bitmap.height, rotation: 0, key: r.key };

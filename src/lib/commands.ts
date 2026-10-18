@@ -45,6 +45,7 @@ import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorP
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
+import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -163,7 +164,14 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   // Sizes are pixels at 1080p; an empty color removes the part.
   background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"]),
   stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"]),
+  stroke2: S.obj({ color: S.str("CSS color"), width: S.num("Pixels beyond the first outline; default 6", { minimum: 0 }) }, ["color"]),
   shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"]),
+  // Ad looks: a neon glow, a two-color fill, the kinetic sweeps' color.
+  glow: S.obj({ color: S.str("CSS color, e.g. #00e5ff"), blur: S.num("Pixels, default 24", { minimum: 0 }), strength: S.num("1..3, how bright; default 1", { minimum: 1, maximum: 3 }) }, ["color"]),
+  gradient: S.obj({ from: S.str("CSS color at the start"), to: S.str("CSS color at the end"), angle: S.num("Degrees: 0 left to right (default), 90 top to bottom", { minimum: -360, maximum: 360 }) }, ["from", "to"]),
+  accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
+  letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
+  maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
 });
 
 const REGION_SCHEMA = S.obj(
@@ -191,8 +199,14 @@ function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial
   if (g.background) s.background = { padding: 16, radius: 8, ...base.background, ...g.background } as TextStyle["background"];
   if (g.stroke) s.stroke = { width: 4, ...base.stroke, ...g.stroke } as TextStyle["stroke"];
   if (g.shadow) s.shadow = { blur: 8, x: 0, y: 3, ...base.shadow, ...g.shadow } as TextStyle["shadow"];
-  for (const k of ["background", "stroke", "shadow"] as const) if (s[k]?.color === "") delete s[k];
+  const g2 = given as { stroke2?: object; glow?: object; gradient?: object };
+  if (g2.stroke2) s.stroke2 = { width: 6, ...base.stroke2, ...g2.stroke2 } as TextStyle["stroke2"];
+  if (g2.glow) s.glow = { blur: 24, ...base.glow, ...g2.glow } as TextStyle["glow"];
+  if (g2.gradient) s.gradient = { angle: 0, ...base.gradient, ...g2.gradient } as TextStyle["gradient"];
+  for (const k of ["background", "stroke", "stroke2", "shadow", "glow"] as const) if (s[k]?.color === "") delete s[k];
+  if (s.gradient && (s.gradient.from === "" || s.gradient.to === "")) delete s.gradient;
   if (s.highlight === "") delete s.highlight;
+  if (s.accent === "") delete s.accent;
   if ((s.case as string) === "none") delete s.case;
   return s;
 }
@@ -784,15 +798,43 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_animation",
-    description: "Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.",
-    input: S.obj({ clip_id: S.str("Clip id"), slot: S.str("Which animation", { enum: ["in", "out", "loop"] }), type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "slot", "type"]),
+    description:
+      "Set a clip's intro (in), outro (out) or looping (loop) animation; type 'none' clears the slot. Whole clip, in/out: fade, zoomIn, zoomOut, slideLeft, slideRight, slideUp, slideDown, rise, drop, pop, spin, tilt, blurIn; loop: pulse, sway, float, shake, flicker, heartbeat. Titles only (kinetic typography), in/out: typewriter (letters appear one by one behind a caret; as out it deletes from the end), letterRise, letterFade, wordPop, wordRise, wordSlide, lineRise (each letter, word or line moves on its own), highlightSweep (a marker box sweeps behind the words) and underlineWipe (an underline draws across them), both in the title's style.accent color. On a title, unit plays any in, out or loop animation per letter, word or line instead (rise by word; a float loop by letter is a wave); stagger spreads the units over the duration and order picks which goes first. duration is the whole animation in seconds, every unit included (a typewriter over 1.5 s suits a 25-letter line); for a loop, one cycle. Example: {clip_id, slot: 'in', type: 'rise', unit: 'word', stagger: 0.6, duration: 0.8}.",
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        slot: S.str("Which animation", { enum: ["in", "out", "loop"] }),
+        type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }),
+        duration: S.num("Seconds for the whole animation (loops: one cycle); default 0.5", { minimum: 0.05 }),
+        unit: S.str("Titles only: play it by each letter, word or line instead of the whole title (the kinetic presets have their own; this overrides it)", { enum: KINETIC_UNITS }),
+        stagger: S.num("Titles, per unit: 0 moves every unit together, 1 one after another; default the preset's, else 0.5", { minimum: 0, maximum: 1 }),
+        order: S.str("Titles, per unit: which unit moves first; default forward (a typewriter's out: backward)", { enum: KINETIC_ORDERS }),
+      },
+      ["clip_id", "slot", "type"],
+    ),
     run: (p, a) => {
       const key = a.slot === "in" ? "animIn" : a.slot === "out" ? "animOut" : "animLoop";
+      const type = String(a.type);
+      const perUnit = a.unit !== undefined || a.stagger !== undefined || a.order !== undefined;
       return ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (!("transform" in c)) throw new CommandError(`${c.type} clips do not animate`);
         const next = { ...c } as Record<string, unknown>;
-        if (a.type === "none") delete next[key];
-        else next[key] = { type: String(a.type), duration: Math.max(1, f(p, a.duration ?? 0.5)) };
+        if (type === "none") {
+          delete next[key];
+          return next as unknown as Clip;
+        }
+        const def = ANIMATIONS[type];
+        if (a.slot === "loop" ? !def.loop : !def.from && !def.text) throw new CommandError(`${type} is ${def.loop ? "a loop animation: use slot loop" : "an in or out animation: use slot in or out"}`);
+        if (def.text && c.type !== "text") throw new CommandError(`${type} animates a title's letters or words: it works on text clips only`);
+        if (perUnit && c.type !== "text") throw new CommandError("unit, stagger and order move a title's letters, words or lines: text clips only");
+        if (perUnit && def.text?.sweep) throw new CommandError(`${type} draws across the words as a whole; it takes no unit, stagger or order`);
+        next[key] = {
+          type,
+          duration: Math.max(1, f(p, a.duration ?? 0.5)),
+          ...(a.unit !== undefined ? { unit: a.unit } : {}),
+          ...(a.stagger !== undefined ? { stagger: Number(a.stagger) } : {}),
+          ...(a.order !== undefined ? { order: a.order } : {}),
+        };
         return next as unknown as Clip;
       });
     },

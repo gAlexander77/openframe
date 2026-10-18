@@ -11,6 +11,7 @@ import { findCompound, getAsset, sourceTimeAt, timelineEnd } from "../project/op
 import { correctionAt } from "../analysis/stabilize";
 import { fittedSize } from "./size";
 import { spokenWord } from "../captions";
+import { isKinetic, kineticAt, unitOf, type KineticFrame } from "../kinetic";
 import { frameAt, framesToSeconds } from "../time";
 import type {
   Adjust,
@@ -40,7 +41,8 @@ export type LayerSource =
       next?: { time: number; w: number };
     }
   | { kind: "image"; assetId: Id }
-  | { kind: "text"; clip: TextClip; word?: number }
+  /** `kinetic`: the animations its letters, words or lines play now. */
+  | { kind: "text"; clip: TextClip; word?: number; kinetic?: KineticFrame }
   | { kind: "color"; color: string }
   /** A compound clip's nested timeline at inner frame `frame`, planned like
    * the project's own: the compositor draws `items` into a canvas-sized
@@ -177,17 +179,20 @@ export function animationAt(clip: VisualClip, r: number): AnimState {
       blur: s.blur + o.blur,
     };
   };
-  const inDef = clip.animIn && ANIMATIONS[clip.animIn.type];
+  // A title's per-letter, word or line animations are drawn by the text
+  // rasterizer (layerAt's kinetic), not by moving the whole layer.
+  const text = clip.type === "text";
+  const inDef = clip.animIn && !(text && isKinetic(clip.animIn, ANIMATIONS)) ? ANIMATIONS[clip.animIn.type] : undefined;
   if (inDef?.from && r < clip.animIn!.duration) {
     const p = r / clip.animIn!.duration;
     apply(mixAnim(inDef.from, inDef.overshoot ? easeOutBack(p) : ease("easeOut", p)));
   }
-  const outDef = clip.animOut && ANIMATIONS[clip.animOut.type];
+  const outDef = clip.animOut && !(text && isKinetic(clip.animOut, ANIMATIONS)) ? ANIMATIONS[clip.animOut.type] : undefined;
   if (outDef?.from && r >= clip.duration - clip.animOut!.duration) {
     const p = (r - (clip.duration - clip.animOut!.duration)) / clip.animOut!.duration;
     apply(mixAnim(outDef.from, 1 - ease("easeIn", p)));
   }
-  const loopDef = clip.animLoop && ANIMATIONS[clip.animLoop.type];
+  const loopDef = clip.animLoop && !(text && unitOf(clip.animLoop, ANIMATIONS)) ? ANIMATIONS[clip.animLoop.type] : undefined;
   if (loopDef?.loop) {
     const period = Math.max(1, clip.animLoop!.duration);
     const phase = (r % period) / period;
@@ -237,7 +242,8 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
   else if (clip.type === "text") {
     const word = clip.style.highlight ? spokenWord(clip.text, clip.wordTimes, r) : undefined;
-    source = { kind: "text", clip, ...(word !== undefined ? { word } : {}) };
+    const kinetic = kineticAt(clip, r, ANIMATIONS);
+    source = { kind: "text", clip, ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
   }
   else if (clip.type === "color") source = { kind: "color", color: clip.color };
   else {

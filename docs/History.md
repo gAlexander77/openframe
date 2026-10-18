@@ -864,3 +864,18 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   timings, and the editor moves to the second half. And the transcript
   card dropped reversed and speed-curved clips without a word; it says
   how many it leaves out and why.
+- **Kinetic typography, for ads.** Titles animate per letter, word or
+  line with a stagger and an order, the shape of After Effects' range
+  selectors rather than a fixed list: any catalog animation plays per
+  unit, and the presets (typewriter, word pop...) are catalog entries
+  with a unit. The plan says which animation runs and how far; the text
+  rasterizer draws each unit, so preview and export agree (the drive
+  compares the viewer with an exported still of the same frame). Three
+  things the first version got wrong: a highlight swept in vanished the
+  frame it finished, because a settled title rasterized as a plain still
+  (a sweep is part of the look at rest, so it is drawn at its end, still
+  cacheable); a title with a marker in and an underline out drew only one
+  of them; and per-unit frames, each a new raster, would have filled the
+  compositor's 256 keyed textures, so a moving frame is uploaded unkeyed.
+  A gradient fill must stay put while letters travel through it: each
+  unit maps the gradient's ends through the inverse of its own transform.

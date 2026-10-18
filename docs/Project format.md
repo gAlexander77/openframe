@@ -69,7 +69,13 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
           text styles may carry case?: upper | lower | title (shown so; the
-            text itself is kept as typed)
+            text itself is kept as typed), stroke2?: { color, width } (a second
+            outline), glow?: { color, blur, strength? }, gradient?: { from, to,
+            angle } (fills instead of color) and accent?: the color the
+            highlightSweep and underlineWipe animations draw in
+          animIn, animOut and animLoop may carry unit?: letter | word | line,
+            stagger?: 0..1 and order?: forward | backward | center | random:
+            on a text clip the animation then plays per unit (src/lib/kinetic.ts)
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
@@ -255,7 +261,10 @@ Auto removal) carries a reference to its matte
 Effects, transitions, filters and animations are referenced by name; the
 lists live in `src/lib/catalog.ts` (e.g. effects `blur`, `glitch`, `vhs`;
 transitions `dissolve`, `wipeLeft`, `zoomIn`; filters `teal`, `noir`;
-animations `fade`, `pop`, `slideUp`, and loops `pulse`, `shake`).
+animations `fade`, `pop`, `slideUp`, and loops `pulse`, `shake`; for
+titles only, the kinetic `typewriter`, `letterRise`, `letterFade`,
+`wordPop`, `wordRise`, `wordSlide`, `lineRise`, `highlightSweep` and
+`underlineWipe`).
 
 ## Building one with commands instead
 
