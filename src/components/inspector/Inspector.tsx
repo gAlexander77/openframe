@@ -38,6 +38,7 @@ import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
 import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
+import { applyTextStyle, deleteTextStyle, saveTextStyle, useTextStyles } from "../../state/textStyles";
 import { beginTrackBox, cancelTrackBox, cancelTracking, cannotTrack, trackMotion, useTrackBox, useTracking } from "../../state/tracking";
 import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
@@ -1085,6 +1086,81 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
 
 const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];
 
+/** Black or white, whichever a color reads better on: the swatch behind
+ * a saved style's sample, so a dark style's "Aa" still shows. */
+const swatchFor = (hex: string) => {
+  const n = parseInt(hex.slice(1, 7), 16);
+  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return lum > 140 ? "#000000" : "#ffffff";
+};
+
+/** CapCut's Save as preset for text: this title's look under a name, and
+ * the saved looks as chips that give a title that look in one click, in
+ * any project (state/textStyles.ts). */
+function SavedStylesSection({ clip }: { clip: TextClip }) {
+  const saved = useTextStyles();
+  const [naming, setNaming] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const save = () => {
+    try {
+      saveTextStyle(clip.style, naming ?? "");
+      setNaming(null);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <Section title="Saved styles">
+      {saved.length ? (
+        <div className="style-chips">
+          {saved.map((t) => (
+            <span key={t.id} className="style-chip">
+              <button className="chip-btn" data-tip={`Give this title the ${t.name} style`} onClick={() => applyTextStyle(t.id, [clip.id])}>
+                <span className="style-sample" aria-hidden="true" style={{ fontFamily: t.style.font, color: t.style.color, background: swatchFor(t.style.color), fontWeight: t.style.bold ? 700 : 400, fontStyle: t.style.italic ? "italic" : undefined }}>
+                  Aa
+                </span>
+                {t.name}
+              </button>
+              <button className="icon-btn small" aria-label={`Delete style ${t.name}`} data-tip="Delete style" onClick={() => deleteTextStyle(t.id)}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="insp-hint">Save this title's look to give it to other titles in one click, in any project.</p>
+      )}
+      {naming === null ? (
+        <div className="insp-actions">
+          <button className="btn" onClick={() => setNaming("")}>
+            <Plus size={14} /> Save this style
+          </button>
+        </div>
+      ) : (
+        <div className="insp-actions">
+          <input
+            className="field style-name"
+            aria-label="Style name"
+            placeholder="Style name"
+            autoFocus
+            value={naming}
+            onChange={(e) => setNaming(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation(); // typing is not the editor's keys
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") setNaming(null);
+            }}
+          />
+          <button className="btn primary" onClick={save}>Save</button>
+          <button className="btn ghost" onClick={() => setNaming(null)}>Cancel</button>
+        </div>
+      )}
+      {error && <p className="insp-hint" role="alert">{error}</p>}
+    </Section>
+  );
+}
+
 function TextTab({ clip }: { clip: TextClip }) {
   const s = clip.style;
   const style = (patch: Partial<TextStyle>, label: string) => patchClip(clip.id, label, (c) => ({ ...c, style: { ...(c as TextClip).style, ...patch } }) as Clip);
@@ -1185,6 +1261,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
+      <SavedStylesSection clip={clip} />
       <TransformSection clip={clip} />
       <Section title="Opacity" defaultOpen={false}>
         <SliderRow clip={clip} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} {...pct} />

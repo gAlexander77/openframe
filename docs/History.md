@@ -812,3 +812,8 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   `clip-focus` checked focus straight after an arrow key, but focus moves
   in the next animation frame (27 to 40 ms headless) and the extra
   inspector work this round lost the race; it waits for focus now.
+- **Saved text styles.** A title's look could be copied with Paste
+  attributes but not kept: CapCut saves text presets and Premiere has
+  Text Styles. The Text tab saves a style under a name in this viewer's
+  storage, and a chip with an "Aa" sample (on black or white, whichever
+  its color reads on) gives it to a title in one undo step.

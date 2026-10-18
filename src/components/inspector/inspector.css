@@ -254,3 +254,10 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 /* Canvas width x height under Resolution. */
 .size-fields { display: flex; align-items: center; gap: 6px; color: var(--text-3); }
 .size-fields .field { width: 76px; }
+
+/* Saved text styles: a sample of each look, then its name. */
+.style-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.style-chip { display: inline-flex; align-items: center; gap: 2px; }
+.style-chip .chip-btn { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.style-sample { display: inline-grid; place-items: center; width: 22px; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
+.style-name { flex: 1; min-width: 0; }

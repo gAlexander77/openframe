@@ -398,6 +398,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Saved styles** (CapCut's Save as preset for text, Premiere's Text
+  Styles): Text tab > Saved styles keeps a title's whole look under a
+  name, in this viewer's storage so it is there in every project; a chip
+  with a sample gives it to the selected title in one click, words kept.
 - **A new title shows when added**: a title, template or sticker added at
   the playhead plays its In animation once, silently, and stops where it
   has settled (under reduced motion it goes straight there), so the viewer
