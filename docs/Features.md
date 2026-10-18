@@ -8,6 +8,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Home screen** with a Create project card and canvas presets named for
   where the video goes (16:9 YouTube, 9:16 TikTok/Reels/Shorts, 1:1, 4:5,
   21:9), and searchable project cards with thumbnails. Delete asks twice.
+- **Canvas size in pixels** (project Details > Size, CapCut's custom
+  ratio): any width and height from 16 to 8192, rounded to even numbers
+  as encoders need; `set_project` also takes the frame rate.
 - **Autosave** 800 ms after every change, never overlapping; "Saved 10:42"
   in the title bar; Ctrl+S saves now. No save dialog, as in CapCut.
 - **Safe project switching:** edits made during a slow save are persisted
@@ -71,7 +74,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   deactivate clip; markers; in/out range.
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
-  labels, and undo deletion. Double-click a ruler flag to edit it. Markers
+  labels, and undo deletion. **Delete shown** removes what the search and
+  color filter show (a run of beat markers, say) in one undo step.
+  Double-click a ruler flag to edit it. Markers
   beyond the last clip remain reachable without extending export duration.
 - **Export marker text:** preview and save the displayed notes as exact
   timecodes or YouTube-style chapter timestamps. Search/color filters choose
@@ -227,6 +232,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   bottom against the canvas; with several clips selected, against their
   combined bounds, plus distribute for three or more
   ([[ADR-045 Align measures the resting box, one clip to the canvas]]).
+  **Inside title safe** makes one clip stop at the title-safe line (the
+  viewer's Title 80% guide) instead of the canvas edge.
 - Frame-exact: the framecode drive proves the right source frame at 1x,
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
@@ -508,6 +515,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-034 Timelines leave as OpenTimelineIO]]).
 ## Library
 
+- **Solid color** in the Adjustment tab (CapCut's color background): a
+  white layer on a new top track at the playhead, its color set in the
+  inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
   Captions, Filters, Adjustment, with category sub-navigation.
 - **Previews drawn by the engine**: filter, effect, transition and text

@@ -8,7 +8,7 @@
 import { prefsStore } from "./prefs";
 import { player } from "../engine/player";
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
-import { createAdjustmentClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
+import { createAdjustmentClip, createColorClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import { placeOnTop, revealSpan } from "../lib/overlays";
 import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
@@ -217,6 +217,20 @@ export function applyTransition(type: string, clipId?: Id, dropped = false) {
 }
 
 /** CapCut's "Custom adjustment": an empty adjustment layer at the playhead. */
+/** A solid color layer (CapCut's color background) on a new top track at
+ * the playhead, white until its Color is set. */
+export function addColorLayer(at?: number) {
+  const f = at ?? store.get().playhead;
+  let id = "";
+  store.edit("Add solid color", (p0) => {
+    const [p, tid] = topTrack(p0, "Color");
+    const clip = createColorClip("#ffffff", f, secondsToFrames(layerSeconds(), p.fps));
+    id = clip.id;
+    return ops.addClip(p, tid, clip);
+  });
+  store.select([id]);
+}
+
 export function addAdjustmentLayer(at?: number) {
   const f = at ?? store.get().playhead;
   let id = "";

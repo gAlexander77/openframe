@@ -58,7 +58,10 @@ export function MarkersTab() {
           {colors.map((c) => <option key={c} value={c}>{colorName(c)}</option>)}
         </select>
       </div>
-      <button className="btn ghost marker-export-open" disabled={!list.length} onClick={() => setExporting(true)}><Download size={14} /> Export shown markers</button>
+      <div className="marker-bulk">
+        <button className="btn ghost marker-export-open" aria-label="Export shown markers" disabled={!list.length} onClick={() => setExporting(true)}><Download size={14} /> Export shown</button>
+        <button className="btn ghost" aria-label="Delete shown markers" disabled={!list.length} onClick={() => store.edit(`Delete ${list.length === 1 ? "marker" : `${list.length} markers`}`, (p) => runCommand(p, "delete_markers", { marker_ids: list.map((m) => m.id) }))}><Trash2 size={14} /> Delete shown</button>
+      </div>
       <div className="marker-list" aria-label="Timeline markers" ref={listRef}>
         {!list.length && <p className="lib-hint">{markers.length ? "No markers match. Clear the search or color filter." : "Mark chapters, beats or editing notes. Add a marker at the playhead to get started."}</p>}
         {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>

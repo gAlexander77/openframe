@@ -8,7 +8,7 @@ export function DragGhost() {
   if (!d) return null;
   const p = d.payload;
   const Icon =
-    p.kind === "asset" ? (p.asset.kind === "audio" ? AudioLines : Film) : p.kind === "text" || p.kind === "template" ? Type : p.kind === "transition" ? Blend : p.kind === "filter" ? Palette : p.kind === "adjustment" ? SlidersHorizontal : p.kind === "sticker" ? Sticker : Sparkles;
+    p.kind === "asset" ? (p.asset.kind === "audio" ? AudioLines : Film) : p.kind === "text" || p.kind === "template" ? Type : p.kind === "transition" ? Blend : p.kind === "filter" || p.kind === "color" ? Palette : p.kind === "adjustment" ? SlidersHorizontal : p.kind === "sticker" ? Sticker : Sparkles;
   const label = p.kind === "asset" ? p.asset.name : p.label;
   return (
     <div className="drag-ghost" style={{ transform: `translate(${d.x + 12}px, ${d.y + 12}px)` }}>

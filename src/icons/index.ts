@@ -3,6 +3,9 @@
 // Lucide supplies the drawings; re-exporting here keeps the set countable and
 // lets a custom-drawn icon replace one without touching its callers.
 export {
+  Pipette,
+  SquareDashed,
+  PaintBucket,
   Underline,
   Italic,
   CaseUpper,

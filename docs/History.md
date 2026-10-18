@@ -741,3 +741,11 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   dialog, at its resolution; the transport's camera button, the File menu
   and Mod+Shift+E (Premiere's Export Frame) save the frame at the
   project's size.
+- **What only an agent could do.** The code audit listed commands no
+  button reached. Now in the UI: a solid color layer (Adjustment tab), the
+  canvas size in pixels, deleting the markers a search shows (after Beat
+  markers drop forty), and aligning inside the title-safe line. Going the
+  other way, `set_project` said it set the frame rate and could not; it
+  takes one of the app's rates now. Add track stays agent-only on purpose:
+  the timeline tidies empty tracks away, as CapCut does, so a button would
+  add a track that vanished.

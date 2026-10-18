@@ -1311,7 +1311,7 @@ function ProjectDetails() {
       <div className="insp-body">
         <Section title="Project">
           <Row label="Name">
-            <input className="field" defaultValue={p.name} key={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && store.edit("Rename project", (q) => ({ ...q, name: e.target.value.trim() }))} />
+            <input className="field" aria-label="Project name" defaultValue={p.name} key={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && store.edit("Rename project", (q) => ({ ...q, name: e.target.value.trim() }))} />
           </Row>
           <Row label="Ratio">
             <div className="ratio-grid">
@@ -1324,7 +1324,7 @@ function ProjectDetails() {
             </div>
           </Row>
           <Row label="Resolution">
-            <select className="field" value={RESOLUTIONS.includes(short) ? short : ""} onChange={(e) => setCanvas(p.width, p.height, Number(e.target.value))}>
+            <select className="field" aria-label="Resolution" value={RESOLUTIONS.includes(short) ? short : ""} onChange={(e) => setCanvas(p.width, p.height, Number(e.target.value))}>
               {!RESOLUTIONS.includes(short) && <option value="">{p.width}x{p.height}</option>}
               {RESOLUTIONS.map((r) => (
                 <option key={r} value={r}>
@@ -1333,9 +1333,17 @@ function ProjectDetails() {
               ))}
             </select>
           </Row>
+          <Row label="Size">
+            <div className="size-fields">
+              <SizeField label="Canvas width" value={p.width} onSet={(width) => store.edit("Canvas size", (q) => ({ ...q, width, canvasFixed: true }))} />
+              <span aria-hidden="true">×</span>
+              <SizeField label="Canvas height" value={p.height} onSet={(height) => store.edit("Canvas size", (q) => ({ ...q, height, canvasFixed: true }))} />
+            </div>
+          </Row>
           <Row label="Frame rate">
             <select
               className="field"
+              aria-label="Frame rate"
               value={fpsLabel}
               onChange={(e) => {
                 const f = FPS_PRESETS.find((x) => x.label === e.target.value);
@@ -1371,6 +1379,29 @@ function ProjectDetails() {
         </Section>
       </div>
     </>
+  );
+}
+
+/** A canvas side in pixels (CapCut's custom ratio): even, as encoders
+ * need, between 16 and 8192; committed on Enter or leaving the field. */
+function SizeField({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
+  const commit = (raw: string) => {
+    const n = Math.round(Number(raw) / 2) * 2;
+    if (Number.isFinite(n) && n !== value) onSet(Math.min(8192, Math.max(16, n)));
+  };
+  return (
+    <input
+      className="field num"
+      type="number"
+      min={16}
+      max={8192}
+      step={2}
+      aria-label={label}
+      defaultValue={value}
+      key={value}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+    />
   );
 }
 

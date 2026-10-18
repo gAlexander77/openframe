@@ -7,7 +7,7 @@
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
-import { frameAt, framesToSeconds, secondsToFrames } from "./time";
+import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
   createAdjustmentClip,
@@ -250,14 +250,20 @@ export const COMMANDS: Command[] = [
       width: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas width in pixels" },
       height: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas height in pixels" },
       background: S.str("CSS hex color behind all layers"),
+      fps: S.str("Frame rate; clips keep their times", { enum: FPS_PRESETS.map((f) => f.label) }),
     }),
-    run: (p, a) => ({
-      ...p,
-      ...(a.name !== undefined ? { name: String(a.name) } : {}),
-      ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
-      ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
-      ...(a.background !== undefined ? { background: String(a.background) } : {}),
-    }),
+    run: (p, a) => {
+      const rate = a.fps === undefined ? undefined : FPS_PRESETS.find((f) => f.label === String(a.fps));
+      if (a.fps !== undefined && !rate) throw new CommandError(`fps must be one of ${FPS_PRESETS.map((f) => f.label).join(", ")}`);
+      const q = {
+        ...p,
+        ...(a.name !== undefined ? { name: String(a.name) } : {}),
+        ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
+        ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
+        ...(a.background !== undefined ? { background: String(a.background) } : {}),
+      };
+      return rate ? ops.setFps(q, rate.fps) : q;
+    },
   },
   {
     name: "add_track",

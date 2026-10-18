@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   List,
   Music,
+  PaintBucket,
   Palette,
   Plus,
   Search,
@@ -27,7 +28,7 @@ import { organizeMedia, removeMedia } from "../lib/project/mediaOrganization";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
+import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
 import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
@@ -499,13 +500,19 @@ function TextTab() {
 function AdjustmentTab() {
   return (
     <div className="lib-content">
-      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length.</p>
+      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length. A solid color is a plain background or a flash; set its color in the inspector.</p>
       <div className="card-grid small">
         <CatalogCard
           label="Custom adjustment"
           payload={{ kind: "adjustment", label: "Adjustment" }}
           onAdd={() => addAdjustmentLayer()}
           preview={<div className="fx-preview"><SlidersHorizontal size={18} strokeWidth={1.4} /></div>}
+        />
+        <CatalogCard
+          label="Solid color"
+          payload={{ kind: "color", label: "Solid color" }}
+          onAdd={() => addColorLayer()}
+          preview={<div className="fx-preview"><PaintBucket size={18} strokeWidth={1.4} /></div>}
         />
       </div>
     </div>

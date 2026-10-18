@@ -19,17 +19,7 @@ import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/ti
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import {
-  addAdjustmentLayer,
-  addTextPreset,
-  applyEffect,
-  applyFilter,
-  applyTemplate,
-  applyTransition,
-  layerSeconds,
-  placeTextPreset,
-  transitionSeconds,
-} from "../state/apply";
+import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
 import { replaceClip } from "../lib/project/replace";
@@ -167,6 +157,8 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
     }
     case "adjustment":
       return { view: layer, run: () => addAdjustmentLayer(frame) };
+    case "color":
+      return { view: layer, run: () => addColorLayer(frame) };
     case "transition": {
       const cut = transitionCut(tracks, row, frame);
       const d = secondsToFrames(transitionSeconds(), p.fps);

@@ -20,6 +20,16 @@ describe("command registry", () => {
     }
   });
 
+  it("changes the frame rate it says it does, and refuses odd rates", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 2, duration: 4 });
+    const q = runCommand(p, "set_project", { fps: "50" });
+    expect(q.fps).toEqual({ num: 50, den: 1 });
+    // The clip keeps its time: 2 s at 25 fps, still 2 s at 50.
+    expect(q.tracks[0].clips[0].start).toBe(100);
+    expect(() => runCommand(p, "set_project", { fps: "48" })).toThrow();
+  });
+
   it("builds an edit from seconds, the way an agent would", () => {
     let p = withAsset();
     p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 8 });

@@ -250,3 +250,7 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .cutout-pct svg { color: var(--accent); }
 .spoken-word { display: flex; align-items: center; gap: 8px; }
 .auto-adjust { padding: 8px 12px 0; margin-top: 0; }
+
+/* Canvas width x height under Resolution. */
+.size-fields { display: flex; align-items: center; gap: 6px; color: var(--text-3); }
+.size-fields .field { width: 76px; }
