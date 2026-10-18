@@ -229,6 +229,20 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     hot-updates the app under the drive and its results are noise; run
     long drives between edits, not during them.
 
+## MCP against the web build
+
+`node scripts/mcp-web.mjs --base http://localhost:1420` opens the web
+build in a headless browser and serves its MCP at
+`http://127.0.0.1:47281/mcp`. Each POST is one JSON-RPC request, the
+same methods as the desktop server ([[Automation]], [[MCP tools]]), with
+no token since it listens only on this machine.
+- **No desktop app needed:** an MCP client, curl or a test model can make
+  a whole video this way.
+- **Images:** `--images <folder>` also saves each image a tool returns
+  and names its path in the answer, for clients that cannot show images.
+- **Media:** `import_media` takes the dev server's URLs here
+  (`http://localhost:1420/fixtures/media/...`), not paths.
+
 ## Styling sweep
 
 `scripts/drive/style-sweep.js` opens every library tab, every inspector

@@ -945,3 +945,6 @@ and delivery) while the MCP layer was rebuilt here.
   do the same. A transition drive that put a color clip before a picture
   found no cut to transition: color clips land on an overlay track, not
   the main one, and `set_transition` answers `unchanged`.
+- **MCP without the desktop app.** `scripts/mcp-web.mjs` serves the web
+  build's MCP over HTTP from a headless browser ([[Driving the app]]), so
+  a model can be tested against the tools exactly as a client sees them.
