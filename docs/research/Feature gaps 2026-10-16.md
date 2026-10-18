@@ -88,6 +88,7 @@ Guides are in `src/components/ViewerGuides.tsx`.
 | Ratio menu under the player | C | yes (`40561e4`) | — | — |
 | Loop playback and play In to Out | P R V F | yes: Loop (Ctrl+L) and Play In to Out | — | A `loop` flag in the store; `src/engine/player.ts` seeks back at the out point. Add keymap actions. |
 | Timecode or clip-name overlay on the viewer | P R | no | P2 | DOM overlay; never exported. |
+| Type a timecode to jump there, +/- offsets | P R | yes: click the player's timecode (2026-10-17) | — | Added by the everyday-gaps pass; `parseJump` in `lib/time.ts`. |
 | Second-monitor full-screen output | P R V F | partial: full-screen preview only | P2 | A second Tauri window that mirrors the canvas. |
 
 ## 2. Inspector: transform and picture
@@ -310,6 +311,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | ProRes or DNxHR via FFmpeg | P R V F | no | P2 | Desktop only, through `src-tauri/src/ffmpeg.rs`. |
 | Alpha export (ProRes 4444, VP9 alpha, PNG sequence) | P R V F | no | P2 | — |
 | Cover / thumbnail designer | C | no | P2 | A still export with text layers. |
+| Save the current frame from the player | C P | yes: camera button, Mod+Shift+E (2026-10-17) | — | Added by the everyday-gaps pass; it was only in the export dialog. "Import into project" is not offered. |
 | Loudness-normalized export, true-peak limiter | P R V | partial: normalization to a target (sample peak held at -1 dBFS); no true-peak limiter | P2 | — |
 | Smart render (stream copy of untouched GOPs) | P V | no | P2 | — |
 | Several aspect versions in one go | C | no | P2 | After auto reframe. |

@@ -61,6 +61,9 @@
 @container (max-width: 420px) { .tc-sep, .tc-total { display: none; } }
 @container (max-width: 352px) { .timecodes { display: none; } }
 .tc-now { color: var(--accent); font-weight: 600; }
+button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; font-weight: 600; cursor: text; }
+button.tc-now:hover { background: var(--bg-3); }
+.tc-input { width: 12ch; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg-inset); font: inherit; font-weight: 600; outline: none; }
 .tc-sep, .tc-total { color: var(--text-3); }
 
 .quality-select {

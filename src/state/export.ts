@@ -189,11 +189,12 @@ export async function exportForAgent(options: RenderOptions = {}): Promise<Agent
  * exports (CapCut's "export still frame"). Call from the click handler.
  * Returns the file's name, or null when the save dialog was canceled.
  */
-export async function saveStill(name: string, resolution: ExportSettings["resolution"]): Promise<string | null> {
+export async function saveStill(name: string, resolution?: ExportSettings["resolution"]): Promise<string | null> {
   const target = await platform.createExportTarget(`${safeFileName(name)} frame`, "png");
   if (!target) return null;
   const s = store.get();
-  const short = RESOLUTIONS.find((r) => r.id === resolution)?.short ?? 1080;
+  // Without a resolution, the project's own size.
+  const short = resolution ? (RESOLUTIONS.find((r) => r.id === resolution)?.short ?? 1080) : Math.min(s.project.width, s.project.height);
   const { width, height } = outputSize(s.project, short);
   const blob = await exportStill(s.project, s.playhead, width, height);
   const w = target.writable.getWriter();
@@ -228,4 +229,17 @@ export async function stillToUrl(frame?: number, resolution: ExportSettings["res
   return { url: URL.createObjectURL(blob), size: blob.size, width, height };
 }
 
-provide({ export: openExportDialog });
+/** The player's camera button and Mod+Shift+E: the frame under the
+ * playhead at the project's size, without opening the export dialog. */
+export async function saveFrame() {
+  const p = store.get().project;
+  if (!p.tracks.some((t) => t.clips.length)) return toast("Add something to the timeline first");
+  try {
+    const name = await saveStill(p.name);
+    if (name) toast(`Saved ${name}`);
+  } catch (e) {
+    toast(`Couldn't save the frame: ${e instanceof Error ? e.message : e}`, "error");
+  }
+}
+
+provide({ export: openExportDialog, saveFrame: () => void saveFrame() });

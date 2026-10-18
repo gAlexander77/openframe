@@ -61,6 +61,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "importMedia" },
         { action: "export" },
+        { action: "saveFrame" },
         {
           label: "Export timeline (OTIO)",
           hint: "Resolve, Premiere",

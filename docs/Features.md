@@ -234,6 +234,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
+  click the current timecode to **type where to go** (Premiere's Playhead
+  Position): a timecode, digits read right to left (1000 is ten seconds),
+  or +/- an offset (+15 is fifteen frames on);
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter, and a **loudness line** under it (Premiere's
   Loudness Meter in one row): momentary, short-term and integrated LUFS
@@ -477,6 +480,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
   rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+- **Save frame as PNG** from the player (the camera button, File menu,
+  Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
+  at the project's size, without the export dialog.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
 - **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring

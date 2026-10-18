@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player, topClipAt } from "../engine/player";
-import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play, Repeat } from "../icons";
+import { Activity, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
+import { toast } from "../state/toast";
 import { boxesAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
 import { expandGroups } from "../lib/project/groups";
 import { projectDuration } from "../lib/project/ops";
-import { formatTimecode } from "../lib/time";
+import { formatTimecode, parseJump } from "../lib/time";
 import { isMac } from "../platform/env";
 import { provide, run, tipFor } from "../state/actions";
 import { store, useEditor } from "../state/store";
@@ -230,6 +231,9 @@ function Transport() {
         <ViewerZoom />
         <CanvasRatio />
         <PreviewQuality />
+        <button className="icon-btn" aria-label="Save frame as PNG" data-tip={tipFor("saveFrame")} onClick={() => run("saveFrame")}>
+          <ImageDown />
+        </button>
         <button className="icon-btn" aria-label="Full screen" data-tip={tipFor("fullscreenPreview", "Full screen")} onClick={() => run("fullscreenPreview")}>
           <Maximize2 />
         </button>
@@ -238,13 +242,41 @@ function Transport() {
   );
 }
 
+/** The playhead's time; click it to type where to go (Premiere's Playhead
+ * Position): a timecode, digits read right to left, or +/- an offset. */
 function Timecodes() {
   const playhead = useEditor((s) => s.hoverFrame ?? s.playhead);
   const project = useEditor((s) => s.project);
   const total = projectDuration(project);
+  const [typing, setTyping] = useState<string | null>(null);
+  const go = () => {
+    const f = typing === null ? null : parseJump(typing, project.fps, store.get().playhead);
+    setTyping(null);
+    if (f !== null) store.seek(f);
+    else if (typing?.trim()) toast(`"${typing.trim()}" is not a timecode`, "error");
+  };
   return (
     <div className="timecodes num">
-      <span className="tc-now">{formatTimecode(playhead, project.fps)}</span>
+      {typing === null ? (
+        <button className="tc-now" aria-label="Go to timecode" data-tip="Type a time to go there; +15 or -15 moves by frames" onClick={() => setTyping(formatTimecode(playhead, project.fps))}>
+          {formatTimecode(playhead, project.fps)}
+        </button>
+      ) : (
+        <input
+          className="tc-now tc-input"
+          aria-label="Go to timecode"
+          value={typing}
+          autoFocus
+          onFocus={(e) => e.currentTarget.select()}
+          onChange={(e) => setTyping(e.target.value)}
+          onBlur={() => setTyping(null)}
+          onKeyDown={(e) => {
+            e.stopPropagation(); // not the editor's keys while typing
+            if (e.key === "Enter") go();
+            if (e.key === "Escape") setTyping(null);
+          }}
+        />
+      )}
       <span className="tc-sep">/</span>
       <span className="tc-total">{formatTimecode(total, project.fps)}</span>
     </div>

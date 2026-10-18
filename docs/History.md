@@ -734,3 +734,10 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   setting ten clips' volume took ten edits. The rows the clips share now
   set them all (Premiere 25's Properties panel), each keyed at its own
   frame when keyframed, with "Mixed" where they disagree.
+- **Type where to go.** The player's timecode was display only; it is a
+  field on click now, read as Premiere reads it (1000 is 10:00, +15
+  moves fifteen frames). The markers' time field gets the same digit rule.
+- **Save a frame from the player.** A still was only in the export
+  dialog, at its resolution; the transport's camera button, the File menu
+  and Mod+Shift+E (Premiere's Export Frame) save the frame at the
+  project's size.

@@ -72,8 +72,11 @@ export function formatTimecode(frame: number, fps: Rational): string {
  * Returns null on anything else so the field can refuse it.
  */
 export function parseTimecode(text: string, fps: Rational): number | null {
-  const t = text.trim();
+  let t = text.trim();
   if (!t) return null;
+  // Digits alone fill the groups from the right, as Premiere reads them:
+  // 1000 is 10:00, ten seconds; 1 or 15 stay frames.
+  if (/^\d{3,8}$/.test(t)) t = t.padStart(8, "0").match(/../g)!.join(":");
   const secs = /^(\d+(?:\.\d+)?)s$/i.exec(t);
   if (secs) {
     const frame = secondsToFrames(Number(secs[1]), fps);
@@ -94,6 +97,15 @@ export function parseTimecode(text: string, fps: Rational): number | null {
     frame -= dropped * (totalMinutes - Math.floor(totalMinutes / 10));
   }
   return Number.isSafeInteger(frame) ? frame : null;
+}
+
+/** Where a "go to" field sends the playhead: a timecode, or +/- an amount
+ * from `current` (Premiere's +15 moves fifteen frames). Never before 0. */
+export function parseJump(text: string, fps: Rational, current: number): number | null {
+  const m = /^\s*([+-])\s*(.+)$/.exec(text);
+  const f = parseTimecode(m ? m[2] : text, fps);
+  if (f === null) return null;
+  return Math.max(0, m ? current + (m[1] === "-" ? -f : f) : f);
 }
 
 /** Short human duration for clip badges and the media panel: 1:05, 12.4s. */
