@@ -42,8 +42,36 @@ export interface Project {
   luts?: LutFile[];
   /** Nested timelines that compound clips play (ADR-037). Absent = none. */
   compounds?: Compound[];
+  /** The brand kit an ad keeps to (set_brand): colors by role, two fonts,
+   * logos. Absent = none set; ad elements then use neutral defaults. */
+  brand?: Brand;
   createdAt: number;
   updatedAt: number;
+}
+
+/** A brand kit (lib/brandKit.ts): what titles, buttons, badges and end
+ * cards draw with, so every part of an ad agrees. Colors are CSS colors. */
+export interface Brand {
+  name?: string;
+  colors: {
+    /** Buttons, bars, the main brand color. */
+    primary: string;
+    /** A second brand color: panels, the lower third's second line. */
+    secondary: string;
+    /** Highlights: badges, marker sweeps, labels. */
+    accent: string;
+    /** Behind end cards and text boxes. */
+    background: string;
+    /** Text over footage and over the background. */
+    text: string;
+  };
+  /** At most two families, as ad typography wants: headings and the rest. */
+  fonts: { heading: string; body: string };
+  /** Image assets: main (full color), light (for dark backgrounds), dark
+   * (for light ones), icon (the mark alone). */
+  logos?: { main?: Id; light?: Id; dark?: Id; icon?: Id };
+  url?: string;
+  tagline?: string;
 }
 
 export type AssetKind = "video" | "audio" | "image";
@@ -299,6 +327,16 @@ export interface Animation {
   type: string;
   /** Frames. */
   duration: number;
+  /** Text clips: play it by each letter, word or line instead of the whole
+   * title (lib/kinetic.ts). Absent: the animation's own (whole, unless it
+   * is a typewriter-like preset). */
+  unit?: "letter" | "word" | "line";
+  /** Per unit: 0 moves every unit together, 1 one after another. Absent:
+   * the preset's, else 0.5. */
+  stagger?: number;
+  /** Per unit: which moves first. Absent: forward (a typewriter's out:
+   * backward). */
+  order?: "forward" | "backward" | "center" | "random";
 }
 
 export interface Mask {
@@ -511,7 +549,19 @@ export interface TextStyle {
   /** Pixels at 1080p. */
   letterSpacing: number;
   stroke?: { color: string; width: number };
+  /** A second outline around the first (sticker style), `width` pixels at
+   * 1080p beyond it. */
+  stroke2?: { color: string; width: number };
   shadow?: { color: string; blur: number; x: number; y: number };
+  /** A soft light around the letters (neon), behind them: `blur` pixels at
+   * 1080p; `strength` 1..3 draws it that many times, brighter. */
+  glow?: { color: string; blur: number; strength?: number };
+  /** Fill with a linear gradient across the whole text instead of `color`:
+   * `angle` in degrees, 0 left to right, 90 top to bottom. */
+  gradient?: { from: string; to: string; angle: number };
+  /** The color the Highlight and Underline animations draw in. Absent: a
+   * warm yellow marker, an underline in the text color. */
+  accent?: string;
   background?: { color: string; padding: number; radius: number };
   /** Text is laid out within this fraction of the canvas width. */
   maxWidth: number;

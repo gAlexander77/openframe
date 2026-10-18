@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 127 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 132 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -24,6 +24,8 @@ To make a video:
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
+
+For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_fades on the music, and export_versions for every shape and cut-down (check: true shows them first).
 ```
 
 ## Contents
@@ -36,9 +38,10 @@ Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_rever
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
+- **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
 - **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `measure_loudness`, `export_video`, `export_status`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
 ## Start here
 
@@ -895,14 +898,17 @@ Remove the background of a video clip of a person or object (CapCut's Remove BG)
 
 ### set_animation
 
-Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.
+Set a clip's intro (in), outro (out) or looping (loop) animation; type 'none' clears the slot. Whole clip, in/out: fade, zoomIn, zoomOut, slideLeft, slideRight, slideUp, slideDown, rise, drop, pop, spin, tilt, blurIn; loop: pulse, sway, float, shake, flicker, heartbeat. Titles only (kinetic typography), in/out: typewriter (letters appear one by one behind a caret; as out it deletes from the end), letterRise, letterFade, wordPop, wordRise, wordSlide, lineRise (each letter, word or line moves on its own), highlightSweep (a marker box sweeps behind the words) and underlineWipe (an underline draws across them), both in the title's style.accent color. On a title, unit plays any in, out or loop animation per letter, word or line instead (rise by word; a float loop by letter is a wave); stagger spreads the units over the duration and order picks which goes first. duration is the whole animation in seconds, every unit included (a typewriter over 1.5 s suits a 25-letter line); for a loop, one cycle. Example: {clip_id, slot: 'in', type: 'rise', unit: 'word', stagger: 0.6, duration: 0.8}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Clip id |
 | `slot` | "in" \| "out" \| "loop" | yes | Which animation |
-| `type` | "fade" \| "zoomIn" \| "zoomOut" \| "slideLeft" \| "slideRight" \| "slideUp" \| "slideDown" \| "rise" \| "drop" \| "pop" \| "spin" \| "tilt" \| "blurIn" \| "pulse" \| "sway" \| "float" \| "shake" \| "flicker" \| "heartbeat" \| "none" | yes | Animation |
-| `duration` | number |  | Seconds (0.05..) |
+| `type` | "fade" \| "zoomIn" \| "zoomOut" \| "slideLeft" \| "slideRight" \| "slideUp" \| "slideDown" \| "rise" \| "drop" \| "pop" \| "spin" \| "tilt" \| "blurIn" \| "pulse" \| "sway" \| "float" \| "shake" \| "flicker" \| "heartbeat" \| "typewriter" \| "letterRise" \| "letterFade" \| "wordPop" \| "wordRise" \| "wordSlide" \| "lineRise" \| "highlightSweep" \| "underlineWipe" \| "none" | yes | Animation |
+| `duration` | number |  | Seconds for the whole animation (loops: one cycle); default 0.5 (0.05..) |
+| `unit` | "letter" \| "word" \| "line" |  | Titles only: play it by each letter, word or line instead of the whole title (the kinetic presets have their own; this overrides it) |
+| `stagger` | number |  | Titles, per unit: 0 moves every unit together, 1 one after another; default the preset's, else 0.5 (0..1) |
+| `order` | "forward" \| "backward" \| "center" \| "random" |  | Titles, per unit: which unit moves first; default forward (a typewriter's out: backward) |
 
 Example:
 
@@ -1066,7 +1072,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `duration` | number | yes | Seconds (0.001..) |
 | `x` | number |  | Horizontal offset, -0.5..0.5 |
 | `y` | number |  | Vertical offset, -0.5..0.5 |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1082,11 +1088,26 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
+| `style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
+| `style.stroke2.color` | string | yes | CSS color |
+| `style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
 | `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
 | `style.shadow.y` | number |  | Pixels |
+| `style.glow` | { color, blur, strength } |  | A neon glow around the letters |
+| `style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
+| `style.glow.blur` | number |  | Pixels, default 24 (0..) |
+| `style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
+| `style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `style.gradient.from` | string | yes | CSS color at the start |
+| `style.gradient.to` | string | yes | CSS color at the end |
+| `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
+| `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
+| `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id |
 
 Example:
@@ -1103,7 +1124,7 @@ Change a text clip's words and/or style.
 |---|---|---|---|
 | `clip_id` | string | yes | Text clip id |
 | `text` | string |  | New words |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1119,11 +1140,25 @@ Change a text clip's words and/or style.
 | `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
+| `style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
+| `style.stroke2.color` | string | yes | CSS color |
+| `style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
 | `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
 | `style.shadow.y` | number |  | Pixels |
+| `style.glow` | { color, blur, strength } |  | A neon glow around the letters |
+| `style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
+| `style.glow.blur` | number |  | Pixels, default 24 (0..) |
+| `style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
+| `style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `style.gradient.from` | string | yes | CSS color at the start |
+| `style.gradient.to` | string | yes | CSS color at the end |
+| `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
+| `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
+| `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 
 Example:
 
@@ -1181,7 +1216,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `captions[].end` | number | yes | Seconds (0..) |
 | `captions[].text` | string | yes | Words shown |
 | `captions[].words` | number[] |  | Seconds each word of text starts, for the spoken-word highlight |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1197,11 +1232,25 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
+| `style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
+| `style.stroke2.color` | string | yes | CSS color |
+| `style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
 | `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
 | `style.shadow.y` | number |  | Pixels |
+| `style.glow` | { color, blur, strength } |  | A neon glow around the letters |
+| `style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
+| `style.glow.blur` | number |  | Pixels, default 24 (0..) |
+| `style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
+| `style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `style.gradient.from` | string | yes | CSS color at the start |
+| `style.gradient.to` | string | yes | CSS color at the end |
+| `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
+| `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
+| `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 | `y` | number |  | Vertical offset from center as a canvas fraction; 0.36 sits near the bottom |
 | `replace` | boolean |  | Remove existing captions first |
 
@@ -1237,6 +1286,87 @@ Hear a video or audio clip's speech on this machine (Whisper) and return its wor
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
+
+## Brand and ad elements
+
+A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.
+
+### set_brand
+
+Set the project's brand kit, which add_text's role, apply_brand and add_ad_element draw with, so every part of an ad agrees: colors by role (CSS colors), a heading and a body font (at most two families), logo pictures by variant (asset ids from import_media; a PNG with transparency works best), the brand's name, website and tagline. Only what is given changes; an empty string removes a logo, name, url or tagline; reset clears the kit. describe_project shows it. Example: {primary: '#ff3366', accent: '#ffd23f', background: '#14101f', heading_font: 'Arial Black', body_font: 'Segoe UI', logo: 'a_123', url: 'shop.example.com'}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string |  | Brand name (a wordmark when there is no logo) |
+| `primary` | string |  | Main color: buttons, bars |
+| `secondary` | string |  | Second color: panels, a lower third's second line |
+| `accent` | string |  | Highlight color: badges, labels, marker sweeps |
+| `background` | string |  | Behind end cards and text boxes (usually dark) |
+| `text` | string |  | Text over footage and the background (usually white) |
+| `heading_font` | string |  | Font family for headlines, buttons, badges |
+| `body_font` | string |  | Font family for everything else |
+| `logo` | string |  | Main logo: an image asset id |
+| `logo_light` | string |  | Logo for dark backgrounds: an image asset id |
+| `logo_dark` | string |  | Logo for light backgrounds: an image asset id |
+| `logo_icon` | string |  | The mark alone: an image asset id |
+| `url` | string |  | Website shown on end cards, e.g. shop.example.com |
+| `tagline` | string |  | A short line: end cards and lower thirds use it by default |
+| `reset` | boolean |  | Clear the brand kit (then apply the rest of this call) |
+
+Example:
+
+```json
+{"name":"set_brand","arguments":{"name":"Northwind","primary":"#1f6feb","accent":"#ffd23f","background":"#0d1117","text":"#ffffff","heading_font":"Arial Black","body_font":"Segoe UI","logo":"a_9","url":"northwind.example","tagline":"Run further"}}
+```
+
+### apply_brand
+
+Restyle clips with the brand kit, keeping their words, timing and place. Titles: with role, that role's whole look and size (headline, subhead, body, label, cta, badge, as add_text's role); without, only fonts and colors change (the heading font for bold display type; a box takes the primary color with a readable label; plain type the brand's text color; glows, gradients, sweeps and spoken-word highlights the accent). Solid color clips: role primary, secondary, accent, background or text sets their color (default primary).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Text or color clips |
+| `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" \| "primary" \| "secondary" \| "accent" \| "background" \| "text" |  | A text role, or a color role for solids |
+
+### add_ad_element
+
+Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `element` | "end_card" \| "lower_third" \| "offer_badge" \| "cta_button" \| "logo_reveal" | yes | Which element |
+| `start` | number | yes | Timeline seconds (0..) |
+| `duration` | number |  | Seconds; default end_card 3, lower_third 4, offer_badge 3, cta_button 3, logo_reveal 2.5 (0.2..) |
+| `headline` | string |  | end_card headline; lower_third name; offer_badge offer; logo_reveal wordmark (default the brand name when there is no logo) |
+| `subline` | string |  | lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline) |
+| `cta` | string |  | Button words for end_card and cta_button; default 'Shop now' |
+| `url` | string |  | end_card and cta_button: website line; default the brand's url |
+| `logo` | "auto" \| "main" \| "light" \| "dark" \| "icon" \| "none" |  | Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none |
+| `position` | "top-left" \| "top" \| "top-right" \| "left" \| "center" \| "right" \| "bottom-left" \| "bottom" \| "bottom-right" |  | Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered) |
+| `background` | "brand" \| "primary" \| "scrim" \| "none" |  | end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none |
+| `glow` | boolean |  | logo_reveal: a glow that flares as the logo lands |
+| `flash` | boolean |  | logo_reveal: a white flash as the logo lands |
+
+Example:
+
+```json
+{"name":"add_ad_element","arguments":{"element":"end_card","start":12,"headline":"Run further","cta":"Shop now"}}
+```
+
+### text_behind_subject
+
+Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track above the titles, silent and grouped with the original so they move together. Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subjectClipId).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The video or picture clip with the person or product |
+| `text_clip_ids` | string[] | yes | The titles (or stickers) to put behind the subject; they must play while the video does |
+
+Example:
+
+```json
+{"name":"text_behind_subject","arguments":{"clip_id":"c_2","text_clip_ids":["c_5"]}}
+```
 
 ## Effects, transitions and color
 
@@ -1405,7 +1535,7 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `gap` | number |  | Seconds between lines, default 0.4 (0..) |
 | `captions` | boolean |  | A caption per line (default true) |
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true) |
-| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The captions' look: the same fields as add_text's style |
+| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The captions' look: the same fields as add_text's style |
 | `caption_style.font` | string |  | Font family |
 | `caption_style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `caption_style.color` | string |  | CSS color |
@@ -1421,11 +1551,25 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `caption_style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `caption_style.stroke.color` | string | yes | CSS color |
 | `caption_style.stroke.width` | number |  | Pixels (0..) |
+| `caption_style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
+| `caption_style.stroke2.color` | string | yes | CSS color |
+| `caption_style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
 | `caption_style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `caption_style.shadow.color` | string | yes | CSS color |
 | `caption_style.shadow.blur` | number |  | Pixels (0..) |
 | `caption_style.shadow.x` | number |  | Pixels |
 | `caption_style.shadow.y` | number |  | Pixels |
+| `caption_style.glow` | { color, blur, strength } |  | A neon glow around the letters |
+| `caption_style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
+| `caption_style.glow.blur` | number |  | Pixels, default 24 (0..) |
+| `caption_style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
+| `caption_style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `caption_style.gradient.from` | string | yes | CSS color at the start |
+| `caption_style.gradient.to` | string | yes | CSS color at the end |
+| `caption_style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
+| `caption_style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
+| `caption_style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36) |
 
 Example:
@@ -1754,6 +1898,35 @@ Example:
 
 ```json
 {"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14}}
+```
+
+### export_versions
+
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `versions` | { ratio, duration, textless, fit, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
+| `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
+| `versions[].textless` | boolean |  | Titles and captions off |
+| `versions[].fit` | "fill" \| "blur" \| "fit" |  | How full-frame footage meets a new shape: fill (default), blur, fit |
+| `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
+| `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
+| `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
+| `textless` | boolean |  | Also a textless version, in the first ratio |
+| `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
+| `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
+| `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
+| `format` | "mp4" \| "mov" \| "webm" \| "mkv" |  | Default mp4 (H.264 + AAC) |
+| `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
+| `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
+| `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
+
+Example:
+
+```json
+{"name":"export_versions","arguments":{"ratios":["16:9","9:16","1:1"],"durations":[15,6],"textless":true,"loudness":-14,"check":true}}
 ```
 
 ### export_status

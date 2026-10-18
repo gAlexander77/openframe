@@ -263,3 +263,70 @@ async function run(asset: Asset, from: number, to: number, model: MatteModel, fo
     input.dispose();
   }
 }
+
+export interface CutoutImage {
+  /** The picture with its background transparent (PNG). */
+  blob: Blob;
+  width: number;
+  height: number;
+  model: string;
+  fellBack?: string;
+}
+
+/**
+ * Remove the background of a still picture: the same models as a video's
+ * matte, run once, and the matte multiplied into the picture's alpha at
+ * its own size (up to 4096 pixels a side), as a PNG. Text behind the
+ * subject of a photo is then just this picture above the title.
+ */
+export async function cutOutImage(asset: Asset, onProgress: (p: CutoutProgress) => void, signal?: AbortSignal): Promise<CutoutImage> {
+  const bitmap = await createImageBitmap(await platform.blobFor(asset.src));
+  const go = async (model: MatteModel, device?: "webgpu" | "wasm") => {
+    await call<{ device: string }>({ type: "load", spec: model, device }, { onDownload: (x) => onProgress({ stage: "downloading", progress: x, model }), signal });
+    signal?.throwIfAborted();
+    onProgress({ stage: "processing", progress: 0, model });
+    const [iw, ih] = model.input;
+    const small = new OffscreenCanvas(iw, ih);
+    const sctx = small.getContext("2d", { willReadFrequently: true })!;
+    sctx.drawImage(bitmap, 0, 0, iw, ih);
+    const rgba = sctx.getImageData(0, 0, iw, ih).data;
+    const { alpha } = await call<{ alpha: Uint8Array }>({ type: "infer", rgba, width: iw, height: ih }, { transfer: [rgba.buffer], signal });
+    // The matte, gray, scaled up smoothly to the picture's size.
+    const gray = new ImageData(iw, ih);
+    for (let i = 0, j = 0; i < alpha.length; i++, j += 4) {
+      gray.data[j] = gray.data[j + 1] = gray.data[j + 2] = alpha[i];
+      gray.data[j + 3] = 255;
+    }
+    sctx.putImageData(gray, 0, 0);
+    const k = Math.min(1, 4096 / Math.max(bitmap.width, bitmap.height));
+    const w = Math.round(bitmap.width * k), h = Math.round(bitmap.height * k);
+    const big = new OffscreenCanvas(w, h);
+    const bctx = big.getContext("2d", { willReadFrequently: true })!;
+    bctx.imageSmoothingQuality = "high";
+    bctx.drawImage(small, 0, 0, w, h);
+    const matte = bctx.getImageData(0, 0, w, h).data;
+    bctx.clearRect(0, 0, w, h);
+    bctx.drawImage(bitmap, 0, 0, w, h);
+    const pic = bctx.getImageData(0, 0, w, h);
+    for (let j = 3; j < pic.data.length; j += 4) pic.data[j] = Math.round((pic.data[j] * matte[j - 3]) / 255);
+    bctx.putImageData(pic, 0, 0);
+    onProgress({ stage: "processing", progress: 1, model });
+    return { blob: await big.convertToBlob({ type: "image/png" }), width: w, height: h, model: model.id };
+  };
+  const model = await matteModel();
+  try {
+    return await go(model);
+  } catch (e) {
+    if (e instanceof ModelError) resetWorker();
+    const retry = model === MATTE_MODELS.quality && e instanceof ModelError && !downloadFailed(e) && !signal?.aborted;
+    if (!retry) throw explain(e, model);
+    try {
+      return { ...(await go(MATTE_MODELS.fallback, "wasm")), fellBack: e.message };
+    } catch (e2) {
+      if (e2 instanceof ModelError) resetWorker();
+      throw explain(e2, MATTE_MODELS.fallback);
+    }
+  } finally {
+    bitmap.close();
+  }
+}

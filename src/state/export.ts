@@ -8,7 +8,9 @@ import { exportProject as exportVideo, exportStill, memoryTarget, type ExportPro
 import { exportGif } from "../engine/gif";
 import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, VIDEO_FORMATS, type ExportPlan, type ExportSettings } from "../lib/export";
 import { toOtio } from "../lib/interchange/otio";
-import { secondsToFrames } from "../lib/time";
+import { framesToSeconds, secondsToFrames } from "../lib/time";
+import { projectDuration } from "../lib/project/ops";
+import { versionProject, type VersionSpec } from "../lib/versions";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { rootInPoint, rootOutPoint, store } from "./store";
@@ -133,9 +135,10 @@ export async function renderToUrl(options: RenderOptions = {}) {
 
 /** An export an agent started (MCP export_video), for export_status. */
 export type AgentExport =
-  | { state: "running"; path: string; fraction: number; eta: number | null }
+  | { state: "running"; path: string; fraction: number; eta: number | null; version?: string }
   | ({ state: "done"; path: string } & ExportResult)
-  | { state: "failed"; message: string };
+  | { state: "done"; path: string; versions: VersionFile[] }
+  | { state: "failed"; message: string; versions?: VersionFile[] };
 
 let agentExport: AgentExport | null = null;
 export const agentExportStatus = () => agentExport;
@@ -240,6 +243,115 @@ export async function saveFrame() {
   } catch (e) {
     toast(`Couldn't save the frame: ${e instanceof Error ? e.message : e}`, "error");
   }
+}
+
+// ---- versions (export_versions) ---------------------------------------------------
+
+export interface VersionsOptions extends Partial<Pick<ExportSettings, "format" | "resolution" | "quality" | "loudness">> {
+  versions: VersionSpec[];
+  /** Seconds of the end kept in every cut-down; default the end card's. */
+  keepEnd?: number;
+}
+
+export interface VersionFile {
+  name: string;
+  path: string;
+  ratio: string;
+  width: number;
+  height: number;
+  seconds: number;
+  bytes: number;
+  textless?: true;
+}
+
+/** The versions as projects, from the document as it is now. */
+function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
+  const master = store.document();
+  const keep = o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps);
+  return o.versions.map((v) => ({ spec: v, project: versionProject(master, v, keep) }));
+}
+
+/**
+ * export_versions: one file per version of the open project (lib/versions.ts:
+ * other shapes, cut-downs, a textless master), rendered one after another
+ * into the agent folder on desktop, or through the save dialog on the web.
+ * The project in the editor is never changed. agentExportStatus() follows
+ * it; the answer lists every file.
+ */
+export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
+  if (job) throw new Error("An export is already running.");
+  const items = versionProjects(o);
+  const made: VersionFile[] = [];
+  job = new AbortController();
+  const tid = toast(`Exporting ${items.length} versions`, "progress");
+  try {
+    for (const [i, { spec, project: q }] of items.entries()) {
+      const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
+      const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
+      const codecs = VIDEO_FORMATS[settings.format].codecs;
+      if (!codecs.includes(settings.codec)) settings.codec = codecs[0];
+      const plan = planExport(q, settings, { inPoint: null, outPoint: null });
+      const name = safeFileName(q.name);
+      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension) : await platform.createExportTarget(name, plan.extension);
+      if (!target) throw new Error("The save dialog was canceled or could not open (a browser opens it only after a click; the desktop app saves without one).");
+      const path = target.displayName;
+      const version = `${i + 1} of ${items.length}`;
+      const step = (f: number) => (i + f) / items.length;
+      agentExport = { state: "running", path, fraction: +step(0).toFixed(3), eta: null, version };
+      const result = await exportProject(q, plan, target, (pr) => {
+        agentExport = { state: "running", path, fraction: +step(pr.fraction).toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1), version };
+        updateToast(tid, { progress: step(pr.fraction) });
+      }, job.signal);
+      // The web without a save dialog renders into private storage first.
+      if (target.revealLabel === "Download") await target.reveal();
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}) });
+    }
+    agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
+    toast(`Exported ${made.length} versions`);
+    return agentExport;
+  } catch (e) {
+    agentExport = { state: "failed", message: e instanceof Error ? e.message : String(e), ...(made.length ? { versions: made } : {}) };
+    throw e;
+  } finally {
+    job = null;
+    dismiss(tid);
+  }
+}
+
+/** One PNG with a row per version: the frames at those shares of each
+ * version, each stamped with its time, so an agent sees every shape and
+ * cut before rendering any. */
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<Blob> {
+  const items = versionProjects(o);
+  const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
+  const th = o.tileHeight ?? 220, gap = 6, label = 22;
+  const rows = items.map(({ project: q }) => ({ q, tw: Math.round((th * q.width) / q.height) }));
+  const width = Math.max(...rows.map((r) => gap + at.length * (r.tw + gap)), 480);
+  const out = new OffscreenCanvas(width, gap + rows.length * (label + th + gap));
+  const g = out.getContext("2d")!;
+  g.fillStyle = "#1b1d22";
+  g.fillRect(0, 0, out.width, out.height);
+  for (const [ri, { q, tw }] of rows.entries()) {
+    const y = gap + ri * (label + th + gap);
+    const length = projectDuration(q);
+    g.fillStyle = "#e8eaed";
+    g.font = "bold 14px sans-serif";
+    g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, y + 16);
+    for (const [ci, share] of at.entries()) {
+      const frame = Math.min(length - 1, Math.max(0, Math.round(share * length)));
+      const bmp = await createImageBitmap(await exportStill(q, frame, tw * 2, th * 2));
+      const x = gap + ci * (tw + gap);
+      g.drawImage(bmp, x, y + label, tw, th);
+      bmp.close();
+      const t = `${+framesToSeconds(frame, q.fps).toFixed(2)} s`;
+      g.font = "bold 12px sans-serif";
+      g.fillStyle = "rgba(0, 0, 0, 0.75)";
+      g.fillRect(x + 4, y + label + 4, g.measureText(t).width + 10, 18);
+      g.fillStyle = "#fff";
+      g.fillText(t, x + 9, y + label + 17);
+    }
+  }
+  return out.convertToBlob({ type: "image/png" });
 }
 
 provide({ export: openExportDialog, saveFrame: () => void saveFrame() });

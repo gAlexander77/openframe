@@ -19,7 +19,7 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, Sound, TextStyle, Track, Transform, WheelName } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, Sound, TextClip, TextStyle, Track, Transform, WheelName } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
@@ -47,6 +47,9 @@ import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAs
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
+import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
+import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
+import { AD_ELEMENTS, addAdElement, SPOTS, type AdBackground, type AdElement, type Spot } from "./ads";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -176,7 +179,14 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   // Sizes are pixels at 1080p; an empty color removes the part.
   background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"], "A box behind the text, so it reads over busy footage; an empty color removes it"),
   stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"], "An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it"),
+  stroke2: S.obj({ color: S.str("CSS color"), width: S.num("Pixels beyond the first outline; default 6", { minimum: 0 }) }, ["color"], "A second outline outside the first, for a sticker-like double edge"),
   shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"], "A drop shadow; an empty color removes it"),
+  // Ad looks: a neon glow, a two-color fill, the kinetic sweeps' color.
+  glow: S.obj({ color: S.str("CSS color, e.g. #00e5ff"), blur: S.num("Pixels, default 24", { minimum: 0 }), strength: S.num("1..3, how bright; default 1", { minimum: 1, maximum: 3 }) }, ["color"], "A neon glow around the letters"),
+  gradient: S.obj({ from: S.str("CSS color at the start"), to: S.str("CSS color at the end"), angle: S.num("Degrees: 0 left to right (default), 90 top to bottom", { minimum: -360, maximum: 360 }) }, ["from", "to"], "A two-color fill instead of color"),
+  accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
+  letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
+  maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
 }, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
 const REGION_SCHEMA = S.obj(
@@ -204,8 +214,14 @@ function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial
   if (g.background) s.background = { padding: 16, radius: 8, ...base.background, ...g.background } as TextStyle["background"];
   if (g.stroke) s.stroke = { width: 4, ...base.stroke, ...g.stroke } as TextStyle["stroke"];
   if (g.shadow) s.shadow = { blur: 8, x: 0, y: 3, ...base.shadow, ...g.shadow } as TextStyle["shadow"];
-  for (const k of ["background", "stroke", "shadow"] as const) if (s[k]?.color === "") delete s[k];
+  const g2 = given as { stroke2?: object; glow?: object; gradient?: object };
+  if (g2.stroke2) s.stroke2 = { width: 6, ...base.stroke2, ...g2.stroke2 } as TextStyle["stroke2"];
+  if (g2.glow) s.glow = { blur: 24, ...base.glow, ...g2.glow } as TextStyle["glow"];
+  if (g2.gradient) s.gradient = { angle: 0, ...base.gradient, ...g2.gradient } as TextStyle["gradient"];
+  for (const k of ["background", "stroke", "stroke2", "shadow", "glow"] as const) if (s[k]?.color === "") delete s[k];
+  if (s.gradient && (s.gradient.from === "" || s.gradient.to === "")) delete s.gradient;
   if (s.highlight === "") delete s.highlight;
+  if (s.accent === "") delete s.accent;
   if ((s.case as string) === "none") delete s.case;
   return s;
 }
@@ -358,15 +374,119 @@ export const COMMANDS: Command[] = [
         x: S.num("Horizontal offset, -0.5..0.5"),
         y: S.num("Vertical offset, -0.5..0.5"),
         style: TEXT_STYLE_SCHEMA,
+        role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
         track_id: S.str("Track id"),
       },
       ["text", "start", "duration"],
     ),
     run: (p, a) => {
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), styleFrom({}, (a.style ?? {}) as Partial<TextStyle>));
+      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
+    },
+  },
+  // ---- ads: the brand kit and ad elements (lib/brandKit.ts, lib/ads.ts) ----
+  {
+    name: "set_brand",
+    description:
+      "Set the project's brand kit, which add_text's role, apply_brand and add_ad_element draw with, so every part of an ad agrees: colors by role (CSS colors), a heading and a body font (at most two families), logo pictures by variant (asset ids from import_media; a PNG with transparency works best), the brand's name, website and tagline. Only what is given changes; an empty string removes a logo, name, url or tagline; reset clears the kit. describe_project shows it. Example: {primary: '#ff3366', accent: '#ffd23f', background: '#14101f', heading_font: 'Arial Black', body_font: 'Segoe UI', logo: 'a_123', url: 'shop.example.com'}.",
+    input: S.obj({
+      name: S.str("Brand name (a wordmark when there is no logo)"),
+      primary: S.str("Main color: buttons, bars"),
+      secondary: S.str("Second color: panels, a lower third's second line"),
+      accent: S.str("Highlight color: badges, labels, marker sweeps"),
+      background: S.str("Behind end cards and text boxes (usually dark)"),
+      text: S.str("Text over footage and the background (usually white)"),
+      heading_font: S.str("Font family for headlines, buttons, badges"),
+      body_font: S.str("Font family for everything else"),
+      logo: S.str("Main logo: an image asset id"),
+      logo_light: S.str("Logo for dark backgrounds: an image asset id"),
+      logo_dark: S.str("Logo for light backgrounds: an image asset id"),
+      logo_icon: S.str("The mark alone: an image asset id"),
+      url: S.str("Website shown on end cards, e.g. shop.example.com"),
+      tagline: S.str("A short line: end cards and lower thirds use it by default"),
+      reset: S.bool("Clear the brand kit (then apply the rest of this call)"),
+    }),
+    run: (p, a) => {
+      const q = a.reset === true ? (({ brand: _, ...rest }) => rest as Project)(p) : p;
+      const str = (v: unknown) => (v === undefined ? undefined : String(v));
+      try {
+        const brand = patchBrand(q, {
+          name: str(a.name),
+          url: str(a.url),
+          tagline: str(a.tagline),
+          colors: { primary: str(a.primary), secondary: str(a.secondary), accent: str(a.accent), background: str(a.background), text: str(a.text) },
+          fonts: { heading: str(a.heading_font), body: str(a.body_font) },
+          logos: { main: str(a.logo), light: str(a.logo_light), dark: str(a.logo_dark), icon: str(a.logo_icon) },
+        });
+        return { ...q, brand };
+      } catch (e) {
+        throw new CommandError(e instanceof Error ? e.message : String(e));
+      }
+    },
+  },
+  {
+    name: "apply_brand",
+    description:
+      "Restyle clips with the brand kit, keeping their words, timing and place. Titles: with role, that role's whole look and size (headline, subhead, body, label, cta, badge, as add_text's role); without, only fonts and colors change (the heading font for bold display type; a box takes the primary color with a readable label; plain type the brand's text color; glows, gradients, sweeps and spoken-word highlights the accent). Solid color clips: role primary, secondary, accent, background or text sets their color (default primary).",
+    input: S.obj({ clip_ids: S.ids("Text or color clips"), role: S.str("A text role, or a color role for solids", { enum: [...TEXT_ROLES, ...COLOR_ROLES] }) }, ["clip_ids"]),
+    run: (p, a) => {
+      const b = brandOf(p);
+      const k = typeScale(p.width, p.height);
+      for (const id of a.clip_ids as Id[]) {
+        const { clip, track } = clipOrThrow(p, id);
+        if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+        const role = a.role as string | undefined;
+        if (clip.type === "text") {
+          if (role && !TEXT_ROLES.includes(role as TextRole)) throw new CommandError(`${role} is a color role; titles take ${TEXT_ROLES.join(", ")}`);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k) }) as Clip);
+        } else if (clip.type === "color") {
+          if (role && !COLOR_ROLES.includes(role as ColorRole)) throw new CommandError(`${role} is a text role; solids take ${COLOR_ROLES.join(", ")}`);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, color: b.colors[(role as ColorRole | undefined) ?? "primary"] }) as Clip);
+        } else throw new CommandError(`${clip.type} clips have no brand colors; apply_brand restyles titles and solid colors`);
+      }
+      return p;
+    },
+  },
+  {
+    name: "add_ad_element",
+    description:
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+    input: S.obj(
+      {
+        element: S.str("Which element", { enum: AD_ELEMENTS }),
+        start: S.num("Timeline seconds", { minimum: 0 }),
+        duration: S.num("Seconds; default end_card 3, lower_third 4, offer_badge 3, cta_button 3, logo_reveal 2.5", { minimum: 0.2 }),
+        headline: S.str("end_card headline; lower_third name; offer_badge offer; logo_reveal wordmark (default the brand name when there is no logo)"),
+        subline: S.str("lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
+        cta: S.str("Button words for end_card and cta_button; default 'Shop now'"),
+        url: S.str("end_card and cta_button: website line; default the brand's url"),
+        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
+        position: S.str("Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered)", { enum: SPOTS }),
+        background: S.str("end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none", { enum: ["brand", "primary", "scrim", "none"] }),
+        glow: S.bool("logo_reveal: a glow that flares as the logo lands"),
+        flash: S.bool("logo_reveal: a white flash as the logo lands"),
+      },
+      ["element", "start"],
+    ),
+    run: (p, a) => {
+      const logo = a.logo as LogoVariant | "auto" | "none" | undefined;
+      if (logo && logo !== "auto" && logo !== "none" && !brandOf(p).logos?.[logo] && !brandOf(p).logos?.main) throw new CommandError("the brand kit has no logo: import one and set_brand logo first, or pass logo none");
+      return addAdElement(p, a.element as AdElement, {
+        start: f(p, a.start),
+        ...(a.duration !== undefined ? { duration: Math.max(1, f(p, a.duration)) } : {}),
+        headline: a.headline as string | undefined,
+        subline: a.subline as string | undefined,
+        cta: a.cta as string | undefined,
+        url: a.url as string | undefined,
+        logo,
+        position: a.position as Spot | undefined,
+        background: a.background as AdBackground | undefined,
+        glow: a.glow === true,
+        flash: a.flash === true,
+      }).project;
     },
   },
   {
@@ -753,13 +873,16 @@ export const COMMANDS: Command[] = [
     name: "set_fades",
     description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
     input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }) }, ["clip_ids"]),
-    run: (p, a) =>
-      (a.clip_ids as Id[]).reduce((q, id) => {
-        const { clip } = clipOrThrow(q, id);
+    run: (p, a) => {
+      if (a.fade_in === undefined && a.fade_out === undefined) throw new CommandError("give fade_in, fade_out or both, in seconds");
+      return (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip, track } = clipOrThrow(q, id);
         if (!("fadeIn" in clip)) throw new CommandError(`${clip.type} clips have no sound to fade; use set_animation with type fade for pictures`);
+        if (track.locked) throw new CommandError(`track ${track.name} is locked`);
         const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
         return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
-      }, p),
+      }, p);
+    },
   },
   {
     name: "duplicate_clips",
@@ -975,15 +1098,43 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_animation",
-    description: "Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.",
-    input: S.obj({ clip_id: S.str("Clip id"), slot: S.str("Which animation", { enum: ["in", "out", "loop"] }), type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "slot", "type"]),
+    description:
+      "Set a clip's intro (in), outro (out) or looping (loop) animation; type 'none' clears the slot. Whole clip, in/out: fade, zoomIn, zoomOut, slideLeft, slideRight, slideUp, slideDown, rise, drop, pop, spin, tilt, blurIn; loop: pulse, sway, float, shake, flicker, heartbeat. Titles only (kinetic typography), in/out: typewriter (letters appear one by one behind a caret; as out it deletes from the end), letterRise, letterFade, wordPop, wordRise, wordSlide, lineRise (each letter, word or line moves on its own), highlightSweep (a marker box sweeps behind the words) and underlineWipe (an underline draws across them), both in the title's style.accent color. On a title, unit plays any in, out or loop animation per letter, word or line instead (rise by word; a float loop by letter is a wave); stagger spreads the units over the duration and order picks which goes first. duration is the whole animation in seconds, every unit included (a typewriter over 1.5 s suits a 25-letter line); for a loop, one cycle. Example: {clip_id, slot: 'in', type: 'rise', unit: 'word', stagger: 0.6, duration: 0.8}.",
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        slot: S.str("Which animation", { enum: ["in", "out", "loop"] }),
+        type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }),
+        duration: S.num("Seconds for the whole animation (loops: one cycle); default 0.5", { minimum: 0.05 }),
+        unit: S.str("Titles only: play it by each letter, word or line instead of the whole title (the kinetic presets have their own; this overrides it)", { enum: KINETIC_UNITS }),
+        stagger: S.num("Titles, per unit: 0 moves every unit together, 1 one after another; default the preset's, else 0.5", { minimum: 0, maximum: 1 }),
+        order: S.str("Titles, per unit: which unit moves first; default forward (a typewriter's out: backward)", { enum: KINETIC_ORDERS }),
+      },
+      ["clip_id", "slot", "type"],
+    ),
     run: (p, a) => {
       const key = a.slot === "in" ? "animIn" : a.slot === "out" ? "animOut" : "animLoop";
+      const type = String(a.type);
+      const perUnit = a.unit !== undefined || a.stagger !== undefined || a.order !== undefined;
       return ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (!("transform" in c)) throw new CommandError(`${c.type} clips do not animate`);
         const next = { ...c } as Record<string, unknown>;
-        if (a.type === "none") delete next[key];
-        else next[key] = { type: String(a.type), duration: Math.max(1, f(p, a.duration ?? 0.5)) };
+        if (type === "none") {
+          delete next[key];
+          return next as unknown as Clip;
+        }
+        const def = ANIMATIONS[type];
+        if (a.slot === "loop" ? !def.loop : !def.from && !def.text) throw new CommandError(`${type} is ${def.loop ? "a loop animation: use slot loop" : "an in or out animation: use slot in or out"}`);
+        if (def.text && c.type !== "text") throw new CommandError(`${type} animates a title's letters or words: it works on text clips only`);
+        if (perUnit && c.type !== "text") throw new CommandError("unit, stagger and order move a title's letters, words or lines: text clips only");
+        if (perUnit && def.text?.sweep) throw new CommandError(`${type} draws across the words as a whole; it takes no unit, stagger or order`);
+        next[key] = {
+          type,
+          duration: Math.max(1, f(p, a.duration ?? 0.5)),
+          ...(a.unit !== undefined ? { unit: a.unit } : {}),
+          ...(a.stagger !== undefined ? { stagger: Number(a.stagger) } : {}),
+          ...(a.order !== undefined ? { order: a.order } : {}),
+        };
         return next as unknown as Clip;
       });
     },
@@ -1707,6 +1858,7 @@ export function describeProject(p: Project) {
     tracks: p.tracks.map(track),
     markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
+    ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).
     ...(p.compounds?.length
       ? { compounds: p.compounds.map((k) => ({ id: k.id, name: k.name, duration: s(ops.timelineEnd(k.tracks)), tracks: k.tracks.map(track), ...(k.markers.length ? { markers: k.markers.map((m) => ({ id: m.id, at: s(m.frame), label: m.label })) } : {}) })) }
@@ -1743,6 +1895,8 @@ export function describeProject(p: Project) {
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
         // What else departs from the defaults, so an agent can check its work.
+        ...(c.name ? { name: c.name } : {}),
+        ...(c.group ? { group: c.group } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),

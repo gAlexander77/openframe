@@ -10,14 +10,14 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, renderToUrl, stillToUrl, type RenderOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
 import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect } from "./state/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
@@ -95,7 +95,11 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, analyzeMusic, loudnessReport },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, analyzeMusic, loudnessReport, textBehindSubject },
+  /** export_versions: one file per version (lib/versions.ts), the project
+   * left as it is; versionsSheet draws them all without exporting. */
+  exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
+  versionsSheet,
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
   otio: () => toOtio(store.document()),
 };
@@ -134,8 +138,10 @@ async function tiles(frames: { src: CanvasImageSource | null; label: string; w: 
 }
 
 /** A canvas as base64 PNG, for MCP image content. */
-async function png(c: OffscreenCanvas): Promise<string> {
-  const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+const png = async (c: OffscreenCanvas): Promise<string> => blobToBase64(await c.convertToBlob({ type: "image/png" }));
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
@@ -215,6 +221,14 @@ const mcpHost: McpHost = {
     return exportForAgent(options as RenderOptions);
   },
   exportStatus: () => agentExportStatus(),
+  exportVersions: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return exportVersions(options as VersionsOptions);
+  },
+  versionsSheet: async (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return blobToBase64(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+  },
   voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
   ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {

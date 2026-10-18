@@ -366,7 +366,7 @@ function draw(p: Project, scenes: Scene[], frames: number[], outW: number, outH:
   c.resize(p.width, p.height);
   const byKey = new Map(scenes.map((s) => [s.key, s]));
   const sources = (l: Layer): SourceImage | null => {
-    if (l.source.kind === "text") return rasterizeText(l.source.clip, p.width, p.height);
+    if (l.source.kind === "text") return rasterizeText(l.source.clip, p.width, p.height, undefined, l.source.kinetic);
     if (l.source.kind !== "image") return null;
     const sc = byKey.get(l.source.assetId);
     return sc ? { image: sc.image, width: sc.width, height: sc.height, rotation: 0, key: sc.key } : null;

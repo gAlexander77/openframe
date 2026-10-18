@@ -5,6 +5,8 @@ import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "../../lib/catalog";
+import { DEFAULT_STAGGER, KINETIC_ORDERS, type KineticOrder } from "../../lib/kinetic";
+import { brandOf, type ColorRole } from "../../lib/brandKit";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
 import { compoundView } from "../../lib/project/compound";
@@ -750,20 +752,32 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
 
 // ---- animation -----------------------------------------------------------------
 
+const ORDER_LABELS: Record<KineticOrder, string> = { forward: "First to last", backward: "Last to first", center: "From the center", random: "Random" };
+
 function AnimationTab({ clip }: { clip: Clip }) {
   const fps = useEditor((s) => s.project.fps);
   const [slot, setSlot] = useState<"in" | "out" | "loop">("in");
   if (!("transform" in clip)) return null;
   const key = slot === "in" ? "animIn" : slot === "out" ? "animOut" : "animLoop";
   const current = (clip as unknown as Record<string, Animation | undefined>)[key];
-  const list = Object.entries(ANIMATIONS).filter(([, d]) => (slot === "loop" ? !!d.loop : !!d.from));
-  const set = (type: string | null, duration?: number) =>
+  const text = clip.type === "text";
+  // Titles also get the kinetic presets (typewriter, word pop...), which
+  // move their letters and words; other clips only the whole-layer ones.
+  const list = Object.entries(ANIMATIONS).filter(([, d]) => (d.text ? text && slot !== "loop" : slot === "loop" ? !!d.loop : !!d.from));
+  const set = (type: string | null, duration?: number, perUnit?: Pick<Animation, "unit" | "stagger" | "order">) =>
     patchClip(clip.id, type ? `${slot === "loop" ? "Loop" : slot === "in" ? "In" : "Out"} animation` : "Remove animation", (c) => {
       const next = { ...c } as Record<string, unknown>;
       if (!type) delete next[key];
-      else next[key] = { type, duration: duration ?? current?.duration ?? secondsToFrames(slot === "loop" ? 1 : 0.5, fps) };
+      else {
+        // Changing the animation keeps how it plays per unit; a sweep has none.
+        const keep = perUnit ?? (current && !ANIMATIONS[type].text?.sweep ? { unit: current.unit, stagger: current.stagger, order: current.order } : {});
+        const clean = Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined));
+        next[key] = { type, duration: duration ?? current?.duration ?? secondsToFrames(slot === "loop" ? 1 : 0.5, fps), ...clean };
+      }
       return next as unknown as Clip;
     });
+  const def = current && ANIMATIONS[current.type];
+  const unit = current ? (current.unit ?? def?.text?.unit) : undefined;
   return (
     <>
       <div className="insp-sub">
@@ -798,6 +812,61 @@ function AnimationTab({ clip }: { clip: Clip }) {
             <span className="insp-num num">{framesToSeconds(current.duration, fps).toFixed(1)}<span className="insp-unit">s</span></span>
             <span className="insp-keys" />
           </div>
+        </Section>
+      )}
+      {current && text && def?.text?.sweep && (
+        <Section title="Text motion">
+          <Row label={def.text.sweep === "marker" ? "Marker" : "Line"}>
+            <ColorInput
+              label={def.text.sweep === "marker" ? "Marker color" : "Line color"}
+              value={(clip as TextClip).style.accent ?? (def.text.sweep === "marker" ? "#ffd84d" : (clip as TextClip).style.color)}
+              onChange={(v) => patchClip(clip.id, "Accent color", (c) => ({ ...c, style: { ...(c as TextClip).style, accent: v } }) as Clip)}
+            />
+          </Row>
+        </Section>
+      )}
+      {current && text && !def?.text?.sweep && (
+        <Section title="Text motion">
+          <Row label="Moves by">
+            <Segmented
+              value={unit ?? "whole"}
+              onChange={(v) => set(current.type, current.duration, v === "whole" ? {} : { unit: v, stagger: current.stagger, order: current.order })}
+              options={[
+                ...(def?.text ? [] : [{ value: "whole" as const, label: "Whole" }]),
+                { value: "letter" as const, label: "Letter" },
+                { value: "word" as const, label: "Word" },
+                { value: "line" as const, label: "Line" },
+              ]}
+            />
+          </Row>
+          {unit && (
+            <>
+              <div className="insp-row">
+                <label className="insp-label">Stagger</label>
+                <input
+                  type="range"
+                  className="insp-slider"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER}
+                  onChange={(e) => set(current.type, current.duration, { unit: current.unit, stagger: Number(e.target.value), order: current.order })}
+                  aria-label="Stagger"
+                />
+                <span className="insp-num num">{Math.round((current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER) * 100)}<span className="insp-unit">%</span></span>
+                <span className="insp-keys" />
+              </div>
+              <Row label="Order">
+                <select className="field" aria-label="Order" value={current.order ?? (slot === "out" ? def?.text?.outOrder : undefined) ?? "forward"} onChange={(e) => set(current.type, current.duration, { unit: current.unit, stagger: current.stagger, order: e.target.value as KineticOrder })}>
+                  {KINETIC_ORDERS.map((o) => (
+                    <option key={o} value={o}>
+                      {ORDER_LABELS[o]}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            </>
+          )}
         </Section>
       )}
       <TrackingSection clip={clip as VisualClip} />
@@ -1231,6 +1300,39 @@ function TextTab({ clip }: { clip: TextClip }) {
               <ColorInput label="Stroke color" value={s.stroke.color} onChange={(v) => style({ stroke: { ...s.stroke!, color: v } }, "Stroke color")} />
             </Row>
             <SliderRow clip={clip} path="style.stroke.width" label="Width" min={0} max={40} reset={4} keyframes={false} />
+            <Row label="Second">
+              <div className="spoken-word">
+                <Toggle label="Second outline" on={!!s.stroke2 && s.stroke2.width > 0} onChange={(v) => style({ stroke2: v ? { color: s.stroke2?.color ?? "#ffffff", width: Math.max(6, s.stroke2?.width ?? 0) } : undefined }, v ? "Add second outline" : "Remove second outline")} />
+                {s.stroke2 && <ColorInput label="Second outline color" value={s.stroke2.color} onChange={(v) => style({ stroke2: { ...s.stroke2!, color: v } }, "Second outline color")} />}
+              </div>
+            </Row>
+            {s.stroke2 && <SliderRow clip={clip} path="style.stroke2.width" label="Second width" min={0} max={40} reset={6} keyframes={false} />}
+          </>
+        )}
+      </Section>
+      <Section title="Glow" defaultOpen={!!s.glow} extra={<Toggle label="Glow" on={!!s.glow} onChange={(v) => style({ glow: v ? { color: s.glow?.color ?? "#00e5ff", blur: 24 } : undefined }, v ? "Add glow" : "Remove glow")} />}>
+        {s.glow && (
+          <>
+            <Row label="Color">
+              <ColorInput label="Glow color" value={s.glow.color} onChange={(v) => style({ glow: { ...s.glow!, color: v } }, "Glow color")} />
+            </Row>
+            <SliderRow clip={clip} path="style.glow.blur" label="Size" min={0} max={120} reset={24} keyframes={false} />
+            <Row label="Strength">
+              <Segmented value={String(s.glow.strength ?? 1) as "1" | "2" | "3"} onChange={(v) => style({ glow: { ...s.glow!, strength: Number(v) } }, "Glow strength")} options={[{ value: "1", label: "Soft" }, { value: "2", label: "Bright" }, { value: "3", label: "Neon" }]} />
+            </Row>
+          </>
+        )}
+      </Section>
+      <Section title="Gradient" defaultOpen={!!s.gradient} extra={<Toggle label="Gradient fill" on={!!s.gradient} onChange={(v) => style({ gradient: v ? { from: s.color, to: "#ff3d7f", angle: 0 } : undefined }, v ? "Gradient fill" : "Solid fill")} />}>
+        {s.gradient && (
+          <>
+            <Row label="From">
+              <ColorInput label="Gradient start color" value={s.gradient.from} onChange={(v) => style({ gradient: { ...s.gradient!, from: v } }, "Gradient color")} />
+            </Row>
+            <Row label="To">
+              <ColorInput label="Gradient end color" value={s.gradient.to} onChange={(v) => style({ gradient: { ...s.gradient!, to: v } }, "Gradient color")} />
+            </Row>
+            <SliderRow clip={clip} path="style.gradient.angle" label="Angle" min={-180} max={180} unit="°" reset={0} keyframes={false} />
           </>
         )}
       </Section>
@@ -1450,6 +1552,8 @@ function ProjectDetails() {
             <ColorInput label="Background color" value={p.background} onChange={(v) => store.edit("Background color", (q) => ({ ...q, background: v }))} />
           </Row>
         </Section>
+        {/* Opens when a kit arrives (an agent's set_brand), closed without one. */}
+        <BrandSection key={p.brand ? "brand" : "none"} />
         <Section title="Summary">
           <dl className="summary num">
             <dt>Canvas</dt>
@@ -1468,6 +1572,42 @@ function ProjectDetails() {
         </Section>
       </div>
     </>
+  );
+}
+
+/** The project's brand kit (set_brand): the colors, fonts and logo that
+ * ad elements and branded titles draw with. */
+function BrandSection() {
+  const p = useEditor((s) => s.project);
+  const b = brandOf(p);
+  const set = (label: string, args: Record<string, string>) => store.edit(label, (q) => runCommand(q, "set_brand", args));
+  const pictures = p.assets.filter((a) => a.kind === "image" && !a.sticker);
+  const roles: [ColorRole, string][] = [["primary", "Primary"], ["secondary", "Secondary"], ["accent", "Accent"], ["background", "Background"], ["text", "Text"]];
+  return (
+    <Section title="Brand" defaultOpen={!!p.brand}>
+      {roles.map(([role, label]) => (
+        <Row key={role} label={label}>
+          <ColorInput label={`Brand ${role} color`} value={b.colors[role]} onChange={(v) => set("Brand color", { [role]: v })} />
+        </Row>
+      ))}
+      <Row label="Headings">
+        <FontPicker value={b.fonts.heading} onChange={(font) => set("Brand font", { heading_font: font })} />
+      </Row>
+      <Row label="Body">
+        <FontPicker value={b.fonts.body} onChange={(font) => set("Brand font", { body_font: font })} />
+      </Row>
+      <Row label="Logo">
+        <select className="field" aria-label="Brand logo" value={b.logos?.main ?? ""} onChange={(e) => set("Brand logo", { logo: e.target.value })}>
+          <option value="">None</option>
+          {pictures.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <p className="insp-hint">Ad elements and branded titles use these. Agents set them with set_brand.</p>
+    </Section>
   );
 }
 

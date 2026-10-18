@@ -4,6 +4,7 @@
 // list_catalog. Adding an entry here (plus its shader, for effects and
 // transitions) is the whole job of adding one.
 
+import { KINETIC_ANIMATIONS, type TextAnimation } from "./kinetic";
 import type { Adjust, BlendMode, ClipLabel } from "./project/types";
 
 export interface ParamDef {
@@ -42,6 +43,9 @@ export interface AnimationDef {
   loop?: (phase: number) => Partial<AnimState>;
   /** Spring overshoot on the in-animation (pop). */
   overshoot?: boolean;
+  /** Titles only (lib/kinetic.ts): played by each letter, word or line,
+   * or drawn as a sweep. */
+  text?: TextAnimation;
 }
 
 export const ANIMATIONS: Record<string, AnimationDef> = {
@@ -68,9 +72,14 @@ export const ANIMATIONS: Record<string, AnimationDef> = {
     label: "Heartbeat",
     loop: (t) => ({ scale: 1 + 0.08 * Math.max(0, Math.sin(t * Math.PI * 4)) ** 8 }),
   },
+  // Kinetic typography: titles only, each letter, word or line on its own.
+  ...KINETIC_ANIMATIONS,
 };
 
 export const isLoopAnimation = (type: string) => !!ANIMATIONS[type]?.loop;
+
+/** Animations that only a title can play (typewriter, word pop...). */
+export const isTextAnimation = (type: string) => !!ANIMATIONS[type]?.text;
 
 // ---- clip labels -------------------------------------------------------------------
 
