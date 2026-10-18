@@ -15,7 +15,7 @@ import { brandOf, LIFT, pickLogo, readableOn, roleStyle, textOn, typeScale, with
 import { placeOnTop } from "./overlays";
 import { clipForAsset, createColorClip, createTextClip, createTrack, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
-import type { Animation, Clip, ColorClip, Cutout, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
+import type { Animation, Asset, Clip, ColorClip, Cutout, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
 import { fittedSize } from "./render/size";
 import { secondsToFrames } from "./time";
 
@@ -285,62 +285,71 @@ export function addAdElement(p: Project, element: AdElement, o: AdOptions): { pr
 
 // ---- text behind the subject ------------------------------------------------------
 
-/** Why layers cannot go behind a video's subject, or null when they can. */
-export function behindProblem(p: Project, videoId: Id, layerIds: Id[]): string | null {
-  const v = findClip(p, videoId);
-  if (!v) return `no clip with id ${videoId}`;
-  if (v.clip.type !== "video") return `clip ${videoId} is a ${v.clip.type} clip; the subject must be in a video clip (Remove background works on video)`;
+/** Why layers cannot go behind a clip's subject, or null when they can. */
+export function behindProblem(p: Project, clipId: Id, layerIds: Id[]): string | null {
+  const v = findClip(p, clipId);
+  if (!v) return `no clip with id ${clipId}`;
+  if (v.clip.type !== "video" && v.clip.type !== "image") return `clip ${clipId} is a ${v.clip.type} clip; the subject must be in a video or picture clip`;
   if (v.track.locked) return `track ${v.track.name} is locked`;
   if (!layerIds.length) return "name the title (or titles) to put behind the subject";
   for (const id of layerIds) {
     const l = findClip(p, id);
     if (!l) return `no clip with id ${id}`;
-    if (id === videoId || l.clip.type === "audio" || l.clip.type === "adjustment") return `clip ${id} cannot go behind the subject: give titles, stickers or pictures`;
+    if (id === clipId || l.clip.type === "audio" || l.clip.type === "adjustment") return `clip ${id} cannot go behind the subject: give titles, stickers or pictures`;
     if (l.track.locked) return `track ${l.track.name} is locked`;
-    if (l.clip.start >= v.clip.start + v.clip.duration || l.clip.start + l.clip.duration <= v.clip.start) return `clip ${id} does not play while the video does`;
+    if (l.clip.start >= v.clip.start + v.clip.duration || l.clip.start + l.clip.duration <= v.clip.start) return `clip ${id} does not play while the ${v.clip.type === "image" ? "picture shows" : "video does"}`;
   }
   return null;
 }
 
+/** What makes the copy show only the subject: a video's matte, or a
+ * picture with its background cut out (a new image asset, added with it). */
+export type SubjectCut = { cutout: Cutout } | { asset: Asset };
+
 /**
- * Put titles (or stickers) behind a video's subject, the "text behind the
- * person" look: a copy of the video goes on a new track above them with
- * its background removed by `cutout`, so the subject covers the text while
- * the original below shows the background. The copy is silent, has no
- * canvas fill (it would cover the text), and is grouped with the original
- * so they move together. A layer below the video moves to a track just
- * above it first.
+ * Put titles (or stickers) behind a clip's subject, the "text behind the
+ * person" look: a copy of the clip goes on a new track above them showing
+ * only the subject (a video with its background matte on, a picture as
+ * its cut-out), so the subject covers the text while the original below
+ * shows the background. The copy is silent, has no canvas fill (it would
+ * cover the text), and is grouped with the original so they move
+ * together. A layer below the clip moves to a track just above it first.
  */
-export function putBehindSubject(p: Project, videoId: Id, layerIds: Id[], cutout: Cutout): { project: Project; subjectId: Id } {
-  const problem = behindProblem(p, videoId, layerIds);
+export function putBehindSubject(p: Project, clipId: Id, layerIds: Id[], cut: SubjectCut): { project: Project; subjectId: Id } {
+  const problem = behindProblem(p, clipId, layerIds);
   if (problem) throw new Error(problem);
-  const video = findClip(p, videoId)!.clip as VideoClip;
+  const original = findClip(p, clipId)!.clip as VideoClip | ImageClip;
+  if ((original.type === "video") !== "cutout" in cut) throw new Error(original.type === "video" ? "a video's subject needs its matte" : "a picture's subject needs its cut-out picture");
   const index = (id: Id) => p.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
   for (const id of layerIds) {
-    if (index(id) < index(videoId)) continue;
-    // Below or beside the video: lift it onto its own track right above.
+    if (index(id) < index(clipId)) continue;
+    // Below or beside the clip: lift it onto its own track right above.
     const clip = findClip(p, id)!.clip;
     const track = createTrack("video", "Text");
-    p = addTrack({ ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== id) })) }, track, index(videoId));
+    p = addTrack({ ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id !== id) })) }, track, index(clipId));
     p = addClip(p, track.id, clip);
   }
   const top = Math.min(...layerIds.map(index));
-  const group = video.group ?? uid("g");
-  const { canvas: _fill, transitionOut: _cut, ...rest } = video;
-  // A transition into or out of the video dissolves the original while
+  const group = original.group ?? uid("g");
+  const { canvas: _fill, transitionOut: _cut, ...rest } = original;
+  // A transition into or out of the clip dissolves the original while
   // the copy, on its own track, would stay sharp: the copy fades across
   // the half of each transition that falls inside the clip instead.
-  const track0 = findClip(p, videoId)!.track;
-  const before = track0.clips.find((c) => c.start + c.duration === video.start && "transitionOut" in c && c.transitionOut);
+  const track0 = findClip(p, clipId)!.track;
+  const before = track0.clips.find((c) => c.start + c.duration === original.start && "transitionOut" in c && c.transitionOut);
   const into = before && "transitionOut" in before ? before.transitionOut : undefined;
   const fades = {
     ...(into ? { animIn: { type: "fade", duration: Math.max(1, Math.ceil(into.duration / 2)) } } : {}),
-    ...(video.transitionOut ? { animOut: { type: "fade", duration: Math.max(1, Math.ceil(video.transitionOut.duration / 2)) } } : {}),
+    ...(original.transitionOut ? { animOut: { type: "fade", duration: Math.max(1, Math.ceil(original.transitionOut.duration / 2)) } } : {}),
   };
-  const subject: VideoClip = { ...rest, ...fades, id: uid("c"), name: "Subject", muted: true, cutout: { ...cutout, enabled: true }, group };
+  const subject: Clip =
+    "cutout" in cut
+      ? ({ ...rest, ...fades, id: uid("c"), name: "Subject", muted: true, cutout: { ...cut.cutout, enabled: true }, group } as VideoClip)
+      : ({ ...rest, ...fades, id: uid("c"), name: "Subject", assetId: cut.asset.id, group } as ImageClip);
+  if ("asset" in cut && !p.assets.some((a) => a.id === cut.asset.id)) p = { ...p, assets: [...p.assets, cut.asset] };
   const track = createTrack("video", "Subject");
   p = addTrack(p, track, top);
   p = addClip(p, track.id, subject);
-  if (!video.group) p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === videoId ? { ...c, group } : c)) })) };
+  if (!original.group) p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === clipId ? { ...c, group } : c)) })) };
   return { project: p, subjectId: subject.id };
 }

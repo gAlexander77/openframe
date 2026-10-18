@@ -128,7 +128,7 @@ describe("text behind the subject", () => {
 
   it("lays a silent, cut-out copy of the video above the title, grouped with the original", () => {
     const { p, video, title } = setup();
-    const { project: q, subjectId } = putBehindSubject(p, video, [title], cut);
+    const { project: q, subjectId } = putBehindSubject(p, video, [title], { cutout: cut });
     const order = q.tracks.map((t) => t.clips.map((c) => c.id)).flat();
     expect(order.indexOf(subjectId)).toBeLessThan(order.indexOf(title));
     expect(order.indexOf(title)).toBeLessThan(order.indexOf(video));
@@ -147,7 +147,7 @@ describe("text behind the subject", () => {
     const top = p.tracks[0].id;
     p = runCommand(p, "move_clip", { clip_id: video, track_id: top, start: 0 });
     p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === video ? ({ ...c, canvas: { type: "blur", amount: 30 } } as Clip) : c)) })) };
-    const { project: q, subjectId } = putBehindSubject(p, video, [title], cut);
+    const { project: q, subjectId } = putBehindSubject(p, video, [title], { cutout: cut });
     const index = (id: string) => q.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
     expect(index(subjectId)).toBeLessThan(index(title));
     expect(index(title)).toBeLessThan(index(video));
@@ -156,7 +156,7 @@ describe("text behind the subject", () => {
 
   it("refuses what it cannot do, saying why", () => {
     const { p, video, title } = setup();
-    expect(behindProblem(p, title, [video])).toMatch(/must be in a video clip/);
+    expect(behindProblem(p, title, [video])).toMatch(/must be in a video or picture clip/);
     expect(behindProblem(p, video, [])).toMatch(/name the title/);
     const late = runCommand(p, "add_text", { text: "Later", start: 8, duration: 1 });
     const id = late.tracks.flatMap((t) => t.clips).find((c) => c.type === "text" && c.text === "Later")!.id;
@@ -176,7 +176,7 @@ describe("the subject copy and transitions", () => {
     p = runCommand(p, "set_transition", { clip_id: b.id, type: "dissolve", duration: 1 });
     p = runCommand(p, "add_text", { text: "HI", start: 2, duration: 2 });
     const title = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!.id;
-    const { project: q, subjectId } = putBehindSubject(p, b.id, [title], { enabled: true, src: "m.mp4", from: 0, to: 5, model: "m" });
+    const { project: q, subjectId } = putBehindSubject(p, b.id, [title], { cutout: { enabled: true, src: "m.mp4", from: 0, to: 5, model: "m" } });
     const copy = q.tracks.flatMap((t) => t.clips).find((c) => c.id === subjectId) as VideoClip;
     expect(copy.animIn).toEqual({ type: "fade", duration: 8 });
     expect(copy.animOut).toEqual({ type: "fade", duration: 15 });
@@ -195,5 +195,25 @@ describe("set_audio_fade", () => {
     expect(p.tracks.flatMap((t) => t.clips).find((c) => c.id === music)).toMatchObject({ fadeIn: 15, fadeOut: 60 });
     expect(() => runCommand(p, "set_audio_fade", { clip_ids: [text], fade_in: 1 })).toThrow(/no sound/);
     expect(() => runCommand(p, "set_audio_fade", { clip_ids: [music] })).toThrow(/fade_in, fade_out/);
+  });
+});
+
+describe("text behind the subject of a picture", () => {
+  it("stacks the cut-out picture above the title, adding its asset in the same edit", () => {
+    let p: Project = { ...createProject(), assets: [{ id: "ph", kind: "image", name: "product.jpg", src: "product.jpg", duration: 0, width: 1600, height: 1200, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "ph", start: 0, duration: 4 });
+    p = runCommand(p, "add_text", { text: "NEW", start: 0, duration: 4, style: { size: 300 } });
+    const photo = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "image")!;
+    const title = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!.id;
+    p = runCommand(p, "set_param", { clip_ids: [photo.id], path: "transform.scale", value: 1.2 });
+    const asset = { id: "cut", kind: "image" as const, name: "product (cut out).png", src: "cut.png", duration: 0, width: 1600, height: 1200, hasVideo: true, hasAudio: false };
+    const { project: q, subjectId } = putBehindSubject(p, photo.id, [title], { asset });
+    const copy = q.tracks.flatMap((t) => t.clips).find((c) => c.id === subjectId) as ImageClip;
+    expect(copy).toMatchObject({ type: "image", assetId: "cut", name: "Subject", transform: { scale: 1.2 } });
+    expect(q.assets.map((a) => a.id)).toEqual(["ph", "cut"]);
+    const index = (id: string) => q.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
+    expect(index(subjectId)).toBeLessThan(index(title));
+    expect(index(title)).toBeLessThan(index(photo.id));
+    expect(() => putBehindSubject(p, photo.id, [title], { cutout: { enabled: true, src: "m", from: 0, to: 1, model: "m" } })).toThrow(/cut-out picture/);
   });
 });

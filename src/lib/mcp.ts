@@ -414,10 +414,10 @@ APP_TOOLS.push(
   {
     name: "text_behind_subject",
     description:
-      "Put titles (or stickers) behind the person or product in a video clip, the 'text behind the subject' look: the clip's background is removed on this computer (Remove background's matte, made once; the first run downloads the model), and a silent copy of the video with only the subject goes on a new track above the titles, grouped with the original so they move together. Titles below the video are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subject_clip_id).",
+      "Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track above the titles, silent and grouped with the original so they move together. Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subjectClipId).",
     inputSchema: obj(
       {
-        clip_id: { type: "string", description: "The video clip with the person or product" },
+        clip_id: { type: "string", description: "The video or picture clip with the person or product" },
         text_clip_ids: { type: "array", items: { type: "string" }, description: "The titles (or stickers) to put behind the subject; they must play while the video does" },
       },
       ["clip_id", "text_clip_ids"],
@@ -481,7 +481,8 @@ To make a video:
 6. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
+9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_audio_fade on the music, and export_versions for every shape and cut-down (check: true shows them first).`;
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {

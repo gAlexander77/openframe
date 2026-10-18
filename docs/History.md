@@ -895,6 +895,10 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   added in the same undo step. A dark line at the frame's top edge in the
   first screenshot was the viewer's overlay, not the picture: with the
   title hidden the copy over the original differs by at most 3 of 765.
+  Product ads are often stills, and a picture clip has no matte: the
+  model runs on the photo once and the copy is a new PNG with the
+  background transparent, so nothing new had to be taught to the
+  renderer.
 - **Deliverables without touching the master.** Every version (shape,
   cut-down, textless) is a project document computed from the master
   (`src/lib/versions.ts`) and handed to the exporter, which already takes

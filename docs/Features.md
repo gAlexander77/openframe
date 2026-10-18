@@ -571,9 +571,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **call-to-action button**, and a **logo reveal** (the logo pops in, with
   an optional glow flare and white flash, and the tagline).
 - **Text behind the subject** (`text_behind_subject`): a title sits behind
-  the person or product in a video. The video's background is removed on
-  this computer (Remove background's matte) for a silent copy on a track
-  above the title, grouped with the original; one undo step.
+  the person or product in a video or a photo. The background is removed
+  on this computer (a video's Remove background matte; a photo cut out once
+  into a new picture with transparency) for a copy on a track above the
+  title, silent and grouped with the original; one undo step.
 - **Deliverables** (`export_versions`): a campaign's versions in one call,
   each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
   opening and the end card kept, the middle cut, the music fading at the

@@ -411,7 +411,9 @@ and the AI tools tab has a card for it.
   cover the titles), as one undo step (`src/lib/ads.ts` putBehindSubject).
   The text-behind drive measured the light model headless: 13 to 15 s with
   the first download, the title's yellow gone over the jacket and kept
-  beside the face. With the title hidden, the copy over the original
+  beside the face. A photo has no matte video: the model runs on it once
+  and the cut-out is a new PNG with transparency (`cutOutImage` in
+  `src/engine/cutout.ts`), drawn above the title like any picture. With the title hidden, the copy over the original
   changes no pixel by more than 3 of 765: the matte's edges add no fringe.
 
 ## In the app and for agents

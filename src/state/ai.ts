@@ -17,7 +17,7 @@ import { canvasSize } from "../lib/canvas";
 import { applyTrack, centerRegion, trackPath } from "./tracking";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
-import { makeMatte } from "../engine/cutout";
+import { cutOutImage, makeMatte } from "../engine/cutout";
 import { detectBeats } from "../lib/analysis/beats";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
@@ -29,10 +29,11 @@ import { FILLERS, fillerRanges } from "../lib/fillers";
 import { transcribePcm } from "../engine/transcribe";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
-import { behindProblem, putBehindSubject } from "../lib/ads";
+import { behindProblem, putBehindSubject, type SubjectCut } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Cutout, Id, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Cutout, Id, ImageClip, VideoClip } from "../lib/project/types";
+import { uid } from "../lib/project/defaults";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit } from "./actions";
@@ -951,28 +952,64 @@ export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
   return m.result;
 }
 
+/** Pictures cut out this session, by source, so asking again is instant. */
+const cutPictures = new Map<string, Asset>();
+
+/** A picture clip's subject as a new picture with its background
+ * transparent (engine/cutout.ts cutOutImage), made once a session. */
+async function cutOutPicture(clip: ImageClip): Promise<{ asset: Asset; cached: boolean; model: string; note: string }> {
+  const asset = ops.getAsset(store.get().project, clip.assetId);
+  if (!asset) throw new Error("Its picture is missing");
+  const have = cutPictures.get(asset.src);
+  if (have) return { asset: have, cached: true, model: "", note: "Text placed behind the subject" };
+  const made = await job("cutout", clip as unknown as MediaClip, "Starting the background model", async (progress, signal) => {
+    const r = await cutOutImage(asset, (s) => (s.stage === "downloading" ? progress(s.progress, `Downloading the background model (${s.model.size})`) : progress(s.progress, `Cutting out ${asset.name}`)), signal);
+    const name = `${asset.name.replace(/\.[^.]+$/, "")} (cut out).png`;
+    const [file] = await platform.adoptFiles([new File([r.blob], name, { type: "image/png" })]);
+    return { ...r, file, name };
+  });
+  const cut: Asset = { id: uid("a"), kind: "image", name: made.name, src: made.file.src, size: made.file.size, duration: 0, width: made.width, height: made.height, hasVideo: true, hasAudio: false };
+  cutPictures.set(asset.src, cut);
+  return { asset: cut, cached: false, model: made.model, note: made.fellBack ? "Text placed behind the subject with the light model" : "Text placed behind the subject" };
+}
+
 /**
- * The "text behind the subject" look: the video's matte (made or reused as
- * Remove background does), then, in one undo step, a copy of the video
- * above the titles with its background removed (lib/ads.ts
- * putBehindSubject). Titles below the video are lifted above it first.
+ * The "text behind the subject" look: the clip's subject alone (a video's
+ * matte, made or reused as Remove background does; a picture cut out into
+ * a new picture), then, in one undo step, a copy of the clip showing only
+ * the subject above the titles (lib/ads.ts putBehindSubject). Titles
+ * below the clip are lifted above it first.
  */
 export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {}): Promise<{ subjectClipId: Id; textClipIds: Id[]; cached: boolean; model: string }> {
   const ids = opts.textIds ?? [];
   const problem = behindProblem(store.get().project, clipId, ids);
   if (problem) throw new Error(problem);
-  const m = await matteFor(clipId);
-  stillThere(m.clipId);
+  const scope = projectWork.signal();
+  const clip = ops.findClip(store.get().project, clipId)!.clip;
+  let cut: SubjectCut, cached: boolean, model: string, note: string;
+  if (clip.type === "image") {
+    const r = await cutOutPicture(clip);
+    ({ cached, model, note } = r);
+    cut = { asset: r.asset };
+  } else {
+    const m = await matteFor(clipId);
+    stillThere(m.clipId);
+    cut = { cutout: m.cutout };
+    cached = m.result.cached;
+    model = m.cutout.model;
+    note = m.note.replace("Background removed", "Text placed behind the subject");
+  }
+  scope.throwIfAborted();
   const again = behindProblem(store.get().project, clipId, ids);
   if (again) throw new Error(again);
   let subject = "";
   store.edit("Text behind subject", (p) => {
-    const r = putBehindSubject(p, clipId, ids, m.cutout);
+    const r = putBehindSubject(p, clipId, ids, cut);
     subject = r.subjectId;
     return r.project;
   });
-  finish("cutout", m.note.replace("Background removed", "Text placed behind the subject"));
-  return { subjectClipId: subject, textClipIds: ids, cached: m.result.cached, model: m.cutout.model };
+  finish("cutout", note);
+  return { subjectClipId: subject, textClipIds: ids, cached, model };
 }
 
 /** The inspector's switch: on makes or reuses the matte, off keeps it. */
