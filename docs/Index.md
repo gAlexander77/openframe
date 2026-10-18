@@ -60,6 +60,8 @@ of the documentation and how agents use it as shared working memory.
   export, what users complain about
 - [[Feature gaps 2026-10-16]] — what CapCut, Premiere, Resolve, VEGAS and
   Final Cut have that we lack, with a build order
+- [[Everyday gaps 2026-10-17]] — the small, frequent gaps the survey
+  missed, a UI code audit and a styling sweep, with what was done
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,

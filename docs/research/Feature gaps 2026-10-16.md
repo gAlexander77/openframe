@@ -48,6 +48,10 @@ only, so the result could not be checked in the product. Link/unlink is
 mostly covered the CapCut way: detached sound under a main-track shot
 follows it through linkage, and Group links any clips for moves.
 
+**Updated 2026-10-17.** A second pass for everyday gaps, a UI code audit
+and the styling sweep are in [[Everyday gaps 2026-10-17]]; rows they
+touched read "yes" here with the date.
+
 **Legend.**
 - Apps: **C** CapCut desktop, **P** Premiere, **R** Resolve Edit/Cut,
   **V** VEGAS Pro, **F** Final Cut Pro, **OSS** Shotcut/Kdenlive/OpenShot.
