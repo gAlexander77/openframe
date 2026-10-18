@@ -777,3 +777,10 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   lag 0.15 s away separates them (0.46 to 0.74 against 0.06 at most), so
   that is the confidence. Measured on the new fixture pair (one take
   through a thin camera mic and a noisy lav, 1.37 s apart): 0.8 ms early.
+- **A guide for vertical apps.** Creators keep titles clear of TikTok's,
+  Reels' and Shorts' buttons and captions; Kapwing and others draw those
+  zones, no editor we imitate does. The guides menu has one now, shading
+  what the apps cover and snapping to the clear area. The apps publish
+  margins only for ads, and third-party guides disagree (TikTok's right
+  column is 100 to 180 px depending on the source), so the guide takes the
+  largest of each side; editors can still check the upload in each app.

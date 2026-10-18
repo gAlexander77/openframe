@@ -206,3 +206,11 @@ it("frames a region of a screen recording full screen, never uncovering the canv
   expect(keys["transform.scale"]).toEqual([{ f: 0, v: expect.any(Number), ease: "easeInOut" }, { f: 59, v: half.scale }]);
   expect(keys["transform.x"][1].v).toBeCloseTo(-0.5, 5);
 });
+
+it("snaps to the vertical apps' safe area while that guide shows", () => {
+  const p = { ...createProject(), width: 1080, height: 1920 };
+  const lines = snapLines(p, [], "vertical");
+  expect(lines.x).toEqual(expect.arrayContaining([1080 * 0.11, 1080 * 0.81]));
+  expect(lines.y).toEqual(expect.arrayContaining([1920 * 0.14, 1920 * 0.65]));
+  expect(snapLines(p, [], "off").x).toEqual([0, 540, 1080]);
+});

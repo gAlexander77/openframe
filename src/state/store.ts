@@ -13,6 +13,7 @@ import { createProject } from "../lib/project/defaults";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { clipEnd, findClip, findCompound, projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
+import type { Guides } from "../lib/align";
 import type { CropRatio } from "../lib/crop";
 import type { Crop, Id, Project } from "../lib/project/types";
 import type { TrimPreviewState } from "../lib/trimPreview";
@@ -73,7 +74,7 @@ export interface EditorState {
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
   /** Viewer overlays only: never saved into the project or rendered. */
-  viewerGuides: "off" | "safe" | "thirds" | "both";
+  viewerGuides: Guides;
   leftTab: LeftTab;
   /** Shared Media/Audio browsing preferences, never serialized as edits. */
   mediaBrowser: MediaBrowser;
