@@ -161,3 +161,42 @@ from the earlier implementation and its historical test results.
   request: type check and unit tests on Linux, Rust fmt, clippy and tests
   on Windows.
 - **Next**: [[Roadmap]] holds the order.
+
+## 2026-10-17, late (Claude Code): the `improvements` branch
+
+- **Where it is.** Branch `improvements`, in its own worktree, committed
+  locally and **not pushed or merged**: the owner asked for the work on a
+  branch and decides when it reaches `main`. A detached `verify` worktree
+  holds a snapshot for full drive runs on its own Vite port; remove both
+  worktrees (junctions first, trap 12) once the branch lands.
+- **What it adds** ([[Everyday gaps 2026-10-17]] has the research and the
+  status of each gap):
+  - Tracking and Auto reframe ([[ADR-054 Tracking writes position keyframes]]).
+  - Sync audio by waveform.
+  - Linked picture and sound with out-of-sync counts.
+  - Media removal and editing several clips at once.
+  - Typing a time to jump, and saving a frame from the player.
+  - The rest:
+    - camera and screen recording;
+    - sound effects;
+    - caption looks and Enter-to-split;
+    - saved text styles;
+    - Magnify;
+    - a TikTok, Reels and Shorts guide;
+    - a motion path;
+    - a pipette on color fields;
+    - Home card rename and duplicate;
+    - fades on a video's own sound;
+    - a few agent-only commands now in the UI.
+- **How it was checked.**
+  - Every commit passed tsc and the unit tests.
+  - Every feature has its own headless drive.
+  - Full runs of all web drives on snapshots passed.
+  - `scripts/drive/style-sweep.js` checks 129 states (every tab, menu
+    and dialog at 1600 x 950, 1280 x 720 and 1100 x 680) for layout
+    faults, names and contrast; it is clean.
+- **Not checked on the desktop:**
+  - the camera and screen permissions in WebView2 (Record);
+  - the EyeDropper API in WebView2.
+
+  Both are listed under the [[Roadmap]]'s desktop check.
