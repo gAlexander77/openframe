@@ -4,7 +4,7 @@ import { player } from "../engine/player";
 import type { Project, TextClip } from "../lib/project/types";
 import type { Layer } from "../lib/render/plan";
 import { editBox } from "../lib/textBox";
-import { beginTyping, endTyping, typeText } from "../state/textEdit";
+import { beginTyping, endTyping, splitCaptionAt, typeText } from "../state/textEdit";
 import { useEditor } from "../state/store";
 
 /** Room between the text and the frame, viewer pixels: the raster's own pad
@@ -52,10 +52,13 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
       e.preventDefault();
       document.execCommand("insertText", false, "\n");
     } else if (e.key === "Enter" && !e.shiftKey && clip.caption) {
-      // ponytail: CapCut's Enter splits the caption at the caret; until that
-      // lands it finishes the caption, as the inspector's caption list does.
+      // CapCut's Enter splits the caption at the caret, where the next word
+      // is spoken, and typing goes on in the second half. At either end
+      // there is nothing to split, and it just finishes.
       e.preventDefault();
+      const caret = e.currentTarget.selectionStart;
       endTyping();
+      splitCaptionAt(clip.id, caret);
     }
   };
 

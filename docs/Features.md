@@ -414,6 +414,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Enter splits a caption** at the caret while editing it on the canvas
+  (CapCut's): the second half starts where its first word is spoken (or
+  as far in as the characters go, untimed), each half keeps its words'
+  timings, typing goes on in the second, and it is one undo step.
 - **Caption looks** (CapCut's caption templates, Resolve 20's subtitle
   styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
   (capitals with the spoken word highlighted), Neon and Minimal, each

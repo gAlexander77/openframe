@@ -84,12 +84,14 @@ moved:
   - Several buttons hid their chords.
   - Linkage, Preview axis and the keyframe panel were missing from the
     menus.
-- **Still open from the audit:**
-  - A dozen hard-coded colors that equal a token (listed in the audit's
-    output; mostly CSS that predates the tokens).
-  - The transcript silently leaving out reversed and curved clips.
-  - Captions' Enter finishing an edit instead of splitting the caption
-    at the caret.
+- **Also fixed:**
+  - Captions' Enter now splits the caption at the caret, where the next
+    word is spoken.
+  - The transcript card says when reversed or speed-curved clips are
+    left out, instead of dropping them silently.
+- **Still open from the audit:** a dozen hard-coded colors that equal a
+  token (listed in the audit's output; mostly CSS that predates the
+  tokens).
 
 ## From the styling sweep
 

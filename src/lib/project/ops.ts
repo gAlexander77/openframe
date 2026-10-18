@@ -213,6 +213,33 @@ export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   return [left, right];
 }
 
+/**
+ * CapCut's Enter in a caption: split it at a character position into two
+ * captions, the words before and after. The time is where the first word
+ * after is spoken (its wordTimes), or else as far in as the characters go;
+ * each half keeps its own words' times. Returns the project and the
+ * second caption's id, or the project unchanged when a half would be empty.
+ */
+export function splitCaption(p: Project, clipId: Id, caret: number): { project: Project; second?: Id } {
+  const loc = findClip(p, clipId);
+  const c = loc?.clip;
+  if (!c || c.type !== "text") return { project: p };
+  const before = c.text.slice(0, caret).trim(), after = c.text.slice(caret).trim();
+  if (!before || !after) return { project: p };
+  const n = before.split(/\s+/).length;
+  const words = c.text.trim().split(/\s+/).length;
+  const timed = c.wordTimes && c.wordTimes.length === words && words > n;
+  const rel = timed ? c.wordTimes![n] : Math.round((c.duration * caret) / Math.max(1, c.text.length));
+  const at = c.start + Math.min(c.duration - 1, Math.max(1, rel));
+  const q = splitClip(p, clipId, at);
+  const second = findTrack(q, loc!.track.id)!.clips.find((x) => x.start === at && x.type === "text")?.id;
+  if (!second) return { project: p };
+  const keep = (id: Id, text: string, slice: (t: number[]) => number[]) =>
+    (r: Project) => updateClip(r, id, (x) => (x.type === "text" ? ({ ...x, text, ...(x.wordTimes ? { wordTimes: slice(x.wordTimes) } : {}) } as Clip) : x));
+  const out = keep(second, after, (t) => t.slice(n))(keep(clipId, before, (t) => t.slice(0, n))(q));
+  return { project: out, second };
+}
+
 export function splitClip(p: Project, clipId: Id, at: number): Project {
   const loc = findClip(p, clipId);
   if (!loc || at <= loc.clip.start || at >= clipEnd(loc.clip)) return p;

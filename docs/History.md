@@ -858,3 +858,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   with position keys now shows Premiere's dashed motion path and key dots
   on the viewer. Its drive learned that a level line has a zero-height
   box, which Playwright calls hidden: it waits for the line to exist.
+- **Two audit leftovers.** Enter in a caption only finished the edit, a
+  ponytail note waiting on CapCut's split at the caret; `splitCaption`
+  now splits where the next word is spoken, keeping each half's word
+  timings, and the editor moves to the second half. And the transcript
+  card dropped reversed and speed-curved clips without a word; it says
+  how many it leaves out and why.

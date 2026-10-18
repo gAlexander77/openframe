@@ -3,7 +3,7 @@ import { ScrollText } from "../icons";
 import * as ops from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { store, useEditor } from "../state/store";
-import { cancelTranscript, clipWords, deleteWords, speechClips, transcribeTrack, transcribing, useTranscriptVersion, wordFrame } from "../state/transcript";
+import { cancelTranscript, clipWords, deleteWords, skippedClips, speechClips, transcribeTrack, transcribing, useTranscriptVersion, wordFrame } from "../state/transcript";
 
 /** Whether the selection covers part of a word's own text: touching its
  * edge (a drag that stops at the next word) does not count. */
@@ -25,6 +25,7 @@ export function TranscriptCard() {
   const sel = selection.length ? ops.findClip(project, selection[0]) : null;
   const track = sel && (sel.clip.type === "video" || sel.clip.type === "audio") ? sel.track : ops.mainTrack(project);
   const clips = speechClips(project, track);
+  const skipped = skippedClips(project, track);
   const texts = clips.map((c) => [c, clipWords(project, c)] as const);
   const unheard = texts.filter(([, w]) => !w).length;
   const running = transcribing();
@@ -72,6 +73,11 @@ export function TranscriptCard() {
       <p className="lib-hint">
         {clips.length ? `${track.name}: select words and press Delete to cut them; click a word to go there.` : "Add a clip with speech to the timeline first."}
       </p>
+      {skipped > 0 && (
+        <p className="lib-hint" role="note">
+          {skipped === 1 ? "A clip" : `${skipped} clips`} with a speed curve or played in reverse {skipped === 1 ? "is" : "are"} left out: their words would not line up with the picture.
+        </p>
+      )}
       {unheard > 0 &&
         (running ? (
           <button className="btn ghost" onClick={cancelTranscript}>
