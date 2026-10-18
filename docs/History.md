@@ -823,3 +823,11 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   Center Y (from the top) flips; the drive pins that by checking the lens
   changes pixels near the top and none near the bottom. Its first check
   read eight color bars as seven and sampled one bar both ways.
+- **Record the camera or the screen.** Tutorial makers record their
+  screen and themselves; CapCut has Record. Media > Record does both with
+  MediaRecorder, preferring MP4 (Chromium writes it since 126, so the take
+  seeks without a scan), and imports the take like a dropped file at the
+  playhead it started from. The voiceover recorder was not reused: its
+  worklet exists to place audio to the sample, and a video take has no
+  such need. The drive records the runner's fake camera and microphone;
+  the desktop app's permissions wait for a desktop check.

@@ -14,8 +14,9 @@ None.
 - **Desktop check of the 2026-10-16 features**: most of the CapCut parity
   pass was verified in the web build only. Text to speech, export and the
   MCP tools have since run in the desktop app (2026-10-17); still to check
-  there: the microphone permission (voiceover), WebGPU background removal
-  and installed fonts (Local Font Access in WebView2).
+  there: the microphone permission (voiceover), the camera and screen
+  capture permissions (Record), WebGPU background removal and installed
+  fonts (Local Font Access in WebView2).
 - **A packaged release** when the owner asks: installer, signing, release
   notes ([[Release preparation]]). The rename is done and the source is
   public ([[Renaming]]); CI checks every pull request.

@@ -341,8 +341,8 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Voiceover from a microphone | C P R V F | yes (see §5) | — | See §5. |
-| Screen recording | C V | no | P2 | `getDisplayMedia` + `MediaRecorder`; confirm WebView2 support. |
-| Webcam recording | C | no | P2 | Shares the voiceover recorder. |
+| Screen recording | C V | yes: Media > Record > Record screen (2026-10-17) | — | `getDisplayMedia` + `MediaRecorder` (MP4 in Chromium); WebView2's picker and permission not yet checked on the desktop. |
+| Webcam recording | C | yes: Media > Record > Record camera (2026-10-17) | — | Its own MediaRecorder path, not the voiceover's sample-exact worklet: the take is a file imported like a drop. |
 | Teleprompter while recording | R | no | P2 | — |
 
 ## 15. Keyboard and customization

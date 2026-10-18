@@ -19,7 +19,9 @@ import {
   Sticker,
   Type,
   Upload,
+  Video,
   WandSparkles,
+  X,
 } from "../icons";
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { formatBytes } from "../lib/export";
@@ -33,6 +35,7 @@ import { beginDrag, type DragPayload } from "../state/drag";
 import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { toast } from "../state/toast";
+import { cancelCapture, canRecordScreen, startCapture, stopCapture, useCapture } from "../state/capture";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import { EnginePreview } from "./EnginePreview";
@@ -180,6 +183,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <button className="btn import-btn" onClick={() => void pickAndImport()}>
           <Upload size={14} /> Import
         </button>
+        <RecordButton />
         <label className="lib-search">
           <Search size={14} />
           <input className="field" aria-label={kind === "audio" ? "Search audio" : "Search media"} placeholder={kind === "audio" ? "Search audio" : "Search media"} value={options.query} onChange={(e) => change({ query: e.target.value })} />
@@ -273,6 +277,59 @@ function HoverScrub({ asset }: { asset: Asset }) {
       <canvas ref={canvas} hidden={at === null} />
       {at !== null && <span className="hover-scrub-line" style={{ left: `${at * 100}%` }} />}
     </div>
+  );
+}
+
+/** CapCut's Record beside Import: the camera or the screen, a live pill
+ * with the elapsed time while it runs, and the take imported and placed
+ * at the playhead on Stop (state/capture.ts). */
+function RecordButton() {
+  const phase = useCapture();
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (phase.kind !== "recording") return;
+    const t = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(t);
+  }, [phase.kind]);
+  if (phase.kind === "recording")
+    return (
+      <span className="rec-live" role="status">
+        <span className="rec-dot" aria-hidden="true" />
+        <span className="num">{formatDuration((performance.now() - phase.since) / 1000)}</span>
+        <button className="btn" onClick={() => void stopCapture()}>Stop</button>
+        <button className="icon-btn small" aria-label="Discard recording" data-tip="Discard" onClick={cancelCapture}>
+          <X size={13} />
+        </button>
+      </span>
+    );
+  return (
+    <>
+      <button
+        className="btn"
+        disabled={phase.kind !== "idle"}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenu({
+            x: r.left,
+            y: r.bottom + 4,
+            items: [
+              { label: "Record camera", onSelect: () => void startCapture("camera") },
+              { label: "Record screen", disabled: !canRecordScreen(), onSelect: () => void startCapture("screen") },
+            ],
+          });
+        }}
+      >
+        <Video size={14} /> {phase.kind === "saving" ? "Saving…" : "Record"}
+      </button>
+      {menu && (
+        <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
+          <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
+        </div>
+      )}
+    </>
   );
 }
 

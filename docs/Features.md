@@ -45,6 +45,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   list. Usage counts select all referencing clips and seek the earliest.
   Counts follow edits/Undo, including references on inactive tracks.
 
+- **Record** from the camera or the screen (CapCut's Record; Media >
+  Record, beside Import): a live pill with the elapsed time, Stop or
+  Discard; the take (MP4 where the webview can record it, else WebM) is
+  imported and placed at the playhead it started from. Checked in the
+  web build with the browser's fake camera; the desktop app's camera and
+  screen permissions are not checked yet.
 - **Remove media** (Premiere's Clear and Remove Unused): right-click a
   media card for Add to timeline, Preview, Favorite and Remove from
   project; a file the timeline uses offers to take its clips with it.
