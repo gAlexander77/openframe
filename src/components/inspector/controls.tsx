@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Diamond, RotateCw } from "../../icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Id } from "../../lib/project/types";
@@ -200,8 +200,20 @@ export function Toggle(props: { on: boolean; onChange: (v: boolean) => void; lab
   );
 }
 
+/** The platform's screen color picker (Chromium and WebView2 have it). */
+type EyeDropperApi = new () => { open(): Promise<{ sRGBHex: string }> };
+
 export function ColorInput(props: { value: string; onChange: (v: string) => void; label: string }) {
   const hex = props.value.slice(0, 7);
+  // Read at render, not import: a page can gain it (tests stub it).
+  const Dropper = (globalThis as { EyeDropper?: EyeDropperApi }).EyeDropper;
+  const pick = async () => {
+    try {
+      props.onChange((await new Dropper!().open()).sRGBHex);
+    } catch {
+      // Escape cancels the pick; nothing to do.
+    }
+  };
   return (
     <span className="color-input">
       <input type="color" value={/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#ffffff"} onChange={(e) => props.onChange(e.target.value)} aria-label={props.label} />
@@ -213,6 +225,11 @@ export function ColorInput(props: { value: string; onChange: (v: string) => void
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         aria-label={`${props.label} hex`}
       />
+      {Dropper && (
+        <button className="icon-btn small" aria-label={`Pick ${props.label.toLowerCase()} from the screen`} data-tip="Pick a color from anywhere on the screen, the viewer included" onClick={() => void pick()}>
+          <Pipette size={13} />
+        </button>
+      )}
     </span>
   );
 }

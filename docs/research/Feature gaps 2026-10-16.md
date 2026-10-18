@@ -245,6 +245,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 | Basic, HSL, curves, wheels, LUT, scopes | C P R V F | yes | — | — |
 | Auto adjust / auto balance | C P R F | yes: Adjust > Auto adjust | — | Read the scopes' downscaled frame (ADR-022), then set `adjust.exposure`, `temperature` and `tint` from percentiles and gray-world. A pure function in `src/lib/grade.ts` with a test. |
 | Match color to a reference clip | C P R F | no | P2 | Final Cut 12.3 added Match Color. Histogram match on the same readback. |
+| Eyedropper for color fields (chroma key, text, background) | C P | yes: a pipette on every color field, via the EyeDropper API (2026-10-17) | — | It samples the screen, so a keyed chroma color is picked before keying. Firefox and Safari lack the API and show no pipette. |
 | Skin-tone protection | C | no | P2 | — |
 | Mask that limits the grade | C P R | no | P2 | Reuse the mask shader on the adjust pass. |
 | Hue vs. saturation curves, HSL qualifier | P R | partial: 8-band HSL | P2 | — |

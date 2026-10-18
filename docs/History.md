@@ -749,3 +749,8 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   takes one of the app's rates now. Add track stays agent-only on purpose:
   the timeline tidies empty tracks away, as CapCut does, so a button would
   add a track that vanished.
+- **A pipette on every color field.** The native color dialog on Windows
+  has no screen picker, so matching a title to the footage meant guessing
+  hex values. WebView2 has the EyeDropper API; each color field offers it
+  where it exists. Headless browsers have no screen to sample, so the
+  drive stands in a picker with a known answer.

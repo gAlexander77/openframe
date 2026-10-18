@@ -289,6 +289,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Uniform scale** switch under Transform, as in CapCut: off splits Scale
   into Scale X and Scale Y (keys copied, so nothing jumps); on joins them.
   Corner handles keep a stretched picture's proportions.
+- Every color field has a **pipette** where the platform has the
+  EyeDropper API (WebView2, Chromium): pick a color from anywhere on the
+  screen, the viewer included (a text color from the footage, a chroma
+  key's green before keying).
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
 - **Several clips at once** (Premiere 25's Properties panel): with more
