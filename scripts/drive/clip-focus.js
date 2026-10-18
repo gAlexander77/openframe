@@ -22,6 +22,9 @@ async (page) => {
   });
   const focused = () => page.evaluate(() => document.activeElement?.dataset?.clip ?? null);
   const selected = () => page.evaluate(() => window.videoEditor.state().selection.join());
+  // Focus follows a frame later (focusClip waits for the clip to render),
+  // so each check waits for it rather than racing it.
+  const settle = (id) => page.waitForFunction((id) => document.activeElement?.dataset?.clip === id, id, { timeout: 1000 }).catch(() => {});
   const details = {};
 
   // A click selects without focusing; Right then steps a frame.
@@ -38,12 +41,16 @@ async (page) => {
   details.ring = { ok: await page.evaluate(() => getComputedStyle(document.activeElement).outlineStyle === "solid") };
 
   await page.keyboard.press("ArrowRight");
+  await settle(ids.b);
   details.right = { ok: (await focused()) === ids.b && (await selected()) === ids.b };
   await page.keyboard.press("ArrowUp");
+  await settle(ids.o);
   details.up = { ok: (await focused()) === ids.o && (await selected()) === ids.o };
   await page.keyboard.press("ArrowDown");
+  await settle(ids.b);
   details.down = { ok: (await focused()) === ids.b };
   await page.keyboard.press("ArrowLeft");
+  await settle(ids.a);
   details.left = { ok: (await focused()) === ids.a };
   const label = await page.evaluate(() => document.activeElement.getAttribute("aria-label"));
   details.label = { ok: /selected/.test(label ?? ""), label };

@@ -803,3 +803,12 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   (Premiere's audio handles). The strip is 14 px for 48 dB, so the first
   drive's 5 px drag took 17 dB off; the line now moves at a quarter of
   the pointer there, and 5 px is 4 dB.
+- **A full run, from a snapshot.** All 82 web drives ran against a
+  detached copy of the branch on its own server, so editing could go on
+  meanwhile (a drive's page reloads if `src/` changes under it). 80
+  passed. `project-copy` looked up the Save a copy field by the name
+  "Project name", which the inspector's Name field now also has (the
+  sweep had found it unnamed); the drive asks the dialog now.
+  `clip-focus` checked focus straight after an arrow key, but focus moves
+  in the next animation frame (27 to 40 ms headless) and the extra
+  inspector work this round lost the race; it waits for focus now.

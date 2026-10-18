@@ -18,7 +18,7 @@ async page => {
     await page.getByRole("dialog", { name: "Save a copy", exact: true }).waitFor();
   };
   await openDialog();
-  await page.getByRole("textbox", { name: "Project name", exact: true }).fill("__QA_20261016_copy_snapshot");
+  await page.getByRole("dialog").getByRole("textbox", { name: "Project name", exact: true }).fill("__QA_20261016_copy_snapshot");
   await page.getByRole("checkbox", { name: "Open the copy after saving" }).uncheck();
   await page.screenshot({ path: "scratch/project-copy-desktop.png", animations: "disabled" });
   await page.getByRole("button", { name: "Save copy", exact: true }).click();
@@ -31,7 +31,7 @@ async page => {
   }, original);
 
   await openDialog();
-  await page.getByRole("textbox", { name: "Project name", exact: true }).fill("__QA_20261016_copy_alternate");
+  await page.getByRole("dialog").getByRole("textbox", { name: "Project name", exact: true }).fill("__QA_20261016_copy_alternate");
   await page.evaluate(async () => {
     const { platform } = await import("/src/platform/index.ts");
     const save = platform.saveProject;
@@ -43,7 +43,7 @@ async page => {
   });
   await page.getByRole("button", { name: "Save copy", exact: true }).click();
   await page.getByRole("alert").filter({ hasText: "Injected copy write failure" }).waitFor();
-  details.failedCopyKeepsOriginal = { ok: await page.evaluate((id) => window.videoEditor.project().id === id, original.id) && await page.getByRole("textbox", { name: "Project name", exact: true }).inputValue() === "__QA_20261016_copy_alternate" };
+  details.failedCopyKeepsOriginal = { ok: await page.evaluate((id) => window.videoEditor.project().id === id, original.id) && await page.getByRole("dialog").getByRole("textbox", { name: "Project name", exact: true }).inputValue() === "__QA_20261016_copy_alternate" };
   await page.evaluate(() => { window.__copyFail = false; });
   await page.getByRole("button", { name: "Save copy", exact: true }).click();
   await page.getByRole("dialog", { name: "Save a copy", exact: true }).waitFor({ state: "detached" });
@@ -55,7 +55,7 @@ async page => {
     return { ok: JSON.stringify(saved.tracks) === JSON.stringify(source.tracks) };
   }, original);
   await openDialog();
-  await page.getByRole("textbox", { name: "Project name", exact: true }).fill(" ");
+  await page.getByRole("dialog").getByRole("textbox", { name: "Project name", exact: true }).fill(" ");
   details.blankNameDisabled = { ok: await page.getByRole("button", { name: "Save copy", exact: true }).isDisabled() };
   await page.setViewportSize({ width: 1100, height: 680 });
   details.dialogFits = { ok: await page.locator(".editor-dialog").evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().bottom <= innerHeight) };
