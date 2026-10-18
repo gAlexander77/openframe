@@ -81,7 +81,7 @@ Guides are in `src/components/ViewerGuides.tsx`.
 | Edge handles that stretch one axis | P R F V | partial: Scale X/Y exists (`d94ef4f`); handles are corners only | P2 | Add side handles that write `transform.scale` or `transform.scaleY` alone. |
 | Crop on the canvas | C P R V F | yes (`CropOverlay.tsx`, `state/cropEdit.ts`) | — | Shipped `e09a3f7` ([[ADR-048 Crop is cut from the source and edited on a copy]]); flips fixed in `8cd42ae`. |
 | Mask handles on the canvas | C P R V F | yes (`MaskOverlay.tsx`, `lib/mask.ts`) | — | Shipped `d89987f`: move, size, rigid rotate, feather arrow, corner radius; mask keyframes now play (`eb0f6f7`). |
-| Motion path for animated position | P R F | no | P2 | Draw `transform.x/y` keyframes as a polyline with draggable points. Spatial beziers need a new keyframe field (an ADR). |
+| Motion path for animated position | P R F | partial: drawn, with key dots (2026-10-17); not draggable | P2 | Dragging the dots and spatial beziers remain; a bezier needs a new keyframe field (an ADR). |
 | Rulers, draggable guides, grid | P | partial: thirds and safe margins only | P2 | Guides stay session-only, like `viewerGuides`, and become snap targets. |
 | Safe zones for TikTok, Reels and Shorts | (Kapwing, Flixier) | yes: a viewer guide, snapping included (2026-10-17) | — | None of the five editors has it built in. No app publishes organic-post margins; the numbers are the largest of each side in the three apps' ad specs, gathered by third-party checkers (reap.video, visu.network, adkit.so, 2026), so treat them as conservative. |
 | Transparency checkerboard | P R F | no; `Project.background` fills behind every layer | P2 | Only useful once alpha export exists (§12). |

@@ -853,3 +853,8 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   that already held the clip, which is exactly how one side of a selected
   pair is taken. The drive's first clicks landed on the selected sound
   clip's volume line, which takes the pointer in the clip's middle.
+- **Motion path.** Tracking and Auto reframe write position keys that
+  were only visible as diamonds in the keyframe panel. A selected picture
+  with position keys now shows Premiere's dashed motion path and key dots
+  on the viewer. Its drive learned that a level line has a zero-height
+  box, which Playwright calls hidden: it waits for the line to exist.

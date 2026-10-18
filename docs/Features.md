@@ -241,6 +241,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
   framing; `frame_clips`): fit shows the whole picture, fill covers the
   canvas and crops the overflow, stretch covers it exactly; each centers.
+- **Motion path** (Premiere's): a selected picture whose position is
+  keyframed shows the dashed line its center travels, with a dot at each
+  position key, so a tracked or reframed path reads at a glance.
 - **Flip** buttons under Transform (horizontal and vertical; `set_flip`),
   and **arrow keys** on the viewer after clicking it nudge the selected
   pictures 1 px (Shift: 10 px); a held key is one undo step, and the

@@ -1,8 +1,8 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { layerBox, otherBoxes, SNAP, snapBox, snapLines, tidy, type Box } from "../lib/align";
 import { paramAt } from "../lib/keyframes";
 import { findClip, setParam } from "../lib/project/ops";
-import type { VisualClip } from "../lib/project/types";
+import type { Project, VisualClip } from "../lib/project/types";
 import { anchorShift, layerAt } from "../lib/render/plan";
 import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
@@ -146,6 +146,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
     <div className="tf-layer" ref={frameRef} onPointerMove={onMove} onPointerUp={end} onPointerCancel={end}>
       {guides.x !== undefined && <div className="tf-guide tf-guide-v" style={{ left: guides.x * k }} />}
       {(anchor.ax || anchor.ay) && <div className="tf-anchor" style={{ left: px, top: py }} aria-hidden />}
+      <MotionPath project={project} clip={c} k={k} />
       {guides.y !== undefined && <div className="tf-guide tf-guide-h" style={{ top: guides.y * k }} />}
       <div
         className="tf-box"
@@ -171,5 +172,38 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
         />
       </div>
     </div>
+  );
+}
+
+/** Premiere's motion path: where an animated picture's center travels
+ * over the clip, with a dot at each position keyframe, so a tracked or
+ * reframed path can be seen at a glance. Drawn only: the keys are edited
+ * in the keyframe panel. */
+function MotionPath({ project, clip, k }: { project: Project; clip: VisualClip; k: number }) {
+  const path = useMemo(() => {
+    const keyed = [...(clip.keyframes?.["transform.x"] ?? []), ...(clip.keyframes?.["transform.y"] ?? [])];
+    if (!keyed.length) return null;
+    const at = (f: number) => {
+      const l = layerAt(project, clip, clip.start + f);
+      return l ? { x: (0.5 + l.x) * project.width, y: (0.5 + l.y) * project.height } : null;
+    };
+    // ponytail: at most 240 samples a path, plenty for a polyline.
+    const step = Math.max(1, Math.round(clip.duration / 240));
+    const line: { x: number; y: number }[] = [];
+    for (let f = 0; f < clip.duration; f += step) {
+      const q = at(f);
+      if (q) line.push(q);
+    }
+    const dots = [...new Set(keyed.map((x) => x.f))].flatMap((f) => (f >= 0 && f < clip.duration ? [at(f)!] : [])).filter(Boolean);
+    return { line, dots };
+  }, [project, clip]);
+  if (!path) return null;
+  return (
+    <svg className="motion-path" aria-hidden="true">
+      <polyline points={path.line.map((q) => `${(q.x * k).toFixed(1)},${(q.y * k).toFixed(1)}`).join(" ")} />
+      {path.dots.map((q, i) => (
+        <circle key={i} cx={q.x * k} cy={q.y * k} r={3} />
+      ))}
+    </svg>
   );
 }
