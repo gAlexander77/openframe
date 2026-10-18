@@ -46,3 +46,22 @@ export function layoutLines(lines: { at?: number; seconds: number }[], start = 0
     return { start: +s.toFixed(3), end: +end.toFixed(3) };
   });
 }
+
+/**
+ * A spoken line without the silence the voice model pads it with (about
+ * half a second before the first word): `pre` seconds kept before the first
+ * sound and `post` after the last, so a voiceover's reported times, its
+ * captions and the cuts made to them land on the words.
+ */
+export function trimSpeech(audio: Float32Array, rate: number, pre = 0.04, post = 0.15): Float32Array {
+  let peak = 0;
+  for (const x of audio) peak = Math.max(peak, Math.abs(x));
+  const floor = Math.max(peak * 0.02, 1e-4);
+  let first = audio.findIndex((x) => Math.abs(x) > floor);
+  if (first < 0) return audio;
+  let last = audio.length - 1;
+  while (last > first && Math.abs(audio[last]) <= floor) last--;
+  first = Math.max(0, first - Math.round(pre * rate));
+  last = Math.min(audio.length, last + 1 + Math.round(post * rate));
+  return audio.subarray(first, last);
+}

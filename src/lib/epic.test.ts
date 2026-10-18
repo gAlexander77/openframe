@@ -82,7 +82,7 @@ const hitsTracks = (p: Project) => p.tracks.filter((t) => t.name.startsWith("Hit
 describe("add_beat_hits", () => {
   it("puts hits on the beats on one Hits track above the footage, peaking and easing out", () => {
     let p = runCommand(project(), "cut_to_beats", { media: [{ asset_id: "long" }, { asset_id: "long" }, { asset_id: "long" }] });
-    p = runCommand(p, "add_beat_hits", { effects: ["zoom", "rgb_split"], every: 2, to: 3 });
+    p = runCommand(p, "add_beat_hits", { effects: ["zoom", "rgbSplit"], every: 2, to: 3 });
     const b = beatFrames(p);
     const [hits] = hitsTracks(p);
     expect(hitsTracks(p)).toHaveLength(1);

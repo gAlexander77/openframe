@@ -179,9 +179,9 @@ export const HIT_KINDS = {
   flash: { label: "Flash", seconds: 0.2 },
   zoom: { label: "Zoom punch", seconds: 0.25 },
   shake: { label: "Shake", seconds: 0.35 },
-  rgb_split: { label: "RGB split", seconds: 0.25 },
+  rgbSplit: { label: "RGB split", seconds: 0.25 },
   glow: { label: "Glow", seconds: 0.35 },
-  zoom_blur: { label: "Zoom blur", seconds: 0.2 },
+  zoomBlur: { label: "Zoom blur", seconds: 0.2 },
 } as const;
 
 export type HitKind = keyof typeof HIT_KINDS;
@@ -221,9 +221,9 @@ function hitLayer(kinds: HitKind[], start: number, len: number, k: number): Adju
       decay("adjust.whites", -100 * k);
     } else if (kind === "zoom") fx("zoom", {}, "amount", 25 * k);
     else if (kind === "shake") fx("shake", { speed: 70 }, "amount", 80 * k);
-    else if (kind === "rgb_split") fx("rgbSplit", { angle: 0 }, "amount", 60 * k);
+    else if (kind === "rgbSplit") fx("rgbSplit", { angle: 0 }, "amount", 60 * k);
     else if (kind === "glow") fx("glow", { threshold: 50 }, "amount", 80 * k);
-    else if (kind === "zoom_blur") fx("zoomBlur", {}, "amount", 60 * k);
+    else if (kind === "zoomBlur") fx("zoomBlur", {}, "amount", 60 * k);
   }
   return { ...clip, name: `Hit: ${kinds.map((x) => HIT_KINDS[x].label).join(" + ")}`, effects, keyframes: keys };
 }

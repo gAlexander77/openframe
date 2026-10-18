@@ -1078,3 +1078,38 @@ and delivery) while the MCP layer was rebuilt here.
   - *Agents cannot space letters.* The text style schema has no
     `letterSpacing` (nor `lineHeight`), though the document does; the
     lower-third drive wanted tracked capitals. Left for the text work.
+- **A blind test of the tools.** A fresh agent given only the MCP
+  connection, through `scripts/mcp-web.mjs`, made a 15 s ad and a 15 s epic
+  edit from the fixtures: 180 calls, both passing `check_project`, rated 5
+  and 6 out of 10 (synthetic footage, and a mix it could not measure; the
+  merged toolkits since add `measure_loudness`, ad end cards and a brand
+  kit). Its findings, fixed:
+  - `set_filter`, and `set_animation` on a picture, answered
+    `unchanged` though they worked. `describe_project` showed no filter,
+    and a picture has no `animIn` key until one is set. It shows both now.
+  - App tools skipped argument checks: `preview_frame {time}` drew a
+    black frame instead of an error. They are validated like commands
+    now, and an unknown argument names the known ones.
+  - A clip at 6.9 s for 2.05 s and the next at 8.95 s left one black
+    frame between them, because each length was rounded on its own.
+    Ends are rounded from start + duration now.
+  - `batch` steps can name clips earlier steps added ("$1"), so a title
+    and its animations are one call. An app tool in a batch says it runs
+    on its own.
+  - `add_voiceover` lines start on their words: the voice model pads
+    about 0.5 s of silence, which put every reported time and caption
+    early. A line's `caption` can differ from its words ("20% off").
+  - Also fixed:
+    - `add_sound_effect` takes a volume;
+    - ducking ignores sound effects (12 "voices" were whooshes);
+    - the keyframed-loudness refusal says what to do;
+    - `preview_media` shows photos;
+    - marker edits answer with the markers that changed, not all of them;
+    - `slip_clip`;
+    - epic hits are named like `add_effect`'s (rgbSplit, zoomBlur);
+    - the ad playbook puts the grade's adjustment clip down before
+      titles;
+    - the epic playbook says how to make a drop in a flat loop;
+    - the design rules stopped citing a file a client cannot read.
+  - Not done: undoing a voiceover leaves its speech files in the library;
+    beat markers outlive the music `fit_music` trims.

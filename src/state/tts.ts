@@ -9,7 +9,7 @@ import { createTrack } from "../lib/project/defaults";
 import { addTrack, findClip } from "../lib/project/ops";
 import type { Id, Project, TextStyle } from "../lib/project/types";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
-import { DEFAULT_VOICE, layoutLines, speechFileName, speechText } from "../lib/tts";
+import { DEFAULT_VOICE, layoutLines, speechFileName, speechText, trimSpeech } from "../lib/tts";
 import { encodeWav } from "../lib/wav";
 import { edit } from "./actions";
 import { adoptAndImport } from "./media";
@@ -72,6 +72,8 @@ export interface VoiceLine {
   text: string;
   /** Timeline seconds; default right after the line before. */
   at?: number;
+  /** What the caption shows, when it differs from the words spoken. */
+  caption?: string;
 }
 
 export interface VoiceoverOptions {
@@ -112,7 +114,8 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     for (const [i, text] of texts.entries()) {
       // ponytail: lines are spoken one by one in the one speech worker; a long
       // script on a CPU can pass the desktop bridge's 300 s for one call.
-      const { audio, rate } = await speak(text, opts.voice ?? DEFAULT_VOICE, opts.speed ?? 1, undefined, signal);
+      const spoken = await speak(text, opts.voice ?? DEFAULT_VOICE, opts.speed ?? 1, undefined, signal);
+      const rate = spoken.rate, audio = trimSpeech(spoken.audio, rate);
       signal.throwIfAborted();
       seconds.push(audio.length / rate);
       files.push(new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" }));
@@ -137,7 +140,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       if (opts.captions !== false) {
         const before = ids(q);
         q = runCommand(q, "add_captions", {
-          captions: lines.map((l, i) => ({ text: l.text, start: times[i].start, end: times[i].end })),
+          captions: lines.map((l, i) => ({ text: l.caption ?? l.text, start: times[i].start, end: times[i].end })),
           ...(opts.captionStyle ? { style: opts.captionStyle } : {}),
           ...(opts.captionY !== undefined ? { y: opts.captionY } : {}),
         });

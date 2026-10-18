@@ -113,7 +113,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     for (const [k, v] of Object.entries(o)) {
       const sub = schema.properties?.[k];
       if (!sub) {
-        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument`);
+        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument (known: ${Object.keys(schema.properties ?? {}).join(", ")})`);
         continue;
       }
       if (v !== undefined) errs.push(...validate(v, sub, `${path}.${k}`));
@@ -141,6 +141,9 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
 // ---- helpers for runners ---------------------------------------------------------
 
 const f = (p: Project, seconds: unknown) => secondsToFrames(Number(seconds), p.fps);
+/** Frames from `start` to `start + duration` seconds, both rounded to frames, so
+ * clips given back to back in seconds meet exactly. At least one frame. */
+const span = (p: Project, start: unknown, duration: unknown) => Math.max(1, f(p, Number(start ?? 0) + Number(duration)) - f(p, start ?? 0));
 
 function clipOrThrow(p: Project, id: unknown) {
   const loc = ops.findClip(p, String(id));
@@ -345,7 +348,7 @@ export const COMMANDS: Command[] = [
     description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track).",
     input: S.obj(
       {
-        asset_id: S.str("Asset id from list_assets"),
+        asset_id: S.str("Asset id, from import_media or describe_project"),
         start: S.num("Timeline position in seconds", { minimum: 0 }),
         duration: S.num("Length in seconds; defaults to the whole source (5 s for images)", { minimum: 0.001 }),
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
@@ -360,7 +363,7 @@ export const COMMANDS: Command[] = [
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
-      const wanted = a.duration !== undefined ? Math.max(1, f(p, a.duration)) : clip.duration;
+      const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite");
@@ -384,7 +387,7 @@ export const COMMANDS: Command[] = [
     ),
     run: (p, a) => {
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
@@ -479,7 +482,7 @@ export const COMMANDS: Command[] = [
       if (logo && logo !== "auto" && logo !== "none" && !brandOf(p).logos?.[logo] && !brandOf(p).logos?.main) throw new CommandError("the brand kit has no logo: import one and set_brand logo first, or pass logo none");
       return addAdElement(p, a.element as AdElement, {
         start: f(p, a.start),
-        ...(a.duration !== undefined ? { duration: Math.max(1, f(p, a.duration)) } : {}),
+        ...(a.duration !== undefined ? { duration: span(p, a.start, a.duration) } : {}),
         headline: a.headline as string | undefined,
         subline: a.subline as string | undefined,
         cta: a.cta as string | undefined,
@@ -497,7 +500,7 @@ export const COMMANDS: Command[] = [
     description: "Add a solid color layer (backgrounds, flashes, title cards).",
     input: S.obj({ color: S.str("CSS color"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
     run: (p, a) => {
-      const clip = createColorClip(String(a.color), f(p, a.start), Math.max(1, f(p, a.duration)));
+      const clip = createColorClip(String(a.color), f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -507,7 +510,7 @@ export const COMMANDS: Command[] = [
     description: "Add an adjustment layer: its color settings, filter and effects apply to every layer below it for its duration.",
     input: S.obj({ start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["start", "duration"]),
     run: (p, a) => {
-      const clip = createAdjustmentClip(f(p, a.start), Math.max(1, f(p, a.duration)));
+      const clip = createAdjustmentClip(f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -888,6 +891,16 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "slip_clip",
+    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.",
+    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by: positive shows later material") }, ["clip_id", "by"]),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!("in" in clip)) throw new CommandError(`${clip.type} clips have no source to slip`);
+      return ops.slipClip(p, clip.id, f(p, a.by));
+    },
+  },
+  {
     name: "duplicate_clips",
     description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.",
     input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }) }, ["clip_ids"]),
@@ -1060,7 +1073,7 @@ export const COMMANDS: Command[] = [
         ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
       };
       if (shape.fill === false && !shape.stroke) throw new CommandError("an outline-only shape needs stroke_width");
-      const base = createColorClip(color, f(p, a.start), Math.max(1, f(p, a.duration)));
+      const base = createColorClip(color, f(p, a.start), span(p, a.start, a.duration));
       const clip = {
         ...base,
         name: shapeLabel(shape),
@@ -1847,7 +1860,7 @@ export const COMMANDS: Command[] = [
       const num = (v: unknown) => (v === undefined ? undefined : Number(v));
       return addStickerClip(p, asset, {
         start: f(p, a.start),
-        duration: a.duration === undefined ? undefined : Math.max(1, f(p, a.duration)),
+        duration: a.duration === undefined ? undefined : span(p, a.start, a.duration),
         motion: a.motion === undefined ? undefined : String(a.motion),
         x: num(a.x),
         y: num(a.y),
@@ -2028,7 +2041,7 @@ export const COMMANDS: Command[] = [
   {
     name: "batch",
     description:
-      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes.",
+      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name a clip an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.",
     input: S.obj(
       {
         commands: {
@@ -2039,16 +2052,33 @@ export const COMMANDS: Command[] = [
       },
       ["commands"],
     ),
-    run: (p, a) =>
-      (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
+    run: (p, a) => {
+      const added: Id[][] = [];
+      const ids = (q: Project) => q.tracks.flatMap((t) => t.clips.map((c) => c.id));
+      // "$2" / "$2.2": the first / second clip step 2 added.
+      const ref = (v: unknown): unknown => {
+        if (Array.isArray(v)) return v.map(ref);
+        if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, ref(x)]));
+        const m = typeof v === "string" ? /^\$(\d+)(?:\.(\d+))?$/.exec(v) : null;
+        if (!m) return v;
+        const id = added[Number(m[1]) - 1]?.[Number(m[2] ?? 1) - 1];
+        if (!id) throw new CommandError(`${v}: step ${m[1]} ${Number(m[1]) > added.length ? "has not run yet" : `added no clip number ${m[2] ?? 1}`}`);
+        return id;
+      };
+      return (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
         // add_sticker draws its picture outside the registry first.
         if (step.command === "batch" || step.command === "add_sticker") throw new CommandError(`step ${i + 1}: ${step.command} cannot run inside a batch`);
+        if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
-          return runCommand(q, step.command, step.args ?? {});
+          const before = new Set(ids(q));
+          const next = runCommand(q, step.command, ref(step.args ?? {}));
+          added.push(ids(next).filter((id) => !before.has(id)));
+          return next;
         } catch (e) {
           throw new CommandError(`step ${i + 1} (${step.command}): ${e instanceof Error ? e.message : e}`);
         }
-      }, p),
+      }, p);
+    },
   },
 ];
 
@@ -2188,13 +2218,19 @@ export function describeProject(p: Project) {
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
-        ...("animIn" in c && (c.animIn || c.animOut || c.animLoop)
-          ? { animation: { ...(c.animIn ? { in: c.animIn.type } : {}), ...(c.animOut ? { out: c.animOut.type } : {}), ...(c.animLoop ? { loop: c.animLoop.type } : {}) } }
-          : {}),
+        ...("filter" in c && c.filter ? { filter: c.filter.type, ...(c.filter.intensity !== 1 ? { filter_intensity: c.filter.intensity } : {}) } : {}),
+        ...animSummary(c),
         ...(c.keyframes && Object.values(c.keyframes).some((k) => k.length) ? { keyframed: Object.keys(c.keyframes).filter((k) => c.keyframes![k].length) } : {}),
       })),
     };
   }
+}
+
+/** A clip's animations by slot, for describeProject: pictures carry no
+ * animIn key until one is set, so this reads all three slots on any clip. */
+function animSummary(c: Clip) {
+  const { animIn, animOut, animLoop } = c as { animIn?: { type: string }; animOut?: { type: string }; animLoop?: { type: string } };
+  return animIn || animOut || animLoop ? { animation: { ...(animIn ? { in: animIn.type } : {}), ...(animOut ? { out: animOut.type } : {}), ...(animLoop ? { loop: animLoop.type } : {}) } } : {};
 }
 
 /** Where a picture sits, when not centered at its fitted size, for

@@ -211,7 +211,12 @@ const mcpHost: McpHost = {
   mediaSheet: async (assetId, times, tileWidth, columns) => {
     const a = store.get().project.assets.find((x) => x.id === assetId);
     if (!a) throw new Error(`No asset ${assetId}; describe_project lists them`);
-    if (a.kind !== "video") throw new Error(`${a.name} is ${a.kind === "audio" ? "sound only" : "a still picture"}; preview_media shows video files`);
+    if (a.kind === "audio") throw new Error(`${a.name} is sound only; preview_media shows pictures and videos`);
+    // A still is one tile: the whole picture, as imported.
+    if (a.kind === "image") {
+      const bmp = await createImageBitmap(await platform.blobFor(a.src));
+      return tiles([{ src: bmp, label: `${bmp.width}x${bmp.height}`, w: bmp.width, h: bmp.height }], tileWidth, 1);
+    }
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },

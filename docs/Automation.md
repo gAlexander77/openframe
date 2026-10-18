@@ -66,7 +66,9 @@ up to 24 moments, each stamped with its time), `export_video`,
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time),
 `set_caption_look` (one of six caption looks for every caption),
-`check_project` (the design rules measured on the edit: title safe, the
+`slip_clip` (a later or earlier part of a shot's source, same place and
+length), `batch` steps that name clips earlier steps added (`"$1"`,
+`"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
 vertical apps' buttons, text size and reading time, caption speed, fonts,
 flashes over 3 a second, black gaps, music endings, an ad's end card, an
 epic edit's cuts on the beat; each finding names the fixing tool),
@@ -153,7 +155,7 @@ Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
   every cut on a beat, bar or phrase.
 - `add_beat_hits` `{effect | effects, times? | at_cuts? | marker_label?,
   every?, from?, to?, duration?, intensity?}`: flash, zoom, shake,
-  rgb_split, glow or zoom_blur hits on a Hits track; at most three flashes
+  rgbSplit, glow or zoomBlur hits on a Hits track; at most three flashes
   a second.
 - `add_cinematic_bars` `{ratio?, start?, end?, animate_in?, animate_out?}`:
   letterbox bars (2.39 by default) under the titles.

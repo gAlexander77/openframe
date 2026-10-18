@@ -62,7 +62,7 @@ async (page) => {
 
   // Hits, moves and the ramp.
   const barHits = await call("add_beat_hits", { effects: ["flash", "zoom"], marker_label: "Bar", from: 2, intensity: 0.7 });
-  const cutHits = await call("add_beat_hits", { effects: ["shake", "rgb_split"], at_cuts: true, from: fast - 0.01, to: shots[13].start, intensity: 0.6 });
+  const cutHits = await call("add_beat_hits", { effects: ["shake", "rgbSplit"], at_cuts: true, from: fast - 0.01, to: shots[13].start, intensity: 0.6 });
   await call("set_transition", { clip_id: shots[4].id, type: "whipLeft", duration: 0.3 });
   await call("set_transition", { clip_id: shots[13].id, type: "zoomPunch", duration: 0.3 });
   const ramp = await call("set_speed_ramp", { clip_id: hero.id });

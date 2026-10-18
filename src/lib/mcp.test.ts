@@ -196,7 +196,7 @@ describe("MCP edits answer with what changed", () => {
     const before = { name: "A", duration: 1, assets: [], tracks: [{ id: "t", clips: [] }], markers: [] };
     expect(describeChanges(before, before)).toEqual({ unchanged: true, duration: 1 });
     const after = { ...before, markers: [{ id: "m", at: 0.5 }], assets: [{ id: "x" }] };
-    expect(describeChanges(before, after)).toEqual({ duration: 1, markers: [{ id: "m", at: 0.5 }], added_assets: [{ id: "x" }] });
+    expect(describeChanges(before, after)).toEqual({ duration: 1, added_markers: [{ id: "m", at: 0.5 }], added_assets: [{ id: "x" }] });
     expect(describeChanges(before, { screen: "home" })).toEqual({ screen: "home" });
   });
 
@@ -265,5 +265,54 @@ describe("MCP ad tools", () => {
     expect(h.versionCalls).toEqual([{ versions: [{ ratio: "1:1", fit: "blur" }] }]);
     const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
     expect(none!.result).toMatchObject({ isError: true });
+  });
+});
+
+describe("what a blind test of the tools found", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+
+  it("checks app tools' arguments too, naming the ones it knows", async () => {
+    const r = await call(host(), "tools/call", { name: "preview_frame", arguments: { time: 0.7 } });
+    expect(r!.result).toMatchObject({ isError: true });
+    expect(text(r)).toBe("args.at is required; args.time is not a known argument (known: at, max_width)");
+  });
+
+  it("says what set_filter and a picture's set_animation changed", async () => {
+    const h = host();
+    h.project = { ...h.project, assets: [...h.project.assets, { id: "i", kind: "image", name: "p.jpg", src: "p.jpg", duration: 0, width: 600, height: 400, hasVideo: true, hasAudio: false }] };
+    const id = (await run(h, "add_media_clip", { asset_id: "i", start: 0, duration: 3 })).added_clips[0].id;
+    expect((await run(h, "set_filter", { clip_id: id, type: "noir", intensity: 0.6 })).changed_clips[0]).toMatchObject({ filter: "noir", filter_intensity: 0.6 });
+    expect((await run(h, "set_animation", { clip_id: id, slot: "out", type: "fade" })).changed_clips[0].animation).toEqual({ out: "fade" });
+  });
+
+  it("lets a batch step name the clips earlier steps added", async () => {
+    const h = host();
+    const r = await run(h, "batch", {
+      commands: [
+        { command: "add_text", args: { text: "SALE", start: 1, duration: 2 } },
+        { command: "set_animation", args: { clip_id: "$1", slot: "in", type: "pop" } },
+      ],
+    });
+    expect(r.added_clips[0]).toMatchObject({ text: "SALE", animation: { in: "pop" } });
+    const bad = await call(h, "tools/call", { name: "batch", arguments: { commands: [{ command: "add_sound_effect", args: { name: "pop" } }] } });
+    expect(text(bad)).toContain("add_sound_effect is not an editing command");
+    const early = await call(h, "tools/call", { name: "batch", arguments: { commands: [{ command: "set_animation", args: { clip_id: "$2", slot: "in", type: "pop" } }] } });
+    expect(text(early)).toContain("$2: step 2 has not run yet");
+  });
+
+  it("meets clips given back to back in seconds, frame for frame", async () => {
+    const h = host();
+    await run(h, "add_color_clip", { color: "#000", start: 6.9, duration: 2.05 });
+    const next = await run(h, "add_color_clip", { color: "#fff", start: 8.95, duration: 1, track_id: h.project.tracks.find((t) => t.clips.length)!.id });
+    const [a, b] = h.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
+    expect(a.start + a.duration).toBe(b.start);
+    expect(next.added_clips[0].start).toBe(8.967);
+  });
+
+  it("slips a shot's source without moving it", async () => {
+    const h = host();
+    const id = (await run(h, "add_media_clip", { asset_id: "a1", start: 2, duration: 3, in: 1 })).added_clips[0].id;
+    const r = await run(h, "slip_clip", { clip_id: id, by: 1.5 });
+    expect(r.changed_clips.find((c: { id: string }) => c.id === id)).toMatchObject({ start: 2, end: 5, in: 2.5 });
   });
 });

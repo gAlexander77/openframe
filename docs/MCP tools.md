@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 138 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 139 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -33,7 +33,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Start here**: `help`, `describe_project`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
@@ -211,7 +211,7 @@ Place an imported asset (video, audio or image) on the timeline. Omit track_id t
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `asset_id` | string | yes | Asset id from list_assets |
+| `asset_id` | string | yes | Asset id, from import_media or describe_project |
 | `start` | number | yes | Timeline position in seconds (0..) |
 | `duration` | number |  | Length in seconds; defaults to the whole source (5 s for images) (0.001..) |
 | `in` | number |  | Seconds into the source where the clip begins (0..) |
@@ -306,6 +306,21 @@ Move a clip's start or end edge to a time. Limited by the source media and neigh
 | `edge` | "start" \| "end" | yes | Which edge |
 | `to` | number | yes | Seconds (0..) |
 | `ripple` | boolean |  | Shift later clips |
+
+### slip_clip
+
+Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip |
+| `by` | number | yes | Seconds of source to move by: positive shows later material |
+
+Example:
+
+```json
+{"name":"slip_clip","arguments":{"clip_id":"c_4","by":1.5}}
+```
 
 ### move_clip
 
@@ -477,7 +492,7 @@ Rename a compound; every compound clip that plays it shows the new name.
 
 ### batch
 
-Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes.
+Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name a clip an earlier step added: "$2" is the first clip step 2 added, "$2.2" its second (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -488,7 +503,7 @@ Run several commands in order as one edit (one undo step), all or nothing: set_a
 Example:
 
 ```json
-{"name":"batch","arguments":{"commands":[{"command":"set_animation","args":{"clip_id":"c_1","slot":"in","type":"rise","duration":0.5}},{"command":"set_animation","args":{"clip_id":"c_1","slot":"out","type":"fade","duration":0.3}}]}}
+{"name":"batch","arguments":{"commands":[{"command":"add_text","args":{"text":"SALE","start":1,"duration":2,"style":{"size":140,"bold":true}}},{"command":"set_animation","args":{"clip_id":"$1","slot":"in","type":"pop","duration":0.4}},{"command":"set_animation","args":{"clip_id":"$1","slot":"out","type":"fade","duration":0.3}}]}}
 ```
 
 ### undo
@@ -562,8 +577,8 @@ Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch),
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `effect` | "flash" \| "zoom" \| "shake" \| "rgb_split" \| "glow" \| "zoom_blur" |  | One hit |
-| `effects` | "flash" \| "zoom" \| "shake" \| "rgb_split" \| "glow" \| "zoom_blur"[] |  | Several hits on each beat, as one layer |
+| `effect` | "flash" \| "zoom" \| "shake" \| "rgbSplit" \| "glow" \| "zoomBlur" |  | One hit |
+| `effects` | "flash" \| "zoom" \| "shake" \| "rgbSplit" \| "glow" \| "zoomBlur"[] |  | Several hits on each beat, as one layer |
 | `times` | number[] |  | Timeline seconds of the hits |
 | `at_cuts` | boolean |  | Hit every cut of the main track instead |
 | `marker_label` | string |  | Hit the markers with this label (default Beat) |
@@ -1659,8 +1674,9 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `lines` | { text, at }[] | yes | The script, one sentence or two per line |
+| `lines` | { text, caption, at }[] | yes | The script, one sentence or two per line |
 | `lines[].text` | string | yes | Words to say (and show) |
+| `lines[].caption` | string |  | What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL) |
 | `lines[].at` | number |  | Timeline seconds; default right after the line before (0..) |
 | `voice` | string |  | Voice id, default af_heart |
 | `speed` | number |  | 1 is natural (0.5..2) |
@@ -1730,6 +1746,7 @@ Add a built-in sound effect, made on this computer: whoosh (Whoosh, 0.8 s), swis
 | `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect (list_catalog section sound_effects has their lengths) |
 | `start` | number |  | Timeline seconds the sound starts (0..) |
 | `end_at` | number |  | Timeline seconds the sound ends instead (start = end_at - its length) (0..) |
+| `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1 (0..4) |
 
 Example:
 
@@ -1923,11 +1940,11 @@ Look at the media and the result, check it against the rules, then export.
 
 ### preview_media
 
-Look inside an imported video before cutting it: a contact sheet of its own frames at source seconds (times), or `count` frames spread over the whole file (default 12). Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action).
+Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `asset_id` | string | yes | A video asset id from describe_project or import_media |
+| `asset_id` | string | yes | A video or picture asset id from describe_project or import_media |
 | `times` | number[] |  | Source seconds, up to 24 |
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
 | `columns` | integer |  | Default 4 (1..6) |

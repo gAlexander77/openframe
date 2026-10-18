@@ -18,6 +18,7 @@ import { applyTrack, centerRegion, trackPath } from "./tracking";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
 import { cutOutImage, makeMatte } from "../engine/cutout";
+import { SFX } from "../lib/sfx";
 import { BEATS_PER_BAR, detectBeats, musicStructure, type SectionLabel } from "../lib/analysis/beats";
 import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
@@ -208,7 +209,7 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
-  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
+  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove_keyframes path volume first";
   // ponytail: the cleaned sound is a new file of the source window; a
   // retimed clip would need the retimer's window instead.
   if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
@@ -667,9 +668,12 @@ function voicesUnder(clip: MediaClip): Target[] {
     .filter((c) => c.start < end && c.start + c.duration > clip.start)
     .flatMap((c) => {
       const asset = ops.getAsset(p, c.assetId);
-      return asset?.hasAudio ? [{ clip: c, asset }] : [];
+      return asset?.hasAudio && !SFX_FILES.has(asset.name) ? [{ clip: c, asset }] : [];
     });
 }
+
+/** The built-in sound effects' file names (state/sfx.ts names them by label). */
+const SFX_FILES = new Set(Object.values(SFX).map((s) => `${s.label}.wav`));
 
 /**
  * Dip a music clip under the speech of every other clip with sound that

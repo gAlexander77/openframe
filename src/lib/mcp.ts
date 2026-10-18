@@ -6,7 +6,7 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
-import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
+import { COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
 import { expandVersions, VERSION_FITS, VERSION_RATIOS, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
@@ -130,6 +130,8 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   const tracks = (d: Desc) => new Map(d.tracks!.map(({ clips: _, ...t }) => [t.id, t] as const));
   diff(clips(b), clips(a), "clips");
   diff(tracks(b), tracks(a), "tracks");
+  const marks = (d: Desc) => new Map(((d.markers ?? []) as { id: string }[]).map((m) => [m.id, m] as const));
+  diff(marks(b), marks(a), "markers");
   const order = (d: Desc) => d.tracks!.map((t) => t.id);
   const kept = (x: Desc, y: Desc) => order(x).filter((id) => order(y).includes(id));
   if (!same(kept(b, a), kept(a, b))) out.track_order = order(a);
@@ -138,7 +140,7 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   if ([...aa.keys()].some((id) => !ba.has(id))) out.added_assets = [...aa.values()].filter((x) => !ba.has(x.id));
   if ([...ba.keys()].some((id) => !aa.has(id))) out.removed_assets = [...ba.keys()].filter((id) => !aa.has(id));
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    if (!["duration", "tracks", "assets"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
+    if (!["duration", "tracks", "assets", "markers"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
   }
   return Object.keys(out).length === 1 ? { unchanged: true, duration: a.duration } : out;
 }
@@ -278,10 +280,10 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "preview_media",
-    description: "Look inside an imported video before cutting it: a contact sheet of its own frames at source seconds (times), or `count` frames spread over the whole file (default 12). Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action).",
+    description: "Look inside imported media before using it: a video's own frames at source seconds (times), or `count` frames spread over the whole file (default 12), as one contact sheet; a still picture whole, labeled with its size. Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action) and to see what a photo shows before framing it.",
     inputSchema: obj(
       {
-        asset_id: { type: "string", description: "A video asset id from describe_project or import_media" },
+        asset_id: { type: "string", description: "A video or picture asset id from describe_project or import_media" },
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
         count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
         columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
@@ -290,11 +292,11 @@ export const APP_TOOLS: AppTool[] = [
       ["asset_id"],
     ),
     call: async (h, a) => {
-      const d = h.describe() as { assets: { id: string; duration: number }[] };
+      const d = h.describe() as { assets: { id: string; kind: string; duration: number }[] };
       const asset = d.assets.find((x) => x.id === a.asset_id);
       if (!asset) throw new Error(`No asset ${a.asset_id}; describe_project lists them`);
       const n = Number(a.count ?? 12);
-      const times = a.times ? (a.times as number[]).slice(0, 24) : Array.from({ length: n }, (_, i) => +((asset.duration * (i + 0.5)) / n).toFixed(2));
+      const times = asset.kind === "image" ? [0] : a.times ? (a.times as number[]).slice(0, 24) : Array.from({ length: n }, (_, i) => +((asset.duration * (i + 0.5)) / n).toFixed(2));
       return { content: [{ type: "image", data: await h.mediaSheet(String(a.asset_id), times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
     },
   },
@@ -450,10 +452,15 @@ APP_TOOLS.push(
         name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
         start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
         end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
+        volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1" },
       },
       ["name"],
     ),
-    call: async (h, a) => json(await h.ai("addSoundEffect", String(a.name), given({ at: a.start, endAt: a.end_at }))),
+    call: async (h, a) => {
+      const r = (await h.ai("addSoundEffect", String(a.name), given({ at: a.start, endAt: a.end_at }))) as { clipId: string };
+      if (a.volume !== undefined && a.volume !== 1) h.exec("set_param", { clip_ids: [r.clipId], path: "volume", value: a.volume });
+      return json(r);
+    },
   },
   {
     name: "auto_reframe",
@@ -502,7 +509,7 @@ APP_TOOLS.push(
       "Narrate a script: every line is spoken on this computer (Kokoro) and placed one after another at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step. A line's at pins it to a time. Answers each line's start, end and clip ids, so the footage can be cut to the voice. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB); a line takes a second or two.",
     inputSchema: obj(
       {
-        lines: { type: "array", description: "The script, one sentence or two per line", items: obj({ text: { type: "string", description: "Words to say (and show)" }, at: { type: "number", minimum: 0, description: "Timeline seconds; default right after the line before" } }, ["text"]) },
+        lines: { type: "array", description: "The script, one sentence or two per line", items: obj({ text: { type: "string", description: "Words to say (and show)" }, caption: { type: "string", description: "What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL)" }, at: { type: "number", minimum: 0, description: "Timeline seconds; default right after the line before" } }, ["text"]) },
         voice: { type: "string", description: "Voice id, default af_heart" },
         speed: { type: "number", minimum: 0.5, maximum: 2, description: "1 is natural" },
         start: { type: "number", minimum: 0, description: "Seconds the first line starts, default 0" },
@@ -515,7 +522,7 @@ APP_TOOLS.push(
       ["lines"],
     ),
     call: async (h, a) =>
-      json(await h.voiceover(a.lines as { text: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance }))),
+      json(await h.voiceover(a.lines as { text: string; caption?: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance }))),
   },
   {
     name: "auto_adjust",
@@ -650,7 +657,11 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
       const args = (p.arguments ?? {}) as Record<string, unknown>;
       try {
         const app = APP_INDEX.get(name);
-        if (app) return ok(req.id, await app.call(host, args));
+        if (app) {
+          const errs = validate(args, app.inputSchema);
+          if (errs.length) throw new Error(errs.join("; "));
+          return ok(req.id, await app.call(host, args));
+        }
         if (!COMMANDS.some((c) => c.name === name)) return fail(req.id, -32602, `unknown tool ${name}`);
         const before = host.describe();
         return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
