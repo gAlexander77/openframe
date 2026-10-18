@@ -1376,7 +1376,14 @@ function ProjectDetails() {
 
 function MultiSelection({ count }: { count: number }) {
   const sel = useEditor((s) => s.selection);
+  const project = useEditor((s) => s.project);
   const movable = useMovable(sel);
+  const clips = sel.flatMap((id) => {
+    const c = ops.findClip(project, id)?.clip;
+    return c ? [c] : [];
+  });
+  const pictures = clips.filter((c) => "transform" in c);
+  const sounds = clips.filter((c) => "volume" in c);
   return (
     <>
       <nav className="insp-tabs">
@@ -1384,7 +1391,7 @@ function MultiSelection({ count }: { count: number }) {
       </nav>
       <div className="insp-body">
         <Section title="Selection">
-          <p className="insp-hint">{count} clips selected. Move, delete, copy or split them together; select one clip to edit its properties.</p>
+          <p className="insp-hint">{count} clips selected. Move, delete, copy or split them together; what they share can be set below for all of them at once.</p>
           <div className="insp-actions">
             <button className="btn" data-tip={tipFor("duplicate")} onClick={() => run("duplicate")}>Duplicate</button>
             <button className="btn ghost" data-tip={tipFor("delete")} onClick={() => run("delete")}>Delete</button>
@@ -1392,6 +1399,18 @@ function MultiSelection({ count }: { count: number }) {
           <EffectClipboard />
           <AttributeClipboard />
         </Section>
+        {pictures.length > 1 && (
+          <Section title={`Picture (${pictures.length} clips)`}>
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="transform.scale" label="Scale" min={1} max={500} unit="%" reset={1} keyframes={false} {...pct} />
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} keyframes={false} />
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} keyframes={false} {...pct} />
+          </Section>
+        )}
+        {sounds.length > 1 && (
+          <Section title={`Sound (${sounds.length} clips)`}>
+            <SliderRow clip={sounds[0]} also={sounds.slice(1)} path="volume" label="Volume" min={-60} max={12} step={0.1} digits={1} unit="dB" reset={1} keyframes={false} show={(v) => Math.max(-60, toDb(v))} store={(db) => (db <= -60 ? 0 : fromDb(db))} />
+          </Section>
+        )}
         {movable > 0 && (
           <Section title="Align">
             <AlignBar ids={sel} />

@@ -281,6 +281,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Corner handles keep a stretched picture's proportions.
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- **Several clips at once** (Premiere 25's Properties panel): with more
+  than one clip selected, Scale, Rotate and Opacity for the pictures and
+  Volume for the clips with sound set all of them, one undo step; a value
+  they disagree on shows "Mixed" until it is set.
 - On a keyframe, an easing button beside the cluster opens the presets;
   the Transform header's ◇ keys (or unkeys) all four of its properties at
   once, as CapCut's section diamonds do.

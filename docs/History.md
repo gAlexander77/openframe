@@ -729,3 +729,8 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   show their keys, through one `tipFor` beside `chordFor` (the player had
   its own copy). Linkage, Preview axis and the keyframe panel were
   toolbar-only; the Timeline and View menus list them.
+- **Several clips at once.** With two or more clips selected the
+  inspector offered only Duplicate, Delete, Align and the clipboards, so
+  setting ten clips' volume took ten edits. The rows the clips share now
+  set them all (Premiere 25's Properties panel), each keyed at its own
+  frame when keyframed, with "Mixed" where they disagree.

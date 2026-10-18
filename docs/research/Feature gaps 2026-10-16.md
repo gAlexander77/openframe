@@ -116,6 +116,7 @@ are written with `setParam` (`src/lib/project/ops.ts`) and drawn by
 | Motion blur | P R | no | P2 | Sub-frame accumulation of the transform in the compositor. |
 | Lens correction | C R | no | P2 | Barrel shader. |
 | Apply to all, and Save as preset, for Transform | C | partial: effect presets and Paste Attributes (transform group) exist | P2 | Reuse `paste_attributes` across all selected clips. |
+| Edit several selected clips' properties at once | P | yes: Scale, Rotate, Opacity and Volume for a multi-selection, "Mixed" when they differ (2026-10-17) | — | Added by the everyday-gaps pass (Premiere 25's Properties panel). Relative drags (offset each) are not offered. |
 
 ## 3. Timeline: tracks
 

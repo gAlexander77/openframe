@@ -58,6 +58,9 @@ export interface SliderProps {
   keyframes?: boolean;
   /** CSS gradient for the track (CapCut colors temperature/tint tracks). */
   track?: string;
+  /** More clips the row sets too (a multi-selection, as Premiere's
+   * Properties panel edits several): each keys at its own frame. */
+  also?: Clip[];
 }
 
 /** A labeled slider + numeric field + keyframe cluster. Dragging is one
@@ -71,7 +74,12 @@ export function SliderRow(p: SliderProps) {
   const shown = show(value);
   const [text, setText] = useState<string | null>(null);
   const digits = p.digits ?? (p.step && p.step < 1 ? 1 : 0);
-  const set = (v: number) => (p2: Parameters<typeof setParam>[0]) => setParam(p2, [p.clip.id], p.path, v, rel);
+  const playhead = useEditor((s) => s.playhead);
+  const relOf = (c: Clip) => Math.min(Math.max(playhead - c.start, 0), c.duration - 1);
+  // A dash, as Premiere shows, when the clips disagree.
+  const mixed = !!p.also?.some((c) => Math.abs(paramAt(c, p.path, relOf(c)) - value) > 1e-6);
+  const set = (v: number) => (p2: Parameters<typeof setParam>[0]) =>
+    (p.also ?? []).reduce((q, c) => setParam(q, [c.id], p.path, v, relOf(c)), setParam(p2, [p.clip.id], p.path, v, rel));
   const commit = (raw: string) => {
     const n = Number(raw.replace(/[^\d.+-]/g, ""));
     setText(null);
@@ -101,7 +109,8 @@ export function SliderRow(p: SliderProps) {
       <span className="insp-num">
         <input
           className="field num"
-          value={text ?? shown.toFixed(digits)}
+          value={text ?? (mixed ? "" : shown.toFixed(digits))}
+          placeholder={mixed ? "Mixed" : undefined}
           onChange={(e) => setText(e.target.value)}
           // Only what the user typed is an edit: committing on every blur
           // recorded undo steps for tabbing past, and keyed the playhead.
