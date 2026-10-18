@@ -4,6 +4,7 @@
 // as a complete, valid Project or as an error naming what is wrong.
 
 import { cleanCompressor } from "../compressor";
+import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { secondsToFrames, type Rational } from "../time";
@@ -291,6 +292,8 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     const comp = cleanCompressor(c.compressor);
     if (comp) c.compressor = comp;
     else delete c.compressor;
+    // Sound design (ADR-060): each effect in range, or dropped.
+    cleanSoundFx(c);
   }
   // Remove BG (ADR-033): a reference to a matte file, or nothing. A broken
   // one is dropped, not refused: the clip still plays, with its background.
@@ -302,7 +305,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (typeof c.compoundId !== "string") throw new ProjectError(`${where}: missing compoundId`);
     // Not supported on compound clips yet (ADR-037): dropped, not refused,
     // so a file that has them still opens.
-    for (const k of ["speedCurve", "reverse", "freeze"]) delete c[k];
+    for (const k of ["speedCurve", "reverse", "freeze", ...FX_KEYS]) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);

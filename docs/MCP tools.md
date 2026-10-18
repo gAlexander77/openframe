@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 122 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 127 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -23,6 +23,7 @@ To make a video:
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
+Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 ```
 
 ## Contents
@@ -36,8 +37,8 @@ Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
-- **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `export_video`, `export_status`
+- **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `measure_loudness`, `export_video`, `export_status`
 
 ## Start here
 
@@ -1475,6 +1476,82 @@ Example:
 {"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2}}
 ```
 
+### set_audio_filter
+
+Filter a video or audio clip's sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff's keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `type` | "lowpass" \| "highpass" | yes | Which filter |
+| `cutoff` | number |  | Hz (at sweep.start when sweeping) (20..20000) |
+| `resonance` | number |  | Peak at the cutoff, dB; 0 = smooth (0..24) |
+| `sweep` | { to, start, end, ease } |  | Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export |
+| `sweep.to` | number | yes | Cutoff at the end of the sweep, Hz (20..20000) |
+| `sweep.start` | number | yes | Timeline seconds the sweep begins (0..) |
+| `sweep.end` | number | yes | Timeline seconds it arrives (0..) |
+| `sweep.ease` | "linear" \| "easeIn" \| "easeOut" \| "easeInOut" |  | Curve of the sweep (default linear: the same octaves each second) |
+| `off` | boolean |  | Remove this filter |
+
+Example:
+
+```json
+{"name":"set_audio_filter","arguments":{"clip_ids":["c_3"],"type":"lowpass","cutoff":400,"sweep":{"to":18000,"start":6,"end":8.4,"ease":"easeIn"}}}
+```
+
+### set_reverb
+
+Put a video or audio clip's sound in a room (a convolution reverb). preset room (small and close), hall (a concert hall; what a new reverb starts as) or cathedral (huge and long, for trailers and epic edits). size 0..1 (pre-delay 5 to 50 ms, slower build), decay: seconds for the tail to fall 60 dB (0.1..10), mix: wet share 0..1 at equal power, so the clip stays as loud (0.2 subtle, 0.5 drenched). It comes after the clip's volume and its tail rings on past the clip's end, so a voice's last word hangs in the room. Values left out keep theirs, or the preset's. A reverb throw on one word: add_keyframe on reverb.mix. off: true removes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `preset` | "room" \| "hall" \| "cathedral" |  | Starting point |
+| `size` | number |  | Room size, 0..1 (0..1) |
+| `decay` | number |  | Seconds to fall 60 dB (RT60) (0.1..10) |
+| `mix` | number |  | Wet share, 0..1 (0..1) |
+| `off` | boolean |  | Remove the reverb |
+
+Example:
+
+```json
+{"name":"set_reverb","arguments":{"clip_ids":["c_9"],"preset":"hall","mix":0.25}}
+```
+
+### set_echo
+
+Repeat a video or audio clip's sound (a delay). time: seconds between repeats, 0.01..2 (0.08-0.15 a slapback, 0.3-0.5 an echo; on music 60/BPM lands on the beat). feedback: each repeat's level against the one before, 0..0.9 (0.4 gives a few repeats, 0.8 a long trail). mix: wet share 0..1 at equal power. A new echo is 0.35 s, 0.4, 0.3; values left out keep theirs. It comes after the clip's volume, so the repeats ring on past the clip's end: an echo on a short hit or sound effect trails off after it. Echo one word only: add_keyframe on echo.mix. off: true removes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `time` | number |  | Seconds between repeats (0.01..2) |
+| `feedback` | number |  | Each repeat's level against the one before (0..0.9) |
+| `mix` | number |  | Wet share, 0..1 (0..1) |
+| `off` | boolean |  | Remove the echo |
+
+Example:
+
+```json
+{"name":"set_echo","arguments":{"clip_ids":["c_9"],"time":0.375,"feedback":0.4,"mix":0.3}}
+```
+
+### set_tape_stop
+
+Make a video or audio clip's sound slow to a stop over its last `duration` seconds, its pitch diving with it, as a turntable or tape machine losing power: the classic ending, or a cut into silence before a drop. duration 0.05..10 seconds (default 1; 0.5 a quick stop, 2-3 a long wind-down; never more than the clip). Only the sound stops; a video's picture plays on. Splitting the clip keeps it on the part with the end. off: true removes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `duration` | number |  | Seconds the stop takes (0.05..10) |
+| `off` | boolean |  | Remove the tape stop |
+
+Example:
+
+```json
+{"name":"set_tape_stop","arguments":{"clip_ids":["c_3"],"duration":0.8}}
+```
+
 ### set_compressor
 
 Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.
@@ -1501,12 +1578,13 @@ Play one channel of a video's or audio clip's sound on both sides (Premiere's Fi
 
 ### normalize_loudness
 
-Measure clips' loudness (EBU R128) and set their volume to reach a target without clipping. -14 LUFS suits social video, -16 podcasts, -23 broadcast.
+Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). Each clip is measured alone: measure_loudness checks the mix.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Video or audio clip ids |
 | `target` | number |  | LUFS, default -14 (-40..-5) |
+| `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | online (-14 LUFS, -1 dBTP), ebu_r128 (-23 LUFS, -1 dBTP) or atsc_a85 (-24 LKFS, -2 dBTP); overrides target |
 
 ### duck_under_speech
 
@@ -1641,9 +1719,26 @@ Example:
 {"name":"check_project","arguments":{"kind":"ad"}}
 ```
 
+### measure_loudness
+
+Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: "ebu_r128", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
+| `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
+| `start` | number |  | Timeline seconds, default 0 (0..) |
+| `end` | number |  | Timeline seconds, default the end (0..) |
+
+Example:
+
+```json
+{"name":"measure_loudness","arguments":{"spec":"online","loudness":-14}}
+```
+
 ### export_video
 
-Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS (-14 for YouTube, TikTok and Spotify). Exports that take over about four minutes answer state running: follow them with export_status.
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

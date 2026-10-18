@@ -95,6 +95,36 @@ step names its number (`step 2 (set_animation): no clip with id nope`).
 ratio, knee, attack, release and makeup to adjust it; `describe_project`
 names the preset or `custom`. `normalize_loudness` measures through it.
 
+Sound design ([[ADR-060 Sound design rings past the clip and is measured as exported]]),
+on video and audio clips:
+
+- `set_audio_filter` `{"clip_ids", "type": "lowpass"|"highpass", "cutoff"
+  (Hz), "resonance" (dB), "sweep": {"to" (Hz), "start", "end" (timeline
+  s), "ease"}, "off"}`: 24 dB per octave; `sweep` keys the cutoff, on a
+  log scale ("muffled build, open on the drop": `cutoff` 400, `sweep`
+  `{"to": 20000, "start": 4.5, "end": 5}`).
+- `set_reverb` `{"clip_ids", "preset": "room"|"hall"|"cathedral", "size"
+  (0..1), "decay" (s, RT60), "mix" (0..1), "off"}`.
+- `set_echo` `{"clip_ids", "time" (s), "feedback" (0..0.9), "mix", "off"}`.
+- `set_tape_stop` `{"clip_ids", "duration" (s), "off"}`: the sound slows
+  to a stop, pitch diving, over the clip's last seconds.
+- `add_keyframe` animates `lowpass.cutoff`, `highpass.cutoff`,
+  `reverb.mix` and `echo.mix`; `describe_project` lists the effects on
+  (`lowpass`, `highpass`, `reverb`, `echo`, `tape_stop`).
+
+Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
+
+- `measure_loudness` `{"spec": "online"|"ebu_r128"|"atsc_a85", "loudness",
+  "start", "end"}` renders the mix as export does and answers
+  `integrated_lufs`, `loudness_range_lu`, `short_term_max_lufs`,
+  `momentary_max_lufs`, `true_peak_dbtp`, `sample_peak_dbfs`, `pass` and
+  `problems` (every spec when none is named; `clips` when the mix passes
+  full scale; a `fix` when it fails). With `loudness` it measures what
+  `export_video` at that target delivers.
+- `normalize_loudness` takes `spec` for a spec's target and true-peak
+  ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
+  (-2 at ATSC's -24) and answers the `loudness` it reached.
+
 `add_voiceover` narrates a script: `{"lines": [{"text": "Meet
 RacePulse."}, {"text": "Pick your widgets.", "at": 6}], "voice":
 "af_heart", "gap": 0.4, "caption_style": {...}}`. Each line is spoken on

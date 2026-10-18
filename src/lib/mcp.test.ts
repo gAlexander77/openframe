@@ -147,6 +147,21 @@ describe("MCP AI tools", () => {
     ]);
     expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech", "sync_audio", "sync_to_clip"]));
   });
+
+  it("measures loudness against a named spec, and normalizes to one", async () => {
+    const h = host() as ReturnType<typeof host> & { aiCalls: unknown[][] };
+    await call(h, "tools/call", { name: "measure_loudness", arguments: { spec: "ebu_r128", loudness: -23, end: 10 } });
+    await call(h, "tools/call", { name: "measure_loudness", arguments: {} });
+    await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c1"], spec: "atsc_a85" } });
+    expect(h.aiCalls).toEqual([
+      ["loudnessReport", "ebu_r128", { loudness: -23, end: 10 }],
+      ["loudnessReport", "", {}],
+      ["normalizeLoudness", ["c1"], { spec: "atsc_a85" }],
+    ]);
+    const tools = listTools();
+    expect(tools.find((t) => t.name === "measure_loudness")?.inputSchema.properties?.spec?.enum).toEqual(["online", "ebu_r128", "atsc_a85"]);
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["set_audio_filter", "set_reverb", "set_echo", "set_tape_stop"]));
+  });
 });
 
 describe("MCP edits answer with what changed", () => {

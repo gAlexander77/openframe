@@ -19,7 +19,7 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, Transform, WheelName } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, Sound, TextStyle, Track, Transform, WheelName } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
@@ -42,6 +42,7 @@ import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/m
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
+import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
@@ -456,6 +457,101 @@ export const COMMANDS: Command[] = [
         p,
       );
     },
+  },
+  // ---- sound design (ADR-060) -----------------------------------------------------
+  {
+    name: "set_audio_filter",
+    description:
+      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes.',
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        type: S.str("Which filter", { enum: ["lowpass", "highpass"] }),
+        cutoff: S.num("Hz (at sweep.start when sweeping)", { minimum: 20, maximum: 20000 }),
+        resonance: S.num("Peak at the cutoff, dB; 0 = smooth", { minimum: 0, maximum: 24 }),
+        sweep: S.obj(
+          {
+            to: S.num("Cutoff at the end of the sweep, Hz", { minimum: 20, maximum: 20000 }),
+            start: S.num("Timeline seconds the sweep begins", { minimum: 0 }),
+            end: S.num("Timeline seconds it arrives", { minimum: 0 }),
+            ease: S.str("Curve of the sweep (default linear: the same octaves each second)", { enum: ["linear", "easeIn", "easeOut", "easeInOut"] }),
+          },
+          ["to", "start", "end"],
+          "Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export",
+        ),
+        off: S.bool("Remove this filter"),
+      },
+      ["clip_ids", "type"],
+    ),
+    run: (p, a) => {
+      const kind = a.type as FilterKind;
+      const path = `${kind}.cutoff`;
+      const sweep = a.sweep as { to: number; start: number; end: number; ease?: Ease } | undefined;
+      return fxEdit(p, a, "filter", (c) => {
+        if (a.off === true) return withoutFx(c, kind, [path]);
+        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
+        const out = { ...c, [kind]: filter } as Clip;
+        if (!sweep) return a.cutoff === undefined ? out : withoutKeys(out, [path]);
+        const k0 = f(p, sweep.start) - c.start;
+        const k1 = f(p, sweep.end) - c.start;
+        if (k1 <= k0) throw new CommandError("sweep.end must come at least a frame after sweep.start");
+        const to = cleanFx(kind, { cutoff: sweep.to }, filter)!.cutoff;
+        return { ...out, keyframes: { ...c.keyframes, [path]: [{ f: k0, v: filter.cutoff, ...(sweep.ease && sweep.ease !== "linear" ? { ease: sweep.ease } : {}) }, { f: k1, v: to }] } };
+      });
+    },
+  },
+  {
+    name: "set_reverb",
+    description:
+      "Put a video or audio clip's sound in a room (a convolution reverb). preset room (small and close), hall (a concert hall; what a new reverb starts as) or cathedral (huge and long, for trailers and epic edits). size 0..1 (pre-delay 5 to 50 ms, slower build), decay: seconds for the tail to fall 60 dB (0.1..10), mix: wet share 0..1 at equal power, so the clip stays as loud (0.2 subtle, 0.5 drenched). It comes after the clip's volume and its tail rings on past the clip's end, so a voice's last word hangs in the room. Values left out keep theirs, or the preset's. A reverb throw on one word: add_keyframe on reverb.mix. off: true removes it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        preset: S.str("Starting point", { enum: Object.keys(REVERB_PRESETS) }),
+        size: S.num("Room size, 0..1", { minimum: 0, maximum: 1 }),
+        decay: S.num("Seconds to fall 60 dB (RT60)", { minimum: 0.1, maximum: 10 }),
+        mix: S.num("Wet share, 0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the reverb"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      fxEdit(p, a, "reverb", (c) => {
+        if (a.off === true) return withoutFx(c, "reverb", ["reverb.mix"]);
+        const base = a.preset ? REVERB_PRESETS[a.preset as ReverbPreset] : ((c as Partial<Sound>).reverb ?? REVERB_PRESETS.hall);
+        return { ...c, reverb: cleanFx("reverb", { size: a.size, decay: a.decay, mix: a.mix }, base)! } as Clip;
+      }),
+  },
+  {
+    name: "set_echo",
+    description:
+      "Repeat a video or audio clip's sound (a delay). time: seconds between repeats, 0.01..2 (0.08-0.15 a slapback, 0.3-0.5 an echo; on music 60/BPM lands on the beat). feedback: each repeat's level against the one before, 0..0.9 (0.4 gives a few repeats, 0.8 a long trail). mix: wet share 0..1 at equal power. A new echo is 0.35 s, 0.4, 0.3; values left out keep theirs. It comes after the clip's volume, so the repeats ring on past the clip's end: an echo on a short hit or sound effect trails off after it. Echo one word only: add_keyframe on echo.mix. off: true removes it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        time: S.num("Seconds between repeats", { minimum: 0.01, maximum: 2 }),
+        feedback: S.num("Each repeat's level against the one before", { minimum: 0, maximum: 0.9 }),
+        mix: S.num("Wet share, 0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the echo"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      fxEdit(p, a, "echo", (c) => {
+        if (a.off === true) return withoutFx(c, "echo", ["echo.mix"]);
+        return { ...c, echo: cleanFx("echo", { time: a.time, feedback: a.feedback, mix: a.mix }, (c as Partial<Sound>).echo ?? ECHO_DEFAULT)! } as Clip;
+      }),
+  },
+  {
+    name: "set_tape_stop",
+    description:
+      "Make a video or audio clip's sound slow to a stop over its last `duration` seconds, its pitch diving with it, as a turntable or tape machine losing power: the classic ending, or a cut into silence before a drop. duration 0.05..10 seconds (default 1; 0.5 a quick stop, 2-3 a long wind-down; never more than the clip). Only the sound stops; a video's picture plays on. Splitting the clip keeps it on the part with the end. off: true removes it.",
+    input: S.obj({ clip_ids: S.ids("Video or audio clips"), duration: S.num("Seconds the stop takes", { minimum: 0.05, maximum: 10 }), off: S.bool("Remove the tape stop") }, ["clip_ids"]),
+    run: (p, a) =>
+      fxEdit(p, a, "tape stop", (c) => {
+        if (a.off === true) return withoutFx(c, "tapeStop");
+        return { ...c, tapeStop: cleanFx("tapeStop", { duration: a.duration }, (c as Partial<Sound>).tapeStop ?? TAPE_STOP_DEFAULT)! } as Clip;
+      }),
   },
   {
     name: "set_channel_fill",
@@ -1652,6 +1748,7 @@ export function describeProject(p: Project) {
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
+        ...soundFxSummary(c),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
@@ -1728,4 +1825,39 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     p = ops.addClip(p, track.id, clip);
   }
   return p;
+}
+
+// ---- sound design helpers (ADR-060) --------------------------------------------------
+
+/** Apply `fn` to each of a sound-design command's clips, refusing clips
+ * without sound of their own (compound clips mix many; edit inside). */
+function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Clip) => Clip): Project {
+  const ids = a.clip_ids as Id[];
+  ids.forEach((id) => clipOrThrow(p, id));
+  return ids.reduce(
+    (q, id) =>
+      ops.updateClip(q, id, (c) => {
+        if (c.type === "compound") throw new CommandError(`compound clips take no ${what} yet: put it on the clips inside (edit_compound)`);
+        if (c.type !== "video" && c.type !== "audio") throw new CommandError(`a ${what} needs a video or audio clip; ${id} is a ${c.type} clip`);
+        return fn(c);
+      }),
+    p,
+  );
+}
+
+/** A clip without the keyframes of `paths`. */
+function withoutKeys(c: Clip, paths: string[]): Clip {
+  if (!c.keyframes || !paths.some((k) => k in c.keyframes!)) return c;
+  const keys = { ...c.keyframes };
+  for (const k of paths) delete keys[k];
+  const out = { ...c, keyframes: keys };
+  if (!Object.keys(keys).length) delete (out as Partial<Clip>).keyframes;
+  return out;
+}
+
+/** A clip without one sound-design effect and its keyframes. */
+function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
+  const out = withoutKeys({ ...c }, paths) as Clip & Record<string, unknown>;
+  delete out[key];
+  return out;
 }

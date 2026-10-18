@@ -540,7 +540,8 @@ makes a 13 s one). Times are timeline seconds.
 ## AI tools (all on this machine)
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
-  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping; a mono clip
+  loudness** (EBU R128, to −14/−16/−23/−24 LUFS, the true peak under
+  its ceiling, −2 dBTP for ATSC's −24; `spec` names one; a mono clip
   is measured as it plays through the mix's equal-power center pan, -3 dB
   each side) and **Auto
   ducking** (music dips under speech as editable volume keyframes) and
@@ -584,6 +585,48 @@ makes a 13 s one). Times are timeline seconds.
 - **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
 
+## Sound design and delivery
+
+- **Effects** (Audio tab, under Compressor; `set_audio_filter`,
+  `set_reverb`, `set_echo`, `set_tape_stop`): the trailer and epic-edit
+  moves on any video or audio clip, built into the clip's one Web Audio
+  chain, so preview and export sound the same
+  ([[ADR-060 Sound design rings past the clip and is measured as exported]]).
+  - **Low-pass and high-pass**, 24 dB per octave, resonance 0 to 24 dB.
+    The cutoff keys like any slider (a log slider, typed in Hz) and moves
+    between keys on a log scale, the same octaves each second; the
+    agent's `sweep` writes the two keys of the "muffled build, open on
+    the drop" in one call.
+  - **Reverb**: Room, Hall or Cathedral, then mix, decay (RT60) and size.
+    A convolution reverb whose impulse response is made here from those
+    numbers (seeded noise, unit energy, highs dying first), mixed at
+    equal power so the clip stays as loud.
+  - **Echo**: delay time, feedback (repeats), mix.
+  - **Tape stop**: the sound slows to a stop over the clip's last
+    seconds, its pitch falling with it (speed falls linearly, a
+    turntable coasting; the level follows the speed under half speed).
+    Only the sound: a video's picture plays on. A split keeps it on the
+    part with the end.
+  - Echo and reverb come after the clip's volume, so their tails ring on
+    past the clip's end and its fade (Premiere cuts clip-effect tails at
+    the edit); export windows start early by the longest tail, so a
+    reverb rings across them too. The keyframe panel lists the cutoffs
+    and the two mixes; Paste Attributes copies the effects with the
+    sound.
+- **Loudness report** (`measure_loudness`): the mix measured as export
+  renders it, effects and tails included: integrated loudness
+  (BS.1770), loudness range (EBU Tech 3342), the loudest 3 s and 400 ms,
+  true peak (4x oversampled, BS.1770-4 Annex 2) and sample peak, with
+  pass or fail and the reasons against online (-14 LUFS, -1 dBTP), EBU
+  R128 (-23, -1 dBTP) or ATSC A/85 (-24 LKFS, -2 dBTP). It flags a mix
+  that passes full scale, and measures as export with a target would
+  deliver it, so an agent checks before it exports
+  ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
+- **Broadcast targets**: export Loudness and Normalize loudness offer
+  -24 LKFS (ATSC A/85, US TV) beside -14, -16 and -23; the limiter holds
+  the **true peak**, not the sample peak, under -1 dBTP (-2 for ATSC),
+  and the export's answer says what the mix reached.
+
 ## Export
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
@@ -595,10 +638,11 @@ makes a 13 s one). Times are timeline seconds.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
 - **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring
-  the mix to -14, -16 or -23 LUFS. A first pass measures the whole mix
-  (BS.1770) and its peaks, then it is rendered through the gain that meets
-  the target, with a limiter holding the raised peaks under -1 dBFS (up to
-  6 dB of limiting; the whole mix is known, so it looks ahead for free).
+  the mix to -14, -16, -23 or -24 LUFS. A first pass measures the whole mix
+  (BS.1770) and its true peaks, then it is rendered through the gain that
+  meets the target, with a limiter holding the raised true peaks under
+  -1 dBTP, -2 for ATSC's -24 (up to 6 dB of limiting; the whole mix is
+  known, so it looks ahead for free).
   The result notes what it measured, what it reached and how much the
   limiter held. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
   with the limiter it measures -14.3 in ffmpeg, peaks at -0.9 dBTP.

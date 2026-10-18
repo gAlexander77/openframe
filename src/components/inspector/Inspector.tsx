@@ -24,6 +24,7 @@ import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
 import { SectionKey } from "./KeyTools";
+import { SoundFxSection } from "./SoundFx";
 import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
@@ -524,6 +525,7 @@ function AudioTab({ clip }: { clip: Clip }) {
         ))}
       </Section>
       {clip.type !== "compound" && <CompressorSection clip={clip} />}
+      {clip.type !== "compound" && <SoundFxSection clip={clip} />}
       {clip.type === "video" && (
         <Section title="Sound">
           <div className="insp-actions">

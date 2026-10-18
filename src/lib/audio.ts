@@ -121,7 +121,7 @@ export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
  */
 export function soundOverlaps(p: Project): Map<Id, Overlap> {
   const out = new Map<Id, Overlap>();
-  const plain = (c: VideoClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze;
+  const plain = (c: VideoClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze && !c.tapeStop;
   for (const t of p.tracks) {
     const clips = [...t.clips].sort((a, b) => a.start - b.start);
     for (let i = 0; i + 1 < clips.length; i++) {

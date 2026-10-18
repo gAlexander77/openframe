@@ -32,7 +32,6 @@ import {
   type OutputFormat,
   type StreamTargetChunk,
 } from "mediabunny";
-import { soundingClips } from "../lib/audio";
 import {
   CODEC_LABELS,
   VIDEO_FORMATS,
@@ -48,8 +47,10 @@ import { getAsset } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
 import { planFrame, planLayers } from "../lib/render/plan";
 import { formatTimecode, type Rational } from "../lib/time";
-import { scheduleAudio } from "./audio";
-import { applyLimiter, blockPeaks, LIMIT_BLOCK, limiterGains, LoudnessMeter, MAX_LIMITING_DB, normalizeGain } from "../lib/analysis/loudness";
+import { applyLimiter, LIMIT_BLOCK, LoudnessMeter, MAX_LIMITING_DB } from "../lib/analysis/loudness";
+import { ceilingFor, planLoudness } from "../lib/analysis/delivery";
+import { toDbtp, TruePeakMeter } from "../lib/analysis/truePeak";
+import { hasSound, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "./mixdown";
 import { Compositor } from "./compositor";
 import { CursorPool, resolveSources, sourceImages, type Resolved } from "./player";
 
@@ -78,14 +79,14 @@ export interface ExportResult {
   audioDelay: number;
   /** Set when the codec asked for could not be encoded here. */
   note?: string;
+  /** With a loudness target: what the mix reached, before the encoder
+   * (LUFS integrated, dBTP true peak). */
+  loudness?: { integrated: number; truePeak: number };
 }
 
 /** An export failure with a message meant for the person exporting. */
 export class ExportError extends Error {}
 
-/** Audio rendered per OfflineAudioContext: 10 s of stereo float is 3.8 MB,
- * where a whole-timeline context would allocate it all up front. */
-const WINDOW_SECONDS = 10;
 /** Audio is kept this far ahead of the picture as both are muxed. */
 const AUDIO_LEAD = 1;
 /** No encoded output for this long while we wait on the encoder = hung
@@ -361,47 +362,48 @@ export async function exportProject(
     // Loudness normalization, set by the measuring pass below: a gain and
     // the limiter's gains that hold the peaks it raises.
     let limit: { gain: number; gains: Float32Array } | null = null;
-    const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
+    // Windows start early by the longest effect tail, so a reverb rings
+    // across their edges (ADR-060).
+    const preroll = a && sounding ? mixPreroll(p) : 0;
     const renderWindow = (i: number): Promise<AudioBuffer> => {
       const w = windows[i];
       const sr = a!.sampleRate;
       if (!sounding) return Promise.resolve(new AudioBuffer({ length: w.length, numberOfChannels: a!.channels, sampleRate: sr }));
-      const ctx = new OfflineAudioContext({ numberOfChannels: a!.channels, length: w.length, sampleRate: sr });
-      const t0 = fromSec + w.start / sr;
-      const sched = scheduleAudio(ctx, ctx.destination, p, t0, t0 + w.length / sr, 0);
-      return sched.done
-        .then(() => ctx.startRendering())
-        .then((b) => {
-          if (limit) applyLimiter(planesOf(b), w.start, limit.gain, limit.gains);
-          return b;
-        });
+      return renderMixWindow(p, fromSec + w.start / sr, w.length, sr, a!.channels, preroll).then((b) => {
+        if (limit) applyLimiter(planesOf(b), w.start, limit.gain, limit.gains);
+        return b;
+      });
     };
     // Loudness normalization (Premiere's): a first pass renders and measures
-    // the whole mix (BS.1770) and its peaks, then every window is rendered
-    // again through the gain that meets the target, with a limiter holding
-    // the raised peaks under -1 dBFS. Gain alone stopped the RacePulse promo
+    // the whole mix (BS.1770) and its true peaks, then every window is
+    // rendered again through the gain that meets the target, with a limiter
+    // holding the raised true peaks under the target's ceiling (-2 dBTP for
+    // ATSC A/85, else -1; ADR-061). Gain alone stopped the RacePulse promo
     // at -17 LUFS of -14: speech peaks far above its loudness.
     let finalMeter: LoudnessMeter | null = null;
+    let finalPeak: TruePeakMeter | null = null;
     let loudnessNote: ((reached: number) => string) | null = null;
     if (a && sounding && plan.loudness !== null) {
       const meter = new LoudnessMeter(a.sampleRate, a.channels);
+      const tp = new TruePeakMeter(a.channels);
       const peaks = new Float32Array(Math.ceil(totalSamples / LIMIT_BLOCK) + 1);
       for (let i = 0; i < windows.length; i++) {
         const b = await wait("audio", renderWindow(i));
         meter.push(planesOf(b), b.length);
-        blockPeaks(planesOf(b), windows[i].start, peaks);
+        tp.push(planesOf(b), b.length, peaks);
       }
+      tp.flush(peaks);
       const measured = meter.integrated();
+      const ceiling = ceilingFor(plan.loudness);
       // Up to MAX_LIMITING_DB over the ceiling goes to the limiter.
-      const n = normalizeGain(measured, plan.loudness, meter.peak, { ceilingDb: -1 + MAX_LIMITING_DB });
-      if (n.gain !== 1) {
-        const gains = limiterGains(peaks, n.gain, 10 ** (-1 / 20));
-        limit = { gain: n.gain, gains };
+      const n = planLoudness(measured, tp.peak, peaks, plan.loudness, ceiling);
+      if (n) {
+        limit = { gain: n.gain, gains: n.gains };
         finalMeter = new LoudnessMeter(a.sampleRate, a.channels);
-        const held = -20 * Math.log10(gains.reduce((m, g) => Math.min(m, g), 1));
+        finalPeak = new TruePeakMeter(a.channels);
         loudnessNote = (reached) =>
           `Loudness ${measured.toFixed(1)} LUFS, ${n.limitedBy === "peak" ? `raised as far as ${MAX_LIMITING_DB} dB of limiting allows` : "normalized"} to ${reached.toFixed(1)} LUFS` +
-          (held > 0.1 ? ` (a limiter held the peaks under -1 dB, at most ${held.toFixed(1)} dB).` : ".");
+          (n.heldDb > 0.1 ? ` (a limiter held the peaks under ${ceiling} dBTP, at most ${n.heldDb.toFixed(1)} dB).` : ".");
       } else if (Number.isFinite(measured)) notes.push(`Loudness ${measured.toFixed(1)} LUFS, already at the target.`);
     }
     /** Next rendered window, starting the one after it in the background. */
@@ -419,6 +421,7 @@ export async function exportProject(
         if (!slice || slice.offset >= slice.buffer.length) {
           const buffer = await wait("audio", nextWindow(windowIndex++), timelineAtSample(fed));
           finalMeter?.push(planesOf(buffer), buffer.length);
+          finalPeak?.push(planesOf(buffer), buffer.length);
           slice = { buffer, offset: 0 };
         }
         const n = Math.min(a.sampleRate, slice.buffer.length - slice.offset, until - fed);
@@ -487,7 +490,9 @@ export async function exportProject(
     onProgress({ phase: "finalizing", done: total, total, fraction: 1, fps: 0, eta: 0 });
     await wait("encoder", output.finalize());
     if (loudnessNote && finalMeter) notes.push(loudnessNote(finalMeter.integrated()));
+    finalPeak?.flush();
     return {
+      ...(finalMeter && finalPeak ? { loudness: { integrated: +finalMeter.integrated().toFixed(2), truePeak: +toDbtp(finalPeak.peak).toFixed(2) } } : {}),
       frames: plan.frames,
       seconds: plan.seconds,
       bytes,
@@ -534,9 +539,6 @@ function assertSources(p: Project, items: ReturnType<typeof planFrame>, resolved
     }
   }
 }
-
-/** Does any clip make sound? Silence needs no OfflineAudioContext. */
-const hasSound = (p: Project) => soundingClips(p, (id) => getAsset(p, id)?.hasAudio ?? false).length > 0;
 
 function humanize(e: unknown): unknown {
   if (e instanceof ExportError || (e instanceof DOMException && e.name === "AbortError")) return e;

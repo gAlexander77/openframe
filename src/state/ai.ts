@@ -24,6 +24,7 @@ import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
+import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { FILLERS, fillerRanges } from "../lib/fillers";
@@ -606,15 +607,19 @@ export interface LoudnessResult extends Normalization {
  * loudness by setting its volume, as one undoable edit (CapCut's
  * "Normalize loudness", measured per ITU-R BS.1770).
  */
-export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> = {}): Promise<LoudnessResult[]> {
+export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> & { spec?: string } = {}): Promise<LoudnessResult[]> {
   const scope = projectWork.signal();
-  const target = opts.target ?? state.settings.loudness.target;
+  // A delivery spec names the target and the true-peak ceiling (ADR-061).
+  const spec = opts.spec === undefined ? undefined : LOUDNESS_SPECS[opts.spec as SpecId];
+  if (opts.spec !== undefined && !spec) throw new Error(`Unknown spec ${opts.spec}: use ${SPEC_IDS.join(", ")}`);
+  const target = spec?.target ?? opts.target ?? state.settings.loudness.target;
+  const ceilingDb = spec?.maxTruePeak ?? ceilingFor(target);
   const ids = clipIds ?? store.get().selection;
   const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
   if (!targets.length) throw new Error(ids.length ? String(targetFor("loudness", ids[0])) : `Select ${NEEDS.loudness} on the timeline`);
   const label = targets.length === 1 ? `Measuring the loudness of ${targets[0].asset.name}` : `Measuring the loudness of ${plural(targets.length, "clip")}`;
   const measured = await job("loudness", targets[0].clip, label, async (progress, signal) => {
-    const out: { clipId: Id; lufs: number; peak: number }[] = [];
+    const out: { clipId: Id; lufs: number; peak: number; truePeak: number }[] = [];
     for (const [i, { clip, asset }] of targets.entries()) {
       const [from, to] = windowOf(clip);
       // Measured as it plays: through the clip's compressor, if it has one.
@@ -624,7 +629,7 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
     return out;
   });
   scope.throwIfAborted();
-  const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.peak) }));
+  const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.truePeak, { ceilingDb }) }));
   const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
   if (!live.length) {
     finish("loudness", "Only silence, so nothing changed");

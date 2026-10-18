@@ -49,16 +49,16 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
-    tools: ["add_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
+    tools: ["add_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
-  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project", "export_video", "export_status"] },
+  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project", "measure_loudness", "export_video", "export_status"] },
 ];
 
 /** A tool's group; new tools land in "More" until they are filed. */
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "export_status", "get_transcript", "seek"]);
+const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
@@ -108,6 +108,11 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
   fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
   add_cinematic_bars: { ratio: 2.39, animate_in: 0.6 },
+  set_audio_filter: { clip_ids: ["c_3"], type: "lowpass", cutoff: 400, sweep: { to: 18000, start: 6, end: 8.4, ease: "easeIn" } },
+  set_reverb: { clip_ids: ["c_9"], preset: "hall", mix: 0.25 },
+  set_echo: { clip_ids: ["c_9"], time: 0.375, feedback: 0.4, mix: 0.3 },
+  set_tape_stop: { clip_ids: ["c_3"], duration: 0.8 },
+  measure_loudness: { spec: "online", loudness: -14 },
   add_sound_effect: { name: "whoosh", start: 3.9 },
   add_voiceover: { lines: [{ text: "Meet the lightest bottle we have ever made." }, { text: "Cold for 24 hours." }], voice: "af_heart" },
   duck_under_speech: { clip_id: "c_music", depth: 12 },
@@ -211,7 +216,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: logo, product, the offer and the call to action (Shop now, the URL) on a clean background, held 2-3 s.
-10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
+10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
 
 ${DESIGN}`,
   },
@@ -226,8 +231,8 @@ ${DESIGN}`,
 6. Hits: add_beat_hits flash, zoom, shake, rgb_split, glow or zoom_blur on the drop (marker_label Drop), on bars, or at_cuts; it keeps flashes to 3 a second. Transitions whipLeft, whipRight, zoomPunch or spinBlur at a few cuts, in the direction of the motion.
 7. Look: one grade over everything (filter teal or a LUT on an adjustment clip), grain, and add_cinematic_bars (2.39) for a film feel.
 8. Titles: big, short, bold words (one display face, size 160-240) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
-9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; then fit_music end bar (or video) with fade_out to end the music cleanly.
-10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
+9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; a set_audio_filter lowpass sweep that opens onto the drop, set_tape_stop for a stop before it; then fit_music end bar (or video) with fade_out to end the music cleanly.
+10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).
 
 ${DESIGN}`,
   },
