@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
@@ -30,7 +30,7 @@ import { chordFor, run, tipFor } from "../state/actions";
 import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
-import { MenuList } from "./Menu";
+import { MenuList, useDismiss } from "./Menu";
 import { VoiceoverButton } from "./VoiceoverButton";
 
 /** "Split (Ctrl+B)" — CapCut's tooltip format, chord read from the keymap. */
@@ -210,26 +210,4 @@ export function TimelineToolbar() {
       </div>
     </div>
   );
-}
-
-/** Close a dropdown on a click outside `ref` or on Escape, like every menu. */
-function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopImmediatePropagation();
-      close();
-    };
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", esc, true);
-    return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", esc, true);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 }

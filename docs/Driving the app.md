@@ -218,6 +218,30 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     full of hot updates, still answered. Find the listener
     (`Get-NetTCPConnection -LocalPort <port>`), check its command line is
     yours, and stop that process.
+17. **Escape on the editor clears the selection.** A drive that presses
+    Escape after every step to close menus loses the clip, and every
+    inspector tab it then asks for times out (30 s each by default).
+    Press it only after opening a menu or dialog, and set a short default
+    timeout in long drives (`page.setDefaultTimeout(5000)`).
+18. **Menus and dialogs pop in over 180 ms.** A screenshot taken right
+    after opening one shows it nearly transparent; wait 300 ms first.
+19. **Editing `src/` while a long drive runs reloads its page.** Vite
+    hot-updates the app under the drive and its results are noise; run
+    long drives between edits, not during them.
+
+## Styling sweep
+
+`scripts/drive/style-sweep.js` opens every library tab, every inspector
+tab of a video, picture, audio and text clip, a multi-selection, every
+title-bar menu, the clip, track and media-card menus and the dialogs, at
+1600 x 950, 1280 x 720 and the desktop window's 1100 x 680 minimum (129
+states, about a minute). In each it checks: page scroll; text cut off by
+its own box or a non-scrolling parent with no ellipsis; text spilling out
+of a control; controls cut off by a non-scrolling parent; controls
+overlapping each other (popups and modal `<dialog>`s excepted); controls
+with no accessible name; and text contrast under WCAG AA. Elements a
+scroller hides count as unseen, not cut. Screenshots land in
+`scratch/style/`, for a look by eye at what the checks cannot judge.
 
 ## Header interaction check — 2026-10-15
 

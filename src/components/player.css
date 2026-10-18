@@ -53,15 +53,17 @@
 
 .timecodes { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-sm); }
 /* The transport queries its own width. Both timecodes beside the frame,
-   play and loop buttons and the ratio, quality and full-screen controls
-   take about 414 px; below that only the current time shows, and below
-   about 351 px (the player's 320 px minimum) no timecode does: the
-   playhead's time is still on the timeline. */
+   play and loop buttons and the zoom, ratio, quality, save-frame and
+   full-screen controls take about 528 px (measured at a 1180 px window,
+   where they just fit); below that only the current time shows, and
+   below about 470 px no timecode does: the playhead's time is still on
+   the timeline. Remeasure when a control joins the bar (the style sweep's
+   clipped-text check catches a cut timecode). */
 .transport { container-type: inline-size; }
-@container (max-width: 420px) { .tc-sep, .tc-total { display: none; } }
-@container (max-width: 352px) { .timecodes { display: none; } }
+@container (max-width: 532px) { .tc-sep, .tc-total { display: none; } }
+@container (max-width: 470px) { .timecodes { display: none; } }
 .tc-now { color: var(--accent); font-weight: 600; }
-button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; font: inherit; font-weight: 600; cursor: text; }
+button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: text; }
 button.tc-now:hover { background: var(--bg-3); }
 .tc-input { width: 12ch; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg-inset); font: inherit; font-weight: 600; outline: none; }
 .tc-sep, .tc-total { color: var(--text-3); }

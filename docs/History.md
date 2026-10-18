@@ -754,3 +754,17 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   hex values. WebView2 has the EyeDropper API; each color field offers it
   where it exists. Headless browsers have no screen to sample, so the
   drive stands in a picker with a known answer.
+- **A styling sweep, and what it found.** A new drive checks 129 states
+  (every tab, menu and dialog at three window sizes, the smallest the
+  desktop window's minimum) for clipped and spilling text, overlapping and
+  cut-off controls, unnamed controls and contrast. Before this round's
+  fixes it found the project Name field unnamed; after them it caught
+  three regressions of this round: the new clickable timecode kept the
+  browser's gray button face (cyan on gray, 2.4:1), the media card's new
+  menu ignored Escape and clicks elsewhere (it now shares `useDismiss`
+  with the toolbar's menus), and the save-frame button pushed the total
+  timecode out of the transport at the minimum window (its container
+  breakpoints were remeasured). Its first versions were slow and noisy:
+  pressing Escape after every step deselected the clip, so each inspector
+  tab waited out a 30 s timeout, and a pairwise overlap check that
+  recomputed clipping per pair took ten minutes; memoized, it takes one.

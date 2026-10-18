@@ -33,6 +33,14 @@ async (page) => {
   await page.getByRole("menuitem", { name: /^Remove from project/ }).click();
   details.unused = { ok: JSON.stringify(await names()) === '["voice-8s.wav","talk-gaps.mp4"]' && (await undoLabel()) === "Remove photo.jpg", names: await names() };
 
+  // Escape and a click elsewhere close the menu, as every menu does.
+  await card("voice-8s.wav").click({ button: "right" });
+  await page.keyboard.press("Escape");
+  const afterEscape = await page.locator(".ctx-anchor").count();
+  await card("voice-8s.wav").click({ button: "right" });
+  await page.locator(".tl-ruler").click();
+  details.dismiss = { ok: afterEscape === 0 && (await page.locator(".ctx-anchor").count()) === 0 };
+
   await card("talk-gaps.mp4").click({ button: "right" });
   const used = page.getByRole("menuitem", { name: /Remove from project and its clip/ });
   details.usedLabel = { ok: (await used.count()) === 1 };

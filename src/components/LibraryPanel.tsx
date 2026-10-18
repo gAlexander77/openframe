@@ -41,7 +41,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
-import { MenuList, type MenuItem } from "./Menu";
+import { MenuList, useDismiss, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
@@ -156,6 +156,8 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const compounds = useEditor((s) => s.project.compounds);
@@ -234,7 +236,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         </div>
       )}
       {menu && (
-        <div className="ctx-anchor" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+        <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
           <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
         </div>
       )}
