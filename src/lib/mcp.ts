@@ -84,7 +84,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect" | "analyzeMusic";
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
 
@@ -406,9 +406,16 @@ APP_TOOLS.push(
   },
   {
     name: "add_sound_effect",
-    description: "Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, ding, success, rise (a riser) or boom. It lands on an audio track at `start` (default the playhead); the file is made once per project and reused.",
-    inputSchema: obj({ name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" }, start: { type: "number", minimum: 0, description: "Timeline seconds" } }, ["name"]),
-    call: async (h, a) => json(await h.ai("addSoundEffect", String(a.name), given({ at: a.start }))),
+    description: `Add a built-in sound effect, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. It lands on an audio track at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. The file is made once per project and reused.`,
+    inputSchema: obj(
+      {
+        name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
+        start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
+        end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
+      },
+      ["name"],
+    ),
+    call: async (h, a) => json(await h.ai("addSoundEffect", String(a.name), given({ at: a.start, endAt: a.end_at }))),
   },
   {
     name: "auto_reframe",
@@ -423,6 +430,20 @@ APP_TOOLS.push(
       ["clip_id"],
     ),
     call: async (h, a) => json(await h.ai("reframeClip", String(a.clip_id), given({ ratio: a.ratio, box: a.box }))),
+  },
+  // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
+  {
+    name: "analyze_music",
+    description:
+      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); and drop (where the biggest rise into a loud section lands, or null). All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
+    inputSchema: obj(
+      {
+        clip_id: { type: "string", description: "The music clip (audio, or a video with sound)" },
+        markers: { type: "array", items: { type: "string", enum: ["beats", "bars", "phrases", "sections", "drop"] }, description: "Kinds of markers to add (default none)" },
+      },
+      ["clip_id"],
+    ),
+    call: async (h, a) => json(await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers }))),
   },
   {
     name: "remove_background",
@@ -476,12 +497,13 @@ To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, mark_beats on the track and cut on the beat markers.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
+9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.`;
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {

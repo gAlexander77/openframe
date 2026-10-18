@@ -508,6 +508,20 @@ export const EFFECT_SHADERS: Record<string, string> = {
     float p = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 6.0);
     vec2 uv = (v_uv - 0.5) / (1.0 + p * u_amount * 0.004) + 0.5;
     outColor = texture(u_tex, uv);`),
+  zoom: effect(["amount"], `
+    outColor = texture(u_tex, (v_uv - 0.5) / (1.0 + u_amount * 0.01) + 0.5);`),
+  // Bars across the short way to the ratio: top and bottom when the
+  // canvas is narrower than it, left and right when wider. One pixel of
+  // smoothing keeps the edge from crawling as the bars slide.
+  letterbox: effect(["ratio", "amount"], `
+    vec4 c = texture(u_tex, v_uv);
+    float canvas = u_res.x / u_res.y;
+    float k = clamp(u_amount * 0.01, 0.0, 1.0);
+    bool rows = canvas < u_ratio;
+    float bar = (rows ? 1.0 - canvas / u_ratio : 1.0 - u_ratio / canvas) * 0.5 * k;
+    float d = rows ? min(v_uv.y, 1.0 - v_uv.y) : min(v_uv.x, 1.0 - v_uv.x);
+    float px = 0.5 / (rows ? u_res.y : u_res.x);
+    outColor = mix(vec4(0.0, 0.0, 0.0, 1.0), c, smoothstep(bar - px, bar + px, d));`),
   flash: effect(["amount", "rate"], `
     vec4 c = texture(u_tex, v_uv);
     float f = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 16.0) * u_amount * 0.01;
@@ -591,6 +605,8 @@ float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32)
 vec4 A(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_a, uv); }
 vec4 B(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_b, uv); }
 float ease(float t) { return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0; }
+// Mirrored edges, for moves that would uncover the frame's outside.
+vec2 mirror(vec2 uv) { return 1.0 - abs(1.0 - mod(uv, 2.0)); }
 void main() {
   float p = clamp(u_p, 0.0, 1.0);
   float e = ease(p);
@@ -664,6 +680,46 @@ void main() {
     float f = 1.0 - abs(p * 2.0 - 1.0);
     outColor = mix(A(uv), B(uv), step(0.5, p)) + vec4(vec3(pow(f, 3.0)), 0.0); return;
   }
+  // Epic-edit moves: each smears along its motion, strongest mid-move,
+  // the way a fast camera blurs, so the cut hides inside the blur.
+  if (u_type == 20 || u_type == 21) {                                                    // whip left / right
+    float dir = u_type == 20 ? 1.0 : -1.0;
+    float span = 0.35 * pow(sin(p * 3.14159), 2.0);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 24; i++) {
+      float s = e + (float(i) / 23.0 - 0.5) * span;
+      vec4 b = B(uv + vec2(dir * (s - 1.0), 0.0));
+      acc += b + A(uv + vec2(dir * s, 0.0)) * (1.0 - b.a);
+    }
+    outColor = acc / 24.0; return;
+  }
+  if (u_type == 22) {                                                                    // zoom punch
+    // Rush into the outgoing shot, cut at the middle, land on the next
+    // from slightly too close; a radial blur rides the move.
+    float z = p < 0.5 ? 1.0 + 2.0 * pow(p * 2.0, 2.0) : 1.0 + 0.7 * pow(2.0 - p * 2.0, 2.0);
+    float bl = 0.25 * sin(p * 3.14159);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 20; i++) {
+      vec2 q = (uv - 0.5) * (1.0 - bl * float(i) / 19.0) / z + 0.5;
+      acc += p < 0.5 ? A(q) : B(q);
+    }
+    outColor = acc / 20.0; return;
+  }
+  if (u_type == 23) {                                                                    // spin blur
+    // A half turn out of the outgoing shot and a half turn into the next,
+    // blurred around the center; mirrored edges fill the corners.
+    float ang = (p < 0.5 ? e : e - 1.0) * 3.14159;
+    float span = 0.9 * sin(p * 3.14159);
+    vec2 asp = vec2(u_res.x / u_res.y, 1.0);
+    float z = 1.0 + 0.3 * sin(p * 3.14159);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 24; i++) {
+      float a = ang + (float(i) / 23.0 - 0.5) * span;
+      vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * ((uv - 0.5) * asp) / z / asp + 0.5;
+      acc += p < 0.5 ? texture(u_a, mirror(q)) : texture(u_b, mirror(q));
+    }
+    outColor = acc / 24.0; return;
+  }
   outColor = mix(A(uv), B(uv), p);
 }`;
 
@@ -671,6 +727,7 @@ export const TRANSITION_IDS: Record<string, number> = {
   dissolve: 0, dipBlack: 1, dipWhite: 2, wipeLeft: 3, wipeRight: 4, wipeUp: 5, wipeDown: 6,
   circleOpen: 7, clockWipe: 8, slideLeft: 9, slideRight: 10, pushLeft: 11, pushUp: 12,
   zoomIn: 13, zoomOut: 14, spin: 15, blur: 16, pixelate: 17, glitch: 18, flash: 19,
+  whipLeft: 20, whipRight: 21, zoomPunch: 22, spinBlur: 23,
 };
 
 export const BLEND_IDS: Record<string, number> = {

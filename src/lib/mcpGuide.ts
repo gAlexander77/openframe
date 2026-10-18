@@ -33,13 +33,17 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
     tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "delete_track", "split", "split_at_times", "trim_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "set_clip_label", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
-  { name: "Markers and beats", blurb: "Mark moments and the music's beats to cut and animate on.", tools: ["mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"] },
+  {
+    name: "Music, beats and markers",
+    blurb: "Read the music's structure, cut and hit on it, fit it to the picture; mark moments.",
+    tools: ["analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
+  },
   {
     name: "Picture and motion",
     blurb: "Position, scale, crop, mask, key and animate pictures; keyframes for anything numeric.",
-    tools: ["set_param", "add_keyframe", "move_keyframe", "set_keyframe_ease", "remove_keyframes", "frame_region", "frame_clips", "align_clips", "distribute_clips", "set_uniform_scale", "set_flip", "set_crop", "set_mask", "set_blend", "set_chroma_key", "set_canvas_fill", "set_background_removal", "remove_background", "set_animation", "track_motion", "auto_reframe", "stabilize_clip"],
+    tools: ["set_param", "add_keyframe", "move_keyframe", "set_keyframe_ease", "remove_keyframes", "frame_region", "frame_clips", "align_clips", "distribute_clips", "set_uniform_scale", "set_flip", "set_crop", "set_mask", "set_blend", "set_chroma_key", "set_canvas_fill", "set_background_removal", "remove_background", "set_animation", "add_cinematic_bars", "track_motion", "auto_reframe", "stabilize_clip"],
   },
-  { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
+  { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
   { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
   { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut"] },
   {
@@ -98,6 +102,12 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_canvas_fill: { clip_ids: ["c_123"], fill: "blur", amount: 60 },
   set_fades: { clip_ids: ["c_123"], fade_in: 1, fade_out: 2 },
   mark_beats: { clip_id: "c_123", every: 1 },
+  analyze_music: { clip_id: "c_3", markers: ["beats", "bars", "drop"] },
+  cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
+  add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
+  set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
+  fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
+  add_cinematic_bars: { ratio: 2.39, animate_in: 0.6 },
   add_sound_effect: { name: "whoosh", start: 3.9 },
   add_voiceover: { lines: [{ text: "Meet the lightest bottle we have ever made." }, { text: "Cold for 24 hours." }], voice: "af_heart" },
   duck_under_speech: { clip_id: "c_music", depth: 12 },
@@ -209,14 +219,15 @@ ${DESIGN}`,
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop).
-2. Put the music on an audio track first and mark_beats on it (every 1); describe_project lists the beat markers with their times. The edit is cut to these: cut on downbeats and at phrase starts, a frame or two before the beat rather than after it.
-3. preview_media each clip to find its best moments. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Then lay the best moments on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
-4. Speed: velocity edits run fast between beats and slow on the hit (set_speed_curve hero, bullet or montage); set_speed 0.5 with set_frame_blending for smooth slow motion.
-5. Hits on the beat: short adjustment clips (add_adjustment_clip) with add_effect flash, shake, zoomPulse, rgbSplit or glow at the strongest beats; a white flash (add_color_clip #ffffff a few frames long with set_animation out fade) on the drop.
-6. Look: one grade over everything (filter teal or a LUT on an adjustment layer), grain, and cinematic bars (two black color clips at the top and bottom, or a crop) for a film feel.
-7. Titles: big, short, bold words (Impact or Arial Black, size 180-260) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
-8. Sound design: add_sound_effect whoosh on fast cuts, boom on the drop, rise before it; set_fades on the music's end.
-9. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop: it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
+3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit).
+4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
+5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
+6. Hits: add_beat_hits flash, zoom, shake, rgb_split, glow or zoom_blur on the drop (marker_label Drop), on bars, or at_cuts; it keeps flashes to 3 a second. Transitions whipLeft, whipRight, zoomPunch or spinBlur at a few cuts, in the direction of the motion.
+7. Look: one grade over everything (filter teal or a LUT on an adjustment clip), grain, and add_cinematic_bars (2.39) for a film feel.
+8. Titles: big, short, bold words (one display face, size 160-240) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
+9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; then fit_music end bar (or video) with fade_out to end the music cleanly.
+10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
 
 ${DESIGN}`,
   },

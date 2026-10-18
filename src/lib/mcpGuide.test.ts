@@ -74,7 +74,7 @@ describe("the MCP guide", () => {
     const listed = (await call("prompts/list")) as { result: { prompts: unknown[] } };
     expect(listed.result.prompts).toHaveLength(3);
     const got = (await call("prompts/get", { name: "epic_edit", arguments: { theme: "a ski season" } })) as { result: { messages: { content: { text: string } }[] } };
-    expect(got.result.messages[0].content.text).toContain("mark_beats");
+    expect(got.result.messages[0].content.text).toContain("analyze_music");
     const guide = (await call("resources/read", { uri: "guide://ad" })) as { result: { contents: { text: string }[] } };
     expect(guide.result.contents[0].text).toContain("End card");
     const help = (await call("tools/call", { name: "help", arguments: { topic: "set_fades" } })) as { result: { content: { text: string }[] } };

@@ -39,14 +39,15 @@ Making an ad (15, 30 or 60 s) with these tools:
 
 Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop).
-2. Put the music on an audio track first and mark_beats on it (every 1); describe_project lists the beat markers with their times. The edit is cut to these: cut on downbeats and at phrase starts, a frame or two before the beat rather than after it.
-3. preview_media each clip to find its best moments. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Then lay the best moments on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
-4. Speed: velocity edits run fast between beats and slow on the hit (set_speed_curve hero, bullet or montage); set_speed 0.5 with set_frame_blending for smooth slow motion.
-5. Hits on the beat: short adjustment clips (add_adjustment_clip) with add_effect flash, shake, zoomPulse, rgbSplit or glow at the strongest beats; a white flash (add_color_clip #ffffff a few frames long with set_animation out fade) on the drop.
-6. Look: one grade over everything (filter teal or a LUT on an adjustment layer), grain, and cinematic bars (two black color clips at the top and bottom, or a crop) for a film feel.
-7. Titles: big, short, bold words (Impact or Arial Black, size 180-260) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
-8. Sound design: add_sound_effect whoosh on fast cuts, boom on the drop, rise before it; set_fades on the music's end.
-9. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop: it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
+3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit).
+4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
+5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
+6. Hits: add_beat_hits flash, zoom, shake, rgb_split, glow or zoom_blur on the drop (marker_label Drop), on bars, or at_cuts; it keeps flashes to 3 a second. Transitions whipLeft, whipRight, zoomPunch or spinBlur at a few cuts, in the direction of the motion.
+7. Look: one grade over everything (filter teal or a LUT on an adjustment clip), grain, and add_cinematic_bars (2.39) for a film feel.
+8. Titles: big, short, bold words (one display face, size 160-240) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
+9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; then fit_music end bar (or video) with fade_out to end the music cleanly.
+10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
 
 ## A short for TikTok, Reels or Shorts
 

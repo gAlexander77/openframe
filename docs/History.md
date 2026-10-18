@@ -901,3 +901,47 @@ and delivery) while the MCP layer was rebuilt here.
     the named tools, and passes.
   - The sheets had a transparent ground, so white-edged frames (the
     framecode fixture) ran together. They sit on dark gray now.
+- **Epic edits, for agents first.** A beat-synced montage took dozens of
+  calls (mark beats, read markers, place every shot, keyframe every hit),
+  so agents did not make one. Six tools now cover it: `analyze_music`
+  (the song as data: beats, bars, phrases, sections, the drop),
+  `cut_to_beats`, `add_beat_hits`, `add_cinematic_bars`, `set_speed_ramp`
+  and `fit_music`, with whip, zoom punch and spin blur transitions, seven
+  more synthesized sounds and `end_at` so a riser peaks on the drop.
+  `scripts/drive/epic-edit.js` builds a 13 s edit through MCP calls alone;
+  every cut lands within 17 ms of a true beat.
+- **Downbeats come from where a song changes.** Accents alone (onset
+  strength, bass, how much the sound changes) picked the wrong beat of
+  four on the beat-128 loop, where nothing marks the bar: three ways of
+  measuring each beat at a different place in it (a frame grid, four
+  fixed spots, windows reaching into the next beat) made patterns that
+  repeat every few beats and read as accents. Measured across the whole
+  beat, inside it, and averaged as power, the loop has no accent; a part
+  changing (two bars against two bars, 3 dB or more) is the strongest
+  cue and votes first. Averaging band levels in dB let a silent band in
+  one beat (the last beat's cut-off hat) move a mean by 100 dB and invent
+  a section; power averages with a floor do not.
+- **A hit fades by its effects, not its opacity.** A flash made as an
+  adjustment layer fading out by opacity would cross-fade a zoom on the
+  same layer into a ghost of two pictures, so every hit keyframes its own
+  amounts (the flash: exposure, brightness and whites) from the peak on
+  the beat to nothing. Adjustment layers on their own track meant a title
+  added later landed among the hits (the first free track from the top);
+  new titles and media now skip tracks of adjustment layers.
+- **Flashes keep to three a second** (WCAG 2.3.1, Three Flashes): beat
+  hits drop the flash from a beat that would break the limit, counting
+  flashes already on the timeline, and the strobe effect starts at 2 a
+  second, its range kept.
+- **Zero crossings misread pitch in a mix.** Checking which second of a
+  song plays by its pitch, the export read 236 Hz for a 220 Hz tone: the
+  mix's faint hiss adds crossings. Autocorrelation reads 220.2. The sound
+  effects test had one `expect` per sample; with seven more sounds it took
+  over five seconds, and one `every` makes it two.
+- **What the contact sheet showed.** The end-to-end drive's first sheet
+  had the opening title across the subject's face and the same fractal
+  in five shots of sixteen (three fixtures share one picture). Moving the
+  title to the lower third and giving the one real take three framings
+  with `frame_region` punch-ins fixed both; agents with little footage can
+  do the same. A transition drive that put a color clip before a picture
+  found no cut to transition: color clips land on an overlay track, not
+  the main one, and `set_transition` answers `unchanged`.

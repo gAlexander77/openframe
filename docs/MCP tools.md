@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 116 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 122 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -16,12 +16,13 @@ To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, mark_beats on the track and cut on the beat markers.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 ```
 
 ## Contents
@@ -30,9 +31,9 @@ To make a video:
 - **Projects**: `list_projects`, `open_project`, `new_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
-- **Markers and beats**: `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
-- **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Speed**: `set_speed`, `set_speed_curve`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
+- **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
+- **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
+- **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
 - **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
@@ -505,9 +506,94 @@ Move the playhead to a time in seconds: what the viewer shows and where tools th
 |---|---|---|---|
 | `at` | number | yes | Seconds (0..) |
 
-## Markers and beats
+## Music, beats and markers
 
-Mark moments and the music's beats to cut and animate on.
+Read the music's structure, cut and hit on it, fit it to the picture; mark moments.
+
+### analyze_music
+
+Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); and drop (where the biggest rise into a loud section lands, or null). All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The music clip (audio, or a video with sound) |
+| `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Kinds of markers to add (default none) |
+
+Example:
+
+```json
+{"name":"analyze_music","arguments":{"clip_id":"c_3","markers":["beats","bars","drop"]}}
+```
+
+### cut_to_beats
+
+Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers ["bars"] or ["phrases"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {"media": [{"asset_id": "a_1"}, {"asset_id": "a_2", "in": 3}, {"asset_id": "a_1", "beats": 4}], "pattern": [2, 2, 1, 1]}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `media` | { asset_id, in, beats }[] | yes | The shots in order; the same asset may appear many times |
+| `media[].asset_id` | string | yes | Video or picture asset id (import_media) |
+| `media[].in` | number |  | Source seconds the shot starts at (default: where this media's previous shot ended, else 0) (0..) |
+| `media[].beats` | integer |  | Grid steps this shot lasts, overriding pattern and every (1..) |
+| `grid` | "beats" \| "bars" \| "downbeats" \| "phrases" |  | Which markers make the grid: beats (Beat, default), bars or downbeats (Bar: each bar's first beat), phrases (Phrase: every 4 bars) |
+| `beats` | number[] |  | The grid as timeline seconds instead of markers, e.g. analyze_music's downbeats |
+| `marker_label` | string |  | Use the markers with this label as the grid instead |
+| `every` | integer |  | Grid steps per shot (default 2 for beats, 1 for bars or phrases) (1..64) |
+| `pattern` | integer[] |  | Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1] |
+| `start` | number |  | Timeline seconds the first shot starts (default 0) (0..) |
+| `end` | number |  | Timeline seconds to stop by: no cut after it (0..) |
+| `track_id` | string |  | A video track instead of the main track |
+| `mute` | boolean |  | Mute the shots' own sound (default true: the music carries a montage) |
+
+Example:
+
+```json
+{"name":"cut_to_beats","arguments":{"media":[{"asset_id":"a_1","in":2},{"asset_id":"a_2"},{"asset_id":"a_1","in":9,"beats":4}],"grid":"beats","pattern":[4,4,2,2,1,1]}}
+```
+
+### add_beat_hits
+
+Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch), shake (camera shake), rgb_split, glow or zoom_blur, several at once as one layer (["flash", "zoom"]). Each hit is an adjustment layer on a Hits track above the footage (below bars and titles), at its peak on the beat and easing out over `duration` (default 0.2 to 0.35 s by effect), keyframed, so preview and export match. Times: `times` (timeline seconds), the main track's cuts (at_cuts true), or the Beat markers (or marker_label's, e.g. Bar or Drop), between from and to, thinned to every Nth. intensity 0..1 (default 1, strong). Photosensitivity: flashes keep to at most 3 in any second (WCAG 2.3.1); a beat that would break that gets its other effects without the flash, or nothing. Example: {"effects": ["zoom", "rgb_split"], "marker_label": "Bar"}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `effect` | "flash" \| "zoom" \| "shake" \| "rgb_split" \| "glow" \| "zoom_blur" |  | One hit |
+| `effects` | "flash" \| "zoom" \| "shake" \| "rgb_split" \| "glow" \| "zoom_blur"[] |  | Several hits on each beat, as one layer |
+| `times` | number[] |  | Timeline seconds of the hits |
+| `at_cuts` | boolean |  | Hit every cut of the main track instead |
+| `marker_label` | string |  | Hit the markers with this label (default Beat) |
+| `every` | integer |  | Only every Nth time, from the first (default 1) (1..64) |
+| `from` | number |  | Timeline seconds: no hit before (0..) |
+| `to` | number |  | Timeline seconds: no hit at or after (0..) |
+| `duration` | number |  | Seconds each hit lasts (0.04..2) |
+| `intensity` | number |  | 0..1, default 1 (0..1) |
+
+Example:
+
+```json
+{"name":"add_beat_hits","arguments":{"effects":["flash","zoom"],"marker_label":"Drop"}}
+```
+
+### fit_music
+
+Fit a music clip to the cut. With drop_at, first slide the music so its drop plays at drop_at (timeline seconds): drop is where the drop plays now (analyze_music's drop; default the Drop marker on the clip), anything that would fall before 0 is cut off, and its Beat, Bar, Phrase and section markers move with it. Then end it with the picture (end video, default), on the last Beat or Bar marker before the picture ends (end beat or bar), or at end_at, fading out over fade_out seconds (default 1). trim_picture cuts the picture there too, so both stop together. Align the drop before cut_to_beats: the cuts follow the markers. Example: {"clip_id": "c_2", "drop_at": 4.0, "end": "bar", "fade_out": 1.5}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The music clip (audio, or a video's sound) |
+| `drop_at` | number |  | Timeline seconds the drop should land on (0..) |
+| `drop` | number |  | Timeline seconds where the drop plays now (default the Drop marker on the clip) (0..) |
+| `end` | "video" \| "beat" \| "bar" |  | Where the music ends: video (the picture's end, default), beat or bar (the last Beat or Bar marker before it) |
+| `end_at` | number |  | Timeline seconds to end at instead (0..) |
+| `fade_out` | number |  | Seconds of fade-out (default 1) (0..30) |
+| `fade_in` | number |  | Seconds of fade-in (default unchanged) (0..30) |
+| `trim_picture` | boolean |  | Also cut the picture (every video track) at the music's end |
+
+Example:
+
+```json
+{"name":"fit_music","arguments":{"clip_id":"c_3","drop_at":8.4,"end":"bar","fade_out":1.5}}
+```
 
 ### mark_beats
 
@@ -823,6 +909,24 @@ Example:
 {"name":"set_animation","arguments":{"clip_id":"c_123","slot":"in","type":"pop","duration":0.4}}
 ```
 
+### add_cinematic_bars
+
+Cinematic bars: letterbox the picture to a wide ratio, 2.39 (scope, default), 2.35, 2 or 1.85 (pillarboxed when the canvas is already wider), on any canvas shape. An adjustment layer with the letterbox effect on a Bars track above the footage and hits, below titles, from start (default 0) to end (default the picture's end); animate_in and animate_out slide the bars in and out over that many seconds. Calling it again over the same time replaces the bars. Example: {"ratio": 2.39, "start": 4.0, "animate_in": 0.4}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `ratio` | number |  | Width over height of the picture left between the bars (default 2.39) (1..4) |
+| `start` | number |  | Timeline seconds (default 0) (0..) |
+| `end` | number |  | Timeline seconds (default the end of the picture) (0..) |
+| `animate_in` | number |  | Seconds the bars take to slide in (default 0: there at once) (0..10) |
+| `animate_out` | number |  | Seconds they take to slide out at the end (default 0) (0..10) |
+
+Example:
+
+```json
+{"name":"add_cinematic_bars","arguments":{"ratio":2.39,"animate_in":0.6}}
+```
+
 ### track_motion
 
 Pin a title, sticker or picture to a moving subject in the video under it (CapCut's Tracking): follows the subject from `at` to the end of the shorter clip on this computer and writes the layer's position keyframes, keeping the layer's offset from the subject. box is the subject in fractions of the video's picture (x, y its top-left corner); without it, a box around the layer's own center. One undoable edit.
@@ -896,6 +1000,27 @@ Example:
 
 ```json
 {"name":"set_speed_curve","arguments":{"clip_id":"c_123","preset":"hero"}}
+```
+
+### set_speed_ramp
+
+Velocity edit: ramp a video clip's speed so its slow-motion moment (moment slow, default) or its fast moment (fast) lands exactly on a beat at `at` (timeline seconds; default the Beat marker nearest the clip's middle). The clip keeps its start and length, so cuts made on the beat stay there; the ramp reads more or less of the media instead (the in-point moves earlier when the file would run out). Without a preset: speed 0.1..10 at the moment (default 0.3 slow, 3 fast), base elsewhere (default 2 slow, 1 fast), easing over `ease` seconds (default 0.12) into the beat and holding `hold` seconds (default 0.25). Or preset (montage, hero, bullet, jumpCut, flashIn, flashOut): its slowest (or fastest) point is moved onto the beat. set_speed_curve ramps a whole clip without aligning it. Example: {"clip_id": "c_5", "at": 3.75}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `at` | number |  | Timeline seconds of the beat, inside the clip (0..) |
+| `moment` | "slow" \| "fast" |  | Which moment lands on the beat |
+| `speed` | number |  | Speed at the moment (0.1..10) |
+| `base` | number |  | Speed before and after it (0.1..10) |
+| `hold` | number |  | Seconds the moment holds after the beat (0..10) |
+| `ease` | number |  | Seconds the speed takes to change into and out of the moment (0.02..5) |
+| `preset` | "montage" \| "hero" \| "bullet" \| "jumpCut" \| "flashIn" \| "flashOut" |  | A ready-made ramp to align instead |
+
+Example:
+
+```json
+{"name":"set_speed_ramp","arguments":{"clip_id":"c_7","at":8.4,"moment":"slow"}}
 ```
 
 ### set_reverse
@@ -1118,12 +1243,12 @@ Effects stacks, transitions at cuts, looks and the color grade.
 
 ### add_effect
 
-Add a video effect to a visual or adjustment clip. params override the effect's defaults.
+Add a video effect to a visual or adjustment clip. params override the effect's defaults. Keep the strobe flash (flash) at 3 flashes a second or slower: faster flashing can trigger seizures (WCAG 2.3.1).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Clip id |
-| `type` | "blur" \| "zoomBlur" \| "pixelate" \| "rgbSplit" \| "glitch" \| "vhs" \| "grain" \| "scanlines" \| "invert" \| "posterize" \| "duotone" \| "mirror" \| "kaleidoscope" \| "fisheye" \| "shake" \| "zoomPulse" \| "flash" \| "glow" \| "lightLeak" \| "denoise" \| "motionBlur" \| "sketch" \| "halftone" \| "magnify" | yes | Effect |
+| `type` | "blur" \| "zoomBlur" \| "pixelate" \| "rgbSplit" \| "glitch" \| "vhs" \| "grain" \| "scanlines" \| "invert" \| "posterize" \| "duotone" \| "mirror" \| "kaleidoscope" \| "fisheye" \| "shake" \| "zoomPulse" \| "zoom" \| "flash" \| "glow" \| "lightLeak" \| "denoise" \| "motionBlur" \| "sketch" \| "halftone" \| "letterbox" \| "magnify" | yes | Effect |
 | `params` | object |  | Effect parameters |
 
 Example:
@@ -1178,7 +1303,7 @@ Put a transition on the cut after a clip (the next clip must touch it). type 'no
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The clip before the cut |
-| `type` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "none" | yes | Transition |
+| `type` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "whipLeft" \| "whipRight" \| "zoomPunch" \| "spinBlur" \| "none" | yes | Transition |
 | `duration` | number |  | Seconds (0.05..) |
 
 Example:
@@ -1320,12 +1445,13 @@ Read a title aloud in a voice made on this computer (Kokoro), placing the voice 
 
 ### add_sound_effect
 
-Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, ding, success, rise (a riser) or boom. It lands on an audio track at `start` (default the playhead); the file is made once per project and reused.
+Add a built-in sound effect, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). It lands on an audio track at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. The file is made once per project and reused.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "boom" | yes | Which effect (list_catalog section sound_effects has their lengths) |
-| `start` | number |  | Timeline seconds (0..) |
+| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect (list_catalog section sound_effects has their lengths) |
+| `start` | number |  | Timeline seconds the sound starts (0..) |
+| `end_at` | number |  | Timeline seconds the sound ends instead (start = end_at - its length) (0..) |
 
 Example:
 

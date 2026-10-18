@@ -111,6 +111,32 @@ shows the whole region; the picture slides back where it would uncover
 empty canvas. `to_region` (with optional `from`/`to` seconds) eases from
 one to the other: the push-in on a screen recording.
 
+Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
+
+- `analyze_music` `{clip_id, markers?}`: tempo, beats, downbeats, phrases,
+  sections (intro, verse, build, drop, breakdown, outro, with energy),
+  per-beat energy, hits and the drop, in timeline seconds; `markers`
+  (`beats`, `bars`, `phrases`, `sections`, `drop`) also drops markers.
+- `cut_to_beats` `{media: [{asset_id, in?, beats?}], grid?, beats?,
+  every?, pattern?, start?, end?}`: shots end to end on the main track,
+  every cut on a beat, bar or phrase.
+- `add_beat_hits` `{effect | effects, times? | at_cuts? | marker_label?,
+  every?, from?, to?, duration?, intensity?}`: flash, zoom, shake,
+  rgb_split, glow or zoom_blur hits on a Hits track; at most three flashes
+  a second.
+- `add_cinematic_bars` `{ratio?, start?, end?, animate_in?, animate_out?}`:
+  letterbox bars (2.39 by default) under the titles.
+- `set_speed_ramp` `{clip_id, at?, moment?, speed?, base?, hold?, ease?,
+  preset?}`: the slow (or fast) moment of a ramp on a beat; the clip keeps
+  its place and length.
+- `fit_music` `{clip_id, drop_at?, drop?, end?, end_at?, fade_out?,
+  fade_in?, trim_picture?}`: the drop where it belongs, the end with the
+  picture or on a bar, faded.
+- `add_sound_effect` takes `end_at` (the sound ends there: a riser peaks
+  on the drop) and offers impact, subDrop, braam, reverseCymbal, glitch,
+  shutter and swooshUp; `set_transition` takes whipLeft, whipRight,
+  zoomPunch and spinBlur.
+
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
 footage; an empty color removes one.

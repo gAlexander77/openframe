@@ -37,7 +37,7 @@ async (page) => {
   details.prompt = { ok: /trail running shoe/.test(prompt.result.messages[0].content.text) };
   const guide = await rpc("resources/read", { uri: "guide://epic_edit" });
   const cat = await rpc("resources/read", { uri: "catalog://all" });
-  details.resources = { ok: /mark_beats/.test(guide.result.contents[0].text) && JSON.parse(cat.result.contents[0].text).fonts.builtin.length > 5 };
+  details.resources = { ok: /analyze_music/.test(guide.result.contents[0].text) && JSON.parse(cat.result.contents[0].text).fonts.builtin.length > 5 };
   const proj = await call("describe_project");
   await call("add_color_clip", { color: "#204060", start: 0, duration: 4 });
   const origin = await page.evaluate(() => location.origin);

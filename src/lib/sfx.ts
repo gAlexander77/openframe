@@ -112,6 +112,109 @@ export const SFX: Record<string, Sfx> = {
       }), 0.6);
     },
   },
+  // ---- for epic edits: hits on the drop, risers into it ----
+  impact: {
+    label: "Impact",
+    seconds: 1.2,
+    make: (r) => {
+      // A cinematic hit: a falling low thump, a crack of band-passed noise
+      // and a short metallic ring on top.
+      const n = Math.round(1.2 * r);
+      const crack = bandpass(noise(n, 53), r, (i) => 2400 * Math.exp(-i / (0.05 * r)) + 500, 0.9);
+      let ph = 0;
+      return finish(Float32Array.from({ length: n }, (_, i) => {
+        const t = i / r;
+        ph += (2 * Math.PI * (40 + 70 * Math.exp(-t / 0.04))) / r;
+        const ring = Math.sin(2 * Math.PI * 1730 * t) * 0.15 + Math.sin(2 * Math.PI * 2615 * t) * 0.1;
+        return Math.tanh(1.6 * Math.sin(ph) * env(t, 0.002, 0.35)) + crack[i] * env(t, 0.0005, 0.05) * 1.4 + ring * env(t, 0.001, 0.12);
+      }), 0.8);
+    },
+  },
+  subDrop: {
+    label: "Sub drop",
+    seconds: 1.8,
+    make: (r) => {
+      // A sine falling from 110 Hz to 30 Hz, a little saturated so small
+      // speakers hear its harmonics.
+      let ph = 0;
+      return finish(Float32Array.from({ length: Math.round(1.8 * r) }, (_, i) => {
+        const t = i / r;
+        ph += (2 * Math.PI * (30 + 80 * Math.exp(-t / 0.35))) / r;
+        return Math.tanh(2 * Math.sin(ph)) * env(t, 0.01, 0.7);
+      }), 0.8);
+    },
+  },
+  braam: {
+    label: "Braam",
+    seconds: 3,
+    make: (r) => {
+      // The trailer horn: three detuned saws on A1 through a filter that
+      // opens with the swell, then fades.
+      const n = Math.round(3 * r);
+      const voices = [55, 55.4, 54.6];
+      const x = Float32Array.from({ length: n }, (_, i) => {
+        const t = i / r;
+        // Plain saws: at 55 Hz under a filter this low, aliasing is inaudible.
+        const s = voices.reduce((a, f) => a + 2 * ((f * t) % 1) - 1, 0);
+        return s * (t < 0.08 ? t / 0.08 : Math.exp(-(t - 0.08) / 1.1));
+      });
+      const shaped = bandpass(x, r, (i) => 180 + 1400 * Math.exp(-i / (0.6 * r)), 0.7);
+      return finish(shaped.map((v) => Math.tanh(v * 1.5)), 0.8);
+    },
+  },
+  reverseCymbal: {
+    label: "Reverse cymbal",
+    seconds: 2,
+    make: (r) => {
+      // A crash played backward: bright noise swelling to a sudden stop,
+      // so it ends exactly where it lands.
+      const n = Math.round(2 * r);
+      const x = bandpass(noise(n, 61), r, () => 7000, 0.6);
+      return finish(x.map((v, i) => v * Math.exp(-(n - i) / (0.5 * r)) * (i > n - r * 0.01 ? (n - i) / (r * 0.01) : 1)), 0.7);
+    },
+  },
+  glitch: {
+    label: "Glitch",
+    seconds: 0.5,
+    make: (r) => {
+      // Digital stutter: short grains of square waves at random pitches,
+      // held to a few levels like a broken encoder.
+      const n = Math.round(0.5 * r);
+      const rand = noise(64, 71);
+      const grain = Math.round(0.03 * r);
+      return finish(Float32Array.from({ length: n }, (_, i) => {
+        const g = Math.floor(i / grain);
+        const on = rand[g % 64] > -0.4;
+        const f = 300 + 1700 * Math.abs(rand[(g * 7) % 64]);
+        const sq = Math.sign(Math.sin((2 * Math.PI * f * i) / r));
+        return on ? Math.round(sq * (0.6 + 0.4 * rand[(g * 3) % 64]) * 4) / 4 : 0;
+      }), 0.6);
+    },
+  },
+  shutter: {
+    label: "Camera shutter",
+    seconds: 0.25,
+    make: (r) => {
+      // Two mechanical clicks, the shutter opening and closing.
+      const n = Math.round(0.25 * r);
+      const x = bandpass(noise(n, 79), r, () => 3000, 2);
+      return finish(x.map((v, i) => {
+        const t = i / r;
+        return v * (env(t, 0.0005, 0.008) + (t > 0.07 ? env(t - 0.07, 0.0005, 0.012) * 0.8 : 0));
+      }), 0.7);
+    },
+  },
+  swooshUp: {
+    label: "Swoosh up",
+    seconds: 0.9,
+    make: (r) => {
+      // A whoosh whose band only rises and which swells to the end: a lift
+      // into the next shot.
+      const n = Math.round(0.9 * r);
+      const x = bandpass(noise(n, 83), r, (i) => 300 + 5700 * (i / n) ** 1.5, 2);
+      return finish(x.map((v, i) => v * Math.sin((Math.PI / 2) * (i / n)) ** 2 * (i > n - r * 0.02 ? (n - i) / (r * 0.02) : 1)), 0.6);
+    },
+  },
   boom: {
     label: "Boom",
     seconds: 1.5,

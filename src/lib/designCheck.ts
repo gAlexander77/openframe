@@ -106,8 +106,9 @@ export function checkProject(p: Project, kind: CheckKind = "any") {
     add({ rule: "no_end_card", level: "warning", message: "No title in the last seconds: an ad ends on the brand and a call to action", fix: "add_text or add_text_template endCard over the last 2-3 s" });
 
   if (kind === "epic_edit") {
-    const beats = p.markers.filter((m) => m.label === "Beat").map((m) => m.frame);
-    if (!beats.length) add({ rule: "no_beat_grid", level: "warning", message: "No beat markers: an epic edit is cut to the music", fix: "mark_beats on the music clip" });
+    // Any of analyze_music's grids counts: a cut on a bar or phrase is on a beat.
+    const beats = p.markers.filter((m) => ["Beat", "Bar", "Phrase", "Drop"].includes(m.label ?? "")).map((m) => m.frame);
+    if (!beats.length) add({ rule: "no_beat_grid", level: "warning", message: "No beat markers: an epic edit is cut to the music", fix: "analyze_music with markers beats, bars and drop on the music clip" });
     else {
       const off = main.slice(1).filter((c) => !beats.some((b) => Math.abs(b - c.start) <= 1));
       if (off.length) add({ rule: "cuts_off_beat", level: "warning", at: sec(off[0].start), message: `${off.length} of ${main.length - 1} cuts on the main track miss a beat by more than a frame`, fix: "move_clip or trim_clip so each cut starts on a beat marker" });

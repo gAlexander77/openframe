@@ -159,9 +159,63 @@ behavior, no code was copied). Beat This! (MIT) is the planned upgrade for
 downbeats and tempo changes; madmom (non-commercial models), aubio (GPL)
 and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 
-**Gaps.** One tempo per clip, no downbeats or bars, no tempo changes.
-Markers sit on the timeline, not on the clip, so they stay put if the
-music clip moves.
+**Gaps.** One tempo per clip and no tempo changes; bars and song parts
+are the next section's. Markers sit on the timeline, not on the clip, so
+they stay put if the music clip moves (`fit_music` moves the music's
+markers with it).
+
+## Music structure (analyze_music)
+
+`musicStructure` in `src/lib/analysis/beats.ts`, for epic edits: the
+beats above, grouped the way Final Cut's beat grid shows a song (parts,
+bars, beats). `analyze_music` answers in timeline seconds and can drop
+Beat, Bar, Phrase, section and Drop markers, one undo step.
+
+1. **Beats** as above, but the tracker's trim is replaced by a gentler
+   one (a tenth of the RMS onset strength, not half): the strict trim
+   dropped a quiet intro's beats, and a song's parts need them.
+2. **Per-beat features.** The beat's loudness (RMS dB) and its spectral
+   shape: 12 mel bands from 2048-point windows half a window apart
+   across the beat, averaged as power. The band levels compare in dB
+   floored 60 dB under the loudest, so a band that is silent somewhere
+   moves a mean by what it lost.
+3. **Novelty.** At each beat, the RMS dB difference between the two bars
+   after it and the two before (Foote's idea, as a moving pair of
+   windows). A song changes part where it peaks.
+4. **Bars.** Parts change on bar lines, so novelty peaks of 3 dB or more
+   vote for the phase of the bar (which beat of four is the first).
+   Without them, accents decide: onset strength at the beat (a fifth
+   stronger counts one point), bass at it (2 dB) and how much the sound
+   changes there (2 dB); a phase must lead the first beat's by a point, or
+   the first beat starts bar one.
+5. **Phrases** are every fourth bar, counted from where the parts change.
+6. **Sections** start at bar lines with novelty of 3 dB or more, at least
+   four bars apart. Each is named by its loudness against the loudest
+   (within 0.15 of it, about 4 dB, is a drop); a quiet part before a drop
+   is a build if it rises 3 dB or more, else the intro when first; one
+   after a drop is a breakdown, the last one quieter than the one before
+   an outro, the rest verses. **The drop** is the biggest rise (3 dB or
+   more, two bars after against two before) into a drop section.
+7. **Hits:** onset envelope peaks two deviations above its mean, 100 ms
+   apart, on or off the beat.
+
+Measured: beat-128.m4a reads 128 BPM, one section, no drop, bars from the
+first beat; synthetic songs (`musicStructure.test.ts`) find an 18 dB drop
+to the beat, a breakdown between two drops, a swelling build, and the bar
+line after a one-beat pickup.
+
+Three early versions read structure that was not there, all by measuring
+at the wrong place: a 20-a-second frame grid falls at a different spot in each beat at 128
+BPM, and the pattern repeats every eight beats, so it read as accents;
+four fixed spots per beat missed the off-beat hat in some beats and not
+others, the same way; and a window reaching past a beat's end heard the
+next beat's attack, so a part seemed to start a beat early. Pure test
+tones also beat against each other in patterns that repeat every few
+beats, which is why accents need a clear lead.
+
+**Gaps.** 4/4 only; one tempo; section names come from loudness alone,
+so a loud verse reads as a drop. Beat This! (MIT) remains the upgrade for
+downbeats in real music.
 
 ## Normalize loudness
 
@@ -437,7 +491,15 @@ and the AI tools tab has a card for it.
 - **MCP:** the same nine as tools for external agents — `remove_silences`,
   `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`,
   `reduce_noise`, `stabilize_clip`, `sync_audio`, `remove_background`
-  (snake_case options; unset ones keep the panel's defaults).
+  (snake_case options; unset ones keep the panel's defaults) — and
+  `analyze_music` (`ai.analyzeMusic(clipId?, { markers })`).
+- **Epic edit:** an agent makes a beat-synced montage with
+  `analyze_music` (markers bars and drop), `fit_music` (`drop_at`, before
+  cutting), `cut_to_beats`, `add_beat_hits`, `set_speed_ramp`,
+  `add_cinematic_bars`, `add_sound_effect` with `end_at` (a riser into a
+  cut) and `fit_music` again to end on a bar ([[Features]], Epic edits).
+  `scripts/drive/epic-edit.js` does all of it through MCP calls alone and
+  checks every cut lands within a frame of a true beat.
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

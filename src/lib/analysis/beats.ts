@@ -6,11 +6,13 @@
 // documented behavior; no beat library (aubio is GPL, Essentia AGPL,
 // madmom's models non-commercial: research/AI and automation.md §2.6).
 //
-// Pure: mono PCM in, beat times in seconds and a tempo out.
+// Pure: mono PCM in, beat times in seconds and a tempo out. musicStructure
+// (at the end) adds bars, phrases, sections and the drop on top.
 //
-// ponytail: one global tempo per clip and no downbeats. Songs that change
-// tempo get beats that drift between tempo changes; Beat This! (MIT, ONNX)
-// is the upgrade for downbeats and tempo changes.
+// ponytail: one global tempo per clip, and downbeats from accents in 4/4
+// only. Songs that change tempo get beats that drift between tempo
+// changes; Beat This! (MIT, ONNX) is the upgrade for downbeats and tempo
+// changes.
 
 // ---- FFT ---------------------------------------------------------------------
 
@@ -336,4 +338,282 @@ export function tempoOf(beats: number[], fallback = 0): number {
     den += (i - mi) ** 2;
   });
   return num > 0 ? (60 * den) / num : fallback;
+}
+
+// ---- music structure (analyze_music) ---------------------------------------------
+// Final Cut's beat grid is the model: song parts, bars, beats. The beats
+// above are grouped into bars of four by where the accents fall (a louder
+// onset, more bass, the sound changing), bars into phrases of four, and
+// the song into sections where its sound changes for good (Foote's
+// novelty idea, measured as the change between the two bars before a bar
+// line and the two after it). Sections are named by loudness: what is
+// within a few dB of the loudest part is a drop, a quiet part before one
+// an intro or build, a quiet part after one a breakdown. The drop agents
+// want is the biggest rise into a loud section.
+
+export const BEATS_PER_BAR = 4;
+export const BARS_PER_PHRASE = 4;
+
+export type SectionLabel = "intro" | "verse" | "build" | "drop" | "breakdown" | "outro";
+
+export interface MusicSection {
+  /** Seconds. */
+  start: number;
+  end: number;
+  label: SectionLabel;
+  /** Mean loudness of its beats, 0..1: 1 is the loudest beat of the song,
+   * 0 is 24 dB or more below it. */
+  energy: number;
+}
+
+export interface MusicStructure {
+  bpm: number;
+  /** Seconds. */
+  beats: number[];
+  /** Each bar's first beat, seconds. */
+  downbeats: number[];
+  /** Every fourth bar line, starting where the sections change. */
+  phrases: number[];
+  /** Loudness of each beat, 0..1 as MusicSection.energy. */
+  energy: number[];
+  /** Strong onsets, on or off the beat (drum hits, stabs): cut points. */
+  hits: number[];
+  sections: MusicSection[];
+  /** Start of the biggest rise (3 dB or more) into a loud section, or null. */
+  drop: number | null;
+}
+
+/** dB the bars on each side of a bar line must differ by to start a section. */
+export const SECTION_CHANGE_DB = 3;
+/** Loudness span energy is measured over: 0 is this far below the loudest beat. */
+const ENERGY_RANGE_DB = 24;
+
+const round4 = (t: number) => Math.round(t * 1e4) / 1e4;
+const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
+const mean = (xs: ArrayLike<number>) => {
+  let s = 0;
+  for (let i = 0; i < xs.length; i++) s += xs[i];
+  return xs.length ? s / xs.length : 0;
+};
+
+/** RMS of pcm[a, b) seconds, dB re full scale. */
+function rmsDb(pcm: Float32Array, rate: number, a: number, b: number): number {
+  const from = Math.max(0, Math.floor(a * rate));
+  const to = Math.min(pcm.length, Math.max(from + 1, Math.floor(b * rate)));
+  let s = 0;
+  for (let i = from; i < to; i++) s += pcm[i] * pcm[i];
+  return 10 * Math.log10(s / Math.max(1, to - from) + 1e-12);
+}
+
+/** A meter of power in `bands` mel bands (40 Hz to 11 kHz) through one
+ * Hann window of `fftSize` samples centered where it is asked. */
+function bandMeter(pcm: Float32Array, rate: number, fftSize = 2048, bands = 12) {
+  const half = fftSize >> 1;
+  const win = Float64Array.from({ length: fftSize }, (_, i) => 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / fftSize));
+  const edges = melEdges(bands, 40, Math.min(11000, rate / 2)).map((f) => Math.min(half, Math.max(1, Math.round((f * fftSize) / rate))));
+  const re = new Float64Array(fftSize);
+  const im = new Float64Array(fftSize);
+  return (seconds: number): number[] => {
+    const center = Math.round(seconds * rate);
+    for (let i = 0; i < fftSize; i++) {
+      const k = center - half + i;
+      re[i] = k >= 0 && k < pcm.length ? pcm[k] * win[i] : 0;
+      im[i] = 0;
+    }
+    fft(re, im);
+    return Array.from({ length: bands }, (_, b) => {
+      const lo = edges[b];
+      const hi = Math.max(lo + 1, edges[b + 1]);
+      let sum = 0;
+      for (let k = lo; k < hi; k++) sum += re[k] * re[k] + im[k] * im[k];
+      return sum / (hi - lo) / (fftSize * fftSize);
+    });
+  };
+}
+
+const toDb = (power: number) => 10 * Math.log10(power + 1e-12);
+
+/** Strong onsets: peaks of the onset envelope two deviations above its
+ * mean, at least 100 ms apart. */
+function hitsOf(env: Float32Array, fps: number, offset: number): number[] {
+  const m = mean(env);
+  let v = 0;
+  for (const x of env) v += (x - m) ** 2;
+  const thr = m + 2 * Math.sqrt(v / Math.max(1, env.length));
+  const gap = Math.round(0.1 * fps);
+  const out: number[] = [];
+  let last = -Infinity;
+  for (let i = 0; i < env.length; i++) {
+    if (env[i] < thr) continue;
+    let peak = true;
+    for (let j = Math.max(0, i - 5); j <= Math.min(env.length - 1, i + 5) && peak; j++) if (env[j] > env[i] || (env[j] === env[i] && j < i)) peak = false;
+    if (!peak || i - last < gap) continue;
+    out.push(round4(i / fps + offset));
+    last = i;
+  }
+  return out;
+}
+
+/** RMS difference of two feature vectors, dB. */
+const distance = (a: number[], b: number[]) => Math.sqrt(mean(a.map((x, i) => (x - b[i]) ** 2)));
+
+/** Mean of feature rows [from, to). */
+function meanRows(rows: number[][], from: number, to: number): number[] {
+  const out = new Array(rows[0].length).fill(0);
+  for (let i = from; i < to; i++) rows[i].forEach((v, k) => (out[k] += v / (to - from)));
+  return out;
+}
+
+/**
+ * The beat (0..3) bars start on: the phase whose beats are most accented,
+ * by onset strength (a fifth stronger counts one point), bass (2 dB) and
+ * how much the sound changes there (2 dB). Without a clear winner (a point
+ * ahead of phase 0) the first beat starts the first bar: a steady loop's
+ * beats differ only by rounding, and pure tones beat against each other in
+ * patterns that repeat every few beats.
+ */
+function barPhase(accent: number[], bass: number[], change: number[]): number {
+  const [ma, mb, mc] = [mean(accent), mean(bass), mean(change)];
+  const at = (xs: number[], ph: number) => mean(xs.filter((_, i) => i % BEATS_PER_BAR === ph));
+  const score = [0, 1, 2, 3].map((ph) => (at(accent, ph) / Math.max(1e-9, ma) - 1) / 0.2 + (at(bass, ph) - mb) / 2 + (at(change, ph) - mc) / 2);
+  let best = 0;
+  for (let ph = 1; ph < BEATS_PER_BAR; ph++) if (score[ph] > score[best]) best = ph;
+  return score[best] - score[0] < 1 ? 0 : best;
+}
+
+/** Drop leading and trailing beats with next to no onset (the tracker's
+ * own trim also drops a quiet intro's beats, which a song's parts need). */
+function trimSilent(frames: number[], accent: (f: number) => number): number[] {
+  if (frames.length < 3) return frames;
+  const rms = Math.sqrt(mean(frames.map((f) => accent(f) ** 2)));
+  let a = 0;
+  let b = frames.length;
+  while (a < b && accent(frames[a]) < 0.1 * rms) a++;
+  while (b > a && accent(frames[b - 1]) < 0.1 * rms) b--;
+  return frames.slice(a, b);
+}
+
+/** The music's beat grid and parts, from mono PCM; times are seconds from
+ * the PCM's start. */
+export function musicStructure(pcm: Float32Array, rate: number, options: Partial<TempoOptions & { tightness: number }> = {}): MusicStructure {
+  const o = { ...BEAT_DEFAULTS, ...options };
+  const duration = pcm.length / rate;
+  const { env, fps, offset } = onsetEnvelope(pcm, rate);
+  const { period } = estimateTempo(env, fps, o);
+  const peakNear = (f: number) => {
+    let m = 0;
+    for (let j = Math.max(0, f - 3); j <= Math.min(env.length - 1, f + 3); j++) m = Math.max(m, env[j]);
+    return m;
+  };
+  const frames = trimSilent(trackBeats(env, period, o.tightness, false), peakNear);
+  const beats = frames.map((f) => Math.max(0, round4(f / fps + offset)));
+  const n = beats.length;
+  const hits = hitsOf(env, fps, offset);
+  const bpm = n < 2 ? 0 : Math.round(tempoOf(beats, (60 * fps) / period) * 10) / 10;
+  if (n < 2 * BEATS_PER_BAR) {
+    return { bpm, beats, downbeats: beats.slice(0, 1), phrases: beats.slice(0, 1), energy: beats.map(() => 1), hits, sections: [{ start: 0, end: round4(duration), label: "verse", energy: 1 }], drop: null };
+  }
+  const beatLen = 60 / bpm;
+  const ends = beats.map((t, i) => (i + 1 < n ? beats[i + 1] : Math.min(duration, t + beatLen)));
+  const db = beats.map((t, i) => rmsDb(pcm, rate, t, ends[i]));
+  const top = Math.max(...db);
+  const energy = db.map((d) => Math.round(clamp01((d - (top - ENERGY_RANGE_DB)) / ENERGY_RANGE_DB) * 100) / 100);
+
+  // Per beat: the spectral shape over the beat plus its loudness, the
+  // power of windows half a window apart across the beat (not a frame
+  // grid, nor a few spots: either misses a hat between them in some beats
+  // and not others, and that pattern repeats every few beats, which reads
+  // as accents). A window starting on the beat gives its bass.
+  const meter = bandMeter(pcm, rate);
+  const span = 2048 / rate;
+  const power = beats.map((t, i) => {
+    // Windows inside the beat: one reaching past its end would hear the
+    // next beat's attack, and a part's first beat would leak into its last.
+    const [a, b] = [t + span / 2, Math.max(t + span / 2, ends[i] - span / 2)];
+    const k = Math.max(2, Math.ceil((b - a) / (span / 2)) + 1);
+    const ws = Array.from({ length: k }, (_, j) => meter(a + ((b - a) * j) / (k - 1)));
+    return [...ws[0].map((_, band) => mean(ws.map((w) => w[band]))), 10 ** (db[i] / 10)];
+  });
+  // Levels compare in dB, averaged as power and floored 60 dB under the
+  // loudest, so a band that is silent somewhere (the cut-off last beat's
+  // hat) moves a mean by what it lost, not by a hundred dB.
+  const floor = Math.max(...power.flat().map(toDb)) - 60;
+  const dbOf = (v: number[]) => v.map((x) => Math.max(floor, toDb(x)));
+  const feat = power.map(dbOf);
+
+  // Bars: accents (onset strength at the beat, bass at it, the sound changing).
+  const accent = frames.map(peakNear);
+  const bass = beats.map((t) => {
+    const w = meter(t + span / 2);
+    return toDb(w[0] + w[1]);
+  });
+  const change = feat.map((x, i) => (i ? distance(x, feat[i - 1]) : 0));
+  // Novelty: how much the two bars after a beat differ from the two before.
+  const w = 2 * BEATS_PER_BAR;
+  const nov = beats.map((_, i) => (i < w || i > n - w ? 0 : distance(dbOf(meanRows(power, i, i + w)), dbOf(meanRows(power, i - w, i)))));
+  const novelty = (i: number) => nov[i];
+  // A song changes part on a bar line, which beats accents as a cue: the
+  // peaks of novelty vote for the phase; accents decide only without them.
+  const votes = [0, 0, 0, 0];
+  nov.forEach((v, i) => {
+    if (v >= SECTION_CHANGE_DB && nov.slice(Math.max(0, i - 2), i + 3).every((u) => u <= v)) votes[i % BEATS_PER_BAR] += v;
+  });
+  const voted = votes.indexOf(Math.max(...votes));
+  const phase = votes[voted] > 0 ? voted : barPhase(accent, bass, change);
+  const barStarts: number[] = [];
+  for (let i = phase; i < n; i += BEATS_PER_BAR) barStarts.push(i);
+
+  // Sections: bar lines where the two bars on either side differ most.
+  const candidates = barStarts.map((i) => ({ i, nov: novelty(i) })).filter((c) => c.nov >= SECTION_CHANGE_DB);
+  const cuts: number[] = [];
+  for (const c of [...candidates].sort((a, b) => b.nov - a.nov)) {
+    if (cuts.every((j) => Math.abs(j - c.i) >= BARS_PER_PHRASE * BEATS_PER_BAR)) cuts.push(c.i);
+  }
+  cuts.sort((a, b) => a - b);
+
+  // Phrases start where the sections change (or else on the first bar).
+  const phraseVotes = [0, 0, 0, 0];
+  const barOf = (i: number) => (i - phase) / BEATS_PER_BAR;
+  for (const i of cuts) phraseVotes[barOf(i) % BARS_PER_PHRASE] += novelty(i);
+  let pp = 0;
+  for (let k = 1; k < BARS_PER_PHRASE; k++) if (phraseVotes[k] > phraseVotes[pp]) pp = k;
+  const phrases = barStarts.filter((i) => barOf(i) % BARS_PER_PHRASE === pp).map((i) => beats[i]);
+
+  // Name the sections by loudness.
+  const bounds = [0, ...cuts, n];
+  const parts = bounds.slice(0, -1).map((a, k) => {
+    const b = bounds[k + 1];
+    const e = mean(energy.slice(a, b));
+    const head = mean(db.slice(a, Math.min(b, a + w)));
+    const tail = mean(db.slice(Math.max(a, b - w), b));
+    return { a, b, e, rising: tail - head >= SECTION_CHANGE_DB };
+  });
+  const loudest = Math.max(...parts.map((s) => s.e));
+  const high = parts.map((s) => s.e >= loudest - 0.15);
+  const label = (k: number): SectionLabel => {
+    if (parts.length === 1) return "verse";
+    if (high[k]) return "drop";
+    const beforeDrop = k + 1 < parts.length && high[k + 1];
+    if (beforeDrop && parts[k].rising) return "build";
+    if (k === 0) return "intro";
+    if (k === parts.length - 1 && parts[k].e < parts[k - 1].e) return "outro";
+    if (high[k - 1]) return "breakdown";
+    return beforeDrop ? "build" : "verse";
+  };
+  const sections: MusicSection[] = parts.map((s, k) => ({
+    start: k === 0 ? 0 : beats[s.a],
+    end: k === parts.length - 1 ? round4(duration) : beats[s.b],
+    label: label(k),
+    energy: Math.round(s.e * 100) / 100,
+  }));
+
+  // The drop: the biggest rise across a cut into a loud section.
+  let drop: number | null = null;
+  let rise = SECTION_CHANGE_DB;
+  cuts.forEach((i, k) => {
+    if (sections[k + 1].label !== "drop") return;
+    const r = mean(db.slice(i, i + w)) - mean(db.slice(Math.max(0, i - w), i));
+    if (r >= rise) [drop, rise] = [beats[i], r];
+  });
+  return { bpm, beats, downbeats: barStarts.map((i) => beats[i]), phrases, energy, hits, sections, drop };
 }
