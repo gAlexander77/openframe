@@ -112,6 +112,10 @@ Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 - `fit_music` `{clip_id, drop_at?, drop?, end?, end_at?, fade_out?,
   fade_in?, trim_picture?}`: the drop where it belongs, the end with the
   picture or on a bar, faded.
+- `add_sound_effect` takes `end_at` (the sound ends there: a riser peaks
+  on the drop) and offers impact, subDrop, braam, reverseCymbal, glitch,
+  shutter and swooshUp; `set_transition` takes whipLeft, whipRight,
+  zoomPunch and spinBlur.
 
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy

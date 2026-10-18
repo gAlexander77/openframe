@@ -181,6 +181,11 @@ export const TRANSITIONS: Record<string, TransitionDef> = {
   pixelate: { label: "Pixelate", category: "Stylized" },
   glitch: { label: "Glitch", category: "Stylized" },
   flash: { label: "Flash", category: "Stylized" },
+  // For epic edits: fast moves smeared with motion blur (lib/epic.ts).
+  whipLeft: { label: "Whip pan left", category: "Motion" },
+  whipRight: { label: "Whip pan right", category: "Motion" },
+  zoomPunch: { label: "Zoom punch", category: "Motion" },
+  spinBlur: { label: "Spin blur", category: "Motion" },
 };
 
 // ---- filters (looks) ---------------------------------------------------------

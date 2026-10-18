@@ -493,6 +493,13 @@ and the AI tools tab has a card for it.
   `reduce_noise`, `stabilize_clip`, `sync_audio`, `remove_background`
   (snake_case options; unset ones keep the panel's defaults) — and
   `analyze_music` (`ai.analyzeMusic(clipId?, { markers })`).
+- **Epic edit:** an agent makes a beat-synced montage with
+  `analyze_music` (markers bars and drop), `fit_music` (`drop_at`, before
+  cutting), `cut_to_beats`, `add_beat_hits`, `set_speed_ramp`,
+  `add_cinematic_bars`, `add_sound_effect` with `end_at` (a riser into a
+  cut) and `fit_music` again to end on a bar ([[Features]], Epic edits).
+  `scripts/drive/epic-edit.js` does all of it through MCP calls alone and
+  checks every cut lands within a frame of a true beat.
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

@@ -210,7 +210,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
   screen recording, and **Zoom** and **Letterbox** for epic edits),
-  20 transitions, 17 looks, adjustment layers. The **Strobe flash**
+  24 transitions, 17 looks, adjustment layers. The **Strobe flash**
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
@@ -496,8 +496,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 Music-synced montages (hype, velocity and AMV edits, CapCut's beat-synced
 templates done by hand) for agents first: each is a command or MCP tool,
-so a model makes a whole edit in a dozen calls. Times are timeline
-seconds.
+so a model makes a whole edit in a dozen calls (`scripts/drive/epic-edit.js`
+makes a 13 s one). Times are timeline seconds.
 
 - **Read the music** (`analyze_music`; Final Cut's beat grid is the
   model): tempo, every beat, downbeats (bars of four), phrases (four
@@ -532,6 +532,10 @@ seconds.
   the cut wants it (its markers move along), then end it with the
   picture, on the last beat or bar, or at a time, faded out; optionally
   cut the picture there too.
+- **Moves and sound**: Whip pan left and right, Zoom punch and Spin blur
+  transitions (motion-blurred, so the cut hides in the move), and
+  `add_sound_effect`'s `end_at`, so a riser or reverse cymbal peaks on the
+  drop.
 
 ## AI tools (all on this machine)
 
@@ -615,8 +619,10 @@ seconds.
 
 - **Sound effects** in the Audio tab (CapCut's is a cloud library;
   Resolve ships a local one): Whoosh, Swish, Pop, Click, Ding, Success,
-  Riser and Boom, synthesized on this computer from sines and seeded
-  noise, so they are the same everywhere and nobody's license applies.
+  Riser and Boom, and for epic edits Impact, Sub drop, Braam, Reverse
+  cymbal, Glitch, Camera shutter and Swoosh up, synthesized on this
+  computer from sines, saws and seeded noise, so they are the same
+  everywhere and nobody's license applies.
   The card's play button auditions one; double-click, + or a drag adds it
   on an audio track, the WAV made once per project and reused
   (`add_sound_effect` for agents).

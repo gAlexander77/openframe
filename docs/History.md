@@ -869,8 +869,10 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   so agents did not make one. Six tools now cover it: `analyze_music`
   (the song as data: beats, bars, phrases, sections, the drop),
   `cut_to_beats`, `add_beat_hits`, `add_cinematic_bars`, `set_speed_ramp`
-  and `fit_music`. On beat-128.m4a every cut lands within 17 ms of a
-  true beat.
+  and `fit_music`, with whip, zoom punch and spin blur transitions, seven
+  more synthesized sounds and `end_at` so a riser peaks on the drop.
+  `scripts/drive/epic-edit.js` builds a 13 s edit through MCP calls alone;
+  every cut lands within 17 ms of a true beat.
 - **Downbeats come from where a song changes.** Accents alone (onset
   strength, bass, how much the sound changes) picked the wrong beat of
   four on the beat-128 loop, where nothing marks the bar: three ways of
@@ -895,4 +897,14 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   second, its range kept.
 - **Zero crossings misread pitch in a mix.** Checking which second of a
   song plays by its pitch, the export read 236 Hz for a 220 Hz tone: the
-  mix's faint hiss adds crossings. Autocorrelation reads 220.2.
+  mix's faint hiss adds crossings. Autocorrelation reads 220.2. The sound
+  effects test had one `expect` per sample; with seven more sounds it took
+  over five seconds, and one `every` makes it two.
+- **What the contact sheet showed.** The end-to-end drive's first sheet
+  had the opening title across the subject's face and the same fractal
+  in five shots of sixteen (three fixtures share one picture). Moving the
+  title to the lower third and giving the one real take three framings
+  with `frame_region` punch-ins fixed both; agents with little footage can
+  do the same. A transition drive that put a color clip before a picture
+  found no cut to transition: color clips land on an overlay track, not
+  the main one, and `set_transition` answers `unchanged`.
