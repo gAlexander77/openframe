@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { addAdElement, behindProblem, putBehindSubject, safeArea } from "./ads";
+import { AD_ELEMENTS, addAdElement, behindProblem, putBehindSubject, safeArea } from "./ads";
+import { minTextSize } from "./brandKit";
 import { runCommand } from "./commands";
 import { createProject } from "./project/defaults";
 import type { Clip, ImageClip, Project, TextClip, VideoClip } from "./project/types";
@@ -23,6 +24,22 @@ function box(p: Project, c: Clip) {
   const cx = p.width / 2 + c.transform.x * p.width, cy = p.height / 2 + c.transform.y * p.height;
   return { left: cx - w / 2, right: cx + w / 2, top: cy - h / 2, bottom: cy + h / 2 };
 }
+
+/** The same box turned by the clip's rotation, as wide and tall as it reaches. */
+function turned(p: Project, c: Clip) {
+  const b = box(p, c);
+  const rad = (("transform" in c ? c.transform.rotation : 0) * Math.PI) / 180;
+  const w = b.right - b.left, h = b.bottom - b.top, cx = (b.left + b.right) / 2, cy = (b.top + b.bottom) / 2;
+  const hw = (Math.abs(Math.cos(rad)) * w + Math.abs(Math.sin(rad)) * h) / 2, hh = (Math.abs(Math.sin(rad)) * w + Math.abs(Math.cos(rad)) * h) / 2;
+  return { left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh };
+}
+
+const SHAPES: [number, number][] = [
+  [1920, 1080],
+  [1080, 1080],
+  [1080, 1350],
+  [1080, 1920],
+];
 
 describe("ad elements", () => {
   it("builds an end card: a brand-colored card, logo, headline, button and url, grouped, inside the safe area", () => {
@@ -84,7 +101,72 @@ describe("ad elements", () => {
     expect(badge.animLoop?.type).toBe("pulse");
     expect(badge.style.background!.color).toBe("#ffd23f");
     expect(tag.text).toBe("Today only");
-    expect(Math.max(box(p, badge).right, box(p, tag).right)).toBeCloseTo(0.95 * p.width, 0);
+    expect(Math.max(turned(p, badge).right, turned(p, tag).right)).toBeCloseTo(0.95 * p.width, 0);
+  });
+
+  it("keeps every part's text at the readable floor or above, on every shape", () => {
+    // 40 px at a 1080 short side: 40 on 16:9 and 1:1, 32 on 4:5, 22.5 on 9:16.
+    expect(SHAPES.map(([w, h]) => minTextSize(w, h))).toEqual([40, 40, 32, 22.5]);
+    const words = { headline: "Fresh roast", subline: "Today only", cta: "Order now", url: "roast.example" };
+    for (const [w, h] of SHAPES)
+      for (const element of AD_ELEMENTS) {
+        const { project: p, clipIds } = addAdElement(branded(w, h), element, { start: 0, ...words });
+        for (const c of clipsOf(p, clipIds)) if (c.type === "text") expect(c.style.size, `${element} "${c.text}" on ${w}x${h}`).toBeGreaterThanOrEqual(minTextSize(w, h));
+      }
+  });
+
+  it("centers an end card on the frame, inside the safe area kept even about the center line", () => {
+    for (const [w, h] of SHAPES) {
+      const { project: p, clipIds } = addAdElement(branded(w, h), "end_card", { start: 0, headline: "Fresh roast", cta: "Order now" });
+      const boxes = clipsOf(p, clipIds).filter((c) => c.type !== "color").map((c) => box(p, c));
+      const left = Math.min(...boxes.map((b) => b.left)), right = Math.max(...boxes.map((b) => b.right));
+      expect((left + right) / 2).toBeCloseTo(w / 2, 0);
+      // On 9:16 the right 19% is the apps' buttons: the left keeps 19% too.
+      const s = safeArea(p), side = Math.max(s.left, s.right);
+      expect(left).toBeGreaterThanOrEqual(side * w - 0.5);
+      expect(right).toBeLessThanOrEqual((1 - side) * w + 0.5);
+      expect(Math.min(...boxes.map((b) => b.top))).toBeGreaterThanOrEqual(s.top * h - 0.5);
+      expect(Math.max(...boxes.map((b) => b.bottom))).toBeLessThanOrEqual((1 - s.bottom) * h + 0.5);
+    }
+  });
+
+  it("builds an end card too tall for a 9:16 safe area smaller, as one", () => {
+    const { project: p, clipIds } = addAdElement(branded(1080, 1920), "end_card", { start: 0, headline: "Fresh\nroast,\nevery\nsingle\nmorning", cta: "Order now" });
+    const cs = clipsOf(p, clipIds).filter((c) => c.type !== "color");
+    const boxes = cs.map((c) => box(p, c));
+    expect(Math.min(...boxes.map((b) => b.top))).toBeGreaterThanOrEqual(0.14 * 1920 - 0.5);
+    expect(Math.max(...boxes.map((b) => b.bottom))).toBeLessThanOrEqual(0.65 * 1920 + 0.5);
+    for (let i = 1; i < boxes.length; i++) expect(boxes[i].top).toBeGreaterThanOrEqual(boxes[i - 1].bottom - 0.5);
+    const headline = cs.find((c): c is TextClip => c.type === "text" && c.text.startsWith("Fresh"))!;
+    expect(headline.style.size).toBeLessThan(Math.round((100 * (1.2 * 1080)) / 1920));
+  });
+
+  it("keeps an offer badge in its corner, on its half of the frame", () => {
+    for (const [w, h] of SHAPES) {
+      const { project: p, clipIds } = addAdElement(branded(w, h), "offer_badge", { start: 0, headline: "FREE SHIPPING", subline: "Today only" });
+      const boxes = clipsOf(p, clipIds).map((c) => turned(p, c));
+      const s = safeArea(p);
+      expect(Math.max(...boxes.map((b) => b.right))).toBeCloseTo((1 - s.right) * w, 0);
+      expect(Math.min(...boxes.map((b) => b.top))).toBeCloseTo(s.top * h, 0);
+      expect(Math.min(...boxes.map((b) => b.left))).toBeGreaterThanOrEqual(w / 2 - 0.5);
+    }
+  });
+
+  it("gives type over footage a shadow and an outline, and type on a card neither", () => {
+    const loose = (element: "logo_reveal" | "end_card" | "cta_button", background?: "none" | "brand") => {
+      const { project: p, clipIds } = addAdElement(branded(1080, 1920), element, { start: 0, headline: "Roast", subline: "Fresh every morning", url: "roast.example", ...(background ? { background } : {}) });
+      return clipsOf(p, clipIds).filter((c): c is TextClip => c.type === "text" && !c.style.background);
+    };
+    const over = [...loose("logo_reveal", "none"), ...loose("end_card", "none"), ...loose("cta_button")];
+    expect(over.length).toBeGreaterThan(4);
+    for (const t of over) {
+      expect(t.style.shadow, t.text).toBeDefined();
+      expect(t.style.stroke?.width ?? 0, t.text).toBeGreaterThan(0);
+    }
+    for (const t of [...loose("logo_reveal", "brand"), ...loose("end_card", "brand")]) {
+      expect(t.style.shadow, t.text).toBeUndefined();
+      expect(t.style.stroke?.width ?? 0, t.text).toBe(0);
+    }
   });
 
   it("reveals the logo with a glow flare and a white flash", () => {

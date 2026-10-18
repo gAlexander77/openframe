@@ -91,6 +91,39 @@ tutorials; where a figure comes from a vendor or trade blog, it says so.
 - **Look:** a teal-orange or cinematic grade, grain, with glow and RGB
   split used sparingly.
 
+## What a blind test of the ad tools found
+
+A model with only the MCP tools made a 9:16 ad and its other shapes. What
+it tripped on, and the rule each one taught:
+
+- **Type sized against the short side needs a layout that scales with
+  it.** The end card's parts kept their pixel size in 16:9, 1:1 and 4:5,
+  but their positions stayed fractions of the height, so the stack's type
+  grew 1.78 times against its spacing and overlapped. A group now moves
+  and scales as one ([[ADR-063 Versions fit a group as one unit]]).
+- **Centered is on the frame's center line.** 9:16's safe area is lopsided
+  (19% right for the apps' buttons, 11% left), so an element centered in
+  it sat 4% left of center. A centered element uses the area made even
+  about the center.
+- **A corner element keeps to its half of the frame**: a wide offer badge
+  set against the top right reached the middle.
+- **The readable floor is 40 px at a 1080 short side.** Style sizes are
+  pixels at a 1080-tall canvas, so the floor is `40 × short side ÷
+  height`: 40 on 16:9 and 1:1, 32 on 4:5, 22.5 on 9:16. Ad type scaled
+  for the narrow frame had gone to 20.
+- **A soft shadow alone loses thin type on bright footage**: a tagline
+  over a pink and green fractal needed a thin dark outline as well.
+- **A tool reading the viewer's canvas sees what the screen shows**:
+  `preview_frame` answered 222 × 395 for a 9:16 project at any
+  `max_width`. Previews render as the export does.
+- **One hue wheel everywhere.** Duotone's cosine palette ran its hue
+  backwards (60 purple, 240 green) against HSL and the color wheels (60
+  yellow, 240 blue). Projects made before the fix change color.
+- **Say how far a slider goes.** `set_hsl` hue -30 on an adjustment clip
+  turns that band 9° (±100 is ±30°), which a model read as
+  "nothing happened"; the adjustment layer does grade what is under it
+  (`scripts/drive/adjustment-hsl.js`).
+
 ## What OpenFrame lacked, and who took it
 
 The research ranked about thirty gaps. Work on the `improvements` branch

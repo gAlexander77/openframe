@@ -8,6 +8,7 @@
 // footage is flagged as a risk instead, and loudness is left to export.
 
 import { layerBox, VERTICAL_SAFE } from "./align";
+import { minTextSize } from "./brandKit";
 import { textPad } from "./render/size";
 import { lookReach } from "./textLook";
 import { framesToSeconds } from "./time";
@@ -30,9 +31,6 @@ export type CheckKind = "ad" | "epic_edit" | "social_short" | "any";
 
 /** The 90% title-safe inset (SMPTE ST 2046-1), a fraction of each side. */
 const TITLE_SAFE = 0.05;
-/** Text shorter than this many pixels, on a frame whose short side is 1080,
- * is hard to read on a phone. */
-const MIN_TEXT = 40;
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
@@ -45,7 +43,7 @@ export function checkProject(p: Project, kind: CheckKind = "any") {
   const vertical = p.height > p.width;
   // style.size is pixels at a 1080-tall canvas, scaled with the height; the
   // floor scales with the short side, so 9:16 text can be smaller in size.
-  const minSize = (MIN_TEXT * Math.min(p.width, p.height)) / p.height;
+  const minSize = minTextSize(p.width, p.height);
   const frac = (v: number) => +v.toFixed(3);
   // Canvas fractions from the center, as transform.x / y use them.
   const z = { safe: 0.5 - TITLE_SAFE, top: VERTICAL_SAFE.top - 0.5, bottom: 0.5 - VERTICAL_SAFE.bottom, left: VERTICAL_SAFE.left - 0.5, right: 0.5 - VERTICAL_SAFE.right };

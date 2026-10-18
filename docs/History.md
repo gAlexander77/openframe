@@ -1148,3 +1148,23 @@ and delivery) while the MCP layer was rebuilt here.
     - The social-short playbook no longer sends a model to a UI tab.
   - `save_project_copy` saves the open project as a copy and opens it,
     for a version that needs hand work after `export_versions`.
+- **Polish from the second blind test**, by a parallel agent:
+  - **Versions:** `export_versions` lays out a group, such as an ad
+    element, as one unit, anchored where it sat
+    ([[ADR-063 Versions fit a group as one unit]]). A 9:16 end card's
+    url, button and headline overlapped on 16:9, 1:1 and 4:5: text kept
+    its size against the short side while its spacing stayed a fraction
+    of the height.
+  - **Ad elements:**
+    - they hold the size floor (`minTextSize`, 40 px at a 1080 short
+      side), and `check_project` uses the same floor;
+    - the end card sits on the center line, the badge in its half;
+    - text over footage gets a thin outline as well as its shadow;
+    - the brand's label role went from 34 to 40.
+  - **Duotone** follows the standard hue wheel; it ran backwards. Older
+    projects' duotones look mirrored: hue h now looks as 360 - h did.
+  - **`preview_frame` and the contact sheets** render through the export
+    path at the width asked. They read the viewer's on-screen canvas,
+    222 pixels wide on 9:16.
+  - **`set_hsl` on an adjustment clip** worked all along: -30 is a 9
+    degree turn. Its description says so now.

@@ -550,15 +550,26 @@ function humanize(e: unknown): unknown {
 
 /** One frame as a PNG at the export size: CapCut's "export still frame". */
 export async function exportStill(p: Project, frame: number, width: number, height: number): Promise<Blob> {
+  return (await exportStills(p, [frame], width, height))[0];
+}
+
+/** Frames as PNGs at the export size, drawn as the export draws them,
+ * through one compositor and one set of decoders: a contact sheet's
+ * frames read on through the same files instead of opening them again. */
+export async function exportStills(p: Project, frames: number[], width: number, height: number): Promise<Blob[]> {
   const comp = new Compositor(new OffscreenCanvas(width, height));
   const pool = new CursorPool();
   try {
     await document.fonts.ready;
     comp.resize(width, height);
-    const items = planFrame(p, frame);
-    const resolved = await resolveSources(p, items, pool);
-    comp.render(items, sourceImages(resolved, width, height), p.background);
-    return await (comp.canvas as OffscreenCanvas).convertToBlob({ type: "image/png" });
+    const out: Blob[] = [];
+    for (const frame of frames) {
+      const items = planFrame(p, frame);
+      const resolved = await resolveSources(p, items, pool);
+      comp.render(items, sourceImages(resolved, width, height), p.background);
+      out.push(await (comp.canvas as OffscreenCanvas).convertToBlob({ type: "image/png" }));
+    }
+    return out;
   } finally {
     pool.clear();
     const gl = comp.gl;

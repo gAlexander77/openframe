@@ -51,7 +51,10 @@ Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
-PNG, so an agent can look at its work), the project tools
+PNG, drawn as the export draws it and `max_width` pixels wide, at most
+the canvas's width, so an agent can look at its work; it once read the
+viewer's canvas, which is only as big as it is on screen, and a 9:16
+project came back 222 pixels wide whatever was asked), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), `preview_frames` (one contact sheet of
@@ -196,8 +199,12 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `textless`, `fit`, `name`), one file each, the project untouched; with
 `"check": true` it answers a contact sheet of every version instead.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
-length). Long runs answer `running`; `export_status` follows them and
-lists the `versions` when done.
+length). In another shape an ad element, or any group, moves and scales
+as one unit: its parts keep their layout, it stays against the edges it
+was against (or centered), and it shrinks to fit the safe area when it
+must ([[ADR-063 Versions fit a group as one unit]]). Long runs answer
+`running`; `export_status` follows them and lists the `versions` when
+done.
 `describe_project` now names a clip's `name` and `group`, so an
 element's parts are easy to find.
 

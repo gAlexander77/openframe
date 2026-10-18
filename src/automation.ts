@@ -3,12 +3,13 @@
 // drive scripts, the future MCP bridge and the headless renderer all speak
 // to the app one way. Every edit made here is undoable like a user's.
 
+import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
-import { findClip } from "./lib/project/ops";
+import { findClip, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
 import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
@@ -104,16 +105,20 @@ const automation = {
   otio: () => toOtio(store.document()),
 };
 
-/** The viewer's picture at `seconds`, exactly as it draws. */
-async function grab(seconds: number): Promise<OffscreenCanvas> {
-  store.seek(secondsToFrames(seconds, store.get().project.fps));
-  await new Promise((r) => setTimeout(r, 20));
-  await player.idle();
-  const px = player.pixels();
-  if (!px) throw new Error("the viewer is not showing (open a project first)");
-  const c = new OffscreenCanvas(px.width, px.height);
-  c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0);
-  return c;
+/** The picture at each of `seconds` as PNGs, drawn as the export draws
+ * it, `width` pixels wide (never wider than the canvas). The viewer's own
+ * canvas is only as big as it is on screen (222 pixels wide for a 9:16
+ * project), so reading it capped every preview there. The viewer seeks
+ * to the last one, so the user sees where the agent is looking. */
+async function grab(seconds: number[], width: number): Promise<Blob[]> {
+  if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+  const p = store.get().project;
+  const end = projectDuration(p);
+  // Past the last frame shows the last frame, as the viewer holds it.
+  const frames = seconds.map((t) => Math.min(secondsToFrames(t, p.fps), Math.max(0, end - 1)));
+  store.seek(secondsToFrames(seconds.at(-1) ?? 0, p.fps));
+  const w = Math.max(2, Math.round(Math.min(width, p.width)));
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)));
 }
 
 /** Frames in a grid, each stamped with its label: the contact sheets. */
@@ -194,20 +199,14 @@ const mcpHost: McpHost = {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     return { playhead: seconds };
   },
-  frame: async (seconds, maxWidth) => {
-    const src = await grab(seconds);
-    const k = Math.min(1, maxWidth / src.width);
-    const out = new OffscreenCanvas(Math.round(src.width * k), Math.round(src.height * k));
-    out.getContext("2d")!.drawImage(src, 0, 0, out.width, out.height);
-    return png(out);
-  },
+  frame: async (seconds, maxWidth) => blobToBase64((await grab([seconds], maxWidth))[0]),
   sheet: async (times, tileWidth, columns) => {
-    const frames = [];
-    for (const t of times) {
-      const src = await grab(t);
-      frames.push({ src, label: `${+t.toFixed(2)} s`, w: src.width, h: src.height });
+    const pics = await Promise.all((await grab(times, tileWidth)).map((b) => createImageBitmap(b)));
+    try {
+      return await tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: pics[i].width, h: pics[i].height })), tileWidth, columns);
+    } finally {
+      for (const b of pics) b.close();
     }
-    return tiles(frames, tileWidth, columns);
   },
   mediaSheet: async (assetId, times, tileWidth, columns) => {
     const a = store.get().project.assets.find((x) => x.id === assetId);

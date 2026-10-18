@@ -702,7 +702,9 @@ makes a 13 s one). Times are timeline seconds.
   on this computer (a video's Remove background matte; a photo cut out once
   into a new picture with transparency) for a copy on a track above the
   title, silent and grouped with the original; one undo step.
-- **Deliverables** (`export_versions`): a campaign's versions in one call,
+- **Deliverables** (`export_versions`): a campaign's versions in one call
+  (a group, such as an ad element, moves and scales as one unit, anchored
+  where it sat; [[ADR-063 Versions fit a group as one unit]]),
   each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
   opening and the end card kept, the middle cut, the music fading at the
   new end) and a textless master (titles and captions off). Footage that
