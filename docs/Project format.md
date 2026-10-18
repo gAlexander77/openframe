@@ -66,6 +66,8 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
             | blue | purple | pink (a timeline color label)
           video and audio clips may carry eq?: { low?, mid?, high? } (dB)
           video and audio clips may carry fill?: left | right (one channel on both)
+          video and audio clips may carry highpass?, lowpass?, echo?, reverb?,
+            tapeStop? (sound design; see Sound design below)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
           text styles may carry case?: upper | lower | title (shown so; the
@@ -81,6 +83,34 @@ overlap; audio clips only on audio tracks and nothing else on them; every
 none is marked). Tracks are listed top to bottom; the top video track draws
 last. The same rules hold inside every compound's `tracks`; every
 `compoundId` exists, and no compound plays itself, even through others.
+
+## Sound design
+
+Video and audio clips may carry these effects
+([[ADR-060 Sound design rings past the clip and is measured as exported]]);
+each absent means off, so older projects open unchanged:
+
+```json
+{ "type": "audio", "assetId": "a2", "start": 0, "duration": 300, "in": 0, "speed": 1,
+  "lowpass": { "cutoff": 400, "resonance": 0 },
+  "reverb": { "size": 0.9, "decay": 6, "mix": 0.4 },
+  "echo": { "time": 0.3, "feedback": 0.5, "mix": 0.5 },
+  "tapeStop": { "duration": 1.5 },
+  "keyframes": { "lowpass.cutoff": [{ "f": 135, "v": 400 }, { "f": 150, "v": 20000 }] } }
+```
+
+- `highpass` / `lowpass`: `cutoff` in Hz (20..20000), `resonance` in dB
+  (0..24); 24 dB per octave. Keyframes on `lowpass.cutoff` and
+  `highpass.cutoff` move on a log scale between keys.
+- `reverb`: `size` 0..1, `decay` seconds to fall 60 dB (0.1..10), `mix`
+  0..1 wet share at equal power (keyframeable as `reverb.mix`).
+- `echo`: `time` seconds between repeats (0.01..2), `feedback` 0..0.9,
+  `mix` 0..1 (keyframeable as `echo.mix`).
+- `tapeStop`: `duration` seconds (0.05..10) over which the sound slows to
+  a stop at the clip's end.
+- The loader clamps each number into its range, fills a missing one with
+  its default, and drops an effect that is not an object. Compound clips
+  take none yet: they are dropped when a project is opened.
 
 ## Compound clips
 

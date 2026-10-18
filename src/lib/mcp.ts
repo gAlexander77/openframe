@@ -7,6 +7,7 @@
 
 import { SFX } from "./sfx";
 import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
+import { SPEC_IDS } from "./analysis/delivery";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -79,7 +80,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect" | "loudnessReport";
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
 
@@ -220,7 +221,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "export_video",
     description:
-      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS (-14 for YouTube, TikTok and Spotify). Exports that take over about four minutes answer state running: follow them with export_status.",
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status.",
     inputSchema: obj({
       name: { type: "string", description: "File name without extension; default the project's name" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif"], description: "Default mp4 (H.264 + AAC)" },
@@ -283,9 +284,30 @@ APP_TOOLS.push(
   },
   {
     name: "normalize_loudness",
-    description: "Measure clips' loudness (EBU R128) and set their volume to reach a target without clipping. -14 LUFS suits social video, -16 podcasts, -23 broadcast.",
-    inputSchema: obj({ clip_ids: { type: "array", items: { type: "string" }, description: "Video or audio clip ids" }, target: { type: "number", minimum: -40, maximum: -5, description: "LUFS, default -14" } }, ["clip_ids"]),
-    call: async (h, a) => json(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target }))),
+    description:
+      "Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). Each clip is measured alone: measure_loudness checks the mix.",
+    inputSchema: obj(
+      {
+        clip_ids: { type: "array", items: { type: "string" }, description: "Video or audio clip ids" },
+        target: { type: "number", minimum: -40, maximum: -5, description: "LUFS, default -14" },
+        spec: { type: "string", enum: SPEC_IDS, description: "online (-14 LUFS, -1 dBTP), ebu_r128 (-23 LUFS, -1 dBTP) or atsc_a85 (-24 LKFS, -2 dBTP); overrides target" },
+      },
+      ["clip_ids"],
+    ),
+    call: async (h, a) => json(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target, spec: a.spec }))),
+  },
+  // ---- delivery (ADR-061) --------------------------------------------------------
+  {
+    name: "measure_loudness",
+    description:
+      "Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: \"ebu_r128\", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.",
+    inputSchema: obj({
+      spec: { type: "string", enum: SPEC_IDS, description: "Delivery spec to check; default all three" },
+      loudness: { type: "number", minimum: -40, maximum: -5, description: "Measure as export_video with this loudness (LUFS) delivers it; default as mixed" },
+      start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
+      end: { type: "number", minimum: 0, description: "Timeline seconds, default the end" },
+    }),
+    call: async (h, a) => json(await h.ai("loudnessReport", a.spec === undefined ? "" : String(a.spec), given({ loudness: a.loudness, start: a.start, end: a.end }))),
   },
   {
     name: "duck_under_speech",
@@ -410,7 +432,8 @@ To make a video:
 6. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
+9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.`;
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {

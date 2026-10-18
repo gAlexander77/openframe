@@ -165,6 +165,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   platform's compressor in the clip chain, and in loudness measurement.
 - [[ADR-054 Tracking writes position keyframes]] — a template-matching
   tracker's path becomes the pinned layer's smoothed, thinned keys.
+- [[ADR-060 Sound design rings past the clip and is measured as exported]] —
+  filters before the volume, echo and reverb after it; export windows
+  pre-roll by the longest tail; tape stop through the retimer.
+- [[ADR-061 Delivery holds the true peak and says whether it passes]] —
+  a 4x true-peak limiter, specs by target, `measure_loudness`.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

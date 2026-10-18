@@ -177,23 +177,28 @@ broadcast way (ITU-R BS.1770 / EBU R128, [[AI and automation]] §2.10).
    relative gate 10 LU under the mean. Channels are summed; **mono counts
    twice** because it plays on both speakers — the same reading as
    `ffmpeg -af ebur128=dualmono=true`.
-2. **Set the volume.** `target − measured` dB, held back so the sample
-   peak stays under −1 dBFS, and within the inspector's −60…+12 dB. All
-   selected clips in one undo step ("Normalize loudness of 2 clips").
+2. **Set the volume.** `target − measured` dB, held back so the true
+   peak (4x oversampled, `src/lib/analysis/truePeak.ts`) stays under its
+   ceiling, −1 dBTP or ATSC's −2 at −24, and within the inspector's
+   −60…+12 dB. All selected clips in one undo step ("Normalize loudness
+   of 2 clips"). `spec` (online, ebu_r128, atsc_a85) names a delivery
+   spec's target and ceiling
+   ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
 
 | Option | Default | UI |
 |---|---|---|
-| target | −14 LUFS | Social −14, Podcast −16, Broadcast −23 |
-| peak ceiling | −1 dBFS (sample peak) | — |
+| target | −14 LUFS | Social −14, Podcast −16, TV (EU) −23, TV (US) −24 |
+| peak ceiling | −1 dBTP (true peak); −2 at −24 | — |
 
 Measured: the fixtures read −14.17 and −14.63 LUFS where ffmpeg's
 `ebur128` reads −14.2 and −14.6; a stereo clip normalized to −16 and
 exported measures −16.0 LUFS in ffmpeg.
 
-**Gaps.** Sample peak, not true peak (inter-sample peaks can pass the
-ceiling by a fraction of a dB); surround weights (1.41 on the rear pair,
-no LFE) need the channel layout; clips with volume keyframes are skipped;
-track volume is not taken into account.
+**Gaps.** Surround weights (1.41 on the rear pair, no LFE) need the
+channel layout; clips with volume keyframes are skipped; track volume and
+a clip's filters, echo and reverb are not taken into account (each clip
+is measured alone, through its compressor): `measure_loudness` reads the
+mix as it exports.
 
 ## Auto ducking
 

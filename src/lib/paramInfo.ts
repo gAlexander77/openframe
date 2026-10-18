@@ -40,6 +40,11 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   "chromaKey.similarity": { label: "Key strength", unit: "", digits: 0, scale: 100 },
   "chromaKey.smoothness": { label: "Key feather", unit: "", digits: 0, scale: 100 },
   "chromaKey.spill": { label: "Spill removal", unit: "", digits: 0, scale: 100 },
+  // Sound design (lib/soundFx.ts).
+  "lowpass.cutoff": { label: "Low-pass", unit: "Hz", digits: 0 },
+  "highpass.cutoff": { label: "High-pass", unit: "Hz", digits: 0 },
+  "reverb.mix": { label: "Reverb mix", unit: "%", digits: 0, scale: 100 },
+  "echo.mix": { label: "Echo mix", unit: "%", digits: 0, scale: 100 },
 };
 
 /** CapCut's Adjust labels, where they differ from the field name. */

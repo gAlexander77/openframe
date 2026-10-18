@@ -70,6 +70,9 @@ a clock, so no frame is ever dropped
 | `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
 | `engine/player.ts` | Preview loop, transport, shuttle, a silent bounded run (`preview`) |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
+| `lib/soundFx.ts`, `engine/soundFx.ts` | A clip's filters, echo, reverb and tape stop: values, impulse responses, time warp; the nodes (ADR-060) |
+| `engine/mixdown.ts` | The mix rendered offline in pre-rolled windows, for export and `measure_loudness` |
+| `lib/analysis/truePeak.ts`, `lib/analysis/delivery.ts`, `state/delivery.ts` | True peak, loudness range, delivery specs, the export limiter's plan, the loudness report (ADR-061) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/compoundThumbs.ts` | Compound clips' filmstrips (the nested timeline rendered offscreen) and mixed peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |

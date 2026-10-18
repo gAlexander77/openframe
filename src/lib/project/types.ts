@@ -395,6 +395,43 @@ export interface Compressor {
   makeup: number;
 }
 
+/** A low-pass or high-pass filter on a clip's sound, 24 dB per octave
+ * (lib/soundFx.ts, ADR-060). */
+export interface AudioFilter {
+  /** Hz, 20..20000. Keyframeable (lowpass.cutoff, highpass.cutoff); between
+   * keys it moves on a log scale, the same octaves each second. */
+  cutoff: number;
+  /** Peak at the cutoff, dB, 0..24; 0 is a smooth slope. */
+  resonance: number;
+}
+
+/** A room around a clip's sound: a convolution reverb whose impulse
+ * response is made from these three numbers. */
+export interface Reverb {
+  /** 0..1: pre-delay (5 to 50 ms) and how slowly the reflections build. */
+  size: number;
+  /** Seconds for the tail to fall 60 dB (RT60), 0.1..10. */
+  decay: number;
+  /** Wet share at equal power, 0..1. Keyframeable (reverb.mix). */
+  mix: number;
+}
+
+/** Repeats of a clip's sound. */
+export interface Echo {
+  /** Seconds between repeats, 0.01..2. */
+  time: number;
+  /** Each repeat's level against the one before, 0..0.9. */
+  feedback: number;
+  /** Wet share at equal power, 0..1. Keyframeable (echo.mix). */
+  mix: number;
+}
+
+/** The sound slows to a stop, pitch falling with it, over the clip's last
+ * `duration` seconds (0.05..10), as a turntable losing power. */
+export interface TapeStop {
+  duration: number;
+}
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -411,6 +448,14 @@ export interface Sound {
   /** Premiere's Fill Left / Fill Right: one channel played on both (a lav
    * recorded on one side). Absent = the channels as recorded. */
   fill?: "left" | "right";
+  /** Sound design (ADR-060), each absent = off. The filters run after the
+   * compressor, before the volume; echo and reverb after the volume, so
+   * their tails ring past the clip's end. Video and audio clips only. */
+  highpass?: AudioFilter;
+  lowpass?: AudioFilter;
+  echo?: Echo;
+  reverb?: Reverb;
+  tapeStop?: TapeStop;
 }
 
 /** One point of a speed curve. */

@@ -317,7 +317,9 @@ function LoudnessSettings() {
       options={[
         [-14, "Social"],
         [-16, "Podcast"],
-        [-23, "Broadcast"],
+        // EBU R128 and ATSC A/85: their true-peak ceilings come with them.
+        [-23, "TV (EU)"],
+        [-24, "TV (US)"],
       ]}
       onChange={(v) => set({ target: v })}
     />

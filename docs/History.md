@@ -864,3 +864,33 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   timings, and the editor moves to the second half. And the transcript
   card dropped reversed and speed-curved clips without a word; it says
   how many it leaves out and why.
+- **Sound design for trailers and ads** (ADR-060). A low-pass and
+  high-pass with a keyframeable cutoff, a reverb, an echo and a tape stop
+  on any clip with sound, one command each, so an agent can make the
+  "muffled build, open on the drop" in one call (`sweep`). Lessons: echo
+  and reverb sit after the clip's volume so their tails ring past its end
+  (Premiere's clip-effect tails stop at the edit, a known complaint), and
+  that forced a change to export, whose 10 s audio windows each started
+  silent: a reverb would have been cut at every window edge. Windows now
+  pre-roll by the longest tail. Web Audio's low/high-pass `Q` is a
+  resonance in dB, not a Q (-3.01 dB is Butterworth's 0.707). A cutoff
+  swept linearly in Hz sounds open almost at once, so keys move on a log
+  scale. The reverb's two sides first came out correlated 0.5: a Lehmer
+  generator seeded with s and 2s gives the same stream doubled. A tape
+  stop cannot be a playbackRate ramp, because the scheduler places
+  constant-rate chunks; it is the retimer's varispeed at a slowing clock,
+  and its drive checks the pitch at five moments against the map (within
+  1.3%).
+- **Delivery to a spec** (ADR-061). Export's limiter held sample peaks
+  while every broadcast spec is in dBTP; it now holds the 4x-oversampled
+  true peak (a 49-tap windowed sinc, as libebur128 makes its own rather
+  than BS.1770's example table; within 0.05 dB on EBU Tech 3341's tests),
+  and lands on the ceiling with no margin. -24 LKFS (ATSC A/85, -2 dBTP)
+  joined the targets. `measure_loudness` gives an agent integrated
+  loudness, Tech 3342 loudness range (written from its MATLAB listing),
+  maxima, true peak and pass or fail against online, EBU R128 or ATSC,
+  also as an export at a target would deliver it. Its drive checks each
+  figure against the exported WAV read independently, with the true peak
+  from `decodeAudioData` into a 192 kHz context. The first mix it built
+  summed to +3.1 dBFS and the WAV clipped, which no figure had said: the
+  report now flags `clips`.

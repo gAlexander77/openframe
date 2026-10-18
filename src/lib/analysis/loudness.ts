@@ -40,8 +40,9 @@ export class LoudnessMeter {
   private readonly hop: number;
   private acc = 0;
   private n = 0;
-  /** Channel-weighted mean square of each 100 ms step. */
-  private readonly steps: number[] = [];
+  /** Channel-weighted mean square of each 100 ms step (delivery.ts reads
+   * momentary, short-term and loudness range from them). */
+  readonly steps: number[] = [];
   /** Largest |sample| seen, 0..1+. */
   peak = 0;
 
@@ -137,13 +138,6 @@ export interface Normalization {
   limitedBy: "peak" | "range" | null;
 }
 
-/**
- * The volume that brings `measured` LUFS to `target`, without pushing the
- * sample peak over `ceilingDb` and within the inspector's range.
- * ponytail: sample peak, not 4x-oversampled true peak; inter-sample peaks
- * can exceed the ceiling by a fraction of a dB. A true-peak limiter is the
- * upgrade for broadcast deliverables.
- */
 /** Samples in a limiter block: 1 ms at 48 kHz. */
 export const LIMIT_BLOCK = 48;
 
@@ -169,8 +163,8 @@ export function blockPeaks(planes: Float32Array[], start: number, into: Float32A
  * looking ahead is free). After `gain`, no block passes `ceiling`; a
  * reduction ramps in over `attack` blocks before its peak and recovers
  * over about `release` blocks, so peaks are held without clicks or pumping.
- * ponytail: block (1 ms) sample peaks, not true peak; inter-sample peaks
- * can pass the ceiling by a fraction of a dB.
+ * Export feeds it each block's true peak (truePeak.ts), so what it holds
+ * is the peak between samples too (ADR-061).
  */
 export function limiterGains(peaks: Float32Array, gain: number, ceiling: number, attack = 5, release = 150): Float32Array {
   const n = peaks.length;
@@ -202,6 +196,11 @@ export function applyLimiter(planes: Float32Array[], start: number, gain: number
   }
 }
 
+/**
+ * The volume that brings `measured` LUFS to `target`, without pushing
+ * `peak` over `ceilingDb` and within the inspector's range. Pass the true
+ * peak (truePeak.ts) to hold a dBTP ceiling, as broadcast specs ask.
+ */
 export function normalizeGain(measured: number, target: number, peak: number, { ceilingDb = -1, minDb = -60, maxDb = 12 } = {}): Normalization {
   if (!Number.isFinite(measured)) return { gain: 1, limitedBy: null };
   let db = target - measured;
