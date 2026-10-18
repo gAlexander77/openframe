@@ -79,7 +79,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect" | "analyzeMusic";
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
 
@@ -353,6 +353,20 @@ APP_TOOLS.push(
       ["clip_id"],
     ),
     call: async (h, a) => json(await h.ai("reframeClip", String(a.clip_id), given({ ratio: a.ratio, box: a.box }))),
+  },
+  // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
+  {
+    name: "analyze_music",
+    description:
+      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); and drop (where the biggest rise into a loud section lands, or null). All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
+    inputSchema: obj(
+      {
+        clip_id: { type: "string", description: "The music clip (audio, or a video with sound)" },
+        markers: { type: "array", items: { type: "string", enum: ["beats", "bars", "phrases", "sections", "drop"] }, description: "Kinds of markers to add (default none)" },
+      },
+      ["clip_id"],
+    ),
+    call: async (h, a) => json(await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers }))),
   },
   {
     name: "remove_background",

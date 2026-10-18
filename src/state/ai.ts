@@ -18,7 +18,8 @@ import { applyTrack, centerRegion, trackPath } from "./tracking";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
 import { makeMatte } from "../engine/cutout";
-import { detectBeats } from "../lib/analysis/beats";
+import { BEATS_PER_BAR, detectBeats, musicStructure, type SectionLabel } from "../lib/analysis/beats";
+import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { duckKeys } from "../lib/analysis/duck";
@@ -511,6 +512,76 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
   const markers = store.get().project.markers.length - before;
   finish("beats", markers ? `Marked ${plural(markers, "beat")} · ${Math.round(res.bpm)} BPM` : `Every beat is already marked · ${Math.round(res.bpm)} BPM`);
   return { ...res, markers };
+}
+
+export interface MusicAnalysis {
+  bpm: number;
+  beats_per_bar: number;
+  /** Timeline seconds, all of them: beats, bar starts, phrase starts, hits. */
+  beats: number[];
+  downbeats: number[];
+  phrases: number[];
+  hits: number[];
+  /** Each beat's loudness, 0..1 (1 the loudest beat, 0 24 dB under it). */
+  beat_energy: number[];
+  sections: { start: number; end: number; label: SectionLabel; energy: number }[];
+  /** Where the biggest rise into a loud section lands, or null. */
+  drop: number | null;
+  /** Markers added (analyze_music's markers option). */
+  markers: number;
+}
+
+/**
+ * A music clip's beat grid and parts (Final Cut's beat grid: song parts,
+ * bars, beats), in TIMELINE seconds, for agents to cut to. `markers` also
+ * drops markers for the kinds named, as one undoable edit: Beat, Bar,
+ * Phrase, each section by name, and Drop (lib/epic.ts MUSIC_MARKERS).
+ */
+export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[] } = {}): Promise<MusicAnalysis> {
+  const signal = projectWork.signal();
+  const { clip: c0, asset } = resolve("beats", clipId);
+  const id = c0.id;
+  const [from, to] = windowOf(c0);
+  const m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE));
+  signal.throwIfAborted();
+  const clip = stillThere(id);
+  const fps = store.get().project.fps;
+  const end = clip.start + clip.duration;
+  // Seconds into the decoded window -> timeline seconds; null outside the clip.
+  const at = (t: number) => {
+    const f = frameOfSource(clip, t + from, fps);
+    return f >= clip.start && f < end ? +framesToSeconds(f, fps).toFixed(3) : null;
+  };
+  const all = (ts: number[]) => ts.map(at).filter((t): t is number => t !== null);
+  const kept = m.beats.map((t, i) => [at(t), m.energy[i]] as const).filter(([t]) => t !== null);
+  const edge = (t: number) => at(t) ?? +framesToSeconds(Math.min(end, Math.max(clip.start, frameOfSource(clip, t + from, fps))), fps).toFixed(3);
+  const out: MusicAnalysis = {
+    bpm: m.bpm,
+    beats_per_bar: BEATS_PER_BAR,
+    beats: kept.map(([t]) => t!),
+    downbeats: all(m.downbeats),
+    phrases: all(m.phrases),
+    hits: all(m.hits),
+    beat_energy: kept.map(([, e]) => e),
+    sections: m.sections.map((s) => ({ ...s, start: edge(s.start), end: edge(s.end) })).filter((s) => s.end > s.start),
+    drop: m.drop === null ? null : at(m.drop),
+    markers: 0,
+  };
+  const kinds = [...new Set(opts.markers ?? [])].filter((k) => k in MUSIC_MARKERS);
+  if (kinds.length) {
+    const before = store.get().project.markers.length;
+    edit(`Mark the music`, (p) =>
+      kinds.reduce((q, k) => {
+        const { label, color } = MUSIC_MARKERS[k];
+        if (k === "sections") return out.sections.reduce((r, s) => runCommand(r, "add_markers", { times: [s.start], label: SECTION_NAMES[s.label], color }), q);
+        const times = k === "beats" ? out.beats : k === "bars" ? out.downbeats : k === "phrases" ? out.phrases : out.drop === null ? [] : [out.drop];
+        return times.length ? runCommand(q, "add_markers", { times, label, color }) : q;
+      }, p),
+    );
+    out.markers = store.get().project.markers.length - before;
+  }
+  finish("beats", `${Math.round(m.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
+  return out;
 }
 
 /** Source seconds inside `clip` to timeline seconds, dropping any outside it. */

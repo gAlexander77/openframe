@@ -206,10 +206,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  24 effects (including CapCut's Reduce image noise, Motion blur, Sketch
-  and Halftone, and Premiere 26.3's **Magnify**: a round lens with its
+  26 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
-  screen recording), 20 transitions, 17 looks, adjustment layers.
+  screen recording, and **Zoom** and **Letterbox** for epic edits),
+  20 transitions, 17 looks, adjustment layers. The **Strobe flash**
+  starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
+  2.3.1), so keep it there.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
   rectangle with round corners, heart and star, with feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
@@ -488,6 +491,47 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Pieces of a cut clip read on without hearing it again. Agents:
   `get_transcript` then `cut_ranges`. The words are kept for the session,
   not in the project; clips with a speed curve or reversed are left out.
+
+## Epic edits
+
+Music-synced montages (hype, velocity and AMV edits, CapCut's beat-synced
+templates done by hand) for agents first: each is a command or MCP tool,
+so a model makes a whole edit in a dozen calls. Times are timeline
+seconds.
+
+- **Read the music** (`analyze_music`; Final Cut's beat grid is the
+  model): tempo, every beat, downbeats (bars of four), phrases (four
+  bars), sections named intro, verse, build, drop, breakdown or outro with
+  their energy, each beat's loudness, strong hits on or off the beat, and
+  the drop, as data in timeline seconds, and as Beat, Bar, Phrase,
+  section and Drop markers when asked ([[AI tools]]).
+- **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
+  the main track, every cut on a beat, bar or phrase (or the agent's own
+  times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
+  up, or a shot's own count. One long clip gives many shots (each reads on
+  from where the last stopped); a source window past the file's end slides
+  back, and a file too short for its slot ends on an earlier beat.
+- **Hits on the beat** (`add_beat_hits`): flash (blown out to white),
+  zoom punch, camera shake, RGB split, glow or zoom blur, several as one
+  hit, on beats, bars, the main track's cuts or given times. Each is a
+  short adjustment layer on a Hits track (above the footage, below bars
+  and titles) whose effects peak on the beat and ease out, keyframed, so
+  preview and export match and the user can retime or delete any of them.
+  Flashes keep to three a second (WCAG 2.3.1): a beat that would break it
+  keeps its other effects.
+- **Cinematic bars** (`add_cinematic_bars`): letterbox to 2.39, 2.35, 2 or
+  1.85:1 on any canvas (pillarbox when the canvas is wider), sliding in
+  and out if asked; an adjustment layer with the Letterbox effect on a
+  Bars track, under the titles. New titles and media never land on a
+  track of adjustment layers.
+- **Speed ramp on the beat** (`set_speed_ramp`, velocity edits): a shot's
+  slow moment (or fast one) lands exactly on a beat while the shot keeps
+  its place and length, so the cuts stay on the beat; the ramp reads more
+  of the media instead. A speed curve preset can be aligned the same way.
+- **Fit the music** (`fit_music`): slide a song so its drop lands where
+  the cut wants it (its markers move along), then end it with the
+  picture, on the last beat or bar, or at a time, faded out; optionally
+  cut the picture there too.
 
 ## AI tools (all on this machine)
 

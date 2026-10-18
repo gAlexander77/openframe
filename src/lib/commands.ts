@@ -45,6 +45,7 @@ import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorP
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
+import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -66,6 +67,15 @@ export interface Command {
 }
 
 export class CommandError extends Error {}
+
+/** Run an epic-edit op, reporting its problems as command errors. */
+function epic(fn: () => Project): Project {
+  try {
+    return fn();
+  } catch (e) {
+    throw e instanceof EpicError ? new CommandError(e.message) : e;
+  }
+}
 
 // ---- schema helpers ------------------------------------------------------------
 
@@ -144,7 +154,8 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   const media = clip.type === "video" || clip.type === "image";
   const main = ops.mainTrack(p);
   if (media && ops.rangeFree(main, clip.start, clip.duration)) return [p, main.id];
-  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && ops.rangeFree(t, clip.start, clip.duration));
+  // Tracks of adjustment layers (beat hits, bars, grades) take only more of them.
+  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
   if (free) return [p, free.id];
   const fresh = createTrack(kind, kind === "audio" ? "Audio" : "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
@@ -735,7 +746,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_effect",
-    description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults.",
+    description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults. Keep the strobe flash (flash) at 3 flashes a second or slower: faster flashing can trigger seizures (WCAG 2.3.1).",
     input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Effect", { enum: Object.keys(EFFECTS) }), params: { type: "object", description: "Effect parameters" } }, ["clip_id", "type"]),
     run: (p, a) => {
       const { clip, track } = clipOrThrow(p, a.clip_id);
@@ -950,6 +961,109 @@ export const COMMANDS: Command[] = [
       const added = fresh.map((fr) => createMarker(fr, label, a.color ? String(a.color) : undefined));
       return { ...p, markers: [...p.markers, ...added].sort((x, y) => x.frame - y.frame) };
     },
+  },
+  // ---- epic edits (lib/epic.ts): music-synced montages in a few calls ----
+  {
+    name: "cut_to_beats",
+    description:
+      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
+    input: S.obj(
+      {
+        media: {
+          type: "array",
+          description: "The shots in order; the same asset may appear many times",
+          items: S.obj(
+            {
+              asset_id: S.str("Video or picture asset id (import_media)"),
+              in: S.num("Source seconds the shot starts at (default: where this media's previous shot ended, else 0)", { minimum: 0 }),
+              beats: { type: "integer", minimum: 1, description: "Grid steps this shot lasts, overriding pattern and every" },
+            },
+            ["asset_id"],
+          ),
+        },
+        grid: S.str("Which markers make the grid: beats (Beat, default), bars or downbeats (Bar: each bar's first beat), phrases (Phrase: every 4 bars)", { enum: ["beats", "bars", "downbeats", "phrases"] }),
+        beats: { type: "array", items: { type: "number", minimum: 0 }, description: "The grid as timeline seconds instead of markers, e.g. analyze_music's downbeats" },
+        marker_label: S.str("Use the markers with this label as the grid instead"),
+        every: { type: "integer", minimum: 1, maximum: 64, description: "Grid steps per shot (default 2 for beats, 1 for bars or phrases)" },
+        pattern: { type: "array", items: { type: "integer", minimum: 1, maximum: 64 }, description: "Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1]" },
+        start: S.num("Timeline seconds the first shot starts (default 0)", { minimum: 0 }),
+        end: S.num("Timeline seconds to stop by: no cut after it", { minimum: 0 }),
+        track_id: S.str("A video track instead of the main track"),
+        mute: S.bool("Mute the shots' own sound (default true: the music carries a montage)"),
+      },
+      ["media"],
+    ),
+    run: (p, a) => epic(() => cutToBeats(p, a as unknown as CutToBeats)),
+  },
+  {
+    name: "add_beat_hits",
+    description: `Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch), shake (camera shake), rgb_split, glow or zoom_blur, several at once as one layer (["flash", "zoom"]). Each hit is an adjustment layer on a Hits track above the footage (below bars and titles), at its peak on the beat and easing out over \`duration\` (default ${HIT_KINDS.flash.seconds} to ${HIT_KINDS.shake.seconds} s by effect), keyframed, so preview and export match. Times: \`times\` (timeline seconds), the main track's cuts (at_cuts true), or the Beat markers (or marker_label's, e.g. Bar or Drop), between from and to, thinned to every Nth. intensity 0..1 (default 1, strong). Photosensitivity: flashes keep to at most ${MAX_FLASHES_PER_SECOND} in any second (WCAG 2.3.1); a beat that would break that gets its other effects without the flash, or nothing. Example: {"effects": ["zoom", "rgb_split"], "marker_label": "Bar"}.`,
+    input: S.obj({
+      effect: S.str("One hit", { enum: Object.keys(HIT_KINDS) }),
+      effects: { type: "array", items: S.str("Hit", { enum: Object.keys(HIT_KINDS) }), description: "Several hits on each beat, as one layer" },
+      times: { type: "array", items: { type: "number", minimum: 0 }, description: "Timeline seconds of the hits" },
+      at_cuts: S.bool("Hit every cut of the main track instead"),
+      marker_label: S.str("Hit the markers with this label (default Beat)"),
+      every: { type: "integer", minimum: 1, maximum: 64, description: "Only every Nth time, from the first (default 1)" },
+      from: S.num("Timeline seconds: no hit before", { minimum: 0 }),
+      to: S.num("Timeline seconds: no hit at or after", { minimum: 0 }),
+      duration: S.num("Seconds each hit lasts", { minimum: 0.04, maximum: 2 }),
+      intensity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
+    }),
+    run: (p, a) => {
+      const kinds = [...(a.effect !== undefined ? [a.effect] : []), ...((a.effects as string[] | undefined) ?? [])] as HitKind[];
+      return epic(() => addBeatHits(p, { ...(a as object), effects: kinds } as BeatHits));
+    },
+  },
+  {
+    name: "add_cinematic_bars",
+    description:
+      "Cinematic bars: letterbox the picture to a wide ratio, 2.39 (scope, default), 2.35, 2 or 1.85 (pillarboxed when the canvas is already wider), on any canvas shape. An adjustment layer with the letterbox effect on a Bars track above the footage and hits, below titles, from start (default 0) to end (default the picture's end); animate_in and animate_out slide the bars in and out over that many seconds. Calling it again over the same time replaces the bars. Example: {\"ratio\": 2.39, \"start\": 4.0, \"animate_in\": 0.4}.",
+    input: S.obj({
+      ratio: S.num("Width over height of the picture left between the bars (default 2.39)", { minimum: 1, maximum: 4 }),
+      start: S.num("Timeline seconds (default 0)", { minimum: 0 }),
+      end: S.num("Timeline seconds (default the end of the picture)", { minimum: 0 }),
+      animate_in: S.num("Seconds the bars take to slide in (default 0: there at once)", { minimum: 0, maximum: 10 }),
+      animate_out: S.num("Seconds they take to slide out at the end (default 0)", { minimum: 0, maximum: 10 }),
+    }),
+    run: (p, a) => epic(() => addCinematicBars(p, a as CinematicBars)),
+  },
+  {
+    name: "set_speed_ramp",
+    description: `Velocity edit: ramp a video clip's speed so its slow-motion moment (moment slow, default) or its fast moment (fast) lands exactly on a beat at \`at\` (timeline seconds; default the Beat marker nearest the clip's middle). The clip keeps its start and length, so cuts made on the beat stay there; the ramp reads more or less of the media instead (the in-point moves earlier when the file would run out). Without a preset: speed ${CURVE_MIN}..${CURVE_MAX} at the moment (default 0.3 slow, 3 fast), base elsewhere (default 2 slow, 1 fast), easing over \`ease\` seconds (default 0.12) into the beat and holding \`hold\` seconds (default 0.25). Or preset (montage, hero, bullet, jumpCut, flashIn, flashOut): its slowest (or fastest) point is moved onto the beat. set_speed_curve ramps a whole clip without aligning it. Example: {"clip_id": "c_5", "at": 3.75}.`,
+    input: S.obj(
+      {
+        clip_id: S.str("Video or audio clip id"),
+        at: S.num("Timeline seconds of the beat, inside the clip", { minimum: 0 }),
+        moment: S.str("Which moment lands on the beat", { enum: ["slow", "fast"] }),
+        speed: S.num("Speed at the moment", { minimum: CURVE_MIN, maximum: CURVE_MAX }),
+        base: S.num("Speed before and after it", { minimum: CURVE_MIN, maximum: CURVE_MAX }),
+        hold: S.num("Seconds the moment holds after the beat", { minimum: 0, maximum: 10 }),
+        ease: S.num("Seconds the speed takes to change into and out of the moment", { minimum: 0.02, maximum: 5 }),
+        preset: S.str("A ready-made ramp to align instead", { enum: Object.keys(PRESETS).filter((k) => k !== "custom") }),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => epic(() => setSpeedRamp(p, a as unknown as SpeedRamp)),
+  },
+  {
+    name: "fit_music",
+    description:
+      "Fit a music clip to the cut. With drop_at, first slide the music so its drop plays at drop_at (timeline seconds): drop is where the drop plays now (analyze_music's drop; default the Drop marker on the clip), anything that would fall before 0 is cut off, and its Beat, Bar, Phrase and section markers move with it. Then end it with the picture (end video, default), on the last Beat or Bar marker before the picture ends (end beat or bar), or at end_at, fading out over fade_out seconds (default 1). trim_picture cuts the picture there too, so both stop together. Align the drop before cut_to_beats: the cuts follow the markers. Example: {\"clip_id\": \"c_2\", \"drop_at\": 4.0, \"end\": \"bar\", \"fade_out\": 1.5}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The music clip (audio, or a video's sound)"),
+        drop_at: S.num("Timeline seconds the drop should land on", { minimum: 0 }),
+        drop: S.num("Timeline seconds where the drop plays now (default the Drop marker on the clip)", { minimum: 0 }),
+        end: S.str("Where the music ends: video (the picture's end, default), beat or bar (the last Beat or Bar marker before it)", { enum: ["video", "beat", "bar"] }),
+        end_at: S.num("Timeline seconds to end at instead", { minimum: 0 }),
+        fade_out: S.num("Seconds of fade-out (default 1)", { minimum: 0, maximum: 30 }),
+        fade_in: S.num("Seconds of fade-in (default unchanged)", { minimum: 0, maximum: 30 }),
+        trim_picture: S.bool("Also cut the picture (every video track) at the music's end"),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => epic(() => fitMusic(p, a as unknown as FitMusic)),
   },
   {
     name: "move_keyframe",

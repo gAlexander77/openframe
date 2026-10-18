@@ -864,3 +864,35 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   timings, and the editor moves to the second half. And the transcript
   card dropped reversed and speed-curved clips without a word; it says
   how many it leaves out and why.
+- **Epic edits, for agents first.** A beat-synced montage took dozens of
+  calls (mark beats, read markers, place every shot, keyframe every hit),
+  so agents did not make one. Six tools now cover it: `analyze_music`
+  (the song as data: beats, bars, phrases, sections, the drop),
+  `cut_to_beats`, `add_beat_hits`, `add_cinematic_bars`, `set_speed_ramp`
+  and `fit_music`. On beat-128.m4a every cut lands within 17 ms of a
+  true beat.
+- **Downbeats come from where a song changes.** Accents alone (onset
+  strength, bass, how much the sound changes) picked the wrong beat of
+  four on the beat-128 loop, where nothing marks the bar: three ways of
+  measuring each beat at a different place in it (a frame grid, four
+  fixed spots, windows reaching into the next beat) made patterns that
+  repeat every few beats and read as accents. Measured across the whole
+  beat, inside it, and averaged as power, the loop has no accent; a part
+  changing (two bars against two bars, 3 dB or more) is the strongest
+  cue and votes first. Averaging band levels in dB let a silent band in
+  one beat (the last beat's cut-off hat) move a mean by 100 dB and invent
+  a section; power averages with a floor do not.
+- **A hit fades by its effects, not its opacity.** A flash made as an
+  adjustment layer fading out by opacity would cross-fade a zoom on the
+  same layer into a ghost of two pictures, so every hit keyframes its own
+  amounts (the flash: exposure, brightness and whites) from the peak on
+  the beat to nothing. Adjustment layers on their own track meant a title
+  added later landed among the hits (the first free track from the top);
+  new titles and media now skip tracks of adjustment layers.
+- **Flashes keep to three a second** (WCAG 2.3.1, Three Flashes): beat
+  hits drop the flash from a beat that would break the limit, counting
+  flashes already on the timeline, and the strobe effect starts at 2 a
+  second, its range kept.
+- **Zero crossings misread pitch in a mix.** Checking which second of a
+  song plays by its pitch, the export read 236 Hz for a 220 Hz tone: the
+  mix's faint hiss adds crossings. Autocorrelation reads 220.2.

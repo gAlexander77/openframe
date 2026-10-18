@@ -508,6 +508,20 @@ export const EFFECT_SHADERS: Record<string, string> = {
     float p = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 6.0);
     vec2 uv = (v_uv - 0.5) / (1.0 + p * u_amount * 0.004) + 0.5;
     outColor = texture(u_tex, uv);`),
+  zoom: effect(["amount"], `
+    outColor = texture(u_tex, (v_uv - 0.5) / (1.0 + u_amount * 0.01) + 0.5);`),
+  // Bars across the short way to the ratio: top and bottom when the
+  // canvas is narrower than it, left and right when wider. One pixel of
+  // smoothing keeps the edge from crawling as the bars slide.
+  letterbox: effect(["ratio", "amount"], `
+    vec4 c = texture(u_tex, v_uv);
+    float canvas = u_res.x / u_res.y;
+    float k = clamp(u_amount * 0.01, 0.0, 1.0);
+    bool rows = canvas < u_ratio;
+    float bar = (rows ? 1.0 - canvas / u_ratio : 1.0 - u_ratio / canvas) * 0.5 * k;
+    float d = rows ? min(v_uv.y, 1.0 - v_uv.y) : min(v_uv.x, 1.0 - v_uv.x);
+    float px = 0.5 / (rows ? u_res.y : u_res.x);
+    outColor = mix(vec4(0.0, 0.0, 0.0, 1.0), c, smoothstep(bar - px, bar + px, d));`),
   flash: effect(["amount", "rate"], `
     vec4 c = texture(u_tex, v_uv);
     float f = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 16.0) * u_amount * 0.01;
