@@ -160,7 +160,7 @@ binding in `src/lib/keymap.ts`.
 | Insert, overwrite and replace edits from the source monitor | P R V F | yes: Insert (,) and Overwrite (.) in the source monitor | — | Replace edit and track targeting remain (P2). |
 | Lift and extract the In/Out range | P R V F | yes (; and ', `lift_range`) | — | A pure `extractRange(p, in, out, ripple)` over unlocked tracks, with a test. Add commands and keys. |
 | Three- and four-point editing, fit to fill | P R F | partial: source In/Out only | P2 | After insert/overwrite. |
-| Link/unlink A/V; Alt-trim one side for J/L cuts | P R V F | partial: `detach_audio` splits sound off for good; no relink, no one-side trim, no out-of-sync badge | P1 | Add `linkId` on the detached pair so moves stay together. Alt bypasses the link. Draw a ±N badge when offsets drift. |
+| Link/unlink A/V; Alt-trim one side for J/L cuts | P R V F | yes: Extract audio links the pair as a group, Alt-click takes one side, red ±N out-of-sync counts (2026-10-17) | — | The group was the link already (select, move, delete together; Alt narrows; trims are per clip), so no `linkId` field was needed. Relinking two clips is Group. |
 | Close a gap; select a gap and delete it | P R V F | yes: right-click a gap > Close gap, or Close all gaps | — | Click a gap to select it; Delete calls the ripple path (`compactTrack` exists). |
 | Nudge clips by 1 or 10 frames from the keyboard | P R V F | yes (Alt+arrows) | — | `moveClip` by ±1/±10 with snapping off. Add keymap actions (Premiere uses Alt+←/→). |
 | Clip color labels | P R V | yes (`labelColor`, `set_clip_label`) | — | — |

@@ -9,7 +9,7 @@ import { placeOnTop } from "../lib/overlays";
 import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
 import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
 import { stretchClip } from "../lib/project/stretch";
-import { expandGroups } from "../lib/project/groups";
+import { expandGroups, syncOffsets } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
 import { CLIP_LABELS } from "../lib/catalog";
@@ -210,6 +210,7 @@ export function Timeline() {
     if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 40);
   }, [focusedFrame]);
   const selected = useMemo(() => new Set(selection), [selection]);
+  const outOfSync = useMemo(() => syncOffsets(project), [project]);
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
   const compounds = useMemo(() => new Map((project.compounds ?? []).map((k) => [k.id, k])), [project.compounds]);
   // Into or out of a compound clip: bring the playhead into view, since
@@ -334,7 +335,9 @@ export function Timeline() {
       const picked = e.altKey ? [clip.id] : expandGroups(s.project, [clip.id]);
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
         sel = sel.includes(clip.id) ? sel.filter((x) => !picked.includes(x)) : [...new Set([...sel, ...picked])];
-      } else if (!sel.includes(clip.id)) sel = picked;
+        // Alt narrows even a selection that holds the clip: it is how one
+        // side of a linked pair is taken alone.
+      } else if (!sel.includes(clip.id) || e.altKey) sel = picked;
       store.select(sel);
       if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
         gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
@@ -800,6 +803,7 @@ export function Timeline() {
                         height={row.height}
                         selected={selected.has(c.id)}
                         tabStop={c.id === tabStop}
+                        outOfSync={outOfSync.get(c.id)}
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
                         shift={(drop?.shifts.get(c.id) ?? 0) * zoom}

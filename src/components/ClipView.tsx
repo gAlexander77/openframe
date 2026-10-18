@@ -27,6 +27,8 @@ interface Props {
   selected: boolean;
   /** The timeline's one keyboard stop (UX-33): Tab lands here. */
   tabStop?: boolean;
+  /** Frames this clip is out of sync with its linked picture or sound. */
+  outOfSync?: number;
   /** Visible content range in px relative to the clip's left edge. */
   visFrom: number;
   visTo: number;
@@ -251,6 +253,12 @@ export const ClipView = memo(function ClipView(p: Props) {
         {speed && !tiny && <span className="clip-badge num">{speed}</span>}
         {reversed && !tiny && <span className="clip-badge">Reverse</span>}
         {freeze && !tiny && <Snowflake size={11} className="clip-badge-icon" />}
+        {!!p.outOfSync && (
+          <span className="clip-badge sync num" aria-label={`${Math.abs(p.outOfSync)} frames out of sync`} data-tip="Out of sync with its linked picture or sound, in frames">
+            {p.outOfSync > 0 ? "+" : "−"}
+            {Math.abs(p.outOfSync)}
+          </span>
+        )}
         {c.group && !tiny && <Group size={11} className="clip-badge-icon" aria-label="Grouped" />}
         {fxCount > 0 && !tiny && c.type !== "adjustment" && (
           <span className="clip-badge">

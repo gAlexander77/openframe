@@ -123,6 +123,8 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 .clip-dur { color: rgb(255 255 255 / 60%); }
 .clip-badge { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; border-radius: 3px; background: rgb(0 0 0 / 35%); font-size: 9.5px; }
 .clip-badge-icon { color: #bfefff; }
+/* Premiere's out-of-sync numbers: red, on both linked clips. */
+.clip-badge.sync { background: var(--danger); color: #fff; font-weight: 600; }
 .clip-strip, .clip-wave { position: absolute; pointer-events: none; }
 .clip-text .clip-label, .clip-adjustment .clip-label, .clip-color .clip-label { height: 100% !important; background: none; }
 .clip-key {

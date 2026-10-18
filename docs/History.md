@@ -844,3 +844,12 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   in the Captions tab, each a whole style and a height (so Boxed drops
   the outline it replaces) with a CSS sample on its card, and Word pop
   carries the spoken-word highlight. Per-word motion stays for later.
+- **Linked picture and sound.** Extract audio split the sound off for
+  good, so a moved shot left its sound behind unless linkage happened to
+  carry it. Groups already behaved like Premiere's links (select, move and
+  delete together, Alt takes one, trims per clip), so the extracted pair
+  is grouped, and Premiere's red out-of-sync counts show when one side
+  moves alone. One fix on the way: Alt-click did not narrow a selection
+  that already held the clip, which is exactly how one side of a selected
+  pair is taken. The drive's first clicks landed on the selected sound
+  clip's volume line, which takes the pointer in the clip's middle.

@@ -80,6 +80,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
+- **Linked picture and sound** (Premiere's linked clips, for J and L
+  cuts): Extract audio keeps the video and its sound linked as a group,
+  so they select, move and delete together; Alt-click takes one side
+  alone, each edge trims on its own, and red frame counts (+15 / −15)
+  show on both when one is moved out of sync. Ungroup unlinks them.
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. **Delete shown** removes what the search and

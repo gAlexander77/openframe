@@ -603,7 +603,10 @@ export function freezeFrame(p: Project, clipId: Id, at: number, frames: number):
 }
 
 /** Move a video clip's sound onto an audio track (CapCut's Extract audio),
- * so J/L cuts and separate audio edits become possible. */
+ * so J/L cuts and separate audio edits become possible. The picture and
+ * its sound are linked as a group (Premiere's linked clips): they select,
+ * move and delete together, Alt takes one side alone, and each edge trims
+ * on its own; Ungroup unlinks them. */
 export function detachAudio(p: Project, clipId: Id): Project {
   const loc = findClip(p, clipId);
   if (!loc || loc.clip.type !== "video" || loc.clip.muted) return p;
@@ -625,8 +628,9 @@ export function detachAudio(p: Project, clipId: Id): Project {
     fadeIn: v.fadeIn,
     fadeOut: v.fadeOut,
     muted: false,
+    group: v.group ?? uid("g"),
   };
-  let q = updateClip(p, clipId, (c) => ({ ...c, muted: true }) as Clip);
+  let q = updateClip(p, clipId, (c) => ({ ...c, muted: true, group: audio.group }) as Clip);
   let track = q.tracks.find((t) => t.kind === "audio" && rangeFree(t, audio.start, audio.duration));
   if (!track) {
     track = createTrack("audio", "Audio");
