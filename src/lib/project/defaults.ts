@@ -8,6 +8,9 @@ import { cleanCompressor } from "../compressor";
 import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
+import { cleanShape } from "../shapes";
+import { cleanTrackMatte, dropDanglingMattes } from "../trackMatte";
+import { cleanWiggle } from "../wiggle";
 import { secondsToFrames, type Rational } from "../time";
 import type {
   Adjust,
@@ -244,6 +247,12 @@ const num = (v: unknown, fallback: number) =>
   typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
 const VISUAL_TYPES = new Set(["video", "image", "text", "color", "compound"]);
+
+/** Set an optional field, or remove it when its cleaned value is absent. */
+function optional(c: Record<string, unknown>, key: string, value: unknown) {
+  if (value === undefined) delete c[key];
+  else c[key] = value;
+}
 const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment", "compound"]);
 
 /** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
@@ -271,6 +280,13 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
     c.effects = Array.isArray(c.effects) ? c.effects : [];
+    // Graphics (ADR-056 to ADR-059, ADR-062): optional, and a malformed one is
+    // dropped rather than refused, so the clip still plays.
+    optional(c, "trackMatte", cleanTrackMatte(c.trackMatte));
+    const mb = isObj(c.motionBlur) ? num(c.motionBlur.shutter, 180) : 0;
+    optional(c, "motionBlur", mb > 0 ? { shutter: Math.min(720, mb) } : undefined);
+    optional(c, "edge", c.edge === "mirror" || c.edge === "repeat" ? c.edge : undefined);
+    optional(c, "wiggle", cleanWiggle(c.wiggle));
   }
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
@@ -315,7 +331,10 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.text = typeof c.text === "string" ? c.text : "";
     c.style = { ...DEFAULT_TEXT_STYLE, ...(isObj(c.style) ? c.style : {}) };
   }
-  if (type === "color") c.color = typeof c.color === "string" ? c.color : "#000000";
+  if (type === "color") {
+    c.color = typeof c.color === "string" ? c.color : "#000000";
+    optional(c, "shape", cleanShape(c.shape));
+  }
   return c as unknown as Clip;
 }
 
@@ -454,7 +473,7 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
     if (firstVideo) firstVideo.main = true;
     else tracks.unshift(createTrack("video", "Main", true));
   }
-  return tracks;
+  return dropDanglingMattes(tracks);
 }
 
 function normalizeMarkers(raw: unknown): Marker[] {

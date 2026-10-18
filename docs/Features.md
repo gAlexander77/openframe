@@ -294,6 +294,41 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   the graded output; live while paused, 8 updates a second while playing
   ([[ADR-022 Scopes bin a GPU-downscaled readback on the CPU]]).
 
+## Graphics and compositing
+
+- **Shape layers** (After Effects' shape layers, ADR-057): rectangle,
+  rounded rectangle (1 is a pill), ellipse and line, with a solid or
+  two-color gradient fill, an outline, and a draw-on amount (Trim Paths)
+  that runs round the outline from its top center or along a line from its
+  left end. Width, height, corners, outline thickness, draw and gradient
+  angle all keyframe; drawn by the GPU at any size, so edges stay crisp at
+  4K and under any scale or rotation. The Shape section of the Video tab
+  edits them; the timeline names the clip after its shape. The pieces of
+  lower thirds, callouts, CTA buttons and end cards (`add_shape`,
+  `set_shape`).
+- **Track mattes** (After Effects', ADR-056): a clip shows only where
+  another clip's picture is opaque (Alpha) or bright (Luma), or the
+  reverse: video inside text, logo and wipe reveals. The matte is the clip
+  on the track directly above (keeps working after cuts) or a named clip;
+  it is not drawn itself, and its own animation animates the reveal.
+  Preview and export match to the level (`set_track_matte`; Compositing
+  section of the Video tab).
+- **Motion blur from movement** (ADR-058): a clip that moves (keyframes,
+  in/out animations, wiggle) is averaged over a 180-degree shutter (or any
+  angle to 720), with more samples the faster it travels; slides, pushes,
+  zooms and spins between clips blur too. Full quality paused and in
+  export, lighter while playing; still frames cost nothing
+  (`set_motion_blur`).
+- **Mirror edges** (Motion Tile's, ADR-059): a picture moved, shrunk,
+  spun or shaken off the canvas fills it with mirrored (seamless) or
+  repeated copies instead of black (`set_edge_mode`).
+- **Wiggle** (After Effects' wiggle(), ADR-062): seeded smooth noise on
+  position, rotation or scale for camera shake, nervous titles and floating
+  logos, in pixels, degrees and percent; its strength keyframes to ramp a
+  shake in or out, and the same seed repeats the same path (`set_wiggle`).
+- **Spring, Elastic and Bounce** eases for keyframes, overshooting and
+  settling exactly on the next value (ADR-062).
+
 ## Inspector
 
 - CapCut's tab matrix per clip type: Video (Basic, Remove BG, Mask),
@@ -347,8 +382,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   one-click keys for a clip with none.
 - **Easing presets** wherever keys are selected, with curve previews:
   Linear, Hold, Ease in, Ease out, Ease in-out, Smooth, Fast in, Overshoot
-  (passes once, no bounce), Anticipate. Presets beyond the named five and
-  hand-drawn curves are stored as CSS beziers.
+  (passes once, no bounce), Anticipate, Spring, Elastic, Bounce. Smooth to
+  Anticipate and hand-drawn curves are stored as CSS beziers; Spring,
+  Elastic and Bounce are named curves no bezier can draw (ADR-062).
 - **Diamonds on the selected clip**: click to select (Shift/Ctrl adds),
   drag to retime with snapping to the playhead and the other keys,
   right-click for easing, double-click to seek; the tooltip names what is

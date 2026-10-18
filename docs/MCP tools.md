@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 132 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 138 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -36,6 +36,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
@@ -684,7 +685,7 @@ Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on
 | `path` | string | yes | Parameter path (see set_param) |
 | `at` | number | yes | Timeline seconds |
 | `value` | number | yes | Value at that time |
-| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" |  | Curve toward the next keyframe |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "spring" \| "elastic" \| "bounce" |  | Curve toward the next keyframe; spring, elastic and bounce overshoot and settle |
 
 Example:
 
@@ -706,14 +707,14 @@ Retime a keyframe and/or change its value. at is the keyframe's current timeline
 
 ### set_keyframe_ease
 
-Shape the curve leaving keyframes toward the next one. ease is a preset (linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate); bezier [x1, y1, x2, y2] is a CSS cubic-bezier (x in 0..1, y may overshoot) and overrides it. Without path, applies to every parameter keyed at that time; without at, to every keyframe on the path(s).
+Shape the curve leaving keyframes toward the next one. ease is a preset (linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce); bezier [x1, y1, x2, y2] is a CSS cubic-bezier (x in 0..1, y may overshoot) and overrides it. Without path, applies to every parameter keyed at that time; without at, to every keyframe on the path(s).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Clip id |
 | `path` | string |  | Parameter path; omit for all keyed parameters |
 | `at` | number |  | Timeline seconds of the keyframe; omit for all keyframes |
-| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" |  | Preset name |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | Preset name |
 | `bezier` | number[] |  | [x1, y1, x2, y2] |
 
 ### remove_keyframes
@@ -977,6 +978,138 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `level` | "least-crop" \| "recommended" \| "most-stable" \| "off" |  | How strongly to smooth |
+
+## Graphics and compositing
+
+Shapes (bars, boxes, lines that draw on), track mattes, motion blur, mirrored edges and camera shake.
+
+### add_shape
+
+Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | "rectangle" \| "rounded_rectangle" \| "ellipse" \| "line" | yes | Shape |
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number | yes | Seconds (0.001..) |
+| `x` | number |  | Center's horizontal offset from the canvas center, fraction of its width (-0.5 left edge .. 0.5 right edge; default 0) |
+| `y` | number |  | Center's vertical offset, fraction of the canvas height (-0.5 top .. 0.5 bottom; 0.35 is lower-third height; default 0) |
+| `width` | number |  | Width, fraction of the canvas width (a line's length); default 0.3, an ellipse 0.2 (0.001..4) |
+| `height` | number |  | Height, fraction of the canvas height (unused by lines); default 0.1, an ellipse a circle as wide as width (0.001..4) |
+| `color` | string |  | Fill color, CSS: '#ff3366', '#00000099' (with alpha), 'rgba(0,0,0,0.6)', 'white'; a line's color. Default #ffffff |
+| `gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `gradient.from` | string | yes | Color at the start |
+| `gradient.to` | string | yes | Color at the end |
+| `gradient.angle` | number |  | Degrees: 0 runs left to right (default), 90 top to bottom, 45 diagonal |
+| `fill` | boolean |  | false draws only the outline (give stroke_width); default true |
+| `stroke_color` | string |  | Outline color, CSS; default white |
+| `stroke_width` | number |  | Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline (0..400) |
+| `radius` | number |  | Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35 (0..1) |
+| `draw` | number |  | Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1 (0..1) |
+| `rotation` | number |  | Degrees, clockwise (turn a line to any angle) |
+| `opacity` | number |  | 0..1, default 1 (0..1) |
+| `track_id` | string |  | Track id; default above everything at that time |
+
+Example:
+
+```json
+{"name":"add_shape","arguments":{"kind":"rounded_rectangle","start":2,"duration":3,"x":-0.25,"y":0.32,"width":0.4,"height":0.1,"color":"#14101fcc","radius":0.3}}
+```
+
+### set_shape
+
+Change shape layers made with add_shape (same meanings and units). Values left out keep theirs. Numbers that are animated (have keyframes) get a keyframe at `at` instead; to start animating one, use add_keyframe on its path (shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle). gradient with an empty from removes it; stroke_width 0 removes the outline.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Shape clips |
+| `kind` | "rectangle" \| "rounded_rectangle" \| "ellipse" \| "line" |  | Shape |
+| `width` | number |  | Fraction of the canvas width (0.001..4) |
+| `height` | number |  | Fraction of the canvas height (0.001..4) |
+| `color` | string |  | Fill color, CSS |
+| `gradient` | { from, to, angle } |  | A two-color fill instead of color |
+| `gradient.from` | string | yes | Start color; empty removes the gradient |
+| `gradient.to` | string |  | End color |
+| `gradient.angle` | number |  | Degrees, 0 left to right |
+| `fill` | boolean |  | false: outline only |
+| `stroke_color` | string |  | Outline color, CSS |
+| `stroke_width` | number |  | Pixels at 1080p; 0 removes the outline (0..400) |
+| `radius` | number |  | Rectangle corners 0..1 (0..1) |
+| `draw` | number |  | Share drawn 0..1 (0..1) |
+| `at` | number |  | Timeline seconds, for animated values |
+
+Example:
+
+```json
+{"name":"set_shape","arguments":{"clip_ids":["c_8"],"draw":1,"at":2.6}}
+```
+
+### set_track_matte
+
+Cut a clip with a track matte (After Effects'): it shows only where another clip's picture is, the basis of video inside text, logo reveals and wipe reveals. mode alpha (default) keeps where the matte is opaque, alphaInverted where it is transparent, luma where it is bright, lumaInverted where it is dark. matte_clip_id: a visual clip of the same timeline (text, shape, picture, video), 'above' for whatever is on the video track directly above at each frame (keeps working after cuts), or 'none' to remove the matte; left out, the current matte stays (a new one uses 'above'). The matte clip is not drawn itself but keeps its transform, animations and keyframes, so animating the matte animates the reveal. Example, video inside big text: add_text {text: 'SUMMER', style: {size: 420}} then set_track_matte {clip_id: <video>, matte_clip_id: <text>}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The clip to cut (it is what shows) |
+| `matte_clip_id` | string |  | The matte clip's id, 'above' (the video track directly above) or 'none' |
+| `mode` | "alpha" \| "alphaInverted" \| "luma" \| "lumaInverted" |  | alpha: show where the matte is opaque (default); alphaInverted: where it is not; luma: where it is bright; lumaInverted: where it is dark |
+
+Example:
+
+```json
+{"name":"set_track_matte","arguments":{"clip_id":"c_2","matte_clip_id":"above","mode":"alpha"}}
+```
+
+### set_motion_blur
+
+Motion blur from movement (After Effects'): while a clip moves (position, scale or rotation keyframes, wiggle, in/out animations, and moving transitions such as slides, pushes, zooms and spins), its picture is averaged over the camera's shutter, so fast moves streak instead of strobing. shutter_angle in degrees: 180 (default; film's and After Effects') blurs over half a frame centered on it, 360 a whole frame (heavier), 90 crisper. Still frames cost nothing; export and the paused viewer use up to 32 samples, playback fewer.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `on` | boolean | yes | Motion blur on or off |
+| `shutter_angle` | number |  | Degrees, 1..720; default 180 (1..720) |
+
+Example:
+
+```json
+{"name":"set_motion_blur","arguments":{"clip_ids":["c_4","c_5"],"on":true,"shutter_angle":180}}
+```
+
+### set_edge_mode
+
+What fills the canvas around a picture that is moved, shrunk, spun or shaken off it (After Effects' Motion Tile with Mirror Edges): mirror reflects the picture at its edges, seamless, the usual choice under camera shake, zoom-out and spin moves; repeat tiles it; none (default) leaves the canvas empty there. Pairs with set_wiggle and with scale below 1.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `edge` | "none" \| "mirror" \| "repeat" | yes | Edge mode |
+
+Example:
+
+```json
+{"name":"set_edge_mode","arguments":{"clip_ids":["c_4"],"edge":"mirror"}}
+```
+
+### set_wiggle
+
+Organic shake or drift (After Effects' wiggle): seeded smooth noise added to a clip's position, x, y, rotation or scale, for handheld camera shake, a nervous title or a floating logo. frequency is wiggles per second (camera shake 2..6, a slow drift 0.3..1); amplitude is the largest offset: pixels for position/x/y, degrees for rotation, percent for scale (a light shake: position 12 px and rotation 0.6 degrees at 4 Hz; an impact: position 40 px). amplitude 0 removes it. strength 0..1 (default 1) scales it: with at, it is keyed there, so two calls ramp a shake in or out (or add_keyframe on wiggle.x.strength, wiggle.y.strength, wiggle.rotation.strength, wiggle.scale.strength). The same seed repeats the same path. A shaken picture uncovers the canvas edge: set_edge_mode mirror, or scale it up slightly.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `target` | "position" \| "x" \| "y" \| "rotation" \| "scale" | yes | What shakes: position is x and y together |
+| `frequency` | number |  | Wiggles per second (Hz); default 3, or the current one (0.05..30) |
+| `amplitude` | number |  | Largest offset: pixels (position, x, y), degrees (rotation) or percent (scale); 0 removes the wiggle (0..) |
+| `strength` | number |  | 0..1, multiplies the amplitude; keyed at `at` when given (0..1) |
+| `seed` | integer |  | Noise seed; default one per clip |
+| `at` | number |  | Timeline seconds: key strength there |
+
+Example:
+
+```json
+{"name":"set_wiggle","arguments":{"clip_ids":["c_4"],"target":"position","frequency":4,"amplitude":12}}
+```
 
 ## Speed
 

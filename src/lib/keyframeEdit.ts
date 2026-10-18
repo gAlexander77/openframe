@@ -200,8 +200,9 @@ const NAMED: Record<string, Bezier> = {
 /** The bezier a curve is drawn with, or null for hold (a step has none). */
 export function asBezier(e: Ease | undefined): Bezier | null {
   if (Array.isArray(e)) return [...e] as Bezier;
-  if (e === "hold") return null;
-  return [...NAMED[e ?? "linear"]] as Bezier;
+  // Hold steps; spring, elastic and bounce are no bezier (ADR-062).
+  const named = NAMED[e ?? "linear"];
+  return named ? ([...named] as Bezier) : null;
 }
 
 export interface Point {
@@ -258,8 +259,9 @@ export interface EasePreset {
 
 /**
  * The easing menu. The first five are the document's named eases; the
- * rest are CapCut-style curves stored as beziers, so any player that reads
- * CSS cubic-bezier reproduces them exactly.
+ * next four are CapCut-style curves stored as beziers, so any player that
+ * reads CSS cubic-bezier reproduces them exactly; the last three are named
+ * eases with overshoot no bezier can draw.
  */
 export const EASE_PRESETS: EasePreset[] = [
   { id: "linear", label: "Linear", ease: "linear", hint: "Constant speed" },
@@ -271,6 +273,10 @@ export const EASE_PRESETS: EasePreset[] = [
   { id: "fastIn", label: "Fast in", ease: [0.16, 1, 0.3, 1], hint: "Arrives fast, glides to rest" },
   { id: "overshoot", label: "Overshoot", ease: [0.34, 1.56, 0.64, 1], hint: "Passes the value once, no bounce" },
   { id: "anticipate", label: "Anticipate", ease: [0.36, 0, 0.66, -0.56], hint: "Pulls back, then goes" },
+  // Named eases a bezier cannot draw (ADR-062): no handles in the graph.
+  { id: "spring", label: "Spring", ease: "spring", hint: "Overshoots, rings, settles" },
+  { id: "elastic", label: "Elastic", ease: "elastic", hint: "Snaps past and wobbles in" },
+  { id: "bounce", label: "Bounce", ease: "bounce", hint: "Lands and bounces" },
 ];
 
 export const EASE_IDS = EASE_PRESETS.map((p) => p.id);

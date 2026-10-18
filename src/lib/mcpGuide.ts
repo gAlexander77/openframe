@@ -43,6 +43,11 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "Position, scale, crop, mask, key and animate pictures; keyframes for anything numeric.",
     tools: ["set_param", "add_keyframe", "move_keyframe", "set_keyframe_ease", "remove_keyframes", "frame_region", "frame_clips", "align_clips", "distribute_clips", "set_uniform_scale", "set_flip", "set_crop", "set_mask", "set_blend", "set_chroma_key", "set_canvas_fill", "set_background_removal", "remove_background", "set_animation", "add_cinematic_bars", "track_motion", "auto_reframe", "stabilize_clip"],
   },
+  {
+    name: "Graphics and compositing",
+    blurb: "Shapes (bars, boxes, lines that draw on), track mattes, motion blur, mirrored edges and camera shake.",
+    tools: ["add_shape", "set_shape", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
+  },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
   { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
   {
@@ -113,6 +118,12 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
   fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
   add_cinematic_bars: { ratio: 2.39, animate_in: 0.6 },
+  add_shape: { kind: "rounded_rectangle", start: 2, duration: 3, x: -0.25, y: 0.32, width: 0.4, height: 0.1, color: "#14101fcc", radius: 0.3 },
+  set_shape: { clip_ids: ["c_8"], draw: 1, at: 2.6 },
+  set_track_matte: { clip_id: "c_2", matte_clip_id: "above", mode: "alpha" },
+  set_motion_blur: { clip_ids: ["c_4", "c_5"], on: true, shutter_angle: 180 },
+  set_edge_mode: { clip_ids: ["c_4"], edge: "mirror" },
+  set_wiggle: { clip_ids: ["c_4"], target: "position", frequency: 4, amplitude: 12 },
   set_audio_filter: { clip_ids: ["c_3"], type: "lowpass", cutoff: 400, sweep: { to: 18000, start: 6, end: 8.4, ease: "easeIn" } },
   set_reverb: { clip_ids: ["c_9"], preset: "hall", mix: 0.25 },
   set_echo: { clip_ids: ["c_9"], time: 0.375, feedback: 0.4, mix: 0.3 },
@@ -222,7 +233,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 4. add_voiceover with the script: the voice and captions are placed at their real lengths and it answers where each line landed; cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
-7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots.
+7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a subject must stay in frame on 9:16, a separate project with auto_reframe does better.
@@ -238,7 +249,7 @@ ${DESIGN}`,
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
 6. Hits: add_beat_hits flash, zoom, shake, rgb_split, glow or zoom_blur on the drop (marker_label Drop), on bars, or at_cuts; it keeps flashes to 3 a second. Transitions whipLeft, whipRight, zoomPunch or spinBlur at a few cuts, in the direction of the motion.
-7. Look: one grade over everything (filter teal or a LUT on an adjustment clip), grain, and add_cinematic_bars (2.39) for a film feel.
+7. Look: one grade over everything (filter teal or a LUT on an adjustment clip), grain, and add_cinematic_bars (2.39) for a film feel. set_motion_blur on clips that move fast (punch-ins, whips) and set_edge_mode mirror on them so a shake or zoom never shows black; set_wiggle for a handheld shake on the drop.
 8. Titles: big, short, bold words (one display face, size 160-240) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
 9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; a set_audio_filter lowpass sweep that opens onto the drop, set_tape_stop for a stop before it; then fit_music end bar (or video) with fade_out to end the music cleanly.
 10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).

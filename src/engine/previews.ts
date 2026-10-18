@@ -297,6 +297,11 @@ async function grabClip(key: string): Promise<Scene> {
     animLoop: undefined,
     keyframes: undefined,
     transitionOut: undefined,
+    // Alone on its track a track matte would cut it to nothing.
+    trackMatte: undefined,
+    motionBlur: undefined,
+    edge: undefined,
+    wiggle: undefined,
   } as Clip;
   const mini: Project = { ...createProject({ width: w, height: h, fps: s.project.fps }), assets: [asset], tracks: [{ ...createTrack("video", "Main", true), clips: [bare] }] };
   const plan = planFrame(mini, r);

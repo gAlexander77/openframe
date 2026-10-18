@@ -13,6 +13,10 @@ import { fittedSize } from "./size";
 import { spokenWord } from "../captions";
 import { isKinetic, kineticAt, unitOf, type KineticFrame } from "../kinetic";
 import { frameAt, framesToSeconds } from "../time";
+import { MOTION_SAMPLES, MOVING_TRANSITIONS, samplesFor, shutterOffsets, travel, type Placement } from "../motionBlur";
+import { resolveShape, type ResolvedShape } from "../shapes";
+import { matteClip, mattesAt } from "../trackMatte";
+import { wiggleAt } from "../wiggle";
 import type {
   Adjust,
   AdjustmentClip,
@@ -20,13 +24,22 @@ import type {
   ChromaKey,
   Clip,
   Crop,
+  EdgeMode,
   Id,
   Mask,
+  MatteMode,
   Project,
   TextClip,
   Track,
   VisualClip,
 } from "../project/types";
+
+/** How a plan is drawn. The default is export quality. */
+export interface PlanOptions {
+  /** Most shutter samples a moving layer with motion blur gets
+   * (ADR-058); 1 draws every layer once. Default MOTION_SAMPLES.full. */
+  motionSamples?: number;
+}
 
 export type LayerSource =
   | {
@@ -44,6 +57,9 @@ export type LayerSource =
   /** `kinetic`: the animations its letters, words or lines play now. */
   | { kind: "text"; clip: TextClip; word?: number; kinetic?: KineticFrame }
   | { kind: "color"; color: string }
+  /** A shape layer (ADR-057): a color clip's shape at this frame, its
+   * fill `color` unless the shape has a gradient. */
+  | { kind: "shape"; color: string; shape: ResolvedShape }
   /** A compound clip's nested timeline at inner frame `frame`, planned like
    * the project's own: the compositor draws `items` into a canvas-sized
    * picture first, and that picture is this layer's source (ADR-037). */
@@ -91,11 +107,28 @@ export interface Layer {
   blur: number;
   /** Seconds since the clip started, for time-driven effects. */
   time: number;
+  /** Motion blur (ADR-058): the placements to average over the shutter,
+   * in order; absent when the layer holds still or blur is off. */
+  motion?: Placement[];
+  /** Mirrored or repeated copies past the picture's edges (ADR-059). */
+  edge?: EdgeMode;
+  /** Track matte (ADR-056): the matte clip's own layer at this frame
+   * (null: it has no picture here) and how it cuts this one. */
+  trackMatte?: { layer: Layer | null; mode: MatteMode };
 }
 
 export type PlanItem =
   | { kind: "layer"; layer: Layer }
-  | { kind: "transition"; type: string; progress: number; from: Layer; to: Layer }
+  | {
+      kind: "transition";
+      type: string;
+      progress: number;
+      from: Layer;
+      to: Layer;
+      /** Motion blur on a transition that moves the pictures: average
+       * `samples` progress values spread `spread` wide around progress. */
+      motion?: { spread: number; samples: number };
+    }
   | {
       kind: "adjust";
       clipId: Id;
@@ -211,7 +244,7 @@ const MAX_DEPTH = 16;
  * holds the last/first frame when the source runs out. `prefix` is the
  * path of compound clips the clip is seen through ("" on the project's own
  * timeline). */
-export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", depth = 0): Layer | null {
+export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", depth = 0, opts: PlanOptions = {}): Layer | null {
   const r = Math.min(Math.max(f - clip.start, 0), clip.duration - 1);
   let source: LayerSource;
   if (clip.type === "video") {
@@ -245,51 +278,62 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     const kinetic = kineticAt(clip, r, ANIMATIONS);
     source = { kind: "text", clip, ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
   }
-  else if (clip.type === "color") source = { kind: "color", color: clip.color };
+  else if (clip.type === "color") {
+    const shape = resolveShape(clip, r);
+    source = shape ? { kind: "shape", color: clip.color, shape } : { kind: "color", color: clip.color };
+  }
   else {
     // The nested timeline is a source like a file, sampled at whole frames
     // of the same rate; past its end (an inner edit shortened it) there is
     // nothing to show.
     const k = findCompound(p, clip.compoundId);
     const inner = Math.max(0, frameAt(sourceTimeAt(clip, f, p.fps), p.fps));
-    const items = k && depth < MAX_DEPTH && inner < timelineEnd(k.tracks) ? planTracks(p, k.tracks, inner, `${prefix}${clip.id}/`, depth + 1) : [];
+    const items = k && depth < MAX_DEPTH && inner < timelineEnd(k.tracks) ? planTracks(p, k.tracks, inner, `${prefix}${clip.id}/`, depth + 1, opts) : [];
     source = { kind: "compound", compoundId: clip.compoundId, frame: inner, items };
   }
 
-  const anim = animationAt(clip, r);
   const { adjust, tone } = resolveAdjust(clip, r);
-  let x = paramAt(clip, "transform.x", r) + anim.x;
-  let y = paramAt(clip, "transform.y", r) + anim.y;
-  let scale = paramAt(clip, "transform.scale", r) * anim.scale;
-  let scaleY = clip.transform.scaleY !== undefined ? paramAt(clip, "transform.scaleY", r) * anim.scale : undefined;
-  const rotation = paramAt(clip, "transform.rotation", r) + anim.rotation;
-  // Stabilization moves the picture onto the smooth camera path, in the
-  // picture's own axes (so it turns and mirrors with it), zoomed to hide
-  // the edges it uncovers.
-  if (clip.type === "video" && clip.stabilize && source.kind === "video") {
-    const a = getAsset(p, clip.assetId);
-    if (a?.width && a.height) {
-      const s = clip.stabilize;
-      const c = correctionAt(s, source.time);
-      const fit = Math.min(p.width / a.width, p.height / a.height);
-      const lx = c.x * a.width * fit * scale * s.zoom * (clip.transform.flipX ? -1 : 1);
-      const ly = c.y * a.height * fit * (scaleY ?? scale) * s.zoom * (clip.transform.flipY ? -1 : 1);
+  const fps = p.fps.num / p.fps.den;
+  // Stabilization's correction for this source frame, applied to every
+  // shutter sample alike: it undoes the camera's shake, not a move.
+  const stab = clip.type === "video" && clip.stabilize && source.kind === "video" ? { s: clip.stabilize, c: correctionAt(clip.stabilize, source.time), a: getAsset(p, clip.assetId) } : null;
+  /** The picture's placement at clip frame `rr` (fractional for motion
+   * blur's samples): keyframes, animations, wiggle, stabilization, anchor. */
+  const placeAt = (rr: number) => {
+    const anim = animationAt(clip, rr);
+    let x = paramAt(clip, "transform.x", rr) + anim.x + wiggleAt(clip, "x", rr, fps);
+    let y = paramAt(clip, "transform.y", rr) + anim.y + wiggleAt(clip, "y", rr, fps);
+    const ws = wiggleAt(clip, "scale", rr, fps);
+    let scale = (paramAt(clip, "transform.scale", rr) + ws) * anim.scale;
+    let scaleY = clip.transform.scaleY !== undefined ? (paramAt(clip, "transform.scaleY", rr) + ws) * anim.scale : undefined;
+    const rotation = paramAt(clip, "transform.rotation", rr) + anim.rotation + wiggleAt(clip, "rotation", rr, fps);
+    // Stabilization moves the picture onto the smooth camera path, in the
+    // picture's own axes (so it turns and mirrors with it), zoomed to hide
+    // the edges it uncovers.
+    if (stab?.a?.width && stab.a.height) {
+      const { s, c, a } = stab;
+      const fit = Math.min(p.width / a.width!, p.height / a.height!);
+      const lx = c.x * a.width! * fit * scale * s.zoom * (clip.transform.flipX ? -1 : 1);
+      const ly = c.y * a.height! * fit * (scaleY ?? scale) * s.zoom * (clip.transform.flipY ? -1 : 1);
       const rad = (rotation * Math.PI) / 180;
       x += (Math.cos(rad) * lx - Math.sin(rad) * ly) / p.width;
       y += (Math.sin(rad) * lx + Math.cos(rad) * ly) / p.height;
       scale *= s.zoom;
       if (scaleY !== undefined) scaleY *= s.zoom;
     }
-  }
+    // The anchor point sits at the position; the picture's center moves off
+    // it by the anchor's offset, scaled, mirrored and turned with the picture.
+    const ax = paramAt(clip, "transform.anchorX", rr), ay = paramAt(clip, "transform.anchorY", rr);
+    if (ax || ay) {
+      const sh = anchorShift(p, clip, { ax, ay, scale, scaleY, rotation });
+      x += sh.dx;
+      y += sh.dy;
+    }
+    return { anim, x, y, scale, scaleY, rotation };
+  };
+  const { anim, x, y, scale, scaleY, rotation } = placeAt(r);
+  const motion = clip.motionBlur ? shutterPath(p, clip, r, clip.motionBlur.shutter, opts, placeAt) : undefined;
   const cut = clip.type === "video" && clip.cutout?.enabled ? clip.cutout : undefined;
-  // The anchor point sits at the position; the picture's center moves off
-  // it by the anchor's offset, scaled, mirrored and turned with the picture.
-  const ax = paramAt(clip, "transform.anchorX", r), ay = paramAt(clip, "transform.anchorY", r);
-  if (ax || ay) {
-    const sh = anchorShift(p, clip, { ax, ay, scale, scaleY, rotation });
-    x += sh.dx;
-    y += sh.dy;
-  }
   return {
     clipId: prefix + clip.id,
     source,
@@ -317,7 +361,26 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     matte: cut && source.kind === "video" && source.time >= cut.from - 1e-3 && source.time < cut.to + 1e-3 ? { src: cut.src, time: source.time - cut.from } : undefined,
     blur: anim.blur,
     time: framesToSeconds(r, p.fps),
+    ...(motion ? { motion } : {}),
+    ...(clip.edge ? { edge: clip.edge } : {}),
   };
+}
+
+/** Motion blur's placements over the shutter around clip frame `r`, or
+ * undefined when the picture travels less than half a pixel (ADR-058).
+ * The travel along five instants sets the sample count, about one per
+ * two pixels, as After Effects adds samples to fast moves. */
+function shutterPath(p: Project, clip: VisualClip, r: number, shutter: number, opts: PlanOptions, placeAt: (rr: number) => Placement): Placement[] | undefined {
+  const most = opts.motionSamples ?? MOTION_SAMPLES.full;
+  const open = Math.max(0, Math.min(720, shutter)) / 360;
+  if (most <= 1 || open === 0) return undefined;
+  const at = (dt: number): Placement => {
+    const t = placeAt(Math.min(Math.max(r + dt, 0), clip.duration - 1));
+    return { x: t.x, y: t.y, scale: t.scale, ...(t.scaleY !== undefined ? { scaleY: t.scaleY } : {}), rotation: t.rotation };
+  };
+  const { w, h } = fittedSize(p, clip);
+  const n = samplesFor(travel([0, 1, 2, 3, 4].map((k) => at((k / 4 - 0.5) * open)), w, h, p.width, p.height), most);
+  return n > 1 ? shutterOffsets(n, shutter).map(at) : undefined;
 }
 
 /** How far (canvas fractions) the picture's center sits from its position
@@ -368,7 +431,7 @@ export function transitionWindow(cut: number, duration: number) {
 }
 
 /** Everything to draw at frame f, bottom track first. */
-export const planFrame = (p: Project, f: number): PlanItem[] => planTracks(p, p.tracks, f, "", 0);
+export const planFrame = (p: Project, f: number, opts: PlanOptions = {}): PlanItem[] => planTracks(p, p.tracks, f, "", 0, opts);
 
 /** Every item of a plan, compound clips' nested items included (after the
  * layer that shows them), for code that must visit every source. */
@@ -376,7 +439,11 @@ export function* walkPlan(plan: PlanItem[]): Generator<PlanItem> {
   for (const item of plan) {
     yield item;
     const layers = item.kind === "layer" ? [item.layer] : item.kind === "transition" ? [item.from, item.to] : [];
-    for (const l of layers) if (l.source.kind === "compound") yield* walkPlan(l.source.items);
+    for (const l of layers) {
+      // A track matte's layer draws like any other, so its source loads too.
+      if (l.trackMatte?.layer) yield* walkPlan([{ kind: "layer", layer: l.trackMatte.layer }]);
+      if (l.source.kind === "compound") yield* walkPlan(l.source.items);
+    }
   }
 }
 
@@ -386,8 +453,16 @@ export const planLayers = (plan: PlanItem[]): Layer[] =>
 
 /** One timeline's tracks at frame f: the project's, or a compound's seen
  * through the compound clips in `prefix`. */
-function planTracks(p: Project, tracks: Track[], f: number, prefix: string, depth: number): PlanItem[] {
+function planTracks(p: Project, tracks: Track[], f: number, prefix: string, depth: number, opts: PlanOptions): PlanItem[] {
   const items: PlanItem[] = [];
+  // Track mattes (ADR-056): matte clips are not drawn; the clip each one
+  // cuts carries the matte's layer.
+  const mattes = mattesAt(tracks, f);
+  const withMatte = (layer: Layer, clip: VisualClip, ti: number): Layer => {
+    const m = clip.trackMatte && matteClip(tracks, ti, clip, f);
+    if (m === undefined || !clip.trackMatte) return layer;
+    return { ...layer, trackMatte: { layer: m ? layerAt(p, m, f, prefix, depth, opts) : null, mode: clip.trackMatte.mode } };
+  };
   for (let ti = tracks.length - 1; ti >= 0; ti--) {
     const track = tracks[ti];
     if (track.kind !== "video" || track.hidden) continue;
@@ -400,19 +475,24 @@ function planTracks(p: Project, tracks: Track[], f: number, prefix: string, dept
       if (!tr) continue;
       const b = clips[i + 1] as VisualClip;
       const cut = a.start + a.duration;
-      if (b.start !== cut || a.disabled || b.disabled) continue;
+      if (b.start !== cut || a.disabled || b.disabled || mattes.has(a.id) || mattes.has(b.id)) continue;
       const w = transitionWindow(cut, tr.duration);
       if (f < w.from || f >= w.to) continue;
-      const from = layerAt(p, a, f, prefix, depth);
-      const to = layerAt(p, b, f, prefix, depth);
+      const from = layerAt(p, a, f, prefix, depth, opts);
+      const to = layerAt(p, b, f, prefix, depth, opts);
       if (from && to) {
-        items.push({ kind: "transition", type: tr.type, progress: (f - w.from + 0.5) / tr.duration, from, to });
+        // A transition that moves the pictures blurs with them when either
+        // side has motion blur on (ADR-058).
+        const mb = a.motionBlur ?? b.motionBlur;
+        const spread = mb ? Math.min(720, Math.max(0, mb.shutter)) / 360 / tr.duration : 0;
+        const samples = spread && MOVING_TRANSITIONS.has(tr.type) ? samplesFor(spread * Math.max(p.width, p.height), opts.motionSamples ?? MOTION_SAMPLES.full) : 1;
+        items.push({ kind: "transition", type: tr.type, progress: (f - w.from + 0.5) / tr.duration, from: withMatte(from, a, ti), to: withMatte(to, b, ti), ...(samples > 1 ? { motion: { spread, samples } } : {}) });
         handled = true;
       }
     }
     if (handled) continue;
     const clip = clips.find((c) => c.start <= f && f < c.start + c.duration);
-    if (!clip || clip.disabled) continue;
+    if (!clip || clip.disabled || mattes.has(clip.id)) continue;
     if (clip.type === "adjustment") {
       const r = f - clip.start;
       const a = clip as AdjustmentClip;
@@ -428,11 +508,11 @@ function planTracks(p: Project, tracks: Track[], f: number, prefix: string, dept
         time: framesToSeconds(r, p.fps),
       });
     } else if (clip.type !== "audio") {
-      const layer = layerAt(p, clip, f, prefix, depth);
+      const layer = layerAt(p, clip, f, prefix, depth, opts);
       if (layer && layer.opacity > 0) {
         const fill = "canvas" in clip && clip.canvas ? canvasLayer(p, clip, layer) : null;
         if (fill) items.push({ kind: "layer", layer: fill });
-        items.push({ kind: "layer", layer });
+        items.push({ kind: "layer", layer: withMatte(layer, clip, ti) });
       }
     }
   }

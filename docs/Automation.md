@@ -210,6 +210,21 @@ replaces a file, answering with the path, size and a note (what the
 loudness pass did). Past about four minutes it answers `running`; follow
 it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
 
+Graphics and compositing, for ads and title sequences
+([[ADR-056 Track mattes cut a layer with another clip]] to
+[[ADR-062 Overshoot eases are named and wiggle is seeded noise]]):
+
+- `add_shape` `{kind: rectangle | rounded_rectangle | ellipse | line, start, duration, x, y, width, height, color, gradient: {from, to, angle}, fill, stroke_color, stroke_width, radius, draw, rotation, opacity, track_id}`: a shape layer, above everything at that time; sizes are canvas fractions, stroke pixels at 1080p.
+- `set_shape` `{clip_ids, kind, width, height, color, gradient, fill, stroke_color, stroke_width, radius, draw, at}`: change shapes; animated numbers get a key at `at` (paths `shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`, `shape.draw`, `shape.gradient.angle`).
+- `set_track_matte` `{clip_id, matte_clip_id: <clip id> | "above" | "none", mode: alpha | alphaInverted | luma | lumaInverted}`: the clip shows only where the matte clip's picture is (video inside text, wipe reveals); the matte is not drawn.
+- `set_motion_blur` `{clip_ids, on, shutter_angle}`: moving clips (and slides, pushes, zooms, spins) blur over the shutter, 180 degrees by default.
+- `set_edge_mode` `{clip_ids, edge: none | mirror | repeat}`: copies of the picture fill the canvas around it when it moves, shrinks or shakes.
+- `set_wiggle` `{clip_ids, target: position | x | y | rotation | scale, frequency, amplitude, strength, seed, at}`: seeded shake or drift (pixels, degrees, percent); `strength` with `at` keys a ramp; amplitude 0 removes it.
+- `add_keyframe` and `set_keyframe_ease` take `spring`, `elastic` and `bounce`, which overshoot and settle.
+
+`describe_project` shows a color clip's `color`, a shape's `shape`, and
+`track_matte`, `motion_blur`, `edge` and `wiggle` where set.
+
 ## 3. Ask in plain words (AI assistant)
 
 The AI assistant panel runs a model on this computer (Ollama or LM Studio,

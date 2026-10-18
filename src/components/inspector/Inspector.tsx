@@ -25,6 +25,7 @@ import { edit, run, tipFor } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
+import { CompositingSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
 import { SoundFxSection } from "./SoundFx";
 import { CurvesPanel } from "./CurvesPanel";
@@ -232,6 +233,8 @@ function VideoTab({ clip }: { clip: Clip }) {
               </Row>
             </Section>
           )}
+          {clip.type === "color" && <ShapeSection clip={clip} />}
+          <CompositingSection clip={clip} />
           {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
           <CropSection clip={clip} />
           {clip.type === "video" && <StabilizeSection clip={clip} />}
