@@ -136,3 +136,9 @@ describe("loudness plan (export's true-peak limiter)", () => {
     expect(over.gains[3]).toBeLessThanOrEqual(10 ** (-1 / 20) + 1e-6);
   });
 });
+
+it("passes a true peak that rounds to the ceiling, as the report prints it", () => {
+  const online = LOUDNESS_SPECS.online;
+  expect(checkSpec({ integrated: -14, truePeak: -0.9996 }, online).pass).toBe(true);
+  expect(checkSpec({ integrated: -14, truePeak: -0.94 }, online).pass).toBe(false);
+});

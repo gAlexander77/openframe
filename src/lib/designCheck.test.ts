@@ -51,9 +51,41 @@ it("asks an ad for an end card and an epic edit for cuts on the beat", () => {
   let p = base();
   expect(rules(p, "ad")).toContain("no_end_card");
   expect(rules(p, "epic_edit")).toContain("no_beat_grid");
-  p = runCommand(p, "split", { at: 2.5, clip_ids: [p.tracks[0].clips[0].id] });
+  p = runCommand(p, "split", { at: 2.3, clip_ids: [p.tracks[0].clips[0].id] });
   p = runCommand(p, "add_markers", { times: [1, 2, 3], label: "Beat" });
   expect(rules(p, "epic_edit")).toContain("cuts_off_beat");
-  p = runCommand(p, "add_markers", { times: [2.5], label: "Beat" });
+  p = runCommand(p, "add_markers", { times: [2.3], label: "Beat" });
   expect(rules(p, "epic_edit")).not.toContain("cuts_off_beat");
+});
+
+it("lets countdown digits, half-beat cuts and text on its own card pass", () => {
+  let p = base();
+  p = runCommand(p, "add_text", { text: "3", start: 0, duration: 0.5, style: { size: 200, stroke: { color: "#000", width: 6 } } });
+  expect(rules(p)).not.toContain("text_too_short");
+  p = runCommand(p, "split", { at: 1.5, clip_ids: [p.tracks.find((t) => t.main)!.clips[0].id] });
+  p = runCommand(p, "add_markers", { times: [1, 2], label: "Beat" });
+  expect(rules(p, "epic_edit")).not.toContain("cuts_off_beat");
+});
+
+it("does not call text on its own solid card a contrast risk", () => {
+  let p = createProject();
+  p = { ...p, assets: [{ id: "v", kind: "video", name: "v.mp4", src: "v.mp4", duration: 10, hasVideo: true, hasAudio: false, width: 1920, height: 1080 }] };
+  p = runCommand(p, "add_media_clip", { asset_id: "v", start: 0, duration: 4 });
+  p = runCommand(p, "add_text", { text: "Over footage", start: 0, duration: 3 });
+  expect(rules(p)).toContain("text_contrast_risk");
+  let q = runCommand(createProject(), "add_color_clip", { color: "#000", start: 0, duration: 4 });
+  q = { ...q, assets: p.assets };
+  q = runCommand(q, "add_media_clip", { asset_id: "v", start: 0, duration: 4, track_id: q.tracks.find((t) => t.main)!.id });
+  q = runCommand(q, "add_color_clip", { color: "#111", start: 0, duration: 4 });
+  q = runCommand(q, "add_text", { text: "On its card", start: 0, duration: 3 });
+  expect(rules(q)).not.toContain("text_contrast_risk");
+});
+
+it("puts captions above the apps' zone on a tall canvas, and scales the size floor", () => {
+  let v = createProject({ width: 1080, height: 1920 });
+  v = runCommand(v, "add_captions", { captions: [{ start: 0, end: 2, text: "hello there" }] });
+  const cap = v.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
+  expect("transform" in cap && cap.transform.y).toBe(0.05);
+  v = runCommand(v, "add_text", { text: "Small but fine", start: 0, duration: 3, style: { size: 26 } });
+  expect(rules(v)).not.toContain("text_too_small");
 });

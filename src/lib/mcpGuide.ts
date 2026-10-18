@@ -6,6 +6,7 @@
 // generated from it and a test keeps the two in step (ADR-055).
 
 import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "./catalog";
+import { KINETIC_ANIMATIONS } from "./kinetic";
 import { CAPTION_LOOKS } from "./captionLooks";
 import { RATIOS } from "./canvas";
 import type { JsonSchema } from "./commands";
@@ -31,7 +32,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "set_clip_label", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "set_clip_label", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
@@ -144,6 +145,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   check_project: { kind: "ad" },
   export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14 },
   slip_clip: { clip_id: "c_4", by: 1.5 },
+  move_track: { track_id: "t_grade", below_track_id: "t_captions" },
   batch: { commands: [{ command: "add_text", args: { text: "SALE", start: 1, duration: 2, style: { size: 140, bold: true } } }, { command: "set_animation", args: { clip_id: "$1", slot: "in", type: "pop", duration: 0.4 } }, { command: "set_animation", args: { clip_id: "$1", slot: "out", type: "fade", duration: 0.3 } }] },
 };
 
@@ -160,10 +162,10 @@ export const PARAM_PATHS: { path: string; range: string; meaning: string }[] = [
   { path: "opacity", range: "0..1", meaning: "0 invisible" },
   { path: "volume", range: "0..4", meaning: "Gain: 1 is 0 dB, 0.5 about -6 dB, 0 silent" },
   { path: "pan", range: "-1..1", meaning: "Left to right" },
-  { path: "adjust.exposure", range: "-100..100", meaning: "Also contrast, saturation, temperature, tint, highlights, shadows, whites, blacks, vibrance, sharpen" },
+  { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100" },
   { path: "adjust.lut.intensity", range: "0..1", meaning: "Strength of an applied LUT" },
   { path: "mask.x / mask.y / mask.width / mask.height / mask.feather", range: "fractions", meaning: "Animate a mask set with set_mask" },
-  { path: "effects.<index>.<param>", range: "per effect", meaning: "An effect's parameter, e.g. effects.0.amount (list_catalog section effects has each one's range)" },
+  { path: "effects.<index|id|type>.<param>", range: "per effect", meaning: "An effect's parameter: its place in the stack from 0 (effects.0.amount), its id, or its type (effects.glow.threshold); list_catalog section effects has each one's parameters and range" },
 ];
 
 /**
@@ -178,6 +180,7 @@ export function fullCatalog(section?: string, query?: string): unknown {
     animations: {
       in_out: Object.entries(ANIMATIONS).filter(([, d]) => d.from).map(([id, d]) => ({ id, label: d.label })),
       loop: Object.entries(ANIMATIONS).filter(([, d]) => d.loop).map(([id, d]) => ({ id, label: d.label })),
+      titles_only: Object.entries(KINETIC_ANIMATIONS).map(([id, d]) => ({ id, label: d.label, unit: d.text?.unit })),
     },
     filters: Object.entries(FILTERS).map(([id, d]) => ({ id, label: d.label, category: d.category })),
     text_templates: Object.entries(TEXT_TEMPLATES).map(([id, t]) => ({ id, label: t.label, category: t.category, seconds: t.seconds, texts: t.layers.filter((l) => l.text !== undefined).length })),
@@ -214,7 +217,7 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - Hook: the product or the most striking image in the first 1-2 s; the proposition in the first 3 s, the hook within 6 s, the brand within 5 s (TikTok's and YouTube's creative guides).
 - Pacing: ad shots average under 2 s (social ads 1-3 s, brand spots 2-5 s); epic edits cut on the beat, every 2-4 beats in a build and every beat after the drop.
 - Words: one idea per title, 2-6 words for a headline, on screen long enough to read twice (about 0.4 s per word, 1.5 s at least); lower thirds 3-6 s; captions at most 20 characters a second, two lines.
-- Type: at most two font families (a bold display face for headlines, a clean sans for the rest); headlines 8-12% of the frame height (size 90-160 at 1080p; an epic edit's one- or two-word slams up to 240), nothing under size 40; inside the 90% title-safe area (align_clips margin 0.05); on 9:16 clear of the bottom 35% and the right 19%, where the apps' buttons sit (the viewer's TikTok, Reels, Shorts guide).
+- Type: at most two font families (a bold display face for headlines, a clean sans for the rest); style.size counts pixels at a 1080-tall canvas and scales with the height, so on 16:9 headlines are size 90-160 (8-12% of the frame height; an epic edit's one- or two-word slams up to 240), and on 9:16, where the frame is narrow, size 50-90 with 2-4 words a line; nothing under 40 px on a frame whose short side is 1080 (size 40 on 16:9 and 1:1, 32 on 4:5, 23 on 9:16); inside the 90% title-safe area (align_clips margin 0.05); on 9:16 clear of the bottom 35% and the right 19%, where the apps' buttons sit (the viewer's TikTok, Reels, Shorts guide).
 - Contrast: text over footage gets an outline, a shadow or a box (style.stroke, style.shadow, style.background); aim for 4.5:1 against what is behind it.
 - Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film.
 - Motion: titles get an in and an out animation; push slowly into stills (frame_region); do not move everything at once; whip transitions follow the direction of motion.
@@ -230,7 +233,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
     text: `Making an ad (15, 30 or 60 s) with these tools:
 1. new_project with a name; set_project for the shape: 1920x1080 for YouTube and TV, 1080x1920 for Reels, TikTok and Shorts, 1080x1080 or 1080x1350 for feeds.
 2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project for asset ids and durations; preview_media to see what is in each video. set_brand with the brand's colors, two fonts, the logo, url and tagline: every title role and ad element then agrees.
-3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short. Put the grade's adjustment clip (step 7) on the timeline before any titles: new tracks stack on top, and a grade added last would tint the titles and end card too.
+3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short. Put the grade's adjustment clip (step 7) on the timeline before the voiceover and any titles: new tracks stack on top, and a grade added last would tint the captions, titles and end card too (move_track below_track_id fixes the order later).
 4. add_voiceover with the script (a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, trimmed to the speech, and it answers where each line landed; cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
@@ -263,7 +266,7 @@ ${DESIGN}`,
 1. new_project; set_project 1080x1920; import_media.
 2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
 3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
-4. Captions: the Captions tab's generator or add_captions with word times, then set_caption_look pop; keep them in the middle third, clear of the apps' buttons.
+4. Captions: get_transcript on the speech (it answers words with times), then add_captions with a few words per caption and their word times, then set_caption_look pop; on a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons.
 5. Hook title in the first second (add_text, size 120-160, with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect).
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p).

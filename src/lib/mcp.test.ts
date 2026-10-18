@@ -316,3 +316,46 @@ describe("what a blind test of the tools found", () => {
     expect(r.changed_clips.find((c: { id: string }) => c.id === id)).toMatchObject({ start: 2, end: 5, in: 2.5 });
   });
 });
+
+describe("what a second blind test found", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+
+  it("sets an effect's parameter by its place, id or type, and refuses one that is not there", async () => {
+    const h = host();
+    const id = (await run(h, "add_color_clip", { color: "#204060", start: 0, duration: 2 })).added_clips[0].id;
+    await run(h, "add_effect", { clip_id: id, type: "glow" });
+    const by = async (path: string, value: number) => (await run(h, "set_param", { clip_ids: [id], path, value })).changed_clips[0].effectStack[0].params;
+    expect((await by("effects.0.amount", 61)).amount).toBe(61);
+    expect((await by("effects.glow.amount", 62)).amount).toBe(62);
+    const fx = h.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id)!;
+    expect((await by(`effects.${"effects" in fx ? fx.effects[0].id : ""}.amount`, 63)).amount).toBe(63);
+    const bad = await call(h, "tools/call", { name: "set_param", arguments: { clip_ids: [id], path: "effects.0.hue", value: 1 } });
+    expect(text(bad)).toMatch(/^glow has no parameter hue; it has /);
+    const none = await call(h, "tools/call", { name: "add_keyframe", arguments: { clip_id: id, path: "effects.3.amount", at: 1, value: 1 } });
+    expect(text(none)).toContain("has no effect 3; its stack: 0 glow");
+  });
+
+  it("moves a track within its kind, never under the main track", async () => {
+    const h = host();
+    await run(h, "add_track", { kind: "video" });
+    await run(h, "add_track", { kind: "video" });
+    const [top, second] = h.project.tracks;
+    const r = await run(h, "move_track", { track_id: top.id, below_track_id: second.id });
+    expect(r.track_order.slice(0, 2)).toEqual([second.id, top.id]);
+    const main = h.project.tracks.find((t) => t.main)!;
+    expect(text(await call(h, "tools/call", { name: "move_track", arguments: { track_id: top.id, below_track_id: main.id } }))).toContain("main track stays");
+  });
+
+  it("names a track an earlier batch step added", async () => {
+    const h = host();
+    const r = await run(h, "batch", { commands: [{ command: "add_track", args: { kind: "video", name: "Grade" } }, { command: "add_adjustment_clip", args: { start: 0, duration: 2, track_id: "$1.track" } }] });
+    expect(r.added_clips[0].track).toBe(h.project.tracks.find((t) => t.name === "Grade")!.id);
+  });
+
+  it("says up front when this build cannot export", async () => {
+    const h = { ...host(), canExport: () => false };
+    const init = await call(h, "initialize");
+    expect((init!.result as { instructions: string }).instructions).toContain("cannot write files");
+    expect((await call(host(), "initialize"))!.result).not.toMatchObject({ instructions: expect.stringContaining("cannot write files") });
+  });
+});

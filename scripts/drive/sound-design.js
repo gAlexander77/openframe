@@ -50,7 +50,7 @@ async (page) => {
   const drums = await place({ asset_id: asset("beat-128.m4a"), start: 0, duration: 10, track_id: tracks.drums });
   const synth = await place({ asset_id: asset("music-30s.mp3"), start: 0, duration: 10, track_id: tracks.synth });
   const voice = await place({ asset_id: asset("voice-8s.wav"), start: 1, duration: 3, track_id: tracks.voice });
-  const pop = (await rpc("add_sound_effect", { name: "pop", start: 6 })).clipId;
+  const pop = (await rpc("add_sound_effect", { name: "pop", start: 6 })).clip_id;
   await rpc("move_clip", { clip_id: pop, start: 6, track_id: tracks.sfx });
   // The trailer move: muffled build, open on the drop at 5 s.
   await rpc("set_audio_filter", { clip_ids: [drums, synth], type: "lowpass", cutoff: 300, sweep: { to: 20000, start: 4.5, end: 5 } });

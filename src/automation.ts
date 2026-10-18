@@ -173,6 +173,7 @@ window.openFrame = window.videoEditor = automation;
 const mcpHost: McpHost = {
   name: APP_NAME,
   version: __APP_VERSION__,
+  canExport: () => platform.kind === "desktop",
   exec: (name, args) => automation.exec(name, args),
   describe: () => automation.describe(),
   projectJson: () => store.document(),

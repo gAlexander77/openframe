@@ -8,6 +8,8 @@
 // footage is flagged as a risk instead, and loudness is left to export.
 
 import { layerBox, VERTICAL_SAFE } from "./align";
+import { textPad } from "./render/size";
+import { lookReach } from "./textLook";
 import { framesToSeconds } from "./time";
 import { mainTrack, projectDuration } from "./project/ops";
 import type { Id, Project, TextClip, VisualClip } from "./project/types";
@@ -28,7 +30,8 @@ export type CheckKind = "ad" | "epic_edit" | "social_short" | "any";
 
 /** The 90% title-safe inset (SMPTE ST 2046-1), a fraction of each side. */
 const TITLE_SAFE = 0.05;
-/** Text below this size (pixels at a 1080-pixel-tall frame) is hard to read. */
+/** Text shorter than this many pixels, on a frame whose short side is 1080,
+ * is hard to read on a phone. */
 const MIN_TEXT = 40;
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
@@ -40,30 +43,47 @@ export function checkProject(p: Project, kind: CheckKind = "any") {
   const all = p.tracks.flatMap((t) => t.clips.map((c) => ({ c, t })));
   const texts = all.filter((x): x is { c: TextClip; t: (typeof all)[number]["t"] } => x.c.type === "text" && !x.t.hidden);
   const vertical = p.height > p.width;
+  // style.size is pixels at a 1080-tall canvas, scaled with the height; the
+  // floor scales with the short side, so 9:16 text can be smaller in size.
+  const minSize = (MIN_TEXT * Math.min(p.width, p.height)) / p.height;
+  const frac = (v: number) => +v.toFixed(3);
+  // Canvas fractions from the center, as transform.x / y use them.
+  const z = { safe: 0.5 - TITLE_SAFE, top: VERTICAL_SAFE.top - 0.5, bottom: 0.5 - VERTICAL_SAFE.bottom, left: VERTICAL_SAFE.left - 0.5, right: 0.5 - VERTICAL_SAFE.right };
 
-  for (const { c } of texts) {
+  for (const { c, t: track } of texts) {
     const mid = c.start + Math.floor(c.duration / 2);
     const layer = layerAt(p, c as VisualClip, mid);
     if (!layer) continue;
     const b = layerBox(p, c as VisualClip, layer);
-    const [l, r, t, btm] = [b.cx - b.hw, b.cx + b.hw, b.cy - b.hh, b.cy + b.hh];
+    // The letters (with their box or outline), not the raster's empty margin
+    // for a shadow or glow to spread into.
+    const reach = lookReach(c.style, p.height / 1080);
+    const inset = Math.max(0, textPad(p, c) - Math.max(reach.box, reach.stroke + reach.stroke2)) * layer.scale;
+    const box = { left: frac((b.cx - b.hw + inset) / p.width - 0.5), right: frac((b.cx + b.hw - inset) / p.width - 0.5), top: frac((b.cy - b.hh + inset) / p.height - 0.5), bottom: frac((b.cy + b.hh - inset) / p.height - 0.5) };
+    const where = `its box runs x ${box.left}..${box.right}, y ${box.top}..${box.bottom} (fractions from the center)`;
     const name = c.caption ? "A caption" : `"${c.text.slice(0, 24)}"`;
-    if (l < p.width * TITLE_SAFE - 1 || r > p.width * (1 - TITLE_SAFE) + 1 || t < p.height * TITLE_SAFE - 1 || btm > p.height * (1 - TITLE_SAFE) + 1)
-      add({ rule: "text_outside_title_safe", level: "warning", clip_id: c.id, at: sec(mid), message: `${name} reaches outside the 90% title-safe area`, fix: "align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size" });
-    if (vertical && !c.caption && (btm > p.height * (1 - VERTICAL_SAFE.bottom) || r > p.width * (1 - VERTICAL_SAFE.right) || t < p.height * VERTICAL_SAFE.top))
-      add({ rule: "text_under_app_buttons", level: "warning", clip_id: c.id, at: sec(mid), message: `${name} sits where TikTok, Reels or Shorts draw their buttons and captions`, fix: "move it into the middle of the frame (transform.y between -0.36 and 0.15, transform.x left of 0.31)" });
+    const out = [box.left < -z.safe - 0.001 && `left of ${-z.safe}`, box.right > z.safe + 0.001 && `right of ${z.safe}`, box.top < -z.safe - 0.001 && `above ${-z.safe}`, box.bottom > z.safe + 0.001 && `below ${z.safe}`].filter(Boolean);
+    if (out.length) add({ rule: "text_outside_title_safe", level: "warning", clip_id: c.id, at: sec(mid), message: `${name} reaches outside the 90% title-safe area (${out.join(", ")}): ${where}`, fix: "align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size" });
+    const zones = vertical ? [box.bottom > z.bottom + 0.001 && `the bottom 35% (below y ${frac(z.bottom)}): captions, names, the description`, box.right > z.right + 0.001 && `the right 19% (right of x ${frac(z.right)}): like, comment, share`, box.top < z.top - 0.001 && `the top 14% (above y ${frac(z.top)}): the tabs and search`, box.left < z.left - 0.001 && `the left 11% (left of x ${frac(z.left)})`].filter(Boolean) : [];
+    if (zones.length) add({ rule: "text_under_app_buttons", level: "warning", clip_id: c.id, at: sec(mid), message: `${name} reaches into ${zones.join("; and ")}, where TikTok, Reels and Shorts draw over the video; ${where}`, fix: c.caption ? "captions on a tall canvas sit at y 0.05 (add_captions y, set_param transform.y)" : `move it so its box stays within x ${frac(z.left)}..${frac(z.right)} and y ${frac(z.top)}..${frac(z.bottom)}, or make it smaller` });
     const size = c.style.size * layer.scale;
-    if (size < MIN_TEXT) add({ rule: "text_too_small", level: "warning", clip_id: c.id, at: sec(c.start), message: `${name} is ${Math.round(size)} px tall at 1080p; under ${MIN_TEXT} is hard to read on a phone`, fix: "set_text style.size larger" });
+    if (size < minSize - 0.5) add({ rule: "text_too_small", level: "warning", clip_id: c.id, at: sec(c.start), message: `${name} is size ${Math.round(size)}; on a ${p.width}x${p.height} canvas, under ${Math.round(minSize)} is hard to read on a phone`, fix: "set_text style.size larger" });
     const seconds = framesToSeconds(c.duration, p.fps);
     if (c.caption) {
       const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(seconds, 1e-3);
       if (cps > 20 || seconds < 5 / 6) add({ rule: "caption_too_fast", level: "warning", clip_id: c.id, at: sec(c.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
     } else {
-      const need = Math.max(1.5, 0.4 * words(c.text));
+      // A countdown digit or a one-word hit reads at a glance.
+      const need = c.text.trim().length <= 3 ? 0.4 : Math.max(1.5, 0.4 * words(c.text));
       if (seconds + 1e-6 < need) add({ rule: "text_too_short", level: "warning", clip_id: c.id, at: sec(c.start), message: `${name} is on screen ${seconds.toFixed(1)} s; it needs about ${need.toFixed(1)} s to be read twice`, fix: "trim_clip its end later, or fewer words" });
       const style = c.style;
       const guarded = (style.stroke?.width ?? 0) > 0 || !!style.shadow || !!style.background;
-      const overFootage = all.some(({ c: o, t }) => o !== c && !t.hidden && (o.type === "video" || o.type === "image") && o.start < c.start + c.duration && c.start < o.start + o.duration);
+      // Footage below the text (tracks[0] is the top) that no opaque solid,
+      // such as an end card's background, covers between them.
+      const level = (x: (typeof all)[number]["t"]) => p.tracks.indexOf(x);
+      const during = (o: { start: number; duration: number }) => o.start < c.start + c.duration && c.start < o.start + o.duration;
+      const solidAbove = (fi: number) => all.some(({ c: o, t }) => o.type === "color" && !("shape" in o && o.shape) && o.opacity >= 0.99 && !t.hidden && during(o) && level(t) > level(track) && level(t) < fi);
+      const overFootage = all.some(({ c: o, t }) => !t.hidden && (o.type === "video" || o.type === "image") && during(o) && level(t) > level(track) && !solidAbove(level(t)));
       if (!guarded && overFootage) add({ rule: "text_contrast_risk", level: "tip", clip_id: c.id, at: sec(c.start), message: `${name} has no outline, shadow or box over footage; it may not read over bright or busy shots`, fix: "set_text style.stroke, style.shadow or style.background" });
     }
   }
@@ -103,15 +123,18 @@ export function checkProject(p: Project, kind: CheckKind = "any") {
   }
 
   if (kind === "ad" && !texts.some(({ c }) => c.start + c.duration >= total - 1 && !c.caption))
-    add({ rule: "no_end_card", level: "warning", message: "No title in the last seconds: an ad ends on the brand and a call to action", fix: "add_text or add_text_template endCard over the last 2-3 s" });
+    add({ rule: "no_end_card", level: "warning", message: "No title in the last seconds: an ad ends on the brand and a call to action", fix: "add_ad_element end_card over the last 2-3 s" });
 
   if (kind === "epic_edit") {
     // Any of analyze_music's grids counts: a cut on a bar or phrase is on a beat.
     const beats = p.markers.filter((m) => ["Beat", "Bar", "Phrase", "Drop"].includes(m.label ?? "")).map((m) => m.frame);
     if (!beats.length) add({ rule: "no_beat_grid", level: "warning", message: "No beat markers: an epic edit is cut to the music", fix: "analyze_music with markers beats, bars and drop on the music clip" });
     else {
-      const off = main.slice(1).filter((c) => !beats.some((b) => Math.abs(b - c.start) <= 1));
-      if (off.length) add({ rule: "cuts_off_beat", level: "warning", at: sec(off[0].start), message: `${off.length} of ${main.length - 1} cuts on the main track miss a beat by more than a frame`, fix: "move_clip or trim_clip so each cut starts on a beat marker" });
+      // Half-beats count: velocity edits cut on the "and" too.
+      const sorted = [...new Set(beats)].sort((x, y) => x - y);
+      const grid = [...sorted, ...sorted.slice(1).map((b, i) => (b + sorted[i]) / 2)];
+      const off = main.slice(1).filter((c) => !grid.some((b) => Math.abs(b - c.start) <= 1));
+      if (off.length) add({ rule: "cuts_off_beat", level: "warning", at: sec(off[0].start), message: `${off.length} of ${main.length - 1} cuts on the main track miss a beat (or half-beat) by more than a frame: first at ${sec(off[0].start)} s`, fix: "move_clip or trim_clip so each cut starts on a beat marker, or cut_to_beats" });
     }
   }
 

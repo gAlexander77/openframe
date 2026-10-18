@@ -31,6 +31,9 @@ export interface JsonRpcResponse {
 export interface McpHost {
   name: string;
   version: string;
+  /** False where export_video and export_versions cannot write files (the
+   * browser build), so the instructions say so before a model plans on it. */
+  canExport?(): boolean;
   /** Run a registry command as an undoable edit; returns the new summary. */
   exec(name: string, args: unknown): unknown | Promise<unknown>;
   describe(): unknown;
@@ -170,7 +173,7 @@ export const APP_TOOLS: AppTool[] = [
     name: "help",
     description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
-    call: (_h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), INSTRUCTIONS) }] }),
+    call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), instructionsFor(h)) }] }),
   },
   {
     name: "describe_project",
@@ -457,9 +460,10 @@ APP_TOOLS.push(
       ["name"],
     ),
     call: async (h, a) => {
+      const before = h.describe();
       const r = (await h.ai("addSoundEffect", String(a.name), given({ at: a.start, endAt: a.end_at }))) as { clipId: string };
-      if (a.volume !== undefined && a.volume !== 1) h.exec("set_param", { clip_ids: [r.clipId], path: "volume", value: a.volume });
-      return json(r);
+      if (a.volume !== undefined && a.volume !== 1) await h.exec("set_param", { clip_ids: [r.clipId], path: "volume", value: a.volume });
+      return json({ clip_id: r.clipId, ...(describeChanges(before, h.describe()) as object) });
     },
   },
   {
@@ -517,7 +521,7 @@ APP_TOOLS.push(
         captions: { type: "boolean", description: "A caption per line (default true)" },
         enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true)" },
         caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look: the same fields as add_text's style" },
-        caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36)" },
+        caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons)" },
       },
       ["lines"],
     ),
@@ -608,6 +612,10 @@ Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_rever
 
 For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_fades on the music, and export_versions for every shape and cut-down (check: true shows them first).`;
 
+/** The instructions, with a word on export where this build cannot. */
+const instructionsFor = (h: McpHost) =>
+  h.canExport?.() === false ? `${INSTRUCTIONS}\nIn this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.` : INSTRUCTIONS;
+
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {
   return [
@@ -646,7 +654,7 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: host.name, version: host.version },
-        instructions: INSTRUCTIONS,
+        instructions: instructionsFor(host),
       });
     case "ping":
       return ok(req.id, {});

@@ -1113,3 +1113,36 @@ and delivery) while the MCP layer was rebuilt here.
     - the design rules stopped citing a file a client cannot read.
   - Not done: undoing a voiceover leaves its speech files in the library;
     beat markers outlive the music `fit_music` trims.
+- **A second blind test, on the merged build.** Another fresh agent made a
+  12 s 9:16 coffee ad and a 20 s epic edit: 245 calls, 6 errors, both
+  checks passing. Its findings, fixed here (the rest in the next commit):
+  - Effect parameters could not be changed. The guide said
+    `effects.<index>.<param>`, but paths are stored by effect id, and
+    `describe_project` showed no effect values, so every attempt answered
+    `unchanged`. Paths now take the stack index, the id or the effect
+    type. A wrong effect or parameter is an error that lists what exists,
+    and `describe_project` shows each effect's values.
+  - `check_project` measured a title's raster, margin included. An
+    outline or shadow adds room for itself, so turning one on flagged a
+    centered title and turning it off cleared it. The check measures the
+    letters (with any box or outline) now, and each finding gives the
+    measured box and which zone it crossed. The 9:16 zones are named:
+    top 14%, bottom 35%, left 11%, right 19%.
+  - Captions on 9:16 sat in the apps' caption zone, at y 0.36 or 0.25.
+    On a tall canvas they now sit at y 0.05, wrapped to the column
+    between the side rails, and the check covers captions.
+  - **Smaller fixes:**
+    - The size floor scales with the canvas: 40 px on a 1080 short side,
+      which is size 23 on 9:16.
+    - Countdown digits, half-beat cuts, and text on its own solid card
+      are no longer flagged.
+    - An export limited to -1 dBTP measured -0.9996 and failed its own
+      check. The limiter now aims 0.1 dB under the ceiling, and the
+      check compares at the precision it prints.
+    - The server says up front when this build cannot export.
+    - `move_track`, and `"$2.track"` in batch.
+    - `add_sound_effect` answers where the sound landed, as `clip_id`
+      like the rest of the API.
+    - Kinetic presets are in the catalog.
+    - The design rules give 9:16 text sizes.
+    - The social-short playbook no longer sends a model to a UI tab.

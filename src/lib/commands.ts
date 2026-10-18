@@ -7,7 +7,7 @@
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
-import { applyCaptionLook, CAPTION_LOOKS } from "./captionLooks";
+import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionY } from "./captionLooks";
 import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
@@ -719,14 +719,14 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. Sound fades are frames here; set_fades takes seconds.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
-      return ops.setParam(p, ids, String(a.path), Number(a.value), rel);
+      return ids.reduce((q, id) => ops.setParam(q, [id], paramPath(clipOrThrow(q, id).clip, String(a.path)), Number(a.value), rel), p);
     },
   },
   {
@@ -888,6 +888,24 @@ export const COMMANDS: Command[] = [
         const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
         return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
       }, p);
+    },
+  },
+  {
+    name: "move_track",
+    description: "Move a track up or down the stack, next to another track of its kind: above_track_id or below_track_id. tracks[0] in describe_project is the top. Higher pictures cover lower ones, and an adjustment clip grades every track below it, so a grade's track goes under the titles' and captions'. The main track stays the bottom video track.",
+    input: S.obj({ track_id: S.str("The track to move"), above_track_id: S.str("Put it just above this track"), below_track_id: S.str("Put it just below this track") }, ["track_id"]),
+    run: (p, a) => {
+      const track = p.tracks.find((t) => t.id === a.track_id);
+      if (!track) throw new CommandError(`no track with id ${a.track_id}`);
+      if ((a.above_track_id === undefined) === (a.below_track_id === undefined)) throw new CommandError("give above_track_id or below_track_id");
+      const below = a.below_track_id !== undefined;
+      const target = p.tracks.find((t) => t.id === (below ? a.below_track_id : a.above_track_id));
+      if (!target || target === track) throw new CommandError(`no other track with id ${below ? a.below_track_id : a.above_track_id}`);
+      if (target.kind !== track.kind) throw new CommandError(`${track.name} holds ${track.kind} and ${target.name} ${target.kind}: tracks move among their own kind`);
+      if (track.main || (below && target.main)) throw new CommandError("the main track stays the bottom video track");
+      const rest = p.tracks.filter((t) => t !== track);
+      const at = rest.indexOf(target) + (below ? 1 : 0);
+      return { ...p, tracks: [...rest.slice(0, at), track, ...rest.slice(at)] };
     },
   },
   {
@@ -1292,7 +1310,8 @@ export const COMMANDS: Command[] = [
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       const key = { f: f(p, a.at) - clip.start, v: Number(a.value), ...(a.ease ? { ease: a.ease as "linear" } : {}) };
-      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [String(a.path)]: upsertKey(c.keyframes?.[String(a.path)], key) } }));
+      const path = paramPath(clip, String(a.path));
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
     },
   },
   {
@@ -1489,7 +1508,7 @@ export const COMMANDS: Command[] = [
           items: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), text: S.str("Words shown"), words: { type: "array", items: { type: "number" }, description: "Seconds each word of text starts, for the spoken-word highlight" } }, ["start", "end", "text"]),
         },
         style: TEXT_STYLE_SCHEMA,
-        y: S.num("Vertical offset from center as a canvas fraction; 0.36 sits near the bottom"),
+        y: S.num("Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons"),
         replace: S.bool("Remove existing captions first"),
       },
       ["captions"],
@@ -1586,7 +1605,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_beat_hits",
-    description: `Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch), shake (camera shake), rgb_split, glow or zoom_blur, several at once as one layer (["flash", "zoom"]). Each hit is an adjustment layer on a Hits track above the footage (below bars and titles), at its peak on the beat and easing out over \`duration\` (default ${HIT_KINDS.flash.seconds} to ${HIT_KINDS.shake.seconds} s by effect), keyframed, so preview and export match. Times: \`times\` (timeline seconds), the main track's cuts (at_cuts true), or the Beat markers (or marker_label's, e.g. Bar or Drop), between from and to, thinned to every Nth. intensity 0..1 (default 1, strong). Photosensitivity: flashes keep to at most ${MAX_FLASHES_PER_SECOND} in any second (WCAG 2.3.1); a beat that would break that gets its other effects without the flash, or nothing. Example: {"effects": ["zoom", "rgb_split"], "marker_label": "Bar"}.`,
+    description: `Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch), shake (camera shake), rgbSplit, glow or zoomBlur, several at once as one layer (["flash", "zoom"]). Each hit is an adjustment layer on a Hits track above the footage (below bars and titles), at its peak on the beat and easing out over \`duration\` (default ${HIT_KINDS.flash.seconds} to ${HIT_KINDS.shake.seconds} s by effect), keyframed, so preview and export match. Times: \`times\` (timeline seconds), the main track's cuts (at_cuts true), or the Beat markers (or marker_label's, e.g. Bar or Drop), between from and to, thinned to every Nth. intensity 0..1 (default 1, strong). Photosensitivity: flashes keep to at most ${MAX_FLASHES_PER_SECOND} in any second (WCAG 2.3.1); a beat that would break that gets its other effects without the flash, or nothing. Example: {"effects": ["zoom", "rgb_split"], "marker_label": "Bar"}.`,
     input: S.obj({
       effect: S.str("One hit", { enum: Object.keys(HIT_KINDS) }),
       effects: { type: "array", items: S.str("Hit", { enum: Object.keys(HIT_KINDS) }), description: "Several hits on each beat, as one layer" },
@@ -2041,7 +2060,7 @@ export const COMMANDS: Command[] = [
   {
     name: "batch",
     description:
-      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name a clip an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.",
+      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name what an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second, \"$2.track\" the track it added (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.",
     input: S.obj(
       {
         commands: {
@@ -2053,16 +2072,17 @@ export const COMMANDS: Command[] = [
       ["commands"],
     ),
     run: (p, a) => {
-      const added: Id[][] = [];
+      const added: Id[][] = [], addedTracks: Id[][] = [];
       const ids = (q: Project) => q.tracks.flatMap((t) => t.clips.map((c) => c.id));
-      // "$2" / "$2.2": the first / second clip step 2 added.
+      // "$2" / "$2.2" / "$2.track": the first / second clip, or the track, step 2 added.
       const ref = (v: unknown): unknown => {
         if (Array.isArray(v)) return v.map(ref);
         if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, ref(x)]));
-        const m = typeof v === "string" ? /^\$(\d+)(?:\.(\d+))?$/.exec(v) : null;
+        const m = typeof v === "string" ? /^\$(\d+)(?:\.(\d+|track))?$/.exec(v) : null;
         if (!m) return v;
-        const id = added[Number(m[1]) - 1]?.[Number(m[2] ?? 1) - 1];
-        if (!id) throw new CommandError(`${v}: step ${m[1]} ${Number(m[1]) > added.length ? "has not run yet" : `added no clip number ${m[2] ?? 1}`}`);
+        const step = Number(m[1]) - 1;
+        const id = m[2] === "track" ? addedTracks[step]?.[0] : added[step]?.[Number(m[2] ?? 1) - 1];
+        if (!id) throw new CommandError(`${v}: step ${m[1]} ${step >= added.length ? "has not run yet" : m[2] === "track" ? "added no track" : `added no clip number ${m[2] ?? 1}`}`);
         return id;
       };
       return (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
@@ -2070,9 +2090,10 @@ export const COMMANDS: Command[] = [
         if (step.command === "batch" || step.command === "add_sticker") throw new CommandError(`step ${i + 1}: ${step.command} cannot run inside a batch`);
         if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
-          const before = new Set(ids(q));
+          const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
           const next = runCommand(q, step.command, ref(step.args ?? {}));
           added.push(ids(next).filter((id) => !before.has(id)));
+          addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
         } catch (e) {
           throw new CommandError(`step ${i + 1} (${step.command}): ${e instanceof Error ? e.message : e}`);
@@ -2082,11 +2103,28 @@ export const COMMANDS: Command[] = [
   },
 ];
 
+/**
+ * A parameter path as stored. An effect's parameter can be named by the
+ * effect's place in the stack (effects.0.amount), its id (as stored), or its
+ * type (effects.glow.amount, the first glow); an effect path naming no
+ * effect or no parameter of it is an error, never a silent no-op.
+ */
+function paramPath(clip: Clip, path: string): string {
+  const m = /^effects\.([^.]+)\.(.+)$/.exec(path);
+  if (!m) return path;
+  const stack = "effects" in clip ? clip.effects : [];
+  const fx = /^\d+$/.test(m[1]) ? stack[Number(m[1])] : (stack.find((e) => e.id === m[1]) ?? stack.find((e) => e.type === m[1]));
+  if (!fx) throw new CommandError(`clip ${clip.id} has no effect ${m[1]}; its stack: ${stack.map((e, i) => `${i} ${e.type} (${e.id})`).join(", ") || "empty (add_effect first)"}`);
+  const known = Object.keys(EFFECTS[fx.type]?.params ?? {});
+  if (!known.includes(m[2])) throw new CommandError(`${fx.type} has no parameter ${m[2]}; it has ${known.join(", ") || "none"}`);
+  return `effects.${fx.id}.${m[2]}`;
+}
+
 /** The keyframes a command names: on `path` (or every path) at the given
  * timeline seconds (or every time). Throws when that is none at all. */
 function keyRefs(p: Project, clip: Clip, path: unknown, at: number[] | undefined): KeyRef[] {
   const map = clip.keyframes ?? {};
-  const paths = path === undefined ? Object.keys(map) : [String(path)];
+  const paths = path === undefined ? Object.keys(map) : [paramPath(clip, String(path))];
   const frames = at && new Set(at.map((s) => f(p, s) - clip.start));
   const refs = paths.flatMap((pt) => (map[pt] ?? []).filter((k) => !frames || frames.has(k.f)).map((k) => ({ path: pt, f: k.f })));
   if (!refs.length) throw new CommandError(`no matching keyframes on clip ${clip.id}`);
@@ -2197,7 +2235,7 @@ export function describeProject(p: Project) {
         ...("fadeIn" in c && c.fadeIn ? { fade_in: s(c.fadeIn) } : {}),
         ...("fadeOut" in c && c.fadeOut ? { fade_out: s(c.fadeOut) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
-        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
+        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled, params }) => ({ id, type, enabled, params })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
         // What else departs from the defaults, so an agent can check its work.
@@ -2296,7 +2334,8 @@ export const toFrame = (p: Project, seconds: number) => frameAt(seconds, p.fps);
 export const CAPTION_STYLE: Partial<TextStyle> = { size: 64, bold: true, color: "#ffffff", stroke: { color: "#000000", width: 6 }, maxWidth: 0.84, lineHeight: 1.15 };
 
 /** Place captions on one Captions track (created on top if needed). */
-export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyle> = {}, y = 0.36, replace = false): Project {
+export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyle> = {}, given?: number, replace = false): Project {
+  const y = given ?? captionY(p, 0.36);
   if (replace) {
     p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !(c.type === "text" && c.caption)) })) };
     p = ops.pruneEmptyTracks(p);
@@ -2311,11 +2350,12 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
     const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
     lastEnd = end;
-    const text = createTextClip(cap.text, start, end - start, { ...CAPTION_STYLE, ...style });
+    const fit = captionFit(p, { ...CAPTION_STYLE, ...style } as TextStyle, 0);
+    const text = createTextClip(cap.text, start, end - start, fit.style);
     const clip: Clip = {
       ...text,
       caption: true,
-      transform: { ...text.transform, y },
+      transform: { ...text.transform, x: fit.x, y },
       ...(cap.words?.length ? { wordTimes: cap.words.map((s) => Math.max(0, secondsToFrames(s, p.fps) - start)) } : {}),
     };
     p = ops.addClip(p, track.id, clip);

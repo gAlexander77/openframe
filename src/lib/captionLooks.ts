@@ -34,14 +34,29 @@ export function lookStyle(id: string): TextStyle {
   return s;
 }
 
+/** Where captions sit on this canvas: on a tall one the apps draw their own
+ * captions and buttons over the bottom 35% (VERTICAL_SAFE), so a caption
+ * meant for the bottom sits just under the middle instead. */
+export const captionY = (p: { width: number; height: number }, y: number) => (p.height > p.width ? Math.min(y, 0.05) : y);
+
+/** On a tall canvas the apps' side rails leave a column from x -0.39 to
+ * 0.31 (VERTICAL_SAFE's left 11% and right 19%): captions wrap inside it
+ * (0.62 of the width, room left for an outline) and center on it. */
+export const captionFit = (p: { width: number; height: number }, style: TextStyle, x: number): { style: TextStyle; x: number } =>
+  p.height > p.width ? { style: { ...style, maxWidth: Math.min(style.maxWidth, 0.62) }, x: -0.04 } : { style, x };
+
 /** Every caption takes the look: its style and height. */
 export function applyCaptionLook(p: Project, id: string): Project {
-  const style = lookStyle(id), y = CAPTION_LOOKS[id].y;
+  const y = captionY(p, CAPTION_LOOKS[id].y);
   return {
     ...p,
     tracks: p.tracks.map((t) => ({
       ...t,
-      clips: t.clips.map((c): Clip => (c.type === "text" && c.caption ? { ...c, style: structuredClone(style), transform: { ...c.transform, y } } : c)),
+      clips: t.clips.map((c): Clip => {
+        if (c.type !== "text" || !c.caption) return c;
+        const fit = captionFit(p, lookStyle(id), c.transform.x);
+        return { ...c, style: fit.style, transform: { ...c.transform, x: fit.x, y } };
+      }),
     })),
   };
 }

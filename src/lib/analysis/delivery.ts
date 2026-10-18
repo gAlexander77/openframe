@@ -110,7 +110,8 @@ export function checkSpec(r: { integrated: number; truePeak: number }, spec: Lou
     const off = r.integrated - spec.target;
     if (Math.abs(off) > spec.tolerance) problems.push(`Integrated ${r.integrated.toFixed(1)} LUFS is ${Math.abs(off).toFixed(1)} LU ${off > 0 ? "over" : "under"} ${spec.target} (±${spec.tolerance}).`);
   }
-  if (r.truePeak > spec.maxTruePeak) problems.push(`True peak ${r.truePeak.toFixed(1)} dBTP is over ${spec.maxTruePeak} dBTP.`);
+  // To the tenth of a dB the report prints: -1.0 meets a -1 ceiling.
+  if (Math.round(r.truePeak * 10) / 10 > spec.maxTruePeak) problems.push(`True peak ${r.truePeak.toFixed(1)} dBTP is over ${spec.maxTruePeak} dBTP.`);
   return { spec: spec.id, pass: !problems.length, problems };
 }
 
@@ -129,11 +130,17 @@ export interface LoudnessPlan extends Normalization {
  * raised mix under `ceilingDb` dBTP, taking at most MAX_LIMITING_DB off.
  * Null when the mix is silent, or already at the target under the ceiling.
  */
+/** How far under the ceiling the limiter aims, dB. */
+const LIMIT_HEADROOM_DB = 0.1;
+
 export function planLoudness(measured: number, truePeak: number, blockPeaks: Float32Array, target: number, ceilingDb: number): LoudnessPlan | null {
   const n = normalizeGain(measured, target, truePeak, { ceilingDb: ceilingDb + MAX_LIMITING_DB });
   const ceiling = 10 ** (ceilingDb / 20);
   if (!Number.isFinite(measured) || (n.gain === 1 && truePeak <= ceiling)) return null;
-  const gains = limiterGains(blockPeaks, n.gain, ceiling);
+  // Aim a hair under the ceiling: the limiter works on block peaks, and the
+  // file's own 4x true peak can land a few hundredths over (-0.9996 dBTP
+  // read as "-1.0 is over -1").
+  const gains = limiterGains(blockPeaks, n.gain, ceiling * 10 ** (-LIMIT_HEADROOM_DB / 20));
   const heldDb = -20 * Math.log10(gains.reduce((m, g) => Math.min(m, g), 1));
   return { ...n, gains, heldDb, ceilingDb };
 }
