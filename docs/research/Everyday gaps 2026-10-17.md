@@ -89,9 +89,10 @@ moved:
     word is spoken.
   - The transcript card says when reversed or speed-curved clips are
     left out, instead of dropping them silently.
-- **Still open from the audit:** a dozen hard-coded colors that equal a
-  token (listed in the audit's output; mostly CSS that predates the
-  tokens).
+- **Colors:** the literals that equal a token in meaning as well as value
+  use it now (panel greys, the audio clip blue, the accent). The rest
+  stay literal: AI tool colors that happen to match a clip edge, the
+  canvas-drawn ruler and meter, and the marker palette (project data).
 
 ## From the styling sweep
 

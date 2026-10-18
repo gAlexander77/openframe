@@ -96,7 +96,7 @@
 .card-grid.wide { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
 .card:hover .card-thumb { box-shadow: inset 0 0 0 1.5px var(--accent); }
 .card-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
-.card-thumb.audio { background: linear-gradient(160deg, #123a66, #0e3058); color: #6fb2e8; }
+.card-thumb.audio { background: linear-gradient(160deg, #123a66, var(--clip-audio)); color: #6fb2e8; }
 .card-label {
   font-size: var(--fs-xs); color: var(--text-2);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

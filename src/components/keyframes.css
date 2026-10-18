@@ -85,7 +85,7 @@
 .kf-lane.focus { fill: #252a2b; }
 .kf-graph-bg { fill: #1a1a1a; }
 .kf-span { fill: rgb(255 255 255 / 3%); pointer-events: none; }
-.kf-grid { stroke: #2b2b2b; stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
+.kf-grid { stroke: var(--bg-2); stroke-width: 1; shape-rendering: crispEdges; pointer-events: none; }
 .kf-fill { fill: rgb(0 193 205 / 7%); pointer-events: none; }
 .kf-curve { fill: none; stroke: var(--accent); stroke-width: 1.75; stroke-linejoin: round; pointer-events: none; }
 
