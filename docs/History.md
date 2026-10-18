@@ -817,3 +817,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   Text Styles. The Text tab saves a style under a name in this viewer's
   storage, and a chip with an "Aa" sample (on black or white, whichever
   its color reads on) gives it to a title in one undo step.
+- **Magnify.** Premiere 26.3's lens, used constantly in tutorials and
+  screen recordings, is one more effect shader: a circle whose picture is
+  scaled up about its center. The effect pass's v_uv runs bottom-up, so
+  Center Y (from the top) flips; the drive pins that by checking the lens
+  changes pixels near the top and none near the bottom. Its first check
+  read eight color bars as seven and sampled one bar both ways.

@@ -233,7 +233,7 @@ Catalogs are in `src/lib/catalog.ts`; shaders in `src/engine/shaders.ts`.
 
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
-| 19 effects, 20 transitions, 17 looks, in/out/loop animations, adjustment layers | C P R V F | yes | — | — |
+| 24 effects, 20 transitions, 17 looks, in/out/loop animations, adjustment layers | C P R V F | yes | — | Magnify (Premiere 26.3's lens) added 2026-10-17; count recounted from `catalog.ts`. |
 | Effect stack reorder, presets, copy/paste | P R V F | yes | — | — |
 | Picture border, shadow and rounded corners | C R F V | partial (rounded corners via the rectangle mask) | P2 | See §2. |
 | Animated GIF, WebP or APNG import | C | no; `createImageBitmap` keeps the first frame (`src/engine/media.ts`) | P2 | WebCodecs `ImageDecoder` decodes animated frames; treat the file like a short video. |

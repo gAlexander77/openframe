@@ -122,6 +122,20 @@ export const EFFECTS: Record<string, EffectDef> = {
   motionBlur: { label: "Motion blur", category: "Blur", params: { amount: amount(30), angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
   sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 } } },
   halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10 } } },
+  // Premiere 26.3's Magnify: a round lens over part of the picture, for
+  // tutorials and screen recordings. Center from the top left, size as a
+  // share of the frame's height; keyframe the center to follow a pointer.
+  magnify: {
+    label: "Magnify",
+    category: "Distort",
+    params: {
+      x: { label: "Center X", unit: "%", min: 0, max: 100, default: 50 },
+      y: { label: "Center Y", unit: "%", min: 0, max: 100, default: 50 },
+      size: { label: "Size", unit: "%", min: 5, max: 100, default: 35 },
+      zoom: { label: "Zoom", unit: "%", min: 100, max: 400, default: 200 },
+      feather: { label: "Feather", unit: "%", min: 0, max: 100, default: 8 },
+    },
+  },
 };
 
 export function effectDefaults(type: string): Record<string, number> {

@@ -481,6 +481,18 @@ export const EFFECT_SHADERS: Record<string, string> = {
     a = mod(a, seg); a = abs(a - seg * 0.5);
     p = vec2(cos(a), sin(a)) * r / vec2(u_res.x / u_res.y, 1.0);
     outColor = texture(u_tex, p + 0.5);`),
+  // The lens: inside a circle (size = its diameter as a share of the
+  // frame's height), the picture around the center scaled up by zoom.
+  // v_uv runs bottom-up in the effect pass, so Center Y (from the top)
+  // flips.
+  magnify: effect(["x", "y", "size", "zoom", "feather"], `
+    vec2 c = vec2(u_x / 100.0, 1.0 - u_y / 100.0);
+    vec2 asp = vec2(u_res.x / u_res.y, 1.0);
+    float r = u_size / 200.0;
+    float edge = max(r * u_feather / 100.0, 1.0 / u_res.y);
+    float m = 1.0 - smoothstep(r - edge, r, length((v_uv - c) * asp));
+    vec2 z = c + (v_uv - c) / max(u_zoom / 100.0, 0.01);
+    outColor = mix(texture(u_tex, v_uv), texture(u_tex, z), m);`),
   fisheye: effect(["amount"], `
     vec2 p = v_uv - 0.5;
     float r = length(p);

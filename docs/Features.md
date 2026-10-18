@@ -195,8 +195,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  23 effects (including CapCut's Reduce image noise, Motion blur, Sketch
-  and Halftone), 20 transitions, 17 looks, adjustment layers.
+  24 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  and Halftone, and Premiere 26.3's **Magnify**: a round lens with its
+  center, size, zoom and feather, keyframable to follow a pointer in a
+  screen recording), 20 transitions, 17 looks, adjustment layers.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
   rectangle with round corners, heart and star, with feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
