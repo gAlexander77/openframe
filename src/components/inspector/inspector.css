@@ -131,9 +131,6 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 }
 .chip-btn:hover { color: var(--text-1); background: var(--bg-3); }
 .chip-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.chip-btn.bold { font-weight: 800; }
-.chip-btn.italic { font-style: italic; }
-.chip-btn.underline { text-decoration: underline; }
 .style-toggles { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .speed-presets, .fx-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .color-input { display: inline-flex; align-items: center; gap: 6px; }

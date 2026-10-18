@@ -3,6 +3,12 @@
 // Lucide supplies the drawings; re-exporting here keeps the set countable and
 // lets a custom-drawn icon replace one without touching its callers.
 export {
+  Underline,
+  Italic,
+  CaseUpper,
+  CaseSensitive,
+  CaseLower,
+  Bold,
   Activity,
   AlignCenterHorizontal,
   AlignCenterVertical,

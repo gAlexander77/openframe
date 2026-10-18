@@ -1,14 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player, topClipAt } from "../engine/player";
 import { Activity, ChevronLeft, ChevronRight, Maximize2, Pause, Play, Repeat } from "../icons";
-import { chordText } from "../lib/keymap";
 import { boxesAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
 import { expandGroups } from "../lib/project/groups";
 import { projectDuration } from "../lib/project/ops";
 import { formatTimecode } from "../lib/time";
 import { isMac } from "../platform/env";
-import { chordFor, provide, run } from "../state/actions";
+import { provide, run, tipFor } from "../state/actions";
 import { store, useEditor } from "../state/store";
 import { Meter } from "./Meter";
 import { CropBar } from "./CropOverlay";
@@ -17,10 +16,6 @@ import { ViewerGuideControl, ViewerGuides } from "./ViewerGuides";
 import { TrimPreview } from "./TrimPreview";
 import "./player.css";
 
-const tip = (label: string, id: Parameters<typeof chordFor>[0]) => {
-  const c = chordFor(id);
-  return c ? `${label} (${chordText(c, isMac)})` : label;
-};
 
 /** The viewer: the composited frame, fitted to the panel at the project's
  * aspect ratio, with CapCut's transport bar underneath. */
@@ -218,16 +213,16 @@ function Transport() {
     <div className="transport">
       <Timecodes />
       <div className="transport-center">
-        <button className="icon-btn" aria-label="Previous frame" data-tip={tip("Previous frame", "stepBack")} onClick={() => run("stepBack")}>
+        <button className="icon-btn" aria-label="Previous frame" data-tip={tipFor("stepBack")} onClick={() => run("stepBack")}>
           <ChevronLeft />
         </button>
-        <button className="play-btn" aria-label={playing ? "Pause" : "Play"} data-tip={tip(playing ? "Pause" : "Play", "playPause")} onClick={() => run("playPause")}>
+        <button className="play-btn" aria-label={playing ? "Pause" : "Play"} data-tip={tipFor("playPause", playing ? "Pause" : "Play")} onClick={() => run("playPause")}>
           {playing ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
         </button>
-        <button className="icon-btn" aria-label="Next frame" data-tip={tip("Next frame", "stepForward")} onClick={() => run("stepForward")}>
+        <button className="icon-btn" aria-label="Next frame" data-tip={tipFor("stepForward")} onClick={() => run("stepForward")}>
           <ChevronRight />
         </button>
-        <button className={`icon-btn loop-btn${loop ? " on" : ""}`} aria-label="Loop playback" aria-pressed={loop} data-tip={tip("Loop playback", "toggleLoop")} onClick={() => run("toggleLoop")}>
+        <button className={`icon-btn loop-btn${loop ? " on" : ""}`} aria-label="Loop playback" aria-pressed={loop} data-tip={tipFor("toggleLoop", "Loop playback")} onClick={() => run("toggleLoop")}>
           <Repeat />
         </button>
       </div>
@@ -235,7 +230,7 @@ function Transport() {
         <ViewerZoom />
         <CanvasRatio />
         <PreviewQuality />
-        <button className="icon-btn" aria-label="Full screen" data-tip={tip("Full screen", "fullscreenPreview")} onClick={() => run("fullscreenPreview")}>
+        <button className="icon-btn" aria-label="Full screen" data-tip={tipFor("fullscreenPreview", "Full screen")} onClick={() => run("fullscreenPreview")}>
           <Maximize2 />
         </button>
       </div>
@@ -268,7 +263,7 @@ function ViewerZoom() {
     <select
       className="quality-select"
       aria-label="Viewer zoom"
-      data-tip="Viewer zoom (Ctrl+wheel; wheel or middle-drag pans)"
+      data-tip={`Viewer zoom (${isMac ? "⌘" : "Ctrl"}+wheel; wheel or middle-drag pans)`}
       value={value}
       onChange={(e) => store.set(e.target.value === "fit" ? { viewerZoom: null, viewerPan: { x: 0, y: 0 } } : { viewerZoom: Number(e.target.value) / 100 / dpr, viewerPan: { x: 0, y: 0 } })}
     >

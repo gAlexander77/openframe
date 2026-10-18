@@ -173,6 +173,7 @@ export function Segmented<T extends string>(props: { value: T; options: { value:
           aria-checked={props.value === o.value}
           className={props.value === o.value ? "on" : ""}
           data-tip={o.tip}
+          aria-label={o.tip}
           onClick={() => props.onChange(o.value)}
         >
           {o.label}

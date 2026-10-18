@@ -719,3 +719,13 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   library hides; it says "1 file" and counts what the library lists. A
   screenshot taken right after opening a menu shows nothing: menus pop in
   over 180 ms, so drives wait before capturing.
+- **Names and keys a screen reader and a rebinding could not see.** A
+  code audit found the Text tab's B, I and U buttons and its AA, aa and
+  Aa case buttons named only by those letters (a screen reader read "B");
+  they are drawn icons now, with names and tips. The trim tools' T, R, Y
+  and U were typed into the tool picker and went stale once a key was
+  rebound; the picker shows the key as bound. Add marker, the marker
+  arrows, Extract audio, Duplicate, Delete and the shortcuts button now
+  show their keys, through one `tipFor` beside `chordFor` (the player had
+  its own copy). Linkage, Preview axis and the keyframe panel were
+  toolbar-only; the Timeline and View menus list them.

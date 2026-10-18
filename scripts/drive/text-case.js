@@ -1,4 +1,4 @@
-// Text case (CapCut's Aa / AA / aa): the Text tab's Case set to AA draws
+// Text case (CapCut's Aa / AA / aa): the Text tab's Case set to UPPERCASE draws
 // a title exactly as the same title typed in capitals would, while the
 // clip keeps the words as typed; As typed restores it. set_text takes
 // case for agents.
@@ -29,7 +29,7 @@ async (page) => {
   const typed = await still();
   const inspector = page.getByRole("region", { name: "Inspector" });
   await inspector.getByRole("tab", { name: "Text", exact: true }).click();
-  await inspector.getByRole("radio", { name: "AA", exact: true }).click();
+  await inspector.getByRole("radio", { name: "UPPERCASE", exact: true }).click();
   const shown = await still();
   const clip = () => page.evaluate((id) => window.videoEditor.project().tracks.flatMap((t) => t.clips).find((c) => c.id === id), id);
   details.kept = { ok: (await clip()).text === "hello world" && (await clip()).style.case === "upper" };

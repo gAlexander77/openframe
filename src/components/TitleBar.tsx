@@ -4,7 +4,7 @@ import { Copy, Download, Keyboard, Minus, Square, WandSparkles, X } from "../ico
 import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
-import { chordFor, run } from "../state/actions";
+import { chordFor, run, tipFor } from "../state/actions";
 import { toggleAssistant } from "../state/assistant";
 import { saveOtio } from "../state/export";
 import { closeProject } from "../state/project";
@@ -117,6 +117,8 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         { action: "toggleSnapping", checked: s().snapping },
         { action: "toggleMagnet", checked: s().magnet },
+        { action: "toggleLinkage", checked: s().linkage },
+        { action: "togglePreviewAxis", checked: s().previewAxis },
       ],
     },
     {
@@ -125,6 +127,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "zoomIn" },
         { action: "zoomOut" },
         { action: "zoomFit" },
+        { action: "toggleKeyframePanel", checked: s().keyframePanel },
         "-",
         { label: "Preview at full resolution", checked: s().previewScale === 1, onSelect: () => store.set({ previewScale: 1 }) },
         { label: "Preview at 1/2 resolution", checked: s().previewScale === 0.5, onSelect: () => store.set({ previewScale: 0.5 }) },
@@ -189,7 +192,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
             <WandSparkles size={14} /> AI assistant
           </button>
         )}
-        <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip="Keyboard shortcuts" onClick={props.onShortcuts}>
+        <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip={tipFor("showShortcuts")} onClick={props.onShortcuts}>
           <Keyboard />
         </button>
         {!props.home && (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
@@ -19,7 +19,7 @@ import { canvasSize, ratioOf, RATIOS } from "../../lib/canvas";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
-import { edit, run } from "../../state/actions";
+import { edit, run, tipFor } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
@@ -531,7 +531,7 @@ function AudioTab({ clip }: { clip: Clip }) {
       {clip.type === "video" && (
         <Section title="Sound">
           <div className="insp-actions">
-            <button className="btn" onClick={() => run("detachAudio")}>Extract audio</button>
+            <button className="btn" data-tip={tipFor("detachAudio")} onClick={() => run("detachAudio")}>Extract audio</button>
             <button className="btn ghost" onClick={() => patchClip(clip.id, clip.muted ? "Unmute clip" : "Mute clip", (c) => ({ ...c, muted: !(c as VideoClip).muted }) as Clip)}>
               {clip.muted ? "Unmute clip" : "Mute clip"}
             </button>
@@ -1104,9 +1104,9 @@ function TextTab({ clip }: { clip: TextClip }) {
         <SliderRow clip={clip} path="style.size" label="Size" min={8} max={400} reset={96} keyframes={false} />
         <Row label="Style">
           <div className="style-toggles">
-            <button className={`chip-btn bold${s.bold ? " on" : ""}`} aria-pressed={s.bold} onClick={() => style({ bold: !s.bold }, "Bold")}>B</button>
-            <button className={`chip-btn italic${s.italic ? " on" : ""}`} aria-pressed={s.italic} onClick={() => style({ italic: !s.italic }, "Italic")}>I</button>
-            <button className={`chip-btn underline${s.underline ? " on" : ""}`} aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}>U</button>
+            <button className={`chip-btn${s.bold ? " on" : ""}`} aria-label="Bold" data-tip="Bold" aria-pressed={s.bold} onClick={() => style({ bold: !s.bold }, "Bold")}><Bold size={14} /></button>
+            <button className={`chip-btn${s.italic ? " on" : ""}`} aria-label="Italic" data-tip="Italic" aria-pressed={s.italic} onClick={() => style({ italic: !s.italic }, "Italic")}><Italic size={14} /></button>
+            <button className={`chip-btn${s.underline ? " on" : ""}`} aria-label="Underline" data-tip="Underline" aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}><Underline size={14} /></button>
             <Segmented value={s.align} onChange={(v) => style({ align: v }, "Align")} options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]} />
           </div>
         </Row>
@@ -1116,9 +1116,9 @@ function TextTab({ clip }: { clip: TextClip }) {
             onChange={(v) => style({ case: v === "none" ? undefined : v }, "Text case")}
             options={[
               { value: "none", label: "As typed" },
-              { value: "upper", label: "AA" },
-              { value: "lower", label: "aa" },
-              { value: "title", label: "Aa" },
+              { value: "upper", label: <CaseUpper size={16} />, tip: "UPPERCASE" },
+              { value: "lower", label: <CaseLower size={16} />, tip: "lowercase" },
+              { value: "title", label: <CaseSensitive size={16} />, tip: "Title Case" },
             ]}
           />
         </Row>
@@ -1386,8 +1386,8 @@ function MultiSelection({ count }: { count: number }) {
         <Section title="Selection">
           <p className="insp-hint">{count} clips selected. Move, delete, copy or split them together; select one clip to edit its properties.</p>
           <div className="insp-actions">
-            <button className="btn" onClick={() => run("duplicate")}>Duplicate</button>
-            <button className="btn ghost" onClick={() => run("delete")}>Delete</button>
+            <button className="btn" data-tip={tipFor("duplicate")} onClick={() => run("duplicate")}>Duplicate</button>
+            <button className="btn ghost" data-tip={tipFor("delete")} onClick={() => run("delete")}>Delete</button>
           </div>
           <EffectClipboard />
           <AttributeClipboard />
