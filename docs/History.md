@@ -1146,3 +1146,5 @@ and delivery) while the MCP layer was rebuilt here.
     - Kinetic presets are in the catalog.
     - The design rules give 9:16 text sizes.
     - The social-short playbook no longer sends a model to a UI tab.
+  - `save_project_copy` saves the open project as a copy and opens it,
+    for a version that needs hand work after `export_versions`.

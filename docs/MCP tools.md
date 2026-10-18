@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 140 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 141 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -31,7 +31,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 ## Contents
 
 - **Start here**: `help`, `describe_project`, `list_catalog`
-- **Projects**: `list_projects`, `open_project`, `new_project`, `set_project`
+- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
@@ -113,6 +113,21 @@ Example:
 
 ```json
 {"name":"new_project","arguments":{"name":"Spring sale ad"}}
+```
+
+### save_project_copy
+
+Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | The copy's name, e.g. 'Ember Roast 16x9' |
+| `open` | boolean |  | Open the copy to edit it (default true) |
+
+Example:
+
+```json
+{"name":"save_project_copy","arguments":{"name":"Ember Roast 16x9","open":true}}
 ```
 
 ### set_project

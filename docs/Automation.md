@@ -68,7 +68,8 @@ up to 24 moments, each stamped with its time), `export_video`,
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `move_track` (up or down the stack, so a grade sits under the
-titles), effect parameters by place, id or type in `set_param` and the
+titles), `save_project_copy` (a variant to work by hand, the original
+kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
 `"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
 vertical apps' buttons, text size and reading time, caption speed, fonts,

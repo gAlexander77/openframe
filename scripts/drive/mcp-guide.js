@@ -49,5 +49,10 @@ async (page) => {
   await call("set_blend", { clip_ids: [color.id], mode: "screen" });
   const dup = await call("duplicate_clips", { clip_ids: [color.id] });
   details.commands = { ok: faded.changed_clips[0].fade_in === 0.5 && faded.changed_clips[0].fade_out === 1.5 && dup.added_clips[0].start === 4 && dup.added_clips[0].blend === "screen", name: proj.name };
+  // A variant to work by hand: the copy opens, the original stays saved.
+  const copy = await call("save_project_copy", { name: `${proj.name} 16x9` });
+  const now = await call("describe_project");
+  const saved = (await call("list_projects")).map((x) => x.name);
+  details.copy = { ok: copy.open === `${proj.name} 16x9` && now.name === `${proj.name} 16x9` && saved.includes(proj.name) && saved.includes(`${proj.name} 16x9`) && now.tracks.flatMap((t) => t.clips).length >= 3 };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

@@ -27,7 +27,7 @@ export interface ToolInfo {
 
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "list_catalog"] },
-  { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "set_project"] },
+  { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "set_project"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "remove_media", "relink_media", "replace_clip", "edit_media_folder", "organize_media"] },
   {
     name: "Timeline",
@@ -145,6 +145,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   check_project: { kind: "ad" },
   export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14 },
   slip_clip: { clip_id: "c_4", by: 1.5 },
+  save_project_copy: { name: "Ember Roast 16x9", open: true },
   move_track: { track_id: "t_grade", below_track_id: "t_captions" },
   batch: { commands: [{ command: "add_text", args: { text: "SALE", start: 1, duration: 2, style: { size: 140, bold: true } } }, { command: "set_animation", args: { clip_id: "$1", slot: "in", type: "pop", duration: 0.4 } }, { command: "set_animation", args: { clip_id: "$1", slot: "out", type: "fade", duration: 0.3 } }] },
 };
@@ -240,7 +241,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
-10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a subject must stay in frame on 9:16, a separate project with auto_reframe does better.
+10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a version needs work by hand (a subject to keep in frame, an end card to lay out), save_project_copy, set_project to the new shape, fix it there (auto_reframe for the shots) and export it on its own.
 
 ${DESIGN}`,
   },

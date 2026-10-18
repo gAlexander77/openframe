@@ -69,6 +69,7 @@ function host() {
       return { name: h.saved.find((p) => p.id === id)!.name };
     },
     newProject: async (name?: string) => ({ name: name ?? "Untitled" }),
+    saveCopy: async (name: string, open: boolean) => ({ saved: name, open: open ? name : "Race demo" }),
   };
   return h;
 }

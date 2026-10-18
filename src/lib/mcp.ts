@@ -70,6 +70,8 @@ export interface McpHost {
   openProject(id: string): Promise<unknown>;
   /** Save the open project and start an empty one; resolves to its description. */
   newProject(name?: string): Promise<unknown>;
+  /** Save the open project as a copy (sharing its media), opening it or not. */
+  saveCopy(name: string, open: boolean): Promise<unknown>;
 }
 
 export interface SavedProject {
@@ -227,6 +229,12 @@ export const APP_TOOLS: AppTool[] = [
     description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched.",
     inputSchema: obj({ name: { type: "string", description: "Project name; default: the date and time" } }),
     call: async (h, a) => json(await h.newProject(a.name === undefined ? undefined : String(a.name))),
+  },
+  {
+    name: "save_project_copy",
+    description: "Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.",
+    inputSchema: obj({ name: { type: "string", description: "The copy's name, e.g. 'Ember Roast 16x9'" }, open: { type: "boolean", description: "Open the copy to edit it (default true)" } }, ["name"]),
+    call: async (h, a) => json(await h.saveCopy(String(a.name), a.open !== false)),
   },
   {
     name: "preview_frame",

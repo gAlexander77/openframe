@@ -24,7 +24,7 @@ import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
-import { currentScreen, newProject, openProject } from "./state/project";
+import { currentScreen, newProject, openProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -249,5 +249,10 @@ const mcpHost: McpHost = {
   newProject: async (name) => {
     if (!(await newProject(name ? { name } : {}))) throw new Error("A new project could not be started; the app shows why.");
     return automation.describe();
+  },
+  saveCopy: async (name, open) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project first.");
+    if (!(await saveProjectCopy(name, open))) throw new Error("The copy could not be saved; the app shows why.");
+    return { saved: name, open: open ? name : store.document().name };
   },
 };
