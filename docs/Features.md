@@ -469,6 +469,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   it. A box placed on the viewer is followed from the playhead on this
   computer and the layer gets position keyframes, a handful, editable
   like any others ([[ADR-054 Tracking writes position keyframes]]).
+- **Sync audio by waveform** (CapCut's Sync video and audio, Resolve's
+  Auto Sync Audio > Based on Waveform; `sync_audio`): select a separately
+  recorded sound (a lav, a recorder) and its video, right-click, and
+  "Sync audio by waveform" (or "Sync audio and mute camera sound")
+  matches the two sounds' onsets on this computer and moves the audio
+  clip into sync, exact to the sample, one undo step. Sound from before
+  the camera rolled is trimmed off the head; unrelated sounds are
+  refused. Also an AI tools card; `sync_to_clip` places a clip by a known
+  offset ([[AI tools]]).
 - **Remove filler words** (CapCut's and Premiere's; AI tools card,
   `remove_filler_words`): Whisper base or small on this computer
   transcribes the clip and its "um", "hmm" and "ah" are cut with the

@@ -15,7 +15,7 @@ import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
@@ -91,7 +91,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio },
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
   otio: () => toOtio(store.document()),
 };

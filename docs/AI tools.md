@@ -1,7 +1,7 @@
 ---
-tags: [ai, analysis, silence, scenes, beats, loudness, ducking, matting]
+tags: [ai, analysis, silence, scenes, beats, loudness, ducking, matting, sync]
 created: 2026-10-13
-updated: 2026-10-16
+updated: 2026-10-17
 status: living
 ---
 
@@ -266,6 +266,65 @@ for 0.0625, and kept 5 keys.
 frozen clips are refused. Moving the followed video later does not move
 the pin: track again.
 
+## Sync audio
+
+`src/lib/analysis/sync.ts`, `src/lib/project/sync.ts`. CapCut's Sync
+video and audio, Resolve's Auto Sync Audio > Based on Waveform,
+PluralEyes: select a separately recorded sound (a lav, a recorder) and
+the video it was recorded with, right-click, *Sync audio by waveform* (or
+*Sync audio and mute camera sound*); the AI tools card does the same for
+the selected audio clip and the selected video, or the video with sound
+that plays with it longest.
+
+Both clips' source windows are decoded to mono at 4 kHz. Two microphones
+hear one take differently (gain, EQ, noise, room), so the samples are
+not compared; their onsets are: each sound becomes the mel-band spectral
+flux envelope of Beat markers (40 bands, a 64 ms window every 10 ms),
+which drops a gain or a static EQ because each is a constant per band in
+the log. One FFT cross-correlates the two envelopes at every lag where
+they overlap by a second or more; each lag is normalized over its own
+overlap and scaled by the square root of how much of the shorter sound
+it covers, and a parabola through the best lag refines it between
+frames. The first frames do not count: a window filling up at the start
+reads as an attack, and every pair of sounds would match there.
+
+**Confidence is the margin, not the peak.** At its best lag an unrelated
+sound still scores 0.13 to 0.28 (speech against speech, music, a steady
+tone); a true match 0.5 to 0.93, and over a short overlap the best wrong
+lag rises with it. What separates them is how far the best lag stands
+above the best one at least 0.15 s away: 0.46 to 0.74 for one take (0.32
+with only a third of it overlapping, in the unit test), 0.00 to 0.06 for
+every unrelated pair of fixtures. Below 0.15 the tool refuses
+("The two sounds don't match clearly enough to sync"), as it does for a
+sound that repeats (a click track matches every beat equally) and for a
+video without sound of its own.
+
+**Exact, not to the nearest frame.** A clip starts on a whole frame, so
+rounding the start would leave up to half a frame (17 ms at 30 fps). The
+command `sync_to_clip` starts the clip on the nearest frame and moves its
+in-point by the rest. Sound before the timeline's start (the recorder ran
+before the camera) is trimmed off the head, a taken spot puts it on a
+new track below, and *mute camera sound* sets the video's volume to 0
+(its volume keyframes go). One undo step ("Sync audio").
+
+Measured by `scripts/drive/audio-sync.js` in Edge on `sync-camera.mp4`
+(thin, roomy AAC) and `sync-lav.wav` (warm, quieter, pink noise; started
+1.37 s earlier): offset 1.3692 s, 0.8 ms early, confidence 0.74, 0.24 s
+for 12 s of camera against 19 s of lav. On the same files decoded by
+ffmpeg (Node), a 3 s piece of the camera found its place in the lav, and
+in ten minutes of noise around it, 1.2 ms early (confidence 0.54, 0.47).
+The unit tests hold 2 ms with gain, EQ, echoes and noise (5 ms in heavy
+noise).
+
+**Gaps.** One constant offset: a recorder whose clock drifts (a few
+milliseconds a minute on cheap ones) slides out of sync over a long take
+(fit the drift from several windows). Only the clips' windows are
+searched, so a trimmed audio clip must still cover the take. Both clips
+need the same constant speed, forward. Clips on the main track are not
+moved (the magnet would close the gap back): sync the other clip to them.
+The match runs on the main thread: 0.4 s per ten minutes of recorder
+(measured in Node).
+
 ## Reduce noise
 
 `src/lib/analysis/denoise.ts`. CapCut's Reduce noise and Audacity's Noise
@@ -353,13 +412,15 @@ and the AI tools tab has a card for it.
   `ai.duckUnderSpeech(clipId?, { depth })` returns the dips and keys made.
   `ai.reduceNoise(clipId?, { strength })` and `ai.stabilizeClip(clipId?,
   { level })` clean the sound and stabilize the picture.
+  `ai.syncAudio(clipId?, { videoId, muteCamera })` syncs an audio clip to
+  a video by waveform and returns the offset, confidence and new place.
   `ai.removeBackground(clipId?)` makes (or reuses) the matte and turns it
   on, returning the frames, speed, model and device, or `cached: true`;
   the `set_background_removal` command turns an existing matte off and on.
-- **MCP:** the same eight as tools for external agents — `remove_silences`,
+- **MCP:** the same nine as tools for external agents — `remove_silences`,
   `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`,
-  `reduce_noise`, `stabilize_clip`, `remove_background` (snake_case
-  options; unset ones keep the panel's defaults).
+  `reduce_noise`, `stabilize_clip`, `sync_audio`, `remove_background`
+  (snake_case options; unset ones keep the panel's defaults).
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

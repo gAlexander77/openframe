@@ -133,12 +133,14 @@ describe("MCP AI tools", () => {
     expect(r?.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ removed: 2 }) }] });
     await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c1", "c2"] } });
     await call(h, "tools/call", { name: "remove_background", arguments: { clip_id: "c3" } });
+    await call(h, "tools/call", { name: "sync_audio", arguments: { clip_id: "c4", video_clip_id: "c1", mute_camera: true } });
     expect(h.aiCalls).toEqual([
       ["removeSilences", "c1", { padding: 0.2 }],
       ["normalizeLoudness", ["c1", "c2"], {}],
       ["removeBackground", "c3", {}],
+      ["syncAudio", "c4", { videoId: "c1", muteCamera: true }],
     ]);
-    expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech"]));
+    expect(listTools().map((t) => t.name)).toEqual(expect.arrayContaining(["split_scenes", "mark_beats", "duck_under_speech", "sync_audio", "sync_to_clip"]));
   });
 });
 

@@ -176,7 +176,8 @@ function omit<T extends object>(o: T, keys: string[]): T {
   return out as T;
 }
 
-function shiftKeys(keys: Clip["keyframes"], by: number): Clip["keyframes"] {
+/** Keyframes moved by `by` frames, for edits that move a clip's head. */
+export function shiftKeys(keys: Clip["keyframes"], by: number): Clip["keyframes"] {
   if (!keys) return keys;
   const out: Record<string, Keyframe[]> = {};
   for (const [k, list] of Object.entries(keys)) out[k] = list.map((x) => ({ ...x, f: x.f + by }));

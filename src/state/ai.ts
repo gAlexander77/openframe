@@ -16,6 +16,8 @@ import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
 import { makeMatte } from "../engine/cutout";
 import { detectBeats } from "../lib/analysis/beats";
+import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
+import { syncProblem } from "../lib/project/sync";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { sceneCuts } from "../lib/analysis/scenes";
@@ -34,7 +36,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout";
+export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout" | "sync";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -77,6 +79,11 @@ export interface StabilizeSettings {
   level: StabilizeLevel;
 }
 
+export interface SyncSettings {
+  /** The camera's own sound once the recorded sound is synced to it. */
+  camera: "keep" | "mute";
+}
+
 export interface FillerSettings {
   /** A Whisper model id from ASR_MODELS. */
   model: string;
@@ -91,6 +98,7 @@ export interface AiSettings {
   denoise: DenoiseSettings;
   stabilize: StabilizeSettings;
   fillers: FillerSettings;
+  sync: SyncSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -105,6 +113,9 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   stabilize: { level: "recommended" },
   // Tiny drops every "um"; base keeps them at a third of small's download.
   fillers: { model: "onnx-community/whisper-base.en_timestamped" },
+  // Kept: the camera's sound is how to check the sync by ear, and muting
+  // it is the menu's second item.
+  sync: { camera: "keep" },
 };
 
 export interface AiJob {
@@ -169,6 +180,7 @@ export const NEEDS: Record<ToolId, string> = {
   denoise: "a video or audio clip with sound",
   stabilize: "a video clip",
   cutout: "a video clip with a person or subject",
+  sync: "an audio clip and the video it was recorded with",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
@@ -176,6 +188,7 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
   if (tool === "scenes" || tool === "stabilize" || tool === "cutout") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
+  if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
   if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
@@ -711,6 +724,92 @@ export async function stabilizeClip(clipId?: Id, opts: { level?: StabilizeLevel 
   store.edit("Stabilize", (p) => ops.updateClip(p, c.id, (x) => ({ ...x, stabilize: data }) as VideoClip));
   finish("stabilize", `Stabilized ${asset.name}, zoomed ${Math.round((data.zoom - 1) * 100)}%`);
   return { frames: data.x.length, zoom: data.zoom };
+}
+
+// ---- sync audio ------------------------------------------------------------------
+
+export interface SyncEdit {
+  /** The audio clip, now in sync. */
+  clipId: Id;
+  /** The video it was synced to. */
+  videoId: Id;
+  /** Seconds: the audio's source time minus the video's for one moment. */
+  offset: number;
+  /** 0..1, how clearly the best match stands out (MIN_CONFIDENCE up). */
+  confidence: number;
+  /** Where the audio clip starts now (timeline seconds) and its in-point
+   * (source seconds). */
+  start: number;
+  in: number;
+  /** The video's own sound was set to volume 0. */
+  muted: boolean;
+}
+
+/** Throw `msg` as a toast and an error, for refusals before a job starts. */
+function refuse(msg: string): never {
+  toast(msg, "error");
+  throw new Error(msg);
+}
+
+/** The camera clip to sync `audio` to: `videoId`, else the selected video
+ * clip with sound, else the one that plays with it longest. */
+function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
+  const p = store.get().project;
+  if (videoId) {
+    const v = ops.findClip(p, videoId)?.clip;
+    if (!v) refuse(`No clip with id ${videoId}`);
+    if (v.type !== "video") refuse("Sync the audio to a video clip");
+    return v;
+  }
+  const videos = p.tracks.flatMap((t) => t.clips).filter((c): c is VideoClip => c.type === "video" && !!ops.getAsset(p, c.assetId)?.hasAudio);
+  const picked = videos.find((v) => store.get().selection.includes(v.id));
+  if (picked) return picked;
+  const overlap = (v: VideoClip) => Math.min(v.start + v.duration, audio.start + audio.duration) - Math.max(v.start, audio.start);
+  const under = videos.filter((v) => overlap(v) > 0).sort((a, b) => overlap(b) - overlap(a))[0];
+  return under ?? refuse("Select the video clip to sync to as well");
+}
+
+/**
+ * CapCut's Sync video and audio, Resolve's Auto Sync Audio > Based on
+ * Waveform: find where a separately recorded sound (a lav, a recorder)
+ * lines up with the camera's own sound by matching their waveforms
+ * (lib/analysis/sync.ts), then move the audio clip into sync, exact to the
+ * sample (sync_to_clip), as one undo step. Refuses when the sounds do not
+ * clearly match. muteCamera sets the video's volume to 0.
+ */
+export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
+  const scope = projectWork.signal();
+  const t = targetFor("sync", clipId);
+  if (typeof t === "string") refuse(t);
+  const { clip, asset } = t;
+  const video = cameraFor(clip as AudioClip, opts.videoId);
+  const p = store.get().project;
+  const vAsset = ops.getAsset(p, video.assetId);
+  if (!vAsset) refuse("The video's media is missing");
+  if (!vAsset.hasAudio) refuse(`${vAsset.name} has no sound of its own to sync to`);
+  const why = syncProblem(p, clip.id, video.id);
+  if (why) refuse(why);
+  const muteCamera = opts.muteCamera ?? state.settings.sync.camera === "mute";
+  const match = await job("sync", clip, `Syncing ${asset.name} to ${vAsset.name}`, async (progress, signal) => {
+    const [vFrom, vTo] = windowOf(video);
+    const [aFrom, aTo] = windowOf(clip);
+    const ref = await decodeMono(vAsset, vFrom, vTo, SYNC_RATE, (x) => progress(x * 0.4), signal);
+    const other = await decodeMono(asset, aFrom, aTo, SYNC_RATE, (x) => progress(0.4 + x * 0.5), signal);
+    progress(0.92, "Matching the waveforms");
+    // Let the progress paint before the (synchronous) match.
+    await new Promise((r) => setTimeout(r, 0));
+    const m = findLag(ref, other, SYNC_RATE);
+    if (!m.score) throw new Error("One of the clips is silent where it plays, so there is nothing to match");
+    if (m.confidence < MIN_CONFIDENCE) throw new Error(`The two sounds don't match clearly enough to sync (confidence ${Math.round(m.confidence * 100)}%). Are they the same take?`);
+    return { ...m, offset: aFrom - vFrom + m.lag };
+  });
+  scope.throwIfAborted();
+  const a = stillThere(clip.id), v = stillThere(video.id);
+  edit("Sync audio", (q) => runCommand(q, "sync_to_clip", { clip_id: a.id, to_clip_id: v.id, offset: match.offset, mute_reference: muteCamera }));
+  const now = ops.findClip(store.get().project, a.id)!.clip as AudioClip;
+  finish("sync", `Synced ${asset.name} to ${vAsset.name}${muteCamera ? ", camera sound muted" : ""}`);
+  const fps = store.get().project.fps;
+  return { clipId: a.id, videoId: v.id, offset: +match.offset.toFixed(4), confidence: +match.confidence.toFixed(3), start: +framesToSeconds(now.start, fps).toFixed(4), in: +now.in.toFixed(4), muted: muteCamera };
 }
 
 // ---- remove background -----------------------------------------------------------

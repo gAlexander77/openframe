@@ -768,3 +768,12 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   pressing Escape after every step deselected the clip, so each inspector
   tab waited out a 30 s timeout, and a pairwise overlap check that
   recomputed clipping per pair took ten minutes; memoized, it takes one.
+- **Sync audio by waveform.** A lav or recorder lines up with the camera's
+  own sound by cross-correlating onset envelopes (Beat markers' spectral
+  flux), then lands exact to the sample: the start on a whole frame, the
+  in-point taking up the rest. The correlation peak alone could not tell
+  one take from two: unrelated fixtures still peaked at 0.13 to 0.28, and a
+  short true overlap's best wrong lag rises too. The margin over the best
+  lag 0.15 s away separates them (0.46 to 0.74 against 0.06 at most), so
+  that is the confidence. Measured on the new fixture pair (one take
+  through a thin camera mic and a noisy lav, 1.37 s apart): 0.8 ms early.

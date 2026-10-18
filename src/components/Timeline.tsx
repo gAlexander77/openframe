@@ -22,6 +22,7 @@ import { canPaste, edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
+import { syncAudio } from "../state/ai";
 import { replaceClip } from "../lib/project/replace";
 import { toast } from "../state/toast";
 import { addSticker } from "../state/stickers";
@@ -681,6 +682,11 @@ export function Timeline() {
     e.preventDefault();
     e.stopPropagation();
     if (!store.get().selection.includes(clip.id)) store.select([clip.id]);
+    // CapCut's Sync video and audio: exactly a video and an audio clip.
+    const picked = store.get().selection.map((id) => ops.findClip(store.get().project, id)?.clip);
+    const syncVideo = picked.length === 2 ? picked.find((c) => c?.type === "video") : undefined;
+    const syncSound = picked.length === 2 ? picked.find((c) => c?.type === "audio") : undefined;
+    const sync = (muteCamera: boolean) => void syncAudio(syncSound!.id, { videoId: syncVideo!.id, muteCamera }).catch(() => {});
     const items: MenuItem[] = [
       { action: "cut" },
       { action: "copy" },
@@ -696,6 +702,12 @@ export function Timeline() {
       },
       { action: "freeze", disabled: clip.type !== "video" },
       { action: "detachAudio", disabled: clip.type !== "video" },
+      ...(syncVideo && syncSound
+        ? ([
+            { label: "Sync audio by waveform", onSelect: () => sync(false) },
+            { label: "Sync audio and mute camera sound", onSelect: () => sync(true) },
+          ] as MenuItem[])
+        : []),
       { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
       { action: "groupClips", disabled: store.get().selection.length < 2 },
       ...(clip.group ? ([{ action: "ungroupClips" }] as MenuItem[]) : []),

@@ -35,6 +35,7 @@ import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
+import { syncClip, syncProblem } from "./project/sync";
 import { groupClips, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
@@ -800,6 +801,25 @@ export const COMMANDS: Command[] = [
     description: "Move a video clip's sound to its own audio clip (for J/L cuts or separate audio edits).",
     input: S.obj({ clip_id: S.str("Video clip id") }, ["clip_id"]),
     run: (p, a) => ops.detachAudio(p, clipOrThrow(p, a.clip_id).clip.id),
+  },
+  {
+    name: "sync_to_clip",
+    description:
+      "Move a clip (a separately recorded sound) into sync with another (the camera clip of the same take), given where their sources line up: source second t of to_clip_id plays with source second t + offset of clip_id. Exact to the sample: the in-point takes up what a whole frame cannot; sound that would fall before 0 is trimmed off its head; a taken spot puts it on a new track. mute_reference sets to_clip_id's volume to 0. sync_audio finds the offset by waveform.",
+    input: S.obj(
+      {
+        clip_id: S.str("The clip to move: usually an audio clip"),
+        to_clip_id: S.str("The clip it syncs to: usually the camera's video"),
+        offset: S.num("Seconds: clip_id's source time minus to_clip_id's for the same moment"),
+        mute_reference: S.bool("Silence to_clip_id's own sound (default false)"),
+      },
+      ["clip_id", "to_clip_id", "offset"],
+    ),
+    run: (p, a) => {
+      const problem = syncProblem(p, String(a.clip_id), String(a.to_clip_id));
+      if (problem) throw new CommandError(problem);
+      return syncClip(p, String(a.clip_id), String(a.to_clip_id), Number(a.offset), a.mute_reference === true);
+    },
   },
   {
     name: "freeze_frame",

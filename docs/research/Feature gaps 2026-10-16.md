@@ -165,7 +165,7 @@ binding in `src/lib/keymap.ts`.
 | Clip color labels | P R V | yes (`labelColor`, `set_clip_label`) | — | — |
 | Type a clip's duration | C P R F | yes: the Speed tab's Duration sets the speed (CapCut's way) | — | Premiere's trim-to-length variant is not offered. |
 | Default transition key; add to the selected cuts | P R F | partial: "Apply to all cuts" | P2 | Add a keymap action. |
-| Multicam | C P R V F | no | P2 | Sync by audio reuses the `src/lib/analysis/` cross-correlation; an angle grid needs one cursor per angle. |
+| Multicam | C P R V F | no | P2 | Sync by audio reuses `src/lib/analysis/sync.ts` (Sync audio by waveform); an angle grid needs one cursor per angle. |
 | Audio scrubbing while dragging the playhead | P R V F | no (not found in `src/engine/player.ts`) | P2 | Short grain playback in `src/engine/audio.ts`. |
 | Extend edit (E), edit-point selection | P R F | no | P2 | — |
 | Timeline index / find clips | P R F | partial: a marker list only | P2 | A clip list beside Markers. |
@@ -194,6 +194,7 @@ in both.
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
 | Pitch shift independent of speed | C P V | no; pitch only follows speed (Change pitch) | P2 | The engine's time-stretch (ADR-028) can expose a semitone offset. |
 | Fill channel (left or right to both) | C | yes (`set_channel_fill`) | — | — |
+| Sync external audio to camera audio | C P R F | yes: clip menu > Sync audio by waveform (or the AI tools card, `sync_audio`), onset envelopes cross-correlated, exact to the sample; `sync_to_clip` by a known offset | — | — |
 | Loudness meter (LUFS M/S/I) | P R V F | yes (`Meter.tsx`, `public/loudness-tap.js`) | — | Integrated resets on each play; no Reset button, loudness range or true peak yet (P2). |
 | Track mixer with per-track meters | P R V F | no | P2 | After solo and track volume. Add buses and inserts later. |
 | Stretch music to fit (Premiere Remix) | P | no | P2 | Beat analysis already exists; L. |
