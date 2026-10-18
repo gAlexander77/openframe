@@ -1,0 +1,1492 @@
+# MCP tools
+
+<!-- Generated from src/lib/mcpGuide.ts and the tool definitions by
+     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
+     npm test fails when this file is out of date. Do not edit by hand. -->
+
+Every tool the editor offers an AI model over MCP, 113 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+
+## What the server tells a model first
+
+```text
+You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom); scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
+Before you start: help (the tools by step), help with topic ad, epic_edit or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect and font by name), help with a tool's name (its parameters and an example).
+To make a video:
+1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
+2. import_media the footage, music, logo and pictures by absolute path.
+3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, mark_beats on the track and cut on the beat markers.
+5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
+7. Make many small edits at once with batch: one call, one undo step.
+8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look; fix what reads badly.
+9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+```
+
+## Contents
+
+- **Start here**: `help`, `describe_project`, `list_catalog`
+- **Projects**: `list_projects`, `open_project`, `new_project`, `set_project`
+- **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `edit_media_folder`, `organize_media`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Markers and beats**: `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
+- **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `track_motion`, `auto_reframe`, `stabilize_clip`
+- **Speed**: `set_speed`, `set_speed_curve`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
+- **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
+- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
+- **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Check and deliver**: `preview_frames`, `preview_frame`, `export_video`, `export_status`
+
+## Start here
+
+Read before editing: the guide, the timeline and the names the tools accept.
+
+### help
+
+The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `topic` | string |  | overview (default), design, ad, epic_edit, social_short, catalog, params, or a tool's name |
+
+Example:
+
+```json
+{"name":"help","arguments":{"topic":"ad"}}
+```
+
+### describe_project
+
+Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds. Call this first and after edits.
+
+No parameters.
+
+### list_catalog
+
+Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults. section stickers with a query searches the sticker library.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `section` | string |  | A section name from the index |
+| `query` | string |  | Search words, for section stickers |
+
+Example:
+
+```json
+{"name":"list_catalog","arguments":{"section":"effects"}}
+```
+
+## Projects
+
+Work in a new project so the user's own stay untouched.
+
+### list_projects
+
+The saved projects, most recently edited first, with ids for open_project. The one open in the editor is marked open: true; none is when the app shows its home screen.
+
+No parameters.
+
+### open_project
+
+Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Returns its description, as describe_project does.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `project` | string | yes | Project id or name |
+
+### new_project
+
+Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string |  | Project name; default: the date and time |
+
+Example:
+
+```json
+{"name":"new_project","arguments":{"name":"Spring sale ad"}}
+```
+
+### set_project
+
+Change project settings: name, canvas size (pixels), frame rate, background color.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string |  | Project name |
+| `width` | integer |  | Canvas width in pixels (16..8192) |
+| `height` | integer |  | Canvas height in pixels (16..8192) |
+| `background` | string |  | CSS hex color behind all layers |
+| `fps` | "23.976" \| "24" \| "25" \| "29.97" \| "30" \| "50" \| "59.94" \| "60" |  | Frame rate; clips keep their times |
+
+Example:
+
+```json
+{"name":"set_project","arguments":{"width":1080,"height":1920,"fps":"30"}}
+```
+
+## Media
+
+Bring files in and keep the library tidy.
+
+### import_media
+
+Import media files into the project by absolute path (desktop) or URL. Returns the new assets with their ids, for add_media_clip.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `files` | { src, name }[] | yes | Files to import |
+| `files[].src` | string | yes | Absolute path or URL |
+| `files[].name` | string |  | Display name |
+
+Example:
+
+```json
+{"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4"},{"src":"C:/Music/track.mp3"}]}}
+```
+
+### remove_media
+
+Remove imported media from the project; the files on disk stay. Media a clip uses is refused unless remove_clips=true, which deletes those clips too. unused=true removes every file no clip uses.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] |  | Assets |
+| `unused` | boolean |  | Remove all media no clip uses |
+| `remove_clips` | boolean |  | Also delete the clips that use it |
+
+### relink_media
+
+Relink every use of an asset to another imported asset's source. Preserves edits and identity; requires compatible streams and duration. Undoable.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Original asset |
+| `replacement_asset_id` | string | yes | Imported replacement asset |
+
+### replace_clip
+
+Put another media file of the project in a clip's place (CapCut's Replace): the clip keeps its start, length (shorter only if the new source runs out), transform, effects, animations and sound settings, and plays the new source from its start.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video, image or audio clip |
+| `asset_id` | string | yes | Media in the project |
+
+### edit_media_folder
+
+Create, rename or delete a virtual media folder. Deleting unfiles its media; source files and clips are preserved.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `action` | "create" \| "rename" \| "delete" | yes | Operation |
+| `name` | string | yes | Folder name |
+| `new_name` | string |  | New name for rename |
+
+### organize_media
+
+Set virtual folder membership and/or favorite status for imported assets. An empty folder name unfiles media; does not move source files.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Assets |
+| `folder` | string |  | Existing folder, or empty to unfile |
+| `favorite` | boolean |  | Favorite status |
+
+## Timeline
+
+Place, cut, move and arrange clips. batch runs many edits as one undo step.
+
+### add_media_clip
+
+Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Asset id from list_assets |
+| `start` | number | yes | Timeline position in seconds (0..) |
+| `duration` | number |  | Length in seconds; defaults to the whole source (5 s for images) (0.001..) |
+| `in` | number |  | Seconds into the source where the clip begins (0..) |
+| `track_id` | string |  | Track id |
+| `mode` | "overwrite" \| "insert" |  | overwrite replaces what is under the clip; insert pushes later clips right |
+
+Example:
+
+```json
+{"name":"add_media_clip","arguments":{"asset_id":"a_123","start":0,"duration":3.5,"in":12}}
+```
+
+### add_color_clip
+
+Add a solid color layer (backgrounds, flashes, title cards).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `color` | string | yes | CSS color |
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number | yes | Seconds (0.001..) |
+| `track_id` | string |  | Track id |
+
+### add_adjustment_clip
+
+Add an adjustment layer: its color settings, filter and effects apply to every layer below it for its duration.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number | yes | Seconds (0.001..) |
+| `track_id` | string |  | Track id |
+
+### add_track
+
+Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | "video" \| "audio" | yes | Track kind |
+| `name` | string |  | Track name |
+
+### update_track
+
+Mute, solo, hide, lock, rename, resize, or set the volume or pan of a track.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `track_id` | string | yes | Track id |
+| `name` | string |  | New name |
+| `muted` | boolean |  | Mute the track's sound |
+| `hidden` | boolean |  | Hide the track's picture |
+| `locked` | boolean |  | Prevent edits |
+| `volume` | number |  | Linear gain, 1 = unchanged (0..4) |
+| `pan` | number |  | -1 left .. 1 right, added to each clip's pan (-1..1) |
+| `solo` | boolean |  | While any track is soloed, only soloed tracks sound |
+| `height` | "small" \| "normal" \| "large" |  | Row height on the timeline |
+
+### delete_track
+
+Remove a track and its clips. The main track stays.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `track_id` | string | yes | Track id |
+
+### split
+
+Cut clips at a time. Without clip_ids, cuts every clip under that time on unlocked tracks.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `at` | number | yes | Seconds (0..) |
+| `clip_ids` | string[] |  | Only these clips |
+
+### split_at_times
+
+Split a video or audio clip at several SOURCE times (seconds into its media file, the way scene detection reports them). Times on or outside the clip's edges are ignored; a detached audio clip lined up with it splits too. For a cut at a timeline time use split.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `times` | number[] | yes | Source seconds |
+
+### trim_clip
+
+Move a clip's start or end edge to a time. Limited by the source media and neighbors; ripple=true shifts later clips instead of stopping at them.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `edge` | "start" \| "end" | yes | Which edge |
+| `to` | number | yes | Seconds (0..) |
+| `ripple` | boolean |  | Shift later clips |
+
+### move_clip
+
+Move a clip to a time and (optionally) another track of the same kind. Overwrites whatever is under its new position.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `start` | number | yes | Seconds (0..) |
+| `track_id` | string |  | Destination track id |
+
+### nudge_clips
+
+Move clips by whole frames on their tracks (negative is earlier). Nothing moves when a clip would pass the start, cover another clip or sits on a locked track.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips |
+| `frames` | number | yes | Frames to move (-100000..100000) |
+
+### duplicate_clips
+
+Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips to copy |
+| `at` | number |  | Seconds where the earliest copy starts (0..) |
+
+### delete_clips
+
+Remove clips. ripple=true closes the gaps they leave on their tracks.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips to remove |
+| `ripple` | boolean |  | Close the gaps |
+
+### lift_range
+
+Take a timeline range out of every unlocked track (Premiere's Lift and Extract): clips crossing its edges are cut; ripple=false leaves a gap, ripple=true closes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number | yes | Seconds (0..) |
+| `end` | number | yes | Seconds (0..) |
+| `ripple` | boolean |  | Close the gap (Extract) |
+
+### close_gaps
+
+Close empty space on a track by rippling later clips left: the gap at `at` seconds, or every gap (packing the track from 0) when `at` is left out.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `track_id` | string | yes | Track id |
+| `at` | number |  | Timeline seconds inside the gap |
+
+### cut_ranges
+
+Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The primitive behind silence and filler removal.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `ranges` | { start, end }[] | yes | Source ranges to remove; overlaps merge, parts outside the clip are ignored |
+| `ranges[].start` | number | yes | Source seconds (0..) |
+| `ranges[].end` | number | yes | Source seconds (0..) |
+| `ripple` | boolean |  | Close the gaps (default true) |
+
+### split_scenes
+
+Find every shot change in a video clip and split there (or drop markers). Returns the cut times in source seconds.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
+| `output` | "split" \| "markers" |  | Default split |
+
+### group_clips
+
+Group two or more clips so they select, move, copy and delete together (Premiere's Group). They keep their tracks and settings.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips, two or more |
+
+### ungroup_clips
+
+Break up the groups the given clips belong to.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips |
+
+### set_clip_label
+
+Color-label clips (Premiere's Label): the timeline paints them with it. "none" removes the label.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips to label |
+| `label` | "red" \| "orange" \| "yellow" \| "green" \| "cyan" \| "blue" \| "purple" \| "pink" \| "none" | yes | A label color, or none |
+
+### freeze_frame
+
+Insert a still of the frame at a time inside a video clip, pushing the rest of the track right.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video clip id |
+| `at` | number | yes | Timeline seconds |
+| `duration` | number |  | Seconds to hold (0.04..) |
+
+### detach_audio
+
+Move a video clip's sound to its own audio clip (for J/L cuts or separate audio edits).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video clip id |
+
+### sync_to_clip
+
+Move a clip (a separately recorded sound) into sync with another (the camera clip of the same take), given where their sources line up: source second t of to_clip_id plays with source second t + offset of clip_id. Exact to the sample: the in-point takes up what a whole frame cannot; sound that would fall before 0 is trimmed off its head; a taken spot puts it on a new track. mute_reference sets to_clip_id's volume to 0. sync_audio finds the offset by waveform.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The clip to move: usually an audio clip |
+| `to_clip_id` | string | yes | The clip it syncs to: usually the camera's video |
+| `offset` | number | yes | Seconds: clip_id's source time minus to_clip_id's for the same moment |
+| `mute_reference` | boolean |  | Silence to_clip_id's own sound (default false) |
+
+### create_compound_clip
+
+Put clips into one compound clip (CapCut's Create compound clip, Premiere's Nest), on the lowest of their video tracks, spanning them all. The clips move into a nested timeline (describeProject lists it under compounds) at the same times relative to each other; the compound clip then plays it like a video clip plays a file, and its own transform, opacity, blend, color, effects, speed and volume act on the whole. Needs a clip on a video track, and nothing else on that track inside the span.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips to put inside, on any tracks |
+| `name` | string |  | Name shown on the clip (default Compound clip N) |
+
+### break_compound_clip
+
+Break a compound clip apart (Resolve's Decompose in place, CapCut's Undo compound clip): the clips inside go back on this timeline at the frames the compound clip showed them, trimmed to what it showed, on its track and the tracks above. The compound clip's own settings go with it. Needs speed 1.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Compound clip id |
+
+### edit_compound
+
+Run another command inside a compound's nested timeline (compound_id from compounds in describeProject, not the compound clip's id). Clip and track ids, and times, are the nested timeline's own. Every compound clip that plays it shows the change.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `compound_id` | string | yes | Compound id |
+| `command` | string | yes | Command to run inside, e.g. move_clip or set_param |
+| `args` | object |  | That command's arguments |
+
+### rename_compound
+
+Rename a compound; every compound clip that plays it shows the new name.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `compound_id` | string | yes | Compound id |
+| `name` | string | yes | New name |
+
+### batch
+
+Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `commands` | { command, args }[] | yes | The steps, in order |
+| `commands[].command` | string | yes | Command name, e.g. set_animation |
+| `commands[].args` | object |  | That command's arguments |
+
+Example:
+
+```json
+{"name":"batch","arguments":{"commands":[{"command":"set_animation","args":{"clip_id":"c_1","slot":"in","type":"rise","duration":0.5}},{"command":"set_animation","args":{"clip_id":"c_1","slot":"out","type":"fade","duration":0.3}}]}}
+```
+
+### undo
+
+Undo the last edit; returns what that changed back.
+
+No parameters.
+
+### redo
+
+Redo the last undone edit; returns what changed.
+
+No parameters.
+
+### seek
+
+Move the playhead to a time in seconds.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `at` | number | yes | Seconds (0..) |
+
+## Markers and beats
+
+Mark moments and the music's beats to cut and animate on.
+
+### mark_beats
+
+Drop a timeline marker on the beat of a music clip. Returns the BPM and beat count.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `every` | 1 \| 2 \| 4 |  | Marker on every Nth beat (default 1) |
+
+Example:
+
+```json
+{"name":"mark_beats","arguments":{"clip_id":"c_123","every":1}}
+```
+
+### add_marker
+
+Drop a marker at a time (chapters, beats, notes).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `at` | number | yes | Seconds (0..) |
+| `label` | string |  | Text |
+| `color` | string |  | CSS color |
+
+### add_markers
+
+Drop several markers at once at TIMELINE seconds (beats, scene cuts, chapters). A time that already has a marker with the same label is skipped, so running a detector twice does not double its markers.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `times` | number[] | yes | Timeline seconds |
+| `label` | string |  | Text for every marker |
+| `color` | string |  | CSS color |
+
+### update_marker
+
+Edit a timeline marker's position, label or color without moving clips. Times are seconds.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `marker_id` | string | yes | Marker id |
+| `at` | number |  | Timeline seconds (0..) |
+| `label` | string |  | Text |
+| `color` | string |  | CSS color |
+
+### delete_markers
+
+Delete the specified timeline markers together. Unknown ids reject the whole edit.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `marker_ids` | string[] | yes | Marker ids |
+
+## Picture and motion
+
+Position, scale, crop, mask, key and animate pictures; keyframes for anything numeric.
+
+### set_param
+
+Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. Sound fades are frames here; set_fades takes seconds.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips |
+| `path` | string | yes | Parameter path |
+| `value` | number | yes | New value |
+| `at` | number |  | Timeline seconds, for keyframed paths |
+
+Example:
+
+```json
+{"name":"set_param","arguments":{"clip_ids":["c_123"],"path":"transform.scale","value":1.2}}
+```
+
+### add_keyframe
+
+Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on a path interpolate between them.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `path` | string | yes | Parameter path (see set_param) |
+| `at` | number | yes | Timeline seconds |
+| `value` | number | yes | Value at that time |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" |  | Curve toward the next keyframe |
+
+Example:
+
+```json
+{"name":"add_keyframe","arguments":{"clip_id":"c_123","path":"transform.scale","at":0,"value":1,"ease":"easeInOut"}}
+```
+
+### move_keyframe
+
+Retime a keyframe and/or change its value. at is the keyframe's current timeline time, to the new one (seconds). It stays inside the clip and replaces a keyframe already at its new time on that path.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `path` | string | yes | Parameter path (see set_param) |
+| `at` | number | yes | Timeline seconds of the keyframe now |
+| `to` | number |  | Timeline seconds to move it to |
+| `value` | number |  | New value |
+
+### set_keyframe_ease
+
+Shape the curve leaving keyframes toward the next one. ease is a preset (linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate); bezier [x1, y1, x2, y2] is a CSS cubic-bezier (x in 0..1, y may overshoot) and overrides it. Without path, applies to every parameter keyed at that time; without at, to every keyframe on the path(s).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `path` | string |  | Parameter path; omit for all keyed parameters |
+| `at` | number |  | Timeline seconds of the keyframe; omit for all keyframes |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" |  | Preset name |
+| `bezier` | number[] |  | [x1, y1, x2, y2] |
+
+### remove_keyframes
+
+Remove keyframes from a clip. at lists timeline times in seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keyframes goes back to its static value.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `path` | string |  | Parameter path; omit for all keyed parameters |
+| `at` | number[] |  | Timeline seconds of the keyframes to remove |
+
+### frame_region
+
+Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or image clip id |
+| `region` | { x, y, w, h } | yes |  |
+| `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `to_region` | { x, y, w, h } |  |  |
+| `to_region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `to_region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `to_region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `to_region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `mode` | "fill" \| "fit" |  | How the region meets the canvas |
+| `from` | number |  | Timeline seconds the move starts; default the clip's start |
+| `to` | number |  | Timeline seconds the move ends; default the clip's end |
+
+Example:
+
+```json
+{"name":"frame_region","arguments":{"clip_id":"c_123","region":{"x":0.25,"y":0.2,"w":0.5,"h":0.5},"to_region":{"x":0.1,"y":0.1,"w":0.8,"h":0.8},"from":0,"to":3}}
+```
+
+### frame_clips
+
+Frame pictures on the canvas, centered: fit shows the whole picture, fill covers the canvas and crops the overflow, stretch covers it exactly, ignoring proportions.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `mode` | "fit" \| "fill" \| "stretch" | yes | How to frame |
+| `at` | number |  | Timeline seconds, for animated scale |
+
+### align_clips
+
+Align pictures on the canvas, as CapCut's Transform align row does: one clip against the canvas edge or center, several against their combined bounds. left, center and right move horizontally; top, middle and bottom vertically. Animated positions get a keyframe at `at` (default: each clip's first frame).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `align` | "left" \| "center" \| "right" \| "top" \| "middle" \| "bottom" | yes | Where to align |
+| `at` | number |  | Timeline seconds, for animated positions |
+| `margin` | number |  | One clip: stop this far inside the canvas edge, a fraction of its size (0.05 is the title-safe inset), so titles of any width share one left edge (0..0.4) |
+
+### distribute_clips
+
+Space three or more pictures evenly on the canvas: the outermost two stay, the rest move so the gaps between neighbors are equal.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips, three or more |
+| `axis` | "horizontal" \| "vertical" | yes | Direction |
+| `at` | number |  | Timeline seconds, for animated positions |
+
+### set_uniform_scale
+
+CapCut's Uniform scale switch. false: the vertical scale (transform.scaleY) separates from transform.scale, starting equal; true: it goes and the picture takes transform.scale.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `uniform` | boolean | yes | Scale both directions together |
+
+### set_flip
+
+Mirror pictures: horizontal flips left-right, vertical flips upside down. A direction left out keeps its state.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `horizontal` | boolean |  | Flipped left-right |
+| `vertical` | boolean |  | Flipped upside down |
+
+### set_crop
+
+Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least 5% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `left` | number |  | Fraction trimmed from the source's left (0..0.95) |
+| `top` | number |  | Fraction trimmed from the top (0..0.95) |
+| `right` | number |  | Fraction trimmed from the right (0..0.95) |
+| `bottom` | number |  | Fraction trimmed from the bottom (0..0.95) |
+| `ratio` | "original" \| "16:9" \| "9:16" \| "1:1" \| "4:3" \| "3:4" \| "4:5" \| "21:9" |  | Crop to this shape, centered |
+
+### set_mask
+
+CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height; rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). Values left out keep theirs; animated values get a keyframe at `at`.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `shape` | "none" \| "linear" \| "mirror" \| "circle" \| "rectangle" \| "heart" \| "star" |  | Mask shape |
+| `x` | number |  | Center offset, fraction of the picture's width (-1..1) |
+| `y` | number |  | Center offset, fraction of the picture's height (-1..1) |
+| `width` | number |  | Fraction of the picture's width (0.01..2) |
+| `height` | number |  | Fraction of the picture's height (0.01..2) |
+| `rotation` | number |  | Degrees, clockwise (-360..360) |
+| `feather` | number |  | Edge softness (0..1) |
+| `radius` | number |  | Rectangle corner roundness (0..1) |
+| `invert` | boolean |  | Keep the outside instead |
+| `at` | number |  | Timeline seconds, for animated values |
+
+### set_blend
+
+How a picture mixes with what is under it (the inspector's Blend). screen or add for light leaks, flares and glows shot on black; multiply for textures and paper on white; overlay or softLight for grain and grunge. normal undoes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `mode` | "normal" \| "darken" \| "multiply" \| "colorBurn" \| "lighten" \| "screen" \| "colorDodge" \| "add" \| "overlay" \| "softLight" \| "hardLight" \| "difference" \| "exclusion" | yes | Blend mode |
+
+Example:
+
+```json
+{"name":"set_blend","arguments":{"clip_ids":["c_123"],"mode":"screen"}}
+```
+
+### set_chroma_key
+
+Key out a color (green or blue screen) so what is below shows through, as CapCut's Chroma key. color is the backdrop's color (#00b140 is studio green); similarity 0..1 (default 0.4) is how close a pixel must be to vanish, smoothness 0..1 (default 0.1) softens edges, spill 0..1 (default 0.5) takes the green cast off the subject. enabled=false turns it off and keeps the settings.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or image clips |
+| `color` | string |  | Key color, CSS hex |
+| `similarity` | number |  | 0..1 (0..1) |
+| `smoothness` | number |  | 0..1 (0..1) |
+| `spill` | number |  | 0..1 (0..1) |
+| `enabled` | boolean |  | Keying on (default true) |
+
+### set_canvas_fill
+
+What fills the canvas around a picture that does not cover it (CapCut's Canvas): blur (the clip itself, scaled to cover and blurred; amount 0..100, default 50), color (a solid color), or none. The usual fix for horizontal footage on a vertical canvas without cropping it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or image clips |
+| `fill` | "blur" \| "color" \| "none" | yes | Kind of fill |
+| `amount` | number |  | Blur strength 0..100 (0..100) |
+| `color` | string |  | Fill color, CSS hex |
+
+Example:
+
+```json
+{"name":"set_canvas_fill","arguments":{"clip_ids":["c_123"],"fill":"blur","amount":60}}
+```
+
+### set_background_removal
+
+Turn Remove background on or off for video clips that already have a background matte (the person stays, everything behind them becomes see-through, so lower tracks show). The remove_background tool (window.videoEditor.ai.removeBackground) makes the matte on this machine; turning it off keeps the matte, so turning it back on is instant.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video clips |
+| `enabled` | boolean | yes | On or off |
+
+### remove_background
+
+Remove the background of a video clip of a person or object (CapCut's Remove BG): a segmentation model on this machine makes a matte for every frame (seconds to minutes; the first run downloads the model), then the subject plays over whatever is on the tracks below. One undoable edit; set_background_removal turns it off and on again instantly.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video clip id |
+
+### set_animation
+
+Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `slot` | "in" \| "out" \| "loop" | yes | Which animation |
+| `type` | "fade" \| "zoomIn" \| "zoomOut" \| "slideLeft" \| "slideRight" \| "slideUp" \| "slideDown" \| "rise" \| "drop" \| "pop" \| "spin" \| "tilt" \| "blurIn" \| "pulse" \| "sway" \| "float" \| "shake" \| "flicker" \| "heartbeat" \| "none" | yes | Animation |
+| `duration` | number |  | Seconds (0.05..) |
+
+Example:
+
+```json
+{"name":"set_animation","arguments":{"clip_id":"c_123","slot":"in","type":"pop","duration":0.4}}
+```
+
+### track_motion
+
+Pin a title, sticker or picture to a moving subject in the video under it (CapCut's Tracking): follows the subject from `at` to the end of the shorter clip on this computer and writes the layer's position keyframes, keeping the layer's offset from the subject. box is the subject in fractions of the video's picture (x, y its top-left corner); without it, a box around the layer's own center. One undoable edit.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The layer to pin (title, sticker, picture or video) |
+| `at` | number |  | Timeline seconds to start from; default the playhead (0..) |
+| `box` | { x, y, w, h } |  |  |
+| `box.x` | number | yes |  |
+| `box.y` | number | yes |  |
+| `box.w` | number | yes |  |
+| `box.h` | number | yes |  |
+| `video_clip_id` | string |  | The video to follow; default the one under the layer (main track first) |
+
+### auto_reframe
+
+Reframe a wide video into another shape on this computer (CapCut's and Premiere's Auto reframe): the canvas takes the ratio (its short side kept), the subject is followed through the clip and the clip fills the canvas with position keyframes that keep it centered. box is the subject in fractions of the picture (x, y its top-left corner) on the clip's first frame; default a square at the center. One undoable edit.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The video clip |
+| `ratio` | "9:16" \| "1:1" \| "4:5" \| "keep" |  | Canvas shape; keep reframes in the current one |
+| `box` | { x, y, w, h } |  |  |
+| `box.x` | number | yes |  |
+| `box.y` | number | yes |  |
+| `box.w` | number | yes |  |
+| `box.h` | number | yes |  |
+
+Example:
+
+```json
+{"name":"auto_reframe","arguments":{"clip_id":"c_123","ratio":"9:16"}}
+```
+
+### stabilize_clip
+
+Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the camera's shake and moves each frame onto a smooth path, zooming slightly to hide the edges. level: least-crop, recommended (default), most-stable, or off to remove it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `level` | "least-crop" \| "recommended" \| "most-stable" \| "off" |  | How strongly to smooth |
+
+## Speed
+
+Constant speed, ramps, reverse and smoother slow motion.
+
+### set_speed
+
+Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `speed` | number | yes | Multiplier (0.05..100) |
+
+### set_speed_curve
+
+Ramp a video or audio clip's speed (CapCut's Curve speed): a preset, or points over the clip with t from 0 (its start) to 1 (its end) and speed 0.1..10. The rate changes smoothly (exponentially) between points. The clip keeps its source range, so its length becomes source length / mean speed and later clips on its track move. preset 'none' returns to the constant speed.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `preset` | "none" \| "custom" \| "montage" \| "hero" \| "bullet" \| "jumpCut" \| "flashIn" \| "flashOut" |  | A ready-made ramp |
+| `points` | { t, speed }[] |  | Speed points across the clip; used when no preset is given |
+| `points[].t` | number | yes | 0 = clip start, 1 = clip end (0..1) |
+| `points[].speed` | number | yes | Rate there (0.1..10) |
+
+Example:
+
+```json
+{"name":"set_speed_curve","arguments":{"clip_id":"c_123","preset":"hero"}}
+```
+
+### set_reverse
+
+Play a video or audio clip backward (reverse=true) or forward again. The clip keeps its length and source range; its sound reverses too.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `reverse` | boolean | yes | Backward |
+
+### set_preserve_pitch
+
+Keep a sped-up or slowed-down clip's pitch natural (preserve=true, the default) or let it rise and fall with the speed like tape (preserve=false, CapCut's Change pitch).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `preserve` | boolean | yes | Keep the original pitch |
+
+### set_frame_blending
+
+Frame blending (Premiere's): a slowed video clip, or one whose source rate differs from the project's, mixes neighboring source frames instead of repeating them, so slow motion looks smoother.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video clips |
+| `on` | boolean | yes | Blend frames |
+
+## Text and captions
+
+Titles, templates, stickers, captions and the transcript.
+
+### add_text
+
+Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `text` | string | yes | The words to show; \n for line breaks |
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number | yes | Seconds (0.001..) |
+| `x` | number |  | Horizontal offset, -0.5..0.5 |
+| `y` | number |  | Vertical offset, -0.5..0.5 |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style.font` | string |  | Font family |
+| `style.size` | number |  | Pixels at 1080p canvas height (4..) |
+| `style.color` | string |  | CSS color |
+| `style.bold` | boolean |  | Bold |
+| `style.italic` | boolean |  | Italic |
+| `style.align` | "left" \| "center" \| "right" |  | Alignment |
+| `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
+| `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
+| `style.background` | { color, padding, radius } |  |  |
+| `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
+| `style.background.padding` | number |  | Pixels (0..) |
+| `style.background.radius` | number |  | Corner radius, pixels (0..) |
+| `style.stroke` | { color, width } |  |  |
+| `style.stroke.color` | string | yes | CSS color |
+| `style.stroke.width` | number |  | Pixels (0..) |
+| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow.color` | string | yes | CSS color |
+| `style.shadow.blur` | number |  | Pixels (0..) |
+| `style.shadow.x` | number |  | Pixels |
+| `style.shadow.y` | number |  | Pixels |
+| `track_id` | string |  | Track id |
+
+Example:
+
+```json
+{"name":"add_text","arguments":{"text":"50% OFF","start":1,"duration":2.5,"y":-0.1,"style":{"size":160,"bold":true,"color":"#ffffff","font":"Arial Black","stroke":{"color":"#000000","width":8}}}}
+```
+
+### set_text
+
+Change a text clip's words and/or style.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Text clip id |
+| `text` | string |  | New words |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style.font` | string |  | Font family |
+| `style.size` | number |  | Pixels at 1080p canvas height (4..) |
+| `style.color` | string |  | CSS color |
+| `style.bold` | boolean |  | Bold |
+| `style.italic` | boolean |  | Italic |
+| `style.align` | "left" \| "center" \| "right" |  | Alignment |
+| `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
+| `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
+| `style.background` | { color, padding, radius } |  |  |
+| `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
+| `style.background.padding` | number |  | Pixels (0..) |
+| `style.background.radius` | number |  | Corner radius, pixels (0..) |
+| `style.stroke` | { color, width } |  |  |
+| `style.stroke.color` | string | yes | CSS color |
+| `style.stroke.width` | number |  | Pixels (0..) |
+| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow.color` | string | yes | CSS color |
+| `style.shadow.blur` | number |  | Pixels (0..) |
+| `style.shadow.x` | number |  | Pixels |
+| `style.shadow.y` | number |  | Pixels |
+
+Example:
+
+```json
+{"name":"set_text","arguments":{"clip_id":"c_123","style":{"background":{"color":"#000000b3","padding":18,"radius":12}}}}
+```
+
+### add_text_template
+
+Add a text template: a title design of text and box layers with in/out/loop animations, stacked above everything at that time. Templates: lowerThird, nameTag, subscribe, chapter, quote, countdown, location, opener, news, social, endCard, linkInBio. Word art (one styled text): neonPink, neonBlue, retro, comic, hollow, gold, fire, frost, yellow, hardShadow, candy, sticker, chroma, minimal, typewriter, highlight. texts replaces the template's words, text layers in order (bottom first).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | Template key or label |
+| `start` | number | yes | Seconds (0..) |
+| `texts` | string[] |  | Words for the text layers, in order |
+
+Example:
+
+```json
+{"name":"add_text_template","arguments":{"name":"lowerThird","start":2,"texts":["Jordan Lee","Head of Design"]}}
+```
+
+### apply_word_art
+
+Restyle text clips with a word-art look (fill, stroke, shadow, box), keeping their words, size and position. name is a Word art key from add_text_template.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Text clips |
+| `name` | string | yes | Word art key or label |
+
+### add_sticker
+
+Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string | yes | Sticker id, label or emoji |
+| `start` | number | yes | Seconds (0..) |
+| `duration` | number |  | Seconds; default 3 (0.04..) |
+| `x` | number |  | Horizontal offset from center, -0.5..0.5 |
+| `y` | number |  | Vertical offset from center, -0.5..0.5 |
+| `scale` | number |  | 1 = fit the canvas; default 0.3 (0.01..) |
+| `motion` | "still" \| "pop" \| "float" \| "pulse" \| "sway" \| "heartbeat" |  | Entrance and loop animation |
+
+### add_captions
+
+Add captions (subtitles) as caption text clips on a Captions track. Times are timeline seconds. replace=true removes existing captions first. Captions export as SRT/VTT and restyle together.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `captions` | { start, end, text, words }[] | yes | The captions, in order |
+| `captions[].start` | number | yes | Seconds (0..) |
+| `captions[].end` | number | yes | Seconds (0..) |
+| `captions[].text` | string | yes | Words shown |
+| `captions[].words` | number[] |  | Seconds each word of text starts, for the spoken-word highlight |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style.font` | string |  | Font family |
+| `style.size` | number |  | Pixels at 1080p canvas height (4..) |
+| `style.color` | string |  | CSS color |
+| `style.bold` | boolean |  | Bold |
+| `style.italic` | boolean |  | Italic |
+| `style.align` | "left" \| "center" \| "right" |  | Alignment |
+| `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
+| `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
+| `style.background` | { color, padding, radius } |  |  |
+| `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
+| `style.background.padding` | number |  | Pixels (0..) |
+| `style.background.radius` | number |  | Corner radius, pixels (0..) |
+| `style.stroke` | { color, width } |  |  |
+| `style.stroke.color` | string | yes | CSS color |
+| `style.stroke.width` | number |  | Pixels (0..) |
+| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow.color` | string | yes | CSS color |
+| `style.shadow.blur` | number |  | Pixels (0..) |
+| `style.shadow.x` | number |  | Pixels |
+| `style.shadow.y` | number |  | Pixels |
+| `y` | number |  | Vertical offset from center as a canvas fraction; 0.36 sits near the bottom |
+| `replace` | boolean |  | Remove existing captions first |
+
+### set_caption_look
+
+Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" | yes | Look |
+
+Example:
+
+```json
+{"name":"set_caption_look","arguments":{"look":"pop"}}
+```
+
+### replace_caption_text
+
+Find and replace in every caption's text (CapCut's caption Find and replace), e.g. to fix a name speech recognition misspelled. Any case unless match_case; whole_word skips matches inside longer words.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `find` | string | yes | Text to find |
+| `replace` | string | yes | Replacement (may be empty) |
+| `match_case` | boolean |  | Match case |
+| `whole_word` | boolean |  | Whole words only |
+
+### get_transcript
+
+Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+
+## Effects, transitions and color
+
+Effects stacks, transitions at cuts, looks and the color grade.
+
+### add_effect
+
+Add a video effect to a visual or adjustment clip. params override the effect's defaults.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `type` | "blur" \| "zoomBlur" \| "pixelate" \| "rgbSplit" \| "glitch" \| "vhs" \| "grain" \| "scanlines" \| "invert" \| "posterize" \| "duotone" \| "mirror" \| "kaleidoscope" \| "fisheye" \| "shake" \| "zoomPulse" \| "flash" \| "glow" \| "lightLeak" \| "denoise" \| "motionBlur" \| "sketch" \| "halftone" \| "magnify" | yes | Effect |
+| `params` | object |  | Effect parameters |
+
+Example:
+
+```json
+{"name":"add_effect","arguments":{"clip_id":"c_123","type":"glow","params":{"amount":60,"threshold":55}}}
+```
+
+### edit_effects
+
+Manage a clip's effect stack. Move/reset/remove need effect_id; enable/disable without it affects all effects. Clear removes the entire stack. Reset/remove/clear also remove the affected effect keyframes; other settings stay unchanged.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `action` | "move_up" \| "move_down" \| "reset" \| "remove" \| "clear" \| "enable" \| "disable" | yes | Stack action |
+| `effect_id` | string |  | Effect id from effectStack in describeProject |
+
+### copy_effects
+
+Append a source clip's effect stack and effect keyframes to target clips. Each copy gets fresh effect IDs; existing effects, grading, transforms and clip timing stay intact. Animation keeps clip-relative timing, including keys beyond a shorter target's end. Locked or nonvisual targets are rejected.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `source_clip_id` | string | yes | Clip whose effects to reuse |
+| `clip_ids` | string[] | yes | Target visual or adjustment clip IDs |
+
+### apply_effect_preset
+
+Append a serialized effect preset (id, name, stack with effects/keyframes/fps) to visual clips. Validates catalog parameters, remaps effect IDs and converts animation timing.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Target clips |
+| `preset_json` | string | yes | Effect preset JSON |
+
+### paste_attributes
+
+Copy selected groups from a source clip to targets. Replaces those settings/keyframes; effects append by default. Keeps timing/source offsets and respects locks.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `source_clip_id` | string | yes | Source clip |
+| `clip_ids` | string[] | yes | Target clips |
+| `groups` | "transform" \| "color" \| "audio" \| "effects"[] | yes |  |
+| `replace_effects` | boolean |  | Replace target effect stacks |
+
+### set_transition
+
+Put a transition on the cut after a clip (the next clip must touch it). type 'none' removes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The clip before the cut |
+| `type` | "dissolve" \| "dipBlack" \| "dipWhite" \| "wipeLeft" \| "wipeRight" \| "wipeUp" \| "wipeDown" \| "circleOpen" \| "clockWipe" \| "slideLeft" \| "slideRight" \| "pushLeft" \| "pushUp" \| "zoomIn" \| "zoomOut" \| "spin" \| "blur" \| "pixelate" \| "glitch" \| "flash" \| "none" | yes | Transition |
+| `duration` | number |  | Seconds (0.05..) |
+
+Example:
+
+```json
+{"name":"set_transition","arguments":{"clip_id":"c_123","type":"dissolve","duration":0.5}}
+```
+
+### set_filter
+
+Apply a color look (filter) to a visual or adjustment clip at an intensity 0..1. type 'none' removes it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Clip id |
+| `type` | "vivid" \| "bright" \| "warm" \| "cool" \| "golden" \| "teal" \| "film" \| "vintage" \| "matte" \| "cinematic" \| "moody" \| "dreamy" \| "neon" \| "forest" \| "mono" \| "noir" \| "silver" \| "none" | yes | Filter (look) |
+| `intensity` | number |  | 0..1 (0..1) |
+
+Example:
+
+```json
+{"name":"set_filter","arguments":{"clip_id":"c_123","type":"teal","intensity":0.8}}
+```
+
+### auto_adjust
+
+Correct a video or picture clip's exposure, white balance and levels from its frame at the playhead (CapCut's Auto adjust), setting its Basic adjustment sliders.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or image clip |
+
+### set_hsl
+
+Adjust one of CapCut's eight HSL color ranges on a visual or adjustment clip; only pixels of that color change. hue turns the range up to 30° toward its neighbors, saturation -100 makes it gray, lightness darkens or lightens it; each -100..100, omitted values stay. band 'all' sets every range. reset=true zeroes the band(s) first. Animate with add_keyframe on adjust.hsl.<band>.hue|saturation|lightness.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Visual or adjustment clip id |
+| `band` | "red" \| "orange" \| "yellow" \| "green" \| "cyan" \| "blue" \| "purple" \| "magenta" \| "all" | yes | Color range |
+| `hue` | number |  | -100..100 (-100..100) |
+| `saturation` | number |  | -100..100 (-100..100) |
+| `lightness` | number |  | -100..100 (-100..100) |
+| `reset` | boolean |  | Zero the band(s) before applying the values given |
+
+### set_curve
+
+Set a tone curve on a visual or adjustment clip. channel luma maps R, G and B alike (Lumetri's white curve); r, g, b are per channel. points are [input, output] pairs in 0..1, joined by a monotone cubic that never overshoots; include [0,0] and [1,1] to pin the ends. Omit points or pass [] to reset the channel. Gentle S-curve: [[0,0],[0.25,0.2],[0.75,0.8],[1,1]].
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Visual or adjustment clip id |
+| `channel` | "luma" \| "r" \| "g" \| "b" | yes | Which curve |
+| `points` | number[][] |  | [input, output] pairs, each 0..1 |
+
+### set_color_wheel
+
+Resolve-style color wheels on a visual or adjustment clip: lift (shadows; white stays put), gamma (midtones), gain (highlights; black stays put), offset (everything). y is the wheel's luminance ring; r/g/b its color balance; each -100..100. Or give hue (degrees: 0 red, 60 yellow, 120 green, 180 cyan, 240 blue, 300 magenta) and amount (0..100) to push the balance toward a color, e.g. lift hue 200 amount 12 for teal shadows. reset=true returns the wheel to neutral first. Animate with add_keyframe on adjust.wheels.<wheel>.r|g|b|y.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Visual or adjustment clip id |
+| `wheel` | "lift" \| "gamma" \| "gain" \| "offset" | yes | Which wheel |
+| `r` | number |  | Red balance, -100..100 (-100..100) |
+| `g` | number |  | Green balance, -100..100 (-100..100) |
+| `b` | number |  | Blue balance, -100..100 (-100..100) |
+| `y` | number |  | Luminance, -100..100 (-100..100) |
+| `hue` | number |  | Push the balance toward this hue, degrees (0..360) |
+| `amount` | number |  | How far toward hue, 0..100 (default 20) (0..100) |
+| `reset` | boolean |  | Neutral before applying the values given |
+
+### apply_lut
+
+Apply a .cube LUT to a visual or adjustment clip, mixed in at intensity 0..1 (default 1). lut_id is from the project's luts (describeProject lists them; files are imported with window.videoEditor.importLuts or by dropping a .cube on the app). lut_id 'none' removes it. Animate with add_keyframe on adjust.lut.intensity.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Visual or adjustment clip id |
+| `lut_id` | string | yes | LUT id, or 'none' |
+| `intensity` | number |  | 0..1 (0..1) |
+
+## Sound
+
+Voice, music, effects and the mix.
+
+### add_voiceover
+
+Narrate a script: every line is spoken on this computer (Kokoro) and placed one after another at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step. A line's at pins it to a time. Answers each line's start, end and clip ids, so the footage can be cut to the voice. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB); a line takes a second or two.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `lines` | { text, at }[] | yes | The script, one sentence or two per line |
+| `lines[].text` | string | yes | Words to say (and show) |
+| `lines[].at` | number |  | Timeline seconds; default right after the line before (0..) |
+| `voice` | string |  | Voice id, default af_heart |
+| `speed` | number |  | 1 is natural (0.5..2) |
+| `start` | number |  | Seconds the first line starts, default 0 (0..) |
+| `gap` | number |  | Seconds between lines, default 0.4 (0..) |
+| `captions` | boolean |  | A caption per line (default true) |
+| `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true) |
+| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `caption_style.font` | string |  | Font family |
+| `caption_style.size` | number |  | Pixels at 1080p canvas height (4..) |
+| `caption_style.color` | string |  | CSS color |
+| `caption_style.bold` | boolean |  | Bold |
+| `caption_style.italic` | boolean |  | Italic |
+| `caption_style.align` | "left" \| "center" \| "right" |  | Alignment |
+| `caption_style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
+| `caption_style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
+| `caption_style.background` | { color, padding, radius } |  |  |
+| `caption_style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
+| `caption_style.background.padding` | number |  | Pixels (0..) |
+| `caption_style.background.radius` | number |  | Corner radius, pixels (0..) |
+| `caption_style.stroke` | { color, width } |  |  |
+| `caption_style.stroke.color` | string | yes | CSS color |
+| `caption_style.stroke.width` | number |  | Pixels (0..) |
+| `caption_style.shadow` | { color, blur, x, y } |  |  |
+| `caption_style.shadow.color` | string | yes | CSS color |
+| `caption_style.shadow.blur` | number |  | Pixels (0..) |
+| `caption_style.shadow.x` | number |  | Pixels |
+| `caption_style.shadow.y` | number |  | Pixels |
+| `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36) |
+
+Example:
+
+```json
+{"name":"add_voiceover","arguments":{"lines":[{"text":"Meet the lightest bottle we have ever made."},{"text":"Cold for 24 hours."}],"voice":"af_heart"}}
+```
+
+### text_to_speech
+
+Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The title (text clip) |
+| `voice` | string |  | Voice id, default af_heart |
+| `speed` | number |  | 1 is natural (0.5..2) |
+
+### add_sound_effect
+
+Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, ding, success, rise (a riser) or boom. It lands on an audio track at `start` (default the playhead); the file is made once per project and reused.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "boom" | yes |  |
+| `start` | number |  | Timeline seconds (0..) |
+
+Example:
+
+```json
+{"name":"add_sound_effect","arguments":{"name":"whoosh","start":3.9}}
+```
+
+### set_fades
+
+Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Audio or video clips |
+| `fade_in` | number |  | Seconds (0..) |
+| `fade_out` | number |  | Seconds (0..) |
+
+Example:
+
+```json
+{"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2}}
+```
+
+### set_compressor
+
+Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `preset` | "voice" \| "gentle" \| "strong" \| "off" |  | Starting point |
+| `threshold` | number |  | dBFS where compression starts (-60..0) |
+| `ratio` | number |  | dB in over the threshold per dB out (1..20) |
+| `knee` | number |  | Soft knee, dB (0..40) |
+| `attack` | number |  | Seconds (0..1) |
+| `release` | number |  | Seconds (0..1) |
+| `makeup` | number |  | Extra dB after the compressor's own makeup gain (presets: 0) (0..24) |
+
+### set_channel_fill
+
+Play one channel of a video's or audio clip's sound on both sides (Premiere's Fill Left / Fill Right), e.g. a lav mic recorded on one channel. both = as recorded.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clips |
+| `fill` | "both" \| "left" \| "right" | yes | Which channel fills both |
+
+### normalize_loudness
+
+Measure clips' loudness (EBU R128) and set their volume to reach a target without clipping. -14 LUFS suits social video, -16 podcasts, -23 broadcast.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Video or audio clip ids |
+| `target` | number |  | LUFS, default -14 (-40..-5) |
+
+### duck_under_speech
+
+Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The music clip |
+| `depth` | number |  | dB to lower, default 12 (1..40) |
+
+Example:
+
+```json
+{"name":"duck_under_speech","arguments":{"clip_id":"c_music","depth":12}}
+```
+
+### reduce_noise
+
+Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound on this computer; the clip then plays a cleaned copy (a video's sound is extracted to an audio clip first).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `strength` | number |  | 0.5 gentle, 0.75 default, 1 strong (0..1) |
+
+### sync_audio
+
+Line up a separately recorded sound (a lav, a recorder) with the camera clip of the same take by matching their waveforms on this computer (CapCut's Sync video and audio, Resolve's Auto Sync Audio), then move the audio clip into sync, exact to the sample (one undo step; sound before 0 is trimmed off its head). Answers the offset (audio source seconds minus video source seconds) and a confidence; refuses when the sounds do not clearly match. sync_to_clip places it by a known offset instead.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The audio clip to move |
+| `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest |
+| `mute_camera` | boolean |  | Set the video's volume to 0 (default false) |
+
+### remove_silences
+
+Find the pauses in a clip's speech and cut them out, closing the gaps (one undo step). Returns the silent source ranges and seconds saved.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
+| `min_silence` | number |  | Shortest pause to cut, seconds (default 0.4) (0..) |
+| `padding` | number |  | Kept around speech, seconds (default 0.1) (0..) |
+
+### remove_filler_words
+
+Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe "uh", so those stay. Returns the source ranges cut and the words heard.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video or audio clip id |
+| `model` | string |  | Whisper model id (default onnx-community/whisper-base.en_timestamped) |
+
+## Check and deliver
+
+Look at the result, then export.
+
+### preview_frames
+
+See several moments at once: one PNG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `times` | number[] | yes | Seconds, up to 24 |
+| `columns` | integer |  | Default 4 (1..6) |
+| `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
+
+Example:
+
+```json
+{"name":"preview_frames","arguments":{"times":[0.5,2,4,6,8,10,12,14]}}
+```
+
+### preview_frame
+
+See the composited picture at a time: returns a PNG image of the frame exactly as it would export.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `at` | number | yes | Seconds (0..) |
+| `max_width` | integer |  | Image width, default 640 (64..1920) |
+
+### export_video
+
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS (-14 for YouTube, TikTok and Spotify). Exports that take over about four minutes answer state running: follow them with export_status.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | string |  | File name without extension; default the project's name |
+| `format` | "mp4" \| "mov" \| "webm" \| "mkv" \| "gif" |  | Default mp4 (H.264 + AAC) |
+| `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
+| `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
+| `loudness` | number |  | Integrated LUFS for the mix; default as mixed (-40..-5) |
+| `start` | number |  | Export from this second (0..) |
+| `end` | number |  | Export to this second (0..) |
+
+Example:
+
+```json
+{"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14}}
+```
+
+### export_status
+
+The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
+
+No parameters.

@@ -20,7 +20,7 @@ import {
 } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, Transform, WheelName } from "./project/types";
-import { ANIMATIONS, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
+import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
@@ -37,7 +37,7 @@ import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
 import { syncClip, syncProblem } from "./project/sync";
-import { groupClips, ungroupClips } from "./project/groups";
+import { groupClips, regroupCopies, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
@@ -485,7 +485,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. Sound fades are frames here; set_fades takes seconds.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
@@ -580,6 +580,89 @@ export const COMMANDS: Command[] = [
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       return ops.setFlip(p, ids, { horizontal: a.horizontal as boolean | undefined, vertical: a.vertical as boolean | undefined });
+    },
+  },
+  {
+    name: "set_blend",
+    description: "How a picture mixes with what is under it (the inspector's Blend). screen or add for light leaks, flares and glows shot on black; multiply for textures and paper on white; overlay or softLight for grain and grunge. normal undoes it.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), mode: S.str("Blend mode", { enum: BLEND_MODES.map(([m]) => m) }) }, ["clip_ids", "mode"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("blend" in clip)) throw new CommandError(`${clip.type} clips have no blend mode`);
+        return ops.updateClip(q, id, (c) => ({ ...c, blend: a.mode }) as Clip);
+      }, p),
+  },
+  {
+    name: "set_chroma_key",
+    description: "Key out a color (green or blue screen) so what is below shows through, as CapCut's Chroma key. color is the backdrop's color (#00b140 is studio green); similarity 0..1 (default 0.4) is how close a pixel must be to vanish, smoothness 0..1 (default 0.1) softens edges, spill 0..1 (default 0.5) takes the green cast off the subject. enabled=false turns it off and keeps the settings.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or image clips"),
+        color: S.str("Key color, CSS hex"),
+        similarity: S.num("0..1", { minimum: 0, maximum: 1 }),
+        smoothness: S.num("0..1", { minimum: 0, maximum: 1 }),
+        spill: S.num("0..1", { minimum: 0, maximum: 1 }),
+        enabled: S.bool("Keying on (default true)"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (clip.type !== "video" && clip.type !== "image") throw new CommandError("Only video and image clips can be keyed");
+        const was = clip.chromaKey ?? { enabled: true, color: "#00b140", similarity: 0.4, smoothness: 0.1, spill: 0.5 };
+        const num = (k: "similarity" | "smoothness" | "spill") => (a[k] === undefined ? was[k] : Math.max(0, Math.min(1, Number(a[k]))));
+        const key = { enabled: a.enabled !== false, color: String(a.color ?? was.color), similarity: num("similarity"), smoothness: num("smoothness"), spill: num("spill") };
+        return ops.updateClip(q, id, (c) => ({ ...c, chromaKey: key }) as Clip);
+      }, p),
+  },
+  {
+    name: "set_canvas_fill",
+    description: "What fills the canvas around a picture that does not cover it (CapCut's Canvas): blur (the clip itself, scaled to cover and blurred; amount 0..100, default 50), color (a solid color), or none. The usual fix for horizontal footage on a vertical canvas without cropping it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or image clips"),
+        fill: S.str("Kind of fill", { enum: ["blur", "color", "none"] }),
+        amount: S.num("Blur strength 0..100", { minimum: 0, maximum: 100 }),
+        color: S.str("Fill color, CSS hex"),
+      },
+      ["clip_ids", "fill"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (clip.type !== "video" && clip.type !== "image") throw new CommandError("Only video and image clips have a canvas fill");
+        return ops.updateClip(q, id, (c) => {
+          const { canvas: _, ...rest } = c as Clip & { canvas?: unknown };
+          if (a.fill === "none") return rest as Clip;
+          const canvas = a.fill === "color" ? { type: "color", color: String(a.color ?? "#000000") } : { type: "blur", amount: Math.max(0, Math.min(100, Number(a.amount ?? 50))) };
+          return { ...rest, canvas } as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_fades",
+    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }) }, ["clip_ids"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("fadeIn" in clip)) throw new CommandError(`${clip.type} clips have no sound to fade; use set_animation with type fade for pictures`);
+        const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
+        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
+      }, p),
+  },
+  {
+    name: "duplicate_clips",
+    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.",
+    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }) }, ["clip_ids"]),
+    run: (p, a) => {
+      const found = (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id));
+      const origin = Math.min(...found.map((x) => x.clip.start));
+      const at = a.at === undefined ? Math.max(...found.map((x) => x.clip.start + x.clip.duration)) : f(p, a.at);
+      const copies = regroupCopies(found.map((x) => x.clip));
+      return copies.reduce((q, c, i) => ops.placeClip(q, found[i].track.id, { ...c, id: uid("c"), start: at + c.start - origin } as Clip, { collision: "newTrack" }), p);
     },
   },
   {
@@ -1442,6 +1525,8 @@ export function describeProject(p: Project) {
         ...(c.type === "text" ? { text: c.text } : {}),
         ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
+        ...("fadeIn" in c && c.fadeIn ? { fade_in: s(c.fadeIn) } : {}),
+        ...("fadeOut" in c && c.fadeOut ? { fade_out: s(c.fadeOut) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
         ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
@@ -1453,6 +1538,9 @@ export function describeProject(p: Project) {
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
+        ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
+        ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
+        ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),

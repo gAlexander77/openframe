@@ -4,7 +4,7 @@ import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
-import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
+import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "../../lib/catalog";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
 import { compoundView } from "../../lib/project/compound";
@@ -182,12 +182,7 @@ function stripKeys(c: Clip, prefix: string, keep?: RegExp) {
   return Object.keys(k).length ? k : undefined;
 }
 
-const BLENDS: [BlendMode, string][] = [
-  ["normal", "Normal"], ["darken", "Darken"], ["multiply", "Multiply"], ["colorBurn", "Color burn"],
-  ["lighten", "Lighten"], ["screen", "Screen"], ["colorDodge", "Color dodge"], ["add", "Add"],
-  ["overlay", "Overlay"], ["softLight", "Soft light"], ["hardLight", "Hard light"],
-  ["difference", "Difference"], ["exclusion", "Exclusion"],
-];
+const BLENDS = BLEND_MODES;
 
 function VideoTab({ clip }: { clip: Clip }) {
   // CapCut's order: Basic / Remove BG / Mask (research §3.0, §3.3).
@@ -1084,7 +1079,6 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
   );
 }
 
-const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];
 
 /** Black or white, whichever a color reads better on: the swatch behind
  * a saved style's sample, so a dark style's "Aa" still shows. */

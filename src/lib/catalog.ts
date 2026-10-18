@@ -4,7 +4,7 @@
 // list_catalog. Adding an entry here (plus its shader, for effects and
 // transitions) is the whole job of adding one.
 
-import type { Adjust, ClipLabel } from "./project/types";
+import type { Adjust, BlendMode, ClipLabel } from "./project/types";
 
 export interface ParamDef {
   label: string;
@@ -233,3 +233,15 @@ export function catalogNames() {
     filters: Object.keys(FILTERS),
   };
 }
+
+/** Blend modes, as the inspector's Blend list shows them. */
+export const BLEND_MODES: [BlendMode, string][] = [
+  ["normal", "Normal"], ["darken", "Darken"], ["multiply", "Multiply"], ["colorBurn", "Color burn"],
+  ["lighten", "Lighten"], ["screen", "Screen"], ["colorDodge", "Color dodge"], ["add", "Add"],
+  ["overlay", "Overlay"], ["softLight", "Soft light"], ["hardLight", "Hard light"],
+  ["difference", "Difference"], ["exclusion", "Exclusion"],
+];
+
+/** Fonts every computer running the app can draw; installed and imported
+ * fonts come on top of these. */
+export const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];

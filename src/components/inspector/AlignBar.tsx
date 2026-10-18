@@ -28,9 +28,10 @@ const SPREAD: [Axis, string, ComponentType][] = [
   ["vertical", "Distribute vertically", AlignVerticalDistributeCenter],
 ];
 
-/** The title-safe line is a tenth of the canvas in from each edge. Kept
+/** The title-safe line (90%, SMPTE ST 2046-1) is 5% of the canvas in from
+ * each edge. Kept
  * across clips for the session, as the switch is a working mode. */
-const TITLE_SAFE = 0.1;
+const TITLE_SAFE = 0.05;
 let titleSafe = false;
 
 /** How many of `ids` are pictures on unlocked tracks. */
@@ -51,7 +52,7 @@ export function AlignBar({ ids }: { ids: Id[] }) {
   if (!movable) return null;
   const several = movable > 1;
   // To the canvas, a clip can stop at the title-safe line (the viewer's
-  // Title 80% guide) instead of the edge: the margin align_clips takes.
+  // Title 90% guide) instead of the edge: the margin align_clips takes.
   const margin = !several && safe ? TITLE_SAFE : 0;
   const align = (edge: Align, label: string) =>
     store.edit(label, (p) => alignClips(p, ids, edge, store.get().playhead, margin));

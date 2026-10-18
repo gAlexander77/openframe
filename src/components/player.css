@@ -205,8 +205,10 @@ button.tc-now:hover { background: var(--bg-3); }
 .viewer-guide-select { min-width: 0; max-width: 180px; }
 .viewer-guides, .viewer-thirds { position: absolute; inset: 0; pointer-events: none; }
 .viewer-safe { position: absolute; border: 1px solid rgb(255 255 255 / 85%); box-shadow: 0 0 0 1px rgb(0 0 0 / 50%); }
-.viewer-safe-action { inset: 5%; }
-.viewer-safe-title { inset: 10%; border-style: dashed; }
+/* SMPTE ST 2046-1's safe areas (2009, replacing RP 8 and RP 13's 90% and
+   80%): action 93%, title 90% of the frame. */
+.viewer-safe-action { inset: 3.5%; }
+.viewer-safe-title { inset: 5%; border-style: dashed; }
 /* What TikTok, Reels and Shorts cover is shaded: a huge shadow around the
    clear box, cut to the picture. */
 .viewer-guides { overflow: hidden; }

@@ -87,11 +87,12 @@ it("snaps the nearest edge or center within tolerance", () => {
 
 it("snaps to the safe margins and thirds only while those guides show", () => {
   const p = createProject(); // 1920 x 1080
-  // Left edge 4 px right of the title-safe line (192), center 3 px off the lower third (720).
-  const b: Box = { cx: 296, cy: 723, w: 200, h: 100, hw: 100, hh: 50 };
+  // Left edge 4 px right of the title-safe line (96: 90% title safe),
+  // center 3 px off the lower third (720).
+  const b: Box = { cx: 200, cy: 723, w: 200, h: 100, hw: 100, hh: 50 };
   expect(snapBox(b, snapLines(p, [], "off"), 6)).toMatchObject({ dx: 0, dy: 0 });
-  expect(snapBox(b, snapLines(p, [], "safe"), 6)).toMatchObject({ dx: -4, gx: 192, dy: 0 });
-  expect(snapBox(b, snapLines(p, [], "both"), 6)).toEqual({ dx: -4, dy: -3, gx: 192, gy: 720 });
+  expect(snapBox(b, snapLines(p, [], "safe"), 6)).toMatchObject({ dx: -4, gx: 96, dy: 0 });
+  expect(snapBox(b, snapLines(p, [], "both"), 6)).toEqual({ dx: -4, dy: -3, gx: 96, gy: 720 });
 });
 
 it("mirrors a crop with a flipped picture, as the compositor draws it", () => {

@@ -118,11 +118,12 @@ export type Guides = "off" | "safe" | "thirds" | "both" | "vertical";
 export function snapLines(p: Project, others: Box[], guides: Guides = "off"): { x: number[]; y: number[] } {
   const x = [0, p.width / 2, p.width], y = [0, p.height / 2, p.height];
   // The viewer's guides catch too while they show (Premiere snaps to its
-  // guides): the action (90%) and title (80%) safe edges, and the thirds.
+  // guides): the action (93%) and title (90%) safe edges of SMPTE ST
+  // 2046-1, and the thirds.
   const at = (fs: number[]) => {
     for (const f of fs) x.push(p.width * f), y.push(p.height * f);
   };
-  if (guides === "safe" || guides === "both") at([0.05, 0.1, 0.9, 0.95]);
+  if (guides === "safe" || guides === "both") at([0.035, 0.05, 0.95, 0.965]);
   if (guides === "thirds" || guides === "both") at([1 / 3, 2 / 3]);
   if (guides === "vertical") {
     x.push(p.width * VERTICAL_SAFE.left, p.width * (1 - VERTICAL_SAFE.right));

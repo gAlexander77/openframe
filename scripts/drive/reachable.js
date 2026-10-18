@@ -56,8 +56,8 @@ async (page) => {
   await page.getByRole("button", { name: "Inside title safe" }).click();
   await page.getByRole("button", { name: "Align left", exact: true }).click();
   const edgeX = await api((id) => window.videoEditor.paramAt(id, "transform.x", 0), title);
-  // The title-safe line is a tenth of the canvas in from the edge.
-  details.titleSafe = { ok: Math.abs(safeX - edgeX - 0.1) < 1e-3, safeX, edgeX };
+  // The title-safe line (90%) is 5% of the canvas in from the edge.
+  details.titleSafe = { ok: Math.abs(safeX - edgeX - 0.05) < 1e-3, safeX, edgeX };
 
   const fps = await api(() => {
     const v = window.videoEditor;

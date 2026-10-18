@@ -36,6 +36,17 @@ Turn on **AI assistant → Connect other AI agents → Allow AI agents**. Then:
 - **stdio**: run `openframe --mcp-stdio` as the server command (the exe was
   `video-editor` before 2026-10-17; the panel always shows the current path).
 
+**Start with [[MCP tools]]**: every tool, generated from the code, grouped
+in the order a video gets made, with each parameter (nested fields
+included) and an example call. [[Agent playbook]] is how a model should
+make an ad, an epic edit or a short. A connected model gets the same
+guidance from the `help` tool (topics `overview`, `ad`, `epic_edit`,
+`social_short`, `design`, `params`, or a tool's name), from the MCP prompts
+`make_ad`, `epic_edit` and `social_short`, and from the resources
+`guide://...` and `catalog://all`. Tools carry MCP titles and behavior
+hints (read-only, destructive, open-world), so clients can run reads
+without asking ([[ADR-055 The MCP guide is generated from the tools]]).
+
 Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
@@ -53,7 +64,10 @@ up to 24 moments, each stamped with its time), `export_video` and
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time),
-`set_caption_look` (one of six caption looks for every caption) and
+`set_caption_look` (one of six caption looks for every caption),
+`set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
+in seconds) and `duplicate_clips` (what the inspector could do and agents
+could not) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],

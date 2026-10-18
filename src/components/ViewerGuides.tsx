@@ -32,8 +32,8 @@ export function ViewerGuides() {
   return (
     <div className="viewer-guides" aria-hidden="true">
       {(guides === "safe" || guides === "both") && <>
-        <div className="viewer-safe viewer-safe-action"><span>Action 90%</span></div>
-        <div className="viewer-safe viewer-safe-title"><span>Title 80%</span></div>
+        <div className="viewer-safe viewer-safe-action"><span>Action 93%</span></div>
+        <div className="viewer-safe viewer-safe-title"><span>Title 90%</span></div>
       </>}
       {guides === "vertical" && (
         <div

@@ -864,3 +864,29 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   timings, and the editor moves to the second half. And the transcript
   card dropped reversed and speed-curved clips without a word; it says
   how many it leaves out and why.
+
+## 2026-10-18 — Tools an AI model can make a professional video with (Claude Code)
+
+The owner asked for MCP tooling and features good enough for an AI
+model to make a professional ad or an epic edit, documented so any model
+knows how to use each tool, with research into how professionals work.
+A research pass ([[Pro workflows 2026-10-18]]) set the list; four agents
+built toolkits in parallel worktrees (epic edits, ads, compositing, sound
+and delivery) while the MCP layer was rebuilt here.
+
+- **The MCP guide** ([[ADR-055 The MCP guide is generated from the tools]]).
+  - A model now gets `help`, three prompts, guide resources and a
+    catalog of every name the tools accept.
+  - Before, `list_catalog` named four kinds of thing; the rest (templates,
+    looks, sound effects, fonts, speed presets, blend modes, `set_param`
+    paths) could not be discovered.
+  - The reference and the playbook are generated and tested. The test
+    caught a wrong example on its first run: `batch` steps take `command`,
+    not `name`.
+- **What the inspector could do and agents could not:** blend modes,
+  chroma key, canvas fill and duplicating clips. Also sound fades:
+  `set_param` takes them in frames, while every other time in the API is
+  seconds, a trap for any model; `set_fades` takes seconds.
+- **Safe areas** follow SMPTE ST 2046-1 now: 93% action and 90% title,
+  not the old 90% and 80%. The research caught it; "Inside title safe"
+  and the guides moved.

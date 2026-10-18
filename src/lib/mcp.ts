@@ -7,6 +7,7 @@
 
 import { SFX } from "./sfx";
 import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
+import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -143,6 +144,12 @@ const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = [
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
   {
+    name: "help",
+    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
+    inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
+    call: (_h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), INSTRUCTIONS) }] }),
+  },
+  {
     name: "describe_project",
     description: "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds. Call this first and after edits.",
     inputSchema: obj(),
@@ -150,9 +157,10 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "list_catalog",
-    description: "Names of the effects (with parameters), transitions, filters and animations the edit tools accept.",
-    inputSchema: obj(),
-    call: (h) => json(h.catalog()),
+    description:
+      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults. section stickers with a query searches the sticker library.",
+    inputSchema: obj({ section: { type: "string", description: "A section name from the index" }, query: { type: "string", description: "Search words, for section stickers" } }),
+    call: (_h, a) => json(fullCatalog(a.section === undefined ? undefined : String(a.section), a.query === undefined ? undefined : String(a.query))),
   },
   {
     name: "import_media",
@@ -399,17 +407,18 @@ APP_TOOLS.push(
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
 /** What an agent reads first: the moves, in the order a video gets made. */
-const INSTRUCTIONS = `You are editing a video in the user's video editor; every edit shows live and is undoable (undo).
-Start with describe_project. Times are seconds; ids are stable. Edits answer with only what they changed; describe_project has the whole timeline.
+const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom); scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
+Before you start: help (the tools by step), help with topic ad, epic_edit or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect and font by name), help with a tool's name (its parameters and an example).
 To make a video:
-1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them).
-2. import_media the footage, music and pictures by absolute path.
+1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
+2. import_media the footage, music, logo and pictures by absolute path.
 3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters (a screen recording's panel, a face) and can move between two regions.
-5. Titles: add_text (style.background makes a box that reads over busy footage), then set_animation in and out.
-6. set_transition between shots; music with add_media_clip, then duck_under_speech under the voice.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, mark_beats on the track and cut on the beat markers.
+5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look.
+8. Check with preview_frames (a contact sheet of many moments), then preview_frame for a close look; fix what reads badly.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.`;
 
 /** Every tool, as MCP's tools/list returns them. */
@@ -417,8 +426,21 @@ export function listTools() {
   return [
     ...APP_TOOLS.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
     ...COMMANDS.map(({ name, description, input }) => ({ name, description, inputSchema: input })),
-  ];
+  ].map((t) => {
+    const { title, ...hints } = annotations(t.name);
+    return { ...t, title, annotations: hints };
+  });
 }
+
+/** Guides served as resources, for clients that read them into context. */
+const GUIDES: Record<string, { name: string; text: () => string }> = {
+  "guide://overview": { name: "How to use these tools", text: () => helpText("overview", listTools(), INSTRUCTIONS) },
+  "guide://design": { name: "Design rules", text: () => DESIGN },
+  ...Object.fromEntries(Object.entries(PLAYBOOKS).map(([k, b]) => [`guide://${k}`, { name: `Playbook: ${b.title}`, text: () => b.text }])),
+};
+
+/** The server's first words to a model, for the generated reference. */
+export const instructions = () => INSTRUCTIONS;
 
 const ok = (id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, result });
 const fail = (id: JsonRpcRequest["id"], code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
@@ -435,7 +457,7 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
     case "initialize":
       return ok(req.id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false }, resources: {} },
+        capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: host.name, version: host.version },
         instructions: INSTRUCTIONS,
       });
@@ -461,13 +483,27 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         resources: [
           { uri: "project://current", name: "Current project", description: "The full project document (JSON)", mimeType: "application/json" },
           { uri: "project://summary", name: "Timeline summary", description: "describe_project output", mimeType: "application/json" },
+          { uri: "catalog://all", name: "Catalog", description: "Every effect, transition, animation, template, look, sound effect and font by name (list_catalog)", mimeType: "application/json" },
+          ...Object.entries(GUIDES).map(([uri, g]) => ({ uri, name: g.name, mimeType: "text/markdown" })),
         ],
       });
     case "resources/read": {
       const uri = String(p.uri ?? "");
-      const body = uri === "project://current" ? host.projectJson() : uri === "project://summary" ? host.describe() : undefined;
+      const guide = GUIDES[uri];
+      if (guide) return ok(req.id, { contents: [{ uri, mimeType: "text/markdown", text: guide.text() }] });
+      const catalog = () => Object.fromEntries((fullCatalog() as { sections: string[] }).sections.map((s) => [s, fullCatalog(s)]));
+      const body = uri === "project://current" ? host.projectJson() : uri === "project://summary" ? host.describe() : uri === "catalog://all" ? catalog() : undefined;
       if (body === undefined) return fail(req.id, -32002, `unknown resource ${uri}`);
       return ok(req.id, { contents: [{ uri, mimeType: "application/json", text: JSON.stringify(body) }] });
+    }
+    case "prompts/list":
+      return ok(req.id, { prompts: PROMPTS });
+    case "prompts/get": {
+      try {
+        return ok(req.id, promptMessages(String(p.name ?? ""), (p.arguments ?? {}) as Record<string, string>));
+      } catch (e) {
+        return fail(req.id, -32602, e instanceof Error ? e.message : String(e));
+      }
     }
     default:
       return fail(req.id, -32601, `method not found: ${req.method}`);

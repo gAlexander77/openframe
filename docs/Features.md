@@ -253,7 +253,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   combined bounds, plus distribute for three or more
   ([[ADR-045 Align measures the resting box, one clip to the canvas]]).
   **Inside title safe** makes one clip stop at the title-safe line (the
-  viewer's Title 80% guide) instead of the canvas edge.
+  viewer's Title 90% guide) instead of the canvas edge.
 - Frame-exact: the framecode drive proves the right source frame at 1x,
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
@@ -278,7 +278,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   shape (16:9, 9:16, 1:1, 4:5, 4:3, 3:4, 21:9) without leaving the clip
   being edited; the short side is kept, and Undo restores the size.
 - **Composition guides** in the Player header and View menu: safe margins
-  (90% action / 80% title), rule of thirds, or both, and **TikTok, Reels,
+  (93% action / 90% title, SMPTE ST 2046-1), rule of thirds, or both, and **TikTok, Reels,
   Shorts**: the parts of a 9:16 frame the apps' buttons, captions and
   header cover are shaded (the largest of each side in their ad specs:
   14% top, 35% bottom, 11% left, 19% right), and dragged pictures snap to
@@ -626,7 +626,10 @@ Three doors, one engine ([[Automation]]):
   an agent can look at its work, `list_projects`, `open_project` and
   `new_project` to move between projects as the home screen does, and
   `export_video` / `export_status` to make the file; HTTP or
-  `--mcp-stdio`. Edits answer with only what they changed; `batch` runs
+  `--mcp-stdio`. A model learns the tools from the `help` tool, three MCP
+  prompts (make an ad, an epic edit, a short) with design rules, guide
+  resources and a full `list_catalog`; [[MCP tools]] is the generated
+  reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
