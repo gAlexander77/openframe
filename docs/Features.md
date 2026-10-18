@@ -7,7 +7,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Home screen** with a Create project card and canvas presets named for
   where the video goes (16:9 YouTube, 9:16 TikTok/Reels/Shorts, 1:1, 4:5,
-  21:9), and searchable project cards with thumbnails. Delete asks twice.
+  21:9), and searchable project cards with thumbnails. Delete asks twice;
+  **Rename** (in place, without opening) and **Duplicate** ("Name copy",
+  sharing the same media files) sit on each card, as in CapCut.
 - **Canvas size in pixels** (project Details > Size, CapCut's custom
   ratio): any width and height from 16 to 8192, rounded to even numbers
   as encoders need; `set_project` also takes the frame rate.

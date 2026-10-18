@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Film, Plus, Search, Trash2 } from "../icons";
+import { Clapperboard, Copy, Film, Pencil, Plus, Search, Trash2 } from "../icons";
 import { formatDuration } from "../lib/time";
 import { platform, type ProjectSummary } from "../platform";
-import { newProject, openProject, useSession } from "../state/project";
+import { duplicateProject, newProject, openProject, renameProject, useSession } from "../state/project";
+import { toast } from "../state/toast";
 import "./home.css";
 
 const PRESETS: { label: string; hint: string; w: number; h: number }[] = [
@@ -33,6 +34,8 @@ export function Home() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [q, setQ] = useState("");
   const [confirm, setConfirm] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const failed = (e: unknown) => toast(e instanceof Error ? e.message : String(e), "error");
 
   const refresh = () =>
     platform
@@ -100,6 +103,23 @@ export function Home() {
                 <div className="project-thumb">
                   {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Film size={24} strokeWidth={1.3} />}
                   {p.duration > 0 && <span className="chip num">{formatDuration(p.duration)}</span>}
+                  <span className="project-tools">
+                    <button className="project-tool" disabled={transitioning} aria-label={`Rename ${p.name}`} data-tip="Rename" onClick={(e) => (e.stopPropagation(), setRenaming(p.id))}>
+                      <Pencil size={13} />
+                    </button>
+                    <button
+                      className="project-tool"
+                      disabled={transitioning}
+                      aria-label={`Duplicate ${p.name}`}
+                      data-tip="Duplicate"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void duplicateProject(p).then(refresh, failed);
+                      }}
+                    >
+                      <Copy size={13} />
+                    </button>
+                  </span>
                   <button
                     className={`project-delete${confirm === p.id ? " armed" : ""}`}
                     disabled={transitioning}
@@ -119,7 +139,28 @@ export function Home() {
                     {confirm === p.id && <span>Delete?</span>}
                   </button>
                 </div>
-                <strong className="project-card-name">{p.name}</strong>
+                {renaming === p.id ? (
+                  <input
+                    className="field project-rename"
+                    aria-label={`New name for ${p.name}`}
+                    defaultValue={p.name}
+                    autoFocus
+                    onFocus={(e) => e.currentTarget.select()}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      e.stopPropagation(); // not the card's Enter, which opens it
+                      if (e.key === "Enter") e.currentTarget.blur();
+                      if (e.key === "Escape") setRenaming(null);
+                    }}
+                    onBlur={(e) => {
+                      const name = e.currentTarget.value;
+                      setRenaming(null);
+                      if (name.trim() && name.trim() !== p.name) void renameProject(p, name).then(refresh, failed);
+                    }}
+                  />
+                ) : (
+                  <strong className="project-card-name">{p.name}</strong>
+                )}
                 <span className="project-meta num">
                   {p.width}×{p.height} · {ago(p.updatedAt)}
                 </span>

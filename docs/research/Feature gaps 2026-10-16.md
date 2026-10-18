@@ -328,6 +328,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Preferences: default still length, step size, cache location, hardware acceleration | C P R V F | partial: default lengths of pictures, titles and effects, and transitions (Edit > Preferences) | P2 | Step size, cache location and hardware acceleration remain; the step actions are named for 10 frames. |
 | Remove media from the project; remove unused | P R | yes: media card menu > Remove from project, Manage media > Remove unused, `remove_media` (2026-10-17) | — | Added by the 2026-10-17 everyday-gaps pass; the survey had missed it. |
 | Project trash / restore a deleted project | C | no; delete asks twice | P2 | Move to a trash folder in the platform layer. |
+| Rename and duplicate a project from the home screen | C | yes: card buttons (2026-10-17) | — | Added by the everyday-gaps pass; both go through the platform's existing load and save, so desktop and web behave alike. |
 | Hover-scrub on media cards | C P V F | yes (`HoverScrub` in `LibraryPanel.tsx`) | — | The thumbnail sprite already exists. |
 | Collect or archive a project with its media | P R F V | no | P2 | Copy sources beside the JSON and rewrite paths. |
 | Tags, metadata columns, smart bins | P R F | partial: list view and folders | P2 | — |

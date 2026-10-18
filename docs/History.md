@@ -784,3 +784,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   margins only for ads, and third-party guides disagree (TikTok's right
   column is 100 to 180 px depending on the source), so the guide takes the
   largest of each side; editors can still check the upload in each app.
+- **Rename and duplicate from the home screen.** Cards could only be
+  deleted; renaming meant opening the project, and a variant meant Save a
+  copy from inside it. Both are card buttons now, built on the platform's
+  load and save so desktop and web agree. A drive caught that the card,
+  itself a button, takes its children's labels into its own name, so
+  "Rename X" matched two elements until the drive asked for exact names.
