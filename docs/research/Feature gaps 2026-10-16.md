@@ -283,7 +283,7 @@ The AI tools tab is `src/components/AiToolsTab.tsx`, with state in
 |---|---|---|---|---|
 | Remove silences, split scenes, beat markers, normalize, ducking, captions, Copilot | C P R V F | yes | — | — |
 | Auto reframe (follow the subject into 9:16 or 1:1) | C P R V F | no ("Coming soon" card) | P1 | A face or saliency model, then a smoothed crop path written as `transform` keyframes. That needs no new render path. See [[AI and automation]] §2.8. L. |
-| Motion tracking: pin text or a sticker to a subject | C R V F | no | P1 | Box tracker (template matching or KLT on downscaled frames) in a worker; results become `transform.x/y` keyframes on the text clip. L. |
+| Motion tracking: pin text or a sticker to a subject | C R V F | yes: Animation > Tracking, `track_motion` (2026-10-17, ADR-054) | — | Template matching on 320 px gray frames, main thread like the other analyses; the path becomes smoothed `transform.x/y` keyframes. |
 | Stabilize | C P R V F | yes: three levels, translation only, measured locally | — | See §2. |
 | Remove background | C P R V F | yes (shipped 2026-10-16) | — | See §10. |
 | Transcript or visual search over media | C P R F | no; name search only | P2 | Transcript search reuses Whisper (M). Visual search needs local CLIP-class embeddings at import (L). Final Cut 12.0 and Premiere's Media Intelligence both run this on the device. |

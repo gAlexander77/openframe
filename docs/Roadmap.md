@@ -25,7 +25,7 @@ None.
   revision and platform evidence before promising web parity.
 - **Still open from the survey** ([[Feature gaps 2026-10-16]]): border and
   shadow on pictures (layer shader), link/unlink with one-side trims for
-  J/L cuts, auto reframe and motion tracking (a tracker in a worker),
+  J/L cuts, auto reframe (the tracker of ADR-054 can drive `frame_region`),
   proxies on demand, translated captions (waits on a non-English speech
   fixture), a compressor on compound clips.
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).

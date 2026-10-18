@@ -47,7 +47,8 @@ leave the user's projects alone), `preview_frames` (one contact sheet of
 up to 24 moments, each stamped with its time), `export_video` and
 `export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
-`duck_under_speech`, `reduce_noise`, `stabilize_clip` and
+`duck_under_speech`, `reduce_noise`, `stabilize_clip`,
+`track_motion` (pin a layer to a subject in the video under it) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],

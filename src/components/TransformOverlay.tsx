@@ -9,6 +9,8 @@ import { editOnCanvas } from "../state/textEdit";
 import { CropOverlay } from "./CropOverlay";
 import { GroupOverlay } from "./GroupOverlay";
 import { MaskOverlay } from "./MaskOverlay";
+import { TrackBoxOverlay } from "./TrackBoxOverlay";
+import { useTrackBox } from "../state/tracking";
 import { TextEditor } from "./TextEditor";
 
 type Drag =
@@ -33,6 +35,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   const editing = useEditor((s) => s.textEdit);
   const cropping = useEditor((s) => s.cropEdit);
   const maskTab = useEditor((s) => s.maskHandles);
+  const trackBox = useTrackBox();
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const drag = useRef<Drag | null>(null);
   const frameRef = useRef<HTMLDivElement>(null);
@@ -54,6 +57,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   }
   const k = W / project.width;
   if (cropping?.id === clip.id) return <CropOverlay project={project} clip={clip} layer={layer} session={cropping} k={k} />;
+  if (trackBox?.target === clip.id) return <TrackBoxOverlay box={trackBox} k={k} />;
   if (maskTab && layer.mask) return <MaskOverlay project={project} clip={clip as VisualClip} layer={layer} mask={layer.mask} k={k} />;
   const box = layerBox(project, clip, layer);
   const cx = box.cx * k, cy = box.cy * k, bw = box.w * k, bh = box.h * k;

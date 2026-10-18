@@ -707,3 +707,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   says "normalized to"). Both changed with the product earlier the same
   day; their drives were not rerun. Run the whole suite after changing
   shared audio paths, not only the drive of the feature.
+- **Tracking** (ADR-054). A title or sticker follows a subject in the
+  video under it: a box on the viewer, template matching on small gray
+  frames, and position keyframes. The first run kept a key on every frame:
+  the tracker's sub-pixel jitter (a tenth of an analysis pixel is half a
+  canvas pixel at 320 px wide) beat the half-pixel thinning. A light
+  binomial smoothing first left 5 keys for the drive's 3 seconds.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
+import { ArrowDown, ArrowUp, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
@@ -38,6 +38,7 @@ import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
 import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
+import { beginTrackBox, cancelTrackBox, cancelTracking, cannotTrack, trackMotion, useTrackBox, useTracking } from "../../state/tracking";
 import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
@@ -801,7 +802,39 @@ function AnimationTab({ clip }: { clip: Clip }) {
           </div>
         </Section>
       )}
+      <TrackingSection clip={clip as VisualClip} />
     </>
+  );
+}
+
+/** CapCut's Tracking: place a box on a subject in the video under this
+ * layer, and the layer follows it from the playhead (state/tracking.ts). */
+function TrackingSection({ clip }: { clip: VisualClip }) {
+  const why = useEditor((s) => cannotTrack(s.project, clip.id, s.playhead));
+  const placing = useTrackBox()?.target === clip.id;
+  const job = useTracking();
+  const mine = job?.target === clip.id;
+  const track = () => void trackMotion(clip.id).catch(() => undefined);
+  return (
+    <Section title="Tracking">
+      <p className="insp-hint" role={mine ? "status" : undefined}>
+        {mine ? `Following the subject… ${Math.round(job.progress * 100)}%` : placing ? "Drag the box onto the subject and size it to fit, then Track." : (why ?? "Pin this layer to a moving subject in the video under it, from the playhead on.")}
+      </p>
+      <div className="insp-actions">
+        {mine ? (
+          <button className="btn ghost" onClick={cancelTracking}>Cancel</button>
+        ) : placing ? (
+          <>
+            <button className="btn primary" onClick={track}>Track</button>
+            <button className="btn ghost" onClick={cancelTrackBox}>Cancel</button>
+          </>
+        ) : (
+          <button className="btn" disabled={!!why || !!job} onClick={() => beginTrackBox(clip.id)}>
+            <Crosshair size={14} /> Pick subject
+          </button>
+        )}
+      </div>
+    </Section>
   );
 }
 

@@ -246,6 +246,26 @@ similarity fit is the upgrade). The analysis covers the clip's range;
 lengthening the clip later needs Stabilize again. Variable-frame-rate
 footage is indexed by its average rate.
 
+## Tracking
+
+`src/lib/analysis/track.ts`, `src/lib/follow.ts`, `src/state/tracking.ts`.
+CapCut's Tracking (Text/Sticker > Tracking there; Animation > Tracking
+here): select a title, sticker or picture over a video, *Pick subject*
+puts a yellow box on the viewer, drag it onto the subject and size it,
+then *Track*. The video under the layer (the main track's first) is
+decoded from the playhead to the end of the shorter clip as 320 px wide
+gray frames; the box's pixels are matched by normalized cross-correlation
+in a window around their last place (sub-pixel by a parabola through the
+peak). The path becomes the layer's position keyframes, smoothed and
+thinned to a handful ([[ADR-054 Tracking writes position keyframes]]).
+Measured by the drive on `person-pan.mp4` (the photo slides one source
+pixel a frame): 60 frames later the title had moved 0.0614 of the canvas
+for 0.0625, and kept 5 keys.
+
+**Gaps.** Position only (no scale or angle); forward only; reversed and
+frozen clips are refused. Moving the followed video later does not move
+the pin: track again.
+
 ## Reduce noise
 
 `src/lib/analysis/denoise.ts`. CapCut's Reduce noise and Audacity's Noise
@@ -317,7 +337,8 @@ and the AI tools tab has a card for it.
   opens its settings in a small popover, shows progress with a cancel
   button while it runs, and keeps its last result ("Removed 4 silences,
   4.9 s shorter"). *Auto captions* opens the Captions tab; *Auto reframe*
-  is marked as coming soon.
+  is marked as coming soon. *Tracking* sits in the pinned layer's
+  Animation tab, not here, since it starts from the layer.
 - **One undo step per run**, labeled with what happened ("Remove 4
   silences", "Split into 5 scenes", "Mark 43 beats"), built from the
   registry commands `cut_ranges`, `split_at_times` and `add_markers`

@@ -161,6 +161,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   writes only into the Videos folder.
 - [[ADR-053 One compressor everywhere, measured as it plays]] — the
   platform's compressor in the clip chain, and in loudness measurement.
+- [[ADR-054 Tracking writes position keyframes]] — a template-matching
+  tracker's path becomes the pinned layer's smoothed, thinned keys.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

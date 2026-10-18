@@ -157,6 +157,10 @@
 .crop-e { right: -4px; }
 .crop-w { left: -4px; }
 
+/* The tracking box (state/tracking.ts): the preview-axis yellow, so it
+   reads as a tool on the picture rather than the layer's own box. */
+.track-box { position: absolute; border: 1.5px solid var(--preview-axis); box-shadow: 0 0 0 1px rgb(0 0 0 / 45%); cursor: move; pointer-events: auto; }
+
 .crop-bar { display: flex; gap: 12px; justify-content: space-between; }
 .crop-ratios { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .crop-ratios .chip-btn { flex-shrink: 0; }

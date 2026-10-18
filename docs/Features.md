@@ -441,6 +441,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
   a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
+- **Tracking** (CapCut's, in the layer's Animation tab; `track_motion`):
+  pin a title, sticker or picture to a moving subject in the video under
+  it. A box placed on the viewer is followed from the playhead on this
+  computer and the layer gets position keyframes, a handful, editable
+  like any others ([[ADR-054 Tracking writes position keyframes]]).
 - **Remove filler words** (CapCut's and Premiere's; AI tools card,
   `remove_filler_words`): Whisper base or small on this computer
   transcribes the clip and its "um", "hmm" and "ah" are cut with the
