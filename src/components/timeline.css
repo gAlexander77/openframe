@@ -237,6 +237,8 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
   cursor: ew-resize; transition: transform var(--t-fast) var(--ease-spring);
 }
 .fade-knob:hover { transform: scale(1.3); }
+/* On a video's 14 px waveform strip. */
+.audio-handles.slim .fade-knob { top: 3px; width: 8px; height: 8px; }
 /* A 24 px tall grab (UX-31) that grows inward only: outward is the 8 px
    trim handle, which must keep its edge. */
 .fade-knob::before { content: ""; position: absolute; top: -7px; bottom: -7px; }

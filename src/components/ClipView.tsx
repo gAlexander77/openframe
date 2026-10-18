@@ -132,7 +132,7 @@ const dbToY = (db: number, h: number) => {
   return h - t * h;
 };
 
-function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number; fps: Project["fps"] }) {
+function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number; fps: Project["fps"]; slim?: boolean }) {
   const c = p.clip as Clip & { volume: number; fadeIn: number; fadeOut: number };
   const [drag, setDrag] = useState<null | { kind: "vol" | "in" | "out"; label: string }>(null);
   const h = p.height;
@@ -151,8 +151,11 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
     const v0 = kind === "vol" ? lineY : kind === "in" ? c.fadeIn : c.fadeOut;
     const move = (ev: PointerEvent) => {
       if (kind === "vol") {
-        // Shift for fine control: a 30 px lane spans 48 dB otherwise.
-        const y = Math.min(h, Math.max(0, v0 + (ev.clientY - y0) * (ev.shiftKey ? 0.2 : 1)));
+        // Shift for fine control: a 30 px lane spans 48 dB otherwise. On
+        // a video's 14 px strip the whole range takes 60 px of travel, so
+        // a small hand movement is not 17 dB.
+        const gain = (p.slim ? h / 60 : 1) * (ev.shiftKey ? 0.2 : 1);
+        const y = Math.min(h, Math.max(0, v0 + (ev.clientY - y0) * gain));
         const d = DB_MIN + ((h - y) / h) * (DB_MAX - DB_MIN);
         const v = y >= h - 0.5 ? 0 : fromDb(Math.round(d * 10) / 10);
         store.previewGesture((q) => setParam(q, [c.id], "volume", v));
@@ -174,7 +177,7 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
     window.addEventListener("pointerup", up);
   };
   return (
-    <div className="audio-handles" style={{ top: p.top, height: h }}>
+    <div className={`audio-handles${p.slim ? " slim" : ""}`} style={{ top: p.top, height: h }}>
       <svg className="fade-shade" width={w} height={h} aria-hidden>
         {fi > 0 && <path d={`M0,0 L${fi},${lineY} L0,${h} Z`} />}
         {fo > 0 && <path d={`M${w},0 L${w - fo},${lineY} L${w},${h} Z`} />}
@@ -268,6 +271,9 @@ export const ClipView = memo(function ClipView(p: Props) {
         />
       )}
       {c.type === "audio" && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={bodyH} top={LABEL_H} fps={p.fps} />}
+      {/* A video's own sound gets the same line and knobs on its waveform
+          strip (Premiere's audio handles), not only in the inspector. */}
+      {c.type === "video" && showWave && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={WAVE_H} top={height - WAVE_H} fps={p.fps} slim />}
       {p.selected && <ClipKeys clip={c} zoom={zoom} locked={p.track.locked} />}
       {!tiny && !p.track.locked && (
         <>

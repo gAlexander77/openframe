@@ -160,7 +160,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Track volume and pan (a dB fader and a pan slider added to each clip's
   pan, one undo step per drag), Small/Normal/Large height and Delete
   track. Agents: `update_track` (solo, height, pan) and `delete_track`.
-- Audio clips: draggable volume line (Shift for fine) and fade knobs.
+- Audio clips: draggable volume line (Shift for fine) and fade knobs; a
+  selected video's own sound has them too, on its waveform strip (the
+  whole range there takes 60 px of travel, the strip being 14 px tall).
 - **Record voiceover** (the microphone in the timeline toolbar, as in
   CapCut): pick the input, optionally mute the project, then a 3-second
   countdown and the timeline plays from the playhead while recording.

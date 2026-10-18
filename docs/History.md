@@ -797,3 +797,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   whatever starts in the middle, or a box the user places in the
   inspector. The tracking module was split so both use one core
   (`trackPath`, `applyTrack`).
+- **Fade a video's sound on the timeline.** The volume line and fade
+  knobs drew only on audio clips, so a video's own sound had to be faded
+  in the inspector. The selected video's waveform strip has them now
+  (Premiere's audio handles). The strip is 14 px for 48 dB, so the first
+  drive's 5 px drag took 17 dB off; the line now moves at a quarter of
+  the pointer there, and 5 px is 4 dB.
