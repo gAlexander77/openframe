@@ -77,6 +77,7 @@ a clock, so no frame is ever dropped
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/compoundThumbs.ts` | Compound clips' filmstrips (the nested timeline rendered offscreen) and mixed peaks |
 | `engine/export.ts` | The export loop, codec choice, audio windows |
+| `lib/brandKit.ts`, `lib/ads.ts`, `lib/versions.ts` | Ads: the brand kit and text roles, the readable text floor; ad elements laid out in the safe area; an ad's other shapes, cut-downs and textless master, groups fitted as one (ADR-063) |
 | `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
 | `engine/cutout.ts`, `engine/matte.worker.ts`, `lib/matte.ts` | Remove BG: the clip's frames through a segmentation model in a worker, steadied over time, stored as a grayscale matte video the compositor samples (ADR-032, ADR-033) |
 | `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |

@@ -176,6 +176,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   pre-roll by the longest tail; tape stop through the retimer.
 - [[ADR-061 Delivery holds the true peak and says whether it passes]] —
   a 4x true-peak limiter, specs by target, `measure_loudness`.
+- [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
+  keep their layout in every shape, anchored where they sat, fitted to
+  the safe area.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

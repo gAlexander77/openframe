@@ -87,6 +87,12 @@ export function withAlpha(c: string, a: number): string {
  * frame; this keeps it to the same share of the width as on 4:5. */
 export const typeScale = (width: number, height: number) => Math.min(1, (1.2 * width) / height);
 
+/** The smallest text that reads on a phone, as a style size (pixels at a
+ * 1080-tall canvas): 40 px on a frame whose short side is 1080, so 40 on
+ * 16:9 and 1:1, 32 on 4:5 and 22.5 on 9:16, where the canvas is 1920 tall
+ * but the phone shows its 1080 width. */
+export const minTextSize = (width: number, height: number) => (40 * Math.min(width, height)) / height;
+
 /** A soft shadow that lifts light type off busy footage (firm enough for
  * white over a bright, busy shot; the ad drive's contact sheet asked). */
 export const LIFT = { color: "#000000cc", blur: 22, x: 0, y: 4 };

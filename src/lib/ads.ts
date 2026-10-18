@@ -7,13 +7,16 @@
 //
 // Layout rules from broadcast and social ad specs: everything inside the
 // 90% title-safe area (5% margins); on 9:16, clear of what TikTok, Reels
-// and Shorts cover (lib/align.ts VERTICAL_SAFE); headlines about 9% of the
-// frame's height; type over footage carries a shadow or sits in a box.
+// and Shorts cover (lib/align.ts VERTICAL_SAFE), a centered element on the
+// frame's center line; an element too big for that built smaller as a
+// whole; headlines about 9% of the frame's height and no type under the
+// readable floor (brandKit minTextSize); type over footage carries a
+// shadow and an outline, or sits in a box.
 
 import { VERTICAL_SAFE } from "./align";
-import { brandOf, LIFT, pickLogo, readableOn, roleStyle, textOn, typeScale, withAlpha, type LogoVariant } from "./brandKit";
+import { brandOf, LIFT, minTextSize, pickLogo, readableOn, roleStyle, textOn, typeScale, withAlpha, type LogoVariant } from "./brandKit";
 import { placeOnTop } from "./overlays";
-import { clipForAsset, createColorClip, createTextClip, createTrack, uid } from "./project/defaults";
+import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
 import type { Animation, Asset, Clip, ColorClip, Cutout, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
 import { fittedSize } from "./render/size";
@@ -73,6 +76,11 @@ interface Part {
   full?: boolean;
 }
 
+/** Type over footage: the soft shadow and a thin dark outline, so it reads
+ * on a bright, busy shot too (a thin tagline was lost on bright footage
+ * with the shadow alone); type on a card or in a box needs neither. */
+const OVER_FOOTAGE: Partial<TextStyle> = { shadow: LIFT, stroke: { color: "#000000b3", width: 2 } };
+
 const anim = (p: Project, type: string, seconds: number, extra: Partial<Animation> = {}): Animation => ({ type, duration: Math.max(1, secondsToFrames(seconds, p.fps)), ...extra });
 
 /** The size a part draws at, in canvas pixels. */
@@ -100,22 +108,63 @@ function alignLeft(p: Project, parts: Part[]) {
   parts.forEach((x, i) => (x.dx = -widest / 2 + sizes[i].w / 2));
 }
 
-/** Move the laid-out element so its bounds sit at `spot` inside the safe
- * area: the parts' offsets become canvas fractions. */
-function place(p: Project, parts: Part[], spot: Spot) {
-  const laid = parts.filter((x) => !x.full);
-  if (!laid.length) return;
-  const sizes = laid.map((x) => sizeOf(p, x.clip));
-  const left = Math.min(...laid.map((x, i) => x.dx - sizes[i].w / 2));
-  const right = Math.max(...laid.map((x, i) => x.dx + sizes[i].w / 2));
-  const top = Math.min(...laid.map((x, i) => x.dy - sizes[i].h / 2));
-  const bottom = Math.max(...laid.map((x, i) => x.dy + sizes[i].h / 2));
+type Rect = { left: number; right: number; top: number; bottom: number };
+
+/** An element shrinks to fit its room no further than this: past it, the
+ * logo and gaps would be tiny while the text sits at its floor. */
+const MIN_FIT = 0.5;
+
+/** A spot as its vertical and horizontal sides. */
+function sides(spot: Spot): ["top" | "middle" | "bottom", "left" | "center" | "right"] {
+  if (spot === "center") return ["middle", "center"];
+  if (spot === "top" || spot === "bottom") return [spot, "center"];
+  if (spot === "left" || spot === "right") return ["middle", spot];
+  return spot.split("-") as ["top" | "bottom", "left" | "right"];
+}
+
+/** Where an element at `spot` may sit, in canvas pixels: the safe area,
+ * made even about the center line for a centered spot (on 9:16 the apps'
+ * buttons take the right 19%, so a centered card keeps that margin on the
+ * left too and sits on the frame's center line, not 4% left of it). An
+ * offer badge keeps to its half of the frame, as a corner sticker does: a
+ * wide one drifted to the middle. */
+function roomFor(p: Project, element: AdElement, spot: Spot): Rect {
   const s = safeArea(p);
   const W = p.width, H = p.height;
-  const area = { left: s.left * W, right: W - s.right * W, top: s.top * H, bottom: H - s.bottom * H };
-  const [v, h] = spot === "center" ? ["middle", "center"] : spot.includes("-") ? spot.split("-") : spot === "top" || spot === "bottom" ? [spot, "center"] : ["middle", spot];
-  const sx = h === "left" ? area.left - left : h === "right" ? area.right - right : (area.left + area.right) / 2 - (left + right) / 2;
-  const sy = v === "top" ? area.top - top : v === "bottom" ? area.bottom - bottom : (area.top + area.bottom) / 2 - (top + bottom) / 2;
+  const room = { left: s.left * W, right: W - s.right * W, top: s.top * H, bottom: H - s.bottom * H };
+  const [, h] = sides(spot);
+  if (h === "center") {
+    const m = Math.max(room.left, W - room.right);
+    return { ...room, left: m, right: W - m };
+  }
+  if (element === "offer_badge") return h === "right" ? { ...room, left: Math.max(room.left, W / 2) } : { ...room, right: Math.min(room.right, W / 2) };
+  return room;
+}
+
+/** The laid-out parts' bounds around the element's center, rotation
+ * included (a tilted badge reaches past its unrotated box). */
+function bounds(p: Project, parts: Part[]): Rect {
+  const laid = parts.filter((x) => !x.full);
+  const boxes = laid.map((x) => {
+    const z = sizeOf(p, x.clip);
+    const rad = (("transform" in x.clip ? x.clip.transform.rotation : 0) * Math.PI) / 180;
+    const hw = (Math.abs(Math.cos(rad)) * z.w + Math.abs(Math.sin(rad)) * z.h) / 2, hh = (Math.abs(Math.sin(rad)) * z.w + Math.abs(Math.cos(rad)) * z.h) / 2;
+    return { left: x.dx - hw, right: x.dx + hw, top: x.dy - hh, bottom: x.dy + hh };
+  });
+  if (!boxes.length) return { left: 0, right: 0, top: 0, bottom: 0 };
+  return { left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) };
+}
+
+/** Move the laid-out element so its bounds sit at `spot` inside `room`:
+ * the parts' offsets become canvas fractions. */
+function place(p: Project, parts: Part[], spot: Spot, room: Rect) {
+  const laid = parts.filter((x) => !x.full);
+  if (!laid.length) return;
+  const { left, right, top, bottom } = bounds(p, laid);
+  const W = p.width, H = p.height;
+  const [v, h] = sides(spot);
+  const sx = h === "left" ? room.left - left : h === "right" ? room.right - right : (room.left + room.right) / 2 - (left + right) / 2;
+  const sy = v === "top" ? room.top - top : v === "bottom" ? room.bottom - bottom : (room.top + room.bottom) / 2 - (top + bottom) / 2;
   for (const x of laid) {
     const t = (x.clip as { transform: { x: number; y: number } }).transform;
     t.x = +((x.dx + sx - W / 2) / W).toFixed(5);
@@ -123,10 +172,12 @@ function place(p: Project, parts: Part[], spot: Spot) {
   }
 }
 
-/** A text part in a style, wrapping inside the safe area. */
-function text(p: Project, words: string, style: Partial<TextStyle>): TextClip {
-  const s = safeArea(p);
-  return createTextClip(words, 0, 1, { maxWidth: +(1 - s.left - s.right).toFixed(3), ...style });
+/** A text part in a style, wrapping inside `room` (its box's padding
+ * included) and never smaller than the readable floor. */
+function textPart(p: Project, words: string, style: Partial<TextStyle>, room: Rect): TextClip {
+  const pad = ((style.background?.padding ?? 0) * p.height) / 1080;
+  const size = Math.max(style.size ?? DEFAULT_TEXT_STYLE.size, Math.ceil(minTextSize(p.width, p.height)));
+  return createTextClip(words, 0, 1, { maxWidth: +Math.max(0.1, (room.right - room.left - 2 * pad) / p.width).toFixed(3), ...style, size });
 }
 
 /** The logo picture, scaled to `height` (a canvas fraction) and never
@@ -150,19 +201,24 @@ function backdrop(p: Project, bg: AdBackground): { clip?: ColorClip; fill?: stri
   return { clip, fill: bg === "scrim" ? undefined : color };
 }
 
-/** The parts of one element, laid out (not yet placed or timed). */
-function build(p: Project, element: AdElement, o: AdOptions): Part[] {
+/** The parts of one element, laid out (not yet placed or timed), wrapping
+ * inside `room`; `fit` below 1 builds it that much smaller (type, logo,
+ * boxes and gaps alike) to fit the room. */
+function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1): Part[] {
   const b = brandOf(p);
   const c = b.colors;
-  const k = typeScale(p.width, p.height);
-  const H = p.height / 1080;
+  const k = typeScale(p.width, p.height) * fit;
+  const H = (p.height / 1080) * fit;
   const part = (clip: Clip, delay = 0, full = false): Part => ({ clip, delay, dx: 0, dy: 0, full });
+  // A text part; its box and letter spacing shrink with the rest.
+  const text = (words: string, st: Partial<TextStyle>) =>
+    textPart(p, words, { ...st, ...(st.letterSpacing ? { letterSpacing: +(st.letterSpacing * fit).toFixed(2) } : {}), ...(st.background ? { background: { ...st.background, padding: +(st.background.padding * fit).toFixed(2) } } : {}) }, room);
   const fadeOut = anim(p, "fade", 0.35);
 
   if (element === "lower_third") {
     const box = withAlpha(c.background, 0.9);
-    const name = text(p, o.headline ?? b.name ?? "Your Name", { font: b.fonts.heading, size: Math.round(60 * k), bold: true, align: "left", color: textOn(box, c.text), background: { color: box, padding: 18, radius: 6 } });
-    const title = text(p, o.subline ?? b.tagline ?? "Title or role", { font: b.fonts.body, size: Math.round(38 * k), bold: false, align: "left", color: readableOn(c.primary), background: { color: c.primary, padding: 12, radius: 6 } });
+    const name = text(o.headline ?? b.name ?? "Your Name", { font: b.fonts.heading, size: Math.round(60 * k), bold: true, align: "left", color: textOn(box, c.text), background: { color: box, padding: 18, radius: 6 } });
+    const title = text(o.subline ?? b.tagline ?? "Title or role", { font: b.fonts.body, size: Math.round(38 * k), bold: false, align: "left", color: readableOn(c.primary), background: { color: c.primary, padding: 12, radius: 6 } });
     const parts = [part({ ...name, animIn: anim(p, "rise", 0.45), animOut: fadeOut }), part({ ...title, animIn: anim(p, "rise", 0.45), animOut: fadeOut }, 0.15)];
     stack(p, parts, [6 * H]);
     alignLeft(p, parts);
@@ -171,10 +227,10 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
 
   if (element === "offer_badge") {
     const tilt = -4;
-    const main = text(p, o.headline ?? "-30%", roleStyle(b, "badge", k));
+    const main = text(o.headline ?? "-30%", roleStyle(b, "badge", k));
     const parts = [part({ ...main, transform: { ...main.transform, rotation: tilt }, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.4), animOut: fadeOut })];
     if (o.subline) {
-      const sub = text(p, o.subline, { font: b.fonts.heading, size: Math.round(30 * k), bold: true, letterSpacing: 4, case: "upper", color: readableOn(c.secondary), background: { color: c.secondary, padding: 12, radius: 8 } });
+      const sub = text(o.subline, { font: b.fonts.heading, size: Math.round(30 * k), bold: true, letterSpacing: 4, case: "upper", color: readableOn(c.secondary), background: { color: c.secondary, padding: 12, radius: 8 } });
       parts.push(part({ ...sub, transform: { ...sub.transform, rotation: tilt }, animIn: anim(p, "pop", 0.4), animOut: fadeOut }, 0.15));
       stack(p, parts, [10 * H]);
     }
@@ -182,11 +238,11 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
   }
 
   if (element === "cta_button") {
-    const button = text(p, o.cta ?? "Shop now", roleStyle(b, "cta", k));
+    const button = text(o.cta ?? "Shop now", roleStyle(b, "cta", k));
     const parts = [part({ ...button, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2), animOut: fadeOut })];
     const under = o.subline ?? o.url;
     if (under) {
-      parts.push(part({ ...text(p, under, { font: b.fonts.body, size: Math.round(36 * k), bold: false, color: c.text, shadow: LIFT }), animIn: anim(p, "fade", 0.4), animOut: fadeOut }, 0.3));
+      parts.push(part({ ...text(under, { font: b.fonts.body, size: Math.round(36 * k), bold: false, color: c.text, ...OVER_FOOTAGE }), animIn: anim(p, "fade", 0.4), animOut: fadeOut }, 0.3));
       stack(p, parts, [18 * H]);
     }
     return parts;
@@ -200,21 +256,21 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
     const laid: Part[] = [];
     const gaps: number[] = [];
     const logoId = o.logo === "none" ? undefined : pickLogo(b, o.logo ?? "auto", bg.fill);
-    const logo = logoId && logoPart(p, logoId, 0.16, 0.45);
+    const logo = logoId && logoPart(p, logoId, 0.16 * fit, 0.45 * fit);
     if (logo) {
       laid.push(part({ ...logo, animIn: anim(p, "pop", 0.5) }, 0.1));
       gaps.push(40 * H);
     }
-    const headline = text(p, o.headline ?? b.tagline ?? b.name ?? "Your headline here", { ...roleStyle(b, "headline", k), color: ink, ...(bg.fill ? { shadow: undefined } : {}) });
+    const headline = text(o.headline ?? b.tagline ?? b.name ?? "Your headline here", { ...roleStyle(b, "headline", k), color: ink, ...(bg.fill ? { shadow: undefined } : OVER_FOOTAGE) });
     laid.push(part({ ...headline, animIn: anim(p, "wordRise", 0.7) }, 0.25));
     gaps.push(44 * H);
     // A button the color of the card would vanish: it takes the accent then.
     const fillBtn = bg.fill && bg.fill.toLowerCase() === c.primary.toLowerCase() ? c.accent : c.primary;
-    const cta = text(p, o.cta ?? "Shop now", { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } });
+    const cta = text(o.cta ?? "Shop now", { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } });
     laid.push(part({ ...cta, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2) }, 0.55));
     gaps.push(30 * H);
     const url = o.url ?? b.url;
-    if (url) laid.push(part({ ...text(p, url, { font: b.fonts.body, size: Math.round(40 * k), bold: false, color: ink, ...(bg.fill ? {} : { shadow: LIFT }) }), opacity: 0.9, animIn: anim(p, "fade", 0.4) }, 0.8));
+    if (url) laid.push(part({ ...text(url, { font: b.fonts.body, size: Math.round(40 * k), bold: false, color: ink, ...(bg.fill ? {} : OVER_FOOTAGE) }), opacity: 0.9, animIn: anim(p, "fade", 0.4) }, 0.8));
     // The headline's own style has no shadow on a solid card.
     for (const x of laid) if (x.clip.type === "text" && !x.clip.style.shadow) delete (x.clip.style as Partial<TextStyle>).shadow;
     stack(p, laid, gaps);
@@ -229,7 +285,7 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
   const laid: Part[] = [];
   const gaps: number[] = [];
   const logoId = o.logo === "none" ? undefined : pickLogo(b, o.logo ?? "auto", bg.fill);
-  const logo = logoId && logoPart(p, logoId, 0.26, 0.6);
+  const logo = logoId && logoPart(p, logoId, 0.26 * fit, 0.6 * fit);
   if (logo) {
     const glow = o.glow
       ? { effects: [{ id: uid("fx"), type: "glow", enabled: true, params: { amount: 0, threshold: 45 } }] }
@@ -243,12 +299,12 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
   }
   const words = o.headline ?? (logo ? undefined : (b.name ?? "Brand"));
   if (words) {
-    const style: Partial<TextStyle> = { font: b.fonts.heading, size: Math.round(72 * k), bold: true, letterSpacing: 10, case: "upper", color: ink, ...(bg.fill ? {} : { shadow: LIFT }), ...(o.glow ? { glow: { color: c.accent, blur: 28, strength: 1 } } : {}) };
-    laid.push(part({ ...text(p, words, style), animIn: anim(p, "letterRise", 0.8), animOut: anim(p, "fade", 0.4) }, logo ? 0.35 : 0));
+    const style: Partial<TextStyle> = { font: b.fonts.heading, size: Math.round(72 * k), bold: true, letterSpacing: 10, case: "upper", color: ink, ...(bg.fill ? {} : OVER_FOOTAGE), ...(o.glow ? { glow: { color: c.accent, blur: 28, strength: 1 } } : {}) };
+    laid.push(part({ ...text(words, style), animIn: anim(p, "letterRise", 0.8), animOut: anim(p, "fade", 0.4) }, logo ? 0.35 : 0));
     gaps.push(18 * H);
   }
   const sub = o.subline ?? b.tagline;
-  if (sub) laid.push(part({ ...text(p, sub, { font: b.fonts.body, size: Math.round(34 * k), bold: false, color: ink, ...(bg.fill ? {} : { shadow: LIFT }) }), animIn: anim(p, "fade", 0.5), animOut: anim(p, "fade", 0.4) }, 0.7));
+  if (sub) laid.push(part({ ...text(sub, { font: b.fonts.body, size: Math.round(34 * k), bold: false, color: ink, ...(bg.fill ? {} : OVER_FOOTAGE) }), animIn: anim(p, "fade", 0.5), animOut: anim(p, "fade", 0.4) }, 0.7));
   stack(p, laid, gaps);
   if (o.flash) {
     // A white flash as the logo lands: added light, gone in a third of a second.
@@ -266,8 +322,22 @@ function build(p: Project, element: AdElement, o: AdOptions): Part[] {
  * grouped and named after the element. Returns the new clip ids.
  */
 export function addAdElement(p: Project, element: AdElement, o: AdOptions): { project: Project; clipIds: Id[] } {
-  const parts = build(p, element, o);
-  place(p, parts, element === "end_card" ? "center" : (o.position ?? DEFAULT_SPOT[element]));
+  const spot = element === "end_card" ? "center" : (o.position ?? DEFAULT_SPOT[element]);
+  const room = roomFor(p, element, spot);
+  // Too big for its room (a long headline on 9:16, whose safe area is half
+  // the frame's height): built again smaller, every part and gap alike, a
+  // few times since rounded sizes, wrapping and the text floor make it
+  // inexact.
+  let fit = 1;
+  let parts = build(p, element, o, room, fit);
+  for (let i = 0; i < 4; i++) {
+    const b = bounds(p, parts);
+    const k = Math.min((room.right - room.left) / Math.max(1, b.right - b.left), (room.bottom - room.top) / Math.max(1, b.bottom - b.top));
+    if (k >= 1 || fit <= MIN_FIT) break;
+    fit = Math.max(MIN_FIT, fit * k * 0.99);
+    parts = build(p, element, o, room, fit);
+  }
+  place(p, parts, spot, room);
   const duration = Math.max(1, o.duration ?? secondsToFrames(AD_SECONDS[element], p.fps));
   const end = o.start + duration;
   const group = parts.length > 1 ? uid("g") : undefined;

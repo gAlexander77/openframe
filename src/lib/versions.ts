@@ -7,8 +7,10 @@
 // A new shape refits every layer: full-frame footage fills the new frame
 // (or fits it over a blurred copy of itself, CapCut's Canvas: Blur), and
 // titles, logos and boxes keep their pixel size against the frame's short
-// side, staying where they were relative to the frame and clamped inside
-// its title-safe area (on 9:16, clear of the apps' buttons). A shorter cut
+// side and their place in its title-safe area (on 9:16, clear of the apps'
+// buttons): against the same edges, or centered. A group (an ad element)
+// moves and scales as one, its layout kept, shrunk to fit the safe area
+// when it must (ADR-063). A shorter cut
 // keeps the opening and the end card, cutting the middle out of the
 // picture tracks; the music runs from the start and fades at the new end.
 
@@ -16,7 +18,7 @@ import { safeArea } from "./ads";
 import { canvasSize } from "./canvas";
 import { paramAt } from "./keyframes";
 import { clipEnd, getAsset, liftRange, projectDuration } from "./project/ops";
-import type { Clip, Id, Project, TextStyle, Track, VisualClip } from "./project/types";
+import type { Clip, Id, Keyframe, Project, TextStyle, Track, VisualClip } from "./project/types";
 import { fittedSize } from "./render/size";
 import { secondsToFrames } from "./time";
 
@@ -108,8 +110,9 @@ function scaleStyle(s: TextStyle, k: number, maxWidth: number): TextStyle {
   };
 }
 
-/** One clip refit from frame `a` (the master's) to project `q`'s frame. */
-function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit): Clip {
+/** One clip refit from frame `a` (the master's) to project `q`'s frame.
+ * `grouped`: a part of a group, which placeSets fits as one. */
+function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, grouped = false): Clip {
   if (c.type === "audio" || c.type === "adjustment" || c.type === "compound") return c;
   const a: Frame = { w: master.width, h: master.height }, b: Frame = { w: q.width, h: q.height };
   const m = mediaSize(master, c);
@@ -147,6 +150,9 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit): Clip 
     // quarters at most, then it wraps): a 16:9 headline otherwise broke
     // into a word a line on 9:16.
     const k = short(b) / b.h / (short(a) / a.h);
+    // A part of a group keeps its lines (it wraps at the same width
+    // against its size), so the group's layout holds when it is fitted.
+    if (grouped) return { ...c, style: { ...scaleStyle(c.style, k, Infinity), maxWidth: +((c.style.maxWidth * a.w * short(b)) / short(a) / b.w).toFixed(5) } };
     const s = safeArea(q);
     const room = 1 - s.left - s.right;
     const style = scaleStyle(c.style, k, +room.toFixed(3));
@@ -165,6 +171,22 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit): Clip 
       const cx = (left + 1 - right) / 2, cy = (top + 1 - bottom) / 2;
       const w = Math.min(1, (1 - left - right) * kw), h = Math.min(1, (1 - top - bottom) * kh);
       out = { ...c, crop: { left: Math.max(0, cx - w / 2), right: Math.max(0, 1 - cx - w / 2), top: Math.max(0, cy - h / 2), bottom: Math.max(0, 1 - cy - h / 2) } };
+    }
+    if (c.shape) {
+      // A shape's box is fractions of the frame and its stroke pixels at a
+      // 1080-tall one: both keep their pixels against the short side.
+      const g = short(b) / short(a), kw = (a.w / b.w) * g, kh = (a.h / b.h) * g, ks = (a.h / b.h) * g;
+      const sh = c.shape;
+      const keyed: Record<string, Keyframe[]> = {};
+      for (const [path, k] of [["shape.width", kw], ["shape.height", kh], ["shape.stroke.width", ks]] as const) {
+        const keys = c.keyframes?.[path];
+        if (keys?.length) keyed[path] = keys.map((key) => ({ ...key, v: +(key.v * k).toFixed(5) }));
+      }
+      out = {
+        ...out,
+        shape: { ...sh, width: +(sh.width * kw).toFixed(5), height: +(sh.height * kh).toFixed(5), ...(sh.stroke ? { stroke: { ...sh.stroke, width: +(sh.stroke.width * ks).toFixed(2) } } : {}) },
+        ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}),
+      } as Clip;
     }
     if (c.mask && c.mask.shape !== "linear" && c.mask.shape !== "mirror") {
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
@@ -197,36 +219,101 @@ function isOverlay(q: Project, c: Clip): c is VisualClip {
   return b.right - b.left < q.width * 0.95 || b.bottom - b.top < q.height * 0.95;
 }
 
-/** Shift overlays into the safe area: a group as one (a lower third's
- * name and title keep their alignment), each other layer alone; one wider
- * than the area is centered across it. */
-function clampOverlays(q: Project): Project {
-  const s = safeArea(q);
-  const area = { left: s.left * q.width, right: q.width * (1 - s.right), top: s.top * q.height, bottom: q.height * (1 - s.bottom) };
-  const all = q.tracks.flatMap((t) => t.clips).filter((c) => !c.disabled && isOverlay(q, c)) as VisualClip[];
+type Rect = { left: number; right: number; top: number; bottom: number };
+
+/** The overlays of a frame in sets that move as one: the clips of a group
+ * (an ad element's parts, a lower third's name and title), each other
+ * overlay alone. */
+function overlaySets(p: Project): VisualClip[][] {
   const sets = new Map<string, VisualClip[]>();
-  for (const c of all) {
+  for (const c of p.tracks.flatMap((t) => t.clips)) {
+    if (c.disabled || !isOverlay(p, c)) continue;
     const key = c.group ?? c.id;
     sets.set(key, [...(sets.get(key) ?? []), c]);
   }
-  const shift = new Map<Id, { dx: number; dy: number }>();
-  for (const set of sets.values()) {
-    const boxes = set.map((c) => boxOf(q, c));
-    const box = { left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) };
-    const fit = (lo: number, hi: number, min: number, max: number) => (hi - lo > max - min ? (min + max) / 2 - (lo + hi) / 2 : lo < min ? min - lo : hi > max ? max - hi : 0);
-    const dx = fit(box.left, box.right, area.left, area.right), dy = fit(box.top, box.bottom, area.top, area.bottom);
-    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) for (const c of set) shift.set(c.id, { dx: dx / q.width, dy: dy / q.height });
+  return [...sets.values()];
+}
+
+/** A frame's safe area in pixels; even about the center line for a set
+ * centered on the frame (on 9:16 the right 19% is the apps' buttons, so a
+ * centered card keeps that margin on the left too, as lib/ads.ts lays it). */
+function areaOf(p: Pick<Project, "width" | "height">, centered: boolean): Rect {
+  const s = safeArea(p);
+  const r = { left: s.left * p.width, right: p.width * (1 - s.right), top: s.top * p.height, bottom: p.height * (1 - s.bottom) };
+  const m = Math.max(r.left, p.width - r.right);
+  return centered ? { ...r, left: m, right: p.width - m } : r;
+}
+
+const union = (boxes: Rect[]): Rect => ({ left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) });
+
+/** Where a span sat in the free room around it, 0 (against the start) to
+ * 1 (against the end); 0.5 when it fills the room or more. Measured in
+ * the safe area when the span was inside it (a badge against its edge
+ * stays against it), else in the whole frame (a picture centered on a
+ * 9:16 frame reaches into the apps' bottom band, and stays centered). */
+function share(lo: number, hi: number, min: number, max: number, frame: number): number {
+  if (lo < min - 1 || hi > max + 1) [min, max] = [0, frame];
+  const free = max - min - (hi - lo);
+  return free > 1 ? Math.max(0, Math.min(1, (lo - min) / free)) : 0.5;
+}
+
+/** Where a span of `size` starts in [min, max] at `t` of the free room;
+ * centered on the room when it is wider. */
+const startAt = (t: number, size: number, min: number, max: number) => (size > max - min ? (min + max) / 2 - size / 2 : min + t * (max - min - size));
+
+/** A layer `f` times its size: a title's type (and its wrap width, so its
+ * lines stay), any other layer's scale. */
+function shrink(c: VisualClip, f: number): VisualClip {
+  if (c.type === "text") return { ...c, style: { ...scaleStyle(c.style, f, Infinity), maxWidth: +(c.style.maxWidth * f).toFixed(5) } };
+  let v = mapPath(c, "transform.scale", (s) => +(s * f).toFixed(5));
+  if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * f).toFixed(5));
+  return v;
+}
+
+/**
+ * Place the master's overlay sets on the new frame. A set keeps its place
+ * in the safe area, against the same edges or centered (a corner badge
+ * stays in its corner, a centered card on the center line), and fits
+ * inside the new safe area. A group moves and scales as one unit: its
+ * parts keep their layout, each offset growing with the short side as
+ * their sizes did (refitClip), so an end card's stack is not spread 1.78
+ * times taller than its type grows on a wider frame, and the whole shrinks
+ * when it would not fit. A lone overlay keeps refitClip's size (a title
+ * already wraps to the new width) and only moves.
+ */
+function placeSets(master: Project, q: Project, sets: VisualClip[][]): Project {
+  const g = Math.min(q.width, q.height) / Math.min(master.width, master.height);
+  const refit = new Map(q.tracks.flatMap((t) => t.clips).map((c) => [c.id, c as VisualClip]));
+  const placed = new Map<Id, Clip>();
+  for (const set of sets) {
+    const before = set.map((c) => boxOf(master, c));
+    const was = union(before);
+    const centered = Math.abs((was.left + was.right) / 2 - master.width / 2) < master.width * 0.01;
+    const roomA = areaOf(master, centered), room = areaOf(q, centered);
+    const now = set.map((c) => refit.get(c.id)!);
+    const group = set.length > 1;
+    const own = boxOf(q, now[0]);
+    const size = group ? { w: (was.right - was.left) * g, h: (was.bottom - was.top) * g } : { w: own.right - own.left, h: own.bottom - own.top };
+    const f = group ? Math.min(1, (room.right - room.left) / size.w, (room.bottom - room.top) / size.h) : 1;
+    const w = size.w * f, h = size.h * f;
+    const left = startAt(share(was.left, was.right, roomA.left, roomA.right, master.width), w, room.left, room.right);
+    const top = startAt(share(was.top, was.bottom, roomA.top, roomA.bottom, master.height), h, room.top, room.bottom);
+    now.forEach((c, i) => {
+      const v = f < 1 ? shrink(c, f) : c;
+      // The part's center: its place in the group's layout, grown and fitted.
+      const want = group
+        ? { x: left + ((before[i].left + before[i].right) / 2 - was.left) * g * f, y: top + ((before[i].top + before[i].bottom) / 2 - was.top) * g * f }
+        : { x: left + w / 2, y: top + h / 2 };
+      const b = boxOf(q, v);
+      const dx = want.x - (b.left + b.right) / 2, dy = want.y - (b.top + b.bottom) / 2;
+      if (Math.abs(dx) <= 0.5 && Math.abs(dy) <= 0.5 && v === c) return;
+      let moved = mapPath(v, "transform.x", (x) => +(x + dx / q.width).toFixed(5));
+      moved = mapPath(moved, "transform.y", (y) => +(y + dy / q.height).toFixed(5));
+      placed.set(c.id, moved);
+    });
   }
-  if (!shift.size) return q;
-  const move = (c: Clip): Clip => {
-    const d = shift.get(c.id);
-    if (!d) return c;
-    let v = c as VisualClip;
-    v = mapPath(v, "transform.x", (x) => +(x + d.dx).toFixed(5));
-    v = mapPath(v, "transform.y", (y) => +(y + d.dy).toFixed(5));
-    return v;
-  };
-  return { ...q, tracks: q.tracks.map((t) => ({ ...t, clips: t.clips.map(move) })) };
+  if (!placed.size) return q;
+  return { ...q, tracks: q.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => placed.get(c.id) ?? c) })) };
 }
 
 /** The master in another shape. */
@@ -236,9 +323,11 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit): Proje
   const [width, height] = canvasSize(rw, rh, Math.min(p.width, p.height));
   if (width === p.width && height === p.height) return p;
   const q: Project = { ...p, width, height, canvasFixed: true };
-  const tracks = (ts: Track[]) => ts.map((t) => ({ ...t, clips: t.clips.map((c) => refitClip(p, q, c, fit)) }));
+  const sets = overlaySets(p);
+  const grouped = new Set(sets.filter((s) => s.length > 1).flatMap((s) => s.map((c) => c.id)));
+  const tracks = (ts: Track[]) => ts.map((t) => ({ ...t, clips: t.clips.map((c) => refitClip(p, q, c, fit, grouped.has(c.id))) }));
   const out: Project = { ...q, tracks: tracks(p.tracks), ...(p.compounds ? { compounds: p.compounds.map((k) => ({ ...k, tracks: tracks(k.tracks) })) } : {}) };
-  return clampOverlays(out);
+  return placeSets(p, out, sets);
 }
 
 // ---- cutting down -------------------------------------------------------------------

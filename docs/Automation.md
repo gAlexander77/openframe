@@ -193,8 +193,12 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `textless`, `fit`, `name`), one file each, the project untouched; with
 `"check": true` it answers a contact sheet of every version instead.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
-length). Long runs answer `running`; `export_status` follows them and
-lists the `versions` when done.
+length). In another shape an ad element, or any group, moves and scales
+as one unit: its parts keep their layout, it stays against the edges it
+was against (or centered), and it shrinks to fit the safe area when it
+must ([[ADR-063 Versions fit a group as one unit]]). Long runs answer
+`running`; `export_status` follows them and lists the `versions` when
+done.
 `describe_project` now names a clip's `name` and `group`, so an
 element's parts are easy to find.
 
