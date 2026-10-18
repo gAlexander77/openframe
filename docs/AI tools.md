@@ -405,6 +405,14 @@ and the AI tools tab has a card for it.
 - **Limits**: ormbg is trained on people. It handles one clear object (an
   apple, a cat, a teapot) but not a scene without a subject. MediaPipe
   finds people only.
+- **Text behind the subject** (agents: `text_behind_subject`) reuses the
+  same matte: a silent copy of the video with the matte on goes on a track
+  above the titles, grouped with the original (no canvas fill, which would
+  cover the titles), as one undo step (`src/lib/ads.ts` putBehindSubject).
+  The text-behind drive measured the light model headless: 13 to 15 s with
+  the first download, the title's yellow gone over the jacket and kept
+  beside the face. With the title hidden, the copy over the original
+  changes no pixel by more than 3 of 765: the matte's edges add no fringe.
 
 ## In the app and for agents
 

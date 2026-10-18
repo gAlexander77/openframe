@@ -44,7 +44,8 @@ PNG, so an agent can look at its work), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), `preview_frames` (one contact sheet of
-up to 24 moments, each stamped with its time), `export_video` and
+up to 24 moments, each stamped with its time), `export_video`,
+`export_versions` (every shape and cut-down of an ad, one file each) and
 `export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
 `duck_under_speech`, `reduce_noise`, `stabilize_clip`, `sync_audio`
@@ -53,7 +54,8 @@ up to 24 moments, each stamped with its time), `export_video` and
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time),
-`set_caption_look` (one of six caption looks for every caption) and
+`set_caption_look` (one of six caption looks for every caption),
+`text_behind_subject` (titles behind a video's subject) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
@@ -97,6 +99,27 @@ footage; an empty color removes one. Ad looks: `glow` (`{"color":
 "#00e5ff", "blur": 24, "strength": 2}`), `gradient` (`{"from": "#ffffff",
 "to": "#ff3d7f", "angle": 0}`), `stroke2` (a second outline) and `accent`
 (the kinetic sweeps' color).
+
+Ads ([[Features]] > Ads and deliverables): `set_brand` keeps the brand kit
+in the project (`describe_project` shows it as `brand`), `add_text`
+takes a `role` from it, `apply_brand` restyles titles and solids,
+`add_ad_element` adds an `end_card`, `lower_third`, `offer_badge`,
+`cta_button` or `logo_reveal` in one call (`{"element": "end_card",
+"start": 12, "headline": "Fresh roast, every morning", "cta": "Order
+now"}`), and the app tool `text_behind_subject` (`clip_id`,
+`text_clip_ids`) puts titles behind a video's person or product.
+`set_audio_fade` fades music in seconds (`{"clip_ids": ["c_..."],
+"fade_in": 0.5, "fade_out": 1.5}`); the clip stores frames.
+`export_versions` renders the deliverables in one call: `{"ratios":
+["16:9", "9:16", "1:1"], "durations": [15, 6], "textless": true,
+"loudness": -14}` (or `versions` spelled out, each `ratio`, `duration`,
+`textless`, `fit`, `name`), one file each, the project untouched; with
+`"check": true` it answers a contact sheet of every version instead.
+Cut-downs keep the end card (`keep_end` seconds, default the end card's
+length). Long runs answer `running`; `export_status` follows them and
+lists the `versions` when done.
+`describe_project` now names a clip's `name` and `group`, so an
+element's parts are easy to find.
 
 `set_animation` plays kinetic typography on titles: the presets
 `typewriter`, `letterRise`, `letterFade`, `wordPop`, `wordRise`,

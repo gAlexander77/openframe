@@ -3,6 +3,7 @@
 // version, a hand-written agent script with half the fields missing — leaves
 // as a complete, valid Project or as an error naming what is wrong.
 
+import { normalizeBrand } from "../brandKit";
 import { cleanCompressor } from "../compressor";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
@@ -385,6 +386,7 @@ export function normalizeProject(raw: unknown): Project {
     path.includes(id) || byId.get(id)!.tracks.some((t) => t.clips.some((c) => c.type === "compound" && cyclic(c.compoundId, [...path, id])));
   for (const k of compounds) if (cyclic(k.id, [])) throw new ProjectError(`compounds: ${k.id} contains itself`);
   const markers = normalizeMarkers(raw.markers);
+  const brand = normalizeBrand(raw.brand, assetIds);
   return {
     schema: 1,
     id: typeof raw.id === "string" ? raw.id : base.id,
@@ -401,6 +403,7 @@ export function normalizeProject(raw: unknown): Project {
     markers,
     ...(luts.length ? { luts } : {}),
     ...(compounds.length ? { compounds } : {}),
+    ...(brand ? { brand } : {}),
     createdAt: num(raw.createdAt, base.createdAt),
     updatedAt: num(raw.updatedAt, base.updatedAt),
   };

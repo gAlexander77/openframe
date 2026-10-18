@@ -29,6 +29,7 @@ import { FILLERS, fillerRanges } from "../lib/fillers";
 import { transcribePcm } from "../engine/transcribe";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
+import { behindProblem, putBehindSubject } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
 import type { Asset, AudioClip, Cutout, Id, VideoClip } from "../lib/project/types";
@@ -895,25 +896,17 @@ export interface CutoutResult {
   matte: string;
 }
 
-/**
- * CapCut's Remove background: make the clip's background matte on this
- * machine (once; progress and cancel like the other tools) and turn it
- * on, as one undoable edit. A clip whose matte already exists, or whose
- * asset has one covering it, turns on instantly.
- */
-export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+/** A clip's matte, ready to put on it: its own or another of the asset's
+ * that covers it (instant), or one made now as the cutout job. Edits
+ * nothing, so a caller can apply it with other changes in one undo step. */
+export async function matteFor(clipId?: Id): Promise<{ clipId: Id; cutout: Cutout; result: CutoutResult; note: string }> {
   const { clip, asset } = resolve("cutout", clipId);
   const fps = store.get().project.fps;
   const [from, to] = clipWindow(clip as VideoClip, fps, asset.fps);
   const own = (clip as VideoClip).cutout;
   const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
-  if (ready) {
-    // A look change, like the inspector's: store.edit, because edit()'s
-    // settle would let the magnet close gaps on the main track.
-    store.edit("Remove background", (p) => ops.setCutout(p, clip.id, ready));
-    finish("cutout", "Background removed");
-    return { clipId: clip.id, cached: true, model: ready.model, matte: ready.src };
-  }
+  if (ready) return { clipId: clip.id, cutout: ready, result: { clipId: clip.id, cached: true, model: ready.model, matte: ready.src }, note: "Background removed" };
+  const scope = projectWork.signal();
   const started = performance.now();
   // Starting the model takes a moment even when it is cached.
   const made = await job("cutout", clip, "Starting the background model", async (progress, signal) => {
@@ -928,15 +921,58 @@ export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
     const [file] = await platform.adoptFiles([new File([m.bytes as Uint8Array<ArrayBuffer>], `matte-${asset.name.replace(/\.[^.]+$/, "")}.mp4`, { type: "video/mp4" })]);
     return { ...m, src: file.src };
   });
+  scope.throwIfAborted();
   const cutout: Cutout = { enabled: true, src: made.src, from: made.from, to: made.to, model: made.model };
   madeMattes.push({ ...cutout, asset: asset.proxy ?? asset.src });
-  const c = stillThere(clip.id);
-  store.edit("Remove background", (p) => ops.setCutout(p, c.id, cutout));
   const seconds = (performance.now() - started) / 1000;
   // The light model's edge is coarser: say why it was used.
   const light = made.fellBack ? " with the light model (this computer's graphics couldn't run the detailed one)" : "";
-  finish("cutout", `Background removed${light} · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`);
-  return { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src, ...(made.fellBack ? { fellBack: made.fellBack } : {}) };
+  return {
+    clipId: clip.id,
+    cutout,
+    result: { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src, ...(made.fellBack ? { fellBack: made.fellBack } : {}) },
+    note: `Background removed${light} · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`,
+  };
+}
+
+/**
+ * CapCut's Remove background: make the clip's background matte on this
+ * machine (once; progress and cancel like the other tools) and turn it
+ * on, as one undoable edit. A clip whose matte already exists, or whose
+ * asset has one covering it, turns on instantly.
+ */
+export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+  const m = await matteFor(clipId);
+  const c = stillThere(m.clipId);
+  // A look change, like the inspector's: store.edit, because edit()'s
+  // settle would let the magnet close gaps on the main track.
+  store.edit("Remove background", (p) => ops.setCutout(p, c.id, m.cutout));
+  finish("cutout", m.note);
+  return m.result;
+}
+
+/**
+ * The "text behind the subject" look: the video's matte (made or reused as
+ * Remove background does), then, in one undo step, a copy of the video
+ * above the titles with its background removed (lib/ads.ts
+ * putBehindSubject). Titles below the video are lifted above it first.
+ */
+export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {}): Promise<{ subjectClipId: Id; textClipIds: Id[]; cached: boolean; model: string }> {
+  const ids = opts.textIds ?? [];
+  const problem = behindProblem(store.get().project, clipId, ids);
+  if (problem) throw new Error(problem);
+  const m = await matteFor(clipId);
+  stillThere(m.clipId);
+  const again = behindProblem(store.get().project, clipId, ids);
+  if (again) throw new Error(again);
+  let subject = "";
+  store.edit("Text behind subject", (p) => {
+    const r = putBehindSubject(p, clipId, ids, m.cutout);
+    subject = r.subjectId;
+    return r.project;
+  });
+  finish("cutout", m.note.replace("Background removed", "Text placed behind the subject"));
+  return { subjectClipId: subject, textClipIds: ids, cached: m.result.cached, model: m.cutout.model };
 }
 
 /** The inspector's switch: on makes or reuses the matte, off keeps it. */

@@ -51,7 +51,10 @@ Everything not given gets its default. This is a complete file:
 ```
 Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, background,
           assets: Asset[], mediaFolders?: string[], tracks: Track[], markers: Marker[], luts?: LutFile[],
-          compounds?: Compound[] }
+          compounds?: Compound[], brand?: Brand }
+Brand   { name?, colors: { primary, secondary, accent, background, text },
+          fonts: { heading, body }, logos?: { main?, light?, dark?, icon? } (image asset ids),
+          url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
           sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)

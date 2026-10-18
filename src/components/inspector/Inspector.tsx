@@ -6,6 +6,7 @@ import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
 import { DEFAULT_STAGGER, KINETIC_ORDERS, type KineticOrder } from "../../lib/kinetic";
+import { brandOf, type ColorRole } from "../../lib/brandKit";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
 import { compoundView } from "../../lib/project/compound";
@@ -1555,6 +1556,8 @@ function ProjectDetails() {
             <ColorInput label="Background color" value={p.background} onChange={(v) => store.edit("Background color", (q) => ({ ...q, background: v }))} />
           </Row>
         </Section>
+        {/* Opens when a kit arrives (an agent's set_brand), closed without one. */}
+        <BrandSection key={p.brand ? "brand" : "none"} />
         <Section title="Summary">
           <dl className="summary num">
             <dt>Canvas</dt>
@@ -1573,6 +1576,42 @@ function ProjectDetails() {
         </Section>
       </div>
     </>
+  );
+}
+
+/** The project's brand kit (set_brand): the colors, fonts and logo that
+ * ad elements and branded titles draw with. */
+function BrandSection() {
+  const p = useEditor((s) => s.project);
+  const b = brandOf(p);
+  const set = (label: string, args: Record<string, string>) => store.edit(label, (q) => runCommand(q, "set_brand", args));
+  const pictures = p.assets.filter((a) => a.kind === "image" && !a.sticker);
+  const roles: [ColorRole, string][] = [["primary", "Primary"], ["secondary", "Secondary"], ["accent", "Accent"], ["background", "Background"], ["text", "Text"]];
+  return (
+    <Section title="Brand" defaultOpen={!!p.brand}>
+      {roles.map(([role, label]) => (
+        <Row key={role} label={label}>
+          <ColorInput label={`Brand ${role} color`} value={b.colors[role]} onChange={(v) => set("Brand color", { [role]: v })} />
+        </Row>
+      ))}
+      <Row label="Headings">
+        <FontPicker value={b.fonts.heading} onChange={(font) => set("Brand font", { heading_font: font })} />
+      </Row>
+      <Row label="Body">
+        <FontPicker value={b.fonts.body} onChange={(font) => set("Brand font", { body_font: font })} />
+      </Row>
+      <Row label="Logo">
+        <select className="field" aria-label="Brand logo" value={b.logos?.main ?? ""} onChange={(e) => set("Brand logo", { logo: e.target.value })}>
+          <option value="">None</option>
+          {pictures.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <p className="insp-hint">Ad elements and branded titles use these. Agents set them with set_brand.</p>
+    </Section>
   );
 }
 

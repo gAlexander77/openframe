@@ -112,35 +112,11 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   ctx.textAlign = s.align;
   const x = s.align === "left" ? pad : s.align === "right" ? w - pad : w / 2;
 
-  const bgPad = reach.box;
-  if (s.background) {
-    const r = s.background.radius * k;
-    ctx.fillStyle = s.background.color;
-    ctx.beginPath();
-    ctx.roundRect(pad - bgPad, pad - bgPad, textW + bgPad * 2, lineH * lines.length + bgPad * 2, r);
-    ctx.fill();
-  }
-
   // Each line's left edge and width, whichever way it is aligned.
   const geo = lines.map((line, i) => {
     const lw = ctx.measureText(line).width;
     return { line, y: pad + lineH * (i + 0.5), lw, left: s.align === "left" ? x : s.align === "right" ? x - lw : x - lw / 2 };
   });
-
-  const sweep = kin && sweepAt(kin, ANIMATIONS);
-  const shares = (amount: number) => lineSweeps(geo.map((g) => g.lw), amount);
-  if (sweep?.marker) {
-    const fractions = shares(sweep.marker);
-    // A highlighter pass behind the words, left to right, line by line.
-    ctx.fillStyle = s.accent ?? MARKER;
-    const px = size * 0.18;
-    geo.forEach((g, i) => {
-      if (fractions[i] <= 0) return;
-      ctx.beginPath();
-      ctx.roundRect(g.left - px, g.y - size * 0.42, (g.lw + px * 2) * fractions[i], size * 0.86, size * 0.12);
-      ctx.fill();
-    });
-  }
 
   const fine = kin && finestUnit(kin);
   let pieces: Piece[];
@@ -168,6 +144,36 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
       firstWord += lineWords.length;
       const m = j >= 0 && j < lineWords.length ? lineWords[j] : undefined;
       return { text: g.line, x, y: g.y, align: s.align, width: g.lw, ...(m ? { word: { text: m[0], x: g.left + ctx.measureText(g.line.slice(0, m.index)).width } } : {}) };
+    });
+  }
+
+  // The box arrives and leaves with the units: its opacity follows the
+  // most visible one, so a boxed title whose letters fade in does not
+  // show an empty box first (the ad drive's first frame did).
+  const bgPad = reach.box;
+  if (s.background) {
+    const r = s.background.radius * k;
+    ctx.save();
+    ctx.globalAlpha = pieces.some((p) => p.state) ? Math.min(1, Math.max(0, ...pieces.map((p) => p.state?.opacity ?? 1))) : 1;
+    ctx.fillStyle = s.background.color;
+    ctx.beginPath();
+    ctx.roundRect(pad - bgPad, pad - bgPad, textW + bgPad * 2, lineH * lines.length + bgPad * 2, r);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const sweep = kin && sweepAt(kin, ANIMATIONS);
+  const shares = (amount: number) => lineSweeps(geo.map((g) => g.lw), amount);
+  if (sweep?.marker) {
+    const fractions = shares(sweep.marker);
+    // A highlighter pass behind the words, left to right, line by line.
+    ctx.fillStyle = s.accent ?? MARKER;
+    const px = size * 0.18;
+    geo.forEach((g, i) => {
+      if (fractions[i] <= 0) return;
+      ctx.beginPath();
+      ctx.roundRect(g.left - px, g.y - size * 0.42, (g.lw + px * 2) * fractions[i], size * 0.86, size * 0.12);
+      ctx.fill();
     });
   }
 

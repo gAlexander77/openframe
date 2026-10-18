@@ -42,8 +42,36 @@ export interface Project {
   luts?: LutFile[];
   /** Nested timelines that compound clips play (ADR-037). Absent = none. */
   compounds?: Compound[];
+  /** The brand kit an ad keeps to (set_brand): colors by role, two fonts,
+   * logos. Absent = none set; ad elements then use neutral defaults. */
+  brand?: Brand;
   createdAt: number;
   updatedAt: number;
+}
+
+/** A brand kit (lib/brandKit.ts): what titles, buttons, badges and end
+ * cards draw with, so every part of an ad agrees. Colors are CSS colors. */
+export interface Brand {
+  name?: string;
+  colors: {
+    /** Buttons, bars, the main brand color. */
+    primary: string;
+    /** A second brand color: panels, the lower third's second line. */
+    secondary: string;
+    /** Highlights: badges, marker sweeps, labels. */
+    accent: string;
+    /** Behind end cards and text boxes. */
+    background: string;
+    /** Text over footage and over the background. */
+    text: string;
+  };
+  /** At most two families, as ad typography wants: headings and the rest. */
+  fonts: { heading: string; body: string };
+  /** Image assets: main (full color), light (for dark backgrounds), dark
+   * (for light ones), icon (the mark alone). */
+  logos?: { main?: Id; light?: Id; dark?: Id; icon?: Id };
+  url?: string;
+  tagline?: string;
 }
 
 export type AssetKind = "video" | "audio" | "image";

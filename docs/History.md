@@ -879,3 +879,45 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   compositor's 256 keyed textures, so a moving frame is uploaded unkeyed.
   A gradient fill must stay put while letters travel through it: each
   unit maps the gradient's ends through the inverse of its own transform.
+- **A brand kit and ad elements.** The kit lives in the project (two fonts,
+  colors by role, logo variants), and the elements (end card, lower third,
+  offer badge, call to action, logo reveal) are ordinary text, solid and
+  picture clips laid out inside the title-safe area, so nothing new
+  renders or saves. Buttons and badges are text with a background box, not
+  masked solids: a box measured in canvas fractions stretches when the
+  frame changes shape, a text box does not. Two lessons from the drive's
+  screenshots: a glow effect left on a logo smears it (the flare now fades
+  to nothing), and a Details section that mounted collapsed before an
+  agent set the kit stayed collapsed (it remounts when a kit arrives).
+- **Text behind the subject.** A copy of the video with Remove
+  background's matte, on a track above the title, is the whole effect;
+  `removeBackground` was split so the matte can be made first and the copy
+  added in the same undo step. A dark line at the frame's top edge in the
+  first screenshot was the viewer's overlay, not the picture: with the
+  title hidden the copy over the original differs by at most 3 of 765.
+- **Deliverables without touching the master.** Every version (shape,
+  cut-down, textless) is a project document computed from the master
+  (`src/lib/versions.ts`) and handed to the exporter, which already takes
+  any project: nothing to restore afterwards, no undo steps, and the user
+  can keep editing. Refitting measured in pixels against the short side is
+  what keeps a 9:16 title the size it was on 16:9 (sizes are pixels at a
+  1080-tall frame, so a literal copy would be 1.8 times larger on a
+  1920-tall one); full-frame footage instead keeps covering, its push-in
+  keyframes scaled and clamped so no frame shows an empty band. A cut-down
+  keeps the opening and the end card and lifts the middle out of the
+  picture tracks only; the music is cut at the new end and faded, since a
+  jump in the music is worse than an early fade. On the web each file goes
+  through the save dialog, which a browser opens only after a click; the
+  drive stands in a dialog that keeps the bytes and ffprobe reads them.
+- **What the ad's contact sheets caught.** `ad-spot` makes a 15 s ad with
+  MCP calls alone and saves `preview_frames` and `export_versions check`
+  sheets to look at. They showed four things no assertion did: a yellow
+  kicker label vanished over a pink, busy shot (labels are boxed in the
+  accent color now, with a readable label color); a 16:9 headline refit to
+  9:16 kept its pixels and broke into a word a line (a refit line wider
+  than the new safe area now shrinks to fit, to three quarters at most);
+  a boxed title whose letters fade in showed its empty box first (the
+  box's opacity follows the most visible unit); and the lower third and
+  the end card's website ran small (60/38 and 40 pixels now). An agent
+  had no seconds-based fade for music either: fades are frames through
+  `set_param`, so `set_audio_fade` takes seconds.

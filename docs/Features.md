@@ -554,6 +554,42 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Ad looks for titles**: a glow (neon, three strengths), a gradient fill
   (two colors at an angle) and a second outline (sticker style), in the
   Text tab and in every text style an agent sends.
+- **Brand kit** (kept in the project; Details > Brand, `set_brand`):
+  primary, secondary, accent, background and text colors, a heading and a
+  body font (two families at most), logo pictures by variant (main, light
+  for dark backgrounds, dark for light ones, icon), the brand's name,
+  website and tagline. Titles take a role from it (`add_text` `role`:
+  headline about 9% of the frame high with a shadow, subhead, body, label,
+  a pill button, a badge), and `apply_brand` restyles existing titles and
+  solids. Labels on a fill pick white or near-black by WCAG contrast.
+- **Ad elements** (`add_ad_element`), each one call, built from ordinary
+  clips in the brand's colors, grouped, inside the 90% title-safe area
+  (on 9:16 clear of the apps' buttons and captions): an **end card**
+  (logo, headline typed in by word, a pulsing call-to-action button, the
+  website), a **lower third** (name in a box over the title in the primary
+  color), an **offer badge** (tilted, pulsing, with a small tag), a
+  **call-to-action button**, and a **logo reveal** (the logo pops in, with
+  an optional glow flare and white flash, and the tagline).
+- **Text behind the subject** (`text_behind_subject`): a title sits behind
+  the person or product in a video. The video's background is removed on
+  this computer (Remove background's matte) for a silent copy on a track
+  above the title, grouped with the original; one undo step.
+- **Deliverables** (`export_versions`): a campaign's versions in one call,
+  each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
+  opening and the end card kept, the middle cut, the music fading at the
+  new end) and a textless master (titles and captions off). Footage that
+  fills the frame keeps filling it, or fits over a blurred copy of itself;
+  titles, logos and badges keep their size against the short side and
+  move inside the new frame's safe area. The versions are built from the
+  master as separate documents, so the project in the editor never
+  changes; `check` answers one contact sheet of them all first. Seven 480p
+  versions of a 5 s ad took 4.4 s headless.
+- **Fades in seconds for agents** (`set_audio_fade`): music under an ad
+  fades in and out by `fade_in` and `fade_out` seconds.
+- **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
+  15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
+  behind the roaster, lower third, offer, end card, faded music), checks
+  it on a contact sheet and exports 16:9, a 6 s 9:16 cut-down and 1:1.
 
 ## Export
 

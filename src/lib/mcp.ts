@@ -7,6 +7,7 @@
 
 import { SFX } from "./sfx";
 import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
+import { expandVersions, VERSION_FITS, VERSION_RATIOS, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -45,6 +46,10 @@ export interface McpHost {
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
   /** The last export_video: running (with progress), done or failed. */
   exportStatus(): unknown;
+  /** export_versions: one file per version, the project left as it is. */
+  exportVersions(options: VersionsRequest): Promise<unknown>;
+  /** One PNG (base64) of every version at a few moments, nothing exported. */
+  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<string>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
   voiceover(lines: { text: string; at?: number }[], options: Record<string, unknown>): Promise<unknown>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
@@ -79,7 +84,18 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect" | "textBehindSubject";
+
+/** What export_versions hands the host: the versions spelled out, and the
+ * export settings they share. */
+export interface VersionsRequest {
+  versions: VersionSpec[];
+  keepEnd?: number;
+  format?: string;
+  resolution?: string;
+  quality?: string;
+  loudness?: number;
+}
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
 
@@ -393,6 +409,61 @@ APP_TOOLS.push(
     description: "Correct a video or picture clip's exposure, white balance and levels from its frame at the playhead (CapCut's Auto adjust), setting its Basic adjustment sliders.",
     inputSchema: obj({ clip_id: { type: "string", description: "Video or image clip" } }, ["clip_id"]),
     call: async (h, a) => json(await h.ai("autoAdjustClip", String(a.clip_id), {})),
+  },
+  // ---- ads: text behind the subject, deliverables ----
+  {
+    name: "text_behind_subject",
+    description:
+      "Put titles (or stickers) behind the person or product in a video clip, the 'text behind the subject' look: the clip's background is removed on this computer (Remove background's matte, made once; the first run downloads the model), and a silent copy of the video with only the subject goes on a new track above the titles, grouped with the original so they move together. Titles below the video are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subject_clip_id).",
+    inputSchema: obj(
+      {
+        clip_id: { type: "string", description: "The video clip with the person or product" },
+        text_clip_ids: { type: "array", items: { type: "string" }, description: "The titles (or stickers) to put behind the subject; they must play while the video does" },
+      },
+      ["clip_id", "text_clip_ids"],
+    ),
+    call: async (h, a) => json(await h.ai("textBehindSubject", String(a.clip_id), { textIds: (a.text_clip_ids as unknown[]).map(String) })),
+  },
+  {
+    name: "export_versions",
+    description:
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+    inputSchema: obj({
+      versions: {
+        type: "array",
+        description: "Versions spelled out, e.g. [{ratio: '9:16', duration: 6}]",
+        items: obj(
+          {
+            ratio: { type: "string", enum: VERSION_RATIOS, description: "Frame shape; original keeps the project's" },
+            duration: { type: "number", minimum: 1, description: "Seconds; shorter than the project makes a cut-down" },
+            textless: { type: "boolean", description: "Titles and captions off" },
+            fit: { type: "string", enum: VERSION_FITS, description: "How full-frame footage meets a new shape: fill (default), blur, fit" },
+            name: { type: "string", description: "File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s'" },
+          },
+          ["ratio"],
+        ),
+      },
+      ratios: { type: "array", items: { type: "string", enum: VERSION_RATIOS }, description: "Every one of these shapes..." },
+      durations: { type: "array", items: { type: "number", minimum: 1 }, description: "...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6]" },
+      textless: { type: "boolean", description: "Also a textless version, in the first ratio" },
+      fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
+      keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
+      check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
+      format: { type: "string", enum: ["mp4", "mov", "webm", "mkv"], description: "Default mp4 (H.264 + AAC)" },
+      resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
+      quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
+      loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for every version's mix, e.g. -14; default as mixed" },
+    }),
+    call: async (h, a) => {
+      const master = Number((h.describe() as { duration?: number }).duration ?? 0);
+      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined }, master);
+      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
+      if (a.check === true) return { content: [{ type: "image", data: await h.versionsSheet(req), mimeType: "image/png" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: "Nothing exported. Each row is a version at 15%, 50% and 92% of its length." }) }] };
+      const done = h.exportVersions(req);
+      done.catch(() => {}); // after the wait below, export_status reports a failure
+      const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
+      return json(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+    },
   },
 );
 

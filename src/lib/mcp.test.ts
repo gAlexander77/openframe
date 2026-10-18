@@ -33,6 +33,15 @@ function host() {
       return { state: "done", path: "C:/Users/me/Videos/OpenFrame/x.mp4" };
     },
     exportStatus: () => null,
+    versionCalls: [] as unknown[],
+    async exportVersions(o: unknown) {
+      h.versionCalls.push(o);
+      return { state: "done", versions: [] };
+    },
+    async versionsSheet(o: unknown) {
+      h.versionCalls.push(o);
+      return "iVBOR";
+    },
     voiced: [] as unknown[][],
     async voiceover(lines: unknown, options: unknown) {
       h.voiced.push([lines, options]);
@@ -206,4 +215,35 @@ it("passes a voiceover script through with the options given, in the app's names
   const lines = [{ text: "Meet RacePulse." }, { text: "Pick your widgets.", at: 6 }];
   await call(h, "tools/call", { name: "add_voiceover", arguments: { lines, voice: "am_michael", caption_y: 0.4 } });
   expect(h.voiced).toEqual([[lines, { voice: "am_michael", captionY: 0.4 }]]);
+});
+
+describe("MCP ad tools", () => {
+  it("puts titles behind the subject through the AI host", async () => {
+    const h = host();
+    await call(h, "tools/call", { name: "text_behind_subject", arguments: { clip_id: "c1", text_clip_ids: ["t1", "t2"] } });
+    expect(h.aiCalls).toEqual([["textBehindSubject", "c1", { textIds: ["t1", "t2"] }]]);
+  });
+
+  it("spells versions out from ratios and durations, and exports them", async () => {
+    const h = host();
+    h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: 0 });
+    const r = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["16:9", "9:16"], durations: [10, 6], textless: true, loudness: -14 } });
+    expect(JSON.parse(text(r))).toMatchObject({ state: "done" });
+    expect(h.versionCalls).toEqual([
+      {
+        versions: [{ ratio: "16:9" }, { ratio: "16:9", duration: 6 }, { ratio: "9:16" }, { ratio: "9:16", duration: 6 }, { ratio: "16:9", textless: true }],
+        loudness: -14,
+      },
+    ]);
+  });
+
+  it("answers a contact sheet of the versions when asked to check, exporting nothing", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "1:1", fit: "blur" }], check: true } });
+    const content = (r!.result as { content: { type: string }[] }).content;
+    expect(content[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(h.versionCalls).toEqual([{ versions: [{ ratio: "1:1", fit: "blur" }] }]);
+    const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
+    expect(none!.result).toMatchObject({ isError: true });
+  });
 });
