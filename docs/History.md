@@ -831,3 +831,11 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   worklet exists to place audio to the sample, and a video take has no
   such need. The drive records the runner's fake camera and microphone;
   the desktop app's permissions wait for a desktop check.
+- **Sound effects, made locally.** Whooshes, pops and dings are in almost
+  every short, and CapCut's are a cloud library. Eight are synthesized
+  from sines and seeded noise (a swept band-pass for the whooshes, a
+  pitch-dropping sine for the pop, inharmonic partials for the bell), so
+  each is the same on every machine and free of any license. The Audio
+  tab's empty drop box was 180 px tall and pushed them out of view; it is
+  one line there now. Record moved out of the Audio tab, where it made
+  little sense.

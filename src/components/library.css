@@ -76,6 +76,8 @@
 .drop-box:hover, .drop-box.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .drop-box strong { font-size: var(--fs-md); }
 .drop-box span { font-size: var(--fs-xs); color: var(--text-3); }
+/* The Audio tab's: short, so the sound effects under it show too. */
+.drop-box.compact { min-height: 0; padding: 12px; grid-auto-flow: column; justify-content: center; gap: 10px; }
 
 /* ---- cards ------------------------------------------------------------------- */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
@@ -204,3 +206,7 @@
 .transcript [data-i]:hover { background: var(--bg-2); }
 .transcript [data-i].now { background: var(--accent-soft); color: var(--text-1); }
 .transcript ::selection { background: rgb(240 90 90 / 45%); }
+
+/* A sound effect's card: its thumbnail is a play button. */
+.sfx-play { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / 35%); color: var(--text-1); }
+.sfx-play:hover { background: var(--accent); color: var(--accent-ink); }

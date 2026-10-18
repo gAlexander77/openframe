@@ -1,3 +1,4 @@
+import { addSoundEffect } from "../state/sfx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
@@ -160,6 +161,9 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       return { view: layer, run: () => addAdjustmentLayer(frame) };
     case "color":
       return { view: layer, run: () => addColorLayer(frame) };
+    case "sfx":
+      // Its file is made on first use; it lands by an audio drop's rules.
+      return { view: null, run: () => void addSoundEffect(payload.id, { frame }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };
     case "transition": {
       const cut = transitionCut(tracks, row, frame);
       const d = secondsToFrames(transitionSeconds(), p.fps);

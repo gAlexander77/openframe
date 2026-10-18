@@ -193,6 +193,7 @@ in both.
 | Enhance voice | C P | yes: the Compressor's Enhance voice preset (2026-10-17); noise reduction stays its own tool | - | — |
 | Voice isolation / stems | C R F | no | P2 | A Demucs-class ONNX model; heavy. |
 | Voice changer filters and characters | C | no | P2 | Web Audio graphs (echo, lo-fi, megaphone) as presets. |
+| Sound effects (whoosh, pop, ding) | C R | yes: Audio tab > Sound effects, eight synthesized on the device (2026-10-17) | — | Stock libraries stay out of scope; these are generated, so no license applies. A larger CC0 set is the upgrade. |
 | Pitch shift independent of speed | C P V | no; pitch only follows speed (Change pitch) | P2 | The engine's time-stretch (ADR-028) can expose a semitone offset. |
 | Fill channel (left or right to both) | C | yes (`set_channel_fill`) | — | — |
 | Sync external audio to camera audio | C P R F | yes: clip menu > Sync audio by waveform (or the AI tools card, `sync_audio`), onset envelopes cross-correlated, exact to the sample; `sync_to_clip` by a known offset | — | — |

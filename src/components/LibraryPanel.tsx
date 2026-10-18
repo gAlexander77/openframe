@@ -12,6 +12,7 @@ import {
   Music,
   PaintBucket,
   Palette,
+  Play,
   Plus,
   Search,
   SlidersHorizontal,
@@ -36,6 +37,8 @@ import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { toast } from "../state/toast";
 import { cancelCapture, canRecordScreen, startCapture, stopCapture, useCapture } from "../state/capture";
+import { addSoundEffect, auditionSoundEffect } from "../state/sfx";
+import { SFX } from "../lib/sfx";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import { EnginePreview } from "./EnginePreview";
@@ -183,7 +186,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <button className="btn import-btn" onClick={() => void pickAndImport()}>
           <Upload size={14} /> Import
         </button>
-        <RecordButton />
+        {kind === "all" && <RecordButton />}
         <label className="lib-search">
           <Search size={14} />
           <input className="field" aria-label={kind === "audio" ? "Search audio" : "Search media"} placeholder={kind === "audio" ? "Search audio" : "Search media"} value={options.query} onChange={(e) => change({ query: e.target.value })} />
@@ -215,7 +218,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <label><input type="checkbox" checked={options.favorites} onChange={(e) => change({ favorites: e.target.checked })} />Favorites only</label>
       </div>
       {total === 0 ? (
-        <button className="drop-box" onClick={() => void pickAndImport()}>
+        <button className={`drop-box${kind === "audio" ? " compact" : ""}`} onClick={() => void pickAndImport()}>
           <Upload size={22} />
           <strong>Import</strong>
           <span>{kind === "audio" ? "No audio imported yet. Click to browse." : "Drag videos, audio or photos here, or click to browse"}</span>
@@ -244,6 +247,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
           <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
         </div>
       )}
+      {kind === "audio" && <SoundEffects />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
       {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
@@ -402,6 +406,34 @@ function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; use
 }
 
 // ---- catalogs -----------------------------------------------------------------
+
+/** The built-in sound effects (lib/sfx.ts), made on this computer: play
+ * one from its card, double-click, + or drag it in to add it. */
+function SoundEffects() {
+  const add = (id: string) => void addSoundEffect(id).catch((e) => toast(e instanceof Error ? e.message : String(e), "error"));
+  return (
+    <section className="lib-section">
+      <h4 className="lib-group">Sound effects</h4>
+      <div className="card-grid small">
+        {Object.entries(SFX).map(([id, s]) => (
+          <CatalogCard
+            key={id}
+            label={s.label}
+            payload={{ kind: "sfx", id, label: s.label }}
+            onAdd={() => add(id)}
+            preview={
+              <div className="fx-preview">
+                <button className="sfx-play" aria-label={`Play ${s.label}`} data-tip="Listen" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={() => auditionSoundEffect(id)}>
+                  <Play size={16} />
+                </button>
+              </div>
+            }
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string }) {
   return (

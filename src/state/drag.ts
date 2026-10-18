@@ -15,7 +15,8 @@ export type DragPayload =
   | { kind: "transition"; type: string; label: string }
   | { kind: "filter"; type: string; label: string }
   | { kind: "adjustment"; label: string }
-  | { kind: "color"; label: string };
+  | { kind: "color"; label: string }
+  | { kind: "sfx"; id: string; label: string };
 
 export interface DragState {
   payload: DragPayload;

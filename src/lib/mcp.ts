@@ -5,6 +5,7 @@
 // window API all hand messages to handleMcp, so agents see one surface
 // however they connect (ADR-008).
 
+import { SFX } from "./sfx";
 import { COMMANDS, TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -78,7 +79,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect";
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
 
@@ -332,6 +333,12 @@ APP_TOOLS.push(
       ["clip_id"],
     ),
     call: async (h, a) => json(await h.ai("trackMotion", String(a.clip_id), given({ at: a.at, box: a.box, videoId: a.video_clip_id }))),
+  },
+  {
+    name: "add_sound_effect",
+    description: "Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, ding, success, rise (a riser) or boom. It lands on an audio track at `start` (default the playhead); the file is made once per project and reused.",
+    inputSchema: obj({ name: { type: "string", enum: Object.keys(SFX) }, start: { type: "number", minimum: 0, description: "Timeline seconds" } }, ["name"]),
+    call: async (h, a) => json(await h.ai("addSoundEffect", String(a.name), given({ at: a.start }))),
   },
   {
     name: "auto_reframe",

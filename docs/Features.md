@@ -552,6 +552,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-034 Timelines leave as OpenTimelineIO]]).
 ## Library
 
+- **Sound effects** in the Audio tab (CapCut's is a cloud library;
+  Resolve ships a local one): Whoosh, Swish, Pop, Click, Ding, Success,
+  Riser and Boom, synthesized on this computer from sines and seeded
+  noise, so they are the same everywhere and nobody's license applies.
+  The card's play button auditions one; double-click, + or a drag adds it
+  on an audio track, the WAV made once per project and reused
+  (`add_sound_effect` for agents).
 - **Solid color** in the Adjustment tab (CapCut's color background): a
   white layer on a new top track at the playhead, its color set in the
   inspector; drag it to place it.
