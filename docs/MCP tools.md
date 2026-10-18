@@ -499,7 +499,7 @@ No parameters.
 
 ### seek
 
-Move the playhead to a time in seconds.
+Move the playhead to a time in seconds: what the viewer shows and where tools that act at the playhead (the Tracking box) start.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -643,12 +643,12 @@ Show one part of a video or picture full screen, as a zoom on a screen recording
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip id |
-| `region` | { x, y, w, h } | yes |  |
+| `region` | { x, y, w, h } | yes | The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner |
 | `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
 | `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
 | `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
 | `region.h` | number | yes | Height, a fraction of its height (0.01..1) |
-| `to_region` | { x, y, w, h } |  |  |
+| `to_region` | { x, y, w, h } |  | Where the move ends: the part of the picture shown at `to` |
 | `to_region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
 | `to_region.y` | number | yes | Top edge, a fraction of its height (0..1) |
 | `to_region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
@@ -831,11 +831,11 @@ Pin a title, sticker or picture to a moving subject in the video under it (CapCu
 |---|---|---|---|
 | `clip_id` | string | yes | The layer to pin (title, sticker, picture or video) |
 | `at` | number |  | Timeline seconds to start from; default the playhead (0..) |
-| `box` | { x, y, w, h } |  |  |
-| `box.x` | number | yes |  |
-| `box.y` | number | yes |  |
-| `box.w` | number | yes |  |
-| `box.h` | number | yes |  |
+| `box` | { x, y, w, h } |  | The subject, as a rectangle of the video's picture |
+| `box.x` | number | yes | Left edge, a fraction of the picture's width |
+| `box.y` | number | yes | Top edge, a fraction of its height |
+| `box.w` | number | yes | Width, a fraction of the picture's width |
+| `box.h` | number | yes | Height, a fraction of its height |
 | `video_clip_id` | string |  | The video to follow; default the one under the layer (main track first) |
 
 ### auto_reframe
@@ -846,11 +846,11 @@ Reframe a wide video into another shape on this computer (CapCut's and Premiere'
 |---|---|---|---|
 | `clip_id` | string | yes | The video clip |
 | `ratio` | "9:16" \| "1:1" \| "4:5" \| "keep" |  | Canvas shape; keep reframes in the current one |
-| `box` | { x, y, w, h } |  |  |
-| `box.x` | number | yes |  |
-| `box.y` | number | yes |  |
-| `box.w` | number | yes |  |
-| `box.h` | number | yes |  |
+| `box` | { x, y, w, h } |  | The subject, as a rectangle of the video's picture |
+| `box.x` | number | yes | Left edge, a fraction of the picture's width |
+| `box.y` | number | yes | Top edge, a fraction of its height |
+| `box.w` | number | yes | Width, a fraction of the picture's width |
+| `box.h` | number | yes | Height, a fraction of its height |
 
 Example:
 
@@ -940,7 +940,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `duration` | number | yes | Seconds (0.001..) |
 | `x` | number |  | Horizontal offset, -0.5..0.5 |
 | `y` | number |  | Vertical offset, -0.5..0.5 |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -949,14 +949,14 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.align` | "left" \| "center" \| "right" |  | Alignment |
 | `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
 | `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `style.background` | { color, padding, radius } |  |  |
+| `style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
 | `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
 | `style.background.padding` | number |  | Pixels (0..) |
 | `style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `style.stroke` | { color, width } |  |  |
+| `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
-| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
@@ -977,7 +977,7 @@ Change a text clip's words and/or style.
 |---|---|---|---|
 | `clip_id` | string | yes | Text clip id |
 | `text` | string |  | New words |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -986,14 +986,14 @@ Change a text clip's words and/or style.
 | `style.align` | "left" \| "center" \| "right" |  | Alignment |
 | `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
 | `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `style.background` | { color, padding, radius } |  |  |
+| `style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
 | `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
 | `style.background.padding` | number |  | Pixels (0..) |
 | `style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `style.stroke` | { color, width } |  |  |
+| `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
-| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
@@ -1055,7 +1055,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `captions[].end` | number | yes | Seconds (0..) |
 | `captions[].text` | string | yes | Words shown |
 | `captions[].words` | number[] |  | Seconds each word of text starts, for the spoken-word highlight |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1064,14 +1064,14 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `style.align` | "left" \| "center" \| "right" |  | Alignment |
 | `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
 | `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `style.background` | { color, padding, radius } |  |  |
+| `style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
 | `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
 | `style.background.padding` | number |  | Pixels (0..) |
 | `style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `style.stroke` | { color, width } |  |  |
+| `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `style.stroke.color` | string | yes | CSS color |
 | `style.stroke.width` | number |  | Pixels (0..) |
-| `style.shadow` | { color, blur, x, y } |  |  |
+| `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `style.shadow.color` | string | yes | CSS color |
 | `style.shadow.blur` | number |  | Pixels (0..) |
 | `style.shadow.x` | number |  | Pixels |
@@ -1168,7 +1168,7 @@ Copy selected groups from a source clip to targets. Replaces those settings/keyf
 |---|---|---|---|
 | `source_clip_id` | string | yes | Source clip |
 | `clip_ids` | string[] | yes | Target clips |
-| `groups` | "transform" \| "color" \| "audio" \| "effects"[] | yes |  |
+| `groups` | "transform" \| "color" \| "audio" \| "effects"[] | yes | Which attributes to paste: transform, color, audio, effects |
 | `replace_effects` | boolean |  | Replace target effect stacks |
 
 ### set_transition
@@ -1279,7 +1279,7 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `gap` | number |  | Seconds between lines, default 0.4 (0..) |
 | `captions` | boolean |  | A caption per line (default true) |
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true) |
-| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  |  |
+| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, shadow } |  | The captions' look: the same fields as add_text's style |
 | `caption_style.font` | string |  | Font family |
 | `caption_style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `caption_style.color` | string |  | CSS color |
@@ -1288,14 +1288,14 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `caption_style.align` | "left" \| "center" \| "right" |  | Alignment |
 | `caption_style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
 | `caption_style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `caption_style.background` | { color, padding, radius } |  |  |
+| `caption_style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
 | `caption_style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
 | `caption_style.background.padding` | number |  | Pixels (0..) |
 | `caption_style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `caption_style.stroke` | { color, width } |  |  |
+| `caption_style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
 | `caption_style.stroke.color` | string | yes | CSS color |
 | `caption_style.stroke.width` | number |  | Pixels (0..) |
-| `caption_style.shadow` | { color, blur, x, y } |  |  |
+| `caption_style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
 | `caption_style.shadow.color` | string | yes | CSS color |
 | `caption_style.shadow.blur` | number |  | Pixels (0..) |
 | `caption_style.shadow.x` | number |  | Pixels |
@@ -1324,7 +1324,7 @@ Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, d
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "boom" | yes |  |
+| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "boom" | yes | Which effect (list_catalog section sound_effects has their lengths) |
 | `start` | number |  | Timeline seconds (0..) |
 
 Example:

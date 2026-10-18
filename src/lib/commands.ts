@@ -74,8 +74,9 @@ const S = {
   num: (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: "number", description, ...extra }),
   bool: (description: string): JsonSchema => ({ type: "boolean", description }),
   ids: (description: string): JsonSchema => ({ type: "array", items: { type: "string" }, description }),
-  obj: (properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema => ({
+  obj: (properties: Record<string, JsonSchema>, required: string[] = [], description?: string): JsonSchema => ({
     type: "object",
+    ...(description ? { description } : {}),
     properties,
     required,
     additionalProperties: false,
@@ -161,10 +162,10 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   case: S.str("Letter case as shown (the text is kept): none, upper, lower or title", { enum: ["none", "upper", "lower", "title"] }),
   // Readable over busy footage: a box behind, an outline, a drop shadow.
   // Sizes are pixels at 1080p; an empty color removes the part.
-  background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"]),
-  stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"]),
-  shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"]),
-});
+  background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"], "A box behind the text, so it reads over busy footage; an empty color removes it"),
+  stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"], "An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it"),
+  shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"], "A drop shadow; an empty color removes it"),
+}, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
 const REGION_SCHEMA = S.obj(
   {
@@ -203,7 +204,7 @@ export const COMMANDS: Command[] = [
   {
     name: "paste_attributes",
     description: "Copy selected groups from a source clip to targets. Replaces those settings/keyframes; effects append by default. Keeps timing/source offsets and respects locks.",
-    input: S.obj({ source_clip_id: S.str("Source clip"), clip_ids: S.ids("Target clips"), groups: { type: "array", items: S.str("Group", { enum: [...ATTRIBUTE_GROUPS] }) }, replace_effects: S.bool("Replace target effect stacks") }, ["source_clip_id", "clip_ids", "groups"]),
+    input: S.obj({ source_clip_id: S.str("Source clip"), clip_ids: S.ids("Target clips"), groups: { type: "array", items: S.str("Group", { enum: [...ATTRIBUTE_GROUPS] }), description: `Which attributes to paste: ${ATTRIBUTE_GROUPS.join(", ")}` }, replace_effects: S.bool("Replace target effect stacks") }, ["source_clip_id", "clip_ids", "groups"]),
     run: (p, a) => pasteAttributes(p, a.clip_ids as string[], copyAttributes(p, String(a.source_clip_id)), a.groups as AttributeGroup[], a.replace_effects === true),
   },
   {
@@ -1399,8 +1400,8 @@ export const COMMANDS: Command[] = [
     input: S.obj(
       {
         clip_id: S.str("Video or image clip id"),
-        region: REGION_SCHEMA,
-        to_region: REGION_SCHEMA,
+        region: { ...REGION_SCHEMA, description: "The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner" },
+        to_region: { ...REGION_SCHEMA, description: "Where the move ends: the part of the picture shown at `to`" },
         mode: S.str("How the region meets the canvas", { enum: ["fill", "fit"] }),
         from: S.num("Timeline seconds the move starts; default the clip's start"),
         to: S.num("Timeline seconds the move ends; default the clip's end"),

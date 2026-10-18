@@ -179,7 +179,7 @@ export const APP_TOOLS: AppTool[] = [
   { name: "redo", description: "Redo the last undone edit; returns what changed.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.redo())) },
   {
     name: "seek",
-    description: "Move the playhead to a time in seconds.",
+    description: "Move the playhead to a time in seconds: what the viewer shows and where tools that act at the playhead (the Tracking box) start.",
     inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" } }, ["at"]),
     call: (h, a) => json(h.seek(Number(a.at))),
   },
@@ -397,7 +397,7 @@ APP_TOOLS.push(
       {
         clip_id: { type: "string", description: "The layer to pin (title, sticker, picture or video)" },
         at: { type: "number", minimum: 0, description: "Timeline seconds to start from; default the playhead" },
-        box: obj({ x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } }, ["x", "y", "w", "h"]),
+        box: { ...obj({ x: { type: "number", description: "Left edge, a fraction of the picture's width" }, y: { type: "number", description: "Top edge, a fraction of its height" }, w: { type: "number", description: "Width, a fraction of the picture's width" }, h: { type: "number", description: "Height, a fraction of its height" } }, ["x", "y", "w", "h"]), description: "The subject, as a rectangle of the video's picture" },
         video_clip_id: { type: "string", description: "The video to follow; default the one under the layer (main track first)" },
       },
       ["clip_id"],
@@ -407,7 +407,7 @@ APP_TOOLS.push(
   {
     name: "add_sound_effect",
     description: "Add a built-in sound effect, made on this computer: whoosh, swish, pop, click, ding, success, rise (a riser) or boom. It lands on an audio track at `start` (default the playhead); the file is made once per project and reused.",
-    inputSchema: obj({ name: { type: "string", enum: Object.keys(SFX) }, start: { type: "number", minimum: 0, description: "Timeline seconds" } }, ["name"]),
+    inputSchema: obj({ name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" }, start: { type: "number", minimum: 0, description: "Timeline seconds" } }, ["name"]),
     call: async (h, a) => json(await h.ai("addSoundEffect", String(a.name), given({ at: a.start }))),
   },
   {
@@ -418,7 +418,7 @@ APP_TOOLS.push(
       {
         clip_id: { type: "string", description: "The video clip" },
         ratio: { type: "string", enum: ["9:16", "1:1", "4:5", "keep"], description: "Canvas shape; keep reframes in the current one" },
-        box: obj({ x: { type: "number" }, y: { type: "number" }, w: { type: "number" }, h: { type: "number" } }, ["x", "y", "w", "h"]),
+        box: { ...obj({ x: { type: "number", description: "Left edge, a fraction of the picture's width" }, y: { type: "number", description: "Top edge, a fraction of its height" }, w: { type: "number", description: "Width, a fraction of the picture's width" }, h: { type: "number", description: "Height, a fraction of its height" } }, ["x", "y", "w", "h"]), description: "The subject, as a rectangle of the video's picture" },
       },
       ["clip_id"],
     ),
@@ -450,7 +450,7 @@ APP_TOOLS.push(
         gap: { type: "number", minimum: 0, description: "Seconds between lines, default 0.4" },
         captions: { type: "boolean", description: "A caption per line (default true)" },
         enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true)" },
-        caption_style: TEXT_STYLE_SCHEMA,
+        caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look: the same fields as add_text's style" },
         caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36)" },
       },
       ["lines"],

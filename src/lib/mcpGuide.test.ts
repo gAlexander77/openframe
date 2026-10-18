@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { validate } from "./commands";
+import { validate, type JsonSchema } from "./commands";
 import { handleMcp, instructions, listTools, type McpHost } from "./mcp";
 import { agentPlaybook, EXAMPLES, fullCatalog, groupOf, helpText, HELP_TOPICS, promptMessages, PROMPTS, TOOL_GROUPS, toolReference } from "./mcpGuide";
 
@@ -21,6 +21,19 @@ describe("the MCP guide", () => {
     }
     expect(tools.find((t) => t.name === "describe_project")!.annotations.readOnlyHint).toBe(true);
     expect(tools.find((t) => t.name === "delete_clips")!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+  });
+
+  it("explains every parameter, nested ones included: an unexplained field is one a model guesses", () => {
+    const bare: string[] = [];
+    const walk = (tool: string, s: JsonSchema, at: string) => {
+      for (const [k, p] of Object.entries(s.properties ?? {})) {
+        if (!p.description) bare.push(`${tool} ${at}${k}`);
+        if (p.properties) walk(tool, p, `${at}${k}.`);
+        if (p.items?.properties) walk(tool, p.items, `${at}${k}[].`);
+      }
+    };
+    for (const t of tools) walk(t.name, t.inputSchema, "");
+    expect(bare).toEqual([]);
   });
 
   it("has examples that pass their tool's own schema", () => {
