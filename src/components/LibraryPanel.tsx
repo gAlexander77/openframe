@@ -23,12 +23,15 @@ import {
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { formatBytes } from "../lib/export";
 import { filterMedia, mediaUsage, type MediaBrowser, type MediaUse } from "../lib/mediaLibrary";
+import { organizeMedia, removeMedia } from "../lib/project/mediaOrganization";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
 import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
+import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
+import { toast } from "../state/toast";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import { EnginePreview } from "./EnginePreview";
@@ -37,6 +40,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
+import { MenuList, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
@@ -150,6 +154,7 @@ function useThumbs() {
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const compounds = useEditor((s) => s.project.compounds);
@@ -213,8 +218,23 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
       ) : (
         <div className={options.view === "list" ? "media-list" : "card-grid"}>
           {list.map((a) => (
-            <MediaCard key={a.id} asset={a} uses={usage.get(a.id) ?? []} list={options.view === "list"} onPreview={() => setSource(a)} />
+            <MediaCard
+              key={a.id}
+              asset={a}
+              uses={usage.get(a.id) ?? []}
+              list={options.view === "list"}
+              onPreview={() => setSource(a)}
+              onMenu={(e) => {
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a)) });
+              }}
+            />
           ))}
+        </div>
+      )}
+      {menu && (
+        <div className="ctx-anchor" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
+          <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
         </div>
       )}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
@@ -253,7 +273,28 @@ function HoverScrub({ asset }: { asset: Asset }) {
   );
 }
 
-function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void }) {
+/** A media card's right-click menu. Removing takes the media out of the
+ * project only; a file the timeline uses says so and takes its clips. */
+function mediaMenu(asset: Asset, uses: number, preview: () => void): MenuItem[] {
+  const remove = (withClips: boolean) => {
+    try {
+      edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
+  };
+  return [
+    { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
+    { label: "Preview", onSelect: preview },
+    { label: "Favorite", checked: !!asset.favorite, onSelect: () => edit("Favorite media", (p) => organizeMedia(p, [asset.id], { favorite: !asset.favorite })) },
+    "-",
+    uses
+      ? { label: `Remove from project and its ${uses === 1 ? "clip" : `${uses} clips`}`, onSelect: () => remove(true) }
+      : { label: "Remove from project", hint: "The file stays", onSelect: () => remove(false) },
+  ];
+}
+
+function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -273,6 +314,7 @@ function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: Media
       title={`${asset.name}\n${metadata}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
+      onContextMenu={onMenu}
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}

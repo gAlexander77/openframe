@@ -1362,7 +1362,8 @@ function ProjectDetails() {
             <dt>Duration</dt>
             <dd>{formatDuration(framesToSeconds(ops.projectDuration(p), p.fps))}</dd>
             <dt>Media</dt>
-            <dd>{p.assets.length} files</dd>
+            {/* As the library counts: stickers are not listed there. */}
+            <dd>{((n) => `${n} ${n === 1 ? "file" : "files"}`)(p.assets.filter((a) => !a.sticker).length)}</dd>
             <dt>Tracks</dt>
             <dd>{p.tracks.length}</dd>
           </dl>

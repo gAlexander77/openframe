@@ -320,6 +320,7 @@ are in `src/lib/export.ts`; encoding is in `src/engine/export.ts`.
 | Autosave, Save a copy, relink, folders and favorites, source monitor, usage counts | C P R V F | yes | — | — |
 | Proxies on demand for heavy decodable media (4K HEVC, long GOP) | C P R V F | partial: desktop proxies only for codecs the webview cannot decode (`Asset.proxy`); web proxies on the [[Roadmap]] | P1 | A "Make proxy" action and a project toggle, using the existing FFmpeg path and the planned mediabunny `Conversion`. |
 | Preferences: default still length, step size, cache location, hardware acceleration | C P R V F | partial: default lengths of pictures, titles and effects, and transitions (Edit > Preferences) | P2 | Step size, cache location and hardware acceleration remain; the step actions are named for 10 frames. |
+| Remove media from the project; remove unused | P R | yes: media card menu > Remove from project, Manage media > Remove unused, `remove_media` (2026-10-17) | — | Added by the 2026-10-17 everyday-gaps pass; the survey had missed it. |
 | Project trash / restore a deleted project | C | no; delete asks twice | P2 | Move to a trash folder in the platform layer. |
 | Hover-scrub on media cards | C P V F | yes (`HoverScrub` in `LibraryPanel.tsx`) | — | The thumbnail sprite already exists. |
 | Collect or archive a project with its media | P R F V | no | P2 | Copy sources beside the JSON and rewrite paths. |

@@ -36,7 +36,7 @@ import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
 import { groupClips, ungroupClips } from "./project/groups";
-import { editFolder, organizeMedia } from "./project/mediaOrganization";
+import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
@@ -221,6 +221,16 @@ export const COMMANDS: Command[] = [
     description: "Set virtual folder membership and/or favorite status for imported assets. An empty folder name unfiles media; does not move source files.",
     input: S.obj({ asset_ids: S.ids("Assets"), folder: S.str("Existing folder, or empty to unfile"), favorite: S.bool("Favorite status") }, ["asset_ids"]),
     run: (p, a) => organizeMedia(p, a.asset_ids as string[], { ...(typeof a.folder === "string" ? { folder: a.folder } : {}), ...(typeof a.favorite === "boolean" ? { favorite: a.favorite } : {}) }),
+  },
+  {
+    name: "remove_media",
+    description: "Remove imported media from the project; the files on disk stay. Media a clip uses is refused unless remove_clips=true, which deletes those clips too. unused=true removes every file no clip uses.",
+    input: S.obj({ asset_ids: S.ids("Assets"), unused: S.bool("Remove all media no clip uses"), remove_clips: S.bool("Also delete the clips that use it") }),
+    run: (p, a) => {
+      const ids = a.unused === true ? unusedMedia(p) : ((a.asset_ids as string[] | undefined) ?? []);
+      if (!ids.length) throw new CommandError(a.unused === true ? "No media is unused." : "Name the media to remove.");
+      return removeMedia(p, ids, a.remove_clips === true);
+    },
   },
   {
     name: "relink_media",

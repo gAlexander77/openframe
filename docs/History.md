@@ -713,3 +713,9 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   the tracker's sub-pixel jitter (a tenth of an analysis pixel is half a
   canvas pixel at 320 px wide) beat the half-pixel thinning. A light
   binomial smoothing first left 5 keys for the drive's 3 seconds.
+- **Remove media.** Nothing removed an imported file: no command, and
+  media cards had no menu. Cards now have one, and Manage media clears the
+  unused. The project summary counted "1 files" and included stickers the
+  library hides; it says "1 file" and counts what the library lists. A
+  screenshot taken right after opening a menu shows nothing: menus pop in
+  over 180 ms, so drives wait before capturing.

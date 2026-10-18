@@ -40,6 +40,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   list. Usage counts select all referencing clips and seek the earliest.
   Counts follow edits/Undo, including references on inactive tracks.
 
+- **Remove media** (Premiere's Clear and Remove Unused): right-click a
+  media card for Add to timeline, Preview, Favorite and Remove from
+  project; a file the timeline uses offers to take its clips with it.
+  Manage media removes every unused file at once (`remove_media`). The
+  files on disk are never touched; one undo step each.
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
@@ -548,7 +553,7 @@ Three doors, one engine ([[Automation]]):
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
   (preset or bezier), `remove_keyframes`.
-- Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
+- Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
   share one left edge inside the safe area), `distribute_clips`, `set_crop`

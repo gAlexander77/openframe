@@ -4,13 +4,14 @@ import type { Asset } from "../lib/project/types";
 import { projectWork } from "../state/projectWork";
 import { applyReplacement, pickReplacement } from "../state/relink";
 import { store, useEditor } from "../state/store";
-import { organizeMedia } from "../lib/project/mediaOrganization";
+import { organizeMedia, removeMedia, unusedMedia } from "../lib/project/mediaOrganization";
 import { MediaFolders } from "./MediaFolders";
 import { Dialog } from "./Dialog";
 
 export function MediaManager({ onClose }: { onClose: () => void }) {
   const assets = useEditor((s) => s.project.assets);
   const folders = useEditor((s) => s.project.mediaFolders);
+  const unused = useEditor((s) => unusedMedia(s.project).length);
   const [signal] = useState(() => projectWork.signal());
   const [status, setStatus] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -36,7 +37,7 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
     <p className="lib-hint">Locate moved or missing files. Relinking updates every use in this project and preserves your edits. Undo restores the previous location.</p>
     <MediaFolders />
     <div className="media-file-list">
-      {assets.length === 0 && <p>No media imported.</p>}
+      {assets.length === 0 && <p>No media imported. Use Import in the Media tab, or drop files on the window.</p>}
       {assets.map((a) => <div className="media-file" key={a.id}>
         <div><strong>{a.name}</strong><span className="media-path">{a.src}</span>{a.proxy && <span className="media-path">Editing copy: {a.proxy}</span>}<span role="status">{status[a.id] ?? "Checking…"}</span>
           <div className="media-organization"><select className="field" aria-label={`Folder for ${a.name}`} value={a.folder ?? ""} onChange={(e) => store.edit("Move media to folder", (p) => organizeMedia(p, [a.id], { folder: e.target.value }))}><option value="">Unfiled</option>{folders?.map((f) => <option key={f}>{f}</option>)}</select>
@@ -63,6 +64,11 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
       <button className="btn ghost" onClick={() => setDraft(null)}>Discard replacement</button>
     </section>}
     {error && <p className="dialog-error" role="alert">{error}</p>}
-    <footer><button className="btn" disabled={busy} onClick={onClose}>Done</button></footer>
+    <footer>
+      <button className="btn ghost" disabled={busy || unused === 0} onClick={() => store.edit(`Remove ${unused} unused media`, (p) => removeMedia(p, unusedMedia(p)))}>
+        {unused ? `Remove ${unused} unused` : "Nothing unused"}
+      </button>
+      <button className="btn" disabled={busy} onClick={onClose}>Done</button>
+    </footer>
   </Dialog>;
 }
