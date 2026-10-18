@@ -864,3 +864,39 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   timings, and the editor moves to the second half. And the transcript
   card dropped reversed and speed-curved clips without a word; it says
   how many it leaves out and why.
+- **Graphics and compositing** (ADR-056 to ADR-060). An agent making ads
+  and title sequences needed After Effects' basics: shape layers (a color
+  clip with a `shape`, drawn as signed distances, with gradient, outline
+  and Trim Paths' draw-on), track mattes (alpha, luma, inverted; the clip
+  above or a named one, not drawn itself), motion blur from movement
+  (placements sampled over the shutter, summed in half float), mirror and
+  repeat edges, spring, elastic and bounce eases, and seeded wiggle. Each
+  is a command; one drive builds a 6-second logo reveal and lower third
+  through MCP alone and saves its contact sheet. Lessons:
+  - *A solid drew nothing once motion blur was on.* Solids and shapes bind
+    no texture, so unit 0 still held the half-float target being summed
+    into; WebGL refused every draw with only a console warning ("Feedback
+    loop formed between Framebuffer and active Texture"). A layer with no
+    texture of its own binds a blank one.
+  - *`texture()` inside a loop cost a second of compile.* Averaging the
+    transition pass over the shutter in a loop of uniform length made
+    ANGLE's D3D compiler unroll it, every transition included: 1053 ms to
+    build the program. A separate program with only the moving transitions
+    and `textureLod` (no gradients, so the loop stays a loop) builds in
+    ~70 ms, and only when used. The shape code got its own build of the
+    layer shader for the same reason (it added ~45 ms to every compile).
+  - *Averages belong in float.* Additive blending into RGBA8, each sample
+    at 1/32 opacity, rounds every share: a flat area drifts by several
+    levels. The sum goes to an RGBA16F target and is copied back once.
+  - *Wiggle's amplitude was not reached.* Two octaves of Perlin noise
+    passed 0.75 of the amplitude one time in a thousand, so a 40-pixel
+    shake wandered 25. Scaled by 1.3 and clamped, the amplitude is a
+    ceiling the shake meets.
+  - *The color bars change rows at mid-height.* A drive comparing the
+    viewer (702 px wide) with export's still (854) at y 0.5 read the 75%
+    row in one and the 100% row in the other and looked like a 13% color
+    shift. Sample off row boundaries; the two paths then agree to the
+    level.
+  - *Agents cannot space letters.* The text style schema has no
+    `letterSpacing` (nor `lineHeight`), though the document does; the
+    lower-third drive wanted tracked capitals. Left for the text work.

@@ -142,6 +142,12 @@ export type Ease =
   | "easeIn"
   | "easeOut"
   | "easeInOut"
+  /** Overshooting eases no bezier can draw (ADR-060): a damped spring
+   * that settles on the next value, Penner's elastic and bounce. Readers
+   * that predate them should treat an unknown name as linear. */
+  | "spring"
+  | "elastic"
+  | "bounce"
   /** Cubic bezier control points, as in CSS `cubic-bezier()`. */
   | [number, number, number, number];
 
@@ -356,9 +362,86 @@ export interface Visual {
    * cover it (a 16:9 shot in a 9:16 project). Blur draws the clip itself
    * scaled to cover and blurred; color draws a solid. */
   canvas?: CanvasFill;
+  /** After Effects' track matte (ADR-056): this clip shows only where the
+   * matte clip's picture is (alpha) or is bright (luma), or the reverse.
+   * The matte clip is not drawn itself. Absent = no matte. */
+  trackMatte?: TrackMatte;
+  /** After Effects' motion blur (ADR-058): while the transform moves, the
+   * picture is averaged over the shutter. Absent = off. */
+  motionBlur?: MotionBlur;
+  /** What fills the canvas around a picture that moved or shrank off it
+   * (ADR-059): mirrored or repeated copies of it. Absent = nothing. */
+  edge?: EdgeMode;
+  /** After Effects' wiggle() on transform values (ADR-060): seeded smooth
+   * noise added to x, y, rotation or scale. Absent = none. */
+  wiggle?: Partial<Record<WiggleTarget, Wiggle>>;
 }
 
 export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
+
+export type MatteMode = "alpha" | "alphaInverted" | "luma" | "lumaInverted";
+
+export interface TrackMatte {
+  /** The matte: absent = whatever clip is on the video track directly
+   * above at each frame (survives cuts); a clip id = that clip, on any
+   * video track of the same timeline. */
+  clipId?: Id;
+  mode: MatteMode;
+}
+
+export interface MotionBlur {
+  /** Shutter angle in degrees, 1..720: 180 (After Effects' default)
+   * blurs over half a frame, centered on it. */
+  shutter: number;
+}
+
+export type EdgeMode = "mirror" | "repeat";
+
+export type WiggleTarget = "x" | "y" | "rotation" | "scale";
+
+/** One transform value's wiggle. Keyframe `wiggle.<target>.amplitude` or
+ * `.strength` to ramp it. */
+export interface Wiggle {
+  /** Wiggles per second (Hz), 0.1..30. */
+  frequency: number;
+  /** Largest deviation, in the value's own units: canvas fractions for x
+   * and y, degrees for rotation, scale factor for scale. */
+  amplitude: number;
+  /** Multiplies the amplitude, 0..1 (absent = 1). */
+  strength?: number;
+  /** Same seed, same motion; another seed, another path. */
+  seed: number;
+}
+
+/** A shape layer (ADR-057): a color clip drawn as a rectangle, ellipse or
+ * line instead of filling the canvas. Every number keyframes by path
+ * (shape.width, shape.radius, shape.stroke.width, shape.draw,
+ * shape.gradient.angle). */
+export interface Shape {
+  kind: "rectangle" | "ellipse" | "line";
+  /** The box, as fractions of the canvas width and height. A line runs
+   * across the width (turn it with transform.rotation); its height is
+   * unused. */
+  width: number;
+  height: number;
+  /** Rectangle corners: 0 square .. 1 a radius of half the shorter side
+   * (a pill). Absent = 0. */
+  radius?: number;
+  /** false: outline only. Absent = filled (the clip's color or gradient).
+   * Lines have no fill. */
+  fill?: boolean;
+  /** A two-color linear fill in place of the clip's color (a line's
+   * color, on a line). Angle in degrees: 0 runs left to right, 90 top to
+   * bottom. */
+  gradient?: { from: string; to: string; angle: number };
+  /** The outline (a line's thickness and color), centered on the path.
+   * Width in pixels at a 1080-pixel-tall canvas. */
+  stroke?: { color: string; width: number };
+  /** Trim paths: the share of the outline (or line) drawn, 0..1, from its
+   * start (a rectangle's and ellipse's top center, clockwise; a line's
+   * left end). Absent = 1. Fills are not trimmed. */
+  draw?: number;
+}
 
 /** CapCut's Remove background (ADR-032, ADR-033): a matte a segmentation
  * model made once on this machine, multiplied into the clip's alpha. The
@@ -519,7 +602,8 @@ export type TextClip = ClipBase &
      * count no longer matches the text. */
     wordTimes?: number[];
   };
-export type ColorClip = ClipBase & Visual & { type: "color"; color: string };
+/** A solid; with `shape`, a shape layer whose fill is `color`. */
+export type ColorClip = ClipBase & Visual & { type: "color"; color: string; shape?: Shape };
 /** Applies its color, filter and effects to everything composited below it
  * (Premiere's adjustment layer, CapCut's effect/filter tracks). */
 export type AdjustmentClip = ClipBase &

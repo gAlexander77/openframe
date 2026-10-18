@@ -116,7 +116,7 @@ function useCanvas(paint: (cv: HTMLCanvasElement) => void, deps: unknown[]) {
 
 function describe(c: Clip): string {
   if (c.type === "text") return c.text.replace(/\n/g, " ") || "Text";
-  if (c.type === "color") return "Solid color";
+  if (c.type === "color") return c.shape ? (c.name ?? "Shape") : "Solid color";
   if (c.type === "adjustment") {
     const parts = [c.filter && FILTERS[c.filter.type]?.label, ...c.effects.map((e) => EFFECTS[e.type]?.label)].filter(Boolean);
     return parts.length ? parts.join(", ") : "Adjustment";

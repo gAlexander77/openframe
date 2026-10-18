@@ -64,6 +64,7 @@ a clock, so no frame is ever dropped
 | `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
 | `lib/crop.ts` | Crop ratios, the largest crop of a ratio, where a dragged crop handle puts the edges (ADR-048) |
 | `lib/mask.ts` | Mask shapes on the viewer: frame, outline, handles and drags, mirroring the shader's maskAlpha (ADR-049) |
+| `lib/shapes.ts`, `lib/trackMatte.ts`, `lib/motionBlur.ts`, `lib/wiggle.ts` | Graphics: shape geometry and colors, which clips are track mattes, motion blur's shutter samples, wiggle's noise; the plan resolves them and the compositor draws them (ADR-056 to ADR-060) |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes, nested compound plans one framebuffer level deeper; `shaders.ts` holds the GLSL |

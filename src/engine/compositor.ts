@@ -15,24 +15,35 @@
 // that texture is then the layer's source, so the clip's transform,
 // opacity, blend, color and effects act on the nested timeline's picture.
 //
+// A layer with motion blur (ADR-058) is drawn once per shutter placement
+// into a half-float target and averaged; one with a track matte (ADR-056)
+// is multiplied by its matte layer, drawn into a level's matte targets.
+//
 // Preview and export share this class; only the canvas and size differ.
 
 import { bakeCurves } from "../lib/curves";
 import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
-import type { BlendMode } from "../lib/project/types";
+import type { Placement } from "../lib/motionBlur";
+import type { BlendMode, MatteMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
+import { parseColor, shapeExtent, strokePx } from "../lib/shapes";
 import {
   ADJUST_FS,
   BLEND_FS,
   BLEND_IDS,
+  COPY_FS,
   EFFECT_SHADERS,
   FULLSCREEN_VS,
   LAYER_FS,
+  LAYER_SHAPE_FS,
   LAYER_VS,
+  MATTE_FS,
+  MATTE_IDS,
   MIX_FS,
   PRESENT_FS,
+  TRANSITION_BLUR_FS,
   TRANSITION_FS,
   TRANSITION_IDS,
 } from "./shaders";
@@ -77,6 +88,50 @@ type DrawSource = SourceImage | RenderedSource;
 const isRendered = (s: DrawSource | null): s is RenderedSource => !!s && "rendered" in s;
 
 const MASK_SHAPES = { linear: 1, mirror: 2, circle: 3, rectangle: 4, heart: 5, star: 6 } as const;
+const SHAPE_IDS = { rectangle: 1, ellipse: 2, line: 3 } as const;
+
+/** A CSS color as straight RGBA for a uniform, parsed once. */
+const rgbaCache = new Map<string, [number, number, number, number]>();
+function rgba(css: string): [number, number, number, number] {
+  let c = rgbaCache.get(css);
+  if (!c) {
+    c = parseColor(css) ?? [0, 0, 0, 1];
+    if (rgbaCache.size > 512) rgbaCache.clear();
+    rgbaCache.set(css, c);
+  }
+  return c;
+}
+
+/** Display uv to texture uv (column-major mat3): a source stored turned
+ * by `turns` quarter turns clockwise (phone footage), and a compound's
+ * picture, whose rows run bottom-up. */
+function uvMatrix(turns: number, rowsUp: boolean): Float32Array {
+  // u' = a.x * u + b.x * v + c.x, v' = a.y * u + b.y * v + c.y
+  const [a, b, c] = [
+    [[1, 0], [0, 1], [0, 0]],
+    [[0, -1], [1, 0], [0, 1]],
+    [[-1, 0], [0, -1], [1, 1]],
+    [[0, 1], [-1, 0], [1, 0]],
+  ][turns & 3];
+  const f = rowsUp ? -1 : 1;
+  return new Float32Array([a[0], f * a[1], 0, b[0], f * b[1], 0, c[0], rowsUp ? 1 - c[1] : c[1], 1]);
+}
+
+/** The span of layer units (u, v) an affine map P = O + u * (m00, m10) +
+ * v * (m01, m11) must cover to reach every corner of a W x H canvas: the
+ * quad an edge mode draws (ADR-059). */
+function edgeExtent(m00: number, m01: number, m10: number, m11: number, ox: number, oy: number, W: number, H: number): number[] | null {
+  const det = m00 * m11 - m01 * m10;
+  if (Math.abs(det) < 1e-9) return null;
+  const us: number[] = [], vs: number[] = [];
+  for (const [px, py] of [[0, 0], [W, 0], [0, H], [W, H]]) {
+    const dx = px - ox, dy = py - oy;
+    us.push((m11 * dx - m01 * dy) / det);
+    vs.push((-m10 * dx + m00 * dy) / det);
+  }
+  const c = (v: number) => Math.max(-256, Math.min(257, v));
+  return [c(Math.min(...us)), c(Math.min(...vs)), c(Math.max(...us)), c(Math.max(...vs))];
+}
 
 /** GL reads rows bottom-up; flip them to top-down in place. */
 function flipRows(out: Uint8Array, width: number, height: number): Uint8Array {
@@ -110,6 +165,11 @@ export class Compositor {
   private levels: Target[][] = [];
   /** Finished compound pictures, per level, reused every frame. */
   private baked: Target[][] = [];
+  /** Track mattes' own draw and effect targets, per level, on first use. */
+  private matteTargets: Target[][] = [];
+  /** Motion blur's half-float sum (ADR-058); null where the platform
+   * cannot render to one, which draws moving layers unblurred. */
+  private accum: Target | null | undefined;
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
@@ -198,11 +258,14 @@ export class Compositor {
     const ext = gl.getExtension("KHR_parallel_shader_compile") as { COMPLETION_STATUS_KHR: number } | null;
     const all: [string, string, string][] = [
       ["layer", LAYER_VS, LAYER_FS],
+      ["layer:shape", LAYER_VS, LAYER_SHAPE_FS],
       ["blend", FULLSCREEN_VS, BLEND_FS],
       ["present", FULLSCREEN_VS, PRESENT_FS],
       ["transition", FULLSCREEN_VS, TRANSITION_FS],
       ["adjust", FULLSCREEN_VS, ADJUST_FS],
       ["mix", FULLSCREEN_VS, MIX_FS],
+      ["matte", FULLSCREEN_VS, MATTE_FS],
+      ["copy", FULLSCREEN_VS, COPY_FS],
       ...Object.entries(EFFECT_SHADERS).map(([k, fs]): [string, string, string] => [`fx:${k}`, FULLSCREEN_VS, fs]),
     ];
     const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
@@ -258,12 +321,38 @@ export class Compositor {
 
   private freeTargets() {
     const gl = this.gl;
-    for (const t of [...this.levels.flat(), ...this.baked.flat()]) {
+    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...(this.accum ? [this.accum] : [])]) {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
     this.levels = [];
     this.baked = [];
+    this.matteTargets = [];
+    this.accum = undefined;
+  }
+
+  /** Level `depth`'s three track-matte targets (draw, two effect temps). */
+  private matteLevel(depth: number): Target[] {
+    return (this.matteTargets[depth] ??= Array.from({ length: 3 }, () => this.makeTarget()));
+  }
+
+  /** The half-float target motion blur sums into, made on first use; null
+   * without EXT_color_buffer_float (WebGL2 cannot render to floats then). */
+  private accumTarget(): Target | null {
+    if (this.accum !== undefined) return this.accum;
+    const gl = this.gl;
+    if (!gl.getExtension("EXT_color_buffer_float")) return (this.accum = null);
+    const tex = this.makeTexture();
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, this.width, this.height, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    const fb = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+      gl.deleteFramebuffer(fb);
+      gl.deleteTexture(tex);
+      return (this.accum = null);
+    }
+    return (this.accum = { fb, tex });
   }
 
   /** Nesting level `depth`'s framebuffers (accum A/B, layer L1/L2, temp
@@ -459,18 +548,36 @@ export class Compositor {
     return tex;
   }
 
-  /** Draw one layer's source into `out` (cleared first). */
+  /** Draw one layer's source into `out` (cleared first). With motion
+   * blur, it is drawn at each shutter placement into the half-float target
+   * at its share of the opacity, and the sum copied into `out` (ADR-058). */
   private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number) {
     const gl = this.gl;
-    this.clear(out);
-    const p = this.program("layer", LAYER_VS, LAYER_FS);
-    const u = this.use(p);
     const W = this.width;
     const H = this.height;
+    // Motion blur's target is made (and binds its texture) before any of
+    // the layer's own textures are bound.
+    const samples = layer.motion && layer.motion.length > 1 ? layer.motion : null;
+    const acc = samples ? this.accumTarget() : null;
+    // Frame blending's next frame uploads first, while unit 0 is free.
+    const next = src && !isRendered(src) ? src.next : undefined;
+    gl.activeTexture(gl.TEXTURE0);
+    const nextTex = next && src && !isRendered(src) ? this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS) : null;
+    const shape = layer.source.kind === "shape" ? layer.source.shape : undefined;
+    const p = shape ? this.program("layer:shape", LAYER_VS, LAYER_SHAPE_FS) : this.program("layer", LAYER_VS, LAYER_FS);
+    const u = this.use(p);
 
     let sw: number, sh: number, fit: number;
     const solid = layer.source.kind === "color";
-    if (solid || !src || isRendered(src)) {
+    if (shape) {
+      // A shape's pixels at scale 1 are the canvas's (ADR-057): the quad
+      // holds its box, its stroke and two screen pixels of soft edge.
+      const e = shapeExtent(shape, W, H);
+      const m = 2 / Math.max(0.05, Math.min(Math.abs(layer.scale), Math.abs(layer.scaleY ?? layer.scale)));
+      sw = e.w + 2 * m;
+      sh = e.h + 2 * m;
+      fit = 1;
+    } else if (solid || !src || isRendered(src)) {
       // A compound's picture is the canvas itself.
       sw = W;
       sh = H;
@@ -481,53 +588,72 @@ export class Compositor {
       fit = src.native ? 1 : Math.min(W / sw, H / sh);
     }
     const { left, top, right, bottom } = layer.crop;
-    const visW = sw * fit * layer.scale * (1 - left - right);
-    const scaleY = layer.scaleY ?? layer.scale;
-    const visH = sh * fit * scaleY * (1 - top - bottom);
-    // Cropping keeps the uncropped image where it was, so the visible part's
-    // center shifts by half the difference of the trimmed edges. The crop is
-    // cut from the source before the flip, so the shift mirrors with the
-    // picture (ADR-048).
     const fx = layer.flipX ? -1 : 1;
     const fy = layer.flipY ? -1 : 1;
-    const shiftX = ((left - right) / 2) * sw * fit * layer.scale * fx;
-    const shiftY = ((top - bottom) / 2) * sh * fit * scaleY * fy;
-    const rad = (layer.rotation * Math.PI) / 180;
-    const cos = Math.cos(rad);
-    const sin = Math.sin(rad);
-    const sx = visW * fx;
-    const sy = visH * fy;
-    // pixel position (y down) of quad point (a, b) in 0..1:
-    //   P = C + R * ((a - 0.5) * sx + shift.x, (b - 0.5) * sy + shift.y)
-    const cx = W / 2 + layer.x * W;
-    const cy = H / 2 + layer.y * H;
-    // Build the affine matrix mapping (a, b, 1) -> pixels, then to clip space.
-    const m00 = cos * sx, m01 = -sin * sy;
-    const m10 = sin * sx, m11 = cos * sy;
-    const ox = cx + cos * (-0.5 * sx + shiftX) - sin * (-0.5 * sy + shiftY);
-    const oy = cy + sin * (-0.5 * sx + shiftX) + cos * (-0.5 * sy + shiftY);
-    // pixels -> clip: x' = x / W * 2 - 1, y' = 1 - y / H * 2
-    const ax = 2 / W, ay = -2 / H;
-    // column-major mat3
-    const mat = new Float32Array([
-      m00 * ax, m10 * ay, 0,
-      m01 * ax, m11 * ay, 0,
-      ox * ax - 1, oy * ay + 1, 1,
-    ]);
-    gl.uniformMatrix3fv(u("u_matrix"), false, mat);
+    /** Where the layer sits at placement `t`: the affine map from layer
+     * units to clip space, the visible size, and the quad's extent. */
+    const geometry = (t: Placement) => {
+      const visW = sw * fit * t.scale * (1 - left - right);
+      const scaleY = t.scaleY ?? t.scale;
+      const visH = sh * fit * scaleY * (1 - top - bottom);
+      // Cropping keeps the uncropped image where it was, so the visible part's
+      // center shifts by half the difference of the trimmed edges. The crop is
+      // cut from the source before the flip, so the shift mirrors with the
+      // picture (ADR-048).
+      const shiftX = ((left - right) / 2) * sw * fit * t.scale * fx;
+      const shiftY = ((top - bottom) / 2) * sh * fit * scaleY * fy;
+      const rad = (t.rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const sx = visW * fx;
+      const sy = visH * fy;
+      // pixel position (y down) of quad point (a, b) in 0..1:
+      //   P = C + R * ((a - 0.5) * sx + shift.x, (b - 0.5) * sy + shift.y)
+      const cx = W / 2 + t.x * W;
+      const cy = H / 2 + t.y * H;
+      // Build the affine matrix mapping (a, b, 1) -> pixels, then to clip space.
+      const m00 = cos * sx, m01 = -sin * sy;
+      const m10 = sin * sx, m11 = cos * sy;
+      const ox = cx + cos * (-0.5 * sx + shiftX) - sin * (-0.5 * sy + shiftY);
+      const oy = cy + sin * (-0.5 * sx + shiftX) + cos * (-0.5 * sy + shiftY);
+      // pixels -> clip: x' = x / W * 2 - 1, y' = 1 - y / H * 2
+      const ax = 2 / W, ay = -2 / H;
+      // column-major mat3
+      const mat = new Float32Array([
+        m00 * ax, m10 * ay, 0,
+        m01 * ax, m11 * ay, 0,
+        ox * ax - 1, oy * ay + 1, 1,
+      ]);
+      const extent = (layer.edge && edgeExtent(m00, m01, m10, m11, ox, oy, W, H)) || [0, 0, 1, 1];
+      return { mat, visW, visH, extent };
+    };
+    const place = (t: Placement) => {
+      const g = geometry(t);
+      gl.uniformMatrix3fv(u("u_matrix"), false, g.mat);
+      gl.uniform4fv(u("u_extent"), g.extent);
+      gl.uniform1f(u("u_maskAspect"), Math.abs(g.visH) > 1e-6 ? Math.abs(g.visW / g.visH) : 1);
+    };
     gl.uniform4f(u("u_crop"), left, top, 1 - right, 1 - bottom);
-    gl.uniform1i(u("u_rotation"), src && !isRendered(src) ? src.rotation : 0);
+    gl.uniformMatrix3fv(u("u_uv"), false, uvMatrix(src && !isRendered(src) ? src.rotation : 0, isRendered(src)));
     gl.uniform1i(u("u_fbo"), isRendered(src) ? 1 : 0);
-    gl.uniform1i(u("u_solid"), solid || !src ? 1 : 0);
+    gl.uniform1i(u("u_solid"), solid || shape || !src ? 1 : 0);
+    gl.uniform1i(u("u_edge"), layer.edge === "mirror" ? 1 : layer.edge === "repeat" ? 2 : 0);
     if (layer.source.kind === "color") {
       const [r, g, b] = hexToRgb(layer.source.color);
       gl.uniform4f(u("u_color"), r, g, b, 1);
     } else gl.uniform4f(u("u_color"), 0, 0, 0, 0);
+    this.setShapeUniforms(u, layer, sw, sh);
+    let mainTex: WebGLTexture | null = null;
+    // Solids and shapes sample nothing, but unit 0 must not hold the
+    // target being drawn (a feedback loop WebGL refuses to draw).
+    if (solid || shape || !src) this.bindTex(0, this.blank(), u("u_tex"));
     if (isRendered(src)) {
-      this.bindTex(0, src.rendered.tex, u("u_tex"));
+      mainTex = src.rendered.tex;
+      this.bindTex(0, mainTex, u("u_tex"));
       gl.uniform2f(u("u_texel"), 1 / W, 1 / H);
-    } else if (src && !solid) {
-      this.bindTex(0, this.sourceTexture(src, slot), u("u_tex"));
+    } else if (src && !solid && !shape) {
+      mainTex = this.sourceTexture(src, slot);
+      this.bindTex(0, mainTex, u("u_tex"));
       const tw = src.rotation % 2 ? src.height : src.width;
       const th = src.rotation % 2 ? src.width : src.height;
       gl.uniform2f(u("u_texel"), 1 / tw, 1 / th);
@@ -544,7 +670,6 @@ export class Compositor {
     gl.uniform1i(u("u_matte"), 4);
     gl.activeTexture(gl.TEXTURE0);
     gl.uniform1f(u("u_sharpen"), layer.adjust.sharpen / 100);
-    gl.uniform1f(u("u_opacity"), layer.opacity);
     const key = layer.chromaKey;
     gl.uniform1i(u("u_key"), key ? 1 : 0);
     if (key) {
@@ -560,24 +685,94 @@ export class Compositor {
       gl.uniform2f(u("u_maskSize"), mask.width, mask.height);
       gl.uniform1f(u("u_maskRotation"), (mask.rotation * Math.PI) / 180);
       gl.uniform1f(u("u_maskFeather"), mask.feather);
-      gl.uniform1f(u("u_maskAspect"), Math.abs(visH) > 1e-6 ? Math.abs(visW / visH) : 1);
       gl.uniform1f(u("u_maskRadius"), mask.shape === "rectangle" ? Math.max(0, Math.min(1, mask.radius ?? 0)) : 0);
       gl.uniform1i(u("u_maskInvert"), mask.invert ? 1 : 0);
     }
     this.setColorUniforms(u, layer.adjust, layer.tone, layer.time, layer.grade);
-    gl.disable(gl.BLEND);
-    this.draw();
-    // Frame blending: the same quad and pass with the next frame, mixed in
-    // by a constant share (alpha included, so edges and keys mix too).
-    const next = src && !isRendered(src) ? src.next : undefined;
-    if (next) {
-      this.bindTex(0, this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS), u("u_tex"));
-      gl.enable(gl.BLEND);
-      gl.blendColor(0, 0, 0, next.w);
-      gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
-      this.draw();
+
+    if (!samples || !acc) {
+      this.clear(out);
       gl.disable(gl.BLEND);
+      place(layer);
+      gl.uniform1f(u("u_opacity"), layer.opacity);
+      this.draw();
+      // Frame blending: the same quad and pass with the next frame, mixed in
+      // by a constant share (alpha included, so edges and keys mix too).
+      if (next && nextTex) {
+        this.bindTex(0, nextTex, u("u_tex"));
+        gl.enable(gl.BLEND);
+        gl.blendColor(0, 0, 0, next.w);
+        gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE_MINUS_CONSTANT_ALPHA);
+        this.draw();
+        gl.disable(gl.BLEND);
+      }
+      return;
     }
+    // Motion blur: each placement adds its share; premultiplied, so the
+    // sum is the average of the pictures, edges and all.
+    this.clear(acc);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    const k = layer.opacity / samples.length;
+    for (const t of samples) {
+      place(t);
+      if (next && nextTex && mainTex) {
+        this.bindTex(0, mainTex, u("u_tex"));
+        gl.uniform1f(u("u_opacity"), k * (1 - next.w));
+        this.draw();
+        this.bindTex(0, nextTex, u("u_tex"));
+        gl.uniform1f(u("u_opacity"), k * next.w);
+      } else gl.uniform1f(u("u_opacity"), k);
+      this.draw();
+    }
+    gl.disable(gl.BLEND);
+    this.bindTarget(out);
+    const c = this.use(this.program("copy", FULLSCREEN_VS, COPY_FS));
+    this.bindTex(0, acc.tex, c("u_tex"));
+    this.draw();
+  }
+
+  /** A shape layer's uniforms (ADR-057), in render pixels; u_shape 0 for
+   * every other layer. */
+  private setShapeUniforms(u: (n: string) => WebGLUniformLocation | null, layer: Layer, quadW: number, quadH: number) {
+    const gl = this.gl;
+    const s = layer.source.kind === "shape" ? layer.source : null;
+    gl.uniform1i(u("u_shape"), s ? SHAPE_IDS[s.shape.kind] : 0);
+    gl.uniform2f(u("u_shapeQuad"), quadW, quadH);
+    if (!s) return;
+    const sh = s.shape;
+    const W = this.width, H = this.height;
+    const stroke = strokePx(sh, H);
+    const line = sh.kind === "line";
+    const bx = (sh.width * W) / 2, by = line ? stroke / 2 : (sh.height * H) / 2;
+    gl.uniform2f(u("u_shapeBox"), bx, by);
+    gl.uniform1f(u("u_shapeRadius"), sh.kind === "rectangle" ? sh.radius * Math.min(bx, by) : 0);
+    gl.uniform1f(u("u_shapeStroke"), line ? 0 : stroke);
+    gl.uniform1f(u("u_shapeDraw"), sh.draw);
+    gl.uniform1i(u("u_shapeFill"), !line && sh.fill !== false ? 1 : 0);
+    // A line is painted with its gradient, else its stroke's color, else
+    // the clip's; a rectangle or ellipse fills with the gradient or color.
+    const solid = line && sh.stroke ? sh.stroke.color : s.color;
+    const g = sh.gradient;
+    gl.uniform4fv(u("u_fill"), rgba(g ? g.from : solid));
+    gl.uniform4fv(u("u_fill2"), rgba(g ? g.to : solid));
+    gl.uniform1i(u("u_gradient"), g ? 1 : 0);
+    const a = ((g?.angle ?? 0) * Math.PI) / 180;
+    gl.uniform2f(u("u_gradDir"), Math.cos(a), Math.sin(a));
+    gl.uniform4fv(u("u_strokeColor"), rgba(sh.stroke?.color ?? s.color));
+  }
+
+  /** Keep `src` where the matte (premultiplied; null: no picture) is
+   * opaque or bright, or the reverse, into `out` (ADR-056). */
+  private applyMatte(src: Target, matte: Target | null, mode: MatteMode, out: Target) {
+    const gl = this.gl;
+    this.bindTarget(out);
+    const u = this.use(this.program("matte", FULLSCREEN_VS, MATTE_FS));
+    this.bindTex(0, src.tex, u("u_src"));
+    this.bindTex(1, matte ? matte.tex : this.blank(), u("u_matte"));
+    gl.uniform1i(u("u_hasMatte"), matte ? 1 : 0);
+    gl.uniform1i(u("u_mode"), MATTE_IDS[mode] ?? 0);
+    this.draw();
   }
 
   /** Run effects over `t`, ping-ponging between two temps (both distinct
@@ -645,7 +840,9 @@ export class Compositor {
     const rendered = new Map<Layer, RenderedSource>();
     let baked = 0;
     for (const item of plan) {
-      const layers = item.kind === "layer" ? [item.layer] : item.kind === "transition" ? [item.from, item.to] : [];
+      const own = item.kind === "layer" ? [item.layer] : item.kind === "transition" ? [item.from, item.to] : [];
+      // A track matte's layer may be a compound clip too.
+      const layers = [...own, ...own.flatMap((l) => (l.trackMatte?.layer ? [l.trackMatte.layer] : []))];
       for (const l of layers) {
         if (l.source.kind !== "compound") continue;
         const result = this.composite(l.source.items, sources, depth + 1, slot);
@@ -662,19 +859,34 @@ export class Compositor {
     let spare = B;
     this.clear(accum);
 
+    const sourceOf = (l: Layer): DrawSource | null =>
+      l.source.kind === "color" || l.source.kind === "shape" ? null : l.source.kind === "compound" ? (rendered.get(l) ?? null) : sources(l);
+    const drawable = (l: Layer, src: DrawSource | null) => l.source.kind === "color" || l.source.kind === "shape" || !!src;
+    /** A layer drawn into one of `target` and `temps` (whichever ends up
+     * holding it is returned): source, effects, then its track matte, which
+     * draws into the level's own matte targets. */
     const layerToTarget = (layer: Layer, src: DrawSource | null, target: Target, temps: [Target, Target]): Target => {
       this.drawLayer(layer, src, target, slot.n++);
       // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
       const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
-      return fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
+      const done = fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
+      const tm = layer.trackMatte;
+      if (!tm) return done;
+      const [M1, M2, M3] = this.matteLevel(depth);
+      const ml = tm.layer;
+      const msrc = ml && sourceOf(ml);
+      // The matte layer is planned without a matte of its own, so this
+      // never recurses further.
+      const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
+      const out = [target, ...temps].find((t) => t !== done)!;
+      this.applyMatte(done, matte, tm.mode, out);
+      return out;
     };
-    const sourceOf = (l: Layer): DrawSource | null =>
-      l.source.kind === "color" ? null : l.source.kind === "compound" ? (rendered.get(l) ?? null) : sources(l);
 
     for (const item of plan) {
       if (item.kind === "layer") {
         const src = sourceOf(item.layer);
-        if (item.layer.source.kind !== "color" && !src) continue;
+        if (!drawable(item.layer, src)) continue;
         const result = layerToTarget(item.layer, src, L1, [T1, T2]);
         this.blendInto(accum, result, item.layer.blend, spare);
         [accum, spare] = [spare, accum];
@@ -687,11 +899,17 @@ export class Compositor {
         const b = layerToTarget(item.to, sourceOf(item.to), L2, bTemps);
         const out = [L1, L2, T1, T2].find((t) => t !== aIn && t !== b)!;
         this.bindTarget(out);
-        const u = this.use(this.program("transition", FULLSCREEN_VS, TRANSITION_FS));
+        // A moving transition with motion blur has its own program, built on
+        // first use: the plain one stays as quick to compile as it was.
+        const u = this.use(item.motion ? this.program("transition:blur", FULLSCREEN_VS, TRANSITION_BLUR_FS) : this.program("transition", FULLSCREEN_VS, TRANSITION_FS));
         this.bindTex(0, aIn.tex, u("u_a"));
         this.bindTex(1, b.tex, u("u_b"));
         gl.uniform1f(u("u_p"), item.progress);
         gl.uniform1i(u("u_type"), TRANSITION_IDS[item.type] ?? 0);
+        if (item.motion) {
+          gl.uniform1i(u("u_samples"), item.motion.samples);
+          gl.uniform1f(u("u_spread"), item.motion.spread);
+        }
         gl.uniform2f(u("u_res"), this.width, this.height);
         this.draw();
         this.blendInto(accum, out, "normal", spare);

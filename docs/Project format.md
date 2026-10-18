@@ -73,6 +73,8 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
+          visual clips may carry trackMatte?, motionBlur?, edge?, wiggle?
+            and color clips shape? (see Graphics)
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
@@ -123,6 +125,50 @@ folder duplicates, recovers referenced folders and discards invalid favorites.
 These optional schema-1 fields do not change rendering. Older builds can read
 the edits but may discard folder definitions on saving (ADR-042).
 
+## Graphics
+
+Shape layers, track mattes, motion blur, edges and wiggle are optional
+fields (ADR-056 to ADR-060); absent means off, so files without them load
+unchanged.
+
+```json
+{ "type": "color", "color": "#0f1218", "start": 60, "duration": 90,
+  "transform": { "x": -0.22, "y": 0.3, "scale": 1, "rotation": 0, "flipX": false, "flipY": false },
+  "shape": { "kind": "rectangle", "width": 0.36, "height": 0.12, "radius": 0.3,
+             "stroke": { "color": "#ffcc00", "width": 4 }, "draw": 1 },
+  "motionBlur": { "shutter": 180 } },
+{ "type": "video", "assetId": "a1", "start": 0, "duration": 75, "in": 0,
+  "trackMatte": { "clipId": "c_title", "mode": "alpha" },
+  "edge": "mirror",
+  "wiggle": { "x": { "frequency": 3, "amplitude": 0.0073, "seed": 12 },
+              "rotation": { "frequency": 2, "amplitude": 0.6, "seed": 12, "strength": 0.5 } } }
+```
+
+- `shape` (color clips only; the clip's `color` is the fill):
+  `kind` `rectangle`, `ellipse` or `line`; `width`/`height` fractions of the
+  canvas (a line is `width` long, horizontal before rotation; its height is
+  unused); `radius` 0..1 of half the shorter side (rectangles; 1 is a
+  pill); `fill: false` for an outline only; `gradient: { from, to, angle }`
+  replaces the fill color (degrees, 0 left to right, 90 top to bottom; a
+  line's color too); `stroke: { color, width }` centered on the outline,
+  width in pixels at 1080p (a line's thickness; 8 when absent); `draw` 0..1
+  the share of the outline or line drawn (absent: all), from the top
+  center clockwise or a line's left end. Colors are CSS: `#rgb`, `#rrggbb`,
+  `#rrggbbaa`, `rgb()`, `rgba()` or a common name. Older builds draw such
+  a clip as a full-canvas solid.
+- `trackMatte: { clipId?, mode }`: `mode` `alpha`, `alphaInverted`,
+  `luma` or `lumaInverted`; `clipId` a visual clip of the same timeline,
+  absent for whatever is on the video track directly above at each frame.
+  A named matte is never drawn; a track-above matte only while it cuts.
+  `normalizeProject` drops a named matte whose clip is missing, is the clip
+  itself, or has no picture.
+- `motionBlur: { shutter }`: degrees, 1..720 (180 is After Effects' and
+  film's). 0 or less is dropped.
+- `edge`: `mirror` or `repeat`.
+- `wiggle`: per value `x`, `y` (canvas fractions), `rotation` (degrees)
+  or `scale` (scale factor), each `{ frequency (Hz), amplitude, seed,
+  strength? (0..1, absent 1) }`.
+
 ## Color grading
 
 A visual or adjustment clip's `adjust` holds the Basic sliders and,
@@ -163,7 +209,11 @@ Any numeric parameter can hold keyframes by path:
 
 Mask numbers animate the same way (`mask.x`, `mask.y`, `mask.width`,
 `mask.height`, `mask.rotation`, `mask.feather`, `mask.radius`), as CapCut
-keys every mask parameter; crop edges do not.
+keys every mask parameter; crop edges do not. So do a shape's
+(`shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`,
+`shape.draw`, `shape.gradient.angle`) and a wiggle's
+(`wiggle.x.strength`, `wiggle.x.amplitude`, and the same for `y`,
+`rotation` and `scale`).
 
 ## Crop and masks
 
@@ -192,8 +242,9 @@ keys every mask parameter; crop edges do not.
   ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
 
 `ease` shapes the curve leaving that keyframe: `linear`, `hold`, `easeIn`,
-`easeOut`, `easeInOut`, or a CSS-style bezier `[x1, y1, x2, y2]`. A missing
-`ease` is linear. The editor's other presets (Smooth, Fast in, Overshoot,
+`easeOut`, `easeInOut`, `spring`, `elastic`, `bounce` (overshoot and
+settle, ADR-060), or a CSS-style bezier `[x1, y1, x2, y2]`. A missing
+`ease` is linear, and so is a name a reader does not know. The editor's other presets (Smooth, Fast in, Overshoot,
 Anticipate) and hand-dragged curves are stored as beziers, so anything that
 evaluates CSS `cubic-bezier()` reproduces them. A path never holds two keys
 on one frame. Commands: `add_keyframe`, `move_keyframe`,

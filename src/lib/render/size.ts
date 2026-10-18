@@ -2,6 +2,7 @@
 // render plan (anchor points) and the on-canvas geometry (lib/align.ts).
 
 import { getAsset } from "../project/ops";
+import { shapeExtent } from "../shapes";
 import type { Project, TextClip, VisualClip } from "../project/types";
 
 /** A text clip's raster size. The engine registers its rasterizer at load;
@@ -17,7 +18,9 @@ export function setTextMeasure(fn: typeof measureText) {
 /** Size of a clip's source in project pixels before transform, and whether
  * it keeps its native size (text, color) or fits the canvas (media). */
 export function sourceSize(p: Project, c: VisualClip): { w: number; h: number; native: boolean } {
-  // A compound clip's picture is its inner timeline, drawn at canvas size.
+  // A shape is its box and stroke (ADR-057); a solid and a compound
+  // clip's inner timeline are drawn at canvas size.
+  if (c.type === "color" && c.shape) return { ...shapeExtent(c.shape, p.width, p.height), native: true };
   if (c.type === "color" || c.type === "compound") return { w: p.width, h: p.height, native: true };
   if (c.type === "text") {
     const r = measureText(c, p.width, p.height);

@@ -19,10 +19,10 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, Transform, WheelName } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Mask, MatteMode, Project, Shape, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { upsertKey } from "./keyframes";
+import { NAMED_EASES, upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
@@ -45,6 +45,9 @@ import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorP
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
+import { placeOnTop } from "./overlays";
+import { LINE_WIDTH, parseColor } from "./shapes";
+import { MATTE_MODES, trackAbove } from "./trackMatte";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -655,6 +658,247 @@ export const COMMANDS: Command[] = [
       return p;
     },
   },
+  // ---- graphics and compositing (ADR-056 to ADR-060) ----
+  {
+    name: "set_track_matte",
+    description:
+      "Cut a clip with a track matte (After Effects'): it shows only where another clip's picture is, the basis of video inside text, logo reveals and wipe reveals. mode alpha (default) keeps where the matte is opaque, alphaInverted where it is transparent, luma where it is bright, lumaInverted where it is dark. matte_clip_id: a visual clip of the same timeline (text, shape, picture, video), 'above' for whatever is on the video track directly above at each frame (keeps working after cuts), or 'none' to remove the matte; left out, the current matte stays (a new one uses 'above'). The matte clip is not drawn itself but keeps its transform, animations and keyframes, so animating the matte animates the reveal. Example, video inside big text: add_text {text: 'SUMMER', style: {size: 420}} then set_track_matte {clip_id: <video>, matte_clip_id: <text>}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The clip to cut (it is what shows)"),
+        matte_clip_id: S.str("The matte clip's id, 'above' (the video track directly above) or 'none'"),
+        mode: S.str("alpha: show where the matte is opaque (default); alphaInverted: where it is not; luma: where it is bright; lumaInverted: where it is dark", { enum: MATTE_MODES }),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => {
+      const { clip, trackIndex } = clipOrThrow(p, a.clip_id);
+      if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to cut with a matte`);
+      if (a.matte_clip_id === "none") {
+        return ops.updateClip(p, clip.id, (c) => {
+          const { trackMatte: _, ...rest } = c as Clip & { trackMatte?: unknown };
+          return rest as Clip;
+        });
+      }
+      const mode = (a.mode as MatteMode | undefined) ?? clip.trackMatte?.mode ?? "alpha";
+      const which = a.matte_clip_id === undefined ? (clip.trackMatte ? (clip.trackMatte.clipId ?? "above") : "above") : String(a.matte_clip_id);
+      let matte: TrackMatte = { mode };
+      if (which === "above") {
+        if (!trackAbove(p.tracks, trackIndex)) throw new CommandError("there is no video track directly above this clip's track: name the matte with matte_clip_id instead");
+      } else {
+        const m = clipOrThrow(p, which).clip;
+        if (m.id === clip.id) throw new CommandError("a clip cannot be its own matte");
+        if (!("transform" in m)) throw new CommandError(`${m.type} clips have no picture to be a matte`);
+        matte = { clipId: m.id, mode };
+      }
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, trackMatte: matte }) as Clip);
+    },
+  },
+  {
+    name: "add_shape",
+    description:
+      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}.",
+    input: S.obj(
+      {
+        kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
+        start: S.num("Seconds", { minimum: 0 }),
+        duration: S.num("Seconds", { minimum: 0.001 }),
+        x: S.num("Center's horizontal offset from the canvas center, fraction of its width (-0.5 left edge .. 0.5 right edge; default 0)"),
+        y: S.num("Center's vertical offset, fraction of the canvas height (-0.5 top .. 0.5 bottom; 0.35 is lower-third height; default 0)"),
+        width: S.num("Width, fraction of the canvas width (a line's length); default 0.3, an ellipse 0.2", { minimum: 0.001, maximum: 4 }),
+        height: S.num("Height, fraction of the canvas height (unused by lines); default 0.1, an ellipse a circle as wide as width", { minimum: 0.001, maximum: 4 }),
+        color: S.str("Fill color, CSS: '#ff3366', '#00000099' (with alpha), 'rgba(0,0,0,0.6)', 'white'; a line's color. Default #ffffff"),
+        gradient: S.obj(
+          {
+            from: S.str("Color at the start"),
+            to: S.str("Color at the end"),
+            angle: S.num("Degrees: 0 runs left to right (default), 90 top to bottom, 45 diagonal"),
+          },
+          ["from", "to"],
+        ),
+        fill: S.bool("false draws only the outline (give stroke_width); default true"),
+        stroke_color: S.str("Outline color, CSS; default white"),
+        stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
+        radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
+        draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
+        rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
+        opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
+        track_id: S.str("Track id; default above everything at that time"),
+      },
+      ["kind", "start", "duration"],
+    ),
+    run: (p, a) => {
+      const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
+      const color = colorArg(a.color, "color") ?? "#ffffff";
+      const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
+      const height = a.height !== undefined ? Number(a.height) : kind === "ellipse" ? (width * p.width) / p.height : 0.1;
+      const strokeColor = colorArg(a.stroke_color, "stroke_color");
+      const strokeWidth = a.stroke_width !== undefined ? Number(a.stroke_width) : kind === "line" ? LINE_WIDTH : strokeColor ? 4 : 0;
+      const shape: Shape = {
+        kind,
+        width,
+        height,
+        ...(kind === "rectangle" && (a.radius !== undefined || a.kind === "rounded_rectangle") ? { radius: Number(a.radius ?? 0.35) } : {}),
+        ...(a.fill === false && kind !== "line" ? { fill: false } : {}),
+        ...(a.gradient ? { gradient: gradientArg(a.gradient as Record<string, unknown>) } : {}),
+        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" ? color : "#ffffff"), width: strokeWidth } } : {}),
+        ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
+      };
+      if (shape.fill === false && !shape.stroke) throw new CommandError("an outline-only shape needs stroke_width");
+      const base = createColorClip(color, f(p, a.start), Math.max(1, f(p, a.duration)));
+      const clip = {
+        ...base,
+        name: shapeLabel(shape),
+        shape,
+        opacity: Number(a.opacity ?? 1),
+        transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
+      } as Clip;
+      if (a.track_id !== undefined) return ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      return placeOnTop(p, clip, "Graphics");
+    },
+  },
+  {
+    name: "set_shape",
+    description:
+      "Change shape layers made with add_shape (same meanings and units). Values left out keep theirs. Numbers that are animated (have keyframes) get a keyframe at `at` instead; to start animating one, use add_keyframe on its path (shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle). gradient with an empty from removes it; stroke_width 0 removes the outline.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Shape clips"),
+        kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
+        width: S.num("Fraction of the canvas width", { minimum: 0.001, maximum: 4 }),
+        height: S.num("Fraction of the canvas height", { minimum: 0.001, maximum: 4 }),
+        color: S.str("Fill color, CSS"),
+        gradient: S.obj({ from: S.str("Start color; empty removes the gradient"), to: S.str("End color"), angle: S.num("Degrees, 0 left to right") }, ["from"]),
+        fill: S.bool("false: outline only"),
+        stroke_color: S.str("Outline color, CSS"),
+        stroke_width: S.num("Pixels at 1080p; 0 removes the outline", { minimum: 0, maximum: 400 }),
+        radius: S.num("Rectangle corners 0..1", { minimum: 0, maximum: 1 }),
+        draw: S.num("Share drawn 0..1", { minimum: 0, maximum: 1 }),
+        at: S.num("Timeline seconds, for animated values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (clip.type !== "color" || !clip.shape) throw new CommandError(`clip ${id} is not a shape (add one with add_shape)`);
+        const color = colorArg(a.color, "color");
+        const strokeColor = colorArg(a.stroke_color, "stroke_color");
+        let s: Shape = { ...clip.shape };
+        if (a.kind !== undefined) {
+          s.kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
+          if (a.kind === "rounded_rectangle" && !s.radius && a.radius === undefined) s.radius = 0.35;
+        }
+        if (a.fill !== undefined) s = a.fill === false ? { ...s, fill: false } : omit(s, "fill");
+        const g = a.gradient as Record<string, unknown> | undefined;
+        if (g) s = g.from === "" ? omit(s, "gradient") : { ...s, gradient: gradientArg({ ...s.gradient, ...g }) };
+        if (strokeColor || a.stroke_width !== undefined) {
+          const w = a.stroke_width !== undefined ? Number(a.stroke_width) : (s.stroke?.width ?? (s.kind === "line" ? LINE_WIDTH : 4));
+          s = w > 0 ? { ...s, stroke: { color: strokeColor ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
+        }
+        // A name that is still the shape's own label follows the shape.
+        const name = clip.name === undefined || clip.name === shapeLabel(clip.shape) ? shapeLabel(s) : clip.name;
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, shape: s, name, ...(color ? { color } : {}) }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        const nums: [string, unknown][] = [["width", a.width], ["height", a.height], ["radius", a.radius], ["draw", a.draw], ...(s.stroke && a.stroke_width !== undefined ? [["stroke.width", a.stroke_width] as [string, unknown]] : [])];
+        for (const [k, v] of nums) if (v !== undefined) p = ops.setParam(p, [clip.id], `shape.${k}`, Number(v), rel);
+      }
+      return p;
+    },
+  },
+  {
+    name: "set_motion_blur",
+    description:
+      "Motion blur from movement (After Effects'): while a clip moves (position, scale or rotation keyframes, wiggle, in/out animations, and moving transitions such as slides, pushes, zooms and spins), its picture is averaged over the camera's shutter, so fast moves streak instead of strobing. shutter_angle in degrees: 180 (default; film's and After Effects') blurs over half a frame centered on it, 360 a whole frame (heavier), 90 crisper. Still frames cost nothing; export and the paused viewer use up to 32 samples, playback fewer.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        on: S.bool("Motion blur on or off"),
+        shutter_angle: S.num("Degrees, 1..720; default 180", { minimum: 1, maximum: 720 }),
+      },
+      ["clip_ids", "on"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to blur`);
+        return ops.updateClip(q, clip.id, (c) => {
+          const { motionBlur: _, ...rest } = c as Clip & { motionBlur?: unknown };
+          return (a.on ? { ...rest, motionBlur: { shutter: Number(a.shutter_angle ?? clip.motionBlur?.shutter ?? 180) } } : rest) as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_edge_mode",
+    description:
+      "What fills the canvas around a picture that is moved, shrunk, spun or shaken off it (After Effects' Motion Tile with Mirror Edges): mirror reflects the picture at its edges, seamless, the usual choice under camera shake, zoom-out and spin moves; repeat tiles it; none (default) leaves the canvas empty there. Pairs with set_wiggle and with scale below 1.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), edge: S.str("Edge mode", { enum: ["none", "mirror", "repeat"] }) }, ["clip_ids", "edge"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture`);
+        return ops.updateClip(q, clip.id, (c) => {
+          const { edge: _, ...rest } = c as Clip & { edge?: unknown };
+          return (a.edge === "none" ? rest : { ...rest, edge: a.edge as EdgeMode }) as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_wiggle",
+    description:
+      "Organic shake or drift (After Effects' wiggle): seeded smooth noise added to a clip's position, x, y, rotation or scale, for handheld camera shake, a nervous title or a floating logo. frequency is wiggles per second (camera shake 2..6, a slow drift 0.3..1); amplitude is the largest offset: pixels for position/x/y, degrees for rotation, percent for scale (a light shake: position 12 px and rotation 0.6 degrees at 4 Hz; an impact: position 40 px). amplitude 0 removes it. strength 0..1 (default 1) scales it: with at, it is keyed there, so two calls ramp a shake in or out (or add_keyframe on wiggle.x.strength, wiggle.y.strength, wiggle.rotation.strength, wiggle.scale.strength). The same seed repeats the same path. A shaken picture uncovers the canvas edge: set_edge_mode mirror, or scale it up slightly.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        target: S.str("What shakes: position is x and y together", { enum: ["position", "x", "y", "rotation", "scale"] }),
+        frequency: S.num("Wiggles per second (Hz); default 3, or the current one", { minimum: 0.05, maximum: 30 }),
+        amplitude: S.num("Largest offset: pixels (position, x, y), degrees (rotation) or percent (scale); 0 removes the wiggle", { minimum: 0 }),
+        strength: S.num("0..1, multiplies the amplitude; keyed at `at` when given", { minimum: 0, maximum: 1 }),
+        seed: { type: "integer", description: "Noise seed; default one per clip" },
+        at: S.num("Timeline seconds: key strength there"),
+      },
+      ["clip_ids", "target"],
+    ),
+    run: (p, a) => {
+      const targets: WiggleTarget[] = a.target === "position" ? ["x", "y"] : [a.target as WiggleTarget];
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to wiggle`);
+        for (const t of targets) {
+          const now = clip.wiggle?.[t];
+          if (!now && a.amplitude === undefined) throw new CommandError(`clip ${id} has no ${t} wiggle yet: give an amplitude`);
+          if (a.amplitude !== undefined && Number(a.amplitude) === 0) {
+            p = ops.updateClip(p, clip.id, (c) => {
+              const w: Record<string, unknown> = { ...("wiggle" in c ? c.wiggle : undefined) };
+              delete w[t];
+              const { wiggle: _w, keyframes: _k, ...rest } = c as Clip & { wiggle?: unknown };
+              // Its strength and amplitude keys go with it.
+              const keys = Object.fromEntries(Object.entries(c.keyframes ?? {}).filter(([k]) => !k.startsWith(`wiggle.${t}.`)));
+              return { ...rest, ...(Object.keys(w).length ? { wiggle: w } : {}), ...(Object.keys(keys).length ? { keyframes: keys } : {}) } as Clip;
+            });
+            continue;
+          }
+          const unit = t === "x" ? p.width : t === "y" ? p.height : t === "scale" ? 100 : 1;
+          const amp = a.amplitude !== undefined ? Number(a.amplitude) / unit : now!.amplitude;
+          const seed = a.seed !== undefined ? Math.round(Number(a.seed)) : (now?.seed ?? seedOf(clip.id));
+          const keyed = a.at !== undefined && a.strength !== undefined;
+          const w: Wiggle = {
+            frequency: Number(a.frequency ?? now?.frequency ?? 3),
+            amplitude: amp,
+            seed,
+            ...(!keyed && a.strength !== undefined && Number(a.strength) !== 1 ? { strength: Number(a.strength) } : !keyed && now?.strength !== undefined && a.strength === undefined ? { strength: now.strength } : {}),
+          };
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, wiggle: { ...(c as { wiggle?: object }).wiggle, [t]: w } }) as Clip);
+          if (keyed) {
+            const key = { f: f(p, a.at) - clip.start, v: Number(a.strength) };
+            const path = `wiggle.${t}.strength`;
+            p = ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
+          }
+        }
+      }
+      return p;
+    },
+  },
   {
     name: "set_uniform_scale",
     description: "CapCut's Uniform scale switch. false: the vertical scale (transform.scaleY) separates from transform.scale, starting equal; true: it goes and the picture takes transform.scale.",
@@ -713,7 +957,7 @@ export const COMMANDS: Command[] = [
         path: S.str("Parameter path (see set_param)"),
         at: S.num("Timeline seconds"),
         value: S.num("Value at that time"),
-        ease: S.str("Curve toward the next keyframe", { enum: ["linear", "hold", "easeIn", "easeOut", "easeInOut"] }),
+        ease: S.str("Curve toward the next keyframe; spring, elastic and bounce overshoot and settle", { enum: NAMED_EASES }),
       },
       ["clip_id", "path", "at", "value"],
     ),
@@ -1390,6 +1634,37 @@ function withPart<K extends keyof Grade>(a: Graded, key: K, value: Grade[K] | un
   return next;
 }
 
+// ---- helpers for the graphics commands (ADR-056 to ADR-060) ----
+
+/** A color argument checked the way the compositor reads it. */
+function colorArg(v: unknown, name: string): string | undefined {
+  if (v === undefined) return undefined;
+  if (!parseColor(String(v))) throw new CommandError(`${name} ${JSON.stringify(v)} is not a color: use #rrggbb, #rrggbbaa, rgb(), rgba() or a common name`);
+  return String(v);
+}
+
+function gradientArg(g: Record<string, unknown>): NonNullable<Shape["gradient"]> {
+  const from = colorArg(g.from, "gradient.from")!, to = colorArg(g.to ?? g.from, "gradient.to")!;
+  return { from, to, angle: Number(g.angle ?? 0) };
+}
+
+/** A copy of `o` without the optional field `key`. */
+function omit<T extends object>(o: T, key: keyof T): T {
+  const out = { ...o };
+  delete out[key];
+  return out;
+}
+
+/** What the timeline calls a shape clip until it is renamed. */
+const shapeLabel = (s: Shape) => ({ rectangle: s.radius ? "Rounded rectangle" : "Rectangle", ellipse: "Ellipse", line: "Line" })[s.kind];
+
+/** A clip's own wiggle seed, so two clips shake differently by default. */
+function seedOf(id: string): number {
+  let h = 7;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 9973;
+  return h + 1;
+}
+
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 
 /** Run one command with validation. Throws CommandError with every problem. */
@@ -1453,6 +1728,7 @@ export function describeProject(p: Project) {
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
+        ...graphicsSummary(c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
@@ -1478,6 +1754,35 @@ function placement(t: Transform) {
     ...(t.rotation ? { rotation: r(t.rotation) } : {}),
   };
   return Object.keys(out).length ? { transform: out } : {};
+}
+
+/** Shapes, mattes, motion blur, edges and wiggles, for describeProject
+ * (ADR-056 to ADR-060): what an agent needs to check its graphics. */
+function graphicsSummary(c: Clip) {
+  if (!("transform" in c)) return {};
+  const r = (v: number) => +v.toFixed(4);
+  const s = c.type === "color" ? c.shape : undefined;
+  return {
+    ...(c.type === "color" ? { color: c.color } : {}),
+    ...(s
+      ? {
+          shape: {
+            kind: s.kind === "rectangle" && s.radius ? "rounded_rectangle" : s.kind,
+            width: r(s.width),
+            ...(s.kind !== "line" ? { height: r(s.height) } : {}),
+            ...(s.radius ? { radius: s.radius } : {}),
+            ...(s.fill === false ? { fill: false } : {}),
+            ...(s.gradient ? { gradient: s.gradient } : {}),
+            ...(s.stroke ? { stroke: s.stroke } : {}),
+            ...(s.draw !== undefined ? { draw: s.draw } : {}),
+          },
+        }
+      : {}),
+    ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
+    ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
+    ...(c.edge ? { edge: c.edge } : {}),
+    ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
+  };
 }
 
 /** Which grade parts a clip uses, for describeProject. */
