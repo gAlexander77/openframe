@@ -200,3 +200,47 @@ from the earlier implementation and its historical test results.
   - the EyeDropper API in WebView2.
 
   Both are listed under the [[Roadmap]]'s desktop check.
+
+## 2026-10-18 (Claude Code): tools an AI model can make a professional video with
+
+- **Where it is.** Still on branch `improvements`, committed locally and
+  **not pushed or merged**. The four toolkit branches (epic, ads, fx,
+  audio) and the polish branch are merged into it, and their worktrees
+  are removed.
+- **What it adds** (History's 2026-10-18 entry has each piece and why):
+  - **The MCP guide** ([[ADR-055 The MCP guide is generated from the tools]]):
+    - a `help` tool, three prompts, `guide://` and `catalog://`
+      resources, and tool titles and hints;
+    - [[MCP tools]] and [[Agent playbook]] are generated, and tests fail
+      when they are stale, when a tool is not filed in a group, when an
+      example breaks its schema, or when any parameter lacks a
+      description.
+  - **Toolkits:**
+    - epic edits: music structure, cut to beats, hits, ramps, bars, fit
+      music, new transitions and sounds;
+    - ads: kinetic titles, brand kit, ad elements, text behind the
+      subject, versions per shape;
+    - graphics: shapes, track mattes, motion blur, edge modes, overshoot
+      eases, wiggle;
+    - sound: filters, reverb, echo, tape stop, broadcast loudness,
+      `measure_loudness`.
+  - **Review tools:**
+    - `preview_media` and `preview_motion`;
+    - `check_project`, the design rules measured, with each finding
+      naming the tool that fixes it;
+    - `save_project_copy`, `move_track` and `slip_clip`.
+  - **`scripts/mcp-web.mjs`** serves the web build's MCP over HTTP from
+    a headless browser, so a model can be tested against the tools as a
+    client sees them ([[Driving the app]]).
+- **How it was checked.**
+  - Each merge passed tsc, the unit tests (810) and its drives.
+  - A full run of all web drives on the merged branch passed (116; the
+    other three are desktop-only by design).
+  - Two blind tests, each a fresh agent given only the MCP connection,
+    made an ad and an epic edit. Every finding they reported is fixed,
+    with a test or a drive.
+- **Next, if the owner wants more:**
+  - a third blind test with real footage;
+  - per-version overrides in `export_versions`;
+  - undo should also drop a voiceover's speech files;
+  - beat markers should follow the music that `fit_music` trims.
