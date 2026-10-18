@@ -50,3 +50,18 @@ The feature survey listed it as a P1 gap. Two shapes were possible:
   (scale and rotation from several tracked points) is the upgrade for
   subjects that approach the camera or turn; reversed and frozen clips
   cannot be followed yet.
+
+## Later the same day: Auto reframe
+
+The same tracker drives Auto reframe (`centerKeys` in `src/lib/follow.ts`):
+the subject's path, read through the clip's own scale and flips, becomes
+position keyframes on the clip itself that keep the subject at the
+canvas's center, clamped so the picture never slides far enough to show
+an edge, and smoothed like an operator's pan (a Gaussian of 8 frames, the
+stabilizer's). The AI tools card changes the canvas to 9:16, 1:1 or 4:5
+(short side kept), fills it with the clip and follows what is at the
+center of its first frame; the inspector's Tracking > Keep subject
+centered starts from a box the user places. Premiere's Auto Reframe also
+emits keyframes, for the same reason: they can be fixed one at a time.
+There is no subject detector: without a box the subject is assumed to
+start in the middle, which holds for most framed shots.

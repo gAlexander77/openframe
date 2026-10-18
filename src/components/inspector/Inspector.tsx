@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, Underline, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCw, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
@@ -808,30 +808,46 @@ function AnimationTab({ clip }: { clip: Clip }) {
 }
 
 /** CapCut's Tracking: place a box on a subject in the video under this
- * layer, and the layer follows it from the playhead (state/tracking.ts). */
+ * layer, and the layer follows it from the playhead; on a video, the box
+ * can instead keep its subject centered (reframe). state/tracking.ts. */
 function TrackingSection({ clip }: { clip: VisualClip }) {
-  const why = useEditor((s) => cannotTrack(s.project, clip.id, s.playhead));
-  const placing = useTrackBox()?.target === clip.id;
+  const pinWhy = useEditor((s) => cannotTrack(s.project, clip.id, s.playhead, "pin"));
+  const centerWhy = useEditor((s) => (clip.type === "video" ? cannotTrack(s.project, clip.id, s.playhead, "center") : "Not a video"));
+  const box = useTrackBox();
+  const placing = box?.target === clip.id ? box.mode : null;
   const job = useTracking();
   const mine = job?.target === clip.id;
   const track = () => void trackMotion(clip.id).catch(() => undefined);
+  const idle =
+    clip.type === "video"
+      ? (centerWhy ?? "Keep a moving subject centered while the picture fills the canvas (reframe), or pin this clip to a subject in a video under it.")
+      : (pinWhy ?? "Pin this layer to a moving subject in the video under it, from the playhead on.");
   return (
     <Section title="Tracking">
       <p className="insp-hint" role={mine ? "status" : undefined}>
-        {mine ? `Following the subject… ${Math.round(job.progress * 100)}%` : placing ? "Drag the box onto the subject and size it to fit, then Track." : (why ?? "Pin this layer to a moving subject in the video under it, from the playhead on.")}
+        {mine ? `Following the subject… ${Math.round(job.progress * 100)}%` : placing ? `Drag the box onto the subject and size it to fit, then ${placing === "center" ? "Reframe" : "Track"}.` : idle}
       </p>
       <div className="insp-actions">
         {mine ? (
           <button className="btn ghost" onClick={cancelTracking}>Cancel</button>
         ) : placing ? (
           <>
-            <button className="btn primary" onClick={track}>Track</button>
+            <button className="btn primary" onClick={track}>{placing === "center" ? "Reframe" : "Track"}</button>
             <button className="btn ghost" onClick={cancelTrackBox}>Cancel</button>
           </>
         ) : (
-          <button className="btn" disabled={!!why || !!job} onClick={() => beginTrackBox(clip.id)}>
-            <Crosshair size={14} /> Pick subject
-          </button>
+          <>
+            {(clip.type !== "video" || !pinWhy) && (
+              <button className="btn" disabled={!!pinWhy || !!job} onClick={() => beginTrackBox(clip.id)}>
+                <Crosshair size={14} /> Pick subject
+              </button>
+            )}
+            {clip.type === "video" && (
+              <button className="btn" disabled={!!centerWhy || !!job} onClick={() => beginTrackBox(clip.id, "center")}>
+                <Ratio size={14} /> Keep subject centered
+              </button>
+            )}
+          </>
         )}
       </div>
     </Section>

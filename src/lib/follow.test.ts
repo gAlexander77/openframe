@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { inSource, onCanvas, pin, pinKeys, pointAt, smooth, type Path } from "./follow";
+import { centerKeys, inSource, onCanvas, pin, pinKeys, pointAt, smooth, type Path } from "./follow";
 import { paramAt } from "./keyframes";
 import { clipForAsset, createProject, createTextClip } from "./project/defaults";
 import type { Asset, VideoClip } from "./project/types";
@@ -75,4 +75,27 @@ it("starts from the playhead and keeps the keys before it", () => {
   // Past the path's end (2 s) the subject holds, so the pin does too.
   // (The source frame is read a quarter frame in: 1.008 s at frame 30.)
   expect(paramAt(q.tracks[1].clips[0], "transform.x", 85)).toBeCloseTo(-0.1 + 0.25, 2);
+});
+
+it("reframes a wide shot onto a tall canvas, following the subject but never past an edge", () => {
+  const { p, video } = setup();
+  // A 9:16 canvas with the 16:9 picture scaled to fill its height: 3.16
+  // canvas widths wide.
+  Object.assign(p, { width: 1080, height: 1920 });
+  video.transform.scale = (1920 / 720) / (1080 / 1280);
+  const keys = centerKeys(p, video, path, 0, 1);
+  const q = pin(p, video.id, keys);
+  const v = q.tracks[0].clips[0];
+  // The subject starts a quarter in from the left: the picture slides right
+  // to bring it to the center, and the shift is what a quarter of the
+  // picture's width is in canvas widths.
+  const shown = 1280 * (1080 / 1280) * video.transform.scale; // picture width on canvas
+  expect(paramAt(v, "transform.x", 0)).toBeCloseTo((0.25 * shown) / 1080, 1);
+  // Halfway (1 s), the subject is at the picture's center: no shift but
+  // the quarter frame the plan reads ahead (7 canvas pixels here).
+  expect(paramAt(v, "transform.x", 30)).toBeCloseTo(0, 1);
+  // It never slides so far that an edge shows.
+  const room = (shown - 1080) / 2160;
+  for (const k of keys.x) expect(Math.abs(k.v)).toBeLessThanOrEqual(room + 1e-6);
+  expect(keys.x.length).toBeLessThan(20);
 });

@@ -790,3 +790,10 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   load and save so desktop and web agree. A drive caught that the card,
   itself a button, takes its children's labels into its own name, so
   "Rename X" matched two elements until the drive asked for exact names.
+- **Auto reframe, from the tracker.** The "Coming soon" card works now:
+  the canvas takes 9:16, 1:1 or 4:5, the clip fills it and keeps the
+  subject at the center with smoothed, clamped position keys, the same
+  path Tracking pins layers to. No face or saliency model: the subject is
+  whatever starts in the middle, or a box the user places in the
+  inspector. The tracking module was split so both use one core
+  (`trackPath`, `applyTrack`).

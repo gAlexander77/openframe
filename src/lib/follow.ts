@@ -5,6 +5,7 @@
 // the pinned layer's position as keyframes, so it moves with the subject
 // and stays editable. Position only: the layer keeps its scale and angle.
 
+import { gaussian } from "./analysis/stabilize";
 import { thin } from "./analysis/track";
 import { paramAt } from "./keyframes";
 import { updateClip } from "./project/ops";
@@ -95,6 +96,35 @@ export function pinKeys(p: Project, video: VideoClip, path: Path, target: Visual
     ys.push(y0 + (q.y - ref.y) / p.height);
   }
   const sx = smooth(xs), sy = smooth(ys);
+  const keep = [...new Set([...thin(sx, 1 / p.width), ...thin(sy, 1 / p.height)])].sort((a, b) => a - b);
+  return { x: keep.map((i) => ({ f: fs[i], v: tidy(sx[i]) })), y: keep.map((i) => ({ f: fs[i], v: tidy(sy[i]) })) };
+}
+
+/**
+ * Auto reframe: position keyframes (clip-relative frames) that keep the
+ * subject at the canvas's center from timeline frame `from` to the clip's
+ * end, as far as the picture covers the canvas: it never slides far
+ * enough to show an edge. Smoothed like a camera operator's pan (a
+ * Gaussian of `sigma` frames), then thinned to within a canvas pixel.
+ * ponytail: the picture's stabilization and anchor offsets are left out
+ * of the centering (they are small); rotation is ignored.
+ */
+export function centerKeys(p: Project, video: VideoClip, path: Path, from: number, sigma = 8): { x: Keyframe[]; y: Keyframe[] } {
+  const fs: number[] = [], xs: number[] = [], ys: number[] = [];
+  for (let f = from; f < video.start + video.duration; f++) {
+    const l = layerAt(p, video, f);
+    if (!l || l.source.kind !== "video") continue;
+    const q = pointAt(path, l.source.time);
+    const c = onCanvas(p, video, { ...l, x: 0, y: 0 }, q.x, q.y);
+    const { w, h } = fittedSize(p, video);
+    const roomX = Math.max(0, (w * l.scale - p.width) / (2 * p.width));
+    const roomY = Math.max(0, (h * (l.scaleY ?? l.scale) - p.height) / (2 * p.height));
+    fs.push(f - video.start);
+    xs.push(Math.max(-roomX, Math.min(roomX, (p.width / 2 - c.x) / p.width)));
+    ys.push(Math.max(-roomY, Math.min(roomY, (p.height / 2 - c.y) / p.height)));
+  }
+  if (!fs.length) return { x: [], y: [] };
+  const sx = gaussian(xs, sigma), sy = gaussian(ys, sigma);
   const keep = [...new Set([...thin(sx, 1 / p.width), ...thin(sy, 1 / p.height)])].sort((a, b) => a - b);
   return { x: keep.map((i) => ({ f: fs[i], v: tidy(sx[i]) })), y: keep.map((i) => ({ f: fs[i], v: tidy(sy[i]) })) };
 }

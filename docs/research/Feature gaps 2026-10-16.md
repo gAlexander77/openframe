@@ -287,7 +287,7 @@ The AI tools tab is `src/components/AiToolsTab.tsx`, with state in
 | Feature | Apps | Have | Pri | Implementation note |
 |---|---|---|---|---|
 | Remove silences, split scenes, beat markers, normalize, ducking, captions, Copilot | C P R V F | yes | — | — |
-| Auto reframe (follow the subject into 9:16 or 1:1) | C P R V F | no ("Coming soon" card) | P1 | A face or saliency model, then a smoothed crop path written as `transform` keyframes. That needs no new render path. See [[AI and automation]] §2.8. L. |
+| Auto reframe (follow the subject into 9:16 or 1:1) | C P R V F | yes: AI tools card and Tracking > Keep subject centered, `auto_reframe` (2026-10-17); the subject starts as a box, no detector | — | A face or saliency model, then a smoothed crop path written as `transform` keyframes. That needs no new render path. See [[AI and automation]] §2.8. L. |
 | Motion tracking: pin text or a sticker to a subject | C R V F | yes: Animation > Tracking, `track_motion` (2026-10-17, ADR-054) | — | Template matching on 320 px gray frames, main thread like the other analyses; the path becomes smoothed `transform.x/y` keyframes. |
 | Stabilize | C P R V F | yes: three levels, translation only, measured locally | — | See §2. |
 | Remove background | C P R V F | yes (shipped 2026-10-16) | — | See §10. |

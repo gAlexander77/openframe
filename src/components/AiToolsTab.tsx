@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Link2, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, Speech, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
-import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
+import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, reframeClip, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { LEVELS, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
@@ -25,6 +25,7 @@ const RUN: Record<ToolId, () => Promise<unknown>> = {
   stabilize: () => stabilizeClip(),
   cutout: () => removeBackground(),
   sync: () => syncAudio(),
+  reframe: () => reframeClip(),
 };
 
 export function AiToolsTab() {
@@ -47,7 +48,7 @@ export function AiToolsTab() {
         <ToolCard tool="sync" icon={Link2} title="Sync audio" blurb="Line up a separately recorded sound with the camera's, by waveform." action="Sync" settings={<SyncSettings />} />
         <ToolCard tool="cutout" icon={Eraser} title="Remove background" blurb="Keep the person or main subject, drop the background." action="Remove" />
         <LinkCard icon={Captions} title="Auto captions" blurb="Turn speech into captions, on your computer." action="Open Captions" onClick={() => store.set({ leftTab: "captions" })} />
-        <LinkCard icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16 or 1:1." soon />
+        <ToolCard tool="reframe" icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16, 1:1 or 4:5." action="Reframe" settings={<ReframeSettings />} />
       </div>
       <p className="ai-foot">Everything runs on this computer. Nothing is uploaded.</p>
     </div>
@@ -364,6 +365,16 @@ function DuckSettings() {
       ]}
       onChange={(v) => set({ depth: v })}
     />
+  );
+}
+
+function ReframeSettings() {
+  const [s, set] = useSettings("reframe");
+  return (
+    <>
+      <Segmented label="Shape" value={s.ratio} options={[["9:16", "9:16"], ["1:1", "1:1"], ["4:5", "4:5"], ["keep", "Keep"]]} onChange={(v) => set({ ratio: v })} />
+      <span className="ai-hint">Follows what is at the center of the clip's first frame. To pick the subject yourself, use Animation &gt; Tracking &gt; Keep subject centered.</span>
+    </>
   );
 }
 

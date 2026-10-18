@@ -50,7 +50,8 @@ up to 24 moments, each stamped with its time), `export_video` and
 `duck_under_speech`, `reduce_noise`, `stabilize_clip`, `sync_audio`
 (line a separately recorded sound up with its video by waveform; the
 `sync_to_clip` command places one by a known offset),
-`track_motion` (pin a layer to a subject in the video under it) and
+`track_motion` (pin a layer to a subject in the video under it),
+`auto_reframe` (into another canvas shape, following the subject) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],

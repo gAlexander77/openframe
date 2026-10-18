@@ -470,6 +470,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
   a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
+- **Auto reframe** (CapCut's and Premiere's; AI tools card,
+  `auto_reframe`): into 9:16, 1:1 or 4:5, the canvas reshaped and the clip
+  filling it with position keyframes that keep its subject centered as it
+  moves; or from a box, with Tracking > Keep subject centered.
 - **Tracking** (CapCut's, in the layer's Animation tab; `track_motion`):
   pin a title, sticker or picture to a moving subject in the video under
   it. A box placed on the viewer is followed from the playhead on this

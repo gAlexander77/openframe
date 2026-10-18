@@ -12,6 +12,9 @@ import { decodeMono, decodePcm, frameGrays, frameScores, measureLoudness } from 
 import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { denoise } from "../lib/analysis/denoise";
 import { replaceClip } from "../lib/project/replace";
+import type { Region } from "../lib/align";
+import { canvasSize } from "../lib/canvas";
+import { applyTrack, centerRegion, trackPath } from "./tracking";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
 import { makeMatte } from "../engine/cutout";
@@ -36,7 +39,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout" | "sync";
+export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout" | "sync" | "reframe";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -79,6 +82,11 @@ export interface StabilizeSettings {
   level: StabilizeLevel;
 }
 
+export interface ReframeSettings {
+  /** The canvas shape to reframe into; "keep" reframes in the current one. */
+  ratio: "9:16" | "1:1" | "4:5" | "keep";
+}
+
 export interface SyncSettings {
   /** The camera's own sound once the recorded sound is synced to it. */
   camera: "keep" | "mute";
@@ -99,6 +107,7 @@ export interface AiSettings {
   stabilize: StabilizeSettings;
   fillers: FillerSettings;
   sync: SyncSettings;
+  reframe: ReframeSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -116,6 +125,8 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   // Kept: the camera's sound is how to check the sync by ear, and muting
   // it is the menu's second item.
   sync: { camera: "keep" },
+  // Shorts, Reels and TikTok: the reason most wide footage gets reframed.
+  reframe: { ratio: "9:16" },
 };
 
 export interface AiJob {
@@ -181,13 +192,15 @@ export const NEEDS: Record<ToolId, string> = {
   stabilize: "a video clip",
   cutout: "a video clip with a person or subject",
   sync: "an audio clip and the video it was recorded with",
+  reframe: "a video clip",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
 function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | null {
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
-  if (tool === "scenes" || tool === "stabilize" || tool === "cutout") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
+  if (tool === "reframe" && (clip.reverse || clip.speedCurve)) return "Its speed is curved or reversed";
+  if (tool === "scenes" || tool === "stabilize" || tool === "cutout" || tool === "reframe") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
   if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
@@ -810,6 +823,44 @@ export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: 
   finish("sync", `Synced ${asset.name} to ${vAsset.name}${muteCamera ? ", camera sound muted" : ""}`);
   const fps = store.get().project.fps;
   return { clipId: a.id, videoId: v.id, offset: +match.offset.toFixed(4), confidence: +match.confidence.toFixed(3), start: +framesToSeconds(now.start, fps).toFixed(4), in: +now.in.toFixed(4), muted: muteCamera };
+}
+
+// ---- auto reframe ----------------------------------------------------------------
+
+export interface ReframeEdit {
+  width: number;
+  height: number;
+  /** Frames followed, and those the subject was lost on (held in place). */
+  frames: number;
+  lost: number;
+}
+
+/**
+ * CapCut's and Premiere's Auto reframe: the canvas takes the new shape
+ * (its short side kept), the subject is followed through the whole clip
+ * from a box (fractions of the picture; default a square at its center,
+ * where a framed subject starts), and the clip fills the canvas with
+ * position keyframes that keep the subject centered (state/tracking.ts,
+ * ADR-054). One undo step. The inspector's Tracking > Keep subject
+ * centered does the same from a box placed on the viewer.
+ */
+export async function reframeClip(clipId?: Id, opts: Partial<ReframeSettings> & { box?: Region } = {}): Promise<ReframeEdit> {
+  const scope = projectWork.signal();
+  const { clip, asset } = resolve("reframe", clipId);
+  const ratio = opts.ratio ?? state.settings.reframe.ratio;
+  const p0 = store.get().project;
+  const video = clip as VideoClip;
+  const [rw, rh] = ratio === "keep" ? [p0.width, p0.height] : ratio.split(":").map(Number);
+  const [width, height] = ratio === "keep" ? [p0.width, p0.height] : canvasSize(rw, rh, Math.min(p0.width, p0.height));
+  const region = opts.box ?? centerRegion(p0, video);
+  const { path, lost } = await job("reframe", clip, `Reframing ${asset.name}`, (progress, signal) =>
+    trackPath(p0, video, asset, region, video.start, video.start + video.duration, progress, signal),
+  );
+  scope.throwIfAborted();
+  const c = stillThere(clip.id);
+  store.edit("Auto reframe", (p) => applyTrack({ ...p, width, height, canvasFixed: true }, c.id, c.id, path, c.start, "center"));
+  finish("reframe", lost > path.times.length / 4 ? `Reframed ${asset.name}, but lost the subject on ${plural(lost, "frame")}` : `Reframed ${asset.name} to ${width}×${height}`);
+  return { width, height, frames: path.times.length, lost };
 }
 
 // ---- remove background -----------------------------------------------------------

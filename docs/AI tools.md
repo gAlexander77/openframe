@@ -266,6 +266,23 @@ for 0.0625, and kept 5 keys.
 frozen clips are refused. Moving the followed video later does not move
 the pin: track again.
 
+## Auto reframe
+
+The AI tools card (and `auto_reframe`): pick 9:16, 1:1, 4:5 or Keep, then
+Reframe. The canvas takes the shape with its short side kept, the clip is
+scaled to fill it, and the tracker above follows what is at the center
+of the clip's first frame through the whole clip; position keyframes then
+keep that subject centered, clamped at the picture's edges and smoothed
+like a camera pan ([[ADR-054 Tracking writes position keyframes]]). On a
+video clip, Animation > Tracking > Keep subject centered does the same
+from a box placed on the viewer, from the playhead. Measured by the drive
+on `person-pan.mp4` reframed from 16:9 to 9:16: the picture slid 0.1961
+of the canvas in 60 frames for the true 0.1975, with two keys.
+
+**Gaps.** No subject detector (a face or saliency model is the upgrade):
+the default box assumes the subject starts centered. One subject per
+clip; cuts inside the clip are not seen, so split scenes first.
+
 ## Sync audio
 
 `src/lib/analysis/sync.ts`, `src/lib/project/sync.ts`. CapCut's Sync
@@ -396,7 +413,7 @@ and the AI tools tab has a card for it.
   opens its settings in a small popover, shows progress with a cancel
   button while it runs, and keeps its last result ("Removed 4 silences,
   4.9 s shorter"). *Auto captions* opens the Captions tab; *Auto reframe*
-  is marked as coming soon. *Tracking* sits in the pinned layer's
+  reframes for real now (below). *Tracking* sits in the pinned layer's
   Animation tab, not here, since it starts from the layer.
 - **One undo step per run**, labeled with what happened ("Remove 4
   silences", "Split into 5 scenes", "Mark 43 beats"), built from the
