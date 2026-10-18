@@ -588,7 +588,9 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec3 s = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
     float l = luma(s);
     float h = radians(u_hue);
-    vec3 tint = 0.5 + 0.5 * cos(h + vec3(0.0, 2.094, 4.188));
+    // The standard wheel, as HSL and the color wheels run: 0 red, 60
+    // yellow, 120 green, 240 blue (each channel peaks at its own hue).
+    vec3 tint = 0.5 + 0.5 * cos(h - vec3(0.0, 2.094, 4.188));
     vec3 d = mix(vec3(0.05, 0.03, 0.12), tint, l);
     outColor = vec4(mix(s, d, u_amount * 0.01) * c.a, c.a);`),
   mirror: effect(["mode"], `

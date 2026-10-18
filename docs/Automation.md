@@ -51,7 +51,10 @@ Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
-PNG, so an agent can look at its work), the project tools
+PNG, drawn as the export draws it and `max_width` pixels wide, at most
+the canvas's width, so an agent can look at its work; it once read the
+viewer's canvas, which is only as big as it is on screen, and a 9:16
+project came back 222 pixels wide whatever was asked), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), `preview_frames` (one contact sheet of
