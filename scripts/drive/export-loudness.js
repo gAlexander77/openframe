@@ -1,8 +1,9 @@
 // Loudness-normalized export (Premiere's): a tone rendered with targets of
 // -20 and -14 LUFS measures within 0.5 LU of each when read back by
 // LoudnessMeter; a -1 LUFS target cannot be met under the -1 dBFS peak
-// ceiling, so it stops there and says so. The export dialog offers the
-// targets under Audio.
+// ceiling, so a limiter holds the peaks there (the steady tone loses as
+// much loudness as it is limited) and the note says so. The export dialog
+// offers the targets under Audio.
 async (page) => {
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.reload();
@@ -34,9 +35,9 @@ async (page) => {
   const at20 = await measure(-20);
   const at14 = await measure(-14);
   const at1 = await measure(-1);
-  details.minus20 = { ok: Math.abs(at20.lufs + 20) < 0.5 && /set to -20 LUFS/.test(at20.note), ...at20 };
+  details.minus20 = { ok: Math.abs(at20.lufs + 20) < 0.5 && /normalized to -20\.0 LUFS\.$/.test(at20.note), ...at20 };
   details.minus14 = { ok: Math.abs(at14.lufs + 14) < 0.5, ...at14 };
-  details.peakHeld = { ok: at1.peakDb <= -0.9 && at1.peakDb > -1.5 && at1.lufs < -1 && /peak allows/.test(at1.note), ...at1, asMixed };
+  details.peakHeld = { ok: at1.peakDb <= -0.9 && at1.peakDb > -1.5 && at1.lufs < -1 && /limiter held the peaks under -1 dB/.test(at1.note), ...at1, asMixed };
   await page.getByRole("button", { name: "Export", exact: true }).first().click();
   const select = page.locator("#export-loudness");
   await select.waitFor();

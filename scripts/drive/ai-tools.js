@@ -122,10 +122,10 @@ async (page, base = "http://localhost:1420") => {
     delete d.beats;
   }
 
-  // 4b. Loudness: each clip measured as ffmpeg's ebur128 measures it (mono
-  //     as dual mono, since it plays on both speakers), then set to the
-  //     target, held back where the peak would clip, in one undo step.
-  //     Reference: ffmpeg -af ebur128=peak=sample[:dualmono=true].
+  // 4b. Loudness: each clip measured as it plays (mono through the
+  //     equal-power panner, -3 dB a side, so each channel counts once), then
+  //     set to the target, held back where the peak would clip, in one undo
+  //     step. Reference: ffmpeg -af ebur128=peak=sample.
   await fresh();
   details.loudness = await run(async () => {
     const ve = window.videoEditor;
@@ -138,10 +138,10 @@ async (page, base = "http://localhost:1420") => {
   });
   {
     const d = details.loudness;
-    // ffmpeg reads -14.2 LUFS (speech, dual mono, peak -3.5 dBFS) and -14.6
-    // (stereo music, peak -7.7). To reach -10 the speech would need +4.2 dB
-    // and peak at +0.7, so it is held at the -1 dBFS ceiling: +2.5 dB.
-    d.ok = near(d.measured, [-14.2, -14.6], 0.15) && near(d.gainDb, [2.5, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && d.undoLabel === "Normalize loudness of 2 clips";
+    // ffmpeg reads -17.2 LUFS (speech, mono, peak -3.5 dBFS) and -14.6
+    // (stereo music, peak -7.7). To reach -10 the speech would need +7.2 dB
+    // and peak at +3.7, so it is held at the -1 dBFS ceiling: +2.5 dB.
+    d.ok = near(d.measured, [-17.2, -14.6], 0.15) && near(d.gainDb, [2.5, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && d.undoLabel === "Normalize loudness of 2 clips";
   }
 
   // 4c. Ducking: music under a voice that talks in 1.6 s bursts every 3 s

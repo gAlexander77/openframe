@@ -690,3 +690,20 @@ was thin. This round fixes what it found.
   and the voices measured -12.5 LUFS with peaks past full scale: Web
   Audio's compressor already makes up about 0.6 of its own reduction, so
   the presets add none.
+
+## 2026-10-17 — The improvements branch (Claude Code)
+
+The owner asked for research into what is still missing and for
+Playwright checks that the styling and the workflows are right, all on a
+branch (`improvements`), committed locally and never pushed. A fresh
+desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
+(features only an agent can reach, keys no menu shows) set the order.
+
+- **Two drives had gone stale, not the product.** The baseline run of all
+  72 web drives on this branch failed two: `ai-tools` still expected mono
+  speech to read as dual mono (-14.2 LUFS; it reads -17.2 since mono is
+  measured as it plays) and `export-loudness` still expected export to
+  stop under the peak ceiling (a limiter holds the peaks now, and the note
+  says "normalized to"). Both changed with the product earlier the same
+  day; their drives were not rerun. Run the whole suite after changing
+  shared audio paths, not only the drive of the feature.
