@@ -225,6 +225,7 @@ Text styling is the Text tab in `Inspector.tsx`. Rasterizing is in
 | Caption find and replace | C P R | yes (`replace_caption_text`) | — | Pure function in `lib/captions.ts`. |
 | Keyword highlight, AI emojis | C | no | P2 | — |
 | Saved text styles (save a title's look, reuse it) | C P | yes: Text tab > Saved styles (2026-10-17) | — | Added by the everyday-gaps pass; kept per viewer like effect presets, not in the project. |
+| Caption templates (one-click caption looks) | C R | yes: Captions tab > Looks, six, `set_caption_look` (2026-10-17) | — | Static looks plus the karaoke highlight; per-word motion (pop-in, bounce) is the upgrade. |
 | Captions in the export dialog (sidecar or embedded track) | C P R F | partial: SRT/VTT from the Captions tab; captions burn in because they are text clips | P2 | A Captions section in `ExportDialog.tsx`; an embedded track needs muxer support. |
 | Lyrics recognition | C | no | P2 | The same Whisper path on music. |
 

@@ -839,3 +839,8 @@ desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
   tab's empty drop box was 180 px tall and pushed them out of view; it is
   one line there now. Record moved out of the Audio tab, where it made
   little sense.
+- **Caption looks.** Styling captions meant styling one and pressing
+  Apply to all; CapCut and Resolve 20 offer templates. Six looks now sit
+  in the Captions tab, each a whole style and a height (so Boxed drops
+  the outline it replaces) with a CSS sample on its card, and Word pop
+  carries the spoken-word highlight. Per-word motion stays for later.

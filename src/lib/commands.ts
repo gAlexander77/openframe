@@ -7,6 +7,7 @@
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
+import { applyCaptionLook, CAPTION_LOOKS } from "./captionLooks";
 import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
@@ -866,6 +867,15 @@ export const COMMANDS: Command[] = [
           }),
         })),
       };
+    },
+  },
+  {
+    name: "set_caption_look",
+    description: "Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.",
+    input: S.obj({ look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }) }, ["look"]),
+    run: (p, a) => {
+      if (!p.tracks.some((t) => t.clips.some((c) => c.type === "text" && c.caption))) throw new CommandError("There are no captions yet: add_captions, or generate them in the Captions tab, first");
+      return applyCaptionLook(p, String(a.look));
     },
   },
   {

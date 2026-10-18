@@ -210,3 +210,9 @@
 /* A sound effect's card: its thumbnail is a play button. */
 .sfx-play { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / 35%); color: var(--text-1); }
 .sfx-play:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* Caption looks: a sample of each on a dark tile, its name under it. */
+.cap-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.cap-look { display: grid; gap: 6px; justify-items: center; padding: 10px 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); color: var(--text-2); font-size: var(--fs-xs); }
+.cap-look:hover { border-color: var(--accent); }
+.cap-look-sample { font-size: 15px; line-height: 1.2; white-space: nowrap; }

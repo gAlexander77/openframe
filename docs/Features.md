@@ -406,6 +406,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Caption looks** (CapCut's caption templates, Resolve 20's subtitle
+  styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
+  (capitals with the spoken word highlighted), Neon and Minimal, each
+  previewed on its card; one click restyles and places every caption,
+  words and timings kept (`set_caption_look`).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip

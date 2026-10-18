@@ -2,6 +2,8 @@ import { useRef, useState } from "react";
 import { ASR_MODELS, type TranscribeProgress } from "../engine/transcribe";
 import { Captions, Download, Search, Upload, WandSparkles } from "../icons";
 import { replaceText } from "../lib/captions";
+import { CAPTION_LOOKS, lookStyle } from "../lib/captionLooks";
+import type { TextStyle } from "../lib/project/types";
 import { runCommand } from "../lib/commands";
 import { cancelCaptions, captionClips, exportCaptions, generateCaptions, importCaptions } from "../state/captions";
 import { store, useEditor } from "../state/store";
@@ -31,6 +33,47 @@ const STAGE: Record<TranscribeProgress["stage"], string> = {
   downloading: "Downloading model",
   transcribing: "Recognizing speech",
 };
+
+/** A look's caption as CSS, near enough to choose by: outline, glow, box
+ * and case as the renderer draws them, at a card's size. */
+function lookCss(s: TextStyle): React.CSSProperties {
+  return {
+    fontFamily: s.font,
+    color: s.color,
+    fontWeight: s.bold ? 700 : 400,
+    textTransform: s.case === "upper" ? "uppercase" : s.case === "lower" ? "lowercase" : s.case === "title" ? "capitalize" : undefined,
+    WebkitTextStroke: s.stroke?.width ? `${Math.min(2, s.stroke.width / 4)}px ${s.stroke.color}` : undefined,
+    paintOrder: "stroke fill",
+    textShadow: s.shadow ? `${s.shadow.x / 4}px ${s.shadow.y / 4}px ${s.shadow.blur / 3}px ${s.shadow.color}` : undefined,
+    background: s.background?.color,
+    padding: s.background ? "1px 6px" : undefined,
+    borderRadius: s.background ? 4 : undefined,
+  };
+}
+
+/** CapCut's caption templates: every caption takes a look in one click. */
+function CaptionLooks() {
+  return (
+    <div className="cap-card">
+      <header className="cap-head">
+        <strong>Looks</strong>
+      </header>
+      <div className="cap-looks">
+        {Object.entries(CAPTION_LOOKS).map(([id, look]) => {
+          const s = lookStyle(id);
+          return (
+            <button key={id} className="cap-look" aria-label={`${look.label} captions`} data-tip={`Give every caption the ${look.label} look`} onClick={() => store.edit(`Caption look ${look.label}`, (p) => runCommand(p, "set_caption_look", { look: id }))}>
+              <span className="cap-look-sample" aria-hidden="true" style={lookCss(s)}>
+                Say {s.highlight ? <span style={{ color: s.highlight }}>this</span> : "this"}
+              </span>
+              <span className="cap-look-name">{look.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 /** CapCut's Captions tab, local: spoken language, model, clear-existing,
  * a full-width Generate button with progress; import and export SRT/VTT. */
@@ -145,6 +188,7 @@ export function CaptionsTab() {
         <p className="lib-hint">Select any caption on the timeline to edit its words, or restyle every caption at once from its Text tab.</p>
       </div>
 
+      {count > 0 && <CaptionLooks />}
       {count > 0 && <FindReplace />}
 
       <TranscriptCard />

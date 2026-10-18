@@ -52,7 +52,8 @@ up to 24 moments, each stamped with its time), `export_video` and
 `sync_to_clip` command places one by a known offset),
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
-`add_sound_effect` (a built-in whoosh, pop, ding... at a time) and
+`add_sound_effect` (a built-in whoosh, pop, ding... at a time),
+`set_caption_look` (one of six caption looks for every caption) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
