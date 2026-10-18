@@ -42,6 +42,10 @@ export interface McpHost {
   frame(seconds: number, maxWidth: number): Promise<string>;
   /** One PNG of several frames in a grid, each stamped with its time. */
   sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** The same, of an imported video's own frames at source seconds. */
+  mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** The design check (lib/designCheck.ts) of the open project. */
+  checkProject(kind: string): unknown;
   /** Export without a dialog (desktop); resolves when the file is done. */
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
   /** The last export_video: running (with progress), done or failed. */
@@ -224,6 +228,64 @@ export const APP_TOOLS: AppTool[] = [
       if (!times.length) throw new Error("times needs at least one time");
       return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
     },
+  },
+  {
+    name: "preview_motion",
+    description: "See movement and timing: consecutive frames of a stretch of the timeline (default 8 a second, at most 36) as one contact sheet, plus, as text, the cuts on the main track and the markers (beats) in that stretch. Use it to check that cuts land on the beat, a move is smooth, or a transition reads; preview_frames is for whole-video overviews.",
+    inputSchema: obj(
+      {
+        start: { type: "number", minimum: 0, description: "Timeline seconds" },
+        end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 2" },
+        fps: { type: "number", minimum: 1, maximum: 30, description: "Frames a second, default 8" },
+        columns: { type: "integer", minimum: 1, maximum: 8, description: "Default 6" },
+        tile_width: { type: "integer", minimum: 120, maximum: 480, description: "Default 240" },
+      },
+      ["start"],
+    ),
+    call: async (h, a) => {
+      const start = Number(a.start), end = Number(a.end ?? start + 2), fps = Number(a.fps ?? 8);
+      if (!(end > start)) throw new Error("end must be after start");
+      const n = Math.min(36, Math.max(2, Math.round((end - start) * fps) + 1));
+      const times = Array.from({ length: n }, (_, i) => +(start + ((end - start) * i) / (n - 1)).toFixed(3));
+      const d = h.describe() as { tracks: { main?: boolean; clips: { start: number }[] }[]; markers: { at: number; label: string }[] };
+      const inside = (t: number) => t >= start && t <= end;
+      const cuts = (d.tracks.find((t) => t.main)?.clips ?? []).map((c) => c.start).filter((t) => t > 0 && inside(t));
+      const markers = d.markers.filter((m) => inside(m.at)).map((m) => ({ at: m.at, label: m.label }));
+      return {
+        content: [
+          { type: "image", data: await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6)), mimeType: "image/png" },
+          { type: "text", text: JSON.stringify({ frames: times, cuts, markers }) },
+        ],
+      };
+    },
+  },
+  {
+    name: "preview_media",
+    description: "Look inside an imported video before cutting it: a contact sheet of its own frames at source seconds (times), or `count` frames spread over the whole file (default 12). Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action).",
+    inputSchema: obj(
+      {
+        asset_id: { type: "string", description: "A video asset id from describe_project or import_media" },
+        times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
+        count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
+        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 320" },
+      },
+      ["asset_id"],
+    ),
+    call: async (h, a) => {
+      const d = h.describe() as { assets: { id: string; duration: number }[] };
+      const asset = d.assets.find((x) => x.id === a.asset_id);
+      if (!asset) throw new Error(`No asset ${a.asset_id}; describe_project lists them`);
+      const n = Number(a.count ?? 12);
+      const times = a.times ? (a.times as number[]).slice(0, 24) : Array.from({ length: n }, (_, i) => +((asset.duration * (i + 0.5)) / n).toFixed(2));
+      return { content: [{ type: "image", data: await h.mediaSheet(String(a.asset_id), times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
+    },
+  },
+  {
+    name: "check_project",
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music ending without a fade, and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
+    inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
+    call: (h, a) => json(h.checkProject(String(a.kind ?? "any"))),
   },
   {
     name: "export_video",

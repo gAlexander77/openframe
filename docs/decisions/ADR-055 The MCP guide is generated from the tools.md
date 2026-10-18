@@ -54,5 +54,8 @@ changes.
 - Examples are checked against schemas, not run. A wrong id is fine; a
   wrong field name fails the test. That is how the first `batch` example,
   written with `name` instead of `command`, was caught.
-- The playbooks are advice in text. A model can still ignore them; a
-  design check tool that measures the result is the complement.
+- The playbooks are advice in text. A model can still ignore them, so
+  `check_project` (`src/lib/designCheck.ts`) measures the result against
+  the same rules and names the tool that fixes each finding. Contrast
+  against the actual picture and loudness are left to `preview_frames`
+  and export, since they need rendering.

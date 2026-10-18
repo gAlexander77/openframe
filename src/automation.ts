@@ -29,6 +29,8 @@ import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { secondsToFrames } from "./lib/time";
+import { sourceFrames } from "./engine/analyze";
+import { checkProject, type CheckKind } from "./lib/designCheck";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -109,6 +111,27 @@ async function grab(seconds: number): Promise<OffscreenCanvas> {
   return c;
 }
 
+/** Frames in a grid, each stamped with its label: the contact sheets. */
+async function tiles(frames: { src: CanvasImageSource | null; label: string; w: number; h: number }[], tileWidth: number, columns: number): Promise<string> {
+  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6;
+  const h = Math.round((frames.find((f) => f.src)?.h ?? 9) * tileWidth / (frames.find((f) => f.src)?.w ?? 16));
+  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + gap) + gap);
+  const ctx = out.getContext("2d")!;
+  // A dark ground, so frames with white edges still read as separate tiles.
+  ctx.fillStyle = "#1e1e1e";
+  ctx.fillRect(0, 0, out.width, out.height);
+  for (const [i, f] of frames.entries()) {
+    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + gap);
+    if (f.src) ctx.drawImage(f.src, x, y, tileWidth, h);
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.fillRect(x + 4, y + 4, ctx.measureText(f.label).width + 10, 19);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(f.label, x + 9, y + 18);
+  }
+  return png(out);
+}
+
 /** A canvas as base64 PNG, for MCP image content. */
 async function png(c: OffscreenCanvas): Promise<string> {
   const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
@@ -171,24 +194,21 @@ const mcpHost: McpHost = {
     return png(out);
   },
   sheet: async (times, tileWidth, columns) => {
-    const cols = Math.min(columns, times.length), rows = Math.ceil(times.length / cols), gap = 6;
-    let out: OffscreenCanvas | null = null;
-    for (const [i, t] of times.entries()) {
+    const frames = [];
+    for (const t of times) {
       const src = await grab(t);
-      const w = tileWidth, h = Math.round((src.height * w) / src.width);
-      out ??= new OffscreenCanvas(cols * (w + gap) + gap, rows * (h + gap) + gap);
-      const ctx = out.getContext("2d")!;
-      const x = gap + (i % cols) * (w + gap), y = gap + Math.floor(i / cols) * (h + gap);
-      ctx.drawImage(src, x, y, w, h);
-      const label = `${+t.toFixed(2)} s`;
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-      ctx.fillRect(x + 4, y + 4, ctx.measureText(label).width + 10, 19);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(label, x + 9, y + 18);
+      frames.push({ src, label: `${+t.toFixed(2)} s`, w: src.width, h: src.height });
     }
-    return png(out!);
+    return tiles(frames, tileWidth, columns);
   },
+  mediaSheet: async (assetId, times, tileWidth, columns) => {
+    const a = store.get().project.assets.find((x) => x.id === assetId);
+    if (!a) throw new Error(`No asset ${assetId}; describe_project lists them`);
+    if (a.kind !== "video") throw new Error(`${a.name} is ${a.kind === "audio" ? "sound only" : "a still picture"}; preview_media shows video files`);
+    const pics = await sourceFrames(a, times, tileWidth);
+    return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
+  },
+  checkProject: (kind) => (needProject(), checkProject(store.document(), kind as CheckKind)),
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     return exportForAgent(options as RenderOptions);

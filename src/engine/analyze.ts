@@ -287,3 +287,23 @@ export async function frameScores(
     input.dispose();
   }
 }
+
+/**
+ * The frames of an asset's video at source seconds `times`, `width` pixels
+ * wide: what an agent looks at to choose the moments to cut. A time past
+ * the end gives the last frame; a file without picture gives nulls.
+ */
+export async function sourceFrames(asset: Asset, times: number[], width: number): Promise<(CanvasImageSource | null)[]> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) return times.map(() => null);
+    const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+    const sink = new CanvasSink(track, { width, fit: "contain" });
+    const out: (CanvasImageSource | null)[] = [];
+    for (const t of times) out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    return out;
+  } finally {
+    input.dispose();
+  }
+}

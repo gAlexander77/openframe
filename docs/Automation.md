@@ -65,7 +65,13 @@ up to 24 moments, each stamped with its time), `export_video` and
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time),
 `set_caption_look` (one of six caption looks for every caption),
-`set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
+`check_project` (the design rules measured on the edit: title safe, the
+vertical apps' buttons, text size and reading time, caption speed, fonts,
+flashes over 3 a second, black gaps, music endings, an ad's end card, an
+epic edit's cuts on the beat; each finding names the fixing tool),
+`preview_motion` (consecutive frames of a stretch, with the cuts and beats
+in it), `preview_media` (an imported video's own frames, to choose
+moments), `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
 in seconds) and `duplicate_clips` (what the inspector could do and agents
 could not) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command

@@ -47,14 +47,14 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "Voice, music, effects and the mix.",
     tools: ["add_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
-  { name: "Check and deliver", blurb: "Look at the result, then export.", tools: ["preview_frames", "preview_frame", "export_video", "export_status"] },
+  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project", "export_video", "export_status"] },
 ];
 
 /** A tool's group; new tools land in "More" until they are filed. */
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "export_status", "get_transcript", "seek"]);
+const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "export_status", "get_transcript", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
@@ -104,6 +104,9 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_caption_look: { look: "pop" },
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
   preview_frames: { times: [0.5, 2, 4, 6, 8, 10, 12, 14] },
+  preview_motion: { start: 7.5, end: 9.5, fps: 10 },
+  preview_media: { asset_id: "a_123", count: 12 },
+  check_project: { kind: "ad" },
   export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14 },
   batch: { commands: [{ command: "set_animation", args: { clip_id: "c_1", slot: "in", type: "rise", duration: 0.5 } }, { command: "set_animation", args: { clip_id: "c_1", slot: "out", type: "fade", duration: 0.3 } }] },
 };
@@ -183,14 +186,14 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).
 - End: logo, product, one call to action and where to go, held 2-3 s.
-- Check: preview_frames across the whole piece, fix what reads badly, then export.`;
+- Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.`;
 
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
   ad: {
     title: "A professional ad",
     text: `Making an ad (15, 30 or 60 s) with these tools:
 1. new_project with a name; set_project for the shape: 1920x1080 for YouTube and TV, 1080x1920 for Reels, TikTok and Shorts, 1080x1080 or 1080x1350 for feeds.
-2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project to get asset ids and durations.
+2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project for asset ids and durations; preview_media to see what is in each video.
 3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short.
 4. add_voiceover with the script: the voice and captions are placed at their real lengths and it answers where each line landed; cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
@@ -198,7 +201,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: logo, product, the offer and the call to action (Shop now, the URL) on a clean background, held 2-3 s.
-10. preview_frames across the whole ad; fix text that is cut off, too small or low in contrast; then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
+10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
 
 ${DESIGN}`,
   },
@@ -207,13 +210,13 @@ ${DESIGN}`,
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop).
 2. Put the music on an audio track first and mark_beats on it (every 1); describe_project lists the beat markers with their times. The edit is cut to these: cut on downbeats and at phrase starts, a frame or two before the beat rather than after it.
-3. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Pick the best moments of each clip (preview_frames), then lay them on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
+3. preview_media each clip to find its best moments. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Pick the best moments of each clip (preview_frames), then lay them on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
 4. Speed: velocity edits run fast between beats and slow on the hit (set_speed_curve hero, bullet or montage); set_speed 0.5 with set_frame_blending for smooth slow motion.
 5. Hits on the beat: short adjustment clips (add_adjustment_clip) with add_effect flash, shake, zoomPulse, rgbSplit or glow at the strongest beats; a white flash (add_color_clip #ffffff a few frames long with set_animation out fade) on the drop.
 6. Look: one grade over everything (filter teal or a LUT on an adjustment layer), grain, and cinematic bars (two black color clips at the top and bottom, or a crop) for a film feel.
 7. Titles: big, short, bold words (Impact or Arial Black, size 180-260) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
 8. Sound design: add_sound_effect whoosh on fast cuts, boom on the drop, rise before it; set_fades on the music's end.
-9. preview_frames around every cut to check it lands on the beat and nothing is black or cut off; export_video (loudness -14).
+9. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
 
 ${DESIGN}`,
   },

@@ -19,13 +19,13 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).
 - End: logo, product, one call to action and where to go, held 2-3 s.
-- Check: preview_frames across the whole piece, fix what reads badly, then export.
+- Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.
 
 ## A professional ad
 
 Making an ad (15, 30 or 60 s) with these tools:
 1. new_project with a name; set_project for the shape: 1920x1080 for YouTube and TV, 1080x1920 for Reels, TikTok and Shorts, 1080x1080 or 1080x1350 for feeds.
-2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project to get asset ids and durations.
+2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project for asset ids and durations; preview_media to see what is in each video.
 3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short.
 4. add_voiceover with the script: the voice and captions are placed at their real lengths and it answers where each line landed; cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
@@ -33,20 +33,20 @@ Making an ad (15, 30 or 60 s) with these tools:
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: logo, product, the offer and the call to action (Shop now, the URL) on a clean background, held 2-3 s.
-10. preview_frames across the whole ad; fix text that is cut off, too small or low in contrast; then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
+10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); then export_video (loudness -14). For other shapes, set_project to the new size and auto_reframe the shots, check again, export again.
 
 ## An epic edit
 
 Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop).
 2. Put the music on an audio track first and mark_beats on it (every 1); describe_project lists the beat markers with their times. The edit is cut to these: cut on downbeats and at phrase starts, a frame or two before the beat rather than after it.
-3. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Pick the best moments of each clip (preview_frames), then lay them on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
+3. preview_media each clip to find its best moments. Shape the edit to the music: intro (wide shots, bars, the title), build (a riser, cuts every 2 beats), drop (cuts every beat, hits), breakdown (slow motion, a freeze with the title), final drop, logo. Pick the best moments of each clip (preview_frames), then lay them on the main track so each cut lands on a beat marker: add_media_clip with start at a beat and duration to the next chosen beat, in at the moment wanted. Use batch to place many at once.
 4. Speed: velocity edits run fast between beats and slow on the hit (set_speed_curve hero, bullet or montage); set_speed 0.5 with set_frame_blending for smooth slow motion.
 5. Hits on the beat: short adjustment clips (add_adjustment_clip) with add_effect flash, shake, zoomPulse, rgbSplit or glow at the strongest beats; a white flash (add_color_clip #ffffff a few frames long with set_animation out fade) on the drop.
 6. Look: one grade over everything (filter teal or a LUT on an adjustment layer), grain, and cinematic bars (two black color clips at the top and bottom, or a crop) for a film feel.
 7. Titles: big, short, bold words (Impact or Arial Black, size 180-260) with pop or zoomIn; text behind the subject (remove_background on a copy above the title) for the hero shot.
 8. Sound design: add_sound_effect whoosh on fast cuts, boom on the drop, rise before it; set_fades on the music's end.
-9. preview_frames around every cut to check it lands on the beat and nothing is black or cut off; export_video (loudness -14).
+9. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), then export_video (loudness -14).
 
 ## A short for TikTok, Reels or Shorts
 

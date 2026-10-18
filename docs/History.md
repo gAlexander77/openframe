@@ -890,3 +890,14 @@ and delivery) while the MCP layer was rebuilt here.
 - **Safe areas** follow SMPTE ST 2046-1 now: 93% action and 90% title,
   not the old 90% and 80%. The research caught it; "Inside title safe"
   and the guides moved.
+- **Looking and checking like an editor.**
+  - `preview_media` shows an imported video's own frames, so a model can
+    choose moments before cutting.
+  - `preview_motion` shows consecutive frames of a stretch, with the
+    cuts and beat markers in it, so a model can see whether a cut lands
+    on the beat.
+  - `check_project` measures the playbook's rules and names the fixing
+    tool for each finding. Its drive breaks three rules, fixes them with
+    the named tools, and passes.
+  - The sheets had a transparent ground, so white-edged frames (the
+    framecode fixture) ran together. They sit on dark gray now.

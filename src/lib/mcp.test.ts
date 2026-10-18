@@ -27,6 +27,11 @@ function host() {
       h.sheets.push([times, width, columns]);
       return "iVBOR";
     },
+    async mediaSheet(assetId: string, times: number[], width: number, columns: number) {
+      h.sheets.push([assetId, times, width, columns]);
+      return "iVBOR";
+    },
+    checkProject: (kind: string) => ({ ok: true, kind }),
     exports: [] as unknown[],
     async exportVideo(o: unknown) {
       h.exports.push(o);

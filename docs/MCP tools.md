@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 113 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 116 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -36,7 +36,7 @@ To make a video:
 - **Text and captions**: `add_text`, `set_text`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
 - **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_frames`, `preview_frame`, `export_video`, `export_status`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `export_video`, `export_status`
 
 ## Start here
 
@@ -1438,7 +1438,25 @@ Transcribe a clip's speech on this machine (Whisper) and cut its filler words (u
 
 ## Check and deliver
 
-Look at the result, then export.
+Look at the media and the result, check it against the rules, then export.
+
+### preview_media
+
+Look inside an imported video before cutting it: a contact sheet of its own frames at source seconds (times), or `count` frames spread over the whole file (default 12). Use it to choose the in-points and moments worth using (a hero shot, a reaction, the action).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | A video asset id from describe_project or import_media |
+| `times` | number[] |  | Source seconds, up to 24 |
+| `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
+| `columns` | integer |  | Default 4 (1..6) |
+| `tile_width` | integer |  | Default 320 (120..640) |
+
+Example:
+
+```json
+{"name":"preview_media","arguments":{"asset_id":"a_123","count":12}}
+```
 
 ### preview_frames
 
@@ -1456,6 +1474,24 @@ Example:
 {"name":"preview_frames","arguments":{"times":[0.5,2,4,6,8,10,12,14]}}
 ```
 
+### preview_motion
+
+See movement and timing: consecutive frames of a stretch of the timeline (default 8 a second, at most 36) as one contact sheet, plus, as text, the cuts on the main track and the markers (beats) in that stretch. Use it to check that cuts land on the beat, a move is smooth, or a transition reads; preview_frames is for whole-video overviews.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number | yes | Timeline seconds (0..) |
+| `end` | number |  | Timeline seconds; default start + 2 (0..) |
+| `fps` | number |  | Frames a second, default 8 (1..30) |
+| `columns` | integer |  | Default 6 (1..8) |
+| `tile_width` | integer |  | Default 240 (120..480) |
+
+Example:
+
+```json
+{"name":"preview_motion","arguments":{"start":7.5,"end":9.5,"fps":10}}
+```
+
 ### preview_frame
 
 See the composited picture at a time: returns a PNG image of the frame exactly as it would export.
@@ -1464,6 +1500,20 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 |---|---|---|---|
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (64..1920) |
+
+### check_project
+
+Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music ending without a fade, and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `kind` | "ad" \| "epic_edit" \| "social_short" \| "any" |  | What is being made; default any |
+
+Example:
+
+```json
+{"name":"check_project","arguments":{"kind":"ad"}}
+```
 
 ### export_video
 
