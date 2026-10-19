@@ -132,8 +132,11 @@ const automation = {
 /** The picture at each of `seconds` as PNGs, drawn as the export draws
  * it, `width` pixels wide (never wider than the canvas). The viewer's own
  * canvas is only as big as it is on screen (222 pixels wide for a 9:16
- * project), so reading it capped every preview there. The viewer seeks
- * to the last one, so the user sees where the agent is looking. */
+ * project), so reading it capped every preview there. Each is drawn at the
+ * canvas's size (its short side at most 1080) and brought down, so a
+ * title weighs what it weighs in the exported file (drawn at 640 wide it
+ * looked heavier: ADR-098). The viewer seeks to the last one, so the user
+ * sees where the agent is looking. */
 async function grab(seconds: number[], width: number): Promise<Blob[]> {
   if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
   const p = store.get().project;
@@ -142,7 +145,11 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   const frames = seconds.map((t) => Math.min(secondsToFrames(t, p.fps), Math.max(0, end - 1)));
   store.seek(secondsToFrames(seconds.at(-1) ?? 0, p.fps));
   const w = Math.max(2, Math.round(Math.min(width, p.width)));
-  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)));
+  // ponytail: past 1080 on the short side the type is large enough that
+  // drawing at the full 4K canvas would change nothing but the time taken.
+  const k = Math.min(1, 1080 / Math.min(p.width, p.height));
+  const big = { width: Math.max(w, Math.round(p.width * k)), height: Math.max(2, Math.round(p.height * k)) };
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
 }
 
 /** Frames in a grid, each stamped with its label: the contact sheets. */

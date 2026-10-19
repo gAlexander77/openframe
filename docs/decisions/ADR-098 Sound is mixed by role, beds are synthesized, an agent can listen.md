@@ -5,8 +5,8 @@
 ## Context
 
 An agent made a 72-second documentary through the MCP tools alone and
-reported every limit it met (the film test of 2026-10-19). Three concerned
-sound:
+reported every limit it met (the film test of 2026-10-19). Five concerned
+sound and review:
 
 - **F.** `add_sound_effect` put each sound on the first audio track with
   room: the riser into the first drop landed in a gap on the Voiceover
@@ -19,6 +19,10 @@ sound:
 - **I.** The agent could not hear the result. `review_voiceover` answers
   transcripts and numbers, `measure_loudness` answers a few figures for
   the whole mix; neither lets a model that accepts audio listen.
+- **L.** At the same 640-pixel review width, a title in `preview_frames`
+  looked heavier than the same title in the exported file.
+- **J.** In one `preview_motion` sheet across a speed-ramped launch, the
+  first tile seemed to show a later rocket position than the second.
 
 ## Decision
 
@@ -109,6 +113,38 @@ stereo correlation, clipped samples and, for the mix, each stem's
 loudness. `audio: false` answers the numbers alone, for a client that
 cannot take an audio block.
 
+### 4. Previews are drawn at the canvas's size and brought down
+
+Titles are rasterized by Canvas2D at the render size. `preview_frames`,
+`preview_motion` and `preview_frame` rendered at the asked width, so a
+60-pixel title on a 1080p canvas was drawn 20 pixels tall at 640 wide,
+where hinting and antialiasing thicken small type: measured on white
+titles over black (weights 400 and 500, sizes 36, 60 and 96), the
+preview held 3 to 21% more ink than the exported H.264 file at the same
+width. They now draw each frame at the canvas's size (its short side at
+most 1080) and bring it down to the asked width (`exportStills`'
+`drawAt`); the preview then holds the file's ink within 0.4%, and 500
+still draws heavier than 400. The downscale is bilinear
+(`createImageBitmap`'s `resizeQuality: "low"`): Chromium's `medium` and
+`high` measured the same, both smoothed a dark sky's grain away and the
+JPEG sheet of it then banded (ADR-073's check fails); bilinear keeps the
+grain the compositor's own scaling kept before and is what a player's
+scaling of the file looks like.
+
+### 5. The first tile after a seek: investigated, not reproduced
+
+`preview_motion` resolves its frames in order through one `CursorPool`
+(`exportStills`), the first after a fresh decoder seek (mediabunny's
+`samples(t)` starts at the last frame at or before t). With the frame
+counter fixture (each frame's number in ten blocks) under two speed
+curves (1.6 to 0.25 to 1.8, and 0.5 to 2.5), 13 sheets starting all over
+both ramps, 217 tiles, every tile read back from the JPEG matched the
+viewer's frame at its time and none stepped back; `preview_frames` agreed
+too. The film's launch footage under three ramps, sheets at 6.7 to 8.3 s
+as the agent called them, matched the viewer tile for tile. No defect was
+found in the seek, decode or frame cache; `scripts/drive/motion-first-frame.js`
+now holds it.
+
 ## Consequences
 
 - Stems no longer depend on names: renaming a track changes nothing, and
@@ -123,5 +159,6 @@ cannot take an audio block.
   sample-exact.
 - An MP3 a call is roughly 12 KB a second; clients that cannot take audio
   content can ask for numbers only.
-- `scripts/drive/sound-stems.js` holds sections 1 to 3 in the running
-  web build.
+- Previews cost a full-size composite a frame instead of a small one.
+- `scripts/drive/sound-stems.js`, `motion-first-frame.js` and
+  `preview-text-weight.js` hold sections 1 to 5 in the running web build.

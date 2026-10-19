@@ -118,7 +118,11 @@ Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 PNG, drawn as the export draws it and `max_width` pixels wide, at most
 the canvas's width, so an agent can look at its work; it once read the
 viewer's canvas, which is only as big as it is on screen, and a 9:16
-project came back 222 pixels wide whatever was asked), the project tools
+project came back 222 pixels wide whatever was asked; it and the contact
+sheets draw each frame at the canvas's size, its short side at most 1080,
+and bring it down, so a title weighs what it weighs in the exported file:
+drawn at 640 wide, small type came out 3 to 21% heavier,
+[[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), both answering a summary (name, canvas,
