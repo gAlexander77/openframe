@@ -106,6 +106,9 @@
    context-menu anchor), shrink-to-fit sized every menu to its min-width,
    so "Export timeline (OTIO)" was cut off with room to spare. */
 .menu { width: max-content; max-width: 340px; }
+/* A right-click menu (timeline, library, Home) opens where the pointer was. */
+.ctx-anchor { position: fixed; z-index: 200; width: 0; height: 0; }
+.ctx-anchor .menu { top: 0 !important; }
 .menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-hint { color: var(--text-3); font-size: var(--fs-xs); }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }

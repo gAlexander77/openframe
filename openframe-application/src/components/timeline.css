@@ -268,13 +268,11 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
   border: 1.5px dashed var(--line-strong); border-radius: 6px;
   color: var(--text-3); font-size: var(--fs-sm); pointer-events: none;
 }
-.ctx-anchor { position: fixed; z-index: 200; width: 0; height: 0; }
 .tl-tog-solo.on { color: var(--accent); }
 .tl-rename { flex: 1 1 0; min-width: 0; height: 22px; padding: 0 4px; font-size: var(--fs-xs); }
 .menu.tl-vol-pop { position: fixed; z-index: 210; min-width: 0; width: 220px; padding: 10px 12px; display: grid; gap: 6px; }
 .tl-vol-pop label { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
 .tl-vol-pop input { width: 100%; accent-color: var(--text-1); }
-.ctx-anchor .menu { top: 0 !important; }
 
 /* ---- audio handles (CapCut volume line and fade knobs) ------------------------ */
 .audio-handles { position: absolute; left: 0; right: 0; z-index: 3; }
