@@ -27,6 +27,18 @@ describe("layout cells", () => {
     p.tracks = [{ ...createTrack("video", "A"), clips: [a, b] }];
     expect(() => applyLayout(p, [a.id, b.id], "split-vertical")).toThrow(/overlap/);
   });
+  it("leaves a main-track clip in place: no gap, no ripple", () => {
+    const p = createProject(); const a = createColorClip("red", 0, 60), b = createColorClip("blue", 0, 60), after = createColorClip("green", 60, 30);
+    p.tracks = [{ ...createTrack("video", "Card"), clips: [b] }, { ...createTrack("video", "Main"), main: true, clips: [a, after] }];
+    const q = applyLayout(p, [a.id, b.id], "pip-top-right");
+    const main = q.tracks.find(t => t.main)!;
+    expect(main.clips.map(c => [c.id, c.start])).toEqual([[a.id, 0], [after.id, 60]]);
+    const cardTrack = q.tracks.findIndex(t => t.clips.some(c => c.id === b.id));
+    expect(cardTrack).toBeLessThan(q.tracks.indexOf(main));
+    expect(() => applyLayout(p, [b.id, a.id], "pip-top-right")).toThrow(/main-track clip stays underneath/);
+    const split = applyLayout(p, [b.id, a.id], "split-vertical");
+    expect(split.tracks.find(t => t.main)!.clips.map(c => c.id)).toEqual([a.id, after.id]);
+  });
   it("adds editable borders and entrance keys atomically", () => {
     const p = createProject(); const a = createColorClip("red", 0, 30), b = createColorClip("blue", 0, 30);
     p.tracks = [a, b].map(c => ({ ...createTrack("video", "Picture"), clips: [c] }));

@@ -49,6 +49,11 @@ export function applyLayout(p: Project, ids: string[], layout: Layout, options: 
     return loc.clip as VisualClip;
   });
   if (Math.max(...clips.map(c => c.start)) >= Math.min(...clips.map(c => c.start + c.duration))) throw new Error("Layout clips must overlap in time");
+  // A clip on the main track stays there, refit in place: taking it off left
+  // a gap, and with the magnet on rippled every later shot. The others stack
+  // above it, so in picture in picture it must be the full-frame picture.
+  const onMain = new Set(p.tracks.find(t => t.main)?.clips.filter(c => ids.includes(c.id)).map(c => c.id));
+  if (layout.startsWith("pip-") && ids.slice(1).some(id => onMain.has(id))) throw new Error("A main-track clip stays underneath: put it first, as the full-frame picture, or move the card off the main track");
   const stack: VisualClip[] = [];
   clips.forEach((c, i) => {
     const cell = cells[i], fit = coverCell(fittedSize(p, c), cell, p.width, p.height);
@@ -83,6 +88,6 @@ export function applyLayout(p: Project, ids: string[], layout: Layout, options: 
   });
   // Stack the chosen clips in input order, main PIP picture first. Existing
   // clips on their old tracks stay untouched; borders remain editable shapes.
-  p = { ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(c => !ids.includes(c.id)) })) };
-  return placeStack(p, stack, "Layout");
+  p = { ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(c => !ids.includes(c.id) || onMain.has(c.id)) })) };
+  return placeStack(p, stack.filter(c => !onMain.has(c.id)), "Layout");
 }
