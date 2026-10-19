@@ -11,6 +11,7 @@
 // does a tape stop's slowing tail. A clip's sound design (filters, echo,
 // reverb) is built by engine/soundFx.ts into the same chain (ADR-060).
 
+import { meterLevels } from "../lib/mixer";
 import type { AudioBufferSink } from "mediabunny";
 import { EQ_BANDS, panEnvelope, soundEnvelope, soundingClips, soundPanAt, soundSpan } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
@@ -85,6 +86,34 @@ export function scheduleAudio(
   at: number,
 ): Schedule {
   const realtime = ctx instanceof AudioContext;
+  const master = ctx.createGain();
+  master.gain.value = p.masterVolume ?? 1;
+  master.connect(dest);
+  const buses = new Map<string, GainNode>();
+  const taps = new Map<string, [AnalyserNode, AnalyserNode]>();
+  const splitters: ChannelSplitterNode[] = [];
+  const output = (id: string) => {
+    let node = buses.get(id);
+    if (!node) {
+      node = ctx.createGain();
+      node.channelCount = 2;
+      node.channelCountMode = "explicit";
+      node.connect(master);
+      buses.set(id, node);
+      if (realtime) {
+        // Separate channels: a mono analyser would cancel opposite-phase
+        // stereo and under-report hard-panned sound.
+        const split = ctx.createChannelSplitter(2);
+        const pair: [AnalyserNode, AnalyserNode] = [ctx.createAnalyser(), ctx.createAnalyser()];
+        pair.forEach((tap, channel) => { tap.fftSize = 1024; split.connect(tap, channel); });
+        node.connect(split);
+        splitters.push(split);
+        taps.set(id, pair);
+        trackMeters.set(id, pair);
+      }
+    }
+    return node;
+  };
   let stopped = false;
   const nodes = new Set<AudioScheduledSourceNode>();
   /** Each clip's last node, connected to `dest`. */
@@ -116,7 +145,7 @@ export function scheduleAudio(
     const gain = ctx.createGain();
     const pan = ctx.createStereoPanner();
     pan.pan.value = soundPanAt(sounding, p.fps, lo);
-    pan.connect(dest);
+    pan.connect(output(sounding.via?.at(-1)?.track.id ?? sounding.track.id));
     outs.push(pan);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
     // Keyframed curves ride the clip's span; started late (realtime), the
@@ -324,6 +353,12 @@ export function scheduleAudio(
       // Echo and reverb would ring on after a pause: cut every clip off.
       for (const o of outs) o.disconnect();
       outs.length = 0;
+      master.disconnect();
+      splitters.forEach(split => split.disconnect());
+      for (const [id, node] of buses) {
+        node.disconnect();
+        if (trackMeters.get(id) === taps.get(id)) trackMeters.delete(id);
+      }
     },
     done: Promise.all(pumps).then(() => undefined),
   };
@@ -445,4 +480,14 @@ export function compressorNodes(ctx: BaseAudioContext, c: Compressor): { input: 
   const makeup = new GainNode(ctx, { gain: 10 ** (c.makeup / 20) });
   comp.connect(makeup);
   return { input: comp, output: makeup };
+}
+
+const trackMeters = new Map<string, [AnalyserNode, AnalyserNode]>();
+export function trackMeter(id: string) { return trackMeters.get(id); }
+export function readMeter(node?: AnalyserNode | [AnalyserNode, AnalyserNode]) {
+  const nodes = node ? Array.isArray(node) ? node : [node] : [];
+  const samples = new Float32Array(nodes.reduce((sum, n) => sum + n.fftSize, 0));
+  let offset = 0;
+  for (const n of nodes) { n.getFloatTimeDomainData(samples.subarray(offset, offset + n.fftSize)); offset += n.fftSize; }
+  return meterLevels(samples);
 }

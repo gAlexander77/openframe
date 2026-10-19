@@ -1,0 +1,13 @@
+.mixer { position: fixed; z-index: 80; right: 24px; bottom: 64px; width: min(720px, calc(100vw - 48px)); padding: 12px; background: var(--bg-panel, #202124); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 30px #0008; }
+.mixer > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.mix-strips { display: flex; overflow-x: auto; gap: 12px; }
+.mix-strip { flex: 0 0 142px; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: #18191c; border-radius: 4px; }
+.mix-strip > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mix-fader { display: flex; height: 132px; gap: 8px; }
+.mix-fader > input { writing-mode: vertical-lr; direction: rtl; width: 24px; height: 132px; }
+.mix-levels { display: flex; flex-direction: column; gap: 6px; font-size: 10px; color: #ddd; }
+.mix-levels > div { display: flex; flex-direction: column; }
+.mix-levels meter { width: 86px; height: 12px; }
+.mix-switches { display: flex; gap: 4px; }
+.mix-switches .btn { padding: 4px 8px; }
+.mix-switches [aria-pressed=true] { background: #315979; }

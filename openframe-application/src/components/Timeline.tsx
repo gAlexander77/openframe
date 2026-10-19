@@ -38,6 +38,8 @@ import { ClipView, type ClipZone } from "./ClipView";
 import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
 import { rangeGesture } from "./inspector/controls";
+import { timelineDisplay, useTimelineDisplay } from "../state/timelineDisplay";
+import { Mixer } from "./Mixer";
 import { TimelineToolbar } from "./TimelineToolbar";
 import "./timeline.css";
 
@@ -87,7 +89,8 @@ async function replaceFromPicker(id: Id) {
 function layoutRows(p: Project): { rows: Row[]; height: number } {
   let y = 0;
   const rows = p.tracks.map((track) => {
-    const h = trackHeight(track);
+    const choice = timelineDisplay().height;
+    const h = trackHeight({ ...track, height: choice === "medium" ? track.height : choice });
     const r = { track, top: y, height: h };
     y += h + ROW_GAP;
     return r;
@@ -208,7 +211,8 @@ export function Timeline() {
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
 
-  const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project]);
+  const display = useTimelineDisplay();
+  const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project, display]);
   const duration = ops.projectDuration(project);
   const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame), duration);
   const fpsN = project.fps.num / project.fps.den;
@@ -810,6 +814,7 @@ export function Timeline() {
 
   return (
     <section className="panel timeline-panel" aria-label="Timeline">
+      <Mixer />
       <TimelineToolbar />
       <CompoundPath />
       <div
@@ -1081,6 +1086,10 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
     const height = (h: Track["height"], label: string) => ({ label, checked: track.height === h, onSelect: () => set({ height: h }, "Track height") });
     openMenu(at.x, at.y, [
       { label: "Rename track…", onSelect: () => setRenaming(true) },
+      { title: "Track color", current: track.color ?? null,
+        swatches: [{ value: null, label: "No track color" }, ...Object.entries(CLIP_LABELS).map(([value, l]) => ({ value, label: l.label, color: l.color }))],
+        onPick: (v) => set({ color: (v ?? undefined) as ClipLabel | undefined }, "Track color"),
+      },
       ...(sounds
         ? ([
             { label: "Solo", checked: !!track.solo, onSelect: solo },

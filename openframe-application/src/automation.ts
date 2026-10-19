@@ -5,7 +5,7 @@
 
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
-import { COMMANDS, describeProject, runCommand } from "./lib/commands";
+import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runCommand } from "./lib/commands";
 import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
@@ -27,7 +27,7 @@ import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
-import { currentScreen, listSaved, newProject, openProject, saveProjectCopy } from "./state/project";
+import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -46,10 +46,17 @@ function needProject() {
 
 const automation = {
   /** Every command with its JSON Schema, for tool listing. */
-  commands: () => COMMANDS.map(({ name, description, input }) => ({ name, description, input })),
+  commands: () => [...COMMANDS, ...PROJECT_FILE_COMMANDS].map(({ name, description, input }) => ({ name, description, input })),
   /** Run one command as an undoable edit. Throws with every problem named.
    * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
+    const fileCommand = PROJECT_FILE_COMMANDS.find(c => c.name === name);
+    if (fileCommand) {
+      const problems = validate(args, fileCommand.input);
+      if (problems.length) throw new Error(problems.join("; "));
+      if (name === "collect_project") { needProject(); return collectProject(true); }
+      return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
+    }
     if (name === "add_sticker") return execAddSticker(args).then(() => describe());
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).

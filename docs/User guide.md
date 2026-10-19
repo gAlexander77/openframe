@@ -411,8 +411,54 @@ Select two to four overlapping pictures and open **Layouts** in the inspector. T
 
 ## Group transforms
 
-A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that member’s span.
+A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that memberâ€™s span.
 
 ## Motion path points
 
 Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
+
+## Mix tracks
+
+Open **Mixer** from the timeline toolbar or **View > Mixer**. Move each
+track's vertical fader to balance its level in dB, and use pan to place it
+left or right. **Mute** silences a track; **Solo** plays only soloed tracks.
+The meters show peak and RMS after track gain and pan. The master strip
+controls the whole mix, including exports, and shows stereo levels and
+short-term LUFS. A drag is one undo step. Double-click a fader or pan to
+reset it. Close the panel with **Close mixer**.
+
+## Use animated images
+
+Import an animated GIF, WebP or APNG like any image. Supported webviews read
+its frame timing and transparency. A new clip lasts one loop; drag its right
+edge farther to repeat it. Hover across its library card to scrub frames.
+The same animation is drawn during playback and export, including imported
+animated stickers. When ImageDecoder is unavailable the image is treated as
+a still. Loops larger than 256 MiB after decoding are refused; use a smaller
+animation in that case.
+
+## Change the timeline display
+
+Open **Timeline display** on the timeline toolbar to show or hide waveforms,
+video thumbnails or clip names, and choose small, medium or large tracks.
+These choices stay with your profile and do not change exports. Medium
+retains individual heights set in track menus. Right-click a track header
+and choose a **Track color** swatch to tint its clips. A clip with its own
+label color keeps that color instead. **No track color** removes the tint.
+
+## Move or open a project file
+
+On desktop, choose **File > Collect files**, then a destination folder.
+OpenFrame creates a new subfolder containing `project.json` and `media`.
+Wait for copying to finish, then move that entire subfolder together. Media,
+proxies, LUTs and background-removal cutouts are included. A missing source
+must be relinked before collecting. The original project and files stay put.
+
+Choose **File > Open project file** and select the JSON. It opens as a new
+saved project; its relative media paths are resolved beside the JSON on
+desktop. If media is missing, open **Media > Manage media** and relink it.
+
+On the web, **Collect files** downloads only the JSON. Media remains in this
+browser profile. Opening that JSON elsewhere does not transfer its media;
+relink the original files there. Automation's `collect_project` is desktop
+only; `open_project_file` accepts a path only on desktop.

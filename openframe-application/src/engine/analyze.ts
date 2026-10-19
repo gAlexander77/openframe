@@ -1,3 +1,4 @@
+import { imageFor } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
 // fixed analysis rate, or as per-frame scene scores from small frames.
 // Each call opens its own mediabunny Input (like thumbs.ts), so analysis
@@ -304,6 +305,7 @@ export async function frameScores(
  * the end gives the last frame; a file without picture gives nulls.
  */
 export async function sourceFrames(asset: Asset, times: number[], width: number): Promise<(CanvasImageSource | null)[]> {
+  if (asset.kind === "image") return Promise.all(times.map(t => imageFor(asset, t)));
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryVideoTrack();

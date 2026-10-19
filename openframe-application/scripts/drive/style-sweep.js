@@ -190,6 +190,9 @@ async (page) => {
     await page.evaluate((id) => window.videoEditor.select([id]), ids.video);
     for (const m of await page.locator(".menubar-item > button").allTextContents())
       await step(`${v}-menu-${m}`, () => page.locator(".menubar-item > button", { hasText: m }).first().click(), true);
+    await step(`${v}-mixer`, () => page.getByRole("button", { name: "Mixer", exact: true }).click());
+    await page.getByRole("button", { name: "Close mixer", exact: true }).click();
+    await step(`${v}-timeline-display`, () => page.getByRole("button", { name: "Timeline display", exact: true }).click(), true);
     await step(`${v}-clip-menu`, () => page.locator(`[data-clip="${ids.video}"]`).first().click({ button: "right" }), true);
     await step(`${v}-track-menu`, () => page.locator(".tl-header").first().click({ button: "right" }), true);
     await step(`${v}-media-menu`, async () => {

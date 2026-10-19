@@ -330,12 +330,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_project",
-    description: "Change project settings: name, canvas size (pixels), frame rate, background color.",
+    description: "Change project settings: name, canvas size (pixels), frame rate, background color, master volume.",
     input: S.obj({
       name: S.str("Project name"),
       width: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas width in pixels" },
       height: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas height in pixels" },
       background: S.str("CSS hex color behind all layers"),
+      master_volume: S.num("Master linear gain; 1 is unity", { minimum: 0, maximum: 4 }),
       fps: S.str("Frame rate; clips keep their times", { enum: FPS_PRESETS.map((f) => f.label) }),
     }),
     run: (p, a) => {
@@ -343,6 +344,7 @@ export const COMMANDS: Command[] = [
       if (a.fps !== undefined && !rate) throw new CommandError(`fps must be one of ${FPS_PRESETS.map((f) => f.label).join(", ")}`);
       const q = {
         ...p,
+        ...(a.master_volume !== undefined ? { masterVolume: Number(a.master_volume) } : {}),
         ...(a.name !== undefined ? { name: String(a.name) } : {}),
         ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
         ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
@@ -359,7 +361,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "update_track",
-    description: "Mute, solo, hide, lock, rename, resize, or set the volume or pan of a track.",
+    description: "Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.",
     input: S.obj(
       {
         track_id: S.str("Track id"),
@@ -370,15 +372,16 @@ export const COMMANDS: Command[] = [
         volume: S.num("Linear gain, 1 = unchanged", { minimum: 0, maximum: 4 }),
         pan: S.num("-1 left .. 1 right, added to each clip's pan", { minimum: -1, maximum: 1 }),
         solo: S.bool("While any track is soloed, only soloed tracks sound"),
+        color: S.str("Track tint; a clip label takes precedence; none clears it", { enum: ["none", ...Object.keys(CLIP_LABELS)] }),
         height: S.str("Row height on the timeline", { enum: ["small", "normal", "large"] }),
       },
       ["track_id"],
     ),
     run: (p, a) => {
-      const { track_id, height, ...patch } = a;
+      const { track_id, height, color, ...patch } = a;
       trackOrThrow(p, track_id);
       // "normal" clears the field (undefined is dropped when saved).
-      return ops.updateTrack(p, String(track_id), { ...patch, ...(height ? { height: height === "normal" ? undefined : height } : {}) } as Partial<Track>);
+      return ops.updateTrack(p, String(track_id), { ...patch, ...(color !== undefined ? { color: color === "none" ? undefined : color } : {}), ...(height ? { height: height === "normal" ? undefined : height } : {}) } as Partial<Track>);
     },
   },
   {
@@ -399,7 +402,7 @@ export const COMMANDS: Command[] = [
       {
         asset_id: S.str("Asset id, from import_media or describe_project"),
         start: S.num("Timeline position in seconds", { minimum: 0 }),
-        duration: S.num("Length in seconds; defaults to the whole source (5 s for images)", { minimum: 0.001 }),
+        duration: S.num("Length in seconds; defaults to the whole source (one loop for animated images, 5 s for stills)", { minimum: 0.001 }),
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
         track_id: S.str("Track id"),
         mode: S.str("overwrite replaces what is under the clip; insert pushes later clips right", { enum: ["overwrite", "insert"] }),
@@ -410,6 +413,7 @@ export const COMMANDS: Command[] = [
       const asset = ops.getAsset(p, String(a.asset_id));
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
+      if (a.in !== undefined && clip.type === "image" && asset.animated) clip = { ...clip, imageIn: Number(a.in) };
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
       const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
@@ -2474,7 +2478,8 @@ export function describeProject(p: Project) {
     canvas: { width: p.width, height: p.height },
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
-    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio })),
+    ...(p.masterVolume !== undefined ? { master_volume: p.masterVolume } : {}),
+    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}) })),
     tracks: p.tracks.map(track),
     markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
@@ -2496,6 +2501,8 @@ export function describeProject(p: Project) {
       ...(t.solo ? { solo: true } : {}),
       ...(t.volume !== 1 ? { volume: +t.volume.toFixed(4) } : {}),
       ...(t.pan ? { pan: t.pan } : {}),
+      ...(t.color ? { color: t.color } : {}),
+      ...(t.height ? { height: t.height } : {}),
       clips: t.clips.map((c) => ({
         id: c.id,
         type: c.type,
@@ -2505,6 +2512,7 @@ export function describeProject(p: Project) {
         ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, speed_curve: c.speedCurve ? (c.speedCurve.preset ?? "custom") : undefined } : {}),
         ...("reverse" in c && c.reverse ? { reverse: true } : {}),
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
+        ...(c.type === "image" && c.imageIn ? { in: c.imageIn } : {}),
         ...(c.type === "text" ? { text: c.text, runs: c.style.runs ?? [] } : {}),
         ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
@@ -2699,3 +2707,9 @@ function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
   delete out[key];
   return out;
 }
+
+/** Lifecycle operations use the app host; their schemas live beside edits. */
+export const PROJECT_FILE_COMMANDS = [
+  { name: "collect_project", description: "Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.", input: S.obj({}) },
+  { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
+];

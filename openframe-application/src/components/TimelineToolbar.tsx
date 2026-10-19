@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  SlidersHorizontal,
   ArrowLeftToLine,
   ArrowRightToLine,
   Bookmark,
@@ -35,6 +36,7 @@ import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
 import { MenuList, useDismiss } from "./Menu";
+import { TimelineDisplayMenu } from "./TimelineDisplayMenu";
 import { VoiceoverButton } from "./VoiceoverButton";
 
 /** "Split (Ctrl+B)" — CapCut's tooltip format, chord read from the keymap. */
@@ -112,6 +114,8 @@ export function TimelineToolbar() {
   return (
     <div className="tl-toolbar">
       <div className="tl-tools">
+        <TimelineDisplayMenu />
+        <button className="icon-btn" aria-label="Mixer" onClick={() => store.set({ mixer: !store.get().mixer })}><SlidersHorizontal /></button>
         <div className="tool-picker" ref={picker}>
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tipFor(TOOL_ACTION[tool])} onClick={() => setToolMenu((v) => !v)}>
             <ToolIcon />

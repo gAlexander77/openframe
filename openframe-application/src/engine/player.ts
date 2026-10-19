@@ -131,8 +131,8 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
-          const bitmap = await imageFor(asset).catch(() => null);
-          if (bitmap) out.set(l.clipId, { bitmap, key: `img:${asset.src}` });
+          const bitmap = await imageFor(asset, src.time).catch(() => null);
+          if (bitmap) out.set(l.clipId, { bitmap, key: `img:${asset.src}:${asset.animated ? src.time : 0}` });
         }
       }
     }),

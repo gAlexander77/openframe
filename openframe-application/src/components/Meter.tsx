@@ -68,6 +68,7 @@ export function Meter() {
 }
 
 const live = new LiveLoudness();
+export const shortTermLufs = () => live.shortTerm();
 // Under BS.1770's -70 LUFS absolute gate is silence (a stopped filter's
 // tail read -1221).
 const lu = (v: number) => (v > -70 ? v.toFixed(1) : "—");

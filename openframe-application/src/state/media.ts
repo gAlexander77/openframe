@@ -23,7 +23,7 @@ const CODEC_NAMES: Record<string, string> = {
 };
 const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCase()) : undefined);
 
-const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|png|jpe?g|gif|webp|bmp|avif|svg)$/i;
+const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|a?png|jpe?g|gif|webp|bmp|avif|svg)$/i;
 export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
 
 /** Probe and add files as assets. Returns the ones that worked; each
@@ -69,6 +69,7 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
       added.push({
         id: uid("a"),
         kind: info.kind,
+        animated: info.animated,
         name: f.name,
         src: f.src,
         proxy,

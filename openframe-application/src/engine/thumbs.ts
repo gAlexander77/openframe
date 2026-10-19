@@ -85,7 +85,10 @@ export function prepare(asset: Asset) {
       const h = THUMB_H;
       const w = Math.max(1, Math.round((bmp.width / bmp.height) * h));
       const small = await createImageBitmap(bmp, { resizeHeight: h, resizeWidth: w, resizeQuality: "medium" });
-      strips.set(src, { step: Infinity, frames: [small], aspect: w / h });
+      const frames = [small];
+      const step = asset.animated ? asset.duration / 20 : Infinity;
+      if (asset.animated) for (let i = 1; i < 20; i++) frames.push(await createImageBitmap(await imageFor(asset, i * step), { resizeHeight: h, resizeWidth: w }));
+      strips.set(src, { step, frames, aspect: w / h });
       posters.set(asset.src, await toUrl(small));
       bump();
     });

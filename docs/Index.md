@@ -261,3 +261,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-087 Inline title ranges share the raster layout]]
 
 - [[ADR-088 Layout and group geometry use canvas pixels]]
+
+- [[ADR-089 Mixer taps and timed images share the render engines]] — post-fader
+  meters, master gain, timed image loops and profile display preferences.
+- [[ADR-090 Collected projects use relative media in a new folder]] — native
+  collection, portable paths and fresh identities when opening JSON.

@@ -7,6 +7,7 @@ mod mcp;
 mod media;
 mod models;
 mod project;
+mod project_files;
 mod render;
 
 use std::sync::Arc;
@@ -71,6 +72,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             media::media_register,
+            project_files::project_collect,
+            project_files::project_open_file,
             project::project_list,
             project::project_load,
             project::project_save,

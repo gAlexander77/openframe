@@ -6,7 +6,7 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
-import { COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
+import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
 import { expandVersions, VERSION_FITS, VERSION_RATIOS, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
@@ -256,6 +256,7 @@ export const APP_TOOLS: AppTool[] = [
           .map((p) => ({ id: p.id, name: p.name, updated: new Date(p.updatedAt).toISOString(), duration: +p.duration.toFixed(2), canvas: `${p.width}x${p.height}`, ...(p.open ? { open: true } : {}) })),
       ),
   },
+  ...PROJECT_FILE_COMMANDS.map(c => ({ name: c.name, description: c.description, inputSchema: c.input, call: async (h: McpHost, a: Record<string, unknown>) => json(await h.exec(c.name, a)) })),
   {
     name: "open_project",
     description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.",
