@@ -1,22 +1,22 @@
 // Makes the site's video media from the launch film and the recorded product
 // footage: a web version of the film (H.264 1080p, +faststart) with its
-// poster, and short muted feature loops (VP9 WebM + H.264 MP4, 1280x720),
-// each cropped to the part of the window that shows the feature.
+// poster and captions, and short muted feature loops (VP9 WebM + H.264 MP4,
+// 1280x720), each cropped to the part of the window that shows the feature.
 //
-//   node scripts/make-media.mjs --film "<launch film.mp4>" --footage <dir> [--only name,name] [--posters 1]
+//   node scripts/make-media.mjs --film "<launch film.mp4>" [--captions "<its .srt>"] --footage <dir> [--only name,name] [--posters 1]
 //   (--posters 1 rewrites only the loops' poster frames from the encoded loops)
 //
 // Needs ffmpeg and ffprobe on PATH. Outputs (committed):
-//   public/media/launch-film.mp4, public/media/loops/<name>.webm|.mp4
-//   src/assets/media/launch-film-poster.png, src/assets/media/<name>.png
+//   public/media/launch-film.mp4, public/media/launch-film.en.vtt,
+//   public/media/loops/<name>.webm|.mp4
+//   src/assets/media/launch-film-poster.jpg, src/assets/media/<name>.jpg
 // Metadata is stripped from every file (no creation times, encoder paths or
 // tags). Every frame still has to be looked at before a commit: see
 // docs/Website.md, "Privacy checklist for media".
 import { execFileSync } from "node:child_process";
-import { mkdirSync, statSync, rmSync, existsSync } from "node:fs";
+import { mkdirSync, statSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = Object.fromEntries(
@@ -52,14 +52,39 @@ const COLOR = ["-color_range", "tv", "-colorspace", "bt709", "-color_primaries",
 
 function filmWeb(src) {
   const out = join(ROOT, "public/media/launch-film.mp4");
-  const log = join(tmpdir(), "openframe-film-2pass");
+  // The two-pass log stays in the site's git-ignored scratch folder.
+  mkdirSync(join(ROOT, ".cache"), { recursive: true });
+  const log = join(ROOT, ".cache", "film-2pass");
   const v = ["-c:v", "libx264", "-preset", "slow", "-threads", "4", "-profile:v", "high", "-pix_fmt", "yuv420p", "-b:v", "1750k", "-maxrate", "3500k", "-bufsize", "7000k", "-g", "60", "-passlogfile", log];
   run("ffmpeg", ["-v", "error", "-y", "-i", src, ...v, "-pass", "1", "-an", "-f", "mp4", process.platform === "win32" ? "NUL" : "/dev/null"]);
-  run("ffmpeg", ["-v", "error", "-y", "-i", src, ...v, "-pass", "2", "-c:a", "aac", "-b:a", "128k", ...NOMETA, "-movflags", "+faststart", out]);
+  // The sound is the master's own mix, loudness-normalized on export: an
+  // AAC track is copied as it is (re-encoding it raised the true peak from
+  // -1.0 to -0.7 dBTP), anything else becomes AAC at 128 kbit/s.
+  const acodec = execFileSync("ffprobe", ["-v", "error", "-select_streams", "a:0", "-show_entries", "stream=codec_name", "-of", "csv=p=0", src]).toString().trim();
+  const audio = acodec === "aac" ? ["-c:a", "copy"] : ["-c:a", "aac", "-b:a", "128k"];
+  run("ffmpeg", ["-v", "error", "-y", "-i", src, ...v, "-pass", "2", ...audio, ...NOMETA, "-movflags", "+faststart", out]);
   for (const f of [log + "-0.log", log + "-0.log.mbtree"]) if (existsSync(f)) rmSync(f);
   // The poster: the wordmark and the line under it, settled.
   run("ffmpeg", ["-v", "error", "-y", "-ss", "10.6", "-i", src, "-frames:v", "1", "-q:v", "2", ...NOMETA, join(ROOT, "src/assets/media/launch-film-poster.jpg")]);
   console.log("launch-film.mp4", mb(out));
+}
+
+// The film's SubRip captions (export_video's captions: srt) as WebVTT for
+// the player's <track>: the same cues, times with a dot, no cue numbers.
+function captionsVtt(srt) {
+  const blocks = readFileSync(srt, "utf8").replace(/^\uFEFF/, "").replace(/\r/g, "").trim().split(/\n{2,}/);
+  const cues = blocks.map((block) => {
+    const lines = block.split("\n");
+    const at = lines.findIndex((l) => l.includes("-->"));
+    if (at < 0) throw new Error(`no cue times in: ${block}`);
+    const time = lines[at].replace(/(\d\d:\d\d:\d\d),(\d\d\d)/g, "$1.$2");
+    const text = lines.slice(at + 1).map((l) => l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+    return [time, ...text].join("\n");
+  });
+  const out = join(ROOT, "public/media/launch-film.en.vtt");
+  const note = "NOTE The narration, from the film's own captions.";
+  writeFileSync(out, ["WEBVTT", note, ...cues].join("\n\n") + "\n", "utf8");
+  console.log("launch-film.en.vtt", cues.length, "cues");
 }
 
 function loop(dir, l) {
@@ -83,6 +108,7 @@ function loop(dir, l) {
 }
 
 if (args.film && want("film")) filmWeb(args.film);
+if (args.captions && want("film")) captionsVtt(args.captions);
 if (args.footage) for (const l of LOOPS) if (want(l.name)) loop(args.footage, l);
 if (!args.film && !args.footage) {
   console.error('usage: node scripts/make-media.mjs --film "<launch film.mp4>" --footage <footage dir> [--only film,cut,...]');

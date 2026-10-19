@@ -137,36 +137,63 @@ const LOG = [
         <p class="lede">The launch film and every clip on this site came from agents working with OpenFrame itself.</p>
       </div>
       <div class="copy-block">
+        <p>
+          The launch film was cut, scored and narrated by an AI agent inside OpenFrame, through its MCP tools. The only part
+          made outside the editor is the footage of the app itself.
+        </p>
         <h3>The footage</h3>
         <p>
-          An agent built a demo project through the MCP tools from public-domain NASA footage and CC0 clips from Wikimedia
-          Commons, then recorded over a dozen takes of the web build at 2560 by 1440 in a headless browser, with a drawn cursor, undoing
-          each take's edits so every take started from the same project.
+          An agent built demo projects through the MCP tools from public-domain NASA footage and CC0 clips from Wikimedia
+          Commons, then recorded takes of the web build in a headless browser, with a drawn cursor, undoing each take's edits
+          so every take started from the same project. The film uses 18 takes recorded this way from the current build.
         </p>
-        <h3>The music</h3>
+        <h3>The score</h3>
         <p>
-          Another agent synthesized the 56-second, 120 BPM track in Python from oscillators, noise and filters: no samples, no
-          loops, no outside audio. It mastered it to -14 LUFS and measured every section, which is why each cut of the film lands
-          on a bar.
+          The agent planned a 120 BPM score in F minor against the edit before anything rendered: drops at 0:08 and 0:40, a
+          breakdown before the second, and the final hit at 1:00, where the end card lands. Every asked time fell on a bar
+          line. OpenFrame's music generator rendered the 68 seconds in about five seconds, mastered to -14 LUFS, synthesizing
+          every instrument in code with no samples.
+        </p>
+        <h3>The voice</h3>
+        <p>
+          The narration is 14 lines read by OpenFrame's text to speech on the computer, each placed on its beat, with a
+          pronunciation map. Then the agent had the app listen back: Whisper heard every word, and the review named
+          three problems with exact fixes, a misheard word, two slow lines and music too loud under the voice. Three lines
+          were read again, and the music was ducked to sit 12 LU under the voice.
         </p>
         <h3>The edit</h3>
         <p>
-          The film itself is about 90 MCP calls, most of them batches: floating windows with motion blur, push-ins on the
-          feature in use, kinetic type, transitions, sound effects, a grade and the export, checked on contact sheets and
-          against the design rules. A few things the editor could not draw yet, the soft glow sprites, a window shadow and the
-          logo image, were made outside it and imported.
+          The master took about 30 MCP calls, most of them batches, one per section: kinetic type with styled accent words,
+          floating windows with shadows, tilt and motion blur, push-ins on the feature in use, soft glows drawn as radial
+          gradients, and whooshes on the reveals. This time no sprite or music was made outside the editor. The agent checked
+          each section on contact sheets and ran the project check until it passed with no warnings, after it caught text
+          under the size floor, contrast as low as 1.27:1 and headlines past the title-safe edge. The export is at -14 LUFS,
+          with the narration's captions beside it, the ones this site's player offers.
         </p>
-        <h3>What it taught the editor</h3>
-        <p>The agent listed every limit it met. The next round of work fixed the ones that misled it:</p>
+        <h3>The vertical cut</h3>
+        <p>
+          A 9:16 version for TikTok, Reels and Shorts, with the captions burned in, came from a copy of the project. The
+          versions tool could not restack this film's side-by-side designs for a tall frame, so the agent laid it out again by
+          hand in about 25 steps and checked it against the parts of the frame those apps cover.
+        </p>
+        <h3>What the films taught the editor</h3>
+        <p>Each agent listed every limit it met. The work since the last film fixed the ones that misled it:</p>
         <ul>
           <li>Keyframes on properties that do not animate were accepted silently; now they are refused, and answers show the keys (<a href={repoFile("docs/decisions/ADR-066 Keyframes are refused where nothing moves and shown in answers.md")}>ADR-066</a>).</li>
           <li>Other shapes of a hand-animated film pushed its windows off frame; versions now lay keyframed motion out again (<a href={repoFile("docs/decisions/ADR-067 Versions lay keyframed motion out again around its rest.md")}>ADR-067</a>).</li>
           <li>The project check guessed at contrast it never saw; it now measures the picture and the sound it judges (<a href={repoFile("docs/decisions/ADR-068 check_project measures the picture and the sound it judges.md")}>ADR-068</a>).</li>
           <li>Music analysis found one drop and missed a breakdown; it now finds every drop and measures voice balance (<a href={repoFile("docs/decisions/ADR-075 Measure music structure and voice balance on the timeline.md")}>ADR-075</a>).</li>
+          <li>The music came from outside the editor; now an agent can compose the score in it (<a href={repoFile("docs/decisions/ADR-085 Music is composed and synthesized in the app, seeded and offline.md")}>ADR-085</a>).</li>
         </ul>
+        <p>
+          This film's list is the next round's work: laying side-by-side designs out again for 9:16, layouts that can fit a
+          picture instead of cropping it, a title edit that dropped a styled word, and new clips that replaced others without
+          saying so. One fix landed the same day: applying a layout no longer ripples the main track.
+          <a href={repoFile("docs/research/Launch film 3 through MCP 2026-10-19.md")}>The full notes</a>
+        </p>
         <h3>This website</h3>
         <p>
-          An agent built this site too: the clips are cut from the same recordings, the screenshots come from a script that
+          An agent built this site too: the clips are cut from an agent's recordings of the running app, the screenshots come from a script that
           drives the running app and builds its demo projects through MCP, and the tool reference is generated from the app's
           own documentation every time the site is built.
         </p>

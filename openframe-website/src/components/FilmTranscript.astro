@@ -1,16 +1,42 @@
 ---
-// The launch film as text: what is on screen in each chapter, and the music.
-// The film has no voice, so this is its full text alternative.
-import { CHAPTERS, clock } from "../data/film";
+// The launch film as text, its full text alternative: for each chapter,
+// what the narrator says and what is on screen, then the music. The
+// narration is read from the captions file the player offers (made from
+// the film's own SRT by scripts/make-media.mjs), so the two cannot drift.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { CHAPTERS, FILM, clock } from "../data/film";
+
+const seconds = (t: string) => t.split(":").reduce((s, part) => s * 60 + Number(part), 0);
+const unescape = (t: string) => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const vtt = readFileSync(resolve(process.cwd(), "public", FILM.captions), "utf8");
+const narration = vtt.replace(/\r/g, "").split(/\n{2,}/).flatMap((block) => {
+  const [time, ...text] = block.trim().split("\n");
+  const m = time.match(/^([\d:.]+)\s+-->\s+[\d:.]+/);
+  return m ? [{ start: seconds(m[1]), text: unescape(text.join(" ").trim()) }] : [];
+});
+if (!narration.length) throw new Error(`No captions found in public/${FILM.captions}`);
+const said = (start: number, end: number) => narration.filter((l) => l.start >= start && l.start < end);
 ---
 <details class="transcript">
   <summary>Read the film as text</summary>
+  <p class="how">The narration in quotes, then what is on screen.</p>
   <ol>
     {CHAPTERS.map((c) => (
-      <li><span class="t">{clock(c.start)}</span> {c.text}</li>
+      <li>
+        <span class="t">{clock(c.start)}</span>
+        <div>
+          {said(c.start, c.end).map((l) => <span class="said">“{l.text}”</span>)}
+          <span class="seen">{c.text}</span>
+        </div>
+      </li>
     ))}
   </ol>
-  <p>Music: an original 120 BPM electronic track, synthesized in code for the film. It builds for eight seconds, drops as the logo appears, breaks down for "Then there's AI." and drops again for the agent.</p>
+  <p>
+    Music: an original 120 BPM score in F minor, generated in OpenFrame for the film. It starts quietly under the first
+    line, drops as the logo appears at 0:08, breaks down for “one thing no other editor can do,” drops again for the agent
+    at 0:40, and lands its final hit on the end card at 1:00.
+  </p>
 </details>
 
 <style>
@@ -20,9 +46,12 @@ import { CHAPTERS, clock } from "../data/film";
     list-style-position: inside;
   }
   .transcript[open] { grid-column: 1 / -1; }
-  .transcript ol { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; columns: 2; }
-  .transcript li { break-inside: avoid; }
-  .transcript .t { display: inline-block; min-width: 3.2em; color: var(--text-3); font-variant-numeric: tabular-nums; }
-  .transcript p { margin-top: 12px; }
+  .transcript ol { list-style: none; margin: 14px 0 0; padding: 0; columns: 2; column-gap: 32px; }
+  .transcript li { display: grid; grid-template-columns: 3.2em minmax(0, 1fr); align-items: baseline; break-inside: avoid; padding-bottom: 12px; }
+  .transcript li > div { display: grid; gap: 2px; }
+  .transcript .t { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .transcript .said { color: var(--text-1); }
+  .transcript > p { margin-top: 12px; }
+  .transcript > p.how { color: var(--text-3); }
   @media (max-width: 760px) { .transcript ol { columns: 1; } }
 </style>
