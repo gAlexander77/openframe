@@ -241,6 +241,17 @@ export function Segmented<T extends string>(props: { value: T; options: { value:
           key={o.value}
           role="radio"
           aria-checked={props.value === o.value}
+          tabIndex={props.value === o.value || (!props.options.some((item) => item.value === props.value) && o === props.options[0]) ? 0 : -1}
+          onKeyDown={(e) => {
+            const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+            if (!step && e.key !== "Home" && e.key !== "End") return;
+            e.preventDefault();
+            e.stopPropagation();
+            const i = props.options.indexOf(o);
+            const next = e.key === "Home" ? 0 : e.key === "End" ? props.options.length - 1 : (i + step + props.options.length) % props.options.length;
+            props.onChange(props.options[next].value);
+            e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+          }}
           className={props.value === o.value ? "on" : ""}
           data-tip={o.tip}
           aria-label={o.tip}

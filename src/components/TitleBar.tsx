@@ -169,6 +169,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         ) : editing ? (
           <input
             className="field project-name-input"
+            maxLength={120}
             autoFocus
             defaultValue={name}
             onBlur={(e) => {

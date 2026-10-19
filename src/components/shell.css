@@ -136,7 +136,7 @@
 .drag-ghost span { overflow: hidden; text-overflow: ellipsis; }
 
 .toasts {
-  position: fixed; top: 52px; left: 50%; z-index: 400;
+  position: fixed; bottom: 18px; left: 50%; z-index: 400;
   display: grid; gap: 6px; justify-items: center;
   transform: translateX(-50%); pointer-events: none;
 }

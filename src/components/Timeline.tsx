@@ -1077,7 +1077,7 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
       ) : (
         <span className="tl-kind" data-tip={track.main ? "Main track" : track.name}>
           {kindIcon}
-          {track.main && <span className="tl-main-chip">Main</span>}
+          <span className="tl-track-name">{track.name}</span>
         </span>
       )}
       {volumeAt && <TrackVolume track={track} at={volumeAt} onClose={() => setVolumeAt(null)} />}
@@ -1127,7 +1127,7 @@ function Ruler({ zoom, left, width, onDown }: { zoom: number; left: number; widt
       ctx.fillRect(x, t.major ? RULER_H - 12 : RULER_H - 6, 1, t.major ? 12 : 6);
       if (t.label) {
         ctx.fillStyle = "#8a8a8a";
-        ctx.fillText(t.label, x + 4, 6);
+        ctx.fillText(t.label, x + (t.frame === 0 ? 12 : 4), 6);
       }
     }
   }, [zoom, left, width, fps]);

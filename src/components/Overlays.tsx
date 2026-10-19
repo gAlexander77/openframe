@@ -18,7 +18,7 @@ export function DragGhost() {
   );
 }
 
-/** CapCut-style toasts: small dark pills near the top of the window. */
+/** CapCut-style toasts: small dark pills near the bottom of the window. */
 export function Toasts() {
   const toasts = useToasts();
   return (

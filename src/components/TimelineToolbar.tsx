@@ -30,7 +30,7 @@ import {
 import { type ActionId, ACTION_LABELS } from "../lib/keymap";
 import * as ops from "../lib/project/ops";
 import { clampZoom, ZOOM_MAX, ZOOM_MIN } from "../lib/timeline";
-import { run, tipFor } from "../state/actions";
+import { edit, run, tipFor } from "../state/actions";
 import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
@@ -70,6 +70,10 @@ export function TimelineToolbar() {
   const axis = useEditor((s) => s.previewAxis);
   const keyframes = useEditor((s) => s.keyframePanel);
   const zoom = useEditor((s) => s.zoom);
+  const canSplit = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration && (!s.selection.length || s.selection.includes(c.id)))));
+  const canTrim = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration)));
+  // Markers are valid on an empty timeline and may share a frame.
+  const canMark = useEditor((s) => Number.isFinite(s.playhead) && s.playhead >= 0);
   const hasSel = useEditor((s) => s.selection.length > 0);
   const undo = useEditor((s) => s.undoLabel);
   const redo = useEditor((s) => s.redoLabel);
@@ -91,14 +95,14 @@ export function TimelineToolbar() {
   const steps = history ? store.history()[history.kind].slice(0, 20) : [];
 
   const flip = () =>
-    store.edit("Mirror", (p) => {
+    edit("Mirror", (p) => {
       for (const id of store.get().selection) {
         p = ops.updateClip(p, id, (c) => ("transform" in c ? ({ ...c, transform: { ...c.transform, flipX: !c.transform.flipX } } as typeof c) : c));
       }
       return p;
     });
   const rotate = () =>
-    store.edit("Rotate", (p) => {
+    edit("Rotate", (p) => {
       for (const id of store.get().selection) {
         p = ops.updateClip(p, id, (c) => ("transform" in c ? ({ ...c, transform: { ...c.transform, rotation: (c.transform.rotation + 90) % 360 } } as typeof c) : c));
       }
@@ -165,11 +169,11 @@ export function TimelineToolbar() {
           )}
         </div>
         <span className="tl-sep" />
-        <Tool id="split" icon={<Scissors />} />
-        <Tool id="trimStartToPlayhead" icon={<ArrowLeftToLine />} />
-        <Tool id="trimEndToPlayhead" icon={<ArrowRightToLine />} />
+        <Tool id="split" icon={<Scissors />} disabled={!canSplit} />
+        <Tool id="trimStartToPlayhead" icon={<ArrowLeftToLine />} disabled={!canTrim} />
+        <Tool id="trimEndToPlayhead" icon={<ArrowRightToLine />} disabled={!canTrim} />
         <Tool id="delete" icon={<Trash2 />} disabled={!hasSel} />
-        <Tool id="addMarker" icon={<Bookmark />} />
+        <Tool id="addMarker" icon={<Bookmark />} disabled={!canMark} />
         <button className="icon-btn" aria-label="Crop" data-tip="Crop" disabled={!croppable} onClick={() => beginCrop(store.get().selection[0])}>
           <Crop />
         </button>

@@ -4,7 +4,7 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
-import { ACTION_LABELS, buildIndex, chordOf, chordText, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
+import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
@@ -62,8 +62,8 @@ export function setKeymapChanges(next: KeymapChanges) {
 export const chordFor = (id: ActionId) => keymap[id]?.[0];
 
 /** A tooltip with the action's current chord: "Split (Ctrl+B)". */
-export function tipFor(id: ActionId, label = ACTION_LABELS[id]) {
-  const c = chordFor(id);
+export function tipFor(id: ActionId | keyof typeof GESTURE_CHORDS, label = id === "viewerZoom" ? "Viewer zoom" : ACTION_LABELS[id]) {
+  const c = id === "viewerZoom" ? GESTURE_CHORDS[id] : chordFor(id);
   return c ? `${label} (${chordText(c, isMac)})` : label;
 }
 

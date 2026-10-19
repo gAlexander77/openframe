@@ -480,6 +480,7 @@ function SettingsView() {
                 className={s.range === "inout" ? "on" : ""}
                 onClick={() => set({ range: "inout" })}
                 disabled={!hasRange}
+                data-tip={hasRange ? "Export the marked In to Out range" : "Set In and Out points to export a range"}
                 aria-describedby={hasRange ? undefined : "export-range-hint"}
               >
                 In to Out

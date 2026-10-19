@@ -21,7 +21,7 @@ const ROW_H = 22;
 const PAD_Y = 16;
 const SNAP_PX = 10;
 const DEFAULT_H = 240;
-const MIN_H = 150;
+const MIN_H = 90;
 
 const loadHeight = () => {
   try {
@@ -56,8 +56,17 @@ export function KeyframePanel(props: Props) {
       /* private window: the height just won't persist */
     }
   }, [height]);
-  // Leave the tracks at least a couple of rows.
-  const maxH = () => Math.max(MIN_H, (dock.current?.parentElement?.clientHeight ?? 600) - 140);
+  // Measure the actual dock, including window and workspace splitter changes.
+  // Reserve the toolbar, ruler and two normal track rows above the graph.
+  const [available, setAvailable] = useState(MIN_H);
+  useLayoutEffect(() => {
+    const parent = dock.current?.parentElement;
+    if (!parent) return;
+    const observer = new ResizeObserver(() => setAvailable(Math.max(MIN_H, parent.clientHeight - 210)));
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+  const maxH = () => available;
   const animated = !!clip?.keyframes && Object.keys(clip.keyframes).length > 0;
   return (
     <div className="kf-dock" ref={dock} style={{ height: Math.min(height, maxH()) }}>

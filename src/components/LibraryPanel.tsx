@@ -65,62 +65,11 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "markers", label: "Markers", icon: Bookmark },
 ];
 
-/** The tab strip scrolls sideways when the panel is narrower than its
- * tabs: edges fade where tabs are hidden, the mouse wheel scrolls it, and
- * the open tab is kept in view (it can be opened from elsewhere). */
-function useTabStrip(tab: string) {
-  const ref = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const el = ref.current!;
-    const edges = () => {
-      el.classList.toggle("more-left", el.scrollLeft > 1);
-      el.classList.toggle("more-right", el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
-    };
-    const wheel = (e: WheelEvent) => {
-      if (el.scrollWidth <= el.clientWidth || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-      el.scrollLeft += e.deltaY;
-      e.preventDefault();
-    };
-    const ro = new ResizeObserver(() => {
-      // Scroll only this strip. scrollIntoView can also move clipped panels.
-      const active = el.querySelector(".lib-tab.on");
-      if (active) {
-        el.scrollLeft += clearOfFade(active, el);
-      }
-      edges();
-    });
-    ro.observe(el);
-    el.addEventListener("scroll", edges, { passive: true });
-    el.addEventListener("wheel", wheel, { passive: false });
-    return () => {
-      ro.disconnect();
-      el.removeEventListener("scroll", edges);
-      el.removeEventListener("wheel", wheel);
-    };
-  }, []);
-  useEffect(() => {
-    const el = ref.current, active = el?.querySelector(".lib-tab.on");
-    if (!el || !active) return;
-    el.scrollBy({ left: clearOfFade(active, el), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  }, [tab]);
-  return ref;
-}
-
-/** How far to scroll the strip so the active tab clears the edge fades
- * (.lib-tabs mask, 36 px): stopping at the strip's edge left "AI tools"
- * half faded out after it was picked. */
-function clearOfFade(tab: Element, strip: Element) {
-  const FADE = 36;
-  const r = tab.getBoundingClientRect(), s = strip.getBoundingClientRect();
-  return r.left < s.left + FADE ? r.left - s.left - FADE : r.right > s.right - FADE ? r.right - s.right + FADE : 0;
-}
-
 export function LibraryPanel() {
   const tab = useEditor((s) => s.leftTab);
-  const strip = useTabStrip(tab);
   return (
     <section className="panel library-panel" aria-label="Library">
-      <nav className="lib-tabs" role="tablist" ref={strip}>
+      <nav className="lib-tabs" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.id}
@@ -376,7 +325,7 @@ function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; use
   return (
     <div
       className="card media-card"
-      title={`${asset.name}\n${metadata}`}
+      data-tip={`${asset.name}\n${metadata}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
       onContextMenu={onMenu}

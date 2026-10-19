@@ -46,7 +46,7 @@
 .kf-ease-btn:hover { background: var(--bg-3); border-color: var(--accent); }
 .kf-count { padding: 0 5px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 10px; }
 
-.kf-empty { display: grid; place-items: center; color: var(--text-3); font-size: var(--fs-sm); padding: 12px; text-align: center; }
+.kf-empty { min-height: 0; overflow-y: auto; display: grid; place-items: center; color: var(--text-3); font-size: var(--fs-sm); padding: 12px; text-align: center; }
 .kf-quick { display: grid; gap: 10px; justify-items: center; }
 .kf-quick-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .kf-quick-chips .chip-btn { display: inline-flex; align-items: center; gap: 5px; }
@@ -138,3 +138,11 @@
   background: rgb(0 0 0 / 80%); color: #fff; font-size: 10px; white-space: nowrap;
   pointer-events: none;
 }
+
+.kf-empty .empty { padding: 8px; }
+/* A shallow dock keeps the icon, title and hint beside the quick-add actions. */
+.kf-empty { padding: 4px 12px; }
+.kf-empty .empty { grid-template-columns: 24px auto; gap: 2px 8px; text-align: left; padding: 2px; }
+.kf-empty .empty > svg { grid-row: 1 / 3; }
+.kf-empty .empty > strong, .kf-empty .empty > span { justify-self: start; }
+.kf-quick { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 20px; }

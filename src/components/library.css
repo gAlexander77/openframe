@@ -1,20 +1,16 @@
 .library-panel { display: grid; grid-template-rows: auto 1fr; }
 
-/* CapCut: a row of icon-over-label tabs, active one in cyan; it scrolls
-   sideways when the panel is narrow. */
+/* Icon-over-label tabs wrap into compact rows; every destination stays visible. */
 .lib-tabs {
-  display: flex; gap: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 0;
   padding: 6px 4px 0;
   border-bottom: 1px solid var(--line);
-  overflow-x: auto; scrollbar-width: none;
+  overflow: visible;
 }
 .lib-tabs::-webkit-scrollbar { display: none; }
-.lib-tabs.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
-.lib-tabs.more-left { mask-image: linear-gradient(to left, #000 calc(100% - 36px), transparent); }
-.lib-tabs.more-left.more-right { mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 .lib-tab {
   display: grid; justify-items: center; gap: 3px;
-  flex: 1 0 auto; min-width: 46px; padding: 5px 4px 7px;
+  min-width: 0; padding: 5px 4px 7px;
   border: 0; border-radius: var(--radius) var(--radius) 0 0;
   background: transparent; color: var(--text-2);
   font-size: var(--fs-xs); white-space: nowrap;

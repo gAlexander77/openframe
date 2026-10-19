@@ -1621,7 +1621,7 @@ function ProjectDetails() {
           </Row>
           <Row label="Resolution">
             <select className="field" aria-label="Resolution" value={RESOLUTIONS.includes(short) ? short : ""} onChange={(e) => setCanvas(p.width, p.height, Number(e.target.value))}>
-              {!RESOLUTIONS.includes(short) && <option value="">{p.width}x{p.height}</option>}
+              {!RESOLUTIONS.includes(short) && <option value="">{p.width}×{p.height}</option>}
               {RESOLUTIONS.map((r) => (
                 <option key={r} value={r}>
                   {r === 2160 ? "4K" : r === 1440 ? "2K" : `${r}p`}

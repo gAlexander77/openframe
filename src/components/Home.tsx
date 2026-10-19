@@ -159,7 +159,7 @@ export function Home() {
                     }}
                   />
                 ) : (
-                  <strong className="project-card-name">{p.name}</strong>
+                  <strong className="project-card-name" data-tip={p.name}>{p.name}</strong>
                 )}
                 <span className="project-meta num">
                   {p.width}×{p.height} · {ago(p.updatedAt)}

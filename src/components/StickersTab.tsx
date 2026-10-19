@@ -89,7 +89,7 @@ function StickerCard({ s }: { s: StickerDef }) {
     <div
       ref={ref}
       className="card sticker-card"
-      title={s.label}
+      data-tip={s.label}
       onPointerDown={(e) => beginDrag(e, { kind: "sticker", id: s.id, label: s.label })}
       onDoubleClick={add}
     >

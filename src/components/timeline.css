@@ -71,7 +71,9 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
   background: var(--bg-1);
   border-right: 1px solid var(--line);
 }
-.tl-kind { display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); }
+.tl-track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.tl-kind > svg { flex: none; }
+.tl-kind { min-width: 0; display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); }
 .tl-main-chip { font-size: 10px; color: var(--text-2); }
 /* One fixed slot per toggle (lock, eye, speaker), so each icon sits in the
    same column on every track whichever toggles the track has. */
