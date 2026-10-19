@@ -19,7 +19,12 @@ export function RenameField({ name, label, className, onDone }: { name: string; 
       aria-label={label}
       defaultValue={name}
       autoFocus
-      onFocus={(e) => e.currentTarget.select()}
+      onFocus={(e) => {
+        // All selected, the start in view: select() scrolls a long name to its end.
+        const input = e.currentTarget;
+        input.setSelectionRange(0, input.value.length, "backward");
+        input.scrollLeft = 0;
+      }}
       onPointerDown={stop}
       onMouseDown={stop}
       onClick={stop}

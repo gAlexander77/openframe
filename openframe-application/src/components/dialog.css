@@ -22,7 +22,6 @@
 .folder-controls .field { width: 160px; min-width: 0; flex: 1 1 140px; }
 .media-organization .field { min-width: 0; max-width: 220px; flex: 1 1 100px; }
 .media-organization label { display: flex; align-items: center; gap: 5px; font-size: var(--fs-xs); overflow-wrap: anywhere; }
-.media-folder-filter { margin-bottom: 10px; }
 /* Preferences: label and hint | seconds | unit. */
 .prefs-head { margin: 0 0 6px; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
 .prefs-row { display: grid; grid-template-columns: 1fr 80px auto; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }

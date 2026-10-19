@@ -211,7 +211,7 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
-  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove_keyframes path volume first";
+  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove its volume keyframes first";
   // ponytail: the cleaned sound is a new file of the source window; a
   // retimed clip would need the retimer's window instead.
   if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
