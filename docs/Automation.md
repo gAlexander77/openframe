@@ -40,6 +40,20 @@ Then:
 The app must be running with Allow AI agents on whenever the agent works;
 start a new agent session after adding the server.
 
+**When the app gains tools.** A client lists a server's tools once, when
+it connects, so tools (or parameters) a newer build adds stay invisible to
+a session that was already open. Every answer names the tool set it came
+from (`result._meta["openframe/tools"]`, a fingerprint of every name and
+schema), and the server says `tools.listChanged: true`:
+
+- **stdio** (`--mcp-stdio`): the bridge watches that fingerprint and sends
+  `notifications/tools/list_changed` after the first answer from another
+  tool set (the app was rebuilt and restarted while the client stayed
+  connected), and the client lists the tools again. Nothing to do.
+- **HTTP**: this server answers each POST and holds no stream to send a
+  notification on, so reconnect: in Claude Code, `/mcp`, choose `openframe`
+  and **Reconnect** (or restart Claude Code); in Codex, start a new session.
+
 ### Connect Codex CLI
 
 1. Under **Connect agents → Codex**, click **Add to Codex**. The app runs

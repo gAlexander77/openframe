@@ -1081,6 +1081,9 @@ Three doors, one engine ([[Automation]]):
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
+  Every answer names the tool set it came from, so the stdio bridge tells
+  a connected client (`notifications/tools/list_changed`) when a newer
+  build brings other tools; over HTTP the client reconnects ([[Automation]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.

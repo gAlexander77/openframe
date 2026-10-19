@@ -323,7 +323,10 @@ OpenFrame to its settings and tells you whether it was added, was already
 there, or the program was not found (with a link to install it). You can
 also copy the ready-made command or, for Codex, the `config.toml` entry.
 Start a new Codex or Claude Code session afterwards, and keep OpenFrame
-open with Allow AI agents on while the agent works.
+open with Allow AI agents on while the agent works. After updating
+OpenFrame, an agent added with the button sees the new tools by itself;
+one connected over HTTP (the copied command) needs a reconnect: in Claude
+Code, type `/mcp`, choose openframe and Reconnect.
 
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection (with step-by-step

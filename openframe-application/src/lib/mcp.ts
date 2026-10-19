@@ -826,7 +826,32 @@ const GUIDES: Record<string, { name: string; text: () => string }> = {
 /** The server's first words to a model, for the generated reference. */
 export const instructions = () => INSTRUCTIONS;
 
-const ok = (id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, result });
+/** Where every answer names the tool set it came from (_meta), for the
+ * stdio bridge (src-tauri/src/mcp.rs) to watch. */
+export const TOOLS_META = "openframe/tools";
+
+let toolsMark: string | undefined;
+/**
+ * A short fingerprint of the tool set (every name and schema): a client
+ * lists the tools once, when it connects, so a build that adds tools or
+ * parameters is invisible to it. Every answer carries this in its _meta,
+ * and the stdio bridge sends notifications/tools/list_changed when it
+ * changes (a rebuilt app, a hot update in development), so the client
+ * lists them again.
+ */
+export function toolsFingerprint(): string {
+  if (toolsMark) return toolsMark;
+  const s = JSON.stringify(listTools());
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  return (toolsMark = `${h.toString(16).padStart(8, "0")}-${s.length.toString(16)}`);
+}
+
+const ok = (id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse => ({
+  jsonrpc: "2.0",
+  id: id ?? null,
+  result: result && typeof result === "object" && !Array.isArray(result) ? { ...result, _meta: { ...(result as { _meta?: object })._meta, [TOOLS_META]: toolsFingerprint() } } : result,
+});
 const fail = (id: JsonRpcRequest["id"], code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
 /**
@@ -841,7 +866,8 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
     case "initialize":
       return ok(req.id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
+        // The stdio bridge says when the tools change; over HTTP a client reconnects.
+        capabilities: { tools: { listChanged: true }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: host.name, version: host.version },
         instructions: instructionsFor(host),
       });
