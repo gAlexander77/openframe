@@ -173,3 +173,34 @@ built by small scripts), plus about 15 for the vertical copy.
 The demo media inside the footage is the same CC0 (Wikimedia Commons) and
 public-domain (NASA) set as before; the score and the voice were made by
 the app. The film's own media list is in the footage folder's `SHOTS.md`.
+
+## After the fixes (the same day)
+
+Two fix lanes acted on this list, and the website shows the film.
+
+| Limit | Status |
+|---|---|
+| 1 | `export_versions` stacks side-by-side designs on tall frames and burns captions ([[ADR-091 Tall versions stack what stood side by side]]) |
+| 2 | `apply_layout` has `fit: contain` |
+| 3 | New titles wrap inside the safe area |
+| 4 | Runs survive multi-place edits |
+| 5-6 | Fixes are concrete, a second hearing decides who misheard, and lines take a pace intent ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]) |
+| 7 | A chosen speed is reported |
+| 8 | Overwrites are reported |
+| 9 | `clip_ids` on `set_text` and `remove_keyframes`, which is a no-op when nothing matches |
+| 10 | The stdio bridge sends `tools/list_changed`; the HTTP endpoint documents a reconnect |
+| 11 | `generate_music` takes `brightness`, and the launch style leans bright |
+
+All four footage findings are fixed too.
+
+**Re-run on the real master.** `export_versions` with `check: true` at 9:16:
+- **Before the fixes:** windows and headlines collapsed into overlaps.
+- **Now:** each window stands above its headline, the captions burn in
+  below, and the end card fits.
+- **Still crowded:** the full-frame macro beats and the LIVE shot, where
+  the headline band and the caption meet.
+
+The hand-made vertical cut stays the better one for this film. A
+re-layout rule for text over full-frame footage on tall versions is the
+next step.
+

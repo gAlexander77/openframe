@@ -1403,6 +1403,27 @@ one at a time.
     zones, and both measure -14.2 LUFS.
   - **No outside assets:** no sprites and no outside music.
 
+- **Acting on the film's limits** (two lanes, then the website):
+  - **UI and commands (Codex):**
+    - runs survive text edits;
+    - `clip_ids` everywhere;
+    - overwrite reports and retake speed notes;
+    - markers pinned with the ruler;
+    - number fields that take typing;
+    - the timeline refits when the assistant docks.
+  - **MCP:**
+    - tall versions stack side-by-side designs and burn captions
+      ([[ADR-091 Tall versions stack what stood side by side]]);
+    - layouts can fit the whole picture;
+    - new titles wrap to the safe area;
+    - the voice review's fixes are concrete, and a scripted voice's
+      captions use its script
+      ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]);
+    - the score takes a brightness;
+    - the stdio bridge tells clients when tools change.
+  - **The website** shows film 3 with its narration as captions, chapters
+    at the real cuts, and the story of how it was made in the app.
+
 ### Lessons paid for in this round
 
 - **A merge can carry bytes a text tool can't see.** A Codex lane wrote a
