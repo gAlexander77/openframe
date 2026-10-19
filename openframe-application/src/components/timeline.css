@@ -1,0 +1,289 @@
+/* The last row is the keyframe panel when it is open (keyframes.css). */
+.timeline-panel { display: grid; grid-template-rows: 38px 1fr auto; }
+/* The compound clip path (breadcrumb) takes a row of its own. */
+.timeline-panel:has(> .tl-path) { grid-template-rows: 38px auto 1fr auto; }
+
+/* ---- toolbar ------------------------------------------------------------------ */
+.tl-toolbar {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 0 8px; border-bottom: 1px solid var(--line);
+  /* Clip only sideways (narrow windows): hidden on both axes also clipped
+     the tool picker's menu and the voiceover panel that open below. */
+  min-width: 0; overflow-x: clip;
+}
+.tl-tools { display: flex; align-items: center; gap: 2px; min-width: 0; }
+/* Inside a compound clip: where you are, and the way back out. */
+.tl-path {
+  display: flex; align-items: center; gap: 4px; min-width: 0; height: 26px;
+  padding: 0 8px; border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--clip-compound) 35%, transparent);
+  font-size: 12px; white-space: nowrap; overflow: hidden;
+}
+.tl-crumb {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+  border: 0; border-radius: 4px; background: none; color: var(--text-2);
+  font: inherit; cursor: pointer;
+}
+button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
+.tl-crumb.current { color: var(--text-1); font-weight: 600; cursor: default; }
+.tl-crumb-sep { color: var(--text-3); flex: none; }
+.tl-path-hint { margin-left: auto; padding-left: 12px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; }
+.tl-sep { width: 1px; height: 18px; margin: 0 6px; background: var(--line-strong); }
+.tool-picker { position: relative; }
+.tool-btn { width: auto; padding: 0 4px; gap: 1px; display: inline-flex; }
+/* Fixed at its static place (just under the button): in a short window
+   the menu has to open upward, out of the timeline panel, whose
+   overflow: hidden clipped it; fixed escapes every ancestor's clip. */
+.tool-picker .menu { position: fixed; top: auto; left: auto; margin-top: 4px; min-width: 220px; }
+.fit-btn { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
+.zoom-slider { width: 110px; accent-color: var(--text-1); }
+/* The toolbar queries its own width. Its two tool groups take 844 px
+   (416 each and the gap, measured 2026-10-18); beside the docked AI
+   assistant (ADR-064) the timeline can be narrower, so the zoom slider
+   goes first and Fit and the zoom buttons stay. Remeasure when a tool
+   joins the bar (the dock drive checks the toolbar fits). */
+.tl-toolbar { container-type: inline-size; }
+@container (max-width: 844px) { .zoom-slider { display: none; } }
+
+/* ---- scroller and layers ----------------------------------------------------------- */
+.tl-scroll { position: relative; overflow: auto; min-height: 0; }
+.tl-scroll.blade .clip { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'><path d='M10 1v18' stroke='white' stroke-width='2'/></svg>") 10 10, crosshair; }
+.tl-scroll.os-drop { box-shadow: inset 0 0 0 2px var(--accent); }
+.tl-content { position: relative; min-height: 100%; }
+
+.tl-ruler { position: sticky; top: 0; z-index: 6; cursor: pointer; background: var(--bg-1); }
+.tl-corner { position: sticky; left: 0; top: 0; z-index: 8; height: 28px; margin-top: -28px; background: var(--bg-1); }
+.tl-rows { position: absolute; left: 0; right: 0; bottom: 0; }
+
+.tl-row { position: absolute; left: 0; right: 0; }
+.tl-lane {
+  position: absolute; top: 0; bottom: 0; right: 0;
+  background: #222;
+  border-radius: 3px;
+}
+.tl-row.main .tl-lane { background: #262626; }
+
+.tl-header {
+  position: sticky; left: 0; z-index: 5;
+  height: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 6px 0 10px;
+  background: var(--bg-1);
+  border-right: 1px solid var(--line);
+}
+.tl-track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.tl-kind > svg { flex: none; }
+.tl-kind { min-width: 0; display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); }
+.tl-main-chip { font-size: 10px; color: var(--text-2); }
+/* One fixed slot per toggle (lock, eye, speaker), so each icon sits in the
+   same column on every track whichever toggles the track has. */
+.tl-toggles { display: grid; grid-template-columns: repeat(3, 22px); gap: 1px; flex: none; }
+.tl-tog-lock { grid-column: 1; }
+.tl-tog-eye { grid-column: 2; }
+.tl-tog-sound { grid-column: 3; }
+.tl-tog {
+  display: grid; place-items: center; width: 22px; height: 22px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent; color: var(--text-3);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.tl-tog:hover { background: var(--bg-2); color: var(--text-1); }
+.tl-tog.on { color: var(--warn); }
+
+/* ---- clips ---------------------------------------------------------------------------- */
+.clip {
+  --body: var(--clip-video); --edge: var(--clip-video-edge);
+  position: absolute; top: 0; left: 0;
+  border-radius: 4px; overflow: hidden;
+  background: var(--body);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+  cursor: grab;
+  transition: box-shadow var(--t-fast), filter var(--t-fast);
+  animation: clip-in var(--t-med) var(--ease-out);
+}
+@keyframes clip-in { from { opacity: 0.4; filter: brightness(1.4); } to { opacity: 1; filter: none; } }
+.clip:hover { filter: brightness(1.1); }
+.clip:active { cursor: grabbing; }
+.clip-audio { --body: var(--clip-audio); --edge: var(--clip-audio-edge); }
+.clip-text { --body: var(--clip-text); --edge: var(--clip-text-edge); }
+.clip-color { --body: var(--clip-color); --edge: var(--clip-color-edge); }
+.clip-adjustment { --body: var(--clip-adjust); --edge: var(--clip-adjust-edge); }
+.clip-compound { --body: var(--clip-compound); --edge: var(--clip-compound-edge); }
+.clip.selected {
+  box-shadow: inset 0 0 0 2px #fff;
+  z-index: 2;
+  animation: clip-select var(--t-med) var(--ease-out);
+}
+@keyframes clip-select { from { box-shadow: inset 0 0 0 4px rgb(255 255 255 / 50%); } }
+/* A color label paints the body and the name strip (which is what shows
+   over a video's thumbnails). */
+.clip[data-label] { --body: var(--label); }
+.clip[data-label] .clip-label { background: var(--label); }
+.clip.disabled { opacity: 0.45; background-image: repeating-linear-gradient(135deg, transparent 0 6px, rgb(0 0 0 / 25%) 6px 12px); }
+.clip.locked { cursor: not-allowed; }
+.clip-label {
+  position: relative; z-index: 1;
+  display: flex; align-items: center; gap: 4px;
+  padding: 0 5px;
+  font-size: 10.5px; color: rgb(255 255 255 / 90%);
+  background: rgb(0 0 0 / 22%);
+  white-space: nowrap; overflow: hidden;
+}
+.clip-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+/* Rename: the name strip becomes a field, wide enough on a short clip. */
+.clip-rename {
+  flex: 1; min-width: 90px; height: 14px; padding: 0 3px;
+  border: 1px solid var(--accent); border-radius: 3px; outline: none;
+  background: var(--bg-0); color: var(--text-1); font: inherit;
+}
+.clip-dur { color: rgb(255 255 255 / 60%); }
+.clip-badge { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; border-radius: 3px; background: rgb(0 0 0 / 35%); font-size: 9.5px; }
+.clip-badge-icon { color: #bfefff; }
+/* Premiere's out-of-sync numbers: red, on both linked clips. */
+.clip-badge.sync { background: var(--danger); color: #fff; font-weight: 600; }
+.clip-strip, .clip-wave { position: absolute; pointer-events: none; }
+.clip-text .clip-label, .clip-adjustment .clip-label, .clip-color .clip-label { height: 100% !important; background: none; }
+.clip-key {
+  position: absolute; bottom: 1px; z-index: 5;
+  display: grid; place-items: center; width: 12px; height: 12px; padding: 0;
+  border: 0; background: none; color: #fff; cursor: ew-resize;
+  filter: drop-shadow(0 0 1px rgb(0 0 0 / 80%));
+  transition: transform var(--t-fast) var(--ease-spring), color var(--t-fast);
+}
+.clip-key:hover { transform: scale(1.3); }
+.clip-key.on { color: var(--accent); }
+.clip-key.sel { color: var(--accent); transform: scale(1.35); filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 3px rgb(0 193 205 / 70%)); }
+
+.trim {
+  position: absolute; top: 0; bottom: 0; width: 8px; z-index: 4;
+  cursor: ew-resize; opacity: 0;
+  transition: opacity var(--t-fast);
+}
+.trim-start { left: 0; border-left: 3px solid #fff; border-radius: 4px 0 0 4px; }
+.trim-end { right: 0; border-right: 3px solid #fff; border-radius: 0 4px 4px 0; }
+.clip.selected .trim, .clip:hover .trim { opacity: 1; }
+.clip:not(.selected):hover .trim { opacity: 0.55; }
+
+.tl-transition {
+  position: absolute; z-index: 3;
+  display: grid; place-items: center; padding: 0;
+  border: 1px solid rgb(255 255 255 / 55%); border-radius: 5px;
+  background: rgb(20 20 20 / 70%); color: #fff;
+  backdrop-filter: blur(2px);
+  animation: pop-in var(--t-med) var(--ease-spring);
+}
+.tl-transition:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---- overlays --------------------------------------------------------------------------- */
+.tl-playhead {
+  position: absolute; left: 0; top: 0; z-index: 9; width: 1px;
+  background: var(--playhead); pointer-events: none;
+  will-change: transform;
+}
+.tl-playhead-cap {
+  position: absolute; top: 0; left: -6px; width: 13px; height: 14px;
+  background: var(--playhead);
+  clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+}
+.tl-axis { position: absolute; left: 0; top: 0; z-index: 8; width: 1px; background: var(--preview-axis); pointer-events: none; }
+.tl-snap {
+  position: absolute; top: 0; z-index: 8; width: 1px;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
+  pointer-events: none; animation: fade-in var(--t-fast);
+}
+.tl-marquee { position: absolute; z-index: 9; border: 1px solid var(--accent); background: var(--accent-soft); pointer-events: none; }
+.tl-marker {
+  position: absolute; top: 0; z-index: 7; width: 0; height: 0; padding: 0;
+  border: 5px solid transparent; border-top: 9px solid var(--accent); border-bottom: 0;
+  background: none; cursor: pointer;
+}
+/* The triangle is 10 x 9; its grab is 24 x 24 (UX-31). The box is the
+   border triangle's, so the padding box (where ::before is placed from)
+   sits 5 px in and 9 px down. */
+.tl-marker::before { content: ""; position: absolute; left: -12px; top: -9px; width: 24px; height: 24px; }
+.tl-range { position: absolute; top: 0; height: 28px; z-index: 5; background: rgb(0 193 205 / 18%); border-bottom: 2px solid var(--accent); pointer-events: none; }
+.tl-drop {
+  position: absolute; z-index: 7; display: flex; align-items: center; padding: 0 8px;
+  border: 1.5px dashed var(--accent); border-radius: 4px;
+  background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs);
+  pointer-events: none; overflow: hidden; white-space: nowrap;
+  transition: left 60ms linear, top var(--t-fast) var(--ease-out);
+}
+.tl-drop.on-clip { border-style: solid; }
+/* Over the magnetic main track the later clips (and what linkage carries
+   with them) slide aside to open the gap the drop will fill, and a bar
+   marks the cut (UX-13). Only during a library drag, so moves, trims and
+   zooms stay instant; the drop itself lands the clips where they already
+   appear, so nothing jumps. */
+.tl-scroll.lib-drag .clip { transition: box-shadow var(--t-fast), filter var(--t-fast), transform var(--t-med) var(--ease-out); }
+.tl-scroll.lib-drag .tl-transition { transition: left var(--t-med) var(--ease-out); }
+.tl-drop.insert { transition: left var(--t-med) var(--ease-out), top var(--t-fast) var(--ease-out); }
+.tl-insert {
+  position: absolute; z-index: 8; width: 2px; margin-left: -1px; border-radius: 1px;
+  background: var(--accent); box-shadow: 0 0 6px var(--accent);
+  pointer-events: none; transition: left var(--t-med) var(--ease-out);
+}
+/* Above the tracks: the clip goes on a new top track (UX-12). */
+.tl-drop.new-track { border-style: solid; background: var(--bg-1); box-shadow: inset 0 0 0 999px var(--accent-soft); }
+.tl-empty {
+  position: absolute; z-index: 4;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  border: 1.5px dashed var(--line-strong); border-radius: 6px;
+  color: var(--text-3); font-size: var(--fs-sm); pointer-events: none;
+}
+.ctx-anchor { position: fixed; z-index: 200; width: 0; height: 0; }
+.tl-tog-solo.on { color: var(--accent); }
+.tl-rename { width: 64px; height: 22px; padding: 0 4px; font-size: var(--fs-xs); }
+.menu.tl-vol-pop { position: fixed; z-index: 210; min-width: 0; width: 220px; padding: 10px 12px; display: grid; gap: 6px; }
+.tl-vol-pop label { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
+.tl-vol-pop input { width: 100%; accent-color: var(--text-1); }
+.ctx-anchor .menu { top: 0 !important; }
+
+/* ---- audio handles (CapCut volume line and fade knobs) ------------------------ */
+.audio-handles { position: absolute; left: 0; right: 0; z-index: 3; }
+.fade-shade { position: absolute; inset: 0; pointer-events: none; }
+.fade-shade path { fill: rgb(0 0 0 / 45%); }
+.vol-line {
+  position: absolute; height: 9px; margin-top: -4px; cursor: ns-resize;
+  background: linear-gradient(#fff, #fff) center / 100% 1.5px no-repeat;
+  opacity: 0.85; transition: opacity var(--t-fast);
+}
+.vol-line:hover, .vol-line.on { opacity: 1; background-size: 100% 2.5px; }
+.fade-knob {
+  position: absolute; top: 4px; z-index: 6; width: 10px; height: 10px; border-radius: 50%;
+  background: #fff; box-shadow: 0 0 0 1px rgb(0 0 0 / 50%);
+  cursor: ew-resize; transition: transform var(--t-fast) var(--ease-spring);
+}
+.fade-knob:hover { transform: scale(1.3); }
+/* On a video's 14 px waveform strip. */
+.audio-handles.slim .fade-knob { top: 3px; width: 8px; height: 8px; }
+/* A 24 px tall grab (UX-31) that grows inward only: outward is the 8 px
+   trim handle, which must keep its edge. */
+.fade-knob::before { content: ""; position: absolute; top: -7px; bottom: -7px; }
+.fade-knob.in::before { left: 0; right: -7px; }
+.fade-knob.out::before { left: -7px; right: 0; }
+.handle-readout {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 2px 7px; border-radius: 4px; background: rgb(0 0 0 / 75%); color: #fff;
+  font-size: 10.5px; pointer-events: none; white-space: nowrap;
+}
+
+/* trim tools: the cursor and handle color say what a drag will do */
+.tl-scroll.tool-slip .clip, .tl-scroll.tool-slide .clip { cursor: ew-resize; }
+.tl-scroll.tool-roll .trim, .tl-scroll.tool-ripple .trim { cursor: col-resize; opacity: 0.7; }
+.tl-scroll.tool-stretch .trim { cursor: ew-resize; opacity: 0.7; }
+.tl-scroll.tool-ripple .trim-start { border-left-color: var(--warn); }
+.tl-scroll.tool-ripple .trim-end { border-right-color: var(--warn); }
+.tl-scroll.tool-roll .trim-start, .tl-scroll.tool-roll .trim-end { border-color: var(--accent); }
+.tl-readout {
+  position: fixed; z-index: 300; padding: 4px 9px; border-radius: 6px;
+  background: rgb(0 0 0 / 82%); color: #fff; font-size: var(--fs-xs);
+  pointer-events: none; white-space: nowrap;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
+}
+
+/* Keyboard focus on a clip (UX-33). */
+.clip:focus { outline: none; }
+.clip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 2; }
+/* Right-click Undo or Redo: the history list hangs from the buttons. */
+.history-anchor { display: contents; }
+.history-anchor > span { display: contents; }

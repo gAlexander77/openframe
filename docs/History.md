@@ -1194,3 +1194,138 @@ and delivery) while the MCP layer was rebuilt here.
     - voice-to-music balance has to be computed by hand;
     - answers grow with compounds;
     - sound effects take one call each.
+
+## 2026-10-18 — The second improvements branch and the website (Claude Code)
+
+The owner asked for:
+- a second improvements branch: the AI assistant's tab and prompt box
+  fixed, an easy way to add the MCP server to the Codex CLI, and a pass
+  over the whole app for bugs, missing features and the right icons;
+- a product website, in its own folder beside the app.
+
+Lanes ran in parallel worktrees, each with its own Vite port, and were
+merged into `improvements-2` one at a time. Codex took three lanes from
+written plans: engine, core fixes, and icons and layout. Its sandbox
+cannot write the git index, so the lead reviewed, gated and committed
+its work from the message it left.
+
+- **The assistant docks as a column**
+  ([[ADR-064 The AI assistant docks as a column the editor makes room for]]).
+  - It was a drawer over the inspector, the zoom controls and the
+    loudness meter. Now the editor lays out as if the window were
+    narrower.
+  - The prompt box grows to five lines beside a send button of the same
+    height. Busy shows the steps and a Stop.
+  - "Add to Codex" and "Add to Claude Code" run the CLI's own `mcp add`
+    from Rust, never over an existing entry
+    ([[ADR-065 One-click agent setup runs the agent's own CLI]]).
+- **The launch film's MCP limits, acted on.** Keyframes are refused on
+  paths that do not animate ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]).
+  Answers show keys, there is one ease vocabulary, and edits answer only
+  the compounds they changed. Sounds are placed in one call.
+  - `check_project` measures the frame behind a title and the music's
+    last seconds ([[ADR-068 check_project measures the picture and the sound it judges]]).
+  - `export_versions` re-lays out keyframed windows
+    ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+- **Engine** (Codex) ([[ADR-074 Prepare preview decoders before their first visible frame]],
+  [[ADR-075 Measure music structure and voice balance on the timeline]]):
+  - the next clip's decoder is prepared before a cut, so a long-GOP
+    stall fell from 628 ms to 38 ms;
+  - `analyze_music` reports every drop and two-bar sections;
+  - loudness is measured per track;
+  - `duck_under_speech` meets a voice-over-music target.
+- **Render** ([[ADR-069 Large blurs run on a downsampled pyramid]], [[ADR-070 Drop shadows are cast by the finished picture]],
+  [[ADR-071 Keyed title styles redraw the title]]): every gap the launch film
+  needed a sprite or a workaround for:
+  - blur to a 300 px radius, with old projects pixel-identical;
+  - radial and feathered shapes;
+  - drop shadows;
+  - font weights 100-900;
+  - keyframed size, spacing and color on titles;
+  - perspective tilt.
+- **Core fixes from the audit** (Codex):
+  - viewer clicks hit-test the clip under the pointer;
+  - a shot can be dragged to the front;
+  - the stray 0 is gone;
+  - adding a title leaves the playhead where it was;
+  - a music bed over several shots stays put;
+  - a transition opens its settings;
+  - agent edits get readable undo labels.
+- **Editor UX** ([[ADR-072 One drag is one undo step and a typed value is kept]],
+  [[ADR-073 Templates land as a block and the web keeps what it imports]]):
+  - one slider or color drag is one undo step everywhere (the Duration
+    slider made eight);
+  - animation presets preview on pick, with tiles drawn from their own
+    numbers;
+  - templates land grouped above the footage;
+  - typed values survive a click away;
+  - the export dialog says what a 9:16 preset does on a 16:9 project;
+  - web URL imports are kept in browser storage;
+  - untouched new projects are discarded.
+- **The website** ([[ADR-076 The website is a static Astro site that reads docs at build time]],
+  [[ADR-077 The website deploys to GitHub Pages from main]]):
+  - an Astro site in `openframe-website/`, in the app's own look, with
+    the launch film, nine feature loops and a docs section rendered from
+    `docs/`, including the searchable MCP reference;
+  - full SEO, and Lighthouse 96-100 on mobile;
+  - it sells the app as an open-source experiment, built and filmed by
+    AI agents, and tells people to build it from source;
+  - Pages deploys it only when the site or the docs change.
+
+- **Icons and layout** (Codex):
+  - one meaning-to-icon table, `docs/Icons.md`, applied across the app;
+  - the trim tools are drawn instead of lettered;
+  - Reset and Rotate, AI and effects, and snapping and tracking no
+    longer share icons;
+  - track headers show what they hold;
+  - one empty state everywhere;
+  - the library's tabs are all visible;
+  - the inspector fits at 1100x680;
+  - segmented controls take arrow keys;
+  - toolbar buttons disable when they can't act.
+- **Everyday features**:
+  - rename clips and media;
+  - a real About dialog, with credits generated at build time;
+  - Go to start and Go to end, and a Preferences gear;
+  - Recently deleted on Home, with Undo
+    ([[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]]);
+  - a fuller clip menu;
+  - audio scrubbing
+    ([[ADR-079 Audio scrubbing plays snippets through the playback scheduler]]);
+  - MP3 export, and captions burned in or written as an SRT beside the
+    file ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
+
+- **One folder per project**
+  ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+  The editor moved into `openframe-application/`, beside `openframe-website/`,
+  so neither project's tools reach into the other. `docs/` stays at the
+  root for both, and its app paths are read as inside the app folder. CI
+  runs the app's gates there and skips website-only changes.
+
+### Lessons paid for in this round
+
+- **Claude Code re-encodes a large image result to a 256-color PNG.** A
+  tool image over 3.75 MB is shrunk to fit, and the palette bands skies.
+  That was the "posterized" contact sheets: the frames were right. Sheets
+  are JPEG at quality 0.98 now (0.92 blocked smooth gradients).
+- **Full-range VP9 from screencast footage fails in Edge on Windows**
+  (`PIPELINE_ERROR_DECODE`); convert it to limited-range BT.709.
+- **Astro's HTML compression glues a word to a link** that starts on the
+  next source line, so it is off. Inlining all CSS raised mobile
+  blocking time from 0 to about 300 ms, so stylesheets stay external.
+- **Merge the generated docs by regenerating them.** Lanes based on
+  older commits all touched `MCP tools.md`, so it was regenerated after
+  each merge rather than resolved.
+- **A lane's drive can be right and still need updating.** Once the core
+  fix returned the playhead after a preview, the UX lane's
+  animation-presets drive expected the old place. A merge reruns every
+  touched lane's drives, not just the newest one's.
+- **The full drive run earns its hour.** Run after every merge, it found
+  two real bugs no lane's own drives reached:
+  - since 2026-10-13, a web tab closed between a save's two writes left a
+    project Home could not list; Home now lists it from the project file;
+  - rename's double-click on a media name took over list rows, whose
+    double-click the user guide says adds the file.
+- **Write edit scripts to files, and read them as UTF-8.** A Git Bash
+  heredoc piped to Python collapsed doubled backslashes and was decoded
+  as cp1252, which put mojibake in a doc.

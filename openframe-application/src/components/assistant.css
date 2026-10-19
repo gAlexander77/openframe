@@ -1,0 +1,180 @@
+/* The AI assistant, docked as the editor's right-hand column (ADR-064). */
+
+/* The title bar's toggle says the column is open, wherever focus is: the
+   app's on style (.icon-btn.on), hovered or not. */
+.btn.ghost.assistant-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.btn.ghost.assistant-btn[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+
+/* The workspace beside the column: the editor's rows on the left, the
+   splitter and the column spanning all of them. */
+.workspace.docked > .top-row { grid-area: 1 / 1; }
+.workspace.docked > .splitter-y { grid-area: 2 / 1; }
+.workspace.docked > .timeline-panel { grid-area: 3 / 1; }
+.workspace.docked > .splitter-x { grid-area: 1 / 2 / 4 / 3; }
+.workspace.docked > .assistant { grid-area: 1 / 3 / 4 / 4; }
+
+.assistant {
+  display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  animation: fade-in var(--t-med) var(--ease-out);
+}
+/* Chat: model, conversation, composer. */
+.assistant:has(> .assistant-list) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+
+.assistant-head {
+  display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+.assistant-head strong { font-size: var(--fs-md); white-space: nowrap; }
+.assistant-mark { color: var(--accent); flex: none; }
+.assistant-spacer { flex: 1; }
+.assistant-status {
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0;
+  color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap;
+}
+.assistant-status i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--ok); }
+.assistant-status.offline i { background: var(--danger); }
+.assistant-status.connecting i, .assistant-status.thinking i { background: var(--warn); animation: dot-pulse 1s ease-in-out infinite; }
+@keyframes dot-pulse { 50% { opacity: 0.35; } }
+
+/* Chat and Connect agents, the inspector's tab look. */
+.assistant-tabs { display: flex; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+.assistant-tabs button {
+  height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius);
+  background: transparent; color: var(--text-2); font-size: var(--fs-md); white-space: nowrap;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.assistant-tabs button:hover { color: var(--text-1); background: var(--bg-2); }
+.assistant-tabs button.on { color: var(--accent); font-weight: 600; }
+
+/* The server and model: the server as wide as its longest name, the model
+   the rest (its full name is in the tip). */
+.assistant-config {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px;
+  padding: 8px 12px; border-bottom: 1px solid var(--line);
+}
+.assistant-config .field { min-width: 0; width: 100%; text-overflow: ellipsis; }
+.assistant-config .field:disabled { color: var(--text-3); }
+
+/* ---- conversation --------------------------------------------------------- */
+.assistant-list {
+  overflow-y: auto; overscroll-behavior: contain; padding: 12px;
+  display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 12px;
+}
+
+.assistant-empty {
+  display: grid; justify-items: center; gap: 6px; padding: 16px 4px 4px; text-align: center;
+  color: var(--text-2); font-size: var(--fs-sm); line-height: 1.45;
+}
+.assistant-empty strong { color: var(--text-1); font-size: var(--fs-md); }
+.assistant-empty-mark {
+  display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 2px;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent);
+}
+.assistant-examples { display: grid; gap: 6px; width: 100%; margin-top: 10px; }
+.assistant-chip {
+  padding: 7px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--bg-2); color: var(--text-2); font-size: var(--fs-sm); line-height: 1.4; text-align: left;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.assistant-chip:hover { background: var(--bg-3); color: var(--text-1); }
+
+.assistant-notice {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--line)); border-radius: var(--radius-panel);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-1));
+  font-size: var(--fs-sm); line-height: 1.45; color: var(--text-2);
+}
+.assistant-notice > svg { color: var(--danger); margin-top: 1px; }
+.assistant-notice strong { display: block; color: var(--text-1); margin-bottom: 2px; }
+.assistant-notice p { margin: 0 0 10px; }
+
+.msg { display: grid; gap: 6px; justify-items: start; max-width: 92%; min-width: 0; animation: rise-in var(--t-med) var(--ease-out); }
+.msg p {
+  margin: 0; padding: 8px 11px; max-width: 100%; border-radius: 12px;
+  font-size: var(--fs-md); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+}
+.msg-user { justify-self: end; justify-items: end; }
+.msg-user p { background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.msg-assistant p { background: var(--bg-2); color: var(--text-1); border-bottom-left-radius: 4px; }
+.msg-error p {
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-1)); color: var(--text-1);
+  border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent); border-bottom-left-radius: 4px;
+}
+.msg-icon { color: var(--danger); vertical-align: -2px; margin-right: 6px; }
+.msg-steps { display: flex; flex-wrap: wrap; gap: 4px; }
+.step {
+  display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px;
+  background: var(--bg-inset); color: var(--text-2); font-size: var(--fs-xs);
+  animation: pop-in var(--t-fast) var(--ease-out);
+}
+.step svg { color: var(--ok); }
+.step.bad svg { color: var(--danger); }
+.msg-actions { display: flex; flex-wrap: wrap; gap: 4px; }
+.msg-action { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
+.thinking { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); }
+.thinking .elapsed { color: var(--text-3); }
+.stop-btn { margin-left: 4px; }
+.stop-btn svg { fill: currentColor; } /* a stop square, not a checkbox */
+
+/* ---- composer: a box holding the text and the send button --------------- */
+.assistant-composer { padding: 12px; border-top: 1px solid var(--line); }
+.composer {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px;
+  padding: 4px; border: 1px solid var(--line-strong); border-radius: 10px;
+  background: var(--bg-inset); cursor: text;
+  transition: border-color var(--t-fast);
+}
+.composer:focus-within { border-color: var(--accent); }
+/* One line is 20 px between 4 px pads: as tall as the send button, so a
+   short request sits centered beside it and longer ones grow upward. */
+.composer textarea {
+  display: block; width: 100%; height: 28px; padding: 4px 6px; margin: 0;
+  border: 0; background: transparent; color: var(--text-1); outline: none; resize: none;
+  font-size: var(--fs-md); line-height: 20px; user-select: text;
+}
+.composer textarea::placeholder { color: var(--text-3); }
+.composer-send {
+  display: grid; place-items: center; width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 7px; background: var(--accent); color: var(--accent-ink);
+  transition: background var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.composer-send:hover { background: var(--accent-strong); }
+.composer-send:active { transform: scale(0.94); }
+.composer-send:disabled { background: var(--bg-3); color: var(--text-3); cursor: default; }
+.composer-send svg { width: 15px; height: 15px; }
+
+/* ---- connect agents (MCP) ------------------------------------------------- */
+.assistant-agents { overflow-y: auto; overscroll-behavior: contain; padding: 12px; font-size: var(--fs-sm); }
+.agents-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+/* The text gives way, never the switch (it was squeezed past the edge). */
+.agents-head > div { display: grid; gap: 3px; flex: 1; min-width: 0; }
+.agents-head > .toggle { flex: none; margin-top: 1px; }
+.agents-head span, .agents-note { color: var(--text-2); line-height: 1.45; font-size: var(--fs-xs); }
+.agents-note { margin: 0; }
+.agents-error { color: var(--text-1); margin: 8px 0 0; padding: 6px 8px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--danger) 14%, var(--bg-1)); }
+.agents-info { display: grid; gap: 10px; margin-top: 12px; animation: rise-in var(--t-med) var(--ease-out); }
+.agent-client {
+  display: grid; gap: 8px; padding: 10px; min-width: 0;
+  border: 1px solid var(--line); border-radius: var(--radius-panel); background: var(--bg-1);
+}
+.agent-client header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
+.agent-client header strong { font-size: var(--fs-sm); }
+.agent-add { height: 26px; padding: 0 10px; }
+.agent-result { margin: 0; color: var(--text-2); font-size: var(--fs-xs); line-height: 1.45; overflow-wrap: anywhere; }
+.agent-result.added { color: var(--ok); }
+.agent-result.failed { color: var(--text-1); }
+.link-btn { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; font-size: inherit; }
+.agent-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 2px 6px;
+  grid-template-areas: "label tools" "value value";
+}
+.agent-label { grid-area: label; color: var(--text-3); font-size: var(--fs-xs); }
+.agent-row-tools { grid-area: tools; display: flex; gap: 2px; }
+.agent-value {
+  grid-area: value; min-width: 0; padding: 5px 7px; border-radius: var(--radius-sm);
+  background: var(--bg-inset); color: var(--text-1);
+  font: 11px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  white-space: pre-wrap; overflow-wrap: anywhere; user-select: all;
+}
+.agent-value.block { user-select: text; }

@@ -34,6 +34,9 @@ timeline by hand. What it took, and what it taught the editor, is in
 
 Repository: [gAlexander77/openframe](https://github.com/gAlexander77/openframe)
 (formerly `video-editor`; GitHub redirects the old URL).
+Website: [galexander77.github.io/openframe](https://galexander77.github.io/openframe/)
+(built from [openframe-website/](openframe-website/); it goes live once
+GitHub Pages is enabled for the repository).
 
 The project was renamed **OpenFrame** on 2026-10-17: the app, its window,
 binary (`openframe`), packages and repository. The app's data folder keeps
@@ -50,7 +53,7 @@ With repository access, clone the current URL:
 
 ```sh
 git clone https://github.com/gAlexander77/openframe.git
-cd openframe
+cd openframe/openframe-application
 npm ci
 npm run tauri dev
 ```
@@ -60,11 +63,17 @@ build prerequisites. FFmpeg and ffprobe on `PATH` enable the desktop's
 broader media-format support. The optional `just` task runner provides the
 combined quality gates.
 
+From `openframe-application/`:
+
 ```sh
 npm run dev          # secondary web app at http://localhost:1420
 just check           # frontend build/tests and Rust checks
 npm run tauri build  # build this platform's desktop release
 ```
+
+The repository holds two projects. The editor is `openframe-application/`,
+the product website is `openframe-website/` (it deploys to GitHub Pages),
+and `docs/` at the root documents both.
 
 See the [user guide](docs/User%20guide.md) for a first editing session,
 project storage, exports, and platform limits.

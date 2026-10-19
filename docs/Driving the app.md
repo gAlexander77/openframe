@@ -21,6 +21,11 @@ desktop input is still outside the test boundary. Attach the MCP server with
 MCP's `browser_close` on the app page. Use native file paths for fixtures.
 The dated [[Development pass 2026-10-16]] lists the checks and limitations.
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+
 **Which harness:**
 
 - **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.
@@ -228,6 +233,22 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
 19. **Editing `src/` while a long drive runs reloads its page.** Vite
     hot-updates the app under the drive and its results are noise; run
     long drives between edits, not during them.
+20. **A bounding box is not on screen.** `boundingBox()` answers for an
+    element scrolled out of its panel, and `mouse.down` there lands on
+    whatever shows at that point (the timeline, deselecting the clip, so
+    the inspector row the drive wanted disappears). Call
+    `scrollIntoViewIfNeeded()` before measuring a slider to drag.
+21. **`fill()` on a range input has no press.** It sends `input` and
+    `change` with no pointer or key events, so a control that edits only
+    inside a gesture ignored it. Sliders now treat a change with no press
+    as one edit (ADR-072); a drive can count undo steps after a real drag
+    with `page.mouse`, and must wait a moment after `mouse.up()`: the
+    gesture closes just after the release's own `change` event.
+22. **A big PNG reaches the model as 256 colors.** An MCP image over the
+    client's budget (about 3.75 MB) is shrunk by the client; Claude Code
+    re-encodes a PNG with a 256-color palette, which bands skies, and a
+    JPEG as a JPEG. The images a tool answers are not always what the
+    model sees: check their size (ADR-073).
 
 ## MCP against the web build
 
@@ -247,15 +268,16 @@ no token since it listens only on this machine.
 
 `scripts/drive/style-sweep.js` opens every library tab, every inspector
 tab of a video, picture, audio and text clip, a multi-selection, every
-title-bar menu, the clip, track and media-card menus and the dialogs, at
-1600 x 950, 1280 x 720 and the desktop window's 1100 x 680 minimum (129
-states, about a minute). In each it checks: page scroll; text cut off by
-its own box or a non-scrolling parent with no ellipsis; text spilling out
-of a control; controls cut off by a non-scrolling parent; controls
-overlapping each other (popups and modal `<dialog>`s excepted); controls
-with no accessible name; and text contrast under WCAG AA. Elements a
-scroller hides count as unseen, not cut. Screenshots land in
-`scratch/style/`, for a look by eye at what the checks cannot judge.
+title-bar menu, the clip, track and media-card menus, the dialogs and the
+AI assistant's two views (Ollama stubbed, so no installed model's name is
+captured), at 1600 x 950, 1280 x 720 and the desktop window's 1100 x 680
+minimum (135 states, about a minute). In each it checks: page scroll;
+text cut off by its own box or a non-scrolling parent with no ellipsis;
+text spilling out of a control; controls cut off by a non-scrolling
+parent; controls overlapping each other (popups and modal `<dialog>`s
+excepted); controls with no accessible name; and text contrast under WCAG
+AA. Elements a scroller hides count as unseen, not cut. Screenshots land
+in `scratch/style/`, for a look by eye at what the checks cannot judge.
 
 ## Header interaction check — 2026-10-15
 

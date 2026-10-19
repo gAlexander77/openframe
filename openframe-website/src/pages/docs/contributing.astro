@@ -1,0 +1,87 @@
+---
+// Contributing: a summary of the repository's CONTRIBUTING.md, which stays
+// the source of truth (the site reads only docs/, so this page links to it).
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import Command from "../../components/Command.astro";
+import { CHECKS, DESKTOP } from "../../data/build";
+import { SITE, repoFile, href } from "../../lib/site";
+
+const headings = [
+  { depth: 2, id: "ways-to-help", text: "Ways to help" },
+  { depth: 2, id: "before-changing-code", text: "Before changing code" },
+  { depth: 2, id: "develop-and-check", text: "Develop and check" },
+  { depth: 2, id: "send-a-change", text: "Send a change" },
+  { depth: 2, id: "ai-assisted-contributions", text: "AI-assisted contributions" },
+  { depth: 2, id: "license", text: "License" },
+];
+---
+<DocsLayout
+  title="Contributing"
+  description="How to report a bug, improve the documentation or send a change to OpenFrame, with the checks every change runs and the rules for AI-assisted work."
+  slug="contributing"
+  headings={headings}
+>
+  <p>
+    OpenFrame is built in the open at <a href={SITE.repo}>{SITE.repoName}</a>, and issues and pull requests there are the way
+    in. This page summarizes the repository's <a href={repoFile("CONTRIBUTING.md")}>CONTRIBUTING.md</a>; when they differ,
+    that file wins.
+  </p>
+
+  <h2 id="ways-to-help">Ways to help</h2>
+  <ul>
+    <li><strong>Report a bug you can reproduce</strong>, with the app revision, your OS, desktop or browser, the steps, what you expected and what happened. <a href={`${SITE.repo}/issues`}>Open an issue</a>.</li>
+    <li><strong>Describe a usability problem</strong> in terms of the editing task you were doing; a small screenshot or sample project helps.</li>
+    <li><strong>Improve</strong> documentation, accessibility, keyboard workflows, format support, tests or existing features. Read the <a href={repoFile("docs/Roadmap.md")}>roadmap</a> before a large change.</li>
+  </ul>
+  <p>
+    Use media you can share. Remove credentials, MCP tokens, private footage and local paths from reports. For
+    security-sensitive reports, contact the owner privately while a public reporting channel is being prepared.
+  </p>
+
+  <h2 id="before-changing-code">Before changing code</h2>
+  <p>
+    Read <a href={repoFile("AGENTS.md")}>AGENTS.md</a>, <a href={repoFile("CLAUDE.md")}>CLAUDE.md</a>,
+    the <a href={repoFile("docs/Conventions.md")}>conventions</a>, the <a href={href("docs/architecture/")}>architecture</a>
+    and <a href={repoFile("docs/Next agent handoff.md")}>the handoff</a>; the
+    <a href={repoFile("docs/Index.md")}>documentation index</a> links every decision and research note. Look at
+    <code>git status</code>, recent history and existing worktrees, and coordinate with work already under way.
+  </p>
+  <p>
+    Features land on desktop first. Keep platform differences behind <code>src/platform/</code>, and do not add a server or
+    an upload step as an incidental choice: OpenFrame runs on the user's hardware.
+  </p>
+
+  <h2 id="develop-and-check">Develop and check</h2>
+  <p>
+    The editor is in <code>openframe-application/</code> and the site in <code>openframe-website/</code>; <code>docs/</code> at the root
+    serves both. Run every command below in <code>openframe-application/</code>.
+  </p>
+  <Command label="Run the desktop app" code={DESKTOP} />
+  <p>Before proposing a change, run the checks (<code>just check</code> runs them all). CI runs the same gates on every pull request:</p>
+  <Command label="The checks" code={CHECKS} />
+  <p>
+    Then try the change in the running product, not only in tests. Desktop changes need desktop checks: a browser drive does
+    not prove native dialogs, paths, FFmpeg or the release security policy. <a href={repoFile("docs/Driving the app.md")}>Driving the app</a>
+    explains how agents and scripts drive it.
+  </p>
+
+  <h2 id="send-a-change">Send a change</h2>
+  <p>
+    Keep it focused, and explain the problem, the result, the tradeoffs and how you checked it. Update the feature docs for
+    shipped behavior, the roadmap for plans, an architecture decision record for a non-obvious choice, and the history for
+    lessons the next contributor should not have to learn again.
+  </p>
+
+  <h2 id="ai-assisted-contributions">AI-assisted contributions</h2>
+  <p>
+    Claude Code and Codex were the first development tools, and other tools are welcome. Say when AI helped substantially,
+    and keep the useful reasoning and evidence in the docs, not private prompts or raw session logs. You are responsible
+    for understanding the change and for real evidence: never report an unrun test or a guessed result as a pass.
+  </p>
+
+  <h2 id="license">License</h2>
+  <p>
+    Contributions are offered under <a href={SITE.licenseUrl}>GPL-3.0-only</a>, the project's license. Submit only work you
+    are entitled to contribute, keep existing notices, and explain a new dependency's purpose and license before adding it.
+  </p>
+</DocsLayout>

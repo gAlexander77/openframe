@@ -1,0 +1,74 @@
+---
+import Icon from "./Icon.astro";
+import { NAV, SITE, href } from "../lib/site";
+
+const here = Astro.url.pathname;
+const current = (path: string) => here.startsWith(href(path));
+---
+<header class="site-header">
+  <div class="wrap bar">
+    <a class="brand" href={href()}>
+      <img src={href("favicon.svg")} width="28" height="28" alt="" />
+      <span>OpenFrame</span>
+    </a>
+    <nav class="nav-wide" aria-label="Main">
+      <ul>
+        {NAV.map((n) => <li><a href={href(n.path)} aria-current={current(n.path) ? "page" : undefined}>{n.label}</a></li>)}
+      </ul>
+    </nav>
+    <a class="btn small gh" href={SITE.repo}>Source on GitHub</a>
+    <details class="nav-menu">
+      <summary aria-label="Menu"><Icon name="list" size={20} /></summary>
+      <nav aria-label="Main (menu)">
+        <ul>
+          {NAV.map((n) => <li><a href={href(n.path)} aria-current={current(n.path) ? "page" : undefined}>{n.label}</a></li>)}
+          <li><a href={SITE.repo}>Source on GitHub</a></li>
+        </ul>
+      </nav>
+    </details>
+  </div>
+</header>
+
+<style>
+  .site-header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgb(5 6 10 / 78%);
+    backdrop-filter: saturate(140%) blur(14px);
+    -webkit-backdrop-filter: saturate(140%) blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .bar { display: flex; align-items: center; gap: 28px; height: 64px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text-1); text-decoration: none; font-weight: 680; letter-spacing: -0.02em; font-size: 1.0625rem; }
+  .brand img { border-radius: 7px; }
+  .nav-wide { margin-right: auto; }
+  .nav-wide ul, .nav-menu ul { list-style: none; margin: 0; padding: 0; }
+  .nav-wide ul { display: flex; gap: 4px; }
+  .nav-wide a {
+    display: block; padding: 8px 12px; border-radius: 8px;
+    color: var(--text-2); text-decoration: none; font-size: 0.9375rem; font-weight: 500;
+  }
+  .nav-wide a:hover { color: var(--text-1); background: rgb(255 255 255 / 5%); }
+  .nav-wide a[aria-current="page"] { color: var(--text-1); }
+  .nav-wide a[aria-current="page"]::after {
+    content: ""; display: block; height: 2px; margin-top: 3px; border-radius: 2px;
+    background: linear-gradient(90deg, var(--cyan), var(--blue));
+  }
+  .btn.small { min-height: 36px; padding: 0 14px; font-size: 0.875rem; border-radius: 8px; }
+  .nav-menu { display: none; margin-left: auto; position: relative; }
+  .nav-menu summary {
+    list-style: none; display: grid; place-items: center; width: 40px; height: 40px;
+    border-radius: 8px; border: 1px solid var(--line-strong); color: var(--text-1); cursor: pointer;
+  }
+  .nav-menu summary::-webkit-details-marker { display: none; }
+  .nav-menu nav {
+    position: absolute; right: 0; top: 48px; min-width: 220px; padding: 8px;
+    background: var(--bg-2); border: 1px solid var(--line-strong); border-radius: 12px;
+    box-shadow: var(--shadow-window);
+  }
+  .nav-menu a { display: block; padding: 10px 12px; border-radius: 8px; color: var(--text-1); text-decoration: none; }
+  .nav-menu a:hover, .nav-menu a[aria-current="page"] { background: rgb(255 255 255 / 6%); }
+  @media (max-width: 860px) {
+    .nav-wide, .gh { display: none; }
+    .nav-menu { display: block; }
+  }
+</style>

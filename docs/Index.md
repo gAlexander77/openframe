@@ -8,8 +8,13 @@ of the documentation and how agents use it as shared working memory.
 
 ## Ground rules
 
-- The chosen name is **OpenFrame**; the implementation rename is pending.
-  [[Renaming]] lists the identity sites and data/automation compatibility work.
+- The name is **OpenFrame** (renamed 2026-10-17). [[Renaming]] lists what
+  kept the old name on purpose and why.
+- **Two projects.** The app is in `openframe-application/`: run every app
+  command there, and read `src/`, `scripts/`, `src-tauri/` and `fixtures/`
+  paths in these notes as inside it. The website is `openframe-website/`;
+  these docs serve both
+  ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
 - **Desktop first**, browser support second (ADR-003). The 2026-10-14 owner
   handoff reaffirmed this; web capability checks remain separately documented.
 - GPL-3.0-only applies to original project code and documentation. The repo
@@ -48,6 +53,10 @@ of the documentation and how agents use it as shared working memory.
 - [[History]] — the build story, round by round, including rejected attempts
 - [[Renaming]] — every site the placeholder name touches, and the one that
   moves user data
+- [[Website]] — the product site in `openframe-website/`: its pages, how it
+  stays true to the app, its media and the privacy checklist for them
+- [[Keyboard shortcuts]] — every default key, grouped as the app's panel
+  groups them
 
 ## Research
 
@@ -182,6 +191,36 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
   keep their layout in every shape, anchored where they sat, fitted to
   the safe area.
+- [[ADR-064 The AI assistant docks as a column the editor makes room for]] —
+  a full-height column; the editor scales to what is left and the library
+  steps aside below four columns' worth of window.
+- [[ADR-065 One-click agent setup runs the agent's own CLI]] — Codex and
+  Claude Code add the stdio bridge with their own `mcp add`, never over an
+  existing entry; the Codex syntax and its sources.
+- [[ADR-066 Keyframes are refused where nothing moves and shown in answers]] —
+  one table of animatable paths, keys as [at, value, ease] in
+  describe_project, one ease vocabulary.
+- [[ADR-067 Versions lay keyframed motion out again around its rest]] —
+  sets placed where they rest, keyed offsets scaled to the new frame,
+  compound clips placed as pictures, wide words shrunk to fit.
+- [[ADR-068 check_project measures the picture and the sound it judges]] —
+  WCAG contrast on the rendered frame behind each title, the music's last
+  second, shots on the busiest track.
+- [[ADR-069 Large blurs run on a downsampled pyramid]] — blur to a
+  300-pixel radius past the old maximum (which draws as before); radial
+  gradients and feathered edges on shapes.
+- [[ADR-070 Drop shadows are cast by the finished picture]] — after
+  mask, effects and matte, so rounded and compound windows cast their
+  shape; perspective tilt for the same windows.
+- [[ADR-071 Keyed title styles redraw the title]] — font weights, and
+  size, letter spacing and color keyframes (colors as 0xRRGGBB).
+- [[ADR-072 One drag is one undo step and a typed value is kept]] —
+  range inputs are gestures (held keys too), a color picker's drag is a
+  run, typed values commit however focus leaves, junk changes nothing.
+- [[ADR-073 Templates land as a block and the web keeps what it imports]] —
+  templates on rows of their own above the footage, presets made for a
+  shape, URL imports copied, untouched projects not kept, JPEG contact
+  sheets, loudness success shown as success.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run
@@ -192,3 +231,27 @@ Every non-obvious choice gets a short Architecture Decision Record in
   before flips and transform; the crop mode's session and whole-picture view
 - [[ADR-049 Masks turn rigidly and grow shapes without new fields]] —
   rotation in layer pixels; heart, star and round corners as additive fields
+
+- [[ADR-074 Prepare preview decoders before their first visible frame]] —
+  adaptive decoder lead, memory admission and transition shader warmup.
+
+- [[ADR-075 Measure music structure and voice balance on the timeline]] -
+  two-bar sections, multiple drops and measured ducking before one edit.
+
+- [[ADR-076 The website is a static Astro site that reads docs at build time]] —
+  its own package beside the app, two React islands, the MCP reference and
+  quoted numbers rendered from docs/
+- [[ADR-077 The website deploys to GitHub Pages from main]] — the only
+  deployment, on site or docs changes; inactive until Pages is enabled
+- [[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]] —
+  one click deletes with Undo, thirty days to restore, no new platform
+  calls, agents never see the trash.
+- [[ADR-079 Audio scrubbing plays snippets through the playback scheduler]] —
+  90 ms snippets of the real mix while the ruler is dragged, one after
+  another, never while playing; a preference turns it off.
+- [[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]] —
+  mediabunny's LAME extension for MP3; captions burned in, an SRT beside
+  the export, both or neither, timed to the exported range.
+- [[ADR-081 The app and the website each have a folder, the docs stay at the root]] —
+  the editor in `openframe-application/`, the site in `openframe-website/`,
+  `docs/` at the root for both.

@@ -7,7 +7,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Home screen** with a Create project card and canvas presets named for
   where the video goes (16:9 YouTube, 9:16 TikTok/Reels/Shorts, 1:1, 4:5,
-  21:9), and searchable project cards with thumbnails. Delete asks twice;
+  21:9), and searchable project cards with thumbnails. **Delete** moves a
+  project to **Recently deleted** at once, with **Undo** on the toast;
+  there it waits 30 days (Restore, or Delete forever, which asks twice)
+  and is then deleted for good. Agents never see it there
+  ([[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]]).
   **Rename** (in place, without opening) and **Duplicate** ("Name copy",
   sharing the same media files) sit on each card, as in CapCut.
 - **Canvas size in pixels** (project Details > Size, CapCut's custom
@@ -22,6 +26,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **The first clip sets the canvas** size and frame rate on an empty
   timeline, so phone footage makes a vertical project — unless a canvas
   was chosen (a Home preset or the Details ratio), which it then keeps.
+- **No empty drafts:** a new project is saved once something is done in
+  it; pressing Create and leaving at once keeps nothing on Home (undoing
+  every edit counts as nothing done)
+  ([[ADR-073 Templates land as a block and the web keeps what it imports]]).
 - **Open JSON format** ([[Project format]]).
 - **Save a copy:** named independent edit versions, optionally opened after
   saving; source media stays shared. Failed writes keep the original open.
@@ -30,6 +38,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Import from the picker, by dropping files anywhere in the window, or on
   the timeline (which also places them).
+- **Web build: imports by address are kept** in the browser's storage, as
+  picked files are, so a project keeps playing when the address goes
+  away; a toast shows the copy. Over 1 GB a file stays linked to its
+  address, and a toast says so.
 - Formats the platform decodes: MP4/MOV/MKV/WebM with H.264, HEVC (where
   the OS has it), VP8/9, AV1; MP3, WAV, AAC/M4A, FLAC, Ogg/Opus; PNG, JPEG,
   WebP, GIF, AVIF. On desktop, what the webview cannot decode (ProRes,
@@ -59,6 +71,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
+- **Rename media** (right-click a media card > Rename, or in the grid
+  view double-click its name; `rename_media`): the project's name for the
+  file, which stays as it is on disk; clips without a name of their own
+  follow it. In the grid a double-click on the name renames and the rest
+  of the card adds the file to the timeline; in the list view, a row's
+  double-click always adds.
 - **Folders and favorites:** saved virtual folders, undoable folder rename/delete
   and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame
@@ -69,14 +87,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Timeline
 
-- CapCut's toggles: main track **magnet** (gapless, reorders on drag),
+- CapCut's toggles: main track **magnet** (gapless, reorders on drag, including a drop at the very front),
   **snapping** with a cyan guide, **linkage** (titles, overlays and sound
   effects follow the shot under most of them through ripples and
-  reorders; music beds spanning several shots stay put), **preview axis**
+  reorders; music beds covering two or more complete shots stay put, even when one shot is longer), **preview axis**
   (hover to preview).
 - **Undo history**: right-click the toolbar's Undo or Redo for the last 20
   steps by name, nearest first; choosing one goes back (or forward) to it
-  (VEGAS's undo list, Premiere's History panel).
+  (VEGAS's undo list, Premiere's History panel). Agent edits use readable
+  labels too, such as "Add clip" and "Change opacity".
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
@@ -98,6 +117,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
+- **The clip menu** (right-click a clip; CapCut's and Premiere's): Cut,
+  Copy, Paste, Duplicate, Delete, **Ripple delete**; Split, **Speed…**
+  (opens the inspector's Speed tab), **Reverse** (a check: every selected
+  clip that can play backward turns, by `set_reverse`'s own rule), Freeze
+  frame, Extract audio, Replace clip; **Copy effects** and **Paste
+  effects** (the inspector's effect clipboard, onto every selected clip
+  that takes effects); Rename, Group, **Ungroup** (always listed, off
+  unless a selected clip is grouped), Activate, compound clips; keyframes,
+  range and Label. Every row runs the action or command the rest of the
+  app uses. A menu taller than the window scrolls inside it.
 - **Library drags land where the preview shows**, by CapCut's rules: video
   and images dropped above the tracks become a picture-in-picture overlay
   on a new track at the drop time; on the magnetic main track they insert
@@ -113,6 +142,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   move, copy and delete together across tracks, each keeping its own
   settings; Alt+click picks one alone, as in Premiere. Pasted copies form
   their own group.
+- **Rename clips** (right-click > Rename, or double-click the name on a
+  clip's strip; `rename_clip`; Premiere's Rename): the name shows on the
+  timeline instead of the file's name, a title's words or an effect
+  layer's effects; an empty name gives the default back. Titles keep
+  CapCut's double-click for their words, so they rename from the menu.
+  One undo step each.
 - **Clip labels** (right-click > Label; `set_clip_label`; Premiere's
   Label, Resolve's Clip Color): eight muted colors paint the selected
   clips' body and name strip, so an edit can be sorted by eye. Splits and
@@ -129,6 +164,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   where they were. One undo history covers every level, saving and export
   take the whole project wherever you are, and OTIO carries it as a nested
   stack ([[ADR-037 Compound clips are nested timelines composited to a texture]]).
+  `duplicate_clips` with `unique: true` copies a compound clip with a
+  timeline of its own, so a styled precomp (a floating window) is a
+  template whose copies take other footage (`edit_compound` `replace_clip`).
 - **Replace clip** (right-click, as in CapCut; `replace_clip`): pick a
   file and it takes the clip's place, keeping its start, length (shorter
   only if the new source runs out), transform, effects, animations and
@@ -189,7 +227,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   before. Clips with a speed curve or a freeze keep their length.
 
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
-  clamped source times, one-step Undo and gesture cancellation.
+  clamped source times, one-step Undo and gesture cancellation. In a short
+  player the frames shrink so its header and footnote always show.
 
 ## Workspace
 
@@ -197,16 +236,28 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   are kept as shares of the window, so a bigger screen grows them all
   (CapCut's behavior). Drag the splitters (double-click resets one); View
   has Default, Large preview and Large timeline layouts and Reset layout.
-- **Preferences** (Edit > Preferences, Ctrl+,; Premiere's Timeline
-  preferences): the lengths new pictures (5 s), titles and effect layers
-  (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap
-  and layout, never in a project.
+- **About** (Help > About, on Home and in the editor): name, version and
+  platform; the GPL-3.0-only license with a link to its text; links to the
+  source code, the user guide and [[Third-party licenses]]; and the
+  open-source packages the app uses directly, with versions and licenses,
+  read from `package.json`, the installed packages, `Cargo.toml` and
+  `Cargo.lock` when the app is built (`src/lib/about.ts`), so the list
+  cannot drift. The desktop app opens these pages by name through Rust
+  (`about_open`), never a URL from the webview; the web build opens a tab.
+- **Preferences** (the gear in the title bar, Edit > Preferences, Ctrl+,;
+  Home too; Premiere's Timeline preferences): the lengths new pictures
+  (5 s), titles and effect layers (3 s) and transitions (0.5 s) start at,
+  and audio scrubbing. Per viewer, kept with the keymap and layout, never
+  in a project.
 
 ## Viewer
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  26 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  26 effects (**Blur** up to a 300-pixel radius at 1080p, amount 500, for
+  big soft glows: past the old maximum of 100 it runs on a downsampled
+  pyramid, and up to 100 it draws exactly as before,
+  [[ADR-069 Large blurs run on a downsampled pyramid]]; CapCut's Reduce image noise, Motion blur, Sketch
   and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
   screen recording, and **Zoom** and **Letterbox** for epic edits),
@@ -226,6 +277,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
   the line; Ctrl moves freely, Shift keeps one axis.
+- **Viewer selection** uses the picture's on-canvas box, top track first,
+  skipping hidden and locked tracks. Empty canvas or stage space deselects;
+  rotation and crop use the same geometry as the transform handles.
 - **Several pictures at once** (a multi-selection or a group): the viewer
   draws one box around the selected pictures showing under the playhead,
   each outlined inside it. Drag inside to move them all, with the same
@@ -261,13 +315,21 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
-  shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
+  shuttle; **Go to start** and **Go to end** buttons around the frame
+  steps in the transport (CapCut's and Premiere's, the keymap's Home and
+  End actions, so their tooltips name the keys as rebound); **Loop** (the transport's repeat button, Mod+L) goes round the
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
   click the current timecode to **type where to go** (Premiere's Playhead
   Position): a timecode, digits read right to left (1000 is ten seconds),
   or +/- an offset (+15 is fifteen frames on);
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
+- **Audio scrubbing** (CapCut's, Premiere's "Play audio while
+  scrubbing"): dragging the playhead on the ruler while paused plays
+  90 ms snippets of the mix where it lands, one after another, through
+  playback's own scheduler, so every effect and fade is heard; never while
+  playing. Preferences > Playback turns it off
+  ([[ADR-079 Audio scrubbing plays snippets through the playback scheduler]]).
 - Stereo peak meter, and a **loudness line** under it (Premiere's
   Loudness Meter in one row): momentary, short-term and integrated LUFS
   of what plays (EBU R128, an AudioWorklet K-weighting the master bus),
@@ -286,7 +348,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   header cover are shaded (the largest of each side in their ad specs:
   14% top, 35% bottom, 11% left, 19% right), and dragged pictures snap to
   the clear area's edges. Follow the canvas in portrait and full screen;
-  preview only, excluded from exported pictures.
+  preview only, excluded from exported pictures. The action box is
+  labeled at its top and the title box at its bottom, so the labels never
+  meet on a small picture.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,
@@ -306,6 +370,25 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   edits them; the timeline names the clip after its shape. The pieces of
   lower thirds, callouts, CTA buttons and end cards (`add_shape`,
   `set_shape`).
+- **Soft light** (ADR-069): a shape's **radial gradient** (from the
+  center to its rim, an ellipse fitting the box, with a center and
+  radius that keyframe) and **feather** (the edge fades over that many
+  pixels with a Gaussian's falloff) make soft background glows without
+  image files; with the Blur effect at 300 to 500 they are as soft as
+  any launch film's. Kind (Linear, Radial), Fade out, Radius, Center and
+  Feather in the Shape section.
+- **Drop shadow on pictures** (After Effects' Drop Shadow, ADR-070): any
+  video, image, title, shape or compound clip casts a soft shadow (color,
+  blur up to 600 px, offset, opacity, all but the color keyframable). It
+  is cast by the finished picture, after its mask, crop, effects and
+  track matte, so a rounded window casts a rounded shadow and a compound
+  clip (footage, a border and a bar) casts one shadow for the whole
+  floating window. Shadow section of the Video tab (`set_shadow`).
+- **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
+  Tilt Y in the Transform section turn a picture in depth, seen from a
+  camera 2000 pixels (at 1080p) in front of the canvas center, the
+  picture drawn perspective-correct; both keyframe, so a window swings
+  into place, and its shadow follows it (`set_tilt`).
 - **Track mattes** (After Effects', ADR-056): a clip shows only where
   another clip's picture is opaque (Alpha) or bright (Luma), or the
   reverse: video inside text, logo and wipe reveals. The matte is the clip
@@ -330,6 +413,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   settling exactly on the next value (ADR-062).
 
 ## Inspector
+
+- Adding a transition or clicking its timeline marker opens its **Transition**
+  settings immediately. Choosing another tab returns to that clip's controls.
 
 - CapCut's tab matrix per clip type: Video (Basic, Remove BG, Mask),
   Audio, Speed, Animation (In/Out/Combo or Loop), Adjust (filter and color),
@@ -357,6 +443,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   key's green before keying).
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- **One drag, one undo step**, on every slider (held arrow keys too) and
+  on the color picker's square
+  ([[ADR-072 One drag is one undo step and a typed value is kept]]).
+- **Typed values are kept** however focus leaves the field (Enter, Tab,
+  clicking another clip); Escape reverts. An empty or non-numeric entry
+  changes nothing, a decimal comma reads as a point ("1,5" is 1.5), and a
+  unit after the number is ignored.
+- **Sections remember** being open or closed, per section, across clips
+  and reloads (in this browser, like the layout). A switch that opens
+  rows (Low-pass, Reverb, Echo) scrolls them into view.
 - **Several clips at once** (Premiere 25's Properties panel): with more
   than one clip selected, Scale, Rotate and Opacity for the pictures and
   Volume for the clips with sound set all of them, one undo step; a value
@@ -453,6 +549,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Font weight** (100 thin to 900 black): the Text tab's Weight list
+  shows the weights the chosen font really has (each face it draws), so
+  a heavy display line pairs with a light one; Bold is weight 700, and a
+  weight wins over it (`style.weight`, ADR-071).
+- **Animated size, spacing and color** (ADR-071): a title's size, letter
+  spacing and color keyframe (the diamonds beside Size, Spacing and
+  Color), so a tracking expand, a grow or a color change plays; a
+  left-aligned title keeps its left edge as it grows, a right-aligned one
+  its right (`animate_text_style`, or `add_keyframe` on `style.size` and
+  `style.letterSpacing`).
 - **Enter splits a caption** at the caret while editing it on the canvas
   (CapCut's): the second half starts where its first word is spoken (or
   as far in as the characters go, untimed), each half keeps its words'
@@ -466,10 +572,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
   with a sample gives it to the selected title in one click, words kept.
-- **A new title shows when added**: a title, template or sticker added at
-  the playhead plays its In animation once, silently, and stops where it
-  has settled (under reduced motion it goes straight there), so the viewer
-  never shows an empty box
+- **Preview a new title**: a title, template or sticker added at
+  the playhead plays its In animation once, silently, then returns to the
+  original playhead. Reduced motion skips the preview. Pausing the preview
+  cancels it without a later jump back
   ([[ADR-047 A new title shows by playing its In animation]]).
 - **Fonts**: the built-in list, **Import font…** (TTF, OTF, WOFF; kept
   per viewer and loaded at startup, so preview, export and headless
@@ -487,7 +593,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   layer its own clip ([[ADR-025 Stickers and templates are ordinary
   clips]]). Agents: `add_text_template` (with replacement words) and
   `apply_word_art`.
-- New text lands above everything showing at that time.
+- New text lands above everything showing at that time, and never on a
+  footage row (a B-roll row stays B-roll). A multi-layer template lands
+  as one block of Text rows directly above the footage: overlapping
+  layers stacked in order, layers that follow one another on one row; a
+  later template reuses the same rows; its layers are grouped, so they
+  select and move together (Alt+click picks one).
+- **Animation presets preview on pick**, as in CapCut: choosing an In
+  plays the clip from its start to where the In settles, an Out to the
+  clip's last frame, a loop one cycle, once and silently. Each tile shows
+  the motion: the layer settled and a dashed ghost where it starts (In),
+  ends (Out) or swings to (loops), titles' per-letter, word and line
+  presets as units part-way; the tile plays on hover.
 - **Type on the canvas**, as in CapCut: double-click a title or caption in
   the viewer or on the timeline (or press Enter with it selected) and a
   caret appears in the rendered text with everything selected; the frame redraws as you type,
@@ -620,6 +737,22 @@ makes a 13 s one). Times are timeline seconds.
   Chroma key sits under it on the same sub-tab.
 - **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
+  It docks as a resizable full-height column the editor makes room for,
+  like Premiere's side panels, instead of covering the inspector and the
+  timeline's zoom; the library steps aside in a window too narrow for four
+  columns ([[ADR-064 The AI assistant docks as a column the editor makes room for]]).
+  The composer grows to five lines, sends on Enter, and shows the steps
+  as they run with a Stop; failed requests can be tried again, and a
+  stopped or failed turn's edits stay undoable as one. Offline, it says
+  whether the server is not answering or has no model that can call tools.
+- **Connect agents** (desktop, the AI assistant's second tab): after Allow
+  AI agents, **Add to Codex** and **Add to Claude Code** run that CLI's own
+  `mcp add` for the stdio bridge, reporting added, already added (never
+  replaced), not found (with its install guide) or the CLI's error; the
+  ready-made `codex mcp add` and `claude mcp add` lines and a Codex
+  `config.toml` entry are there to copy
+  ([[ADR-065 One-click agent setup runs the agent's own CLI]],
+  [[Automation]]).
 
 ## Sound design and delivery
 
@@ -710,10 +843,15 @@ makes a 13 s one). Times are timeline seconds.
   new end) and a textless master (titles and captions off). Footage that
   fills the frame keeps filling it, or fits over a blurred copy of itself;
   titles, logos and badges keep their size against the short side and
-  move inside the new frame's safe area. The versions are built from the
-  master as separate documents, so the project in the editor never
-  changes; `check` answers one contact sheet of them all first. Seven 480p
-  versions of a 5 s ad took 4.4 s headless.
+  move inside the new frame's safe area. Hand-animated films adapt too:
+  layers are placed where they rest and their keyed motion is laid out
+  again around it, a window compound sliding in from off the edge still
+  does on 9:16, and a one-word wordmark too wide to wrap shrinks to the
+  safe width ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+  The versions are built from the master as separate documents, so the
+  project in the editor never changes; `check` answers one contact sheet
+  of them all first (`check_at` picks the moments). Seven 480p versions of
+  a 5 s ad took 4.4 s headless.
 - **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
   15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
   behind the roaster, lower third, offer, end card, faded music), checks
@@ -723,7 +861,19 @@ makes a 13 s one). Times are timeline seconds.
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
-  rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+  rate, in/out range, audio-only (AAC in M4A, MP3, WAV) and still frames.
+- **MP3** (audio only, and the Audio only (MP3) preset): 256 kbps, 48 kHz
+  stereo, encoded by LAME in WebAssembly (`@mediabunny/mp3-encoder`), loaded
+  by the first MP3 export, on the desktop and the web alike;
+  `export_video` format `mp3` (or `m4a`, `wav`) for agents.
+- **Captions on export** (the dialog's Captions row, shown when the
+  project has captions; `export_video` `captions`; Premiere's burn-in or
+  sidecar): **Burn into the picture** (the default), **SRT file beside
+  it** with the picture left clean, both, or leave them out. The SRT is
+  timed to the exported range (an In-to-Out export starts at 0). The
+  desktop app saves `<name>.srt` beside the export; the web build
+  downloads it. Agents get its path as `captions_file`
+  ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
 - **Save frame as PNG** from the player (the camera button, File menu,
   Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
   at the project's size, without the export dialog.
@@ -736,12 +886,19 @@ makes a 13 s one). Times are timeline seconds.
   -1 dBTP, -2 for ATSC's -24 (up to 6 dB of limiting; the whole mix is
   known, so it looks ahead for free).
   The result notes what it measured, what it reached and how much the
-  limiter held. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
+  limiter held: reaching the target shows as success (green, a check);
+  a mix held short of it is a warning, with how far under it landed. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
   with the limiter it measures -14.3 in ffmpeg, peaks at -0.9 dBTP.
 - **Presets** at the top of the dialog: YouTube 1080p and 4K, TikTok,
   Reels and Shorts, Small file (720p), High quality master (HEVC),
   Animated GIF and Audio only (WAV); changed settings read Custom and can
-  be saved under a name (per viewer) and deleted.
+  be saved under a name (per viewer) and deleted. TikTok, Reels and Shorts
+  is made for 9:16: it is never named for a canvas of another shape, and
+  picked there it says what will export (16:9 stays 1920×1080) and offers
+  **Make the canvas 9:16**, which only that click does, as one undo step.
+  A codec the device cannot encode at that size gives way to one it can,
+  and the dialog names both. In to Out, with no marks, is shown disabled
+  with the reason under it.
 - **Animated GIF** (Format: GIF, or the Animated GIF preset): the same
   frames the video export draws, 256 colors per frame (gifenc), 10 to 25
   fps with delays that add up to the real duration, silent, up to 720p
@@ -808,7 +965,9 @@ Three doors, one engine ([[Automation]]):
 - **Headless render**: `openframe --render project.json --out file`,
   JSON-line progress, exit codes.
 - **MCP for agents** (opt-in, token-locked, local only): every editing
-  command plus `preview_frame` and `preview_frames` (a contact sheet) so
+  command plus `preview_frame` and `preview_frames` (a contact sheet,
+  JPEG so it stays under what MCP clients pass a model; as PNG, clients
+  re-encoded big sheets with 256 colors and skies banded) so
   an agent can look at its work, `list_projects`, `open_project` and
   `new_project` to move between projects as the home screen does, and
   `export_video` / `export_status` to make the file; HTTP or
@@ -822,10 +981,61 @@ Three doors, one engine ([[Automation]]):
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
-  (preset or bezier), `remove_keyframes`.
+  and `remove_keyframes`, with one ease vocabulary (twelve presets or a
+  bezier). `add_keyframe` refuses a path that does not animate on the
+  clip, naming the ones that do, and `describe_project` shows every key as
+  `[at, value, ease]`, so edits to keys show in answers
+  ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]).
+- Answers stay small as a project grows: compounds are answered only when
+  they change, summed up; `open_project` and `new_project` answer a
+  summary; `add_sound_effect` places a list of sounds in one call and one
+  undo step.
+- `check_project` measures what it judges: each title's WCAG contrast
+  with the rendered picture behind it, a music clip's last second, and the
+  shots on the busiest picture track
+  ([[ADR-068 check_project measures the picture and the sound it judges]]).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
   share one left edge inside the safe area), `distribute_clips`, `set_crop`
   (edges as source fractions, or the largest centered crop of a ratio) and
   `set_mask` (any shape and number, or none).
+
+- Preview prepares long-GOP video before cuts and transition handles, with
+  adaptive lead time and a bounded admission estimate (ADR-074). Clips
+  larger than the preparation budget still decode on demand.
+
+- Music analysis reports every detected drop as well as the biggest, and
+  supports short two-bar sections and breakdowns.
+- Loudness reports can include isolated audio tracks and Voiceover-to-music
+  balance. Ducking can target a measured LU difference, returning the
+  achieved result and editable keys rather than only taking a fixed depth.
+
+### Icon consistency
+
+The toolbar uses drawn icons for every trim tool and timeline Fit. Reset is
+counterclockwise; Rotate is clockwise. The assistant uses Bot, automatic tools
+use WandSparkles, and effects use Sparkles. Track icons reflect their contents,
+including pictures, captions, stickers, shapes and adjustment layers. Empty
+results include an icon, title and next-step hint. See [[Icons]] for the mapping.
+
+### Compact layouts and keyboard controls
+
+Library tabs wrap with their icons and labels, keeping every destination visible.
+Details ratios and canvas dimensions fit the narrow inspector; text style, case
+and audio channel choices wrap between whole buttons. Segmented radio controls
+support arrow keys, Home and End with one tab stop. Fit, Fill and Stretch share
+an inset button group.
+
+Home thumbnails draw hover and keyboard focus rings over their images, project
+names have styled tooltips, and preset cards align their image and text rows.
+Track headers show their names with ellipsis and a tooltip when space is short.
+Marker editing preserves a multi-row list. Shortcut search keeps the dialog size
+stable. The keyframe dock reserves room to scroll the timeline's tracks.
+
+Narrow viewers keep current and total frame-exact timecodes on a compact row.
+Toasts appear at the bottom, clear of Guides. Toolbar Split and trims reflect
+whether an unlocked clip can be edited at the playhead. Add marker remains
+available on empty timelines and at existing markers because both are valid
+operations. Mirror and Rotate use the shared edit boundary. Title-bar project
+renaming accepts at most 120 characters, matching Home.

@@ -3,7 +3,7 @@
 The owner approved the six proposed workflow additions and asked for styling
 and interaction checks through Playwright MCP attached to a real application
 WebView. Keep each intention in a local commit with its documentation.
-Preserve `Modelfile.qwen32k`, the owner's work and the parked
+Preserve the owner's local model file, the owner's work and the parked
 `bg-removal`, `compound-clips` and `timeline-ux` worktrees. No publication.
 
 ## Delivery checklist
@@ -241,7 +241,7 @@ initial state. Reload cleared test overrides; CDP viewport emulation was
 reset. The app remains open for the owner at its native 1600×940 CSS size.
 
 All changes are local commits on main. Nothing was pushed or published;
-the three parked worktrees and `Modelfile.qwen32k` remain untouched. No new
+the three parked worktrees and the owner's local model file remain untouched. No new
 worktree is left behind. Remaining product/release work lives in the existing
 roadmap and handoff: this completes the approved pass, not every possible
 editor feature. Source marks and clipboard stay session-only, presets stay

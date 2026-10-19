@@ -3,6 +3,11 @@
 How the pieces fit, and where each kind of code lives. Decisions behind the
 shape are in `decisions/`; this page is the map.
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+
 ## Layers
 
 ```
@@ -65,6 +70,7 @@ a clock, so no frame is ever dropped
 | `lib/crop.ts` | Crop ratios, the largest crop of a ratio, where a dragged crop handle puts the edges (ADR-048) |
 | `lib/mask.ts` | Mask shapes on the viewer: frame, outline, handles and drags, mirroring the shader's maskAlpha (ADR-049) |
 | `lib/shapes.ts`, `lib/trackMatte.ts`, `lib/motionBlur.ts`, `lib/wiggle.ts` | Graphics: shape geometry and colors, which clips are track mattes, motion blur's shutter samples, wiggle's noise; the plan resolves them and the compositor draws them (ADR-056 to ADR-059, ADR-062) |
+| `lib/blur.ts`, `lib/shadow.ts`, `lib/tilt.ts`, `lib/textAnim.ts` | Large blurs' pyramid plan and its CPU simulation; drop shadows; perspective tilt's homography; keyed title size, spacing and color (ADR-069 to ADR-071) |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes, nested compound plans one framebuffer level deeper; `shaders.ts` holds the GLSL |
@@ -97,3 +103,22 @@ a clock, so no frame is ever dropped
 | `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |
+
+### Decoder preparation (ADR-074)
+
+The preview player uses `lib/render/preroll.ts` to prepare each upcoming
+clip at its first visible frame, including transition handles. Keyframe
+distance and measured decode throughput select 0.75-5 seconds of lead.
+Admission estimates include decoder queue buildup within a 512 MiB budget
+for additional cursors; oversized entries decode on demand. Export keeps
+its own cursor pool and unchanged frame plan.
+
+### Music structure and voice balance (ADR-075)
+
+`analysis/beats.ts` finds boundaries from adjacent bars supported by two-bar
+novelty, allowing two-bar parts; smaller phrase-aligned timbral changes can
+split variations. `drops` lists qualifying rises; `drop` stays the biggest.
+`analysis/balance.ts` owns stem isolation, role conventions and attenuation
+math. `state/delivery.ts` measures each requested stem with the offline
+export mixer. `state/ai.ts` measures candidate ducking keyframes before one
+undoable edit, rejecting results if the project changed during measurement.

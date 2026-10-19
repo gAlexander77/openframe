@@ -1,0 +1,81 @@
+---
+// The MCP tool reference, generated at build time from docs/MCP tools.md,
+// which the app writes from its own tool definitions (npm test fails when
+// that file drifts from the code). Nothing here is written by hand.
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import ToolFinder from "../../components/ToolFinder.tsx";
+import { mcpReference } from "../../lib/docs";
+import { href } from "../../lib/site";
+
+const ref = mcpReference();
+const headings = ref.groups.map((g) => ({ depth: 2, id: g.id, text: g.name }));
+const index = ref.groups.map((g) => ({ name: g.name, id: g.id, tools: g.tools.map((t) => ({ name: t.name, summary: t.summary.length > 140 ? t.summary.slice(0, 137).replace(/\s+\S*$/, "") + "..." : t.summary })) }));
+---
+<DocsLayout
+  title="MCP tool reference"
+  description={`All ${ref.total} tools OpenFrame offers AI agents over MCP, with every parameter and an example call, generated from the app's own tool definitions.`}
+  slug="mcp-tools"
+  headings={headings}
+  source="MCP tools.md"
+>
+  <Fragment set:html={ref.introHtml} />
+  <p>
+    To connect an agent, see <a href={href("ai/")}>AI and MCP</a>. The <a href={href("docs/agent-playbook/")}>agent playbook</a> is
+    how a model should use these tools to make an ad, an epic edit or a short.
+  </p>
+
+  <details class="server-text">
+    <summary>What the server tells a model when it connects</summary>
+    <pre><code>{ref.serverText}</code></pre>
+  </details>
+
+  <h2 id="find">Find a tool</h2>
+  <ToolFinder client:visible groups={index} total={ref.total} />
+
+  {ref.groups.map((g) => (
+    <section class="tool-group" aria-labelledby={g.id}>
+      <h2 id={g.id}>{g.name}</h2>
+      {g.intro && <p>{g.intro}</p>}
+      {g.tools.map((t) => (
+        <section class="tool" aria-labelledby={t.name}>
+          <h3 id={t.name}><code>{t.name}</code></h3>
+          <Fragment set:html={t.html} />
+        </section>
+      ))}
+    </section>
+  ))}
+</DocsLayout>
+
+<style is:global>
+  .server-text summary { cursor: pointer; color: var(--text-1); font-weight: 600; }
+  .server-text pre { margin-top: 12px; white-space: pre-wrap; }
+  .server-text pre code { white-space: pre-wrap; }
+  .tool-group > h2 { scroll-margin-top: 88px; }
+  .tool { margin-top: 2.2em; }
+  .tool > * + * { margin-top: 0.9em; }
+  .tool h3 { margin-top: 0; scroll-margin-top: 88px; }
+  .tool h3 code { font-size: 1.05rem; color: var(--cyan); background: rgb(59 224 240 / 8%); border-color: rgb(59 224 240 / 22%); }
+
+  .finder { margin-top: 1em; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--bg-1); }
+  .finder-label { display: block; font-size: 0.875rem; color: var(--text-2); margin-bottom: 8px; }
+  .finder-input {
+    width: 100%; height: 44px; padding: 0 14px; border-radius: 10px;
+    border: 1px solid var(--line-strong); background: var(--bg-0); color: var(--text-1); font: inherit;
+  }
+  .finder-input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+  .finder-count { font-size: 0.8125rem; color: var(--text-3); margin-top: 10px; }
+  .finder-groups { margin-top: 8px; max-height: 520px; overflow: auto; }
+  .finder-group { margin-top: 14px; }
+  .finder-group-name { font-size: 0.875rem; font-weight: 600; margin: 0; }
+  .finder-group-name a { color: var(--text-1); text-decoration: none; }
+  .finder-group-name a:hover { text-decoration: underline; }
+  .finder-group-name span { color: var(--text-3); font-weight: 500; margin-left: 4px; }
+  .finder .finder-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .finder .finder-list li + li { margin-top: 0; }
+  .finder-list a { text-decoration: none; }
+  .finder .finder-list.detailed { display: grid; gap: 4px; }
+  .finder-list.detailed a { display: grid; gap: 2px; padding: 8px 10px; border-radius: 8px; }
+  .finder-list.detailed a:hover { background: rgb(255 255 255 / 4%); }
+  .finder-list.detailed span { color: var(--text-2); font-size: 0.875rem; }
+  .finder-none { color: var(--text-2); margin-top: 12px; }
+</style>

@@ -61,6 +61,12 @@ The broader platform and storage limits below still apply.
 Rendered-frame checks measure pixels, rather than only accepting an import
 API response. The local-file check separately verifies OPFS persistence:
 the URL check alone would not prove that media bytes were copied into OPFS.
+
+**2026-10-18:** URL imports are now copied into OPFS like picked files, up
+to 1 GiB ([[ADR-073 Templates land as a block and the web keeps what it imports]]);
+the asset's `src` is the OPFS key. `scripts/drive/web-media.js` imports a
+fixture by URL, checks the OPFS copy's size, blocks the URL, reloads, and
+renders the picture from the copy.
 Audio tracks were identified by metadata; listening quality was not tested.
 
 ### Export

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1f2a"/>
+      <stop offset="1" stop-color="#0b0c10"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3be0f0"/>
+      <stop offset="1" stop-color="#2f7bff"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <rect x="64.5" y="64.5" width="895" height="895" rx="199.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+  <!-- three timeline clips -->
+  <rect x="210" y="610" width="250" height="72" rx="20" fill="#3be0f0" fill-opacity="0.9"/>
+  <rect x="480" y="610" width="334" height="72" rx="20" fill="#7c5cff" fill-opacity="0.9"/>
+  <rect x="210" y="704" width="420" height="56" rx="18" fill="#2fd27a" fill-opacity="0.75"/>
+  <!-- play mark -->
+  <path d="M430 290 L430 520 L620 405 Z" fill="url(#accent)" stroke="url(#accent)" stroke-width="28" stroke-linejoin="round"/>
+  <!-- playhead -->
+  <rect x="696" y="250" width="14" height="530" rx="7" fill="#ffffff" fill-opacity="0.92"/>
+</svg>

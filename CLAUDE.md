@@ -53,6 +53,11 @@ work; they do not mean the app has already been renamed or released.
 
 ## Architecture in one paragraph
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([ADR-081](docs/decisions/ADR-081%20The%20app%20and%20the%20website%20each%20have%20a%20folder,%20the%20docs%20stay%20at%20the%20root.md)).
+
 One project document (`src/lib/project/types.ts`, ADR-004: integer frames,
 rational fps) edited by pure ops (`ops.ts`) through one store with snapshot
 undo (`src/state/store.ts`, ADR-005). Every edit is also a named command with
@@ -71,7 +76,7 @@ inspector, timeline. Full map: `docs/Architecture.md`.
 
 - **American English** everywhere (color, behavior, canceled).
 - **Icons come from `src/icons/`** — never an inline `<svg>` or a unicode
-  glyph as a button face.
+  glyph as a button face. Follow the meaning-to-icon mapping in [docs/Icons.md](docs/Icons.md).
 - **No chord typed in UI prose** — read it from the keymap (`chordFor`,
   `tipFor`).
 - **Logic worth testing lives in `src/lib/`** with a vitest beside it.

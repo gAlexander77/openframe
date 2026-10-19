@@ -1,13 +1,18 @@
 # The gates from CLAUDE.md on every push to main and every pull request:
 # type check and unit tests for the editor, fmt, clippy and tests for the
 # desktop shell. Windows for Rust: the desktop target, and it needs no
-# extra system libraries for Tauri.
+# extra system libraries for Tauri. The app lives in openframe-application/;
+# a change to the website alone (openframe-website/) does not run these.
 name: CI
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "openframe-website/**"
   pull_request:
+    paths-ignore:
+      - "openframe-website/**"
 
 permissions:
   contents: read
@@ -20,12 +25,16 @@ jobs:
   web:
     name: Type check and tests
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openframe-application
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: openframe-application/package-lock.json
       - run: npm ci
       - run: npx tsc --noEmit
       - run: npm test
@@ -35,7 +44,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        working-directory: src-tauri
+        working-directory: openframe-application/src-tauri
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,7 +52,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: openframe-application/src-tauri
       # Tauri's build script wants the web build's folder to exist; the
       # checks need only the Rust.
       - run: New-Item -ItemType Directory -Force ../dist | Out-Null

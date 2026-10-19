@@ -1,0 +1,39 @@
+---
+// A screenshot of the app in a floating window, made by
+// scripts/capture.mjs and optimized by Astro (AVIF and WebP, several widths).
+import { Picture } from "astro:assets";
+import Where from "./Where.astro";
+
+interface Props {
+  name: string;
+  alt: string;
+  where?: string[];
+  hue?: string;
+  sizes?: string;
+  eager?: boolean;
+  class?: string;
+}
+const { name, alt, where, hue = "cyan", sizes = "(min-width: 1240px) 1200px, 100vw", eager = false, class: cls } = Astro.props;
+const shots = import.meta.glob<{ default: ImageMetadata }>("../assets/screens/*.webp", { eager: true });
+const src = shots[`../assets/screens/${name}.webp`];
+if (!src) throw new Error(`No screenshot ${name}; run scripts/capture.mjs`);
+const w = src.default.width;
+const widths = [480, 800, 1200, 1600, 2000, w].filter((x, i, all) => x <= w && all.indexOf(x) === i);
+---
+<figure class:list={["window", "shot", "reveal", cls]} style={`--hue: var(--${hue})`}>
+  <div class="screen">
+    <Picture
+      src={src.default}
+      alt={alt}
+      formats={["avif", "webp"]}
+      fallbackFormat="webp"
+      widths={widths}
+      sizes={sizes}
+      quality={80}
+      loading={eager ? "eager" : "lazy"}
+      fetchpriority={eager ? "high" : "auto"}
+      decoding="async"
+    />
+  </div>
+  {where && <figcaption><Where path={where} /></figcaption>}
+</figure>

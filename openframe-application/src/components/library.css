@@ -1,0 +1,215 @@
+.library-panel { display: grid; grid-template-rows: auto 1fr; }
+
+/* Icon-over-label tabs wrap into compact rows; every destination stays visible. */
+.lib-tabs {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 0;
+  padding: 6px 4px 0;
+  border-bottom: 1px solid var(--line);
+  overflow: visible;
+}
+.lib-tabs::-webkit-scrollbar { display: none; }
+.lib-tab {
+  display: grid; justify-items: center; gap: 3px;
+  min-width: 0; padding: 5px 4px 7px;
+  border: 0; border-radius: var(--radius) var(--radius) 0 0;
+  background: transparent; color: var(--text-2);
+  font-size: var(--fs-xs); white-space: nowrap;
+  position: relative;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.lib-tab:hover { color: var(--text-1); background: var(--bg-2); }
+/* Inset: the strip scrolls (overflow-x), which clipped the ring's bottom. */
+.lib-tab:focus-visible { outline-offset: -2px; }
+.lib-tab.on { color: var(--accent); }
+.lib-tab.on::after {
+  content: ""; position: absolute; left: 30%; right: 30%; bottom: -1px; height: 2px;
+  border-radius: 2px; background: var(--accent);
+  animation: tab-in var(--t-med) var(--ease-out);
+}
+@keyframes tab-in { from { transform: scaleX(0.2); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.lib-body { min-height: 0; overflow: hidden; animation: fade-in var(--t-med) ease-out; }
+.lib-split { display: grid; grid-template-columns: 92px 1fr; height: 100%; }
+.lib-subnav {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 6px; border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+/* min-height, not height: a two-word category ("Black & white") wraps in
+   the 92 px column and spilled out of a fixed 26 px button. */
+.lib-subnav button {
+  flex: none; min-height: 26px; padding: 5px 8px; line-height: 1.3; border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-2); font-size: var(--fs-xs); text-align: left;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.lib-subnav button:hover { background: var(--bg-2); color: var(--text-1); }
+.lib-subnav button.on { color: var(--accent); background: var(--accent-soft); }
+
+.lib-content { height: 100%; overflow-y: auto; padding: 10px 12px 16px; }
+.lib-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.import-btn { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.import-btn:hover { background: rgb(0 193 205 / 25%); }
+/* Recording from the camera or the screen: a pulsing dot and the time. */
+.rec-live { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: rec-pulse 1s ease-in-out infinite alternate; }
+@keyframes rec-pulse { to { opacity: 0.35; } }
+.lib-search { flex: 1; position: relative; display: flex; align-items: center; }
+.lib-search svg { position: absolute; left: 8px; color: var(--text-3); pointer-events: none; }
+.lib-search .field { width: 100%; height: 28px; padding-left: 28px; }
+.lib-hint { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-xs); }
+.lib-group { margin: 14px 0 8px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; }
+/* Each group sits in its own wrapper, so :first-of-type on the heading
+   matched every group and glued each heading to the labels above it. */
+.lib-content > div:first-of-type > .lib-group { margin-top: 0; }
+
+.drop-box {
+  display: grid; place-items: center; gap: 6px;
+  width: 100%; min-height: 180px; padding: 24px;
+  border: 1.5px dashed var(--line-strong); border-radius: var(--radius-panel);
+  background: var(--bg-inset); color: var(--text-2);
+  transition: border-color var(--t-fast), background var(--t-fast), color var(--t-fast);
+}
+.drop-box:hover, .drop-box.over { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.drop-box strong { font-size: var(--fs-md); }
+.drop-box span { font-size: var(--fs-xs); color: var(--text-3); }
+/* The Audio tab's: short, so the sound effects under it show too. */
+.drop-box.compact { min-height: 0; padding: 12px; grid-auto-flow: column; justify-content: center; gap: 10px; }
+
+/* ---- cards ------------------------------------------------------------------- */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
+.card-grid.small { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+.card { display: grid; gap: 5px; cursor: grab; min-width: 0; animation: rise-in var(--t-med) var(--ease-out) both; }
+.card:active { cursor: grabbing; }
+.card-thumb {
+  position: relative; aspect-ratio: 16 / 10;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm); overflow: hidden;
+  background: var(--bg-2); color: var(--text-3);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 4%);
+  transition: box-shadow var(--t-fast), transform var(--t-fast) var(--ease-out);
+}
+.card-grid.small .card-thumb { aspect-ratio: 1; }
+.card-grid.wide { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+.card:hover .card-thumb { box-shadow: inset 0 0 0 1.5px var(--accent); }
+.card-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.card-thumb.audio { background: linear-gradient(160deg, #123a66, var(--clip-audio)); color: #6fb2e8; }
+.card-label {
+  font-size: var(--fs-xs); color: var(--text-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.card-rename { width: 100%; min-width: 0; height: 22px; font-size: var(--fs-xs); }
+.chip {
+  position: absolute; top: 4px; right: 4px; padding: 1px 5px;
+  border-radius: 3px; background: rgb(0 0 0 / 65%); color: #fff; font-size: 10px;
+}
+.badge-added {
+  position: absolute; top: 4px; left: 4px; padding: 1px 5px;
+  border-radius: 3px; background: rgb(0 0 0 / 65%); color: var(--accent); font-size: 10px;
+}
+.card-add {
+  position: absolute; right: 5px; bottom: 5px;
+  display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: var(--accent); color: var(--accent-ink);
+  opacity: 0; transform: scale(0.6);
+  transition: opacity var(--t-fast), transform var(--t-med) var(--ease-spring);
+}
+/* Keyboard focus shows it too: tabbing landed on an invisible button. */
+.card:hover .card-add, .card-add:focus-visible { opacity: 1; transform: none; }
+.card-add:active { transform: scale(0.88); }
+
+/* Media organization remains a view over imports, shared by Media and Audio. */
+.media-browser .lib-toolbar { margin-bottom: 8px; }
+.media-browser .lib-search { min-width: 0; }
+.media-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.media-filters .field { flex: 1 1 88px; min-width: 0; height: 28px; font-size: var(--fs-xs); }
+.media-results { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0 10px; color: var(--text-3); font-size: var(--fs-xs); }
+.media-views { display: flex; margin-left: auto; }
+.media-views .icon-btn { width: 26px; height: 26px; }
+.media-views [aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.media-clear, .media-uses { width: fit-content; padding: 0; border: 0; background: none; color: var(--accent); font-size: var(--fs-xs); text-align: left; }
+.media-clear:hover, .media-uses:hover { text-decoration: underline; }
+.media-info { display: grid; gap: 3px; min-width: 0; }
+.media-list { display: grid; gap: 6px; }
+.media-list .media-card { grid-template-columns: 56px minmax(0, 1fr) 26px; align-items: center; gap: 10px; padding: 8px; border-radius: var(--radius-sm); background: var(--bg-inset); }
+.media-list .card-thumb { width: 56px; height: 44px; aspect-ratio: auto; }
+.media-list .card-label { color: var(--text-1); }
+.media-details { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.media-add { width: 26px; height: 26px; color: var(--accent); }
+
+/* Card pictures are rendered by the engine (ADR-026): a still that fades in,
+   and on hover a sprite strip stepped through by CSS. */
+.fx-preview { width: 100%; height: 100%; display: grid; place-items: center; background: radial-gradient(circle at 30% 30%, #2d6c86, #1a1f3b 70%); color: #bfe9ff; }
+.eng-preview {
+  position: absolute; inset: 0;
+  background: center / cover no-repeat;
+  opacity: 0; transition: opacity var(--t-slow) ease-out;
+}
+.eng-preview.ready { opacity: 1; }
+.eng-preview::after {
+  content: ""; position: absolute; inset: 0; opacity: 0;
+  background: var(--sprite) 0 0 / calc(var(--frames) * 100%) 100% no-repeat;
+}
+/* steps(n, jump-none) holds n positions, both ends included: one per frame. */
+.card:hover .eng-preview.has-motion::after {
+  opacity: 1;
+  animation: sprite-play var(--dur) steps(var(--steps), jump-none) infinite;
+}
+@keyframes sprite-play { from { background-position: 0 0; } to { background-position: 100% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .card:hover .eng-preview.has-motion::after { display: none; }
+}
+
+/* ---- captions tab ---------------------------------------------------------- */
+.captions-tab { display: grid; align-content: start; gap: 12px; }
+.cap-card { display: grid; gap: 10px; padding: 14px; border-radius: var(--radius-panel); background: var(--bg-inset); animation: rise-in var(--t-med) var(--ease-out); }
+.cap-head { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: var(--fs-md); }
+.cap-head svg { color: var(--accent); }
+.cap-field { display: grid; gap: 5px; font-size: var(--fs-xs); color: var(--text-2); }
+.cap-field.row { grid-template-columns: 1fr auto; align-items: center; }
+.cap-field .field { width: 100%; height: 30px; }
+.cap-go, .cap-wide { width: 100%; height: 34px; font-size: var(--fs-sm); }
+.cap-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.cap-progress { display: grid; gap: 8px; }
+.cap-progress-text { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
+.cap-bar { height: 5px; border-radius: 5px; background: var(--bg-3); overflow: hidden; }
+.cap-bar span { display: block; height: 100%; background: var(--accent); transform-origin: left; transition: transform 250ms ease-out; }
+
+/* ---- stickers ------------------------------------------------------------- */
+/* Groups wrapped in sections: each heading is its section's first, so the
+   gap between groups has to come from the section, not :first-of-type. */
+.lib-section + .lib-section > .lib-group { margin-top: 18px; }
+.sticker-motion { flex: none; width: auto; height: 28px; padding: 0 6px; }
+.card-thumb.sticker-thumb img {
+  inset: 13%; width: 74%; height: 74%; object-fit: contain;
+  transition: transform var(--t-med) var(--ease-spring);
+  animation: fade-in var(--t-med) ease-out;
+}
+.card:hover .sticker-thumb img { transform: scale(1.12) rotate(-5deg); }
+.card:active .sticker-thumb img { transform: scale(0.94); }
+.thumb-wait { width: 34%; aspect-ratio: 1; border-radius: 50%; background: var(--bg-3); opacity: 0.6; }
+
+/* CapCut's hover scrub over video cards */
+.hover-scrub { position: absolute; inset: 0; }
+.hover-scrub canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+.hover-scrub-line { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--accent); pointer-events: none; }
+/* Edit by transcript: words as text; the native selection picks them. */
+.transcript { max-height: 320px; overflow-y: auto; padding: 8px 10px; border-radius: 6px; background: var(--bg-1); font-size: var(--fs-sm); line-height: 1.6; color: var(--text-1); user-select: text; cursor: text; }
+.transcript:focus { outline: none; }
+.transcript:focus-visible { outline: 2px solid var(--accent); }
+.transcript p { margin: 0 0 8px; }
+.transcript p + p { padding-top: 8px; border-top: 1px dashed var(--line-strong); }
+.transcript [data-i] { border-radius: 3px; }
+.transcript [data-i]:hover { background: var(--bg-2); }
+.transcript [data-i].now { background: var(--accent-soft); color: var(--text-1); }
+.transcript ::selection { background: rgb(240 90 90 / 45%); }
+
+/* A sound effect's card: its thumbnail is a play button. */
+.sfx-play { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / 35%); color: var(--text-1); }
+.sfx-play:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* Caption looks: a sample of each on a dark tile, its name under it. */
+.cap-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.cap-look { display: grid; gap: 6px; justify-items: center; padding: 10px 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); color: var(--text-2); font-size: var(--fs-xs); }
+.cap-look:hover { border-color: var(--accent); }
+.cap-look-sample { font-size: 15px; line-height: 1.2; white-space: nowrap; }

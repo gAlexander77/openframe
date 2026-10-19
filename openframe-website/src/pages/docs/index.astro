@@ -1,0 +1,93 @@
+---
+// Getting started: build and run OpenFrame from source. The commands are the
+// README's and CONTRIBUTING.md's (src/data/build.ts holds them).
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import Command from "../../components/Command.astro";
+import Shot from "../../components/Shot.astro";
+import { CLONE, DESKTOP, WEB, WEB_URL, RELEASE_BUILD, PREREQUISITES } from "../../data/build";
+import { href, repoFile, SITE } from "../../lib/site";
+
+const headings = [
+  { depth: 2, id: "before-you-start", text: "Before you start" },
+  { depth: 2, id: "get-the-source", text: "Get the source" },
+  { depth: 2, id: "run-the-desktop-app", text: "Run the desktop app" },
+  { depth: 2, id: "try-the-web-build", text: "Try the web build" },
+  { depth: 2, id: "build-a-desktop-release", text: "Build a desktop release" },
+  { depth: 2, id: "where-it-runs", text: "Where it runs" },
+  { depth: 2, id: "next", text: "Next" },
+];
+---
+<DocsLayout
+  title="Getting started"
+  description="Build OpenFrame from source and run it: the desktop app with Tauri, or the web build in your browser. There are no installers yet."
+  slug=""
+  headings={headings}
+>
+  <p>
+    OpenFrame has no packaged release and no installer yet: you build it from the source, which takes a few commands
+    and, the first time, a few minutes while Rust compiles. Everything below is from the repository's
+    <a href={repoFile("README.md")}>README</a> and <a href={repoFile("CONTRIBUTING.md")}>contributing guide</a>.
+  </p>
+
+  <h2 id="before-you-start">Before you start</h2>
+  <p>Install these first:</p>
+  <ul>
+    {PREREQUISITES.map((p) => <li><a href={p.url}>{p.name}</a>: {p.note}.</li>)}
+  </ul>
+  <p>
+    The optional <a href="https://github.com/casey/just">just</a> task runner runs the project's combined checks with
+    <code>just check</code>. If your FFmpeg is not on <code>PATH</code>, point the app at it with the
+    <code>OPENFRAME_FFMPEG</code> environment variable.
+  </p>
+
+  <h2 id="get-the-source">Get the source</h2>
+  <Command label="Clone the repository" code={CLONE} />
+
+  <h2 id="run-the-desktop-app">Run the desktop app</h2>
+  <p>Install the dependencies exactly as the lockfile pins them, then start the app in development mode:</p>
+  <Command label="Install and run" code={DESKTOP} />
+  <p>
+    The first run compiles the Rust shell, so it takes a while; later runs are much faster. The app opens on its home
+    screen: create a project, import a clip and start cutting. The <a href={href("docs/user-guide/")}>user guide</a> walks
+    through a first edit.
+  </p>
+  <Shot
+    name="home"
+    hue="cyan"
+    sizes="(min-width: 1240px) 760px, 100vw"
+    alt="OpenFrame's home screen: a Create project card, canvas presets for 16:9, 9:16, 1:1, 4:5 and 21:9, and five projects with thumbnails."
+  />
+
+  <h2 id="try-the-web-build">Try the web build</h2>
+  <p>
+    The same editor also runs as a web app on your own device, with the capabilities your browser has. It needs no Rust:
+  </p>
+  <Command label="Start the web build" code={WEB} />
+  <p>
+    Then open <code>{WEB_URL}</code>. Projects and imported media stay in your browser's private storage for that site;
+    clearing site data removes them. Desktop is the main product: the web build is a secondary version, and some features
+    (agents over MCP, FFmpeg proxies, the command line) are desktop only.
+  </p>
+
+  <h2 id="build-a-desktop-release">Build a desktop release</h2>
+  <p>To build an optimized app for your own platform instead of the development version:</p>
+  <Command label="Build this platform's desktop app" code={RELEASE_BUILD} />
+  <p>
+    This builds for your computer only. The project does not publish builds yet, so there is nothing to download; when it
+    does, it will say so in the <a href={SITE.repo}>repository</a>.
+  </p>
+
+  <h2 id="where-it-runs">Where it runs</h2>
+  <ul>
+    <li><strong>Windows:</strong> the desktop app is developed and tested here (WebView2).</li>
+    <li><strong>macOS and Linux:</strong> Tauri builds for both, but the app has not been tested there yet. Reports are welcome.</li>
+    <li><strong>Browsers:</strong> the web build has been checked in Microsoft Edge on Windows. Codec and model support depend on the browser.</li>
+  </ul>
+
+  <h2 id="next">Next</h2>
+  <ul>
+    <li><a href={href("docs/user-guide/")}>The user guide</a>: a first edit, where your work is saved, and the deeper tools.</li>
+    <li><a href={href("ai/")}>Connect an AI agent</a> to the desktop app over MCP.</li>
+    <li><a href={href("docs/contributing/")}>Contribute</a>: report a bug, improve the docs or send a change.</li>
+  </ul>
+</DocsLayout>

@@ -7,7 +7,7 @@ OpenFrame is a desktop-first video editor in active development (named
 
 The source is public at github.com/gAlexander77/openframe; there is no
 packaged release yet. Follow the root README's source setup and run
-`npm run tauri dev`. Node.js/npm, Rust, and the platform's Tauri prerequisites
+`npm run tauri dev` in the `openframe-application` folder. Node.js/npm, Rust, and the platform's Tauri prerequisites
 are required. Install FFmpeg and ffprobe on `PATH` for the desktop's broader
 media-format support. `OPENFRAME_FFMPEG` points the app at another FFmpeg
 (the older `VIDEO_EDITOR_FFMPEG` still works).
@@ -44,10 +44,48 @@ resizing does not submit an unfinished project rename.
    Select the output destination when offered, or use Download when the
    browser's export workflow provides it. Play the exported file to check it.
 
+In the inspector, one drag of a slider (or holding an arrow key on it) is
+one Undo step, and so is dragging in a color picker. A typed value applies
+when you press Enter or leave the field, including by clicking another
+clip; Escape puts the old value back. An empty or non-numeric entry
+changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
+open or closed as you left them, across clips and reloads.
+
+In a clip's **Animation** tab, each preset tile pictures its motion: the
+layer where it settles and a dashed outline where it starts (In), ends
+(Out) or swings to (loops); hover a tile to see it move. Picking one plays
+that part of the clip once in the viewer, silently, and stops.
+
+A title template (Text tab) lands on rows of its own above your footage,
+never on a B-roll row, and its layers are grouped: they select and move
+together. Alt+click one layer to edit it alone.
+
+Export presets name where the video goes. **TikTok, Reels and Shorts** is
+made for a 9:16 canvas; on another shape the dialog says what size will be
+exported (a 16:9 project stays 1920×1080) and offers **Make the canvas
+9:16**. The canvas changes only when you click it, and Undo restores it.
+When a mix is normalized to its loudness target, the finished export says
+so in green; an amber note means something did not go as asked.
+
+For the sound alone, turn **Video** off and choose MP3, AAC (M4A) or WAV,
+or pick the **Audio only (MP3)** preset. When the project has captions,
+the **Captions** row decides what becomes of them: burned into the
+picture (as you see them), an **SRT file beside it** for YouTube and other
+sites that take one (the picture stays clean), both, or none. The SRT
+matches the exported range. The desktop app saves it next to the video
+with the same name; the browser version downloads it.
+
+Under the player, the outer buttons jump to the start and the end of the
+timeline, and the inner ones step a frame. Drag the playhead along the
+ruler to hear short snippets of the sound under it, to find a word or a
+beat by ear; turn this off in **Preferences** under Playback. The gear at the top right opens
+**Preferences** (also on Home); the keyboard beside it lists the shortcuts.
 The app's shortcut panel is the source for the current keyboard bindings.
 [[Features]] explains the deeper trim, color, keyframe, and audio tools.
 
 **File → New project** saves the current project and creates a new one.
+A new project is kept once you do something in it: create a project and
+go back to Home straight away, and no empty project is left behind.
 **File → Open project** saves the current project, returns to Home and
 focuses Search projects; select a saved project card to reopen it. Open also
 focuses search when you are already on Home. The project shortcuts shown in
@@ -62,8 +100,14 @@ Edits made while a save is running are saved before navigation completes.
 While a project is opening or the old one is being saved for a switch,
 repeated navigation requests are ignored. Home shows **Opening project…**
 and disables creation/deletion during loading; retry after it finishes.
-A focused project card opens with Enter or Space. Activating its Delete
-button with the keyboard only arms deletion, just like clicking it.
+A focused project card opens with Enter or Space; its Delete button never
+opens it.
+
+Deleting a project moves it to **Recently deleted** at the bottom of Home,
+and the notice that says so has **Undo**. A deleted project waits there
+for 30 days: open the section to **Restore** it (it returns to its place)
+or **Delete forever** (click twice; this cannot be undone). After 30 days
+it is deleted for good. Your media files are never deleted.
 
 Closing or switching projects cancels unfinished captions/analysis and
 discards late import results. Reopening the same project starts a new session;
@@ -94,17 +138,50 @@ to select every referencing clip and seek the earliest one. Counts include
 disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
 
+To rename a file in the project, right-click its card and choose
+**Rename…**, or in the grid view double-click its name; Enter keeps the new
+name and Escape the old one. The file on disk keeps its own name, and clips you have not
+renamed show the new one.
+
 Drag a row, double-click it, or use its Add button to place media, just as
 with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
 the app session. Browsing and selecting uses do not consume Undo steps.
 
+## Select and arrange clips
+
+Click a picture in the viewer to select the top unlocked clip whose box
+contains the pointer. Clicking empty canvas or stage space clears selection.
+Hidden and locked tracks do not intercept the click.
+
+With the main track magnet on, drag a clip to the start to make it the first
+shot. Linkage carries short titles and sound effects with their shots;
+a music bed covering two or more complete shots stays at its timeline time.
+
+Adding a title or sticker briefly previews its In animation, then restores
+the playhead. Reduced motion skips that preview. Pausing a preview stops it
+without a later jump back.
+
+Right-click a clip for the everyday edits in one place: Ripple delete,
+Split, **Speed…** (opens the Speed tab), **Reverse** (shows a check while
+the clip plays backward), **Copy effects** and **Paste effects** (onto
+every selected clip), Rename, Ungroup and Duplicate, among others.
+
+Name a clip with right-click > **Rename…**, or double-click the name on
+its strip (a title's double-click edits its words, so use the menu for
+titles). Clear the name to show the file's name again.
+
+Add a transition between touching clips, or click its timeline marker, to
+open **Transition** settings. Undo history gives agent edits readable names
+such as **Add clip** and **Change opacity**.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**
 from the Player header's guides selector or the View menu. The action box
-encloses 90% of the canvas dimensions; the title box encloses 80%. Use them
-to keep text away from edges and balance a shot. They are general guides,
+encloses 93% of the canvas dimensions and is labeled at its top; the title
+box encloses 90% and is labeled at its bottom. Use them to keep text away
+from edges and balance a shot. They are general guides,
 not platform-specific safe-area requirements.
 
 Guides follow the picture when resizing, using a portrait canvas or entering
@@ -190,8 +267,10 @@ changing the site origin, or switching profiles can make those projects
 unavailable. Storage failures can leave imported files usable for the current
 session without keeping them for a reload. Keep independent backups of your
 original media and important project data.
-URL imports through automation retain their original URLs and need those
-sources to stay reachable after reload; see [[Web capability log]].
+Media imported by its address (through automation) is copied into the same
+storage, so the project keeps working when the address goes away; a file
+over 1 GB stays linked to its address, and the app says so when it is
+imported. See [[Web capability log]].
 
 The OpenFrame rename must preserve existing saved work. Its migration plan
 is in [[Renaming]]. The project format itself is documented in
@@ -212,10 +291,38 @@ that it works offline. A bar shows progress and Cancel stops it. When it
 finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
+**Ask the AI assistant for an edit:** click **AI assistant** in the title
+bar. It opens as a column at the right of the editor, which makes room for
+it (in a window too narrow for four columns the media library steps aside
+until you close it); drag its left edge to resize it. Pick the model server
+and model at the top, type what you want in the box at the bottom and
+press Enter to send (Shift with Enter starts a new line). The box grows as
+you type. While the model works, the steps it takes appear as they run;
+**Stop** ends the turn. Each answer that changed the timeline has an
+**Undo** button for all of its changes at once, and a failed request can be
+tried again. The examples in an empty conversation fill the box for you.
+
+**Connect Codex or Claude Code (desktop app):** open the AI assistant's
+**Connect agents** tab and turn on **Allow AI agents**. Then click **Add to
+Codex** or **Add to Claude Code**: the app asks that program to add
+OpenFrame to its settings and tells you whether it was added, was already
+there, or the program was not found (with a link to install it). You can
+also copy the ready-made command or, for Codex, the `config.toml` entry.
+Start a new Codex or Claude Code session afterwards, and keep OpenFrame
+open with Allow AI agents on while the agent works.
+
 External agents connect only after the user enables "Allow AI agents".
-[[Automation]] explains the controls, MCP connection, headless rendering,
-and the `openframe` command line. [[AI tools]] records the
-algorithms and limits.
+[[Automation]] explains the controls, MCP connection (with step-by-step
+Codex CLI and Claude Code setup), headless rendering, and the `openframe`
+command line. [[AI tools]] records the algorithms and limits.
+
+## About OpenFrame
+
+**Help → About OpenFrame** shows the version, the license (GPL-3.0-only:
+you may share and change the app under its terms) and the open-source
+packages it is built with. Its links open the license text, the source
+code, this guide and the full list of third-party licenses in your
+browser.
 
 ## Report a problem or help improve it
 
@@ -245,7 +352,8 @@ While dragging with Trim, Ripple, Slip, Roll or Slide, the player shows two
 clip-edge frames and their times. Roll compares the outgoing and incoming
 frames; Slide compares neighboring clips. Other tracks and transitions are
 excluded so the cut is clear. Release to keep the edit; cancel the gesture to
-restore it. The whole drag is one Undo step.
+restore it. The whole drag is one Undo step. In a short player the frames
+shrink so the preview's title and note stay in view.
 
 ## Nest clips in a compound clip
 

@@ -42,7 +42,13 @@ as an incidental implementation choice.
 
 ## Develop and validate
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in the docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([ADR-081](docs/decisions/ADR-081%20The%20app%20and%20the%20website%20each%20have%20a%20folder,%20the%20docs%20stay%20at%20the%20root.md)).
+
 ```sh
+cd openframe-application
 npm ci
 npm run tauri dev
 ```

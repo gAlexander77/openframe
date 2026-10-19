@@ -11,6 +11,11 @@ Claude Code and Codex.
 - The product is **OpenFrame** (renamed 2026-10-17). The app identifier
   `com.alex.video-editor`, saved-data keys and `window.videoEditor` keep
   the old name on purpose; [docs/Renaming.md](docs/Renaming.md) says why.
+- **Two projects, one repository.** The app is in `openframe-application/`:
+  run every app command there, and read `src/`, `scripts/`, `src-tauri/` and
+  `fixtures/` paths in these docs as inside it. The website is
+  `openframe-website/`; `docs/` at the root serves both
+  ([ADR-081](docs/decisions/ADR-081%20The%20app%20and%20the%20website%20each%20have%20a%20folder,%20the%20docs%20stay%20at%20the%20root.md)).
 - **Desktop first.** The web app is a secondary, client-only version; validate
   its capabilities separately. See ADR-003 and the handoff.
 - The project uses **GPL-3.0-only**. Preserve third-party notices and follow

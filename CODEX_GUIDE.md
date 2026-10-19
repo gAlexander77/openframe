@@ -25,6 +25,10 @@ identifier and `window.videoEditor` keep the old name (`docs/Renaming.md`).
    - `git log --oneline -15`
    - `git worktree list`
 3. Skim `docs/Index.md`, `docs/Features.md`, `docs/Architecture.md`.
+4. The app is in `openframe-application/`: run every app command there, and
+   read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+   as inside it. The website is `openframe-website/`; `docs/` at the root
+   serves both ([ADR-081](docs/decisions/ADR-081%20The%20app%20and%20the%20website%20each%20have%20a%20folder,%20the%20docs%20stay%20at%20the%20root.md)).
 
 ## 2. Rules (do not break these)
 

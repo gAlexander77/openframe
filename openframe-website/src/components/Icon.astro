@@ -1,0 +1,25 @@
+---
+// One of the app's own icons (src/icons/*.svg, copied from the app's set),
+// inlined so it takes the text color. Decorative unless given a label.
+const svgs = import.meta.glob<string>("../icons/*.svg", { query: "?raw", import: "default", eager: true });
+
+interface Props {
+  name: string;
+  size?: number;
+  label?: string;
+  class?: string;
+  stroke?: number;
+}
+const { name, size = 20, label, class: cls, stroke } = Astro.props;
+const raw = svgs[`../icons/${name}.svg`];
+if (!raw) throw new Error(`No icon named ${name} in src/icons/`);
+const attrs = [
+  `width="${size}"`,
+  `height="${size}"`,
+  label ? `role="img" aria-label="${label.replace(/"/g, "&quot;")}"` : `aria-hidden="true" focusable="false"`,
+  cls ? `class="icon ${cls}"` : `class="icon"`,
+].join(" ");
+let svg = raw.trim().replace('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"', `<svg xmlns="http://www.w3.org/2000/svg" ${attrs}`);
+if (stroke) svg = svg.replace('stroke-width="2"', `stroke-width="${stroke}"`);
+---
+<Fragment set:html={svg} />

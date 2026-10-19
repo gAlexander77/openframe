@@ -1,0 +1,204 @@
+/* The export dialog: CapCut's modal over a 60% scrim, cover on the left,
+   fields on the right, duration and size in the footer. It scales and fades
+   in (160 ms); app.css zeroes that under prefers-reduced-motion. */
+
+.export-scrim {
+  position: fixed; inset: 0; z-index: 350; /* under toasts (400) */
+  display: grid; place-items: center;
+  background: rgb(0 0 0 / 60%);
+  animation: fade-in 160ms ease-out;
+}
+
+.export-dialog {
+  display: grid; grid-template-rows: auto 1fr auto;
+  width: min(760px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  border-radius: 10px;
+  background: var(--bg-1);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%), inset 0 0 0 1px rgb(255 255 255 / 6%);
+  outline: none;
+  overflow: hidden;
+  animation: export-in 160ms var(--ease-out);
+}
+@keyframes export-in { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+.export-head {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 48px; padding: 0 10px 0 20px;
+}
+.export-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
+
+/* ---- settings ----------------------------------------------------------------- */
+
+.export-body {
+  display: grid; grid-template-columns: 220px 1fr; gap: 20px;
+  min-height: 0; padding: 4px 20px 16px;
+  overflow: auto;
+  animation: rise-in var(--t-med) var(--ease-out);
+}
+
+.export-cover { display: grid; align-content: start; gap: 10px; }
+.export-frame {
+  display: grid; place-items: center;
+  max-height: 300px; width: 100%;
+  border-radius: var(--radius); overflow: hidden;
+  background: var(--viewer); color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.export-frame img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.export-cover .btn { justify-self: start; }
+
+.export-fields { display: grid; align-content: start; gap: 10px; min-width: 0; }
+
+.export-row { display: grid; grid-template-columns: 92px 1fr; align-items: center; gap: 12px; min-height: 28px; }
+.export-label { color: var(--text-2); font-size: var(--fs-sm); }
+.export-control { min-width: 0; }
+.export-control > .field, .export-select { width: 100%; }
+.export-control .field { height: 28px; }
+
+.export-static {
+  display: flex; align-items: center; gap: 6px; min-width: 0;
+  color: var(--text-2); font-size: var(--fs-sm);
+}
+.export-static svg { flex: none; color: var(--text-3); }
+
+.export-select { position: relative; display: block; }
+.export-select select {
+  width: 100%; padding-right: 28px;
+  appearance: none; cursor: pointer;
+  background: var(--bg-inset);
+}
+.export-select select:hover { border-color: var(--line-strong); }
+.export-select select option { background: var(--bg-2); color: var(--text-1); }
+.export-select select option:disabled { color: var(--text-3); }
+.export-select svg {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--text-3); pointer-events: none;
+}
+
+.export-pair { display: flex; gap: 8px; }
+/* A preset made for another canvas shape says so where it was picked. */
+.export-shape-note {
+  display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 4px 6px;
+  margin-left: 104px; padding: 6px 10px; border-radius: var(--radius);
+  background: rgb(242 184 75 / 10%); color: var(--warn); font-size: var(--fs-sm);
+}
+.export-shape-note svg { margin-top: 2px; }
+.export-shape-note .btn { grid-column: 2; justify-self: start; }
+@media (max-width: 640px) { .export-shape-note { margin-left: 0; } }
+.export-pair .export-select { flex: 1; min-width: 0; }
+.export-mbps { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); }
+.export-mbps .field { width: 76px; background: var(--bg-inset); }
+
+.export-section {
+  display: grid; gap: 10px;
+  padding: 12px 12px 12px;
+  border-radius: var(--radius);
+  background: rgb(255 255 255 / 2.5%);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background var(--t-fast);
+}
+.export-section.off { background: transparent; }
+.export-section-head {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-weight: 600; font-size: var(--fs-md); cursor: pointer;
+  justify-self: start;
+}
+.export-section.off .export-section-head { color: var(--text-2); }
+.export-section-head input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.export-section-body { display: grid; gap: 10px; animation: rise-in var(--t-med) var(--ease-out); }
+
+.segmented {
+  display: inline-flex; padding: 2px; gap: 2px;
+  border-radius: var(--radius); background: var(--bg-inset);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.segmented button {
+  height: 24px; padding: 0 12px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-2); font-size: var(--fs-sm);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.segmented button:hover { color: var(--text-1); }
+.segmented button.on { background: var(--bg-3); color: var(--text-1); }
+/* Disabled reads as disabled, not as an option not taken: dimmed and
+   struck through, with the reason in a visible line under the row. */
+.segmented button:disabled { color: var(--text-3); cursor: not-allowed; opacity: 0.55; text-decoration: line-through; text-decoration-color: rgb(255 255 255 / 30%); }
+.segmented button:disabled:hover { color: var(--text-3); }
+.export-row-hint { margin: -4px 0 0 104px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
+@media (max-width: 640px) { .export-row-hint { margin-left: 0; } }
+
+.export-foot {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-1);
+}
+.export-summary { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--fs-sm); }
+.export-summary svg { color: var(--text-3); }
+.export-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-3); }
+.export-blocker {
+  flex: 1; min-width: 0; text-align: right;
+  color: var(--warn); font-size: var(--fs-sm);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.export-summary + .btn { margin-left: auto; }
+.export-go { min-width: 92px; }
+
+/* ---- progress, done, failed ------------------------------------------------------- */
+
+.export-state {
+  display: grid; justify-items: center; align-content: center; gap: 10px;
+  min-height: 500px; padding: 8px 32px 32px; /* about the settings view's height: no jump */
+  text-align: center;
+  animation: rise-in var(--t-med) var(--ease-out);
+}
+
+@property --p { syntax: "<number>"; inherits: false; initial-value: 0; }
+.export-ring {
+  --p: 0;
+  display: grid; place-items: center;
+  width: 176px; height: 176px; margin-bottom: 8px;
+  border-radius: 50%;
+  background: conic-gradient(var(--accent) calc(var(--p) * 1turn), var(--bg-3) 0);
+  transition: --p 220ms linear;
+}
+.export-ring.waiting { background: var(--bg-3); }
+.export-ring-inner {
+  display: grid; place-items: center; align-content: center; gap: 2px;
+  width: 160px; height: 160px; border-radius: 50%;
+  background: var(--bg-1);
+}
+.export-pct { font-size: 38px; font-weight: 600; letter-spacing: -0.5px; }
+.export-ring-sub { color: var(--text-2); font-size: var(--fs-sm); }
+
+.export-file { max-width: 100%; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.export-stats { color: var(--text-2); font-size: var(--fs-sm); }
+.export-hint { margin: 6px 0 0; color: var(--text-3); font-size: var(--fs-xs); }
+.export-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+.export-badge {
+  display: grid; place-items: center;
+  width: 64px; height: 64px; margin-bottom: 6px; border-radius: 50%;
+  animation: export-pop var(--t-slow) var(--ease-spring);
+}
+.export-badge.ok { background: var(--accent); color: var(--accent-ink); }
+.export-badge.bad { background: rgb(240 90 90 / 15%); color: var(--danger); }
+@keyframes export-pop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: none; } }
+.export-title { margin: 0; font-size: var(--fs-xl); font-weight: 600; }
+.export-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 10px; border-radius: var(--radius);
+  background: rgb(242 184 75 / 10%); color: var(--warn); font-size: var(--fs-sm);
+}
+/* Good news (a mix normalized to its target) reads as good news, not as
+   a warning. */
+.export-note.ok { background: rgb(60 207 142 / 10%); color: var(--ok); }
+.export-note svg { flex: none; }
+.export-error { max-width: 460px; margin: 0; color: var(--text-2); font-size: var(--fs-sm); user-select: text; }
+
+@media (max-width: 640px) {
+  .export-body { grid-template-columns: 1fr; }
+  .export-frame { max-height: 160px; }
+}
+.export-section-note { margin-left: auto; font-weight: 400; font-size: var(--fs-xs); color: var(--text-3); }
