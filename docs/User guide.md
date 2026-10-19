@@ -44,10 +44,35 @@ resizing does not submit an unfinished project rename.
    Select the output destination when offered, or use Download when the
    browser's export workflow provides it. Play the exported file to check it.
 
+In the inspector, one drag of a slider (or holding an arrow key on it) is
+one Undo step, and so is dragging in a color picker. A typed value applies
+when you press Enter or leave the field, including by clicking another
+clip; Escape puts the old value back. An empty or non-numeric entry
+changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
+open or closed as you left them, across clips and reloads.
+
+In a clip's **Animation** tab, each preset tile pictures its motion: the
+layer where it settles and a dashed outline where it starts (In), ends
+(Out) or swings to (loops); hover a tile to see it move. Picking one plays
+that part of the clip once in the viewer, silently, and stops.
+
+A title template (Text tab) lands on rows of its own above your footage,
+never on a B-roll row, and its layers are grouped: they select and move
+together. Alt+click one layer to edit it alone.
+
+Export presets name where the video goes. **TikTok, Reels and Shorts** is
+made for a 9:16 canvas; on another shape the dialog says what size will be
+exported (a 16:9 project stays 1920×1080) and offers **Make the canvas
+9:16**. The canvas changes only when you click it, and Undo restores it.
+When a mix is normalized to its loudness target, the finished export says
+so in green; an amber note means something did not go as asked.
+
 The app's shortcut panel is the source for the current keyboard bindings.
 [[Features]] explains the deeper trim, color, keyframe, and audio tools.
 
 **File → New project** saves the current project and creates a new one.
+A new project is kept once you do something in it: create a project and
+go back to Home straight away, and no empty project is left behind.
 **File → Open project** saves the current project, returns to Home and
 focuses Search projects; select a saved project card to reopen it. Open also
 focuses search when you are already on Home. The project shortcuts shown in
@@ -103,8 +128,9 @@ the app session. Browsing and selecting uses do not consume Undo steps.
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**
 from the Player header's guides selector or the View menu. The action box
-encloses 90% of the canvas dimensions; the title box encloses 80%. Use them
-to keep text away from edges and balance a shot. They are general guides,
+encloses 93% of the canvas dimensions and is labeled at its top; the title
+box encloses 90% and is labeled at its bottom. Use them to keep text away
+from edges and balance a shot. They are general guides,
 not platform-specific safe-area requirements.
 
 Guides follow the picture when resizing, using a portrait canvas or entering
@@ -190,8 +216,10 @@ changing the site origin, or switching profiles can make those projects
 unavailable. Storage failures can leave imported files usable for the current
 session without keeping them for a reload. Keep independent backups of your
 original media and important project data.
-URL imports through automation retain their original URLs and need those
-sources to stay reachable after reload; see [[Web capability log]].
+Media imported by its address (through automation) is copied into the same
+storage, so the project keeps working when the address goes away; a file
+over 1 GB stays linked to its address, and the app says so when it is
+imported. See [[Web capability log]].
 
 The OpenFrame rename must preserve existing saved work. Its migration plan
 is in [[Renaming]]. The project format itself is documented in
@@ -245,7 +273,8 @@ While dragging with Trim, Ripple, Slip, Roll or Slide, the player shows two
 clip-edge frames and their times. Roll compares the outgoing and incoming
 frames; Slide compares neighboring clips. Other tracks and transitions are
 excluded so the cut is clear. Release to keep the edit; cancel the gesture to
-restore it. The whole drag is one Undo step.
+restore it. The whole drag is one Undo step. In a short player the frames
+shrink so the preview's title and note stay in view.
 
 ## Nest clips in a compound clip
 

@@ -33,6 +33,7 @@ import { projectWork } from "../state/projectWork";
 import { ClipView, type ClipZone } from "./ClipView";
 import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
+import { rangeGesture } from "./inspector/controls";
 import { TimelineToolbar } from "./TimelineToolbar";
 import "./timeline.css";
 
@@ -970,7 +971,7 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
   }, [onClose]);
   const db = Math.max(-40, toDb(track.volume));
   const pan = track.pan ?? 0;
-  const set = (d: number) => store.previewGesture((p) => ops.updateTrack(p, track.id, { volume: d <= -40 ? 0 : +fromDb(d).toFixed(4) }));
+  const set = (d: number) => store.previewGesture((p) => ops.updateTrack(p, track.id, { volume: d <= -40 ? 0 : +fromDb(d).toFixed(4) }), "Track volume");
   // On the body: the sticky header is its own stacking context.
   return createPortal(
     <div className="menu tl-vol-pop" ref={ref} style={{ left: at.x, top: at.y }} role="dialog" aria-label={`${track.name} volume and pan`}>
@@ -985,10 +986,7 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
         step={0.5}
         value={db}
         aria-label="Track volume"
-        onPointerDown={() => store.beginGesture()}
-        onPointerUp={() => store.endGesture("Track volume")}
-        onKeyDown={() => store.beginGesture()}
-        onKeyUp={() => store.endGesture("Track volume")}
+        {...rangeGesture("Track volume")}
         onChange={(e) => set(Number(e.target.value))}
         onDoubleClick={() => store.edit("Reset track volume", (p) => ops.updateTrack(p, track.id, { volume: 1 }))}
       />
@@ -1003,11 +1001,8 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
         step={1}
         value={Math.round(pan * 100)}
         aria-label="Track pan"
-        onPointerDown={() => store.beginGesture()}
-        onPointerUp={() => store.endGesture("Track pan")}
-        onKeyDown={() => store.beginGesture()}
-        onKeyUp={() => store.endGesture("Track pan")}
-        onChange={(e) => store.previewGesture((p) => ops.updateTrack(p, track.id, { pan: Number(e.target.value) / 100 || undefined }))}
+        {...rangeGesture("Track pan")}
+        onChange={(e) => store.previewGesture((p) => ops.updateTrack(p, track.id, { pan: Number(e.target.value) / 100 || undefined }), "Track pan")}
         onDoubleClick={() => store.edit("Reset track pan", (p) => ops.updateTrack(p, track.id, { pan: undefined }))}
       />
     </div>,

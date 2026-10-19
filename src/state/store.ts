@@ -170,6 +170,22 @@ let future: HistoryEntry[] = [];
 let gestureBase: Project | null = null;
 /** The document at the start of the gesture, for its undo entry. */
 let gestureDoc: Project | null = null;
+/** An open run (beginRun): its edits undo as one step, this entry, which
+ * holds the document from before the first (null until that edit). */
+let run: { entry: HistoryEntry | null } | null = null;
+
+/** Record `doc` (the document before an edit) as an undo step, or, inside
+ * a run that already has its step, fold the edit into that one. */
+function record(doc: Project, label: string) {
+  if (run?.entry && past.at(-1) === run.entry) run.entry.label = label;
+  else {
+    const entry = { project: doc, label };
+    past.push(entry);
+    if (past.length > HISTORY_LIMIT) past.shift();
+    if (run) run.entry = entry;
+  }
+  future = [];
+}
 
 /** The whole document, put back together from the open view (memoized). */
 let docCache: { project: Project; nest: NestEntry[]; doc: Project } | null = null;
@@ -247,9 +263,7 @@ export const store = {
       toast("A compound clip can't contain itself.", "error");
       return;
     }
-    past.push({ project: documentOf(state), label });
-    if (past.length > HISTORY_LIMIT) past.shift();
-    future = [];
+    record(documentOf(state), label);
     // Compounds nothing plays any more go, judged on the whole document:
     // a view cannot see the timelines above it.
     if (!state.nest.length) next = pruneCompounds(next);
@@ -262,9 +276,7 @@ export const store = {
     const doc = documentOf(state);
     const next = fn(doc);
     if (next === doc) return;
-    past.push({ project: doc, label });
-    if (past.length > HISTORY_LIMIT) past.shift();
-    future = [];
+    record(doc, label);
     const { project, nest } = reopen(pruneCompounds({ ...next, updatedAt: Date.now() }));
     setProject(project, { nest });
   },
@@ -276,18 +288,19 @@ export const store = {
     gestureBase = state.project;
     gestureDoc = documentOf(state);
   },
-  previewGesture(fn: (p: Project) => Project) {
-    if (!gestureBase) return;
-    setProject(fn(gestureBase));
+  /** A step of the open drag. Without one, a control's change that came
+   * with no press (a script setting its value, assistive technology) is
+   * one edit of its own when `label` names it, and nothing otherwise. */
+  previewGesture(fn: (p: Project) => Project, label?: string) {
+    if (gestureBase) setProject(fn(gestureBase));
+    else if (label) store.edit(label, fn);
   },
   endGesture(label: string) {
     const base = gestureBase;
     const doc = gestureDoc;
     gestureBase = gestureDoc = null;
     if (!base || !doc || base === state.project) return;
-    past.push({ project: doc, label });
-    if (past.length > HISTORY_LIMIT) past.shift();
-    future = [];
+    record(doc, label);
     setProject({ ...state.project, updatedAt: Date.now() });
   },
   cancelGesture() {
@@ -296,16 +309,29 @@ export const store = {
     set({ trimPreview: null });
   },
 
+  /** A run of whole edits that undoes as one step (ADR-072): a native color
+   * picker sends a value per pointer move, each an ordinary edit through its
+   * caller's path, and the run folds them into one undo entry until endRun.
+   * Opening one inside an open run does nothing; undo, redo and load end it. */
+  beginRun() {
+    run ??= { entry: null };
+  },
+  endRun() {
+    run = null;
+  },
+
   /** The undo and redo steps, nearest first (Premiere's History panel). */
   history: () => ({ undo: past.map((e) => e.label).reverse(), redo: future.map((e) => e.label).reverse() }),
 
   undo() {
+    run = null;
     const entry = past.pop();
     if (!entry) return;
     future.push({ project: documentOf(state), label: entry.label });
     restore(entry.project);
   },
   redo() {
+    run = null;
     const entry = future.pop();
     if (!entry) return;
     past.push({ project: documentOf(state), label: entry.label });
@@ -357,6 +383,7 @@ export const store = {
   load(project: Project) {
     projectWork.open();
     gestureBase = gestureDoc = null;
+    run = null;
     past = [];
     future = [];
     set({

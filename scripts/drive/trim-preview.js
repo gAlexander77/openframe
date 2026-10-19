@@ -54,5 +54,27 @@ async page => {
   details.narrowFit = { ok: await page.locator(".trim-preview").evaluate((el) => el.scrollWidth <= el.clientWidth + 1 && el.getBoundingClientRect().bottom <= innerHeight) };
   await page.screenshot({ path: "scratch/trim-narrow-desktop.png", animations: "disabled" });
   await page.keyboard.press("Escape"); await page.mouse.up();
+  // A short player (the Large timeline layout at the smallest window): the
+  // header and the footnote stay inside the panel, the frames shrink.
+  await page.evaluate(async () => {
+    const loaded = performance.getEntriesByType("resource").map((e) => e.name);
+    const layout = await import(loaded.find((n) => new URL(n).pathname === "/src/state/layout.ts") ?? "/src/state/layout.ts");
+    layout.applyLayoutPreset("timeline");
+  });
+  await page.waitForTimeout(200);
+  await drag(ids[0], "end", -40); await framesMatch();
+  details.shortPanelFit = await page.locator(".trim-preview").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const inside = (n) => { const r = n.getBoundingClientRect(); return r.top >= box.top - 0.5 && r.bottom <= box.bottom + 0.5; };
+    const head = inside(el.querySelector("header")), foot = inside(el.querySelector(":scope > p"));
+    const hs = (q) => [...el.querySelectorAll(q)].slice(0, 1).map((n) => Math.round(n.getBoundingClientRect().height))[0];
+    return { ok: head && foot && el.scrollHeight <= el.clientHeight + 1, head, foot, height: Math.round(box.height), scroll: el.scrollHeight - el.clientHeight, parts: { header: hs("header"), figure: hs("figure"), caption: hs("figcaption"), frame: hs(".frame-preview"), name: hs(".trim-clip-name"), time: hs("figure > span"), p: hs(":scope > p") } };
+  });
+  await page.screenshot({ path: "scratch/trim-short-panel.png", animations: "disabled" });
+  await page.keyboard.press("Escape"); await page.mouse.up();
+  await page.evaluate(async () => {
+    const loaded = performance.getEntriesByType("resource").map((e) => e.name);
+    (await import(loaded.find((n) => new URL(n).pathname === "/src/state/layout.ts") ?? "/src/state/layout.ts")).applyLayoutPreset("default");
+  });
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

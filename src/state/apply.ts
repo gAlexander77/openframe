@@ -10,7 +10,7 @@ import { player } from "../engine/player";
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { createAdjustmentClip, createColorClip, createTextClip, createTrack, uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
-import { placeOnTop, revealSpan } from "../lib/overlays";
+import { animationSpan, placeOnTop, revealSpan } from "../lib/overlays";
 import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
 import { addTemplate, TEXT_TEMPLATES, wordArtStyle } from "../lib/templates";
 import { secondsToFrames, type Rational } from "../lib/time";
@@ -110,6 +110,21 @@ export function revealAdded(ids: Id[]) {
   const span = revealSpan(clips, s.playhead);
   if (!span) return;
   if (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches) store.seek(span.to);
+  else player.preview(span.from, span.to);
+}
+
+/**
+ * CapCut's preview on pick: an animation chosen in the Animation tab plays
+ * once in the viewer, silently, over the clip's In, Out or one loop cycle
+ * (animationSpan), and stops where that ends. Playback, if any, gives way
+ * to it, as to any transport command. With reduced motion nothing plays;
+ * the playhead goes to where the clip shows settled.
+ */
+export function previewAnimation(id: Id, slot: "in" | "out" | "loop") {
+  const clip = ops.findClip(store.get().project, id)?.clip;
+  const span = clip && animationSpan(clip, slot);
+  if (!span) return;
+  if (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches) store.seek(slot === "out" ? span.from : span.to);
   else player.preview(span.from, span.to);
 }
 

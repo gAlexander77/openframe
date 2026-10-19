@@ -144,3 +144,20 @@ export function planLoudness(measured: number, truePeak: number, blockPeaks: Flo
   const heldDb = -20 * Math.log10(gains.reduce((m, g) => Math.min(m, g), 1));
   return { ...n, gains, heldDb, ceilingDb };
 }
+
+/** What the export-complete card says about loudness, and whether it is
+ * good news: reaching the target (within 1 LU) is a success to show as one;
+ * a mix the peaks or the gain range held short is a warning. */
+export interface LoudnessOutcome {
+  text: string;
+  ok: boolean;
+}
+
+/** The outcome of a planLoudness plan, once the mix reached `reached` LUFS. */
+export function loudnessOutcome(measured: number, reached: number, target: number, plan: Pick<LoudnessPlan, "limitedBy" | "heldDb" | "ceilingDb">): LoudnessOutcome {
+  const ok = Number.isFinite(reached) && Math.abs(reached - target) <= 1;
+  const how = plan.limitedBy === "peak" ? `raised as far as ${MAX_LIMITING_DB} dB of limiting allows` : plan.limitedBy === "range" ? "changed as far as it can be" : "normalized";
+  const held = plan.heldDb > 0.1 ? ` (a limiter held the peaks under ${plan.ceilingDb} dBTP, at most ${plan.heldDb.toFixed(1)} dB)` : "";
+  const short = ok ? "" : `, ${Math.abs(reached - target).toFixed(1)} LU ${reached < target ? "under" : "over"} the ${target} LUFS target`;
+  return { text: `Loudness ${measured.toFixed(1)} LUFS, ${how} to ${reached.toFixed(1)} LUFS${held}${short}.`, ok };
+}

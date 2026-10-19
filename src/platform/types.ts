@@ -44,6 +44,11 @@ export interface Platform {
   pickMedia(): Promise<ImportedFile[]>;
   /** Take files dropped onto the window (web) into the app's keeping. */
   adoptFiles(files: File[]): Promise<ImportedFile[]>;
+  /** Web: copy a file imported by its address into the app's keeping, as
+   * adoptFiles does a picked one, so the project survives the address
+   * going offline. Null when it is over URL_COPY_LIMIT (it stays linked);
+   * throws when the address or the storage fails. */
+  adoptUrl?(url: string, name: string, onProgress?: (fraction: number) => void): Promise<ImportedFile | null>;
   /** Files dropped from the OS as real paths (desktop, where HTML5 file
    * drops are off). Returns the unsubscribe. */
   onFileDrop?(cb: (files: ImportedFile[]) => void): () => void;

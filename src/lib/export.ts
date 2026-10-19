@@ -4,6 +4,7 @@
 // (docs/research/CapCut desktop.md §6.1); the engine (src/engine/export.ts)
 // runs the plan. Nothing here touches the DOM or WebCodecs.
 
+import { ratioOf } from "./canvas";
 import { projectDuration } from "./project/ops";
 import type { Project } from "./project/types";
 import { FPS_PRESETS, fpsValue, type Rational } from "./time";
@@ -331,6 +332,9 @@ export interface ExportPreset {
   settings: PresetSettings;
   /** Saved by the viewer, not built in. */
   own?: boolean;
+  /** The canvas shape it is made for (w:h), when it is made for one:
+   * the settings scale the canvas, they never reshape it (ADR-073). */
+  shape?: { w: number; h: number };
 }
 
 /** Where videos usually go (CapCut's and Premiere's named presets). A
@@ -338,18 +342,35 @@ export interface ExportPreset {
 export const EXPORT_PRESETS: ExportPreset[] = [
   { id: "youtube-1080", label: "YouTube 1080p", settings: { video: true, format: "mp4", codec: "avc", resolution: "1080p", quality: "recommended", audio: true } },
   { id: "youtube-4k", label: "YouTube 4K", settings: { video: true, format: "mp4", codec: "avc", resolution: "4k", quality: "recommended", audio: true } },
-  { id: "social", label: "TikTok, Reels and Shorts", settings: { video: true, format: "mp4", codec: "avc", resolution: "1080p", quality: "higher", fps: { num: 30, den: 1 }, audio: true } },
+  { id: "social", label: "TikTok, Reels and Shorts", shape: { w: 9, h: 16 }, settings: { video: true, format: "mp4", codec: "avc", resolution: "1080p", quality: "higher", fps: { num: 30, den: 1 }, audio: true } },
   { id: "small", label: "Small file (720p)", settings: { video: true, format: "mp4", codec: "avc", resolution: "720p", quality: "lower", audio: true } },
   { id: "master", label: "High quality master (HEVC)", settings: { video: true, format: "mov", codec: "hevc", resolution: "4k", quality: "higher", audio: true } },
   { id: "gif", label: "Animated GIF", settings: { video: true, format: "gif", codec: "gif", resolution: "480p", fps: { num: 15, den: 1 }, audio: false } },
   { id: "wav", label: "Audio only (WAV)", settings: { video: false, audio: true, audioFormat: "wav" } },
 ];
 
-/** The preset the settings match, if any. */
-export function matchingPreset(s: ExportSettings, presets: ExportPreset[]): ExportPreset | undefined {
-  return presets.find((pr) =>
-    (Object.entries(pr.settings) as [keyof PresetSettings, unknown][]).every(([k, v]) => JSON.stringify(s[k]) === JSON.stringify(v)),
-  );
+/** Whether the settings are the preset's. */
+export const presetMatches = (s: ExportSettings, pr: ExportPreset) =>
+  (Object.entries(pr.settings) as [keyof PresetSettings, unknown][]).every(([k, v]) => JSON.stringify(s[k]) === JSON.stringify(v));
+
+/** Whether a canvas has the preset's shape (any size), or it has none. */
+export const fitsShape = (pr: ExportPreset, canvas: { width: number; height: number }) =>
+  !pr.shape || Math.abs(pr.shape.w / pr.shape.h - canvas.width / canvas.height) < 0.01;
+
+/** The preset the settings match, if any. A preset made for a shape only
+ * matches a canvas of that shape: settings remembered from a 9:16 export
+ * no longer show a 16:9 project as "TikTok, Reels and Shorts". */
+export function matchingPreset(s: ExportSettings, presets: ExportPreset[], canvas?: { width: number; height: number }): ExportPreset | undefined {
+  return presets.find((pr) => presetMatches(s, pr) && (!canvas || fitsShape(pr, canvas)));
+}
+
+/** What to tell someone who picked a preset made for another shape, or
+ * null when the canvas fits it. `size` is what the export will be. */
+export function shapeWarning(pr: ExportPreset, canvas: { width: number; height: number }, size: { width: number; height: number } | null): string | null {
+  if (fitsShape(pr, canvas) || !pr.shape) return null;
+  const want = `${pr.shape.w}:${pr.shape.h}`;
+  const have = ratioOf(canvas.width, canvas.height)?.label ?? `${canvas.width}×${canvas.height}`;
+  return `Made for ${want} video. This project is ${have}, so it exports${size ? ` at ${size.width}×${size.height}` : " in that shape"}: export settings never reshape the canvas.`;
 }
 
 /** The settings worth keeping as a preset. */

@@ -182,6 +182,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
   keep their layout in every shape, anchored where they sat, fitted to
   the safe area.
+- [[ADR-072 One drag is one undo step and a typed value is kept]] —
+  range inputs are gestures (held keys too), a color picker's drag is a
+  run, typed values commit however focus leaves, junk changes nothing.
+- [[ADR-073 Templates land as a block and the web keeps what it imports]] —
+  templates on rows of their own above the footage, presets made for a
+  shape, URL imports copied, untouched projects not kept, JPEG contact
+  sheets, loudness success shown as success.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

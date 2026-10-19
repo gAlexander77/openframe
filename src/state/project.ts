@@ -81,11 +81,18 @@ function summaryOf(p: Project): ProjectSummary {
 let saving: Promise<boolean> | null = null;
 let again = false;
 
+/** The project New just made, until it is touched (ADR-073). An untouched
+ * one is never saved, and leaving it discards it, so pressing Create and
+ * leaving at once keeps no empty project on Home. Undoing every edit makes
+ * it untouched again: the document is then this very object. */
+let fresh: Project | null = null;
+const untouched = () => !!fresh && store.document() === fresh;
+
 /** Save the open project now. Saves never overlap; a request during a save
  * runs once more when it finishes. A false result keeps navigation from
  * discarding the project after a storage failure. */
 export async function saveNow(): Promise<boolean> {
-  if (session.screen !== "editor") return true;
+  if (session.screen !== "editor" || untouched()) return true;
   if (saving) {
     again = true;
     return saving;
@@ -137,7 +144,15 @@ store.subscribe(() => {
   timer = window.setTimeout(() => void saveNow(), 800);
 });
 
+/** Leaving the open project: an untouched new one goes, with any save an
+ * edit since undone made of it. */
+function leave() {
+  if (untouched()) void platform.deleteProject(fresh!.id).catch(() => undefined);
+  fresh = null;
+}
+
 function enter(p: Project) {
+  leave();
   clearTimeout(timer);
   store.load(p);
   lastRevision = store.get().revision;
@@ -163,7 +178,7 @@ export function newProject(init: ProjectInit = {}) {
     const now = new Date();
     const name = init.name ?? `Project ${now.toLocaleDateString(undefined, { month: "short", day: "numeric" })} ${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
     enter(createProject({ ...init, name }));
-    void saveNow();
+    fresh = store.document();
     return true;
   });
 }
@@ -185,6 +200,7 @@ export function openProject(id: string) {
 export function closeProject(focusSearch = false) {
   return navigate(async () => {
     if (!await saveNow()) return false;
+    leave();
     clearTimeout(timer);
     projectWork.close();
     set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });

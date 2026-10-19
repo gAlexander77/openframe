@@ -213,7 +213,10 @@ button.tc-now:hover { background: var(--bg-3); }
    clear box, cut to the picture. */
 .viewer-guides { overflow: hidden; }
 .viewer-safe-vertical { box-shadow: 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 100vmax rgb(0 0 0 / 30%); }
-.viewer-safe span { position: absolute; left: 3px; top: 2px; font-size: 9px; line-height: 12px; color: white; text-shadow: 0 1px 2px black, 0 0 3px black; }
+.viewer-safe span { position: absolute; left: 3px; top: 2px; font-size: 9px; line-height: 12px; color: white; text-shadow: 0 1px 2px black, 0 0 3px black; white-space: nowrap; }
+/* The two safe boxes are 1.5% apart: on a small 9:16 picture their top
+   labels sat on each other, so the title box labels its bottom edge. */
+.viewer-safe-title span { top: auto; bottom: 2px; }
 .viewer-thirds i { position: absolute; background: rgb(255 255 255 / 65%); box-shadow: 0 0 0 1px rgb(0 0 0 / 35%); }
 .viewer-third-v { top: 0; bottom: 0; width: 1px; }
 .viewer-third-h { left: 0; right: 0; height: 1px; }

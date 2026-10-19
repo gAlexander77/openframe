@@ -18,7 +18,9 @@ import {
   EXPORT_PRESETS,
   exportBlocker,
   matchingPreset,
+  presetMatches,
   presetOf,
+  shapeWarning,
   type ExportPreset,
   formatBytes,
   formatEta,
@@ -38,12 +40,22 @@ import {
   type VideoFormat,
 } from "../lib/export";
 import type { Project } from "../lib/project/types";
+import { canvasSize } from "../lib/canvas";
 import { formatDuration } from "../lib/time";
 import { platform } from "../platform";
 import { backToSettings, cancelExport, closeExportDialog, saveStill, startExport, stillToUrl, useExportView, type ExportView } from "../state/export";
 import { documentOf, rootInPoint, rootOutPoint, store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
+import { chordFor } from "../state/actions";
+import { chordText } from "../lib/keymap";
+import { isMac } from "../platform/env";
 import "./export.css";
+
+/** An action's key as the keymap has it (never typed in prose). */
+const markKey = (id: "markIn" | "markOut") => {
+  const c = chordFor(id);
+  return c ? chordText(c, isMac) : "no key";
+};
 
 /** Choices remembered between exports (not the name, rate or range, which
  * belong to the project). */
@@ -190,15 +202,37 @@ function SettingsView() {
       live = false;
     };
   }, [s.format, v?.width, v?.height, s.fps.num, s.fps.den]);
+  // A codec this device cannot encode at this size gives way to one it
+  // can, and the dialog says so: a picked preset asking for it (the HEVC
+  // master) then reads Custom, and silently that looked like a bug.
+  const [swap, setSwap] = useState<{ from: VideoCodec; to: VideoCodec; preset?: string } | null>(null);
   useEffect(() => {
-    if (codecs?.length && !codecs.includes(s.codec)) set({ codec: codecs[0] });
+    if (codecs?.length && !codecs.includes(s.codec)) {
+      setSwap({ from: s.codec, to: codecs[0], preset: presets.find((x) => x.id === picked)?.label });
+      set({ codec: codecs[0] });
+    }
   }, [codecs]);
 
   const [own, setOwn] = useState(loadOwnPresets);
   const [naming, setNaming] = useState(false);
+  // The preset picked here shows as picked while its settings stand, even
+  // on a canvas of another shape (with a warning); settings remembered
+  // from another project only name a preset made for this shape.
+  const [picked, setPicked] = useState<string | null>(null);
   const presets = [...EXPORT_PRESETS, ...own];
-  const preset = matchingPreset(s, presets);
-  const applyPreset = (pr: ExportPreset) => set({ fps: project.fps, ...pr.settings });
+  const preset = presets.find((x) => x.id === picked && presetMatches(s, x)) ?? matchingPreset(s, presets, project);
+  const applyPreset = (pr: ExportPreset) => {
+    setPicked(pr.id);
+    setSwap(null);
+    set({ fps: project.fps, ...pr.settings });
+  };
+  const shapeNote = preset && s.video ? shapeWarning(preset, project, v ? { width: v.width, height: v.height } : null) : null;
+  // Only on this explicit click: the canvas takes the preset's shape at
+  // its short side, one undo step, as Details > Canvas does.
+  const reshape = (shape: { w: number; h: number }) => {
+    const [width, height] = canvasSize(shape.w, shape.h, Math.min(project.width, project.height));
+    store.editDocument("Canvas size", (q) => ({ ...q, width, height, canvasFixed: true }));
+  };
   const keepPreset = (label: string) => {
     const next = [...own, { id: `own-${Date.now()}`, label, settings: presetOf(s), own: true }];
     setOwn(next);
@@ -270,7 +304,16 @@ function SettingsView() {
                   onBlur={() => setNaming(false)}
                 />
               ) : (
-                <Select id="export-preset" value={preset?.id ?? ""} onChange={(id) => applyPreset(presets.find((x) => x.id === id)!)}>
+                <Select
+                  id="export-preset"
+                  value={preset?.id ?? ""}
+                  onChange={(id) => {
+                    // "Custom" is no preset: the settings stay as they are.
+                    const pr = presets.find((x) => x.id === id);
+                    if (pr) applyPreset(pr);
+                    else setPicked(null);
+                  }}
+                >
                   {!preset && <option value="">Custom</option>}
                   <optgroup label="Built in">
                     {EXPORT_PRESETS.map((x) => (
@@ -298,6 +341,23 @@ function SettingsView() {
               )}
             </div>
           </Row>
+          {swap && s.video && s.codec === swap.to && (
+            <div className="export-shape-note" role="note">
+              <CircleAlert size={14} />
+              <span>
+                {CODEC_LABELS[swap.from]} can't be encoded on this device{v ? ` at ${v.width}×${v.height}` : ""}, so {CODEC_LABELS[swap.to]} is used{swap.preset ? `: ${swap.preset} now reads Custom` : ""}.
+              </span>
+            </div>
+          )}
+          {shapeNote && preset?.shape && (
+            <div className="export-shape-note" role="note">
+              <CircleAlert size={14} />
+              <span>{shapeNote}</span>
+              <button className="btn ghost" onClick={() => reshape(preset.shape!)}>
+                Make the canvas {preset.shape.w}:{preset.shape.h}
+              </button>
+            </div>
+          )}
           <Row label="Export to">
             <span className="export-static">
               <FolderOpen size={14} /> {platform.exportLocation ?? "Chosen when the export starts."}
@@ -420,12 +480,17 @@ function SettingsView() {
                 className={s.range === "inout" ? "on" : ""}
                 onClick={() => set({ range: "inout" })}
                 disabled={!hasRange}
-                title={hasRange ? undefined : "Mark In and Out on the timeline first"}
+                aria-describedby={hasRange ? undefined : "export-range-hint"}
               >
                 In to Out
               </button>
             </div>
           </Row>
+          {!hasRange && (
+            <p className="export-row-hint" id="export-range-hint">
+              To export part of the timeline, mark In ({markKey("markIn")}) and Out ({markKey("markOut")}) on it first.
+            </p>
+          )}
         </div>
       </div>
 
@@ -569,6 +634,11 @@ function DoneView({ view }: { view: Extract<ExportView, { phase: "done" }> }) {
         {formatDuration(r.seconds)} · {formatBytes(r.bytes)} · made in {r.elapsed < 10 ? r.elapsed.toFixed(1) : Math.round(r.elapsed)} s
         {r.videoCodec ? ` · ${CODEC_LABELS[r.videoCodec]}` : ""}
       </div>
+      {r.info && (
+        <div className="export-note ok" role="status">
+          <Check size={14} /> {r.info}
+        </div>
+      )}
       {r.note && (
         <div className="export-note">
           <CircleAlert size={14} /> {r.note}

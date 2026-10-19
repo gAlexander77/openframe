@@ -77,6 +77,15 @@
 }
 
 .export-pair { display: flex; gap: 8px; }
+/* A preset made for another canvas shape says so where it was picked. */
+.export-shape-note {
+  display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 4px 6px;
+  margin-left: 104px; padding: 6px 10px; border-radius: var(--radius);
+  background: rgb(242 184 75 / 10%); color: var(--warn); font-size: var(--fs-sm);
+}
+.export-shape-note svg { margin-top: 2px; }
+.export-shape-note .btn { grid-column: 2; justify-self: start; }
+@media (max-width: 640px) { .export-shape-note { margin-left: 0; } }
 .export-pair .export-select { flex: 1; min-width: 0; }
 .export-mbps { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--fs-sm); }
 .export-mbps .field { width: 76px; background: var(--bg-inset); }
@@ -112,7 +121,12 @@
 }
 .segmented button:hover { color: var(--text-1); }
 .segmented button.on { background: var(--bg-3); color: var(--text-1); }
-.segmented button:disabled { color: var(--text-3); cursor: not-allowed; }
+/* Disabled reads as disabled, not as an option not taken: dimmed and
+   struck through, with the reason in a visible line under the row. */
+.segmented button:disabled { color: var(--text-3); cursor: not-allowed; opacity: 0.55; text-decoration: line-through; text-decoration-color: rgb(255 255 255 / 30%); }
+.segmented button:disabled:hover { color: var(--text-3); }
+.export-row-hint { margin: -4px 0 0 104px; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.4; }
+@media (max-width: 640px) { .export-row-hint { margin-left: 0; } }
 
 .export-foot {
   display: flex; align-items: center; gap: 8px;
@@ -177,6 +191,10 @@
   padding: 6px 10px; border-radius: var(--radius);
   background: rgb(242 184 75 / 10%); color: var(--warn); font-size: var(--fs-sm);
 }
+/* Good news (a mix normalized to its target) reads as good news, not as
+   a warning. */
+.export-note.ok { background: rgb(60 207 142 / 10%); color: var(--ok); }
+.export-note svg { flex: none; }
 .export-error { max-width: 460px; margin: 0; color: var(--text-2); font-size: var(--fs-sm); user-select: text; }
 
 @media (max-width: 640px) {

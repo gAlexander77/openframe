@@ -47,8 +47,8 @@ import { getAsset } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
 import { planFrame, planLayers } from "../lib/render/plan";
 import { formatTimecode, type Rational } from "../lib/time";
-import { applyLimiter, LIMIT_BLOCK, LoudnessMeter, MAX_LIMITING_DB } from "../lib/analysis/loudness";
-import { ceilingFor, planLoudness } from "../lib/analysis/delivery";
+import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "../lib/analysis/loudness";
+import { ceilingFor, loudnessOutcome, planLoudness, type LoudnessOutcome } from "../lib/analysis/delivery";
 import { toDbtp, TruePeakMeter } from "../lib/analysis/truePeak";
 import { hasSound, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "./mixdown";
 import { Compositor } from "./compositor";
@@ -77,8 +77,12 @@ export interface ExportResult {
   audioCodec: AudioCodec | null;
   /** Encoder delay removed with an edit list, in samples. */
   audioDelay: number;
-  /** Set when the codec asked for could not be encoded here. */
+  /** Warnings: what did not go as asked (a codec unavailable here, a mix
+   * the peaks held short of its loudness target). */
   note?: string;
+  /** Good news worth saying, shown as such: a mix normalized to its
+   * target, AAC encoded in software. */
+  info?: string;
   /** With a loudness target: what the mix reached, before the encoder
    * (LUFS integrated, dBTP true peak). */
   loudness?: { integrated: number; truePeak: number };
@@ -233,6 +237,7 @@ export async function exportProject(
   const started = performance.now();
   const p = project;
   const notes: string[] = [];
+  const infos: string[] = [];
 
   // ---- stop: user cancel or watchdog -----------------------------------------
   let stopError: unknown = null;
@@ -334,7 +339,7 @@ export async function exportProject(
     if (a) {
       if (a.codec === "aac") {
         const note = await guard(ensureAac(a.bitrate));
-        if (note) notes.push(note);
+        if (note) infos.push(note);
       }
       const isobmff = plan.container === "mp4" || plan.container === "mov" || plan.container === "m4a";
       priming = a.codec === "aac" && isobmff ? await guard(encoderDelay("aac", a.bitrate)) : 0;
@@ -382,7 +387,7 @@ export async function exportProject(
     // at -17 LUFS of -14: speech peaks far above its loudness.
     let finalMeter: LoudnessMeter | null = null;
     let finalPeak: TruePeakMeter | null = null;
-    let loudnessNote: ((reached: number) => string) | null = null;
+    let loudnessNote: ((reached: number) => LoudnessOutcome) | null = null;
     if (a && sounding && plan.loudness !== null) {
       const meter = new LoudnessMeter(a.sampleRate, a.channels);
       const tp = new TruePeakMeter(a.channels);
@@ -401,10 +406,9 @@ export async function exportProject(
         limit = { gain: n.gain, gains: n.gains };
         finalMeter = new LoudnessMeter(a.sampleRate, a.channels);
         finalPeak = new TruePeakMeter(a.channels);
-        loudnessNote = (reached) =>
-          `Loudness ${measured.toFixed(1)} LUFS, ${n.limitedBy === "peak" ? `raised as far as ${MAX_LIMITING_DB} dB of limiting allows` : "normalized"} to ${reached.toFixed(1)} LUFS` +
-          (n.heldDb > 0.1 ? ` (a limiter held the peaks under ${ceiling} dBTP, at most ${n.heldDb.toFixed(1)} dB).` : ".");
-      } else if (Number.isFinite(measured)) notes.push(`Loudness ${measured.toFixed(1)} LUFS, already at the target.`);
+        const target = plan.loudness;
+        loudnessNote = (reached) => loudnessOutcome(measured, reached, target, n);
+      } else if (Number.isFinite(measured)) infos.push(`Loudness ${measured.toFixed(1)} LUFS, already at the target.`);
     }
     /** Next rendered window, starting the one after it in the background. */
     const nextWindow = async (i: number): Promise<AudioBuffer> => {
@@ -489,7 +493,10 @@ export async function exportProject(
 
     onProgress({ phase: "finalizing", done: total, total, fraction: 1, fps: 0, eta: 0 });
     await wait("encoder", output.finalize());
-    if (loudnessNote && finalMeter) notes.push(loudnessNote(finalMeter.integrated()));
+    if (loudnessNote && finalMeter) {
+      const o = loudnessNote(finalMeter.integrated());
+      (o.ok ? infos : notes).push(o.text);
+    }
     finalPeak?.flush();
     return {
       ...(finalMeter && finalPeak ? { loudness: { integrated: +finalMeter.integrated().toFixed(2), truePeak: +toDbtp(finalPeak.peak).toFixed(2) } } : {}),
@@ -501,6 +508,7 @@ export async function exportProject(
       audioCodec: a?.codec ?? null,
       audioDelay: priming,
       ...(notes.length ? { note: notes.join(" ") } : {}),
+      ...(infos.length ? { info: infos.join(" ") } : {}),
     };
   } catch (e) {
     if (!stopError) stop(e);

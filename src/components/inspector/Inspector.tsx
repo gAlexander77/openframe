@@ -6,6 +6,8 @@ import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "../../lib/catalog";
 import { DEFAULT_STAGGER, KINETIC_ORDERS, type KineticOrder } from "../../lib/kinetic";
+import { animThumb, type ThumbSlot } from "../../lib/animThumb";
+import { previewAnimation } from "../../state/apply";
 import { brandOf, type ColorRole } from "../../lib/brandKit";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
@@ -21,10 +23,11 @@ import { canvasSize, ratioOf, RATIOS } from "../../lib/canvas";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
-import { edit, run, tipFor } from "../../state/actions";
+import { edit, run, settleOptions, tipFor } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
-import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
+import { ColorInput, patchClip, rangeGesture, Row, Section, Segmented, SliderRow, Toggle, useClip, useCommitOnLeave } from "./controls";
+import { parseTyped } from "../../lib/numberInput";
 import { CompositingSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
 import { SoundFxSection } from "./SoundFx";
@@ -679,6 +682,20 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
     const s = Math.min(SPEED_MAX, Math.max(SPEED_MIN, +speed.toFixed(2)));
     edit(`Speed ${s}x`, (p) => ops.setSpeed(p, clip.id, s));
   };
+  // What was typed applies on Enter, on leaving the field, and when the
+  // field goes away unblurred (another clip selected); junk changes nothing.
+  const commitSpeed = (raw: string) => {
+    setText(null);
+    const v = parseTyped(raw);
+    if (v !== null && v > 0) apply(v);
+  };
+  const commitDur = (raw: string) => {
+    setDur(null);
+    const v = parseTyped(raw);
+    if (v !== null && v > 0) fit(v);
+  };
+  useCommitOnLeave(text, commitSpeed);
+  useCommitOnLeave(dur, commitDur);
   return (
     <Section title="Standard">
       <div className="insp-row">
@@ -690,11 +707,10 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
           max={1}
           step={0.001}
           value={toLog(clip.speed)}
-          onPointerDown={() => store.beginGesture()}
-          onPointerUp={() => store.endGesture(`Speed ${clip.speed}x`)}
+          {...rangeGesture(() => `Speed ${(ops.findClip(store.get().project, clip.id)?.clip as ops.TimedClip | undefined)?.speed ?? clip.speed}x`)}
           onChange={(e) => {
             const s = +fromLog(Number(e.target.value)).toFixed(2);
-            store.previewGesture((p) => ops.settle(p, ops.setSpeed(p, clip.id, s), { magnet: store.get().magnet, linkage: store.get().linkage }));
+            store.previewGesture((p) => ops.settle(p, ops.setSpeed(p, clip.id, s), { magnet: store.get().magnet, linkage: store.get().linkage }), `Speed ${s}x`);
           }}
           aria-label="Speed"
         />
@@ -703,12 +719,7 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
             className="field num"
             value={text ?? clip.speed.toFixed(2)}
             onChange={(e) => setText(e.target.value)}
-            onBlur={(e) => {
-              const typed = text !== null;
-              setText(null);
-              const v = Number(e.target.value.replace(/x/i, ""));
-              if (typed && v > 0) apply(v);
-            }}
+            onBlur={() => text !== null && commitSpeed(text)}
             onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
             aria-label="Speed value"
           />
@@ -732,12 +743,7 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
               className="field num"
               value={dur ?? framesToSeconds(clip.duration, fps).toFixed(2)}
               onChange={(e) => setDur(e.target.value)}
-              onBlur={(e) => {
-                const typed = dur !== null;
-                setDur(null);
-                const v = Number(e.target.value.replace(/s/i, ""));
-                if (typed && v > 0) fit(v);
-              }}
+              onBlur={() => dur !== null && commitDur(dur)}
               onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
               aria-label="Duration value"
             />
@@ -757,6 +763,31 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
 
 const ORDER_LABELS: Record<KineticOrder, string> = { forward: "First to last", backward: "Last to first", center: "From the center", random: "Random" };
 
+/** A preset's tile picture (lib/animThumb.ts): the layer settled and a
+ * dashed ghost where it moves from or to; it plays on hover. */
+function AnimThumb({ type, slot }: { type: string | null; slot: ThumbSlot }) {
+  const marks = animThumb(type, slot, ANIMATIONS);
+  return (
+    <span className={`anim-demo${type ? ` a-${type}` : " none"} slot-${slot}`} aria-hidden="true">
+      {marks.map((m, i) => (
+        <i
+          key={i}
+          className={`am am-${m.kind}`}
+          style={{
+            left: m.x - m.w / 2,
+            top: m.y - m.h / 2,
+            width: m.w,
+            height: m.h,
+            opacity: m.opacity,
+            transform: m.scale !== 1 || m.rotation ? `rotate(${m.rotation}deg) scale(${m.scale})` : undefined,
+            filter: m.blur ? "blur(1.5px)" : undefined,
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
 function AnimationTab({ clip }: { clip: Clip }) {
   const fps = useEditor((s) => s.project.fps);
   const [slot, setSlot] = useState<"in" | "out" | "loop">("in");
@@ -767,8 +798,11 @@ function AnimationTab({ clip }: { clip: Clip }) {
   // Titles also get the kinetic presets (typewriter, word pop...), which
   // move their letters and words; other clips only the whole-layer ones.
   const list = Object.entries(ANIMATIONS).filter(([, d]) => (d.text ? text && slot !== "loop" : slot === "loop" ? !!d.loop : !!d.from));
-  const set = (type: string | null, duration?: number, perUnit?: Pick<Animation, "unit" | "stagger" | "order">) =>
-    patchClip(clip.id, type ? `${slot === "loop" ? "Loop" : slot === "in" ? "In" : "Out"} animation` : "Remove animation", (c) => {
+  const slotLabel = `${slot === "loop" ? "Loop" : slot === "in" ? "In" : "Out"} animation`;
+  /** This slot's animation set (or removed with null), as an edit of the
+   * project: the sliders preview it through a gesture, a pick commits it. */
+  const animate = (type: string | null, duration?: number, perUnit?: Pick<Animation, "unit" | "stagger" | "order">) => (p: Project) =>
+    ops.updateClip(p, clip.id, (c) => {
       const next = { ...c } as Record<string, unknown>;
       if (!type) delete next[key];
       else {
@@ -779,6 +813,13 @@ function AnimationTab({ clip }: { clip: Clip }) {
       }
       return next as unknown as Clip;
     });
+  const set = (type: string | null, duration?: number, perUnit?: Pick<Animation, "unit" | "stagger" | "order">) => store.edit(type ? slotLabel : "Remove animation", animate(type, duration, perUnit));
+  // CapCut plays what was picked: the slot's stretch of the clip once,
+  // silently, stopping where it ends (lib/overlays.ts animationSpan).
+  const pick = (type: string | null) => {
+    set(type);
+    if (type) previewAnimation(clip.id, slot);
+  };
   const def = current && ANIMATIONS[current.type];
   const unit = current ? (current.unit ?? def?.text?.unit) : undefined;
   return (
@@ -787,13 +828,13 @@ function AnimationTab({ clip }: { clip: Clip }) {
         <Segmented value={slot} onChange={setSlot} options={[{ value: "in", label: "In" }, { value: "out", label: "Out" }, { value: "loop", label: clip.type === "text" ? "Loop" : "Combo" }]} />
       </div>
       <div className="anim-grid">
-        <button className={`anim-tile${!current ? " on" : ""}`} onClick={() => set(null)}>
-          <span className="anim-demo none" />
+        <button className={`anim-tile${!current ? " on" : ""}`} onClick={() => pick(null)}>
+          <AnimThumb type={null} slot={slot} />
           <span>None</span>
         </button>
         {list.map(([k, d]) => (
-          <button key={k} className={`anim-tile${current?.type === k ? " on" : ""}`} onClick={() => set(k)}>
-            <span className={`anim-demo a-${k} slot-${slot}`} />
+          <button key={k} className={`anim-tile${current?.type === k ? " on" : ""}`} onClick={() => pick(k)}>
+            <AnimThumb type={k} slot={slot} />
             <span>{d.label}</span>
           </button>
         ))}
@@ -809,7 +850,8 @@ function AnimationTab({ clip }: { clip: Clip }) {
               max={Math.max(0.2, +framesToSeconds(slot === "loop" ? clip.duration : Math.floor(clip.duration / (slot === "in" && "animOut" in clip && clip.animOut ? 2 : 1)), fps).toFixed(1))}
               step={0.1}
               value={framesToSeconds(current.duration, fps)}
-              onChange={(e) => set(current.type, Math.max(1, secondsToFrames(Number(e.target.value), fps)))}
+              {...rangeGesture(slotLabel)}
+              onChange={(e) => store.previewGesture(animate(current.type, Math.max(1, secondsToFrames(Number(e.target.value), fps))), slotLabel)}
               aria-label="Animation duration"
             />
             <span className="insp-num num">{framesToSeconds(current.duration, fps).toFixed(1)}<span className="insp-unit">s</span></span>
@@ -853,7 +895,8 @@ function AnimationTab({ clip }: { clip: Clip }) {
                   max={1}
                   step={0.05}
                   value={current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER}
-                  onChange={(e) => set(current.type, current.duration, { unit: current.unit, stagger: Number(e.target.value), order: current.order })}
+                  {...rangeGesture(slotLabel)}
+                  onChange={(e) => store.previewGesture(animate(current.type, current.duration, { unit: current.unit, stagger: Number(e.target.value), order: current.order }), slotLabel)}
                   aria-label="Stagger"
                 />
                 <span className="insp-num num">{Math.round((current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER) * 100)}<span className="insp-unit">%</span></span>
@@ -1470,7 +1513,17 @@ function TransitionTab({ clip }: { clip: Clip }) {
       </Row>
       <div className="insp-row">
         <label className="insp-label">Duration</label>
-        <input type="range" className="insp-slider" min={0.1} max={5} step={0.1} value={framesToSeconds(tr.duration, fps)} onChange={(e) => set(tr.type, secondsToFrames(Number(e.target.value), fps))} aria-label="Transition duration" />
+        <input
+          type="range"
+          className="insp-slider"
+          min={0.1}
+          max={5}
+          step={0.1}
+          value={framesToSeconds(tr.duration, fps)}
+          {...rangeGesture("Transition")}
+          onChange={(e) => store.previewGesture((p) => ops.settle(p, ops.setTransition(p, clip.id, { type: tr.type, duration: secondsToFrames(Number(e.target.value), fps) }), settleOptions()), "Transition")}
+          aria-label="Transition duration"
+        />
         <span className="insp-num num">{framesToSeconds(tr.duration, fps).toFixed(1)}<span className="insp-unit">s</span></span>
         <span className="insp-keys" />
       </div>
@@ -1505,7 +1558,7 @@ function ProjectDetails() {
       <div className="insp-body">
         <Section title="Project">
           <Row label="Name">
-            <input className="field" aria-label="Project name" defaultValue={p.name} key={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && store.edit("Rename project", (q) => ({ ...q, name: e.target.value.trim() }))} />
+            <ProjectName name={p.name} />
           </Row>
           <Row label="Ratio">
             <div className="ratio-grid">
@@ -1614,25 +1667,55 @@ function BrandSection() {
   );
 }
 
+/** Details > Name: committed on Enter, on leaving the field, and when
+ * selecting a clip takes the field away unblurred; Escape reverts, as in
+ * the title bar's rename. */
+function ProjectName({ name }: { name: string }) {
+  const [text, setText] = useState<string | null>(null);
+  const commit = (raw: string) => {
+    setText(null);
+    const v = raw.trim().slice(0, 120);
+    if (v && v !== name) store.edit("Rename project", (q) => ({ ...q, name: v }));
+  };
+  useCommitOnLeave(text, commit);
+  return (
+    <input
+      className="field"
+      aria-label="Project name"
+      value={text ?? name}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => text !== null && commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setText(null);
+      }}
+    />
+  );
+}
+
 /** A canvas side in pixels (CapCut's custom ratio): even, as encoders
  * need, between 16 and 8192; committed on Enter or leaving the field. */
 function SizeField({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
+  const [text, setText] = useState<string | null>(null);
   const commit = (raw: string) => {
-    const n = Math.round(Number(raw) / 2) * 2;
-    if (Number.isFinite(n) && n !== value) onSet(Math.min(8192, Math.max(16, n)));
+    setText(null);
+    const typed = parseTyped(raw);
+    const n = typed === null ? null : Math.round(typed / 2) * 2;
+    if (n !== null && n !== value) onSet(Math.min(8192, Math.max(16, n)));
   };
+  useCommitOnLeave(text, commit);
   return (
     <input
       className="field num"
-      type="number"
-      min={16}
-      max={8192}
-      step={2}
+      inputMode="numeric"
       aria-label={label}
-      defaultValue={value}
-      key={value}
-      onBlur={(e) => commit(e.target.value)}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+      value={text ?? String(value)}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => text !== null && commit(text)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") setText(null);
+      }}
     />
   );
 }

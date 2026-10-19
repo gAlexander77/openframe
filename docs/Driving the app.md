@@ -228,6 +228,22 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
 19. **Editing `src/` while a long drive runs reloads its page.** Vite
     hot-updates the app under the drive and its results are noise; run
     long drives between edits, not during them.
+20. **A bounding box is not on screen.** `boundingBox()` answers for an
+    element scrolled out of its panel, and `mouse.down` there lands on
+    whatever shows at that point (the timeline, deselecting the clip, so
+    the inspector row the drive wanted disappears). Call
+    `scrollIntoViewIfNeeded()` before measuring a slider to drag.
+21. **`fill()` on a range input has no press.** It sends `input` and
+    `change` with no pointer or key events, so a control that edits only
+    inside a gesture ignored it. Sliders now treat a change with no press
+    as one edit (ADR-072); a drive can count undo steps after a real drag
+    with `page.mouse`, and must wait a moment after `mouse.up()`: the
+    gesture closes just after the release's own `change` event.
+22. **A big PNG reaches the model as 256 colors.** An MCP image over the
+    client's budget (about 3.75 MB) is shrunk by the client; Claude Code
+    re-encodes a PNG with a 256-color palette, which bands skies, and a
+    JPEG as a JPEG. The images a tool answers are not always what the
+    model sees: check their size (ADR-073).
 
 ## MCP against the web build
 

@@ -28,7 +28,7 @@ async (page) => {
       for (let i = 0; i < n; i++) for (let c = 0; c < ch; c++) planes[c][i] = v.getInt16(44 + (i * ch + c) * 2, true) / 32768;
       const m = new LoudnessMeter(rate, ch);
       m.push(planes, n);
-      return { lufs: +m.integrated().toFixed(2), peakDb: +(20 * Math.log10(m.peak)).toFixed(2), note: r.note ?? "" };
+      return { lufs: +m.integrated().toFixed(2), peakDb: +(20 * Math.log10(m.peak)).toFixed(2), note: [r.info, r.note].filter(Boolean).join(" "), info: r.info ?? "", warning: r.note ?? "" };
     }, loudness);
   const details = {};
   const asMixed = await measure(null);
@@ -37,6 +37,10 @@ async (page) => {
   const at1 = await measure(-1);
   details.minus20 = { ok: Math.abs(at20.lufs + 20) < 0.5 && /normalized to -20\.0 LUFS\.$/.test(at20.note), ...at20 };
   details.minus14 = { ok: Math.abs(at14.lufs + 14) < 0.5, ...at14 };
+  // Reaching the target is good news (the done card shows it as success);
+  // a mix the peaks held short of it is a warning.
+  details.successNotWarning = { ok: /normalized to -20.0 LUFS/.test(at20.info) && !/Loudness/.test(at20.warning) && /Loudness/.test(at14.info) };
+  details.shortIsWarning = { ok: /LU under the -1 LUFS target/.test(at1.warning), warning: at1.warning };
   details.peakHeld = { ok: at1.peakDb <= -0.9 && at1.peakDb > -1.5 && at1.lufs < -1 && /limiter held the peaks under -1 dB/.test(at1.note), ...at1, asMixed };
   await page.getByRole("button", { name: "Export", exact: true }).first().click();
   const select = page.locator("#export-loudness");

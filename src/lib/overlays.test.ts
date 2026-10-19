@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { placeOnTop, revealSpan } from "./overlays";
+import { animationSpan, placeOnTop, revealSpan } from "./overlays";
 import { createProject, createTextClip, createTrack } from "./project/defaults";
 import { addClip, addTrack, findClip } from "./project/ops";
-import type { Project } from "./project/types";
+import type { Clip, Project } from "./project/types";
 
 const text = (start: number, duration: number, id: string) => ({ ...createTextClip(id, start, duration), id });
 const trackOf = (p: Project, id: string) => p.tracks.indexOf(findClip(p, id)!.track);
@@ -73,5 +73,35 @@ describe("revealSpan", () => {
   it("covers every layer of a template, to the last one settled", () => {
     const late = { ...createTextClip("Sub", 108, 60), animIn: { type: "fade", duration: 20 } };
     expect(revealSpan([title, late, createTextClip("Plain", 100, 90)], 100)).toEqual({ from: 100, to: 128 });
+  });
+});
+
+describe("animationSpan", () => {
+  const clip = { ...createTextClip("Title", 100, 90), animIn: { type: "rise", duration: 15 }, animOut: { type: "fade", duration: 20 }, animLoop: { type: "pulse", duration: 30 } };
+  it("plays the In from the clip's start to where it settles", () => {
+    expect(animationSpan(clip, "in")).toEqual({ from: 100, to: 115 });
+  });
+  it("plays the Out to the clip's last frame", () => {
+    expect(animationSpan(clip, "out")).toEqual({ from: 169, to: 189 });
+  });
+  it("plays one loop cycle after the In, or earlier when the clip has no room", () => {
+    expect(animationSpan(clip, "loop")).toEqual({ from: 115, to: 145 });
+    expect(animationSpan({ ...clip, duration: 40 }, "loop")).toEqual({ from: 109, to: 139 });
+  });
+  it("plays nothing for an empty slot, and never past a short clip", () => {
+    expect(animationSpan(createTextClip("Plain", 0, 30), "in")).toBeNull();
+    expect(animationSpan({ ...clip, duration: 10 }, "in")).toEqual({ from: 100, to: 109 });
+  });
+});
+
+describe("placeOnTop with footage", () => {
+  it("never shares a B-roll row, even one empty at that time, and goes above it", () => {
+    let p = createProject();
+    const broll = createTrack("video", "B-roll");
+    p = addTrack(p, broll, 0);
+    p = addClip(p, broll.id, { ...text(300, 60, "shot"), type: "video", assetId: "a1" } as unknown as Clip);
+    p = placeOnTop(p, text(0, 30, "title"), "Text");
+    expect(findClip(p, "title")!.track.id).not.toBe(broll.id);
+    expect(trackOf(p, "title")).toBeLessThan(p.tracks.findIndex((t) => t.id === broll.id));
   });
 });
