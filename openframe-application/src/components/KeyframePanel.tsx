@@ -89,7 +89,11 @@ export function KeyframePanel(props: Props) {
 function ClipName({ clip: c }: { clip: Clip }) {
   const file = useEditor((s) => ("assetId" in c ? s.project.assets.find((a) => a.id === c.assetId)?.name : undefined));
   const name = c.type === "text" ? c.text.split("\n")[0] || "Text" : (c.name ?? file ?? (c.type === "color" ? "Solid color" : "Adjustment"));
-  return <span className="kf-clip-name">{name}</span>;
+  return (
+    <span className="kf-clip-name" data-tip={name}>
+      {name}
+    </span>
+  );
 }
 
 function Head(props: { headerW: number; children?: React.ReactNode }) {
@@ -222,7 +226,7 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
   const [snapX, setSnapX] = useState<number | null>(null);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; refs: KeyRef[] } | null>(null);
-  const [easeBtn, setEaseBtn] = useState<{ x: number; y: number } | null>(null);
+  const [easeBtn, setEaseBtn] = useState<{ x: number; y: number; above: number } | null>(null);
   const gesture = useRef<Gesture | null>(null);
 
   const isSel = (r: KeyRef) => !!keySel?.some((x) => sameRef(x, r));
@@ -433,7 +437,7 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
             data-tip="Easing of the selected keyframes"
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
-              setEaseBtn({ x: r.left, y: r.bottom + 4 });
+              setEaseBtn({ x: r.left, y: r.bottom + 4, above: r.top - 4 });
             }}
           >
             <EaseCurve value={firstSel?.ease ?? "linear"} w={20} h={12} />
@@ -498,7 +502,7 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
         </div>
       )}
       {menu && <EaseMenu x={menu.x} y={menu.y} current={map[menu.refs[0].path]?.find((k) => k.f === menu.refs[0].f)?.ease} onPick={(e) => setEaseFor(menu.refs, e)} onClose={() => setMenu(null)} />}
-      {easeBtn && keySel && <EaseMenu x={easeBtn.x} y={easeBtn.y} current={firstSel?.ease} onPick={(e) => setEaseFor(keySel, e)} onClose={() => setEaseBtn(null)} />}
+      {easeBtn && keySel && <EaseMenu x={easeBtn.x} y={easeBtn.y} above={easeBtn.above} current={firstSel?.ease} onPick={(e) => setEaseFor(keySel, e)} onClose={() => setEaseBtn(null)} />}
     </>
   );
 }

@@ -119,6 +119,7 @@ export function CompositingSection({ clip }: { clip: VisualClip }) {
         <select
           className="field"
           aria-label="Track matte"
+          data-tip={m?.clipId ? `Clip: ${label}` : undefined}
           value={!m ? "none" : m.clipId ? "clip" : "above"}
           onChange={(e) => run(e.target.value === "none" ? "Remove track matte" : "Track matte", "set_track_matte", { clip_id: clip.id, matte_clip_id: e.target.value })}
         >

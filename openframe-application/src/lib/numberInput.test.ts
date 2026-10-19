@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boundedNumber, parseTyped } from "./numberInput";
+import { boundedNumber, parseTyped, stepDigits } from "./numberInput";
 
 describe("parseTyped", () => {
   it("reads plain, signed and decimal numbers", () => {
@@ -36,4 +36,17 @@ it("bounds committed music and export drafts without treating blanks as zero", (
   expect(boundedNumber("", 4, 300)).toBeNull();
   expect(boundedNumber("0.75", 0.5, 400)).toBe(0.75);
   expect(boundedNumber("12.9", 0, Infinity, true)).toBe(12);
+});
+
+describe("stepDigits", () => {
+  it("shows as many decimals as the step moves by", () => {
+    expect(stepDigits()).toBe(0);
+    expect(stepDigits(1)).toBe(0);
+    expect(stepDigits(5)).toBe(0);
+    expect(stepDigits(0.5)).toBe(1);
+    expect(stepDigits(0.1)).toBe(1);
+    expect(stepDigits(0.25)).toBe(2);
+    expect(stepDigits(0.01)).toBe(2);
+    expect(stepDigits(0.0001)).toBe(3);
+  });
 });

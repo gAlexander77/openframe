@@ -25,3 +25,13 @@ export function boundedNumber(raw: string, min = -Infinity, max = Infinity, inte
   const n = parseTyped(raw);
   return n === null ? null : Math.max(min, Math.min(max, integer ? Math.floor(n) : n));
 }
+
+/**
+ * The decimals a value moved in `step`s needs to show: a step of 0.25
+ * two, 0.1 one, 1 none. A field showing one decimal for every fractional
+ * step read Letterbox's 2.39:1 as 2.4 and Zoom pulse's 0.25/s as 0.3.
+ */
+export function stepDigits(step = 1): number {
+  const frac = String(step).split(".")[1] ?? "";
+  return Math.min(3, frac.length);
+}
