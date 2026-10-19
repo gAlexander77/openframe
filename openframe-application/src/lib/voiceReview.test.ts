@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareScript, diffWords, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
+import { compareScript, diffWords, judgeHearings, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
 
 describe("words to compare", () => {
   it("drops case and punctuation, spells numbers and says symbols", () => {
@@ -80,10 +80,53 @@ describe("verdicts", () => {
     expect(verdict({ ...ok, longestPause: 1.5 }, -20)).toHaveLength(1);
   });
 
-  it("respells CamelCase apart and capitals letter by letter", () => {
+  it("respells CamelCase apart, capitals letter by letter, and words as they sound", () => {
     expect(respell("OpenFrame")).toBe("Open Frame");
     expect(respell("MCP")).toBe("M C P");
     expect(respell("APIs")).toBe("A P Is");
-    expect(respell("hello")).toBeNull();
+    // Spelled against their sound, by the table and by the rules.
+    expect(respell("does")).toBe("duz");
+    expect(respell("Does")).toBe("duz");
+    expect(respell("home")).toBe("hohm");
+    expect(respell("phone")).toBe("fohn");
+    expect(respell("station")).toBe("stashun");
+    // A long word in syllables; a short regular one has nothing to change.
+    expect(respell("Olivet")).toBe("o-li-vet");
+    expect(respell("hello")).toBe("hel-lo");
+    expect(respell("cat")).toBeNull();
+  });
+
+  it("gives a concrete fix for every misheard word, never a placeholder", () => {
+    const line = { ...ok, text: "It does it all, home or away." };
+    const heard = (script: string, h: string, pronounce?: Record<string, string>) => verdict({ ...line, pronounce, differences: [{ kind: "misheard", script, heard: h, near: 1 }] }, -20);
+    expect(heard("does", "this")[0].args).toEqual({ clip_id: "c_1", pronounce: { does: "duz" } });
+    expect(heard("home", "helmed")[0].args).toEqual({ clip_id: "c_1", pronounce: { home: "hohm" } });
+    // Respelled already and still wrong: a slower read, and say to reword.
+    const again = heard("does", "this", { does: "duz" })[0];
+    expect(again.args).toEqual({ clip_id: "c_1", speed: 0.85 });
+    expect(again.problem).toMatch(/reword the line without "does"/);
+    // Nothing reads differently ("it", one short regular word): slower.
+    expect(heard("all", "on")[0].args).toEqual({ clip_id: "c_1", speed: 0.85 });
+    for (const f of [heard("does", "this"), heard("all", "on"), heard("it does", "its")].flat()) expect(JSON.stringify(f)).not.toMatch(/[<>]/);
+  });
+
+  it("says whether the voice or the recognizer is likely wrong, from a second hearing", () => {
+    const first = [{ kind: "misheard" as const, script: "does", heard: "this", near: 1 }, { kind: "misheard" as const, script: "home", heard: "helmed", near: 4 }, { kind: "misheard" as const, script: "it", heard: "its", near: 0, minor: true }];
+    const second = [{ kind: "misheard" as const, script: "home", heard: "hold", near: 4 }];
+    const judged = judgeHearings(first, second);
+    expect(judged.map((d) => d.likely)).toEqual(["recognizer", "voice", undefined]);
+    // The recognizer's mistake needs no retake; the voice's names it.
+    const fixes = verdict({ ...ok, text: "It does it all, home or away.", differences: judged }, -20);
+    expect(fixes).toHaveLength(1);
+    expect(fixes[0].problem).toMatch(/home.*likely the voice/);
+  });
+
+  it("holds a line to the pace it was meant to have", () => {
+    const tagline = { ...ok, sps: 2.6 };
+    expect(verdict(tagline, -20).map((f) => f.problem)).toEqual([expect.stringMatching(/^slow/)]);
+    expect(verdict({ ...tagline, pace: "slow" }, -20)).toEqual([]);
+    expect(verdict({ ...tagline, sps: 1.5, pace: "slow" }, -20)).toHaveLength(1);
+    expect(verdict({ ...ok, sps: 6.4, pace: "fast" }, -20)).toEqual([]);
+    expect(verdict({ ...ok, sps: 6.4 }, -20)).toHaveLength(1);
   });
 });

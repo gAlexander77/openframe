@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand } from "./commands";
-import { describeChanges, handleMcp, listTools, type McpHost } from "./mcp";
+import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -145,7 +145,7 @@ describe("MCP AI tools", () => {
   it("routes to the app's AI tools with only the options given", async () => {
     const h = host() as ReturnType<typeof host> & { aiCalls: unknown[][] };
     const r = await call(h, "tools/call", { name: "remove_silences", arguments: { clip_id: "c1", padding: 0.2 } });
-    expect(r?.result).toEqual({ content: [{ type: "text", text: JSON.stringify({ removed: 2 }) }] });
+    expect(r?.result).toMatchObject({ content: [{ type: "text", text: JSON.stringify({ removed: 2 }) }] });
     await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c1", "c2"] } });
     await call(h, "tools/call", { name: "remove_background", arguments: { clip_id: "c3" } });
     await call(h, "tools/call", { name: "sync_audio", arguments: { clip_id: "c4", video_clip_id: "c1", mute_camera: true } });
@@ -238,6 +238,17 @@ it("passes a voiceover script through with the options given, in the app's names
   expect(h.voiced).toEqual([[lines, { voice: "am_michael", captionY: 0.4 }]]);
 });
 
+it("passes a line's pace with its script, and review's second hearing", async () => {
+  const h = host();
+  await call(h, "tools/call", { name: "add_voiceover", arguments: { lines: [{ text: "Free. Yours.", pace: "slow", pause_after: 0.8 }] } });
+  expect(h.voiced).toEqual([[[{ text: "Free. Yours.", pace: "slow", pauseAfter: 0.8 }], {}]]);
+  await call(h, "tools/call", { name: "retake_voiceover", arguments: { clip_id: "c1", pace: "slow" } });
+  await call(h, "tools/call", { name: "review_voiceover", arguments: { recheck: false } });
+  expect(h.aiCalls).toEqual([["retakeVoiceover", "c1", { pace: "slow" }], ["reviewVoiceover", [], { recheck: false }]]);
+  const bad = await call(h, "tools/call", { name: "add_voiceover", arguments: { lines: [{ text: "Hi", pace: "dramatic" }] } });
+  expect(bad!.result).toMatchObject({ isError: true });
+});
+
 describe("MCP ad tools", () => {
   it("puts titles behind the subject through the AI host", async () => {
     const h = host();
@@ -266,6 +277,14 @@ describe("MCP ad tools", () => {
     expect(h.versionCalls).toEqual([{ versions: [{ ratio: "1:1", fit: "blur" }] }]);
     const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
     expect(none!.result).toMatchObject({ isError: true });
+  });
+
+  it("passes captions to every version that does not say", async () => {
+    const h = host();
+    await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "9:16" }, { ratio: "1:1", captions: "burn" }], captions: "none", check: true } });
+    expect(h.versionCalls).toEqual([{ versions: [{ ratio: "9:16", captions: "none" }, { ratio: "1:1", captions: "burn" }] }]);
+    const bad = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], captions: "srt" } });
+    expect(bad!.result).toMatchObject({ isError: true });
   });
 });
 
@@ -431,4 +450,17 @@ describe("what the launch film found (2026-10-18)", () => {
     expect(h.versionCalls.at(-1)).toEqual({ versions: [{ ratio: "9:16" }], at: [0.3, 0.6] });
     expect(text({ ...r!, result: { content: [(r!.result as { content: unknown[] }).content[1]] } } as typeof r)).toContain("30%, 60%");
   });
+});
+
+it("names the tool set in every answer, so the stdio bridge can say when it changes", async () => {
+  const h = host();
+  const init = (await call(h, "initialize")) as { result: { capabilities: { tools: { listChanged: boolean } }; _meta: Record<string, string> } };
+  expect(init.result.capabilities.tools.listChanged).toBe(true);
+  const mark = init.result._meta[TOOLS_META];
+  expect(mark).toMatch(/^[0-9a-f]{8}-[0-9a-f]+$/);
+  expect(mark).toBe(toolsFingerprint());
+  for (const [method, params] of [["tools/list", {}], ["ping", {}], ["tools/call", { name: "describe_project", arguments: {} }]] as const) {
+    const r = (await call(h, method, params)) as { result: { _meta: Record<string, string> } };
+    expect(r.result._meta[TOOLS_META], method).toBe(mark);
+  }
 });

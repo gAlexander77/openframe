@@ -127,6 +127,9 @@ export interface SpeechInfo {
   pronounce?: Record<string, string>;
   quality?: "best" | "draft";
   finish?: "natural" | "clean" | "raw";
+  /** The pace the line is meant to have: slow (an end card's tagline) or
+   * fast, so review_voiceover does not flag it for being so. */
+  pace?: "slow" | "normal" | "fast";
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */

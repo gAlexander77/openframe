@@ -40,6 +40,20 @@ Then:
 The app must be running with Allow AI agents on whenever the agent works;
 start a new agent session after adding the server.
 
+**When the app gains tools.** A client lists a server's tools once, when
+it connects, so tools (or parameters) a newer build adds stay invisible to
+a session that was already open. Every answer names the tool set it came
+from (`result._meta["openframe/tools"]`, a fingerprint of every name and
+schema), and the server says `tools.listChanged: true`:
+
+- **stdio** (`--mcp-stdio`): the bridge watches that fingerprint and sends
+  `notifications/tools/list_changed` after the first answer from another
+  tool set (the app was rebuilt and restarted while the client stayed
+  connected), and the client lists the tools again. Nothing to do.
+- **HTTP**: this server answers each POST and holds no stream to send a
+  notification on, so reconnect: in Claude Code, `/mcp`, choose `openframe`
+  and **Reconnect** (or restart Claude Code); in Codex, start a new session.
+
 ### Connect Codex CLI
 
 1. Under **Connect agents → Codex**, click **Add to Codex**. The app runs
@@ -175,6 +189,12 @@ window sliding in is `{"path": "transform.x", "at": 3, "value": 0.75,
 ...]}` in order as one edit and one undo step, all or nothing: a failing
 step names its number (`step 2 (set_animation): no clip with id nope`).
 
+`apply_layout` takes `fit`: `cover` (default) crops each picture to its
+cell, `contain` shows the whole picture centered in it (screen
+recordings), with `background` (a CSS color) filling the cell behind it as
+an editable shape. The Layout tracks go directly above the highest of the
+chosen clips' tracks, so titles already above them stay on top.
+
 `set_compressor` evens out a video's or audio clip's sound: `{"clip_ids":
 [...], "preset": "voice"}` (voice, gentle, strong or off), with threshold,
 ratio, knee, attack, release and makeup to adjust it; `describe_project`
@@ -227,7 +247,10 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   Voiceover track, with a caption per line, as one undo step with its
   speech files.
 - Per line: `voice` (another speaker, or a blend `"af_heart:70,af_bella:30"`),
-  `speed`, `at`, `pause_after`, `paragraph`, `caption`. The gap after a
+  `speed`, `at`, `pause_after`, `paragraph`, `caption`, `pace` (`slow`,
+  `normal`, `fast`: the pace the line is meant to have, kept with its
+  script; review then flags a slow line only under 2 syllables a second, a
+  fast one only over 7.5, and a fast line is not read again slower). The gap after a
   line follows its ending unless `pause_after` or the call's `gap` says
   otherwise: 0.4 s after a sentence, 0.1 s after a comma, 0.6 s after an
   ellipsis, 0.8 s after a paragraph.
@@ -248,7 +271,7 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   "engine": {"quality", "device", "dtype"}}`: cut the footage to those
   times.
 
-`review_voiceover` (`{"clip_ids"?, "music"?}`, read-only) hears each voice
+`review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
 timeline; a short word a letter off is `minor`), `words_per_second`,
@@ -256,9 +279,18 @@ timeline; a short word a letter off is `minor`), `words_per_second`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
 `range_st`), `voice_above_music_lu`, a `verdict` (`ok` or the problems)
 and `fixes` (`{problem, tool, args}`), plus a `summary` (lines ok, the
-script's words a second, the loudness spread). `retake_voiceover`
+script's words a second, the loudness spread). A line that differs from
+its script is heard again by Whisper small (`recheck`, default true; about
+250 MB downloaded once): each difference gains `likely`, `recognizer` (heard
+right the second time: no fix, a `notes` entry says so) or `voice`, and the
+line `heard_again` and `match_again` ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]). A misread word's fix is a
+`pronounce` respelling as it sounds ("does" "duz", "home" "hohm", "MCP"
+"M C P"), or, when it was respelled already or nothing reads differently,
+a slower read with the advice to reword; never a placeholder.
+Automatic captions and `get_transcript` give a whole voice take with a
+known script its script's words, timed by Whisper. `retake_voiceover`
 (`{"clip_id", "text"?, "caption"?, "voice"?, "speed"?, "pronounce"?,
-"quality"?, "finish"?, "ripple"?}`) reads one line again in its place:
+"quality"?, "finish"?, "pace"?, "ripple"?}`) reads one line again in its place:
 same clip id, its caption follows, the old take leaves the library,
 `ripple` moves the lines and captions after it. `list_catalog` section
 `voices` describes every voice for casting; `help` topic `voiceover` is
@@ -279,7 +311,7 @@ Original music ([[Features]], Generated music;
   ambient, bpm?, key?, mode?, length? | sections?: [{name, bars? |
   seconds? | at? | end_at?, energy?, seed?}], seed?, ending?: ring | stop,
   fx?, max_nudge?, loudness?, stems?, place?: mix | stems | none, start?,
-  markers?, name?}` composes and renders a score on this computer (about
+  markers?, name?, brightness?}` composes and renders a score on this computer (about
   10-15 s for a minute with stems, in a worker), imports it (and the drums, bass, harmony
   and lead stems when asked) and places it, as one undo step. It answers
   the cue sheet in timeline seconds: `bpm`, `key`, `progression`, `beat`,
@@ -288,10 +320,14 @@ Original music ([[Features]], Generated music;
   `kind`: drop, section, phrase, bar), `fit` (each asked-for time, what it
   got, the error and the tempo nudge), `measured` (LUFS, true peak, PLR,
   stereo correlation, the power below 250 Hz, to 4 kHz and above, the
-  octave slope) and the new `asset_id`, `clip_id` and `stems`. A drop at
+  octave slope, the `brightness` used) and the new `asset_id`, `clip_id` and `stems`. A drop at
   8.4 s after a four-bar intro: `{"style": "launch", "sections": [{"name":
   "intro", "bars": 4}, {"name": "drop", "at": 8.4, "bars": 8}, {"name":
   "outro", "end_at": 30}]}` plays at 114.3 BPM.
+- `brightness` (-1..1, default the style's: launch 0.4, the rest 0) tilts
+  the master about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the
+  lows 3 dB under 300 Hz; the loudness and true peak are met after it, and
+  the stems still add up to the mix.
 - `plan_music` (read-only) answers the same cue sheet, and the chord of
   every bar, without rendering: try a form, then generate with the seed
   it answers.
@@ -327,6 +363,12 @@ Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
   shutter and swooshUp; `set_transition` takes whipLeft, whipRight,
   zoomPunch and spinBlur.
 
+`add_text` (and a title added from the library) wraps inside the safe area
+where the title stands unless `style.maxWidth` says otherwise: 0.9 of the
+width centered (as before), on 9:16 the apps' column (0.62 centered), off
+center twice the room on the nearer side. Titles already made keep their
+width.
+
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
 footage; an empty color removes one. Ad looks: `glow` (`{"color":
@@ -350,7 +392,10 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `textless`, `fit`, `name`), one file each, the project untouched; with
 `"check": true` it answers a contact sheet of every version instead.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
-length). In another shape an ad element, or any group, moves and scales
+length). `captions` (on the call or a version) is `burn`, `none` or
+`as_project`: a tall version (9:16, 4:5) burns them by default, even from
+a hidden caption track, at the tall frame's caption place with their type
+kept against the short side; the rest keep the project's. In another shape an ad element, or any group, moves and scales
 as one unit: its parts keep their layout, it stays against the edges it
 was against (or centered), and it shrinks to fit the safe area when it
 must ([[ADR-063 Versions fit a group as one unit]]). Hand-animated
@@ -360,7 +405,13 @@ motion laid out again around that (a slide from off the edge still starts
 off the edge); a compound clip moved or scaled as a picture (a floating
 window) is refit as one picture and placed like a logo, shrunk into the
 safe area when the frame would cut it; a word too wide to wrap shrinks to
-the safe width. `check_at` (fractions of each version's length) picks the
+the safe width. A tall version of a wide film stacks what stood side by
+side ([[ADR-091 Tall versions stack what stood side by side]]): a picture
+in one half with a title or picture in the other becomes the picture above
+the title, each as wide as the safe column (a split screen's cells cut
+again wider), what sat on a picture (a label, a glow) moving with it, all
+above the burned captions; a square version moves such a pair as one
+group. `check_at` (fractions of each version's length) picks the
 moments the check sheet shows. Long runs answer
 `running`; `export_status` follows them and lists the `versions` when
 done.

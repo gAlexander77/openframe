@@ -87,6 +87,9 @@ export interface MusicRequest {
   fx?: boolean;
   /** How far the tempo may move to fit times, a fraction (default 0.06). */
   max_nudge?: number;
+  /** The master's tilt, -1 (darker) .. 1 (brighter), for the render; default
+   * the style's (render.ts tiltEq). The plan does not depend on it. */
+  brightness?: number;
 }
 
 export interface NoteEvent {

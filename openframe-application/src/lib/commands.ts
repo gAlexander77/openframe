@@ -11,7 +11,7 @@ import { shiftRuns, styleRange } from "./textRuns";
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
-import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionY } from "./captionLooks";
+import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionSized, captionY } from "./captionLooks";
 import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
@@ -55,7 +55,7 @@ import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRati
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
-import { AD_ELEMENTS, addAdElement, SPOTS, type AdBackground, type AdElement, type Spot } from "./ads";
+import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
 import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
@@ -223,7 +223,7 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
   letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
   lineHeight: S.num("Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines)", { minimum: 0.5, maximum: 3 }),
-  maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
+  maxWidth: S.num("Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons)", { minimum: 0.1, maximum: 1 }),
 }, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
 /** A gradient's radial fields, shared by add_shape and set_shape. */
@@ -435,7 +435,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -451,7 +451,11 @@ export const COMMANDS: Command[] = [
     ),
     run: (p, a) => {
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
+      const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
+      // A long line wraps inside the safe area where it stands, instead of
+      // running off the frame (9:16: off the apps' column).
+      style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
@@ -831,13 +835,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "apply_layout",
-    description: "Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.",
+    description: "Arrange 2 to 4 overlapping visual clips in input order. fit cover (default) fills each cell, cropping the picture; contain shows the whole picture centered in its cell (screen recordings, slides), with background filling the cell behind it. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. The clips move to Layout tracks directly above the highest of their tracks, so titles already above them stay on top. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders and backgrounds are editable shape layers grouped with their pictures. One undo step.",
     input: S.obj({ clip_ids: S.ids("2 to 4 distinct visual clip ids in cell order; PIP main first"), layout: S.str("Cell arrangement", { enum: [...LAYOUTS] }),
       gap: S.num("Gutter as fraction of the shorter canvas side; default 0.02", { minimum: 0, maximum: 0.3 }),
       margin: S.num("Outer margin as fraction of the shorter canvas side; default 0.04", { minimum: 0, maximum: 0.4 }),
       radius: S.num("Rounded mask radius, 0 square to 1 half the shorter cell side; default 0", { minimum: 0, maximum: 1 }),
       border: S.obj({ width: S.num("Stroke width in pixels at 1080p", { minimum: 0, maximum: 100 }), color: S.str("CSS border color") }, ["width", "color"], "Optional editable border shapes"),
       animate: S.str("Entrance over 0.4 seconds, clipped to clip duration; default none", { enum: ["none", "slide", "scale"] }),
+      fit: S.str("cover (default): fill each cell, cropping the picture; contain: the whole picture, centered in its cell (the PIP's full-frame picture always covers)", { enum: ["cover", "contain"] }),
+      background: S.str("With fit contain: a CSS color filling each cell behind its picture, as an editable shape"),
     }, ["clip_ids", "layout"]),
     run: (p, a) => commandError(() => applyLayout(p, a.clip_ids as string[], a.layout as Layout, a as LayoutOptions)),
   },
@@ -2680,7 +2686,7 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
     const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
     lastEnd = end;
-    const fit = captionFit(p, { ...CAPTION_STYLE, ...style } as TextStyle, 0);
+    const fit = captionFit(p, { ...captionSized(p, CAPTION_STYLE), ...style } as TextStyle, 0);
     const text = createTextClip(cap.text, start, end - start, fit.style);
     const clip: Clip = {
       ...text,

@@ -13,6 +13,7 @@ import { frameOfSource } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
 import type { Clip, Id, Project, Track } from "../lib/project/types";
 import { merge, missing, wordRanges, wordsIn, type Heard } from "../lib/transcript";
+import { assetWords } from "../lib/scriptWords";
 import { edit } from "./actions";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -97,7 +98,8 @@ export async function transcribeTrack(trackId: Id) {
         },
         signal,
       );
-      heard.set(c.assetId, merge(heard.get(c.assetId), gap.start, gap.end, words));
+      // A whole take read from a script says its script, timed by Whisper (ADR-092).
+      heard.set(c.assetId, merge(heard.get(c.assetId), gap.start, gap.end, assetWords(p, c.assetId, gap.start, gap.end, words)));
       changed();
     }
   } catch (e) {

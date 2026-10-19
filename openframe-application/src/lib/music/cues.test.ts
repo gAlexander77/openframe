@@ -82,3 +82,9 @@ describe("plan_music and generate_music over MCP", () => {
     expect(calls.at(-1)).toEqual(["generateMusic", "", { style: "ambient", length: 20 }]);
   });
 });
+
+it("reads brightness, -1..1", () => {
+  expect(readMusicArgs({ style: "launch", brightness: 0.5 }).request.brightness).toBe(0.5);
+  expect(readMusicArgs({ style: "launch" }).request.brightness).toBeUndefined();
+  expect(() => readMusicArgs({ style: "launch", brightness: 2 })).toThrow(/brightness/);
+});

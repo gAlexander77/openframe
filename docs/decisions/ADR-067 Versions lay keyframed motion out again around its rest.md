@@ -77,8 +77,8 @@ broke it:
   `scripts/drive/mcp-launch-film.js` saves the check sheet.
 - **Side-by-side layouts collide.** A title beside a window on 16:9
   overlaps it on 9:16, since each set is placed alone (the film's "Cut."
-  over its window). Re-stacking a layout is a layout engine; until there
-  is one, `save_project_copy` and lay that version out by hand.
+  over its window). Superseded for tall versions by
+  [[ADR-091 Tall versions stack what stood side by side]].
 - **The content box is a box.** A shadow sprite's transparent margin
   counts as content, so a window with a soft shadow is fitted a little
   smaller than its visible edge needs.

@@ -44,6 +44,10 @@ export interface ReadOptions {
   quality?: Quality;
   /** natural (the default), clean or raw (lib/voiceTake.ts). */
   finish?: FinishId;
+  /** The pace the line is meant to have, kept with its script: a fast line
+   * is not read again slower for being rushed, and review_voiceover holds
+   * a slow or fast line to that. */
+  pace?: SpeechInfo["pace"];
 }
 
 /** A line read and finished, ready to save. */
@@ -84,7 +88,7 @@ function append(a: Part | null, b: Part, seconds: number): Part {
  * mark, that stretch is read again in two parts, the first ending on a
  * comma so its pitch stays up, and joined with the mark's silence.
  */
-async function readPart(text: string, marks: { at: number; seconds: number }[], o: Required<Omit<ReadOptions, "pronounce">>, f: Finish, signal: AbortSignal, engine: Take["engine"], how: Take["pauses"]): Promise<Part> {
+async function readPart(text: string, marks: { at: number; seconds: number }[], o: Required<Omit<ReadOptions, "pronounce" | "pace">>, f: Finish, signal: AbortSignal, engine: Take["engine"], how: Take["pauses"]): Promise<Part> {
   const spoken = await speak(text, o.voice, o.speed, undefined, signal, o.quality);
   signal.throwIfAborted();
   engine.device = spoken.device;
@@ -165,7 +169,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
   };
   let speed: number = opts.speed;
   let out = await read(speed);
-  if (opts.finish === "natural" && o.speed === undefined) {
+  if (opts.finish === "natural" && o.speed === undefined && o.pace !== "fast") {
     const sps = written.split(/\s+/).reduce((n, w) => n + syllables(w), 0) / Math.max(0.3, out.last - out.first);
     if (sps > RUSHED_SPS) {
       speed = +Math.max(opts.speed * 0.8, (opts.speed * 5) / sps).toFixed(2);
@@ -173,7 +177,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
     }
   }
   const { audio } = finishTake(out.audio, out.rate, f, hash(text));
-  const info: SpeechInfo = { text, voice: opts.voice, speed, quality: opts.quality, finish: opts.finish, ...(pronounce && Object.keys(pronounce).length ? { pronounce } : {}) };
+  const info: SpeechInfo = { text, voice: opts.voice, speed, quality: opts.quality, finish: opts.finish, ...(pronounce && Object.keys(pronounce).length ? { pronounce } : {}), ...(o.pace && o.pace !== "normal" ? { pace: o.pace } : {}) };
   return { speedChosen: speed !== opts.speed, audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine };
 }
 
@@ -248,6 +252,8 @@ export interface VoiceLine {
   pauseAfter?: number;
   /** The line ends a paragraph: a longer pause after it. */
   paragraph?: boolean;
+  /** The pace it is meant to have (an end-card tagline: slow). */
+  pace?: SpeechInfo["pace"];
 }
 
 export interface VoiceoverOptions extends ReadOptions {
@@ -286,7 +292,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     for (const [i, l] of lines.entries()) {
       // ponytail: lines are read one by one in the one speech worker; on a
       // CPU without WebGPU a long script can pass the desktop bridge's 300 s.
-      takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed }, signal));
+      takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed, pace: l.pace }, signal));
       updateToast(tid, { progress: (i + 1) / (lines.length + 1) });
     }
     const assets = await takeAssets(takes, signal);
@@ -362,7 +368,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
   const tid = toast("Reading the line again", "progress");
   set({ clipId, progress: 0, abort });
   try {
-    const take = await readLine(text, { voice: o.voice ?? was?.voice, speed: o.speed ?? was?.speed, pronounce: o.pronounce ?? was?.pronounce, quality: o.quality ?? was?.quality, finish: o.finish ?? was?.finish }, signal);
+    const take = await readLine(text, { voice: o.voice ?? was?.voice, speed: o.speed ?? was?.speed, pronounce: o.pronounce ?? was?.pronounce, quality: o.quality ?? was?.quality, finish: o.finish ?? was?.finish, pace: o.pace ?? was?.pace }, signal);
     const caption = o.caption ?? (o.text !== undefined ? take.written : undefined);
     if (caption !== undefined) take.info.caption = o.caption;
     else if (was?.caption) take.info.caption = was.caption;

@@ -641,6 +641,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 | `loudness` | number |  | Integrated loudness to master to, LUFS (default -14, online video) (-30..-8) |
 | `stems` | boolean |  | Also import the drums, bass, harmony and lead stems (default false) |
 | `place` | "mix" \| "stems" \| "none" |  | mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only |
@@ -677,6 +678,7 @@ The cue sheet generate_music would answer for these arguments, at once and witho
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 
 Example:
 
@@ -955,7 +957,7 @@ Frame pictures on the canvas, centered: fit shows the whole picture, fill covers
 
 ### apply_layout
 
-Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.
+Arrange 2 to 4 overlapping visual clips in input order. fit cover (default) fills each cell, cropping the picture; contain shows the whole picture centered in its cell (screen recordings, slides), with background filling the cell behind it. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. The clips move to Layout tracks directly above the highest of their tracks, so titles already above them stay on top. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders and backgrounds are editable shape layers grouped with their pictures. One undo step.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -968,6 +970,8 @@ Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Trip
 | `border.width` | number | yes | Stroke width in pixels at 1080p (0..100) |
 | `border.color` | string | yes | CSS border color |
 | `animate` | "none" \| "slide" \| "scale" |  | Entrance over 0.4 seconds, clipped to clip duration; default none |
+| `fit` | "cover" \| "contain" |  | cover (default): fill each cell, cropping the picture; contain: the whole picture, centered in its cell (the PIP's full-frame picture always covers) |
+| `background` | string |  | With fit contain: a CSS color filling each cell behind its picture, as an editable shape |
 
 ### align_clips
 
@@ -1450,7 +1454,8 @@ Titles, templates, stickers, captions and the transcript.
 
 ### add_text
 
-Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
+Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; 
+ breaks a line where you choose.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1495,7 +1500,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id |
 
@@ -1550,7 +1555,7 @@ Change text clips' style with clip_ids (or clip_id). New text requires exactly o
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 
 Example:
 
@@ -1687,7 +1692,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `y` | number |  | Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons |
 | `replace` | boolean |  | Remove existing captions first |
 
@@ -1963,7 +1968,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `lines` | { text, caption, at, voice, speed, pause_after, paragraph }[] | yes | The script, one sentence or two per line (a breath each) |
+| `lines` | { text, caption, at, voice, speed, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
 | `lines[].text` | string | yes | Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/> |
 | `lines[].caption` | string |  | What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL) |
 | `lines[].at` | number |  | Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before (0..) |
@@ -1971,6 +1976,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `lines[].speed` | number |  | This line's speed; default the call's (0.5..2) |
 | `lines[].pause_after` | number |  | Seconds of silence before the next line (overrides gap and the line's ending) (0..10) |
 | `lines[].paragraph` | boolean |  | This line ends a paragraph: 0.8 s before the next |
+| `lines[].pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast; review_voiceover then flags it only past 2 or 7.5 syllables a second, and a fast line is not read again slower for being rushed (default normal) |
 | `voice` | string |  | Voice id, or a blend of voices' styles ("af_heart:60,af_bella:40"); default af_heart, the most natural |
 | `speed` | number |  | 1 is the model's own pace (about 3.3 words a second inside a line); default 0.95, a narrator's (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
@@ -2016,7 +2022,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `caption_style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `caption_style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `caption_style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
 
 Example:
@@ -2027,12 +2033,13 @@ Example:
 
 ### review_voiceover
 
-Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
+Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. A line meant to be slow or fast (add_voiceover's pace) is held to that. The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] |  | Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line |
 | `music` | boolean |  | Measure each line's margin over the music tracks under it (default true) |
+| `recheck` | boolean |  | Hear a line with a difference again with a larger Whisper model (small, 249 MB downloaded once), to say whether the recognizer or the voice is wrong (default true) |
 
 Example:
 
@@ -2054,6 +2061,7 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 | `pronounce` | object |  | Words respelled for the voice, replacing the line's own map ({} clears it) |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
+| `pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have; default the line's own |
 | `ripple` | boolean |  | Move the lines and captions after it by the change in length (default false) |
 
 Example:
@@ -2398,20 +2406,22 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `versions` | { ratio, duration, textless, fit, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions` | { ratio, duration, textless, fit, captions, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
 | `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
 | `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
 | `versions[].textless` | boolean |  | Titles and captions off |
 | `versions[].fit` | "fill" \| "blur" \| "fit" |  | How full-frame footage meets a new shape: fill (default), blur, fit |
+| `versions[].captions` | "burn" \| "none" \| "as_project" |  | burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest) |
 | `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
 | `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
 | `textless` | boolean |  | Also a textless version, in the first ratio |
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
+| `captions` | "burn" \| "none" \| "as_project" |  | For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
 | `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92] |

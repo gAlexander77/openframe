@@ -299,6 +299,12 @@ Undo removes it and its file. Best quality downloads the full speech model
 read at a narrator's pace with natural pauses, one level, and a quiet room
 under the silences.
 
+**Caption a voice:** the Captions tab's **Generate captions** hears the
+timeline on this computer. A voice made by the app (Text to speech, or an
+agent's voiceover) is captioned in the words it was given to read, at the
+times it says them, so a word the recognizer mishears never reaches the
+captions.
+
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
 it (in a window too narrow for four columns the media library steps aside
@@ -317,7 +323,10 @@ OpenFrame to its settings and tells you whether it was added, was already
 there, or the program was not found (with a link to install it). You can
 also copy the ready-made command or, for Codex, the `config.toml` entry.
 Start a new Codex or Claude Code session afterwards, and keep OpenFrame
-open with Allow AI agents on while the agent works.
+open with Allow AI agents on while the agent works. After updating
+OpenFrame, an agent added with the button sees the new tools by itself;
+one connected over HTTP (the copied command) needs a reconnect: in Claude
+Code, type `/mcp`, choose openframe and Reconnect.
 
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection (with step-by-step
@@ -428,13 +437,21 @@ Every use keeps its cuts and effects; Undo restores the old location. Choose
 the same media kind with the original audio/video streams and at least the
 original duration. When a proxy exists, the check reports that editing copy.
 
+## Titles that fit the frame
+
+A new title's lines wrap inside the frame's safe area: on a vertical (9:16)
+project, inside the column the TikTok, Reels and Shorts buttons leave, so a
+long line breaks onto the next instead of running under them. To break a
+line where you want, press Enter while editing the title on the canvas.
+Titles made before this keep the width they had.
+
 ## Inline title styling
 
 In the text inspector, expand **Style range**, choose a word, and set its color or weight. Clear word style restores that word to the title style. Agents can use `style_text_range` with character offsets or a literal match, including all occurrences, to apply color, gradient, weight, italic, underline, or size scale. Ranges use UTF-16 offsets with an exclusive end. Typing shifts and trims ranges; inserted characters inside a range inherit it. Run colors override animated base color. The inline editor preserves styling while typing; its caret and selection use the base font, so use the word picker for precise mixed-font range styling. Preview, alignment, text checks and version exports use the same run-aware raster layout.
 
 ## Layout presets
 
-Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
+Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. Choose **Fill** to crop each picture to its cell, or **Fit** to show the whole picture centered in it (a screen recording stays readable). The pictures move to Layout tracks just above the highest of their tracks, so a label you already placed above them stays on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
 
 ## Group transforms
 

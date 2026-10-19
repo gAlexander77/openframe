@@ -3,7 +3,9 @@
 // measured from its file, its loudness and its margin over the music
 // measured from the mix as export renders it (measure_loudness's
 // machinery), and a verdict naming the tool that fixes each problem. The
-// model making the video cannot listen; this is its ears.
+// model making the video cannot listen; this is its ears. A line that
+// differs from its script is heard again by a larger Whisper before the
+// voice is blamed: what only the small one misheard needs no retake.
 
 import { decodeMono } from "../engine/analyze";
 import { measureMix } from "../engine/mixdown";
@@ -16,7 +18,7 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { compareScript, verdict, type LineMeasure } from "../lib/voiceReview";
+import { compareScript, judgeHearings, verdict, type LineMeasure } from "../lib/voiceReview";
 import { parseLine, syllables, writtenWords } from "../lib/voiceScript";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
@@ -25,9 +27,13 @@ import { TRANSCRIPT_MODEL } from "./transcript";
 import { dismiss, toast, updateToast } from "./toast";
 
 const RATE = 16000;
+
+/** The second opinion on a line that differs from its script: Whisper
+ * small (249 MB, downloaded once), against base's first hearing. */
+export const RECHECK_MODEL = "onnx-community/whisper-small.en_timestamped";
 const round = (x: number | null | undefined, d = 2) => (x === null || x === undefined || !Number.isFinite(x) ? null : +x.toFixed(d));
 
-export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } = {}) {
+export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; recheck?: boolean } = {}) {
   if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
   const p = store.document();
   const lines: VoiceClip[] = clipIds?.length
@@ -42,7 +48,8 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
   const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress");
   const fps = p.fps;
   try {
-    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[] })[] = [];
+    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; recheck?: { heard: string; match: number | null } })[] = [];
+    const heardPcm: Float32Array[] = [];
     for (const [k, c] of lines.entries()) {
       const asset = getAsset(p, c.assetId);
       if (!asset) throw new Error(`${c.id} has no media`);
@@ -52,6 +59,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
       const pcm = await decodeMono(asset, from, to, RATE, undefined, signal);
       const heardWords = await transcribePcm(pcm, 0, { model: TRANSCRIPT_MODEL, language: null }, () => undefined, signal);
       const heard = heardWords.map((w) => w.text.trim()).join(" ");
+      heardPcm.push(pcm);
       const act = speechActivity(pcm, RATE);
       const pitch = pitchStats(pitchTrack(pcm, RATE));
       const sp = asset.speech;
@@ -86,6 +94,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
         voice: sp?.voice,
         speed: sp?.speed,
         pronounce: sp?.pronounce,
+        pace: sp?.pace,
         volume: c.volume,
         compressed: !!c.compressor,
         wps: act && span > 0.3 ? round(words / span) : null,
@@ -110,6 +119,24 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
       });
       updateToast(tid, { progress: (k + 1) / lines.length });
     }
+    // A second hearing, by a larger model, of each line that differs from
+    // its script: what it hears right was the first recognizer's mistake.
+    const doubtful = measured.map((m, i) => ({ m, i, sp: getAsset(p, lines[i].assetId)?.speech })).filter(({ m, sp }) => sp && m.differences.some((d) => !d.minor));
+    let recheckFailed: string | undefined;
+    if (opts.recheck !== false && doubtful.length) {
+      updateToast(tid, { text: "Hearing the doubtful lines again, with a larger model" });
+      try {
+        for (const { m, i, sp } of doubtful) {
+          const again = (await transcribePcm(heardPcm[i], 0, { model: RECHECK_MODEL, language: null }, () => undefined, signal)).map((w) => w.text.trim()).join(" ");
+          const second = compareScript(sp!.text, again, sp!.pronounce);
+          m.differences = judgeHearings(m.differences, second.differences);
+          m.recheck = { heard: again, match: second.words ? round(second.matched / second.words) : null };
+        }
+      } catch (e) {
+        if (signal.aborted) throw e;
+        recheckFailed = e instanceof Error ? e.message : String(e);
+      }
+    }
     const levels = measured.map((m) => m.lufs).filter((x): x is number => x !== null).sort((a, b) => a - b);
     const median = levels.length ? levels[Math.floor(levels.length / 2)] : null;
     const out = measured.map((m) => {
@@ -122,7 +149,10 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
         ...(m.text ? { script: parseLine(m.text).written } : {}),
         heard: m.heard,
         match: m.words ? round(m.matched / m.words) : null,
-        differences: m.differences.map((d, i) => ({ kind: d.kind, ...(d.script ? { script: d.script } : {}), ...(d.heard ? { heard: d.heard } : {}), at: m.diffAt[i] })),
+        differences: m.differences.map((d, i) => ({ kind: d.kind, ...(d.script ? { script: d.script } : {}), ...(d.heard ? { heard: d.heard } : {}), at: m.diffAt[i], ...(d.likely ? { likely: d.likely } : {}) })),
+        ...(m.recheck ? { heard_again: m.recheck.heard, match_again: m.recheck.match } : {}),
+        ...(m.differences.some((d) => d.likely === "recognizer") ? { notes: m.differences.filter((d) => d.likely === "recognizer").map((d) => `"${d.script ?? d.heard}": misheard by the first recognizer, heard right by a larger model; the voice is fine`) } : {}),
+        ...(m.pace && m.pace !== "normal" ? { pace: m.pace } : {}),
         words_per_second: m.wps,
         syllables_per_second: m.sps,
         lead_silence: m.lead,
@@ -148,6 +178,8 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean } 
         script_words_per_second: last > first ? round(words / (last - first)) : null,
         loudness_spread_lu: levels.length > 1 ? round(levels.at(-1)! - levels[0], 1) : 0,
         heard_with: TRANSCRIPT_MODEL.split("/").pop(),
+        ...(measured.some((m) => m.recheck) ? { heard_again_with: RECHECK_MODEL.split("/").pop() } : {}),
+        ...(recheckFailed ? { heard_again: `not done: the larger model could not run (${recheckFailed}); a difference may be the recognizer's` } : {}),
       },
     };
   } finally {

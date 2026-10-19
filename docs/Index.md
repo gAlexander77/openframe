@@ -292,3 +292,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   meters, master gain, timed image loops and profile display preferences.
 - [[ADR-090 Collected projects use relative media in a new folder]] — native
   collection, portable paths and fresh identities when opening JSON.
+- [[ADR-091 Tall versions stack what stood side by side]] — a window beside
+  its headline becomes the window above it on 9:16 and 4:5, a split
+  screen's halves are stacked and cut wider, followers ride along, captions
+  are a version's choice (burned on tall ones).
+- [[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]] — captions and
+  transcripts of a voice with a script use its words, timed by Whisper; a
+  review hears a doubtful line again with a larger model before blaming the
+  voice, fixes are concrete respellings, and a line's pace intent is kept.

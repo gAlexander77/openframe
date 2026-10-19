@@ -13,7 +13,7 @@ import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
-import { expandVersions, VERSION_FITS, VERSION_RATIOS, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
+import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -235,6 +235,7 @@ function musicSchema(files: boolean): JsonSchema {
     fx: { type: "boolean", description: "Risers, impacts, reverse cymbals and braams into and on the drops (default true)" },
     max_nudge: { type: "number", minimum: 0, maximum: 0.2, description: "How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06)" },
     start: { type: "number", minimum: 0, description: "Timeline seconds the music starts at (default 0); the answer's times include it" },
+    brightness: { type: "number", minimum: -1, maximum: 1, description: "The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0)" },
   };
   if (files) {
     Object.assign(p, {
@@ -436,6 +437,7 @@ const SPEED: JsonSchema = { type: "number", minimum: 0.5, maximum: 2, descriptio
 const PRONOUNCE: JsonSchema = { type: "object", description: 'Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"}' };
 const QUALITY: JsonSchema = { type: "string", enum: ["best", "draft"], description: "best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download" };
 const FINISH: JsonSchema = { type: "string", enum: ["natural", "clean", "raw"], description: "natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed" };
+const PACE: JsonSchema = { type: "string", enum: ["slow", "normal", "fast"], description: "The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast; review_voiceover then flags it only past 2 or 7.5 syllables a second, and a fast line is not read again slower for being rushed (default normal)" };
 
 // The local AI tools: analysis on this machine, then one undoable edit each
 // ([[AI tools]], ADR-019). They take a while on long clips.
@@ -651,6 +653,7 @@ APP_TOOLS.push(
               speed: { ...SPEED, description: "This line's speed; default the call's" },
               pause_after: { type: "number", minimum: 0, maximum: 10, description: "Seconds of silence before the next line (overrides gap and the line's ending)" },
               paragraph: { type: "boolean", description: "This line ends a paragraph: 0.8 s before the next" },
+              pace: PACE,
             },
             ["text"],
           ),
@@ -670,19 +673,20 @@ APP_TOOLS.push(
       ["lines"],
     ),
     call: async (h, a) => {
-      const lines = (a.lines as Record<string, unknown>[]).map((l) => given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, pauseAfter: l.pause_after, paragraph: l.paragraph }));
+      const lines = (a.lines as Record<string, unknown>[]).map((l) => given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, pauseAfter: l.pause_after, paragraph: l.paragraph, pace: l.pace }));
       return json(await h.voiceover(lines, given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
     },
   },
   {
     name: "review_voiceover",
     description:
-      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
+      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. A line meant to be slow or fast (add_voiceover's pace) is held to that. The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line" },
       music: { type: "boolean", description: "Measure each line's margin over the music tracks under it (default true)" },
+      recheck: { type: "boolean", description: "Hear a line with a difference again with a larger Whisper model (small, 249 MB downloaded once), to say whether the recognizer or the voice is wrong (default true)" },
     }),
-    call: async (h, a) => json(await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music }))),
+    call: async (h, a) => json(await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music, recheck: a.recheck }))),
   },
   {
     name: "retake_voiceover",
@@ -698,11 +702,12 @@ APP_TOOLS.push(
         pronounce: { ...PRONOUNCE, description: "Words respelled for the voice, replacing the line's own map ({} clears it)" },
         quality: QUALITY,
         finish: FINISH,
+        pace: { ...PACE, description: "The pace the line is meant to have; default the line's own" },
         ripple: { type: "boolean", description: "Move the lines and captions after it by the change in length (default false)" },
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, ripple: a.ripple }))),
+    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple }))),
   },
   {
     name: "auto_adjust",
@@ -727,7 +732,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -738,6 +743,7 @@ APP_TOOLS.push(
             duration: { type: "number", minimum: 1, description: "Seconds; shorter than the project makes a cut-down" },
             textless: { type: "boolean", description: "Titles and captions off" },
             fit: { type: "string", enum: VERSION_FITS, description: "How full-frame footage meets a new shape: fill (default), blur, fit" },
+            captions: { type: "string", enum: VERSION_CAPTIONS, description: "burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest)" },
             name: { type: "string", description: "File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s'" },
           },
           ["ratio"],
@@ -747,6 +753,7 @@ APP_TOOLS.push(
       durations: { type: "array", items: { type: "number", minimum: 1 }, description: "...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6]" },
       textless: { type: "boolean", description: "Also a textless version, in the first ratio" },
       fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
+      captions: { type: "string", enum: VERSION_CAPTIONS, description: "For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
       check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
@@ -757,7 +764,7 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
-      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined }, master);
+      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined }, master);
       const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
@@ -819,7 +826,32 @@ const GUIDES: Record<string, { name: string; text: () => string }> = {
 /** The server's first words to a model, for the generated reference. */
 export const instructions = () => INSTRUCTIONS;
 
-const ok = (id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, result });
+/** Where every answer names the tool set it came from (_meta), for the
+ * stdio bridge (src-tauri/src/mcp.rs) to watch. */
+export const TOOLS_META = "openframe/tools";
+
+let toolsMark: string | undefined;
+/**
+ * A short fingerprint of the tool set (every name and schema): a client
+ * lists the tools once, when it connects, so a build that adds tools or
+ * parameters is invisible to it. Every answer carries this in its _meta,
+ * and the stdio bridge sends notifications/tools/list_changed when it
+ * changes (a rebuilt app, a hot update in development), so the client
+ * lists them again.
+ */
+export function toolsFingerprint(): string {
+  if (toolsMark) return toolsMark;
+  const s = JSON.stringify(listTools());
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  return (toolsMark = `${h.toString(16).padStart(8, "0")}-${s.length.toString(16)}`);
+}
+
+const ok = (id: JsonRpcRequest["id"], result: unknown): JsonRpcResponse => ({
+  jsonrpc: "2.0",
+  id: id ?? null,
+  result: result && typeof result === "object" && !Array.isArray(result) ? { ...result, _meta: { ...(result as { _meta?: object })._meta, [TOOLS_META]: toolsFingerprint() } } : result,
+});
 const fail = (id: JsonRpcRequest["id"], code: number, message: string): JsonRpcResponse => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
 /**
@@ -834,7 +866,8 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
     case "initialize":
       return ok(req.id, {
         protocolVersion: MCP_PROTOCOL_VERSION,
-        capabilities: { tools: { listChanged: false }, resources: {}, prompts: { listChanged: false } },
+        // The stdio bridge says when the tools change; over HTTP a client reconnects.
+        capabilities: { tools: { listChanged: true }, resources: {}, prompts: { listChanged: false } },
         serverInfo: { name: host.name, version: host.version },
         instructions: instructionsFor(host),
       });

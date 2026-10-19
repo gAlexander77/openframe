@@ -14,6 +14,7 @@ import { animationSpan, placeOnTop, revealSpan } from "../lib/overlays";
 import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
 import { addTemplate, TEXT_TEMPLATES, wordArtStyle } from "../lib/templates";
 import { secondsToFrames, type Rational } from "../lib/time";
+import { titleWrap } from "../lib/ads";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -63,9 +64,12 @@ function topTrack(p: Project, name: string): [Project, Id] {
   return [ops.addTrack(p, t, 0), t.id];
 }
 
-/** The clip a preset adds; the library card's preview renders this same clip. */
-export function presetClip(preset: TextPreset, start: number, fps: Rational): Clip {
-  const clip = createTextClip(preset.text, start, secondsToFrames(layerSeconds(), fps), preset.style);
+/** The clip a preset adds; the library card's preview renders this same
+ * clip. On a canvas, its lines wrap inside the canvas's title-safe area
+ * (on 9:16, the apps' column; titleWrap). */
+export function presetClip(preset: TextPreset, start: number, fps: Rational, canvas?: { width: number; height: number }): Clip {
+  const style = canvas && preset.style.maxWidth === undefined ? { ...preset.style, maxWidth: titleWrap(canvas, 0) } : preset.style;
+  const clip = createTextClip(preset.text, start, secondsToFrames(layerSeconds(), fps), style);
   return {
     ...clip,
     transform: { ...clip.transform, y: preset.y ?? 0 },
@@ -78,7 +82,7 @@ export function presetClip(preset: TextPreset, start: number, fps: Rational): Cl
 export function placeTextPreset(p: Project, key: string, at: number): { project: Project; clipId: Id } | null {
   const preset = TEXT_PRESETS[key];
   if (!preset) return null;
-  const clip = presetClip(preset, at, p.fps);
+  const clip = presetClip(preset, at, p.fps, p);
   return { project: placeOnTop(p, clip, "Text"), clipId: clip.id };
 }
 

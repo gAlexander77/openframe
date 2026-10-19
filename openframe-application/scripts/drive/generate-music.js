@@ -14,7 +14,12 @@
 // - spectral balance against the ranges in docs/research/Music generation
 //   2026-10-19.md: the slope of the octave bands 125 Hz-4 kHz (commercial
 //   mixes average -4.5 dB an octave; dance mixes run brighter), the power
-//   below 250 Hz, crest factor in the drops and stereo correlation;
+//   below 250 Hz and above 4 kHz, crest factor in the drops and stereo
+//   correlation;
+// - the launch style at 68 s in the third launch film's form (drops at 8
+//   and 40 s, the final hit at 60) sits in the same ranges at its default
+//   brightness, and brightness -1 and 1 tilt it each way with the
+//   loudness and true peak held;
 // - plan_music with the same arguments answers the same cue sheet.
 async (page) => {
   await page.waitForFunction(() => !!window.videoEditor);
@@ -92,6 +97,14 @@ async (page) => {
         spec,
       };
     }
+    // The film's form at 68 s, at the default brightness and at both ends.
+    const film = [{ name: "intro", bars: 4 }, { name: "drop", at: 8, bars: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 4 }, { name: "drop", at: 40 }, { name: "outro", at: 60, end_at: 68 }];
+    out.film = {};
+    for (const brightness of [undefined, -1, 1]) {
+      await call("new_project", { name: `Film form ${brightness ?? "default"}` });
+      const g = await call("generate_music", { style: "launch", seed: 7, key: "F", mode: "minor", sections: film, place: "none", ...(brightness === undefined ? {} : { brightness }) });
+      out.film[brightness ?? "default"] = { duration: g.duration, measured: g.measured };
+    }
     // Fitting an edit: an intro of four bars, a drop at 8.4 s (between bar
     // lines at 120 BPM) and an outro ending exactly at 56 s.
     out.fit = await call("plan_music", { style: "launch", seed: 3, sections: [{ name: "intro", bars: 4 }, { name: "drop", at: 8.4, bars: 8 }, { name: "breakdown", bars: 4 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }] });
@@ -99,14 +112,16 @@ async (page) => {
   });
   const fit = results.fit;
   delete results.fit;
+  const film = results.film;
+  delete results.film;
 
   // Acceptance ranges per style (the research note gives the reasons).
   const RANGES = {
-    launch: { slope: [-4.5, -0.5], low: [0.5, 0.9] },
-    cinematic: { slope: [-5, -0.5], low: [0.35, 0.85] },
-    corporate: { slope: [-4.5, -0.5], low: [0.4, 0.85] },
-    lofi: { slope: [-6, -1.5], low: [0.4, 0.85] },
-    ambient: { slope: [-4, 1], low: [0.2, 0.7] },
+    launch: { slope: [-4.5, -0.5], low: [0.5, 0.9], high: [0.018, 0.045] },
+    cinematic: { slope: [-5, -0.5], low: [0.35, 0.85], high: [0.004, 0.03] },
+    corporate: { slope: [-4.5, -0.5], low: [0.4, 0.85], high: [0.01, 0.04] },
+    lofi: { slope: [-6, -1.5], low: [0.4, 0.85], high: [0, 0.01] },
+    ambient: { slope: [-4, 1], low: [0.2, 0.7], high: [0.001, 0.02] },
   };
   const details = {};
   for (const [style, r] of Object.entries(results)) {
@@ -126,13 +141,26 @@ async (page) => {
     const starts = r.sections.slice(1).filter((s) => !s.startsWith("outro")).map((s) => +s.split("@")[1]);
     const found = r.analysis.sections.map((s) => +s.split("@")[1]);
     details[`${style}: sections`] = { ok: starts.every((t) => found.some((f) => near(f, t))), planned: r.sections, found: r.analysis.sections };
-    details[`${style}: spectrum`] = { ok: r.balance.slope >= range.slope[0] && r.balance.slope <= range.slope[1] && r.balance.low >= range.low[0] && r.balance.low <= range.low[1], ...r.balance };
+    details[`${style}: spectrum`] = { ok: r.balance.slope >= range.slope[0] && r.balance.slope <= range.slope[1] && r.balance.low >= range.low[0] && r.balance.low <= range.low[1] && r.balance.high >= range.high[0] && r.balance.high <= range.high[1], ...r.balance };
     details[`${style}: crest and width`] = { ok: r.crest_drops_db >= 8 && r.crest_drops_db <= 16 && r.correlation >= 0.3 && r.correlation <= 0.98, crest_drops_db: r.crest_drops_db, correlation: r.correlation };
     // A drop section's marker and its Drop marker share a label and a time: one marker.
     details[`${style}: markers`] = { ok: r.markers.bars > 10 && r.markers.drops === r.sections.filter((x) => x.startsWith("drop")).length && r.markers.sections === r.sections.filter((x) => !x.startsWith("drop")).length, ...r.markers };
     details[`${style}: plan_music agrees`] = { ok: r.plan_matches };
     details[`${style}: render time`] = { ok: r.seconds < 60, seconds: r.seconds, key: r.key, progression: r.progression };
   }
+  const L = RANGES.launch, m = film.default.measured;
+  details["launch at 68 s in the film's form: in range at the default brightness"] = {
+    ok: film.default.duration === 68 && m.brightness === 0.4 && m.slope_db_per_octave >= L.slope[0] && m.slope_db_per_octave <= L.slope[1] && m.low >= L.low[0] && m.low <= L.low[1] && m.high >= L.high[0] && m.high <= L.high[1] && Math.abs(m.lufs + 14) <= 0.1 && m.true_peak_dbtp <= -0.95,
+    ...m,
+  };
+  const [dark, bright] = [film[-1].measured, film[1].measured];
+  details["brightness tilts it each way, loudness and true peak held"] = {
+    ok: dark.high < m.high && m.high < bright.high && dark.low > m.low && m.low > bright.low && [dark, bright].every((x) => Math.abs(x.lufs + 14) <= 0.1 && x.true_peak_dbtp <= -0.95),
+    high: [dark.high, m.high, bright.high],
+    low: [dark.low, m.low, bright.low],
+    lufs: [dark.lufs, m.lufs, bright.lufs],
+    true_peak: [dark.true_peak_dbtp, m.true_peak_dbtp, bright.true_peak_dbtp],
+  };
   const drop = fit.sections.find((x) => x.role === "drop");
   details["fit: drop at 8.4 s, end at 56 s"] = { ok: fit.fit.ok && Math.abs(drop.start - 8.4) < 0.01 && fit.duration === 56 && Math.abs(fit.sections.at(-1).end - 56) < 1e-9, bpm: fit.bpm, nudge: fit.fit.nudge, targets: fit.fit.targets, note: fit.fit.note };
   return { ok: Object.values(details).every((d) => d.ok), details };

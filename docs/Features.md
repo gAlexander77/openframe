@@ -546,7 +546,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
-  stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
+  stroke, shadow, background box, in/out/loop animations. **A new title
+  wraps inside the safe area** where it stands (`titleWrap`): a centered
+  one within 90% of the width (the old default, so 16:9 is unchanged), on
+  9:16 within the column the apps' buttons leave (0.62 centered, 0.7 on the
+  column's own center), one off center within twice the room on its nearer
+  side, so a long line wraps instead of running off. A width asked for is
+  kept; titles already made keep theirs, so older projects draw the same;
+  `export_versions` gives the titles it lays out again the new frame's
+  width. A word wider than that still runs past it (`check_project` says
+  so). **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
 - **Font weight** (100 thin to 900 black): the Text tab's Weight list
@@ -567,7 +576,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
   (capitals with the spoken word highlighted), Neon and Minimal, each
   previewed on its card; one click restyles and places every caption,
-  words and timings kept (`set_caption_look`).
+  words and timings kept (`set_caption_look`). On a tall canvas a look,
+  and `add_captions`' default style, is sized by the short side: a caption
+  has the same pixels on 1080x1920 as on 1920x1080, instead of growing
+  with the height to a dozen letters a line (a size asked for is kept).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
@@ -652,7 +664,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and it is compared with the script word by word; each line's pace
   (words and syllables a second), silences, longest pause, loudness, true
   peak, pitch range and margin over the music are measured, with a verdict
-  and the tool calls that fix what is wrong.
+  and the tool calls that fix what is wrong. A line that differs from its
+  script is heard again by a larger Whisper (small) before the voice is
+  blamed: what only the first one misheard needs no retake, and each
+  difference says whether the recognizer or the voice is likely wrong. A
+  misread word gets a respelling as it sounds ("does" "duz", "home"
+  "hohm"), or a slower read and the advice to reword when it was respelled
+  already; never a placeholder. A line marked `pace: slow` (an end-card
+  tagline) is not flagged as slow ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
 - **Retake one line** (agents: `retake_voiceover`): new words, a voice, a
   speed or a pronunciation, read and put in the line's place; its caption
   follows, the old take leaves the library, and `ripple` moves the lines
@@ -663,7 +682,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption
-  list editing; apply style to all; SRT/VTT import and export.
+  list editing; apply style to all; SRT/VTT import and export. A voice
+  read from a script (a voiceover line, text to speech) is captioned in its
+  script's words, timed by what Whisper heard, so a synthetic voice's "All
+  of it, home" is no longer "Olivet Helmed"; the transcript of a whole take
+  says its script too ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
   and case as chosen, with a live match count; titles are left alone.
@@ -701,7 +724,12 @@ same arguments and seed give the same music.
 - **Mixed and mastered**: stereo width with a mono low end, convolution
   reverb sends, a ping-pong delay on the lead, each stem's loudness set
   to the style's balance, then a glue compressor and a true-peak limiter
-  to -14 LUFS (or any target) under -1 dBTP.
+  to -14 LUFS (or any target) under -1 dBTP. **Brightness** (agents:
+  `brightness`, -1..1) tilts the master about 1 kHz (at 1 the highs 6 dB up
+  from 3 kHz and the lows 3 dB down under 300 Hz), darker under a busy
+  voice or brighter for a launch, the loudness and true peak held; the
+  launch style leans bright by default (0.4), as its measurements against
+  the hand-made track it imitates asked.
 - **Fits the edit**: a length, or sections with bars, seconds or fixed
   times (a drop at 8.0 s, an outro ending at 56 s); the tempo moves a
   little so they land on bar lines, and the answer says how each fit.
@@ -916,6 +944,14 @@ makes a 13 s one). Times are timeline seconds.
   again around it, a window compound sliding in from off the edge still
   does on 9:16, and a one-word wordmark too wide to wrap shrinks to the
   safe width ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+  A tall version of a wide film stacks what stood side by side: a window
+  above the headline beside it, a split screen's halves one above the
+  other (cut again wider), each as wide as the safe column, a label or a
+  glow on a window moving with it; a square version moves each such pair
+  as one group. Captions are burned in on tall versions by default (even
+  from a hidden caption track), sized by the short side and kept clear of
+  the stacks; `captions` says `burn`, `none` or `as_project`
+  ([[ADR-091 Tall versions stack what stood side by side]]).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
@@ -1045,6 +1081,9 @@ Three doors, one engine ([[Automation]]):
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
+  Every answer names the tool set it came from, so the stdio bridge tells
+  a connected client (`notifications/tools/list_changed`) when a newer
+  build brings other tools; over HTTP the client reconnects ([[Automation]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.
@@ -1114,7 +1153,7 @@ In the text inspector, expand **Style range**, choose a word, and set its color 
 
 ## Layout presets
 
-Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
+Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. **Fill** (the default) crops each picture to its cell; **Fit** shows the whole picture centered in it, for screen recordings (`fit: "contain"`, with `background` filling the cell behind it as an editable shape). The Layout tracks go directly above the highest of the chosen clips' tracks, so labels already above them stay on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
 
 ## Group transforms
 

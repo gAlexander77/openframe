@@ -110,7 +110,8 @@ export async function generateMusic(args: Record<string, unknown>, onProgress?: 
     plan.fit.targets.length ? plan.fit.note : "",
     plan.ending === "ring" ? `The final hit is at ${cue.final_hit} s and rings out to the end.` : `It stops on the final hit at ${cue.final_hit} s.`,
   ].filter(Boolean).join(" ");
-  return { asset_id: mix.id, ...(clipId ? { clip_id: clipId } : {}), ...(stems ? { stems } : {}), ...cue, measured: files.measured, markers, note };
+  const brightness = o.request.brightness ?? STYLES[plan.style].brightness ?? 0;
+  return { asset_id: mix.id, ...(clipId ? { clip_id: clipId } : {}), ...(stems ? { stems } : {}), ...cue, measured: { ...files.measured, brightness }, markers, note };
 }
 
 // ---- preview (the Generate music card) -------------------------------------------------

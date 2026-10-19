@@ -6,6 +6,7 @@
 import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
 import { currentCaptions, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, wordsToCaptions } from "../lib/captions";
 import { runCommand } from "../lib/commands";
+import { withScripts } from "../lib/scriptWords";
 import type { TextStyle } from "../lib/project/types";
 import { platform } from "../platform";
 import { store } from "./store";
@@ -32,8 +33,9 @@ export async function generateCaptions(opts: { model: string; language: string |
   const signal = AbortSignal.any([running.signal, projectWork.signal()]);
   const id = toast("Preparing audio…", "progress");
   try {
-    const words = await transcribeTimeline(
-      store.get().project,
+    const project = store.get().project;
+    const heard = await transcribeTimeline(
+      project,
       opts,
       (s) => {
         onProgress?.(s);
@@ -42,6 +44,9 @@ export async function generateCaptions(opts: { model: string; language: string |
       signal,
     );
     signal.throwIfAborted();
+    // A voice line read from a script (add_voiceover, text to speech) says
+    // its script: Whisper only times it (ADR-092).
+    const words = withScripts(project, heard);
     // One word at a time (CapCut's short-form style): no line can hold two.
     const caps = wordsToCaptions(words, opts.oneWord ? { ...DEFAULT_LINES, maxChars: 1, minDuration: 0.25 } : DEFAULT_LINES);
     if (!caps.length) {

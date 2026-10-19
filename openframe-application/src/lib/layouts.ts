@@ -1,13 +1,15 @@
 import { fittedSize } from "./render/size";
-import { createColorClip, uid } from "./project/defaults";
-import { findClip, updateClip } from "./project/ops";
-import { placeStack } from "./overlays";
-import type { Project, VisualClip } from "./project/types";
+import { createColorClip, createTrack, uid } from "./project/defaults";
+import { addClip, addTrack, findClip, updateClip } from "./project/ops";
+import type { Clip, Project, VisualClip } from "./project/types";
 
 export const LAYOUTS = ["split-vertical", "split-horizontal", "grid-2x2", "triptych", "pip-top-right", "pip-top-left", "pip-bottom-right", "pip-bottom-left", "pip-center-card"] as const;
 export type Layout = typeof LAYOUTS[number];
 export interface Cell { x: number; y: number; w: number; h: number }
-export interface LayoutOptions { gap?: number; margin?: number; radius?: number; border?: { width: number; color: string }; animate?: "none" | "slide" | "scale" }
+/** cover fills the cell, cropping the picture; contain shows the whole
+ * picture inside it (a screen recording), centered. */
+export type LayoutFit = "cover" | "contain";
+export interface LayoutOptions { gap?: number; margin?: number; radius?: number; border?: { width: number; color: string }; animate?: "none" | "slide" | "scale"; fit?: LayoutFit; background?: string }
 
 /** Gap and margin are fractions of the shorter canvas side: equal pixel gutters. */
 export function layoutCells(layout: Layout, count: number, width: number, height: number, gap = 0.02, margin = 0.04): Cell[] {
@@ -40,6 +42,31 @@ export function coverCell(source: { w: number; h: number }, cell: Cell, width: n
   return { scale, x: (cell.x + cell.w / 2) / width - 0.5, y: (cell.y + cell.h / 2) / height - 0.5, crop: { left: x, right: x, top: y, bottom: y } };
 }
 
+/** The whole picture inside the cell, centered: no crop, the cell's empty
+ * sides left to its background. */
+export function containCell(source: { w: number; h: number }, cell: Cell, width: number, height: number) {
+  const scale = Math.min(cell.w / source.w, cell.h / source.h);
+  return { scale, x: (cell.x + cell.w / 2) / width - 0.5, y: (cell.y + cell.h / 2) / height - 0.5, crop: { left: 0, right: 0, top: 0, bottom: 0 }, w: source.w * scale, h: source.h * scale };
+}
+
+/** Layers in new tracks named `name` directly above track index `at`,
+ * bottom layer first: each one row above every earlier layer it overlaps. */
+function stackAt(p: Project, clips: Clip[], at: number, name: string): Project {
+  const rows: number[] = [];
+  clips.forEach((c, i) => {
+    const under = clips.slice(0, i).flatMap((o, j) => (o.start < c.start + c.duration && o.start + o.duration > c.start ? [rows[j]] : []));
+    rows.push(under.length ? Math.max(...under) + 1 : 0);
+  });
+  for (let row = 0; row <= Math.max(...rows); row++) {
+    const track = createTrack("video", name);
+    p = addTrack(p, track, at);
+    clips.forEach((c, i) => {
+      if (rows[i] === row) p = addClip(p, track.id, c);
+    });
+  }
+  return p;
+}
+
 export function applyLayout(p: Project, ids: string[], layout: Layout, options: LayoutOptions = {}): Project {
   if (new Set(ids).size !== ids.length) throw new Error("Clip ids must be distinct");
   const cells = layoutCells(layout, ids.length, p.width, p.height, options.gap, options.margin);
@@ -54,11 +81,18 @@ export function applyLayout(p: Project, ids: string[], layout: Layout, options: 
   // above it, so in picture in picture it must be the full-frame picture.
   const onMain = new Set(p.tracks.find(t => t.main)?.clips.filter(c => ids.includes(c.id)).map(c => c.id));
   if (layout.startsWith("pip-") && ids.slice(1).some(id => onMain.has(id))) throw new Error("A main-track clip stays underneath: put it first, as the full-frame picture, or move the card off the main track");
+  // The Layout tracks go directly above the highest of the chosen clips'
+  // tracks, so titles already above them (a split screen's labels) stay
+  // above; they once went above every title showing then and hid them.
+  const top = Math.min(...ids.map((id) => p.tracks.findIndex((t) => t.clips.some((c) => c.id === id))));
+  const homes = new Set(ids.map((id) => findClip(p, id)!.track.id));
   const stack: VisualClip[] = [];
   clips.forEach((c, i) => {
-    const cell = cells[i], fit = coverCell(fittedSize(p, c), cell, p.width, p.height);
-    const main = layout.startsWith("pip-") && i === 0;
-    const group = options.border?.width && !main ? c.group ?? uid("g") : c.group;
+    const cell = cells[i], main = layout.startsWith("pip-") && i === 0;
+    const contain = options.fit === "contain" && !main;
+    const fit = contain ? containCell(fittedSize(p, c), cell, p.width, p.height) : { ...coverCell(fittedSize(p, c), cell, p.width, p.height), w: cell.w, h: cell.h };
+    const backed = contain && !!options.background;
+    const group = ((options.border?.width || backed) && !main) ? c.group ?? uid("g") : c.group;
     const keyframes = Object.fromEntries(Object.entries(c.keyframes ?? {}).filter(([path]) => !path.startsWith("transform.") && !path.startsWith("crop.") && !path.startsWith("mask.")));
     const duration = Math.min(c.duration - 1, Math.max(1, Math.round(p.fps.num / p.fps.den * 0.4)));
     const animate = (clip: VisualClip): VisualClip => {
@@ -74,6 +108,15 @@ export function applyLayout(p: Project, ids: string[], layout: Layout, options: 
       animIn: undefined, animOut: undefined, animLoop: undefined, canvas: undefined, edge: undefined, wiggle: undefined,
     });
     p = updateClip(p, c.id, () => next);
+    // A contained picture's cell, filled behind it: an editable shape.
+    if (backed) {
+      const bg = createColorClip(options.background!, c.start, c.duration);
+      bg.name = "Layout background";
+      bg.group = group;
+      bg.shape = { kind: "rectangle", width: cell.w / p.width, height: cell.h / p.height, radius: options.radius ?? 0, fill: true, draw: 1 };
+      bg.transform = { ...bg.transform, x: fit.x, y: fit.y };
+      stack.push(animate(bg));
+    }
     stack.push(next);
     // ponytail: borders are ordinary editable shapes, not linked layout
     // objects. Remove an old border before applying another bordered layout.
@@ -81,13 +124,17 @@ export function applyLayout(p: Project, ids: string[], layout: Layout, options: 
       const border = createColorClip(options.border.color, c.start, c.duration);
       border.name = "Layout border";
       border.group = group;
-      border.shape = { kind: "rectangle", width: cell.w / p.width, height: cell.h / p.height, radius: options.radius ?? 0, fill: false, stroke: options.border, draw: 1 };
+      // Around the cell; a contained picture without a background, around the picture.
+      const [bw, bh] = contain && !backed ? [fit.w, fit.h] : [cell.w, cell.h];
+      border.shape = { kind: "rectangle", width: bw / p.width, height: bh / p.height, radius: options.radius ?? 0, fill: false, stroke: options.border, draw: 1 };
       border.transform = { ...border.transform, x: fit.x, y: fit.y };
       stack.push(animate(border));
     }
   });
-  // Stack the chosen clips in input order, main PIP picture first. Existing
-  // clips on their old tracks stay untouched; borders remain editable shapes.
+  // Stack the chosen clips in input order, main PIP picture first, above
+  // the highest of their tracks. A track they leave empty goes; other clips
+  // stay untouched; borders remain editable shapes.
   p = { ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(c => !ids.includes(c.id) || onMain.has(c.id)) })) };
-  return placeStack(p, stack.filter(c => !onMain.has(c.id)), "Layout");
+  p = stackAt(p, stack.filter(c => !onMain.has(c.id)), top, "Layout");
+  return { ...p, tracks: p.tracks.filter(t => !homes.has(t.id) || t.main || t.clips.length > 0) };
 }
