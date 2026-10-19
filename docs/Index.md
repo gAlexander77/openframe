@@ -257,3 +257,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   `docs/` at the root for both.
 - [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
   agents run the gates locally and never start it; Pages deploys on its own.
+- [[ADR-089 Mixer taps and timed images share the render engines]] — post-fader
+  meters, master gain, timed image loops and profile display preferences.
+- [[ADR-090 Collected projects use relative media in a new folder]] — native
+  collection, portable paths and fresh identities when opening JSON.

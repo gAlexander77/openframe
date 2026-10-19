@@ -322,7 +322,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
 function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
-  const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
+  const metadata = [asset.animated ? `Animated image · ${formatDuration(asset.duration)}` : asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
     asset.width && asset.height ? `${asset.width}×${asset.height}` : null,
     asset.fps ? `${Number(asset.fps.toFixed(3))} fps` : null,
     asset.size ? formatBytes(asset.size) : null].filter(Boolean).join(" · ");
@@ -343,7 +343,7 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
-        {!list && asset.kind === "video" && asset.hasVideo && <HoverScrub asset={asset} />}
+        {!list && (asset.kind === "video" || asset.animated) && asset.hasVideo && <HoverScrub asset={asset} />}
         {!list && asset.kind !== "image" && <span className="chip num">{formatDuration(asset.duration)}</span>}
         {!list && uses.length > 0 && <span className="badge-added">Added</span>}
         {!list && add}

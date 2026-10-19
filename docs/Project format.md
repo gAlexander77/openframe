@@ -383,3 +383,14 @@ Agents usually find commands easier than raw JSON: seconds instead of
 frames, every argument validated with a readable error. See the registry in
 `src/lib/commands.ts` and `window.videoEditor.commands()` for the live list
 with JSON Schemas ([[ADR-006 Every edit is a named command with a JSON Schema]]).
+
+## Optional mixer and animated-image fields
+
+`Project.masterVolume` is linear master gain (default 1). `Track.color` is
+one of the clip-label palette names; a clip label overrides it. Track pan,
+solo and height survive normalization. Display preferences are not project
+fields. `Asset.animated` marks an ImageDecoder-backed image; `duration`
+then contains one loop in seconds. The image clip can last longer and loop.
+Collected JSON uses relative `src` and `proxy` paths beside the project file,
+including LUTs and nested cutout media; opening it creates a fresh id.
+`ImageClip.imageIn` optionally stores the animation phase in source seconds; trims and splits preserve it.

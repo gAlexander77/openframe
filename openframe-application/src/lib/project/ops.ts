@@ -195,6 +195,7 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
     out = { ...out, in: c.in + dir(c) * sourceOffset(c, d, fps) } as Clip;
     if (c.speedCurve) out = { ...out, speedCurve: { ...c.speedCurve, points: shiftPoints(c.speedCurve.points, -d) } } as Clip;
   }
+  if (c.type === "image") out = { ...out, imageIn: (c.imageIn ?? 0) + framesToSeconds(d, fps) } as Clip;
   if (c.keyframes) out = { ...out, keyframes: shiftKeys(c.keyframes, -d) };
   if (c.type === "text" && c.wordTimes) out = { ...out, wordTimes: c.wordTimes.map((f) => f - d) } as Clip;
   return out;

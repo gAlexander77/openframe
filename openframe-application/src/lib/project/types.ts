@@ -28,6 +28,8 @@ export interface Project {
   fps: Rational;
   /** Audio mix rate, 48000 unless an agent asks otherwise. */
   sampleRate: number;
+  /** Master linear gain, applied to preview and export. */
+  masterVolume?: number;
   /** Color behind every layer (CSS hex). */
   background: string;
   assets: Asset[];
@@ -86,6 +88,8 @@ export interface Asset {
   /** Edit-friendly copy (desktop: made by ffmpeg) when the webview cannot
    * decode the original. Preview and export read this when present. */
   proxy?: string;
+  /** Timed image frames repeat for the length of the clip. */
+  animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */
   duration: number;
   width?: number;
@@ -120,6 +124,7 @@ export interface LutFile {
 export type TrackKind = "video" | "audio";
 
 export interface Track {
+  color?: ClipLabel;
   id: Id;
   kind: TrackKind;
   name: string;
@@ -722,7 +727,7 @@ export type VideoClip = ClipBase &
     frameBlend?: boolean;
   };
 export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
-export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id };
+export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &
   Visual & {
     type: "text";

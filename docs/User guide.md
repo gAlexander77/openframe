@@ -400,3 +400,49 @@ Choose **Locate…**, pick one replacement, review its path, then **Relink file*
 Every use keeps its cuts and effects; Undo restores the old location. Choose
 the same media kind with the original audio/video streams and at least the
 original duration. When a proxy exists, the check reports that editing copy.
+
+## Mix tracks
+
+Open **Mixer** from the timeline toolbar or **View > Mixer**. Move each
+track's vertical fader to balance its level in dB, and use pan to place it
+left or right. **Mute** silences a track; **Solo** plays only soloed tracks.
+The meters show peak and RMS after track gain and pan. The master strip
+controls the whole mix, including exports, and shows stereo levels and
+short-term LUFS. A drag is one undo step. Double-click a fader or pan to
+reset it. Close the panel with **Close mixer**.
+
+## Use animated images
+
+Import an animated GIF, WebP or APNG like any image. Supported webviews read
+its frame timing and transparency. A new clip lasts one loop; drag its right
+edge farther to repeat it. Hover across its library card to scrub frames.
+The same animation is drawn during playback and export, including imported
+animated stickers. When ImageDecoder is unavailable the image is treated as
+a still. Loops larger than 256 MiB after decoding are refused; use a smaller
+animation in that case.
+
+## Change the timeline display
+
+Open **Timeline display** on the timeline toolbar to show or hide waveforms,
+video thumbnails or clip names, and choose small, medium or large tracks.
+These choices stay with your profile and do not change exports. Medium
+retains individual heights set in track menus. Right-click a track header
+and choose a **Track color** swatch to tint its clips. A clip with its own
+label color keeps that color instead. **No track color** removes the tint.
+
+## Move or open a project file
+
+On desktop, choose **File > Collect files**, then a destination folder.
+OpenFrame creates a new subfolder containing `project.json` and `media`.
+Wait for copying to finish, then move that entire subfolder together. Media,
+proxies, LUTs and background-removal cutouts are included. A missing source
+must be relinked before collecting. The original project and files stay put.
+
+Choose **File > Open project file** and select the JSON. It opens as a new
+saved project; its relative media paths are resolved beside the JSON on
+desktop. If media is missing, open **Media > Manage media** and relink it.
+
+On the web, **Collect files** downloads only the JSON. Media remains in this
+browser profile. Opening that JSON elsewhere does not transfer its media;
+relink the original files there. Automation's `collect_project` is desktop
+only; `open_project_file` accepts a path only on desktop.

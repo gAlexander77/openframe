@@ -4,6 +4,7 @@ import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
 import { store } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
+import { useTimelineDisplay } from "../state/timelineDisplay";
 import { thumbs } from "../engine/thumbs";
 import { AudioLines, Captions, Square, Sticker, Group, Image, Layers, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { CLIP_LABELS, EFFECTS, FILTERS } from "../lib/catalog";
@@ -56,6 +57,7 @@ function useThumbVersion() {
 /** Source second under clip-relative frame r (fractional), following the
  * clip's speed, ramp and direction, so strips and waveforms show what plays. */
 function sourceAt(c: Clip, r: number, fps: Project["fps"]): number {
+  if (c.type === "image") return (c.imageIn ?? 0) + framesToSeconds(r, fps);
   if (!isTimed(c)) return 0;
   if (c.freeze) return c.in;
   return c.in + (c.reverse ? -1 : 1) * sourceOffset(c, r, fps);
@@ -80,7 +82,8 @@ function paintStrip(cv: HTMLCanvasElement, p: Props, h: number, x0: number, w: n
     let img: ImageBitmap | undefined;
     if (strip.step === Infinity) img = strip.frames[0];
     else {
-      const t = sourceAt(c, (x + tileW / 2) / p.zoom, p.fps);
+      const raw = sourceAt(c, (x + tileW / 2) / p.zoom, p.fps);
+      const t = p.asset?.animated && p.asset.duration > 0 ? ((raw % p.asset.duration) + p.asset.duration) % p.asset.duration : raw;
       const i = Math.min(strip.frames.length - 1, Math.max(0, Math.round(t / strip.step)));
       img = strip.frames[i] ?? strip.frames.find(Boolean);
     }
@@ -199,22 +202,24 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
 
 export const ClipView = memo(function ClipView(p: Props) {
   const { clip: c, zoom, height } = p;
+  const display = useTimelineDisplay();
+  const tint = c.labelColor ?? p.track.color;
   const v = useThumbVersion();
   const w = c.duration * zoom;
   const x0 = Math.max(0, p.visFrom);
   const x1 = Math.min(w, p.visTo);
   const visW = Math.max(0, x1 - x0);
   const dpr = window.devicePixelRatio || 1;
-  const isVideo = c.type === "video" || c.type === "image" || c.type === "compound";
+  const isVideo = display.thumbnails && (c.type === "video" || c.type === "image" || c.type === "compound");
   const compoundSound = useMemo(() => !!p.compound && compoundHasSound(store.get().project, p.compound), [p.compound]);
-  const showWave = (c.type === "video" && !c.muted && p.asset?.hasAudio) || c.type === "audio" || (c.type === "compound" && !c.muted && compoundSound);
+  const showWave = display.waveforms && ((c.type === "video" && !c.muted && p.asset?.hasAudio) || c.type === "audio" || (c.type === "compound" && !c.muted && compoundSound));
   const bodyH = c.type === "audio" ? height - LABEL_H : height - LABEL_H - (showWave ? WAVE_H : 0);
 
-  const strip = useCanvas((cv) => isVideo && paintStrip(cv, p, bodyH, x0, visW), [v, x0, visW, zoom, c, bodyH, p.compound]);
+  const strip = useCanvas((cv) => isVideo && paintStrip(cv, p, bodyH, x0, visW), [v, x0, visW, zoom, c, bodyH, p.compound, isVideo]);
   const waveH = c.type === "audio" ? bodyH : WAVE_H;
   const wave = useCanvas(
     (cv) => showWave && paintWave(cv, p, waveH, x0, visW, c.type === "audio" ? "#3f95d6" : "rgb(170 230 235 / 55%)"),
-    [v, x0, visW, zoom, c, waveH, p.compound],
+    [v, x0, visW, zoom, c, waveH, p.compound, showWave],
   );
 
   // A clip's own name (Rename) wins over its media's, words or effects.
@@ -231,8 +236,8 @@ export const ClipView = memo(function ClipView(p: Props) {
   return (
     <div
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
-      style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height, ...(c.labelColor ? ({ "--label": CLIP_LABELS[c.labelColor].color } as React.CSSProperties) : {}) }}
-      data-label={c.labelColor}
+      style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height, ...(tint ? ({ "--label": c.labelColor ? CLIP_LABELS[tint].color : `color-mix(in srgb, ${CLIP_LABELS[tint].color} 38%, #20252b)` } as React.CSSProperties) : {}) }}
+      data-label={tint}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       // Keyboard reach (UX-33): Tab focuses one clip, arrows move between
       // them. A click must not focus it, or the arrows would stop stepping
@@ -257,7 +262,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         {p.renaming ? (
           <RenameField name={name} label="Clip name" className="clip-rename" onDone={(v) => p.onRename?.(c, v)} />
         ) : (
-          !tiny && (
+          !tiny && display.names && (
             <span
               className="clip-name"
               // Titles keep CapCut's double-click for their words; their

@@ -59,6 +59,18 @@ const savePicker = () =>
 
 export const web: Platform = {
   kind: "web",
+  async openProjectFile(path) {
+    if (path) throw new Error("Opening a project by path is desktop only; use Open project file.");
+    const [file] = await pickFiles(".json,application/json");
+    return file ? JSON.parse(await file.text()) : null;
+  },
+  async collectProject(project, onProgress) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }));
+    Object.assign(document.createElement("a"), { href: url, download: "project.json" }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+    onProgress(1);
+    return "Project JSON downloaded. Media stays in this browser; collecting media files is desktop only.";
+  },
 
   async pickMedia() {
     return web.adoptFiles(await pickFiles("video/*,audio/*,image/*,.mkv,.mov"));

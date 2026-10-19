@@ -164,7 +164,7 @@ export function clipForAsset(asset: Asset, start: number, fps: Rational): Clip {
       type: "image",
       assetId: asset.id,
       start,
-      duration: secondsToFrames(stillSeconds, fps),
+      duration: asset.animated ? full : secondsToFrames(stillSeconds, fps),
       ...visual(),
     };
     return clip;
@@ -373,6 +373,7 @@ export function normalizeProject(raw: unknown): Project {
       name: typeof a.name === "string" ? a.name : a.src.split(/[\\/]/).pop()!,
       src: a.src,
       duration: num(a.duration, 0),
+      ...(a.animated === true ? { animated: true } : {}),
       hasVideo: typeof a.hasVideo === "boolean" ? a.hasVideo : kind !== "audio",
       hasAudio: typeof a.hasAudio === "boolean" ? a.hasAudio : kind !== "image",
     } as Asset;
@@ -427,6 +428,7 @@ export function normalizeProject(raw: unknown): Project {
     height: Math.max(16, Math.round(num(raw.height, base.height))),
     fps,
     sampleRate: num(raw.sampleRate, base.sampleRate),
+    ...(raw.masterVolume !== undefined ? { masterVolume: Math.max(0, Math.min(4, num(raw.masterVolume, 1))) } : {}),
     background: typeof raw.background === "string" ? raw.background : base.background,
     ...(raw.canvasFixed === true ? { canvasFixed: true } : {}),
     assets,
@@ -476,6 +478,10 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
       hidden: t.hidden === true,
       locked: t.locked === true,
       volume: num(t.volume, 1),
+      ...(t.pan !== undefined ? { pan: Math.max(-1, Math.min(1, num(t.pan, 0))) } : {}),
+      ...(t.solo !== undefined ? { solo: t.solo === true } : {}),
+      height: t.height === "small" || t.height === "large" ? t.height : undefined,
+      color: typeof t.color === "string" && ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"].includes(t.color) ? t.color as Track["color"] : undefined,
     };
   });
   if (!tracks.some((t) => t.main)) {

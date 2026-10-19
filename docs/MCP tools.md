@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 146 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 148 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -31,7 +31,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 ## Contents
 
 - **Start here**: `help`, `describe_project`, `list_catalog`
-- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `set_project`
+- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
@@ -130,9 +130,23 @@ Example:
 {"name":"save_project_copy","arguments":{"name":"Ember Roast 16x9","open":true}}
 ```
 
+### open_project_file
+
+Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `path` | string |  | Absolute desktop path to a project JSON file; omit for the native or browser picker |
+
+### collect_project
+
+Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.
+
+No parameters.
+
 ### set_project
 
-Change project settings: name, canvas size (pixels), frame rate, background color.
+Change project settings: name, canvas size (pixels), frame rate, background color, master volume.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -140,6 +154,7 @@ Change project settings: name, canvas size (pixels), frame rate, background colo
 | `width` | integer |  | Canvas width in pixels (16..8192) |
 | `height` | integer |  | Canvas height in pixels (16..8192) |
 | `background` | string |  | CSS hex color behind all layers |
+| `master_volume` | number |  | Master linear gain; 1 is unity (0..4) |
 | `fps` | "23.976" \| "24" \| "25" \| "29.97" \| "30" \| "50" \| "59.94" \| "60" |  | Frame rate; clips keep their times |
 
 Example:
@@ -237,7 +252,7 @@ Place an imported asset (video, audio or image) on the timeline. Omit track_id t
 |---|---|---|---|
 | `asset_id` | string | yes | Asset id, from import_media or describe_project |
 | `start` | number | yes | Timeline position in seconds (0..) |
-| `duration` | number |  | Length in seconds; defaults to the whole source (5 s for images) (0.001..) |
+| `duration` | number |  | Length in seconds; defaults to the whole source (one loop for animated images, 5 s for stills) (0.001..) |
 | `in` | number |  | Seconds into the source where the clip begins (0..) |
 | `track_id` | string |  | Track id |
 | `mode` | "overwrite" \| "insert" |  | overwrite replaces what is under the clip; insert pushes later clips right |
@@ -280,7 +295,7 @@ Add an empty video (visual) or audio track. Video tracks stack above existing on
 
 ### update_track
 
-Mute, solo, hide, lock, rename, resize, or set the volume or pan of a track.
+Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -292,6 +307,7 @@ Mute, solo, hide, lock, rename, resize, or set the volume or pan of a track.
 | `volume` | number |  | Linear gain, 1 = unchanged (0..4) |
 | `pan` | number |  | -1 left .. 1 right, added to each clip's pan (-1..1) |
 | `solo` | boolean |  | While any track is soloed, only soloed tracks sound |
+| `color` | "none" \| "red" \| "orange" \| "yellow" \| "green" \| "cyan" \| "blue" \| "purple" \| "pink" |  | Track tint; a clip label takes precedence; none clears it |
 | `height` | "small" \| "normal" \| "large" |  | Row height on the timeline |
 
 ### move_track

@@ -59,6 +59,9 @@ const syncMaster = () => {
 };
 
 const jobs = {
+  "animated.apng": () => ff("-f", "lavfi", "-i", "testsrc=size=24x24:rate=5:duration=1,format=rgba,pad=32:32:4:4:color=black@0", "-plays", "0", "-f", "apng", join(out, "animated.apng")),
+  "animated.gif": () => ff("-f", "lavfi", "-i", "testsrc=size=24x24:rate=5:duration=1,format=rgba,pad=32:32:4:4:color=black@0", "-filter_complex", "[0:v]split[a][b];[a]palettegen=reserve_transparent=1[p];[b][p]paletteuse=alpha_threshold=128", "-loop", "0", join(out, "animated.gif")),
+  "animated.webp": () => ff("-f", "lavfi", "-i", "testsrc=size=24x24:rate=5:duration=1,format=rgba,pad=32:32:4:4:color=black@0", "-c:v", "libwebp_anim", "-lossless", "1", "-loop", "0", join(out, "animated.webp")),
   "h264-1080p30.mp4": () =>
     ff("-f", "lavfi", "-i", burn(1920, 1080, 30), "-f", "lavfi", "-i", tone(440, 10), "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-shortest", join(out, "h264-1080p30.mp4")),
   "h264-720p60-longgop.mp4": () =>

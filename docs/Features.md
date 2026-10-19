@@ -1039,3 +1039,40 @@ whether an unlocked clip can be edited at the playhead. Add marker remains
 available on empty timelines and at existing markers because both are valid
 operations. Mirror and Rotate use the shared edit boundary. Title-bar project
 renaming accepts at most 120 characters, matching Home.
+
+## Mixer, animated images, and timeline display
+
+- **Audio track mixer:** open Mixer from the timeline toolbar or View menu.
+  Every audio track and visual track carrying audio has a dB fader, pan,
+  mute, solo, and live post-fader peak/RMS readings. Master has a fader,
+  stereo readings and the player's short-term LUFS. Dragging a fader or
+  pan makes one undo step; double-click resets it. Master gain is included
+  in preview, offline loudness measurement and export. Commands:
+  `update_track`, `set_project` (`master_volume`).
+- **Animated GIF, WebP and APNG:** when ImageDecoder supports the format,
+  import reads real frame durations and retains alpha. The initial clip
+  lasts one loop; extending it repeats the loop. Timeline thumbnails,
+  library hover scrub, player and export share these frames. Platforms
+  without ImageDecoder use their still-image decoder. A decoded loop over
+  256 MiB is refused with a readable error (ADR-089).
+- **Timeline display:** the toolbar's display menu remembers waveforms,
+  video thumbnails, clip names, and small/medium/large track height per
+  browser profile. Track header color swatches use the clip-label palette;
+  a clip's own label wins. `update_track.color` sets or clears a track tint.
+
+## Portable project files
+
+**File > Collect files** on desktop creates a new folder inside the chosen
+folder, with `project.json` and a `media` folder. Originals, proxies, LUTs,
+and cutout files are copied once per distinct path; the JSON uses relative
+paths. Existing files are not overwritten. Progress reports completed files;
+missing or nonlocal sources fail the collection. On the web, this downloads
+JSON only and explains that media stays in the browser.
+
+**File > Open project file** imports JSON through normalization with a fresh
+project id, preserving existing saved projects. Desktop resolves relative
+media beside the JSON. Missing media uses Manage media's existing relink
+workflow. On the web, browser media keys work in the same profile; files
+from another computer need relinking. Commands: `collect_project` (desktop
+only), `open_project_file` (optional absolute desktop path, otherwise picker).
+See ADR-090. Native dialogs and copying still need a desktop validation pass.
