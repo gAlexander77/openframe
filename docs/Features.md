@@ -244,9 +244,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   cannot drift. The desktop app opens these pages by name through Rust
   (`about_open`), never a URL from the webview; the web build opens a tab.
 - **Preferences** (the gear in the title bar, Edit > Preferences, Ctrl+,;
-  Home too; Premiere's Timeline preferences): the lengths new pictures (5 s), titles and effect layers
-  (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap
-  and layout, never in a project.
+  Home too; Premiere's Timeline preferences): the lengths new pictures
+  (5 s), titles and effect layers (3 s) and transitions (0.5 s) start at,
+  and audio scrubbing. Per viewer, kept with the keymap and layout, never
+  in a project.
 
 ## Viewer
 
@@ -322,6 +323,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Position): a timecode, digits read right to left (1000 is ten seconds),
   or +/- an offset (+15 is fifteen frames on);
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
+- **Audio scrubbing** (CapCut's, Premiere's "Play audio while
+  scrubbing"): dragging the playhead on the ruler while paused plays
+  90 ms snippets of the mix where it lands, one after another, through
+  playback's own scheduler, so every effect and fade is heard; never while
+  playing. Preferences > Playback turns it off
+  ([[ADR-079 Audio scrubbing plays snippets through the playback scheduler]]).
 - Stereo peak meter, and a **loudness line** under it (Premiere's
   Loudness Meter in one row): momentary, short-term and integrated LUFS
   of what plays (EBU R128, an AudioWorklet K-weighting the master bus),

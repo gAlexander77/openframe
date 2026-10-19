@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { parseTyped } from "../lib/numberInput";
-import { DEFAULT_PREFS, prefsStore, usePrefs, type Prefs } from "../state/prefs";
-import { useCommitOnLeave } from "./inspector/controls";
+import { DEFAULT_PREFS, prefsStore, usePrefs, type SecondsPref } from "../state/prefs";
+import { Toggle, useCommitOnLeave } from "./inspector/controls";
 import { Dialog } from "./Dialog";
 
-const ROWS: [keyof Prefs, string, string][] = [
+const ROWS: [SecondsPref, string, string][] = [
   ["stillSeconds", "Pictures", "New pictures from the library"],
   ["layerSeconds", "Titles and effects", "Titles, stickers, effects, filters and adjustment layers"],
   ["transitionSeconds", "Transitions", "Shorter when a clip beside it is"],
@@ -51,6 +51,14 @@ export function PreferencesDialog({ onClose }: { onClose: () => void }) {
           <span className="prefs-unit">s</span>
         </label>
       ))}
+      <h3 className="prefs-head prefs-gap">Playback</h3>
+      <div className="prefs-row prefs-switch">
+        <span>
+          Audio scrubbing
+          <small>Hear short snippets of sound while dragging the playhead</small>
+        </span>
+        <Toggle label="Audio scrubbing" on={prefs.audioScrub} onChange={(v) => prefsStore.set({ audioScrub: v })} />
+      </div>
       <footer>
         <button className="btn ghost" onClick={() => prefsStore.set(DEFAULT_PREFS)}>
           Reset to defaults

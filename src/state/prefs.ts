@@ -1,5 +1,6 @@
 // Preferences (Premiere's Edit > Preferences > Timeline): how long new
-// stills, titles and effect layers, and transitions start. Per viewer,
+// stills, titles and effect layers, and transitions start, and whether
+// dragging the playhead sounds (audio scrubbing, ADR-079). Per viewer,
 // like the keymap and the layout, never in a project; a project keeps the
 // lengths its clips were given.
 
@@ -12,11 +13,15 @@ export interface Prefs {
   /** Titles, stickers, effects, filters and adjustment layers. */
   layerSeconds: number;
   transitionSeconds: number;
+  /** Short snippets of sound while the playhead is dragged (CapCut, Premiere). */
+  audioScrub: boolean;
 }
 
-export const DEFAULT_PREFS: Prefs = { stillSeconds: 5, layerSeconds: 3, transitionSeconds: 0.5 };
+export type SecondsPref = "stillSeconds" | "layerSeconds" | "transitionSeconds";
 
-export const PREF_LIMITS: Record<keyof Prefs, [number, number]> = {
+export const DEFAULT_PREFS: Prefs = { stillSeconds: 5, layerSeconds: 3, transitionSeconds: 0.5, audioScrub: true };
+
+export const PREF_LIMITS: Record<SecondsPref, [number, number]> = {
   stillSeconds: [0.5, 60],
   layerSeconds: [0.5, 60],
   transitionSeconds: [0.1, 5],
@@ -25,10 +30,11 @@ export const PREF_LIMITS: Record<keyof Prefs, [number, number]> = {
 const KEY = "ve.prefs";
 const clean = (v: Partial<Prefs>): Prefs => {
   const out = { ...DEFAULT_PREFS };
-  for (const k of Object.keys(PREF_LIMITS) as (keyof Prefs)[]) {
+  for (const k of Object.keys(PREF_LIMITS) as SecondsPref[]) {
     const x = Number(v[k]);
     if (Number.isFinite(x)) out[k] = Math.min(PREF_LIMITS[k][1], Math.max(PREF_LIMITS[k][0], x));
   }
+  if (typeof v.audioScrub === "boolean") out.audioScrub = v.audioScrub;
   return out;
 };
 

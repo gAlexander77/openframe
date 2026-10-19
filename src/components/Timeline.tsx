@@ -2,6 +2,7 @@ import { addSoundEffect } from "../state/sfx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
+import { scrubEnd, scrubTo } from "../engine/scrub";
 import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { fromDb, toDb } from "../lib/audio";
 import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
@@ -386,6 +387,7 @@ export function Timeline() {
     const s = store.get();
     if (g.kind === "scrub") {
       store.seek(frameAtX(e.clientX));
+      scrubTo(store.get().playhead);
       return;
     }
     if (g.kind === "marquee") {
@@ -510,6 +512,7 @@ export function Timeline() {
     setMarquee(null);
     setReadout(null);
     store.set({ trimPreview: null });
+    if (g?.kind === "scrub") scrubEnd();
     if (!g || g.kind === "scrub" || g.kind === "marquee") return;
     if (!g.started) return;
     const label =
@@ -555,6 +558,7 @@ export function Timeline() {
   const onRulerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     store.seek(frameAtX(e.clientX));
+    scrubTo(store.get().playhead);
     gesture.current = { kind: "scrub" };
     attachWindowListeners();
   };

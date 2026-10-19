@@ -45,3 +45,5 @@
 .about-credits td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
 .about-credits td:first-child { color: var(--text-1); }
 .about-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--fs-xs); }
+.prefs-gap { margin-top: 18px; }
+.prefs-switch { grid-template-columns: 1fr auto; }

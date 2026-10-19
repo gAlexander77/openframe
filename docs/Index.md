@@ -231,3 +231,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]] —
   one click deletes with Undo, thirty days to restore, no new platform
   calls, agents never see the trash.
+- [[ADR-079 Audio scrubbing plays snippets through the playback scheduler]] —
+  90 ms snippets of the real mix while the ruler is dragged, one after
+  another, never while playing; a preference turns it off.
