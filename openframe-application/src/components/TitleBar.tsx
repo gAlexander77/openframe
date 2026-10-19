@@ -176,8 +176,15 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         ) : editing ? (
           <input
             className="field project-name-input"
+            aria-label="Project name"
             maxLength={120}
             autoFocus
+            onFocus={(e) => {
+              // All selected, the start in view: a long name showed only its end.
+              const input = e.currentTarget;
+              input.setSelectionRange(0, input.value.length, "backward");
+              input.scrollLeft = 0;
+            }}
             defaultValue={name}
             onBlur={(e) => {
               const v = e.currentTarget.value.trim();
@@ -226,13 +233,13 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
           // Window chrome must not take typing focus or commit an unfinished
           // rename. Keyboard focus still reaches these buttons normally.
           <div className="window-controls" onMouseDown={(e) => { if (e.button === 0) e.preventDefault(); }}>
-            <button aria-label="Minimize" onClick={() => win.minimize()}>
+            <button aria-label="Minimize" data-tip="Minimize" onClick={() => win.minimize()}>
               <Minus size={16} />
             </button>
-            <button aria-label={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
+            <button aria-label={maximized ? "Restore" : "Maximize"} data-tip={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
               {maximized ? <PanelsTopLeft size={13} /> : <Square size={13} />}
             </button>
-            <button aria-label="Close" className="close" onClick={() => win.close()}>
+            <button aria-label="Close" data-tip="Close" className="close" onClick={() => win.close()}>
               <X size={16} />
             </button>
           </div>

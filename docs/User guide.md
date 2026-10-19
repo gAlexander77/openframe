@@ -101,7 +101,10 @@ While a project is opening or the old one is being saved for a switch,
 repeated navigation requests are ignored. Home shows **Opening project…**
 and disables creation/deletion during loading; retry after it finishes.
 A focused project card opens with Enter or Space; its Delete button never
-opens it.
+opens it. Right-click a card for **Open**, **Rename…**, **Duplicate** and
+**Delete**. **List view**, beside Search projects, shows each project as a
+row with its canvas size, length and last edit; Home remembers which view
+you chose.
 
 Deleting a project moves it to **Recently deleted** at the bottom of Home,
 and the notice that says so has **Undo**. A deleted project waits there
@@ -308,7 +311,8 @@ captions.
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
 it (in a window too narrow for four columns the media library steps aside
-until you close it); drag its left edge to resize it. Pick the model server
+until you close it; in a browser window narrower than 1066 px it floats over
+the editor's right side instead); drag its left edge to resize it. Pick the model server
 and model at the top, type what you want in the box at the bottom and
 press Enter to send (Shift with Enter starts a new line). The box grows as
 you type. While the model works, the steps it takes appear as they run;

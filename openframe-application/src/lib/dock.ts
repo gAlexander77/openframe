@@ -4,7 +4,8 @@
 // it open, the editor lays out as if the window were narrower by the
 // column, and when even that leaves too little, the library steps aside
 // (as Scopes take its place) rather than squeezing the player or the
-// inspector below the widths their controls need.
+// inspector below the widths their controls need. In a window too narrow
+// for even that, it floats over the editor's right side.
 
 import type { Layout } from "./layout";
 
@@ -45,6 +46,19 @@ export interface DockColumns {
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
+/** Whether the column can dock in a window this wide: the editor keeps its
+ * minimum beside the column's. Narrower (a browser tab under 1066 px; the
+ * desktop window stops at 1100) it floats over the editor instead, which
+ * keeps its own layout under it. */
+export const canDock = (width: number) => width - DOCK.gap - DOCK.assistantMin >= DOCK.editor;
+
+/** The widest a side panel may be dragged in an editor this wide: its own
+ * limit `hi`, but never so wide that the player drops under its working
+ * width. `other` is the other side panel with its gap (0 when it stepped
+ * aside). Never under `lo`, the panel's own minimum. */
+export const sideMax = (editor: number, other: number, lo: number, hi: number) =>
+  Math.max(lo, Math.min(hi, editor - DOCK.pad - DOCK.gap - other - DOCK.player));
+
 /** The widest the column may be in this window: the editor keeps its
  * minimum (never less than the column's own minimum). */
 export const assistantMax = (width: number) => Math.max(DOCK.assistantMin, Math.min(DOCK.assistantMax, width - DOCK.gap - DOCK.editor));
@@ -57,9 +71,8 @@ export const assistantShare = (px: number, width: number) => clamp(px, DOCK.assi
  * saved width, of the window. */
 export function dockColumns(shares: Layout, width: number, share = DOCK.assistantShare): DockColumns {
   const { gap, pad } = DOCK;
-  // ponytail: below about 1066 px (a narrow browser tab; the desktop
-  // window stops at 1100) the column keeps its minimum and the editor
-  // squeezes, as it already does there without the panel.
+  // Below canDock's 1066 px the app floats the column instead of asking
+  // for these.
   const assistant = Math.round(clamp(share * width, DOCK.assistantMin, assistantMax(width)));
   const editor = width - assistant - gap;
   const row = editor - pad;

@@ -287,7 +287,7 @@ function SettingsView() {
 
         <div className="export-fields">
           <Row label="Name" htmlFor="export-name">
-            <input id="export-name" className="field" data-autofocus value={s.name} spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
+            <input id="export-name" className="field" data-autofocus value={s.name} spellCheck={false} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length, "backward")} onChange={(e) => set({ name: e.target.value })} />
           </Row>
           <Row label="Preset" htmlFor="export-preset">
             <div className="export-pair">

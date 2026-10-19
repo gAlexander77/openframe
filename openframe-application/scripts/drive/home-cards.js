@@ -1,7 +1,8 @@
 // Project cards on the home screen (CapCut's Rename and Duplicate): a
 // project with a clip is renamed in place without opening it (Escape
 // keeps the old name), then duplicated; the copy opens with the same
-// clip, and the original is untouched.
+// clip, and the original is untouched. Then the list view and the
+// right-click menu (Rename…, Duplicate) in both views.
 async (page) => {
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.reload();
@@ -43,5 +44,33 @@ async (page) => {
   await page.locator(".timeline-panel").waitFor();
   const opened = await page.evaluate(() => ({ name: window.videoEditor.project().name, clips: window.videoEditor.project().tracks.flatMap((t) => t.clips).map((c) => c.color) }));
   details.copyOpens = { ok: opened.name === "Renamed drive copy" && JSON.stringify(opened.clips) === '["#884422"]', opened };
+
+  // The list view (CapCut's grid/list toggle) and the right-click menu,
+  // in both views: Rename… and Duplicate from the menu; the view is
+  // remembered across a reload.
+  await page.locator(".menubar-item > button", { hasText: "File" }).click();
+  await page.getByRole("menuitem", { name: "Back to home" }).click();
+  await page.getByRole("button", { name: "List view", exact: true }).click();
+  const row = (name) => page.locator(".project-row", { has: page.locator(".project-card-name", { hasText: new RegExp(`^${name}$`) }) });
+  await row("Renamed drive").waitFor();
+  details.list = { ok: (await page.locator(".project-card").count()) === 0 && (await page.locator(".project-row:not(.project-list-head)").count()) >= 2 };
+  await row("Renamed drive").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Rename…" }).click();
+  await page.getByLabel("New name for Renamed drive").fill("Listed drive");
+  await page.getByLabel("New name for Renamed drive").press("Enter");
+  await row("Listed drive").waitFor();
+  await row("Listed drive").click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await row("Listed drive copy").waitFor();
+  details.listMenu = { ok: (await row("Renamed drive").count()) === 0 && (await row("Listed drive").count()) === 1 && (await page.locator(".timeline-panel").count()) === 0 };
+  await page.reload();
+  await page.waitForFunction(() => !!window.videoEditor);
+  await row("Listed drive").waitFor();
+  details.listRemembered = { ok: (await page.getByRole("button", { name: "List view", exact: true }).getAttribute("aria-pressed")) === "true" };
+  await page.getByRole("button", { name: "Grid view", exact: true }).click();
+  await card("Listed drive").click({ button: "right" });
+  const items = await page.locator(".ctx-anchor .menu-label").allTextContents();
+  await page.keyboard.press("Escape");
+  details.cardMenu = { ok: items.join(",") === "Open,Rename…,Duplicate,Delete" && (await page.locator(".ctx-anchor").count()) === 0, items };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

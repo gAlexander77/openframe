@@ -13,7 +13,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and is then deleted for good. Agents never see it there
   ([[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]]).
   **Rename** (in place, without opening) and **Duplicate** ("Name copy",
-  sharing the same media files) sit on each card, as in CapCut.
+  sharing the same media files) sit on each card, as in CapCut, and in
+  its right-click menu (Open, Rename…, Duplicate, Delete). A **list view**
+  beside the search (CapCut's toggle) shows a row per project with its
+  canvas, length and last edit; the choice is remembered per viewer.
 - **Canvas size in pixels** (project Details > Size, CapCut's custom
   ratio): any width and height from 16 to 8192, rounded to even numbers
   as encoders need; `set_project` also takes the frame rate.

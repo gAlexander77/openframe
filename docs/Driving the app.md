@@ -293,6 +293,20 @@ inside their header, the playhead and markers hidden under the header
 column when scrolled (read from screen pixels), and the in/out band on
 the ruler.
 
+`scripts/drive/sizes-shell.js` sweeps the app shell the same way at nine
+window sizes, from the desktop's 1100 x 680 minimum to 2560 x 1440 plus
+1024 x 640 and 900 x 600 for the web build: Home (empty, grid, list,
+search, Recently deleted, rename, the card menu), the title bar and each
+menu, the editor's splitters at their limits, every dialog (Export with
+its done view, Preferences, Keyboard shortcuts while editing a chord,
+About, Save a copy, Manage media, marker export), tooltips at the window's
+edges and inside a modal dialog, and the AI assistant docked and floating;
+then the desktop title bar with its window buttons (IPC mocked). Beyond
+the style sweep's checks it fails on panels overlapping or leaving the
+window, title-bar parts overlapping, popups leaving the window, a tooltip
+under a modal dialog, and a player under 456 px in a desktop-sized window.
+About six minutes; screenshots land in `scratch/sizes-shell/`.
+
 ## Header interaction check — 2026-10-15
 
 The owner expects the whole header to behave like a desktop caption: drag
