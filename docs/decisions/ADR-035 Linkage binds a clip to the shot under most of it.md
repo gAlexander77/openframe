@@ -30,6 +30,9 @@ would collide or go before 00:00 are left alone.
 
 The rule needs no per-clip link data in the project file and is the same
 for every track kind, so agents and the UI get it from `settle` alone.
-`ponytail:` a bed that happens to lie mostly on one long shot still
-follows it; an explicit link or unlink per clip (CapCut's Linkage
-dropdown, unverified) is the upgrade path if that bites.
+**2026-10-18 correction:** majority overlap alone moved a bed covering a
+6-second shot and an 8-second shot when the latter moved. A layer covering
+two or more complete main-track shots now stays put, before testing the
+majority rule. Short titles straddling a cut still follow their dominant
+shot. No saved-data change is needed; unequal-shot insertion and the
+existing title/sound-effect linkage tests cover the distinction.

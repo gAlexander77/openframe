@@ -99,6 +99,24 @@ with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
 the app session. Browsing and selecting uses do not consume Undo steps.
 
+## Select and arrange clips
+
+Click a picture in the viewer to select the top unlocked clip whose box
+contains the pointer. Clicking empty canvas or stage space clears selection.
+Hidden and locked tracks do not intercept the click.
+
+With the main track magnet on, drag a clip to the start to make it the first
+shot. Linkage carries short titles and sound effects with their shots;
+a music bed covering two or more complete shots stays at its timeline time.
+
+Adding a title or sticker briefly previews its In animation, then restores
+the playhead. Reduced motion skips that preview. Pausing a preview stops it
+without a later jump back.
+
+Add a transition between touching clips, or click its timeline marker, to
+open **Transition** settings. Undo history gives agent edits readable names
+such as **Add clip** and **Change opacity**.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**

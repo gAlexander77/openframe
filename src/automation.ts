@@ -6,6 +6,7 @@
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
+import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
@@ -49,7 +50,7 @@ const automation = {
     if (name === "add_sticker") return execAddSticker(args).then(() => describe());
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
-    store.editDocument(name.replace(/_/g, " "), (p) => runCommand(p, name, args));
+    store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args));
     return describe();
   },
   /** The sticker library, for add_sticker's name. */

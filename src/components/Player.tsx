@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { player, topClipAt } from "../engine/player";
+import { player } from "../engine/player";
 import { Activity, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
 import { toast } from "../state/toast";
-import { boxesAt, nudgeClips } from "../lib/align";
+import { boxesAt, hitClipAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
 import { expandGroups } from "../lib/project/groups";
 import { projectDuration } from "../lib/project/ops";
@@ -175,7 +175,10 @@ export function PlayerPanel() {
           // Click the picture to select what is on top there, as in CapCut;
           // a grouped picture brings its group, as on the timeline (Alt: alone).
           const s = store.get();
-          const hit = topClipAt(s.project, s.playhead);
+          const rect = canvasRef.current!.getBoundingClientRect();
+          const hit = hitClipAt(s.project, s.playhead,
+            (e.clientX - rect.left) * s.project.width / rect.width,
+            (e.clientY - rect.top) * s.project.height / rect.height);
           store.select(hit ? (e.altKey ? [hit.id] : expandGroups(s.project, [hit.id])) : []);
         }}
       >

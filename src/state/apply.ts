@@ -99,8 +99,7 @@ export function addTextPreset(key: string, at?: number) {
 /**
  * UX-15: a title added at the playhead starts on the first frame of its In
  * animation, where nothing shows yet. Play the animation once, silently,
- * and stop where it has settled, so the user sees what they added; with
- * reduced motion, go straight to the settled frame. Leaves playback, and
+ * then restore the playhead; reduced motion skips the preview. Leaves playback, and
  * a playhead the clips already show at, alone.
  */
 export function revealAdded(ids: Id[]) {
@@ -109,8 +108,8 @@ export function revealAdded(ids: Id[]) {
   const clips = ids.map((id) => ops.findClip(s.project, id)?.clip).filter((c): c is Clip => !!c);
   const span = revealSpan(clips, s.playhead);
   if (!span) return;
-  if (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches) store.seek(span.to);
-  else player.preview(span.from, span.to);
+  if (typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  player.preview(span.from, span.to);
 }
 
 /** A word art or title template from the Text tab. Word art restyles text
@@ -214,6 +213,10 @@ export function applyTransition(type: string, clipId?: Id, dropped = false) {
   const before = store.get().project;
   store.edit(`Add ${TRANSITIONS[type].label.toLowerCase()}`, (q) => ops.setTransition(q, left!.id, { type, duration: secondsToFrames(transitionSeconds(), q.fps) }));
   if (store.get().project === before) toast("Transitions go between two touching clips on the same track");
+  else {
+    store.select([left.id]);
+    store.set({ transitionEdit: left.id });
+  }
 }
 
 /** CapCut's "Custom adjustment": an empty adjustment layer at the playhead. */

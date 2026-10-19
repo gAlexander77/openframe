@@ -69,14 +69,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Timeline
 
-- CapCut's toggles: main track **magnet** (gapless, reorders on drag),
+- CapCut's toggles: main track **magnet** (gapless, reorders on drag, including a drop at the very front),
   **snapping** with a cyan guide, **linkage** (titles, overlays and sound
   effects follow the shot under most of them through ripples and
-  reorders; music beds spanning several shots stay put), **preview axis**
+  reorders; music beds covering two or more complete shots stay put, even when one shot is longer), **preview axis**
   (hover to preview).
 - **Undo history**: right-click the toolbar's Undo or Redo for the last 20
   steps by name, nearest first; choosing one goes back (or forward) to it
-  (VEGAS's undo list, Premiere's History panel).
+  (VEGAS's undo list, Premiere's History panel). Agent edits use readable
+  labels too, such as "Add clip" and "Change opacity".
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
@@ -226,6 +227,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
   the line; Ctrl moves freely, Shift keeps one axis.
+- **Viewer selection** uses the picture's on-canvas box, top track first,
+  skipping hidden and locked tracks. Empty canvas or stage space deselects;
+  rotation and crop use the same geometry as the transform handles.
 - **Several pictures at once** (a multi-selection or a group): the viewer
   draws one box around the selected pictures showing under the playhead,
   each outlined inside it. Drag inside to move them all, with the same
@@ -330,6 +334,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   settling exactly on the next value (ADR-062).
 
 ## Inspector
+
+- Adding a transition or clicking its timeline marker opens its **Transition**
+  settings immediately. Choosing another tab returns to that clip's controls.
 
 - CapCut's tab matrix per clip type: Video (Basic, Remove BG, Mask),
   Audio, Speed, Animation (In/Out/Combo or Loop), Adjust (filter and color),
@@ -466,10 +473,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
   with a sample gives it to the selected title in one click, words kept.
-- **A new title shows when added**: a title, template or sticker added at
-  the playhead plays its In animation once, silently, and stops where it
-  has settled (under reduced motion it goes straight there), so the viewer
-  never shows an empty box
+- **Preview a new title**: a title, template or sticker added at
+  the playhead plays its In animation once, silently, then returns to the
+  original playhead. Reduced motion skips the preview. Pausing the preview
+  cancels it without a later jump back
   ([[ADR-047 A new title shows by playing its In animation]]).
 - **Fonts**: the built-in list, **Import font…** (TTF, OTF, WOFF; kept
   per viewer and loaded at startup, so preview, export and headless

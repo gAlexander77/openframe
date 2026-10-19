@@ -352,7 +352,7 @@ export class Player {
 
   /** Play from the playhead at `rate`. `until` stops on that frame, and
    * `silent` leaves the sound off: preview() uses both. */
-  async play(rate: number, opts: { until?: number; silent?: boolean; once?: boolean } = {}) {
+  async play(rate: number, opts: { until?: number; silent?: boolean; once?: boolean; returnTo?: number } = {}) {
     this.stopClock();
     this.until = opts.until ?? null;
     this.silent = !!opts.silent;
@@ -400,7 +400,7 @@ export class Player {
         return;
       }
       if (this.until !== null && f >= this.until) {
-        const stop = this.until;
+        const stop = opts.returnTo ?? this.until;
         this.pause();
         store.seek(stop);
         return;
@@ -429,12 +429,13 @@ export class Player {
     this.schedule = null;
   }
 
-  /** Play [from, to) once without sound and stop on `to`, the frame where
+  /** Play [from, to) once without sound then return to the original playhead. `to` is where
    * a new title's In animation has settled (UX-15). Any transport command
    * takes over, as it does from playback. */
   preview(from: number, to: number) {
+    const returnTo = store.get().playhead;
     store.seek(from);
-    void this.play(1, { until: to, silent: true });
+    void this.play(1, { until: to, silent: true, returnTo });
   }
 
   pause() {

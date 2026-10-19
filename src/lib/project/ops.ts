@@ -370,6 +370,8 @@ export function rangeFree(t: Track, start: number, duration: number, ignore?: Id
 export interface MoveOptions {
   /** The magnetic main track reorders instead of overlapping. */
   magnet?: boolean;
+  /** Unclamped timeline position used to choose a magnetic insertion slot. */
+  insertionFrame?: number;
   /** What to do when the destination is occupied: overwrite what is there
    * (Premiere) or put the clip on a new track (CapCut). */
   collision?: "overwrite" | "newTrack";
@@ -392,7 +394,7 @@ export function moveClip(
     ...t,
     clips: t.clips.filter((c) => c.id !== clipId),
   }));
-  return placeClip(q, trackId, clip, opts);
+  return placeClip(q, trackId, clip, { ...opts, insertionFrame: opts.insertionFrame ?? start });
 }
 
 /** Put a new clip on a track under the move rules: magnetic main track
@@ -402,10 +404,11 @@ export function placeClip(p: Project, trackId: Id, clip: Clip, opts: MoveOptions
   const dest = findTrack(p, trackId);
   if (!dest || dest.locked || !fitsTrack(clip, dest.kind)) return p;
   if (opts.magnet && dest.main) {
-    // Reorder by where the clip's center lands among the others' centers.
-    const center = clip.start + clip.duration / 2;
+    // Compare the requested position before clamping; ties insert before.
+    const start = opts.insertionFrame ?? clip.start;
+    const position = start <= 0 ? start : start + clip.duration / 2;
     const others = dest.clips;
-    let index = others.findIndex((c) => c.start + c.duration / 2 > center);
+    let index = others.findIndex((c) => c.start + c.duration / 2 >= position);
     if (index < 0) index = others.length;
     const ordered = [...others.slice(0, index), clip, ...others.slice(index)];
     let at = 0;
@@ -833,6 +836,10 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
     for (const c of t.clips) {
       const was = old.get(c.id);
       if (!was || was.start !== c.start) continue; // new or moved by the edit itself
+      // A bed covering a whole cut belongs to the sequence, even when one
+      // of its shots supplies a majority of the duration. Short titles
+      // that merely straddle a cut still follow their dominant shot.
+      if (oldMain.clips.filter(x => was.start <= x.start && was.start + was.duration >= x.start + x.duration).length > 1) continue;
       const m = moves.find((x) => 2 * overlap(was.start, was.duration, x.start, x.duration) > was.duration);
       if (!m) continue;
       const track = findTrack(p, t.id)!;

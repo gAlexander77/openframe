@@ -96,14 +96,15 @@ function ClipInspector({ id }: { id: Id }) {
   const clip = useClip(id);
   const project = useEditor((s) => s.project);
   const [tab, setTab] = useState<Tab | null>(null);
+  const transitionEdit = useEditor(s => s.transitionEdit);
   if (!clip) return null;
   const tabs = tabsFor(clip, project);
-  const active = tab && tabs.includes(tab) ? tab : tabs[0];
+  const active = transitionEdit === id && tabs.includes("transition") ? "transition" : tab && tabs.includes(tab) ? tab : tabs[0];
   return (
     <>
       <nav className="insp-tabs" role="tablist">
         {tabs.map((t) => (
-          <button key={t} role="tab" aria-selected={active === t} className={active === t ? "on" : ""} onClick={() => setTab(t)}>
+          <button key={t} role="tab" aria-selected={active === t} className={active === t ? "on" : ""} onClick={() => { store.set({ transitionEdit: null }); setTab(t); }}>
             {TAB_LABEL[t]}{t === "effects" && "effects" in clip && clip.effects.length > 0 ? ` (${clip.effects.length})` : ""}
           </button>
         ))}

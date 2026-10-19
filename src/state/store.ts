@@ -53,6 +53,8 @@ export interface EditorState {
    * project's own timeline. */
   nest: NestEntry[];
   selection: Id[];
+  /** Explicit request to open transition settings; cleared by normal selection. */
+  transitionEdit: Id | null;
   /** Current frame. */
   playhead: number;
   playing: boolean;
@@ -133,6 +135,7 @@ let state: EditorState = {
   project: createProject(),
   nest: [],
   selection: [],
+  transitionEdit: null,
   playhead: 0,
   playing: false,
   zoom: 4,
@@ -363,6 +366,7 @@ export const store = {
       project,
       nest: [],
       selection: [],
+      transitionEdit: null,
       playhead: 0,
       playing: false,
       inPoint: null,
@@ -385,7 +389,7 @@ export const store = {
   },
 
   select(ids: Id[]) {
-    set({ selection: ids, keySel: null });
+    set({ selection: ids, keySel: null, transitionEdit: null });
   },
 };
 

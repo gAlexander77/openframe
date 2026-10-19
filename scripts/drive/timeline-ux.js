@@ -13,7 +13,7 @@
 // - dragging the second shot to the front leaves the music bed at 00:00
 //   while the title on the first shot follows it (UX-14);
 // - a title added from the Text tab plays its In animation and is visible
-//   in the viewer once added; with reduced motion it shows settled at once
+//   in the viewer once added, then restores the playhead; reduced motion skips it
 //   (UX-15).
 //
 // Needs the dev server and fixtures (node scripts/make-fixtures.mjs). Run
@@ -292,14 +292,15 @@ async (page) => {
     }
     return { start: c.start, animIn: c.animIn?.duration, played: s0.playing || frames.some((f, i) => i && f !== frames[0]), frames: [...new Set(frames)], playhead: v.state().playhead, playing: v.state().playing };
   });
+  await ve(() => window.videoEditor.seek(8 * 30 + 15));
   const shown = await titleBand();
   await shot("ux15-title-after-add");
   check(
-    "UX-15 adding an animated title plays its In once and parks where it has settled",
-    motion.played && !motion.playing && motion.playhead === motion.start + motion.animIn,
+    "UX-15 adding an animated title plays its In once and restores the playhead",
+    motion.played && !motion.playing && motion.playhead === motion.start,
     motion,
   );
-  check("UX-15 the viewer shows the title right after it is added", plain < 0.002 && shown > 0.01, { plain, shown });
+  check("UX-15 the title renders at its settled frame", plain < 0.002 && shown > 0.01, { plain, shown });
 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await ve(() => {
@@ -310,7 +311,7 @@ async (page) => {
   await page.locator('.card-add[aria-label="Add Title"]').click({ force: true });
   const still = await ve(() => ({ playing: window.videoEditor.state().playing, playhead: window.videoEditor.state().playhead }));
   const shown2 = await titleBand();
-  check("UX-15 reduced motion shows the settled title at once", !still.playing && still.playhead === 11 * 30 + 15 && plain2 < 0.002 && shown2 > 0.01, { ...still, plain2, shown2 });
+  check("UX-15 reduced motion skips preview and preserves the playhead", !still.playing && still.playhead === 11 * 30 && plain2 < 0.002 && shown2 < 0.002, { ...still, plain2, shown2 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
 
   return { ok: failed.length === 0, failed, details };
