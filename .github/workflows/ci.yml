@@ -1,18 +1,17 @@
-# The gates from CLAUDE.md on every push to main and every pull request:
-# type check and unit tests for the editor, fmt, clippy and tests for the
-# desktop shell. Windows for Rust: the desktop target, and it needs no
-# extra system libraries for Tauri. The app lives in openframe-application/;
-# a change to the website alone (openframe-website/) does not run these.
+# The gates from CLAUDE.md: type check and unit tests for the editor, fmt,
+# clippy and tests for the desktop shell. Windows for Rust: the desktop
+# target, and it needs no extra system libraries for Tauri. The app lives in
+# openframe-application/.
+#
+# Manual only (ADR-082): runners cost the owner money, so this runs only
+# when the owner starts it (Actions > CI > Run workflow). Agents never start
+# it and never add push or pull_request triggers back; they run the same
+# gates locally. The website's deploy (pages.yml) is the one automatic
+# workflow.
 name: CI
 
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "openframe-website/**"
-  pull_request:
-    paths-ignore:
-      - "openframe-website/**"
+  workflow_dispatch:
 
 permissions:
   contents: read

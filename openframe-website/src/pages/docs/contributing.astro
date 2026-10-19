@@ -57,7 +57,7 @@ const headings = [
     serves both. Run every command below in <code>openframe-application/</code>.
   </p>
   <Command label="Run the desktop app" code={DESKTOP} />
-  <p>Before proposing a change, run the checks (<code>just check</code> runs them all). CI runs the same gates on every pull request:</p>
+  <p>Before proposing a change, run the checks (<code>just check</code> runs them all). CI runs the same gates when the maintainer starts it, so run them yourself:</p>
   <Command label="The checks" code={CHECKS} />
   <p>
     Then try the change in the running product, not only in tests. Desktop changes need desktop checks: a browser drive does

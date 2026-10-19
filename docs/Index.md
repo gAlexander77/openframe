@@ -255,3 +255,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-081 The app and the website each have a folder, the docs stay at the root]] —
   the editor in `openframe-application/`, the site in `openframe-website/`,
   `docs/` at the root for both.
+- [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
+  agents run the gates locally and never start it; Pages deploys on its own.

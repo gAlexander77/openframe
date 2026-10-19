@@ -20,7 +20,8 @@ None.
   WebView2).
 - **A packaged release** when the owner asks: installer, signing, release
   notes ([[Release preparation]]). The rename is done and the source is
-  public ([[Renaming]]); CI checks every pull request.
+  public ([[Renaming]]); CI runs the gates when the owner starts it
+  ([[ADR-082 CI runs only when the owner starts it]]).
 - **Desktop-first delivery, browser validation second**: the owner reaffirmed
   desktop priority on 2026-10-14. Retain ADR-003 and the existing shared core;
   log browser import/persistence/export/codec/model capability checks with

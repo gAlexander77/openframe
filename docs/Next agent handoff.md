@@ -157,9 +157,9 @@ from the earlier implementation and its historical test results.
   `frame_region`, `export_video`, `preview_frames`, `add_voiceover`, text
   boxes, `align_clips` margins, a limiter in export loudness, mono measured
   as it plays, and a compressor with Enhance voice (ADR-052, ADR-053).
-- **CI** (`.github/workflows/ci.yml`) runs the gates on every push and pull
-  request: type check and unit tests on Linux, Rust fmt, clippy and tests
-  on Windows.
+- **CI** (`.github/workflows/ci.yml`) runs the gates only when the owner
+  starts it (ADR-082): type check and unit tests on Linux, Rust fmt, clippy
+  and tests on Windows. Never start it; run the gates locally.
 - **Next**: [[Roadmap]] holds the order.
 
 ## 2026-10-17, late (Claude Code): the `improvements` branch

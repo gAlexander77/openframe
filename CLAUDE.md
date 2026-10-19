@@ -40,7 +40,9 @@ work; they do not mean the app has already been renamed or released.
    lesson is paid for twice. Non-obvious decisions get an ADR (next number).
 3. **Gate before committing:** `npx tsc --noEmit`, `npm test`, and for Rust
    `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`,
-   `cargo test` (all via `just check`).
+   `cargo test` (all via `just check`), locally. **CI is the owner's to
+   start** (ADR-082): never trigger, re-run or dispatch it, and never give
+   it push or pull-request triggers. Only the website deploy runs on its own.
 4. **Verify in the running product**, not just tests: the web build through
    the Playwright MCP tools, the desktop app over WebView2's debug port
    (`docs/Driving the app.md`). Playwright is for the product, never for

@@ -34,9 +34,8 @@ interfere with each other.
   and the like are inside `openframe-application/`. Every guide says so
   once, instead of rewriting hundreds of references, including dated
   research notes that describe the code as it was.
-- **CI runs the app's gates in `openframe-application/`** and skips
-  changes to the website alone. Pages builds only on site or docs changes
-  (ADR-077).
+- **CI runs the app's gates in `openframe-application/`**, when the owner
+  starts it (ADR-082). Pages builds only on site or docs changes (ADR-077).
 
 ## Consequences
 

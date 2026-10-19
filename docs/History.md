@@ -1329,3 +1329,15 @@ its work from the message it left.
 - **Write edit scripts to files, and read them as UTF-8.** A Git Bash
   heredoc piped to Python collapsed doubled backslashes and was decoded
   as cp1252, which put mojibake in a doc.
+
+## 2026-10-19 — Main, GitHub and the live site
+
+- The second improvements branch merged into main and, with the owner's
+  go-ahead, was pushed, the first push of this round. Pages was enabled
+  (source: GitHub Actions), the push deployed the site to
+  https://galexander77.github.io/openframe/, and the repository's About
+  box links to it.
+- **CI became manual**
+  ([[ADR-082 CI runs only when the owner starts it]]). Runners cost the
+  owner money, so CI runs only when they start it; agents run the gates
+  locally. The website deploy is the one automatic workflow.
