@@ -8,8 +8,13 @@ of the documentation and how agents use it as shared working memory.
 
 ## Ground rules
 
-- The chosen name is **OpenFrame**; the implementation rename is pending.
-  [[Renaming]] lists the identity sites and data/automation compatibility work.
+- The name is **OpenFrame** (renamed 2026-10-17). [[Renaming]] lists what
+  kept the old name on purpose and why.
+- **Two projects.** The app is in `openframe-application/`: run every app
+  command there, and read `src/`, `scripts/`, `src-tauri/` and `fixtures/`
+  paths in these notes as inside it. The website is `openframe-website/`;
+  these docs serve both
+  ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
 - **Desktop first**, browser support second (ADR-003). The 2026-10-14 owner
   handoff reaffirmed this; web capability checks remain separately documented.
 - GPL-3.0-only applies to original project code and documentation. The repo
@@ -247,3 +252,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]] —
   mediabunny's LAME extension for MP3; captions burned in, an SRT beside
   the export, both or neither, timed to the exported range.
+- [[ADR-081 The app and the website each have a folder, the docs stay at the root]] —
+  the editor in `openframe-application/`, the site in `openframe-website/`,
+  `docs/` at the root for both.

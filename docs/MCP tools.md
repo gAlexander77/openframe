@@ -1,7 +1,7 @@
 # MCP tools
 
 <!-- Generated from src/lib/mcpGuide.ts and the tool definitions by
-     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
+     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
 Every tool the editor offers an AI model over MCP, 146 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.

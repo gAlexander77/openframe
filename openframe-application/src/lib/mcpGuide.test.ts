@@ -5,7 +5,8 @@ import { handleMcp, instructions, listTools, type McpHost } from "./mcp";
 import { agentPlaybook, EXAMPLES, fullCatalog, groupOf, helpText, HELP_TOPICS, promptMessages, PROMPTS, TOOL_GROUPS, toolReference } from "./mcpGuide";
 
 const tools = listTools();
-const DOC = "docs/MCP tools.md";
+// The docs live beside the app, at the repository root.
+const DOC = "../docs/MCP tools.md";
 
 describe("the MCP guide", () => {
   it("files every tool in a group, and groups only tools that exist", () => {
@@ -82,7 +83,7 @@ describe("the MCP guide", () => {
   });
 
   it("keeps docs/MCP tools.md and docs/Agent playbook.md in step with the tools", () => {
-    for (const [file, want] of [[DOC, toolReference(tools, instructions())], ["docs/Agent playbook.md", agentPlaybook()]]) {
+    for (const [file, want] of [[DOC, toolReference(tools, instructions())], ["../docs/Agent playbook.md", agentPlaybook()]]) {
       if (process.env.UPDATE_MCP_DOCS) writeFileSync(file, want);
       const have = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
       // Out of date: run UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts

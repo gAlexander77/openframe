@@ -3,6 +3,11 @@
 How the pieces fit, and where each kind of code lives. Decisions behind the
 shape are in `decisions/`; this page is the map.
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+
 ## Layers
 
 ```

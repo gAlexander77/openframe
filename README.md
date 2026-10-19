@@ -53,7 +53,7 @@ With repository access, clone the current URL:
 
 ```sh
 git clone https://github.com/gAlexander77/openframe.git
-cd openframe
+cd openframe/openframe-application
 npm ci
 npm run tauri dev
 ```
@@ -63,11 +63,17 @@ build prerequisites. FFmpeg and ffprobe on `PATH` enable the desktop's
 broader media-format support. The optional `just` task runner provides the
 combined quality gates.
 
+From `openframe-application/`:
+
 ```sh
 npm run dev          # secondary web app at http://localhost:1420
 just check           # frontend build/tests and Rust checks
 npm run tauri build  # build this platform's desktop release
 ```
+
+The repository holds two projects. The editor is `openframe-application/`,
+the product website is `openframe-website/` (it deploys to GitHub Pages),
+and `docs/` at the root documents both.
 
 See the [user guide](docs/User%20guide.md) for a first editing session,
 project storage, exports, and platform limits.

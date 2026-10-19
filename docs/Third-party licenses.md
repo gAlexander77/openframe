@@ -63,7 +63,7 @@ Vaidhyanathan, CC0, Wikimedia Commons.
 - npm reported these installed packages as extraneous to this production
   tree, so they are excluded: `@emnapi/runtime@1.11.3`, `@img/sharp-wasm32@0.35.5`, `tslib@2.8.1`.
   No installed packages were changed or removed for this inventory.
-- Cargo: `cargo metadata --locked --format-version 1 --manifest-path src-tauri/Cargo.toml`.
+- Cargo: `cargo metadata --locked --format-version 1 --manifest-path openframe-application/src-tauri/Cargo.toml`.
   420 dependency packages, including build dependencies and all
   targets' conditional dependencies. The workspace's own package is excluded.
   This is intentionally broader than one Windows release artifact.

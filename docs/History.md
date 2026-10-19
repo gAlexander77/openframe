@@ -1295,6 +1295,13 @@ its work from the message it left.
   - MP3 export, and captions burned in or written as an SRT beside the
     file ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
 
+- **One folder per project**
+  ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+  The editor moved into `openframe-application/`, beside `openframe-website/`,
+  so neither project's tools reach into the other. `docs/` stays at the
+  root for both, and its app paths are read as inside the app folder. CI
+  runs the app's gates there and skips website-only changes.
+
 ### Lessons paid for in this round
 
 - **Claude Code re-encodes a large image result to a 256-color PNG.** A
@@ -1314,5 +1321,5 @@ its work from the message it left.
   animation-presets drive expected the old place. A merge reruns every
   touched lane's drives, not just the newest one's.
 - **Write edit scripts to files, and read them as UTF-8.** A Git Bash
-  heredoc piped to Python collapsed `\` and was decoded as cp1252, which
-  put mojibake in a doc.
+  heredoc piped to Python collapsed doubled backslashes and was decoded
+  as cp1252, which put mojibake in a doc.

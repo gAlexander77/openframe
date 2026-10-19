@@ -1,9 +1,10 @@
 // How to build OpenFrame from source: the README's and CONTRIBUTING.md's
 // commands, in one place, so the home page and the docs say the same thing.
-// When the app moves into openframe-application/, add that `cd` here.
+// The app lives in openframe-application/ (ADR-081), so the clone
+// steps into it and every command after runs there.
 
 export const CLONE = `git clone https://github.com/gAlexander77/openframe.git
-cd openframe`;
+cd openframe/openframe-application`;
 
 export const DESKTOP = `npm ci
 npm run tauri dev`;

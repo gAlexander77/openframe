@@ -1,7 +1,7 @@
 # Agent playbook
 
 <!-- Generated from src/lib/mcpGuide.ts by
-     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
+     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
 How an AI model should make a video with OpenFrame's MCP tools. A model gets the same text three ways: the `help` tool (topics `ad`, `epic_edit`, `social_short`, `design`), the MCP prompts `make_ad`, `epic_edit` and `social_short`, and the resources `guide://...`. Every tool is in [[MCP tools]]; connecting is in [[Automation]].

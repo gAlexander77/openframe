@@ -21,6 +21,11 @@ desktop input is still outside the test boundary. Attach the MCP server with
 MCP's `browser_close` on the app page. Use native file paths for fixtures.
 The dated [[Development pass 2026-10-16]] lists the checks and limitations.
 
+The app is in `openframe-application/`: run every app command there, and
+read `src/`, `scripts/`, `src-tauri/` and `fixtures/` paths in these docs
+as inside it. The website is `openframe-website/`; `docs/` at the root
+serves both ([[ADR-081 The app and the website each have a folder, the docs stay at the root]]).
+
 **Which harness:**
 
 - **The web build** (`npm run dev`, :1420): engine and UI logic with no IPC.

@@ -19,8 +19,8 @@ CLAUDE.local.md
 *.sw?
 
 # Rust build output
-src-tauri/target/
-src-tauri/gen/schemas/
+openframe-application/src-tauri/target/
+openframe-application/src-tauri/gen/schemas/
 
 # Obsidian's per-machine workspace state — the vault's markdown is the shared
 # artifact, its editor UI state is not
@@ -29,11 +29,11 @@ docs/.obsidian/
 # Playwright MCP scratch output (page snapshots from harness runs)
 .playwright-mcp/
 
-# Generated test media (scripts/make-fixtures.mjs regenerates it with ffmpeg)
-fixtures/media/
+# Generated test media (openframe-application/scripts/make-fixtures.mjs regenerates it with ffmpeg)
+openframe-application/fixtures/media/
 
 # Screenshots the drive scripts write beside themselves
-scripts/drive/shots/
+openframe-application/scripts/drive/shots/
 
 # Per-worktree scratch: playwright-core for drives, isolated app data,
 # browser profiles and logs (docs/Driving the app.md)
@@ -41,4 +41,4 @@ scratch/
 
 # UX audit captures: the raw PNGs run to megabytes per round and stay local;
 # the few shots an audit cites are committed as JPEGs beside them
-scripts/ui-review/shots/**/*.png
+openframe-application/scripts/ui-review/shots/**/*.png

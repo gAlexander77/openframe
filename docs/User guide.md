@@ -7,7 +7,7 @@ OpenFrame is a desktop-first video editor in active development (named
 
 The source is public at github.com/gAlexander77/openframe; there is no
 packaged release yet. Follow the root README's source setup and run
-`npm run tauri dev`. Node.js/npm, Rust, and the platform's Tauri prerequisites
+`npm run tauri dev` in the `openframe-application` folder. Node.js/npm, Rust, and the platform's Tauri prerequisites
 are required. Install FFmpeg and ffprobe on `PATH` for the desktop's broader
 media-format support. `OPENFRAME_FFMPEG` points the app at another FFmpeg
 (the older `VIDEO_EDITOR_FFMPEG` still works).
