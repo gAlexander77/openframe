@@ -94,3 +94,10 @@ export function fitZoom(frames: number, width: number, fps: Rational): number {
 export const ZOOM_MIN = 0.02;
 export const ZOOM_MAX = 60;
 export const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+
+/** Preserve the first visible frame and span when the lane viewport resizes. */
+export function refitTimeline(zoom: number, left: number, oldWidth: number, width: number) {
+  if (oldWidth <= 0 || width <= 0) return { zoom, left };
+  const next = clampZoom(zoom * width / oldWidth);
+  return { zoom: next, left: left * next / zoom };
+}

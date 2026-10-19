@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import {
+  SlidersHorizontal,
   ArrowLeftToLine,
   ArrowRightToLine,
   Bookmark,
@@ -35,6 +36,7 @@ import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
 import { MenuList, useDismiss } from "./Menu";
+import { TimelineDisplayMenu } from "./TimelineDisplayMenu";
 import { VoiceoverButton } from "./VoiceoverButton";
 
 /** "Split (Ctrl+B)" — CapCut's tooltip format, chord read from the keymap. */
@@ -69,6 +71,7 @@ export function TimelineToolbar() {
   const linkage = useEditor((s) => s.linkage);
   const axis = useEditor((s) => s.previewAxis);
   const keyframes = useEditor((s) => s.keyframePanel);
+  const mixer = useEditor((s) => s.mixer);
   const zoom = useEditor((s) => s.zoom);
   const canSplit = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration && (!s.selection.length || s.selection.includes(c.id)))));
   const canTrim = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration)));
@@ -112,6 +115,10 @@ export function TimelineToolbar() {
   return (
     <div className="tl-toolbar">
       <div className="tl-tools">
+        <TimelineDisplayMenu />
+        <button className={`icon-btn${mixer ? " on" : ""}`} aria-label="Mixer" aria-pressed={mixer} data-tip={mixer ? "Hide the audio mixer" : "Audio mixer: track levels, pan, mute and solo"} onClick={() => store.set({ mixer: !mixer })}>
+          <SlidersHorizontal />
+        </button>
         <div className="tool-picker" ref={picker}>
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tipFor(TOOL_ACTION[tool])} onClick={() => setToolMenu((v) => !v)}>
             <ToolIcon />

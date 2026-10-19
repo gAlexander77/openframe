@@ -5,7 +5,7 @@
 
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
-import { COMMANDS, describeProject, runCommand } from "./lib/commands";
+import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runCommand, type CommandReport } from "./lib/commands";
 import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
@@ -13,10 +13,12 @@ import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
-import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
+import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
+import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
@@ -26,8 +28,9 @@ import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
+import { agentNotice, asAgent } from "./state/toast";
 import { platform } from "./platform";
-import { currentScreen, listSaved, newProject, openProject, saveProjectCopy } from "./state/project";
+import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -46,15 +49,23 @@ function needProject() {
 
 const automation = {
   /** Every command with its JSON Schema, for tool listing. */
-  commands: () => COMMANDS.map(({ name, description, input }) => ({ name, description, input })),
+  commands: () => [...COMMANDS, ...PROJECT_FILE_COMMANDS].map(({ name, description, input }) => ({ name, description, input })),
   /** Run one command as an undoable edit. Throws with every problem named.
    * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
-    if (name === "add_sticker") return execAddSticker(args).then(() => describe());
+    const fileCommand = PROJECT_FILE_COMMANDS.find(c => c.name === name);
+    if (fileCommand) {
+      const problems = validate(args, fileCommand.input);
+      if (problems.length) throw new Error(problems.join("; "));
+      if (name === "collect_project") { needProject(); return collectProject(true); }
+      return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
+    }
+    const report: CommandReport = {};
+    if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
-    store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args));
-    return describe();
+    store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args, report));
+    return { ...describe(), ...report };
   },
   /** The sticker library, for add_sticker's name. */
   stickers: () => STICKERS.map(({ id, label, category }) => ({ id, label, category })),
@@ -100,14 +111,14 @@ const automation = {
   /** The current frame (or `frame`) as a PNG Blob URL. */
   still: stillToUrl,
   /** One MCP message in, one response out (null for notifications). */
-  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => handleMcp(req, mcpHost),
+  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => (req.method === "tools/call" ? agentCall(req) : handleMcp(req, mcpHost)),
   /** Local analysis without editing; times are source seconds (ADR-017).
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject },
+  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -241,6 +252,16 @@ window.openFrame = window.videoEditor = automation;
 // The live host behind src/lib/mcp.ts. Transports (desktop HTTP/stdio bridge,
 // a browser extension, tests) post JSON-RPC to window.videoEditor.mcp.
 
+/** An AI agent's tool call (an MCP client, or the docked assistant): its
+ * toasts are the agent's, and a change to the project is announced at the
+ * top with the Bot icon, so the user knows the agent made it. */
+async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+  const before = store.document();
+  const res = await asAgent(() => handleMcp(req, mcpHost));
+  if (store.document() !== before) agentNotice(commandLabel(String(req.params?.name ?? ""), req.params?.arguments));
+  return res;
+}
+
 const mcpHost: McpHost = {
   name: APP_NAME,
   version: __APP_VERSION__,
@@ -309,8 +330,11 @@ const mcpHost: McpHost = {
     bmp.close();
     return jpeg(c);
   },
-  voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
-  ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
+  voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
+  ai: (tool, target, options) =>
+    tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    : tool === "generateMusic" ? (needProject(), generateMusic(options))
+    : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
     // Recently deleted projects are not offered (ADR-078).

@@ -39,8 +39,14 @@ export function MarkersTab() {
     if (r.top < list.top) el.scrollTop += r.top - list.top;
     else if (r.bottom > list.bottom) el.scrollTop += r.bottom - list.bottom;
   }, [selected, markers, query, activeColor]);
+  // The editor opens under the list; bring its Save button into view. At
+  // the default 1600 x 940 window it sat just below the panel's edge.
+  const tabRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selected) tabRef.current?.querySelector(".marker-editor")?.scrollIntoView({ block: "nearest" });
+  }, [selected]);
   return (
-    <div className="lib-content markers-tab">
+    <div className="lib-content markers-tab" ref={tabRef}>
       <div className="marker-toolbar">
         <button className="btn" onClick={() => {
           run("addMarker");
@@ -68,7 +74,7 @@ export function MarkersTab() {
         {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
           <button className="marker-jump" aria-label={`Go to ${m.label || "Untitled marker"} at ${formatTimecode(m.frame, fps)}`} aria-pressed={selected === m.id} onClick={() => openMarkers(m.id)}>
             <i className="marker-dot" style={{ background: m.color }} />
-            <span className="marker-note">{m.label || "Untitled marker"}<small className="num">{formatTimecode(m.frame, fps)}</small></span>
+            <span className="marker-note"><span data-cut>{m.label || "Untitled marker"}</span><small className="num">{formatTimecode(m.frame, fps)}</small></span>
           </button>
           <button className="icon-btn small" aria-label={`Delete ${m.label || "untitled marker"}`} data-tip="Delete marker" onClick={() => store.edit("Delete marker", (p) => runCommand(p, "delete_markers", { marker_ids: [m.id] }))}><Trash2 size={13} /></button>
         </div>)}

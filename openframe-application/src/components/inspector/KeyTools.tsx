@@ -34,7 +34,7 @@ export function SectionKey({ clip, paths, title }: { clip: Clip; paths: string[]
 /** The easing of the keyframe under the playhead, as a small button beside
  * the ‹ ◇ › cluster; it opens the preset menu. */
 export function EaseButton({ clip, path, f }: { clip: Clip; path: string; f: number }) {
-  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number; above: number } | null>(null);
   const key = clip.keyframes?.[path]?.find((k) => k.f === f);
   if (!key) return <span className="key-ease" />;
   const name = presetOf(key.ease)?.label ?? "Custom curve";
@@ -46,7 +46,7 @@ export function EaseButton({ clip, path, f }: { clip: Clip; path: string; f: num
         data-tip={`Easing: ${name}`}
         onClick={(e) => {
           const r = e.currentTarget.getBoundingClientRect();
-          setAt({ x: r.right - 300, y: r.bottom + 4 });
+          setAt({ x: r.right - 300, y: r.bottom + 4, above: r.top - 4 });
         }}
       >
         <Spline size={11} />
@@ -55,6 +55,7 @@ export function EaseButton({ clip, path, f }: { clip: Clip; path: string; f: num
         <EaseMenu
           x={at.x}
           y={at.y}
+          above={at.above}
           current={key.ease}
           onPick={(ease) =>
             store.edit("Easing", (p) => {

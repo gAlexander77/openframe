@@ -1,0 +1,33 @@
+/* The audio mixer: a floating panel of channel strips, one per track that
+   sounds, then the master. It used --bg-panel and --border, which the app
+   never defined, so it had no border and a bluish fallback grey; the menus'
+   surface and shadow now. */
+.mixer {
+  position: fixed; z-index: 80; right: 24px; bottom: 64px;
+  /* As wide as its strips, so a large window shows them all; past that
+     they scroll. */
+  width: max-content; max-width: min(1180px, calc(100vw - 48px)); max-height: calc(100vh - 56px); overflow-y: auto;
+  padding: 12px;
+  background: #242424; border: 1px solid var(--line-strong); border-radius: var(--radius-panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 50%), 0 2px 6px rgb(0 0 0 / 30%);
+  animation: pop-in var(--t-med) var(--ease-out);
+}
+.mixer > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: var(--fs-md); }
+.mix-strips { display: flex; overflow-x: auto; gap: 12px; }
+/* min-width 0: a flex item is at least as wide as its content, and a long
+   track name (nowrap) stretched its strip to the name's full length. */
+.mix-strip { flex: 0 0 142px; width: 142px; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px; background: var(--bg-1); border-radius: var(--radius-sm); }
+.mix-strip > strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); }
+/* The master stays in view at the right while the track strips scroll
+   under it, as the master fader does in Premiere's and Resolve's mixers. */
+.mix-strip.master { position: sticky; right: 0; box-shadow: -12px 0 0 #242424; }
+.mix-fader { display: flex; height: 132px; gap: 8px; }
+.mix-fader > input { flex: none; writing-mode: vertical-lr; direction: rtl; width: 24px; height: 132px; accent-color: var(--text-1); }
+.mix-levels { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: 10px; color: var(--text-2); }
+.mix-levels > div { display: flex; flex-direction: column; }
+.mix-levels meter { width: 86px; height: 12px; }
+.mix-value { font-size: var(--fs-xs); color: var(--text-2); }
+.mix-strip > input[type="range"] { width: 100%; accent-color: var(--text-1); }
+.mix-switches { display: flex; gap: 4px; }
+.mix-switches .btn { flex: 1; height: 26px; padding: 0 8px; }
+.mix-switches [aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }

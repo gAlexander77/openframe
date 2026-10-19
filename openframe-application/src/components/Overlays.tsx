@@ -1,6 +1,6 @@
-import { AudioLines, Blend, Film, Image, Palette, SlidersHorizontal, Sparkles, Sticker, Type, X } from "../icons";
+import { AudioLines, Blend, Bot, Film, Image, Palette, SlidersHorizontal, Sparkles, Sticker, Type, X } from "../icons";
 import { useDrag } from "../state/drag";
-import { dismiss, useToasts } from "../state/toast";
+import { dismiss, useToasts, type Toast } from "../state/toast";
 
 /** The thing being dragged from the library, following the pointer. */
 export function DragGhost() {
@@ -18,13 +18,21 @@ export function DragGhost() {
   );
 }
 
-/** CapCut-style toasts: small dark pills near the bottom of the window. */
+/** CapCut-style toasts: small dark pills near the bottom of the window. An
+ * AI agent's stand apart at the top, under the Bot icon, so the user can
+ * tell the agent's changes from their own. */
 export function Toasts() {
   const toasts = useToasts();
-  return (
-    <div className="toasts" role="status" aria-live="polite">
-      {toasts.map((t) => (
+  const stack = (list: Toast[], top: boolean) => (
+    <div className={`toasts${top ? " toasts-agent" : ""}`} role="status" aria-live="polite">
+      {list.map((t) => (
         <div key={t.id} className={`toast toast-${t.kind}`}>
+          {t.agent && (
+            <span className="toast-agent">
+              <Bot size={14} />
+              AI agent
+            </span>
+          )}
           <span>{t.text}</span>
           {t.kind === "progress" && t.progress !== undefined && (
             <span className="toast-bar">
@@ -50,5 +58,11 @@ export function Toasts() {
         </div>
       ))}
     </div>
+  );
+  return (
+    <>
+      {stack(toasts.filter((t) => !t.agent), false)}
+      {stack(toasts.filter((t) => t.agent), true)}
+    </>
   );
 }

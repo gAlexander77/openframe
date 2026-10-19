@@ -45,6 +45,9 @@ of the documentation and how agents use it as shared working memory.
   user's walk, what was fixed, and what to keep
 - [[UI polish 2026-10-16]] — styling audit at three window sizes and the
   splitter extremes: what clipped or overflowed, why, and rules of thumb
+- [[UI at every window size 2026-10-19]] — the four-lane sweep at nine window
+  sizes: the player's floor, fixed sizes in a fluid shell, layers, the
+  inspector below 340 px, and Chromium layout lessons
 - [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
 - [[Driving the app]] — the web build through Playwright, the desktop app over
   WebView2's debug port; native dialogs, OS drops, the drive scripts
@@ -77,6 +80,16 @@ of the documentation and how agents use it as shared working memory.
 - [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
   entirely through MCP: how it was made, what worked, fourteen limits
   ranked by what they cost, and eleven product issues met while recording
+- [[Launch film 3 through MCP 2026-10-19]] — the 68 s voiced launch film and
+  its vertical cut, scored and narrated in the app through MCP; the limits
+  met, ranked (re-laying out for 9:16, layouts that crop, runs lost on edit).
+- [[Natural voiceover 2026-10-19]] — what a natural read measures (pace,
+  pauses, melody, silence, level), what Kokoro does against it at each
+  precision, speed and voice, and what the natural finish changed
+- [[Music generation 2026-10-19]] — how professional tracks of five
+  styles are built (tempo, swing, progressions, drums, builds and drops,
+  mix and master, with sources), what generate_music does with it, and
+  what it measures since nobody can listen
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,
@@ -257,3 +270,43 @@ Every non-obvious choice gets a short Architecture Decision Record in
   `docs/` at the root for both.
 - [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
   agents run the gates locally and never start it; Pages deploys on its own.
+- [[ADR-083 Voiceover lines are directed in the script and keep it]] —
+  per-line voice, speed, time and pause; pause marks lengthen the voice's
+  own pause; pronunciations for the voice only; the script kept with the
+  take for review and retakes; one undo takes the speech files too.
+- [[ADR-084 Voiceover is read at full precision and finished like a recording]] —
+  fp32 everywhere by default, the natural finish (a reader's pauses,
+  rushed lines read slower, EQ, one loudness, room tone, fades, a touch of
+  room), a narrator's speed, voices cast from a described catalog.
+
+- [[ADR-085 Music is composed and synthesized in the app, seeded and offline]] —
+  generate_music synthesizes in TypeScript in a worker (no samples, the
+  same samples in every webview and test), four stems that add up to the
+  mix, the balance measured and the master's gains shared.
+- [[ADR-086 A score fits an edit by whole bars and a nudged tempo]] —
+  sections in bars, seconds or fixed times, the tempo scanned to land
+  them, phrase-aligned default forms, the cue sheet as the answer and
+  what analyze_music reads back.
+- [[ADR-087 Inline title ranges share the raster layout]]
+
+- [[ADR-088 Layout and group geometry use canvas pixels]]
+
+- [[ADR-089 Mixer taps and timed images share the render engines]] — post-fader
+  meters, master gain, timed image loops and profile display preferences.
+- [[ADR-090 Collected projects use relative media in a new folder]] — native
+  collection, portable paths and fresh identities when opening JSON.
+- [[ADR-091 Tall versions stack what stood side by side]] — a window beside
+  its headline becomes the window above it on 9:16 and 4:5, a split
+  screen's halves are stacked and cut wider, followers ride along, captions
+  are a version's choice (burned on tall ones).
+- [[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]] — captions and
+  transcripts of a voice with a script use its words, timed by Whisper; a
+  review hears a doubtful line again with a larger model before blaming the
+  voice, fixes are concrete respellings, and a line's pace intent is kept.
+- [[ADR-093 An AI agent's changes are announced at the top, under the Bot]] —
+  every MCP tool call (desktop bridge or docked assistant) is the agent's;
+  an edit raises one retitled notice at the top marked AI agent with the
+  Bot icon, and the user's own toasts stay at the bottom.
+- [[ADR-094 Library tabs keep their labels only while they fit]] — balanced
+  rows of labeled tabs while two rows fit in a modest share of the panel,
+  else icons named by tooltips; category lists become chips below 300 px.

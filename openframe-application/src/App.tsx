@@ -17,7 +17,7 @@ import { platform } from "./platform";
 import { onHomeKeyDown, onKeyDown, provide } from "./state/actions";
 import { addToTimeline, adoptAndImport, importFiles } from "./state/media";
 import { useSession } from "./state/project";
-import { assistantShare, dockColumns, DOCK } from "./lib/dock";
+import { assistantShare, canDock, dockColumns, DOCK, sideMax } from "./lib/dock";
 import { DEFAULT_LAYOUT, toPixels, type Layout } from "./lib/layout";
 import { setAssistantWidth, useAssistantValue } from "./state/assistant";
 import { setLayout, useLayout } from "./state/layout";
@@ -40,7 +40,11 @@ export default function App() {
   // (ADR-064); null while it is closed. The editor then lays out as if the
   // window were the editor's width.
   const assistantWidth = useAssistantValue((s) => (s.open ? s.width : null));
-  const dock = assistantWidth === null ? null : dockColumns(shares, win.w, assistantWidth);
+  // Too narrow to dock (a browser tab under 1066 px), it floats over the
+  // editor's right side: docked, the editor squeezed past its minimum and
+  // the player's and timeline's controls ran over each other.
+  const floating = assistantWidth !== null && !canDock(win.w);
+  const dock = assistantWidth === null || floating ? null : dockColumns(shares, win.w, assistantWidth);
 
   // Desktop OS drops arrive as paths, not HTML5 events: import them and add
   // each at the playhead, like the media panel's +.
@@ -56,6 +60,12 @@ export default function App() {
     const of = k === "top" ? innerHeight : (dock?.editor ?? innerWidth);
     setLayout((l) => ({ ...l, [k]: clamp(l[k] * of + d, lo, hi) / of }));
   };
+  // A side panel stops where the player would drop under the width its
+  // transport needs: at 1100 px a library dragged to its 640 px cap left
+  // the player 320 px, and the play button slid under the zoom menu.
+  const editorWidth = dock?.editor ?? win.w;
+  const leftPx = dock ? dock.left : layout.left;
+  const rightPx = dock ? dock.right : layout.right;
   const reset = (k: keyof Layout) => setLayout((l) => ({ ...l, [k]: DEFAULT_LAYOUT[k] }));
 
   const { screen, saveState } = useSession();
@@ -135,11 +145,11 @@ export default function App() {
           {(!dock || dock.left > 0) && (
             <>
               {scopes ? <ScopesPanel /> : <LibraryPanel />}
-              <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => reset("left")} />
+              <Splitter dir="x" onDrag={(d) => resize("left", d, 240, sideMax(editorWidth, rightPx + DOCK.gap, 240, 640))} onReset={() => reset("left")} />
             </>
           )}
           <PlayerPanel />
-          <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => reset("right")} />
+          <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, sideMax(editorWidth, leftPx ? leftPx + DOCK.gap : 0, 260, 560))} onReset={() => reset("right")} />
           <InspectorPanel />
         </div>
         <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => reset("top")} />
@@ -154,6 +164,7 @@ export default function App() {
             <AssistantPanel />
           </>
         )}
+        {floating && <AssistantPanel floating />}
       </div>
       )}
       {dropping && (

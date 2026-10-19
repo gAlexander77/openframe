@@ -22,7 +22,11 @@ are music. The convention and measurement window are part of the tool's
 contract. Music on a video track is not part of that automatic music group.
 
 Targeted ducking measures the chosen music clip and audible voice clips
-across the first-to-last speech window, including gaps. It starts from
+only while someone speaks: over the speech windows, joined across gaps
+under a second, their energies averaged by length. (Until 2026-10-19 it
+measured one first-to-last window, gaps included. The bed between lines,
+where the dip releases, counted against the target, and a voiceover with
+long gaps was pushed to the 40 dB limit, 38 LU under every line.) It starts from
 unducked music, chooses attenuation in 0-40 dB, renders candidate volume
 keys, and corrects the depth up to four times. It reports the achieved
 balance and whether it is within 0.5 LU, including when a target cannot be

@@ -7,7 +7,7 @@ import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run, tipFor } from "../state/actions";
 import { toggleAssistant, useAssistantValue } from "../state/assistant";
 import { saveOtio } from "../state/export";
-import { closeProject } from "../state/project";
+import { closeProject, collectProject, openProjectFile } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { openMarkers } from "../state/markers";
@@ -51,14 +51,18 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   // Menus read the store when they open, so the title bar does not re-render
   // on every playhead tick.
   const s = () => store.get();
+  const files = (task: Promise<unknown>) => void task.catch(e => toast(String(e), "error"));
+  const openFile = { label: "Open project file…", onSelect: () => files(openProjectFile()) };
   const menus: { label: string; items: () => MenuItem[] }[] = [
     {
       label: "File",
-      items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }] : [
+      items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }, openFile] : [
         { label: "Back to home", onSelect: () => void closeProject() },
         "-",
         { action: "newProject" },
         { action: "openProject" },
+        openFile,
+        { label: "Collect files…", onSelect: () => files(collectProject()) },
         { action: "saveProject" },
         { label: "Save a copy…", onSelect: () => setCopyDialog(true) },
         "-",
@@ -139,6 +143,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         "-",
         ...VIEWER_GUIDES.map(([value, label]) => ({ label, checked: s().viewerGuides === value, onSelect: () => store.set({ viewerGuides: value }) })),
         "-",
+        { label: "Mixer", checked: s().mixer, onSelect: () => store.set({ mixer: !s().mixer }) },
         { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
         { label: "Markers", checked: s().leftTab === "markers" && !s().scopes, onSelect: () => openMarkers() },
         { action: "fullscreenPreview" },
@@ -171,8 +176,15 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         ) : editing ? (
           <input
             className="field project-name-input"
+            aria-label="Project name"
             maxLength={120}
             autoFocus
+            onFocus={(e) => {
+              // All selected, the start in view: a long name showed only its end.
+              const input = e.currentTarget;
+              input.setSelectionRange(0, input.value.length, "backward");
+              input.scrollLeft = 0;
+            }}
             defaultValue={name}
             onBlur={(e) => {
               const v = e.currentTarget.value.trim();
@@ -221,13 +233,13 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
           // Window chrome must not take typing focus or commit an unfinished
           // rename. Keyboard focus still reaches these buttons normally.
           <div className="window-controls" onMouseDown={(e) => { if (e.button === 0) e.preventDefault(); }}>
-            <button aria-label="Minimize" onClick={() => win.minimize()}>
+            <button aria-label="Minimize" data-tip="Minimize" onClick={() => win.minimize()}>
               <Minus size={16} />
             </button>
-            <button aria-label={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
+            <button aria-label={maximized ? "Restore" : "Maximize"} data-tip={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
               {maximized ? <PanelsTopLeft size={13} /> : <Square size={13} />}
             </button>
-            <button aria-label="Close" className="close" onClick={() => win.close()}>
+            <button aria-label="Close" data-tip="Close" className="close" onClick={() => win.close()}>
               <X size={16} />
             </button>
           </div>

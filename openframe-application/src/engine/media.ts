@@ -14,6 +14,7 @@ import {
   type Source,
 } from "mediabunny";
 import type { Asset, AssetKind } from "../lib/project/types";
+import { animationFor, animatedBitmap, closeAnimation } from "./animatedImage";
 import { platform } from "../platform";
 
 export interface MediaFile {
@@ -34,6 +35,7 @@ export interface MediaFile {
 }
 
 export interface Probe {
+  animated?: boolean;
   kind: AssetKind;
   duration: number;
   width?: number;
@@ -49,7 +51,7 @@ export interface Probe {
   decodable: boolean;
 }
 
-const IMAGE_EXT = /\.(png|jpe?g|gif|webp|bmp|avif|svg|ico)$/i;
+const IMAGE_EXT = /\.(a?png|jpe?g|gif|webp|bmp|avif|svg|ico)$/i;
 const AUDIO_EXT = /\.(mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?)$/i;
 
 export const isImageName = (name: string) => IMAGE_EXT.test(name);
@@ -110,6 +112,7 @@ export function mediaForSrc(src: string): Promise<MediaFile> {
 
 /** Close an asset's decoders and file handle (asset removed or relinked). */
 export async function closeMedia(src: string) {
+  await closeAnimation(src);
   const m = files.get(src);
   files.delete(src);
   (await m?.catch(() => null))?.input.dispose();
@@ -120,7 +123,11 @@ export async function closeMedia(src: string) {
 const images = new Map<string, Promise<ImageBitmap>>();
 
 /** Decoded still for an image asset, cached for the session. */
-export function imageFor(asset: Asset): Promise<ImageBitmap> {
+export async function imageFor(asset: Asset, time = 0): Promise<ImageBitmap> {
+  if (asset.animated) {
+    const frame = await animatedBitmap(asset.src, asset.name, time);
+    if (frame) return frame;
+  }
   let img = images.get(asset.src);
   if (!img) {
     img = platform.blobFor(asset.src).then((b) => createImageBitmap(b, { imageOrientation: "from-image" }));
@@ -135,6 +142,8 @@ export function imageFor(asset: Asset): Promise<ImageBitmap> {
 /** Everything the media panel and the project need to know about a file. */
 export async function probe(src: string, name: string): Promise<Probe> {
   if (IMAGE_EXT.test(name)) {
+    const animation = await animationFor(src, name);
+    if (animation) return { kind: "image", animated: true, duration: animation.durations.reduce((a, b) => a + b, 0), width: animation.frames[0].width, height: animation.frames[0].height, hasVideo: true, hasAudio: false, decodable: true };
     const bmp = await createImageBitmap(await platform.blobFor(src));
     const out: Probe = { kind: "image", duration: 0, width: bmp.width, height: bmp.height, hasVideo: true, hasAudio: false, decodable: true };
     bmp.close();

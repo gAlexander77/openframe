@@ -28,6 +28,8 @@ export interface Project {
   fps: Rational;
   /** Audio mix rate, 48000 unless an agent asks otherwise. */
   sampleRate: number;
+  /** Master linear gain, applied to preview and export. */
+  masterVolume?: number;
   /** Color behind every layer (CSS hex). */
   background: string;
   assets: Asset[];
@@ -86,6 +88,8 @@ export interface Asset {
   /** Edit-friendly copy (desktop: made by ffmpeg) when the webview cannot
    * decode the original. Preview and export read this when present. */
   proxy?: string;
+  /** Timed image frames repeat for the length of the clip. */
+  animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */
   duration: number;
   width?: number;
@@ -105,6 +109,27 @@ export interface Asset {
   sticker?: string;
   folder?: string;
   favorite?: boolean;
+  /** A voiceover line this file was spoken from on this machine
+   * (add_voiceover, retake_voiceover, text to speech): review_voiceover
+   * compares what it hears with `text`, retake_voiceover reads it again. */
+  speech?: SpeechInfo;
+}
+
+export interface SpeechInfo {
+  /** The line as written, pause marks included ("Meet OpenFrame. [pause 0.4] It's free."). */
+  text: string;
+  /** What its caption shows, when it differs from the words. */
+  caption?: string;
+  /** A voice id, or a blend ("af_heart:60,af_bella:40"). */
+  voice: string;
+  speed: number;
+  /** Words respelled for the voice ({"MCP": "M C P"}). */
+  pronounce?: Record<string, string>;
+  quality?: "best" | "draft";
+  finish?: "natural" | "clean" | "raw";
+  /** The pace the line is meant to have: slow (an end card's tagline) or
+   * fast, so review_voiceover does not flag it for being so. */
+  pace?: "slow" | "normal" | "fast";
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */
@@ -120,6 +145,7 @@ export interface LutFile {
 export type TrackKind = "video" | "audio";
 
 export interface Track {
+  color?: ClipLabel;
   id: Id;
   kind: TrackKind;
   name: string;
@@ -651,7 +677,20 @@ export interface Timed {
   freeze?: boolean;
 }
 
+export interface TextRun {
+  /** UTF-16 offsets, end exclusive, in the original text. */
+  start: number;
+  end: number;
+  color?: string;
+  gradient?: { from: string; to: string; angle: number };
+  weight?: number;
+  italic?: boolean;
+  underline?: boolean;
+  scale?: number;
+}
+
 export interface TextStyle {
+  runs?: TextRun[];
   font: string;
   /** Pixels at a 1080-pixel-tall canvas; scales with the canvas.
    * style.size, style.letterSpacing and style.color animate (ADR-071). */
@@ -722,7 +761,7 @@ export type VideoClip = ClipBase &
     frameBlend?: boolean;
   };
 export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
-export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id };
+export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &
   Visual & {
     type: "text";

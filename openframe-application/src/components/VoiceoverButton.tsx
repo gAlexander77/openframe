@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Mic } from "../icons";
 import { formatDuration } from "../lib/time";
 import { cancelVoiceover, inputLevel, microphones, startVoiceover, stopVoiceover, useVoiceover } from "../state/voiceover";
@@ -25,7 +25,27 @@ export function VoiceoverButton() {
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
   const [, tick] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const busy = phase.kind !== "idle";
+  // The panel is fixed under the button, or above it when the window has
+  // no room below. Absolute in the toolbar, the timeline panel clipped it:
+  // at the desktop's 1100 x 680 minimum its foot ran past the window's
+  // bottom edge. (Fixed, it stays next to the button for Tab order; the
+  // toolbar's container-type does not contain fixed boxes.)
+  const [at, setAt] = useState<{ top: number; left: number; up: boolean } | null>(null);
+  useLayoutEffect(() => {
+    if (!open) return setAt(null);
+    const place = () => {
+      const el = panel.current, r = box.current?.getBoundingClientRect();
+      if (!el || !r) return;
+      const h = el.offsetHeight, w = el.offsetWidth, below = r.bottom + 6;
+      const up = below + h > innerHeight - 8;
+      setAt({ top: up ? Math.max(8, r.top - 6 - h) : below, left: Math.min(Math.max(8, r.right - w), innerWidth - 8 - w), up });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, phase.kind]);
   const live = phase.kind === "recording";
 
   useEffect(() => {
@@ -81,7 +101,7 @@ export function VoiceoverButton() {
         <Mic />
       </button>
       {open && (
-        <div className="menu vo-panel" role="dialog" aria-label="Record voiceover">
+        <div ref={panel} className={`menu vo-panel${at?.up ? " up" : ""}`} role="dialog" aria-label="Record voiceover" style={at ? { top: at.top, left: at.left } : { visibility: "hidden" }}>
           <div className="vo-title">Record voiceover</div>
           <label className="vo-row">
             <span>Microphone</span>

@@ -1,21 +1,24 @@
 import { expect, it } from "vitest";
-import { layoutLines, speechText, trimSpeech } from "./tts";
+import { checkVoice, speechText, trimSpeech, VOICES } from "./tts";
 
 it("reads each line of a title as a sentence", () => {
   expect(speechText("Big news\n\nWe ship today!")).toBe("Big news. We ship today!");
   expect(speechText("  Hello, ")).toBe("Hello,");
+  // A line ending on a pause mark gets no period after the mark.
+  expect(speechText("Wait [pause]")).toBe("Wait [pause]");
   expect(speechText("\n")).toBe("");
 });
 
-it("lays a voiceover's lines one after another at their real lengths", () => {
-  const lines = [{ seconds: 5.07 }, { seconds: 3.2 }, { at: 12, seconds: 2 }, { at: 13, seconds: 1 }];
-  expect(layoutLines(lines, 0.5, 0.4)).toEqual([
-    { start: 0.5, end: 5.57 },
-    { start: 5.97, end: 9.17 },
-    // Pinned to 12; the next asks for 13 but waits for this one to end.
-    { start: 12, end: 14 },
-    { start: 14, end: 15 },
-  ]);
+it("takes a voice or a blend of known voices, and names the ones there are", () => {
+  expect(checkVoice("af_heart")).toBe("af_heart");
+  expect(checkVoice("af_heart:60, af_bella:40")).toBe("af_heart:60,af_bella:40");
+  expect(() => checkVoice("af_hart")).toThrow(/No voice af_hart.*af_heart/);
+  expect(() => checkVoice("af_heart:0")).toThrow(/positive/);
+});
+
+it("describes every voice it offers, the most natural first", () => {
+  expect(VOICES[0].id).toBe("af_heart");
+  for (const v of VOICES) expect(v.character && v.suited, v.id).toBeTruthy();
 });
 
 it("trims a spoken line to its words, keeping a breath either side", () => {

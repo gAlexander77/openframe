@@ -7,7 +7,7 @@ async (page) => {
   details.homeMenus = { ok: names.join(",") === "File,Help", names };
   await page.locator(".menubar-button", { hasText: /^File$/ }).click();
   const file = await page.locator(".menu-label").allTextContents();
-  details.file = { ok: file.join(",") === "New project,Open project", items: file };
+  details.file = { ok: file.join(",") === "New project,Open project,Open project file…", items: file };
   await page.keyboard.press("Escape");
   await page.locator(".menubar-button", { hasText: /^Help$/ }).click();
   const help = await page.locator(".menu-label").allTextContents();

@@ -1,6 +1,8 @@
 /* Record voiceover panel (CapCut's microphone button) */
 .vo { position: relative; }
-.menu.vo-panel { left: auto; right: 0; top: calc(100% + 6px); width: 300px; padding: 12px; display: grid; gap: 10px; transform-origin: top right; }
+/* Fixed, placed by VoiceoverButton under or above the button. */
+.menu.vo-panel { position: fixed; width: 300px; padding: 12px; display: grid; gap: 10px; transform-origin: top right; }
+.menu.vo-panel.up { transform-origin: bottom right; }
 .vo-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); }
 .vo-row { display: grid; gap: 4px; font-size: var(--fs-xs); color: var(--text-2); }
 .vo-row .field { width: 100%; }

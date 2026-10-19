@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCcw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
-import { parseTyped } from "../../lib/numberInput";
+import { parseTyped, stepDigits } from "../../lib/numberInput";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Id } from "../../lib/project/types";
 import { sectionOpen, setSectionOpen } from "../../state/sections";
@@ -136,7 +136,7 @@ export function SliderRow(p: SliderProps) {
   const value = keys?.length ? paramAt(p.clip, p.path, rel) : (getPath(p.clip, p.path) ?? p.reset ?? 0);
   const shown = show(value);
   const [text, setText] = useState<string | null>(null);
-  const digits = p.digits ?? (p.step && p.step < 1 ? 1 : 0);
+  const digits = p.digits ?? stepDigits(p.step);
   const playhead = useEditor((s) => s.playhead);
   const relOf = (c: Clip) => Math.min(Math.max(playhead - c.start, 0), c.duration - 1);
   // A dash, as Premiere shows, when the clips disagree.

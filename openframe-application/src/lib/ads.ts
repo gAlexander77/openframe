@@ -63,6 +63,22 @@ export function safeArea(p: Pick<Project, "width" | "height">): { left: number; 
   return p.height / p.width >= 1.5 ? { ...VERTICAL_SAFE } : { left: 0.05, top: 0.05, right: 0.05, bottom: 0.05 };
 }
 
+/**
+ * The width a title centered at `x` (a fraction of the width from the
+ * canvas's center) wraps within, as a fraction of the width: twice the room
+ * on its nearer side of the safe area, so its lines stay inside it. A
+ * centered title on 16:9, 1:1 or 4:5 gets the 90% title-safe width (0.9,
+ * the style's old default); on 9:16 the column the apps' buttons leave
+ * (0.62 centered, 0.7 on the column's own center at x -0.04). At least a
+ * quarter of the width.
+ */
+export function titleWrap(p: Pick<Project, "width" | "height">, x = 0): number {
+  const s = safeArea(p);
+  const cx = 0.5 + x;
+  const room = 2 * Math.min(cx - s.left, 1 - s.right - cx);
+  return +Math.max(0.25, Math.min(1 - s.left - s.right, room)).toFixed(3);
+}
+
 /** One clip of an element, before placement: its look, when it enters
  * after the element starts, and where it sits in the element's own layout
  * (pixels from the element's center). */

@@ -4,6 +4,7 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
+import { clampZoom } from "../lib/timeline";
 import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
@@ -61,8 +62,11 @@ export function setKeymapChanges(next: KeymapChanges) {
 /** The first chord bound to an action, for tooltips and menus. */
 export const chordFor = (id: ActionId) => keymap[id]?.[0];
 
+/** A pointer gesture as this platform writes it ("Shift+click", "⇧click"). */
+export const gestureText = (id: keyof typeof GESTURE_CHORDS) => chordText(GESTURE_CHORDS[id], isMac);
+
 /** A tooltip with the action's current chord: "Split (Ctrl+B)". */
-export function tipFor(id: ActionId | keyof typeof GESTURE_CHORDS, label = id === "viewerZoom" ? "Viewer zoom" : ACTION_LABELS[id]) {
+export function tipFor(id: ActionId | "viewerZoom", label = id === "viewerZoom" ? "Viewer zoom" : ACTION_LABELS[id]) {
   const c = id === "viewerZoom" ? GESTURE_CHORDS[id] : chordFor(id);
   return c ? `${label} (${chordText(c, isMac)})` : label;
 }
@@ -293,8 +297,8 @@ provide({
       outPoint: Math.max(...items.map((i) => i.c.start + i.c.duration)),
     });
   },
-  zoomIn: () => store.set({ zoom: Math.min(64, store.get().zoom * 1.25) }),
-  zoomOut: () => store.set({ zoom: Math.max(0.02, store.get().zoom / 1.25) }),
+  zoomIn: () => store.set({ zoom: clampZoom(store.get().zoom * 1.25) }),
+  zoomOut: () => store.set({ zoom: clampZoom(store.get().zoom / 1.25) }),
 });
 
 function copyClips() {

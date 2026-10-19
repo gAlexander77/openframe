@@ -17,6 +17,8 @@ import { SFX } from "./sfx";
 import { PRESETS as SPEED_PRESETS } from "./speed";
 import { searchStickers, STICKER_CATEGORIES, STICKER_MOTIONS, STICKERS } from "./stickers";
 import { TEXT_TEMPLATES } from "./templates";
+import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "./tts";
+import { REVIEW } from "./voiceReview";
 
 export interface ToolInfo {
   name: string;
@@ -28,22 +30,22 @@ export interface ToolInfo {
 
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "list_catalog"] },
-  { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "set_project"] },
+  { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "set_project"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
-    blurb: "Read the music's structure, cut and hit on it, fit it to the picture; mark moments.",
-    tools: ["analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
+    blurb: "Compose an original score that fits the edit, or read an imported track's structure; cut and hit on it, fit it to the picture; mark moments.",
+    tools: ["generate_music", "plan_music", "analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
   },
   {
     name: "Picture and motion",
     blurb: "Position, scale, crop, mask, key and animate pictures; keyframes for anything numeric.",
-    tools: ["set_param", "add_keyframe", "move_keyframe", "set_keyframe_ease", "remove_keyframes", "frame_region", "frame_clips", "align_clips", "distribute_clips", "set_uniform_scale", "set_flip", "set_crop", "set_mask", "set_blend", "set_chroma_key", "set_canvas_fill", "set_background_removal", "remove_background", "set_animation", "add_cinematic_bars", "track_motion", "auto_reframe", "stabilize_clip"],
+    tools: ["set_param", "add_keyframe", "move_keyframe", "move_motion_point", "set_keyframe_ease", "remove_keyframes", "frame_region", "frame_clips", "apply_layout", "align_clips", "distribute_clips", "set_uniform_scale", "set_flip", "set_crop", "set_mask", "set_blend", "set_chroma_key", "set_canvas_fill", "set_background_removal", "remove_background", "set_animation", "add_cinematic_bars", "track_motion", "auto_reframe", "stabilize_clip"],
   },
   {
     name: "Graphics and compositing",
@@ -51,7 +53,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     tools: ["add_shape", "set_shape", "set_shadow", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
-  { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
+  { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
   {
     name: "Brand and ad elements",
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
@@ -61,7 +63,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
-    tools: ["add_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
+    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
   { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project", "measure_loudness", "export_video", "export_versions", "export_status"] },
 ];
@@ -70,11 +72,11 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "seek"]);
+const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -100,7 +102,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   import_media: { files: [{ src: "C:/Footage/product.mp4" }, { src: "C:/Music/track.mp3" }] },
   add_media_clip: { asset_id: "a_123", start: 0, duration: 3.5, in: 12 },
   add_text: { text: "50% OFF", start: 1, duration: 2.5, y: -0.1, style: { size: 160, bold: true, color: "#ffffff", font: "Arial Black", stroke: { color: "#000000", width: 8 } } },
-  set_text: { clip_id: "c_123", style: { background: { color: "#000000b3", padding: 18, radius: 12 } } },
+  set_text: { clip_ids: ["c_123"], style: { background: { color: "#000000b3", padding: 18, radius: 12 } } },
   set_animation: { clip_id: "c_123", slot: "in", type: "pop", duration: 0.4 },
   add_text_template: { name: "lowerThird", start: 2, texts: ["Jordan Lee", "Head of Design"] },
   set_param: { clip_ids: ["c_123"], path: "transform.scale", value: 1.2 },
@@ -114,6 +116,8 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_canvas_fill: { clip_ids: ["c_123"], fill: "blur", amount: 60 },
   set_fades: { clip_ids: ["c_123"], fade_in: 1, fade_out: 2 },
   mark_beats: { clip_id: "c_123", every: 1 },
+  generate_music: { style: "launch", key: "Am", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", at: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }], seed: 7, stems: true, markers: ["bars", "drop"] },
+  plan_music: { style: "cinematic", length: 45, ending: "stop" },
   analyze_music: { clip_id: "c_3", markers: ["beats", "bars", "drop"] },
   cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
@@ -140,7 +144,19 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   export_versions: { ratios: ["16:9", "9:16", "1:1"], durations: [15, 6], textless: true, loudness: -14, check: true },
   add_sound_effect: { sounds: [{ name: "whoosh", start: 3.9 }, { name: "whoosh", start: 7.9, volume: 0.6 }, { name: "rise", end_at: 12 }, { name: "impact", start: 12 }] },
   duplicate_clips: { clip_ids: ["c_window"], at: 6, unique: true },
-  add_voiceover: { lines: [{ text: "Meet the lightest bottle we have ever made." }, { text: "Cold for 24 hours." }], voice: "af_heart" },
+  add_voiceover: {
+    lines: [
+      { text: "Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer." },
+      { text: "Every edit is a tool an agent can call,", voice: "am_michael" },
+      { text: "so a whole film can be made by asking.", voice: "am_michael", pause_after: 0.8 },
+      { text: "Free. [beat] Open source. Yours.", at: 12, caption: "Free, open source, yours." },
+    ],
+    voice: "af_heart",
+    pronounce: { OpenFrame: "Open Frame" },
+  },
+  review_voiceover: {},
+  remove_keyframes: { clip_ids: ["c_title"], path: "opacity" },
+  retake_voiceover: { clip_id: "c_vo2", pronounce: { MCP: "M C P" }, ripple: true },
   duck_under_speech: { clip_id: "c_music", depth: 12 },
   set_caption_look: { look: "pop" },
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
@@ -193,6 +209,7 @@ export function fullCatalog(section?: string, query?: string): unknown {
     caption_looks: labels(CAPTION_LOOKS),
     speed_presets: labels(SPEED_PRESETS),
     sound_effects: Object.entries(SFX).map(([id, s]) => ({ id, label: s.label, seconds: s.seconds })),
+    voices: VOICES.map((v) => ({ id: v.id, name: v.label.split(" (")[0], accent: v.accent, gender: v.gender, grade: v.grade, character: v.character, suited: v.suited, ...(v.id === DEFAULT_VOICE ? { default: true } : {}) })),
     blend_modes: BLEND_MODES.map(([id, label]) => ({ id, label })),
     mask_shapes: MASK_SHAPES,
     fonts: { builtin: FONTS, note: "Any font installed on the user's computer works by its family name too." },
@@ -240,11 +257,11 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 1. new_project with a name; set_project for the shape: 1920x1080 for YouTube and TV, 1080x1920 for Reels, TikTok and Shorts, 1080x1080 or 1080x1350 for feeds.
 2. import_media: product shots, b-roll, the logo (PNG with transparency), music. describe_project for asset ids and durations; preview_media to see what is in each video. set_brand with the brand's colors, two fonts, the logo, url and tagline: every title role and ad element then agrees.
 3. Script in beats: hook (0-3 s), problem or desire, the product, proof (features, numbers, a demo), offer, call to action. Write the voice lines short. Put the grade's adjustment clip (step 7) on the timeline before the voiceover and any titles: new tracks stack on top, and a grade added last would tint the captions, titles and end card too (move_track below_track_id fixes the order later).
-4. add_voiceover with the script (a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, trimmed to the speech, and it answers where each line landed; cut the picture to the voice.
+4. add_voiceover with the script, directed (help topic voiceover: casting, pace, pauses, pronunciations; a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, and it answers where each line landed. review_voiceover hears it back and names what to fix; retake_voiceover fixes a line; then cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
-8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
+8. Sound: music with add_media_clip on an audio track (or an original score with generate_music, its sections fitted to the cut and its final hit on the end card), duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a version needs work by hand (a subject to keep in frame, an end card to lay out), save_project_copy, set_project to the new shape, fix it there (auto_reframe for the shots) and export it on its own.
 
@@ -253,8 +270,8 @@ ${DESIGN}`,
   epic_edit: {
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
-1. new_project; import_media the clips and one strong track (a clear beat and a drop).
-2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop: it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
+1. new_project; import_media the clips and one strong track (a clear beat and a drop), or compose one: generate_music (style launch or cinematic) with sections that fit the edit (a drop at the climax, the outro ending with the video; plan_music tries them without rendering) places the music and answers its cue sheet: tempo, bars, beats, sections, drops and the final hit.
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
 3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
@@ -265,6 +282,17 @@ ${DESIGN}`,
 10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).
 
 ${DESIGN}`,
+  },
+  voiceover: {
+    title: "A directed voiceover",
+    text: `Voicing a video so it sounds read by a person (add_voiceover, review_voiceover, retake_voiceover):
+1. Cast: list_catalog section voices describes every voice (accent, gender, the model author's grade, character, what it suits). ${DEFAULT_VOICE} (grade A) is the most natural and the default; am_michael is the US man to cast first, bf_emma and bm_george the British pair. Two speakers in one call are lines with different voices: a question and its answer, a host and a product. A blend ("af_heart:70,af_bella:30") mixes two voices' styles.
+2. Write for the ear: one breath per line (8-16 words, a sentence or two); short words; no parentheses or symbols the voice cannot say; numbers as they are said, with caption for how they are written ("twenty percent off" shown as "20% off"). pronounce respells names and acronyms the voice gets wrong ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the written words.
+3. Pace: speed ${DEFAULT_SPEED} (the default) reads about 2.8 words a second over a script, pauses included; narration and explainers sit at 2.3-2.6 (speed 0.9), ads at 2.7-3.0 (speed 1), a trailer slower with beats. review_voiceover reports each line's words and syllables a second (it judges by syllables, since short words run the word count up: read speech moves at 4-5.5 a second, it flags over ${REVIEW.fastSps} or under ${REVIEW.slowSps}) and the script's words a second. A line meant to be slow (an end-card tagline) or fast takes pace: slow or fast, kept with it, so the review does not flag it for that.
+4. Breathe: a comma rests 0.25-0.35 s, a sentence 0.5-0.8 s, a paragraph or section 1-1.5 s; each line's ending sets the gap after it (pause_after or paragraph: true for more). Inside a line, [pause 0.4] before a reveal or the product's name and [beat] before a punchline; not more than one every four to six words. at puts a line on a beat or a cut; the lines after it follow.
+5. Finish: natural (the default) gives every line a reader's pauses, a low cut and a little presence, one loudness, room tone under the pauses, the voice compressor and a touch of room; clean or raw when the voice is processed elsewhere.
+6. Mix: the voice ${REVIEW.overMusicAim} LU over the music (10-15 for a promo, never under ${REVIEW.overMusicMin}): duck_under_speech the music, then review_voiceover measures each line's margin and its fix names the depth that meets it (voice_above_music_lu aims over the whole span, gaps between lines included, so with long gaps it ducks too deep); the voice at one loudness across lines (review_voiceover flags any line ${REVIEW.levelSpread} LU off); export at loudness -14 for online.
+7. Listen back: review_voiceover after every voiceover and retake. Each line answers what was heard against the script, its pace, silences, pitch range (under ${REVIEW.flatSt} semitones sounds flat), loudness and margin over the music, and a verdict with fixes, the tool and arguments to call. retake_voiceover fixes one line in place (new text, voice, speed or pronounce; ripple true when it grows); the voice reads the same input the same way, so change something. A difference heard again by the larger model and called likely recognizer needs no retake; one called likely voice comes with a respelling to try, and when a respelling did not help, reword the line. Review again until every line is ok, then cut the picture to the lines' final times (describe_project).`,
   },
   social_short: {
     title: "A short for TikTok, Reels or Shorts",
@@ -416,7 +444,7 @@ export function agentPlaybook(): string {
     "     `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;",
     "     npm test fails when this file is out of date. Do not edit by hand. -->",
     "",
-    "How an AI model should make a video with OpenFrame's MCP tools. A model gets the same text three ways: the `help` tool (topics `ad`, `epic_edit`, `social_short`, `design`), the MCP prompts `make_ad`, `epic_edit` and `social_short`, and the resources `guide://...`. Every tool is in [[MCP tools]]; connecting is in [[Automation]].",
+    "How an AI model should make a video with OpenFrame's MCP tools. A model gets the same text three ways: the `help` tool (topics `ad`, `epic_edit`, `voiceover`, `social_short`, `design`), the MCP prompts `make_ad`, `epic_edit` and `social_short`, and the resources `guide://...`. Every tool is in [[MCP tools]]; connecting is in [[Automation]].",
     "",
     "## Design rules",
     "",

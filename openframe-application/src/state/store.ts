@@ -75,6 +75,7 @@ export interface EditorState {
   previewScale: 1 | 0.5 | 0.25;
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
+  mixer: boolean;
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: Guides;
   leftTab: LeftTab;
@@ -148,6 +149,7 @@ let state: EditorState = {
   trimPreview: null,
   previewScale: 1,
   scopes: false,
+  mixer: false,
   viewerGuides: "off",
   leftTab: "media",
   mediaBrowser: { ...DEFAULT_MEDIA_BROWSER },

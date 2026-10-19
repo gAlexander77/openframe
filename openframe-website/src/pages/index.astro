@@ -53,8 +53,11 @@ const agents = feature("mcp");
         />
         <div class="film-notes">
           <p>
-            An AI agent edited this film through OpenFrame's own MCP tools, in about 90 calls. Another agent recorded the
-            footage by driving the app, and a third composed the music in code. <a href={href("experiment/")}>How the film was made</a>
+            An AI agent cut, scored and narrated this film inside OpenFrame, through its MCP tools, in about 30 calls. The
+            music came from the app's music generator and the voice from its text to speech, checked by its listen-back
+            review. The only part made outside the editor is the footage of the app itself, recorded in a headless browser.
+            A vertical 9:16 cut was laid out from a copy of the same project.
+            <a href={href("experiment/")}>How the film was made</a>
           </p>
           <FilmTranscript />
         </div>
@@ -117,6 +120,7 @@ const agents = feature("mcp");
         <ul class="clip-list">
           <li><strong>{facts.tools} MCP tools</strong> cover the whole job, each with a schema, an example and a place in the order a video gets made.</li>
           <li><strong>Playbooks</strong> for an ad, a music-synced epic edit and a vertical short teach a model the design rules editors use.</li>
+          <li><strong>You always know who acted:</strong> each change the agent makes is named at the top of the window, marked AI agent with the robot icon, and undoes like your own.</li>
           <li><strong>Local and opt-in:</strong> the server is off until you turn it on, listens on 127.0.0.1 only and needs this install's token.</li>
         </ul>
         <p>
@@ -146,7 +150,7 @@ const agents = feature("mcp");
       </div>
       <ul class="exp-points">
         <li><Icon name="history" size={20} /><span><strong>{facts.decisions} architecture decisions</strong> are written down with the reasons and the evidence, so each agent picks up where the last one stopped.</span></li>
-        <li><Icon name="clapperboard" size={20} /><span><strong>The film and every clip on this site</strong> were made by agents too: the clips recorded from the running app, the music composed in code, the film edited in OpenFrame.</span></li>
+        <li><Icon name="clapperboard" size={20} /><span><strong>The film and every clip on this site</strong> were made by agents too: the clips recorded from the running app, the film cut, scored and narrated in OpenFrame.</span></li>
         <li><Icon name="check" size={20} /><span><strong>Checked in the running product</strong>, not only in tests: agents drive the real app in a headless browser to try their changes.</span></li>
       </ul>
     </div>

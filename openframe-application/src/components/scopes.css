@@ -1,9 +1,12 @@
 /* The Scopes panel: waveform, parade, vectorscope, histogram. Scope faces
    are near-black and neutral so traces read true, as in Resolve. */
-.scopes-panel { display: grid; grid-template-rows: 34px 1fr; overflow: hidden; animation: fade-in var(--t-med) ease-out; }
-.scopes-head { gap: 10px; }
+/* The five modes need 280 px: in a narrower column (the library's 240 to
+   320) they wrap onto a second line, and the header grows to hold it
+   rather than clipping the first line off its top. */
+.scopes-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; animation: fade-in var(--t-med) ease-out; }
+.scopes-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 10px; height: auto; min-height: 34px; padding-block: 4px; }
+.scopes-head .segmented { justify-self: start; }
 .scopes-head .segmented button { padding: 0 7px; }
-.scopes-close { margin-left: auto; }
 
 .scopes-body { display: grid; gap: 6px; min-height: 0; padding: 8px; }
 .scopes-body.mode-all { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }

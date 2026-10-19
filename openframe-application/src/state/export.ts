@@ -192,7 +192,7 @@ export async function exportForAgent(options: RenderOptions = {}): Promise<Agent
   const plan = planExport(p, settings, inOut);
   const drawn = captionsFor(p, settings, plan);
   job = new AbortController();
-  const tid = toast("Exporting for an AI agent", "progress");
+  const tid = toast("Exporting the video", "progress");
   try {
     const target = await make.call(platform, safeFileName(settings.name), plan.extension);
     const path = target.displayName;

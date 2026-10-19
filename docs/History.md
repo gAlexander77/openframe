@@ -1341,3 +1341,156 @@ its work from the message it left.
   ([[ADR-082 CI runs only when the owner starts it]]). Runners cost the
   owner money, so CI runs only when they start it; agents run the gates
   locally. The website deploy is the one automatic workflow.
+
+## 2026-10-19 — The third improvements branch: a voiced film made in the app (Claude Code)
+
+The owner asked for:
+- more improvements to the app;
+- every feature an advanced, voiced video needs;
+- the promo remade through the MCP tools, with "the voice over must
+  sound very natural";
+- all of it on a new branch, using as many agents as useful.
+
+Four lanes ran in parallel worktrees: voice and music (Claude), text and
+layouts, and mixer and media (Codex). They merged into `improvements-3`
+one at a time.
+
+- **Voice:**
+  - Voiceovers are read at full precision with a natural finish by default
+    ([[ADR-084 Voiceover is read at full precision and finished like a recording]]):
+    phrase-level pauses, room tone instead of digital silence, a low cut
+    and presence, one loudness, the voice compressor and a little room.
+  - Lines are directed per voice, speed, time and pause, with pause marks
+    and a pronounce map
+    ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
+  - `review_voiceover` listens back with Whisper; `retake_voiceover`
+    replaces one line.
+  - Measured on a test script: 2.63 words a second, no digital silence,
+    no clicks.
+- **Music:**
+  - `generate_music` composes an original, seeded score in a worker, in
+    five styles, mastered to -14 LUFS
+    ([[ADR-085 Music is composed and synthesized in the app, seeded and offline]]).
+  - It fits an edit's sections by whole bars and a nudged tempo
+    ([[ADR-086 A score fits an edit by whole bars and a nudged tempo]]).
+  - `plan_music` answers the cue sheet instantly.
+- **Text and layouts:**
+  - styled ranges inside one title (`style_text_range`)
+    ([[ADR-087 Inline title ranges share the raster layout]]);
+  - split-screen, grid and picture-in-picture layouts (`apply_layout`);
+  - group transforms, and draggable motion-path points
+    ([[ADR-088 Layout and group geometry use canvas pixels]]).
+- **Mixer and media:**
+  - a track mixer with meters and a master fader;
+  - animated GIF, WebP and APNG
+    ([[ADR-089 Mixer taps and timed images share the render engines]]);
+  - timeline display options and track colors;
+  - Collect files and Open project file
+    ([[ADR-090 Collected projects use relative media in a new folder]]).
+- **Fixed along the way:**
+  - `duck_under_speech`'s voice target over-ducked a voiceover with gaps
+    (as far as 38 LU under every line). It is measured only while someone
+    speaks now.
+  - A layout no longer takes a main-track clip off its track, which had
+    rippled the timeline.
+- **Launch film 3** ([[Launch film 3 through MCP 2026-10-19]]):
+  - **Footage:** an agent recorded 18 clips of the improved app, headless.
+  - **The edit:** the lead edited a 68 s voiced master and a 9:16 cut
+    through MCP alone. The score came from `generate_music`, the voice
+    from `add_voiceover`, checked with `review_voiceover`, retaken and
+    ducked to 12 LU.
+  - **Checks:** both cuts pass `check_project`, including the 9:16 app UI
+    zones, and both measure -14.2 LUFS.
+  - **No outside assets:** no sprites and no outside music.
+
+- **Acting on the film's limits** (two lanes, then the website):
+  - **UI and commands (Codex):**
+    - runs survive text edits;
+    - `clip_ids` everywhere;
+    - overwrite reports and retake speed notes;
+    - markers pinned with the ruler;
+    - number fields that take typing;
+    - the timeline refits when the assistant docks.
+  - **MCP:**
+    - tall versions stack side-by-side designs and burn captions
+      ([[ADR-091 Tall versions stack what stood side by side]]);
+    - layouts can fit the whole picture;
+    - new titles wrap to the safe area;
+    - the voice review's fixes are concrete, and a scripted voice's
+      captions use its script
+      ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]);
+    - the score takes a brightness;
+    - the stdio bridge tells clients when tools change.
+  - **The website** shows film 3 with its narration as captions, chapters
+    at the real cuts, and the story of how it was made in the app.
+
+### Lessons paid for in this round
+
+- **A merge can carry bytes a text tool can't see.** A Codex lane wrote a
+  Windows-1252 apostrophe into the docs. A blanket byte replace then broke
+  every `→` (E2 86 92), until git restored the conflicted files. Replace
+  only the bytes that fail to decode.
+- **Run a lane's drives on a fresh server after a merge.** Several
+  failures were a cached dependency graph or a fixture that lived in
+  another worktree, not code.
+- **A connected MCP client keeps the tool list it saw at connect.** New
+  tools needed a direct call to the app's HTTP endpoint.
+- **Re-laying out a designed film for 9:16 is still hand work.** The
+  checker's app-zone findings made it quick: each names the box to move.
+
+## 2026-10-19 — Every window size, and the agent's mark (Claude Code)
+
+The owner asked for:
+- the third film as the site's main video (it already was);
+- every part of the UI walked with Playwright and its styling fixed
+  across window sizes, with any bugs or gaps found on the way fixed too;
+- the AI robot icon on the notifications of AI actions, so the user knows
+  it is their AI agent making the changes;
+- then all of it merged into main.
+
+- **The agent's mark**
+  ([[ADR-093 An AI agent's changes are announced at the top, under the Bot]]):
+  - every MCP tool call, from the desktop bridge or the docked assistant,
+    is the agent's;
+  - an edit raises one notice at the top of the window, marked "AI agent"
+    with the Bot icon, which retitles as the edits come;
+  - the user's own toasts stay at the bottom.
+- **Four sweep lanes** (Claude), one area each: the shell and dialogs, the
+  library, the inspector, and the player and timeline.
+  - **Sizes:** nine window sizes, from 1100 x 680 to 2560 x 1440 plus two
+    browser-tab sizes, with every splitter at its limits and the
+    assistant docked.
+  - **Drives:** each lane left one (`sizes-*.js`), more than a thousand
+    states together.
+  - **Findings:** [[UI at every window size 2026-10-19]].
+  - **What changed:**
+    - the player keeps a 456 px floor (the splitters stop, the assistant
+      floats below 1066 px, the transport wraps);
+    - library tabs drop to icons when their labels would not fit
+      ([[ADR-094 Library tabs keep their labels only while they fit]]);
+    - the inspector reflows below 340 px;
+    - the track headers stay above the playhead;
+    - the in/out range shows on the ruler;
+    - the mixer sizes to its strips;
+    - Home has a list view and a right-click menu;
+    - tooltips work inside dialogs and appear only where text is cut;
+    - popovers open on the side that has room.
+- **Follow-ups from the lanes' reports:**
+  - the zoom keys use the timeline's own limits;
+  - the source preview is centered in short windows;
+  - long names show their start when renamed;
+  - the export dialog's range control has its own class;
+  - the keyframe hint reads its gesture from the keymap.
+
+### Lessons paid for in this round
+
+- **A size matrix finds what three sizes miss.** The 2026 x 1084, 1600
+  and 1280 audit of 2026-10-16 never reached:
+  - a splitter at its cap in the smallest window;
+  - the docked assistant in a browser tab;
+  - the 2560 px screens where fixed sizes leave half the room empty.
+- **Global class names collide quietly.** Two `.segmented` rules each
+  looked right alone.
+- **Give each lane a list of files it owns.** Four lanes touching CSS
+  merged with one docs conflict; what crossed a boundary came back as a
+  note in the report, and the lead fixed it after the merges.

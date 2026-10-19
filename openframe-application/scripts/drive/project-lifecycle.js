@@ -6,7 +6,7 @@ async (page) => {
   const details = {};
   const file = async (name) => {
     await page.locator(".menubar-button", { hasText: /^File$/ }).click();
-    await page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).click();
+    await page.getByRole("menuitem", { name: new RegExp(`^${name}(?! file)`) }).click();
   };
   const id = () => page.evaluate(() => window.videoEditor.project().id);
   const differentProject = (old) => page.waitForFunction((old) => !!document.querySelector(".timeline-panel") && window.videoEditor.project().id !== old, old);

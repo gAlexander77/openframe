@@ -31,21 +31,27 @@ export function EaseCurve({ value, w = 26, h = 16 }: { value: Ease; w?: number; 
 /**
  * Easing presets for the selected keyframes, opened at a point (a
  * right-click, or under a button). Rendered into the body so a transformed
- * ancestor (timeline clips are) cannot trap its fixed position, and moved
- * up when it would run off the bottom of the window.
+ * ancestor (timeline clips are) cannot trap its fixed position. When it
+ * would run off the bottom of the window it opens upward, ending at `above`
+ * (the top of the button that opened it) or at the point, so it does not
+ * cover what was clicked; only a window too short for either clamps it.
  */
-export function EaseMenu(props: { x: number; y: number; current: Ease | undefined; onPick: (e: Ease) => void; onClose: () => void }) {
+export function EaseMenu(props: { x: number; y: number; above?: number; current: Ease | undefined; onPick: (e: Ease) => void; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: props.x, top: props.y });
   const current = presetOf(props.current);
 
   useLayoutEffect(() => {
-    const r = ref.current!.getBoundingClientRect();
+    // Layout sizes: the menu's pop-in scale made its measured box 4% short,
+    // and the clamped menu ran a pixel past the window's bottom.
+    const { offsetWidth: w, offsetHeight: h } = ref.current!;
+    const up = (props.above ?? props.y) - h;
+    const top = props.y + h <= window.innerHeight - 6 ? props.y : up >= 6 ? up : window.innerHeight - h - 6;
     setPos({
-      left: Math.max(6, Math.min(props.x, window.innerWidth - r.width - 6)),
-      top: Math.max(6, Math.min(props.y, window.innerHeight - r.height - 6)),
+      left: Math.max(6, Math.min(props.x, window.innerWidth - w - 6)),
+      top: Math.max(6, top),
     });
-  }, [props.x, props.y]);
+  }, [props.x, props.y, props.above]);
 
   useEffect(() => {
     const close = (e: PointerEvent) => {

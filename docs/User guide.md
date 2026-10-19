@@ -51,6 +51,16 @@ clip; Escape puts the old value back. An empty or non-numeric entry
 changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
 open or closed as you left them, across clips and reloads.
 
+The inspector fits any width its splitter gives it. Narrower than about
+340 px, each slider takes a line of its own, with its keyframe buttons,
+under its label and number; a choice that no longer fits beside its label
+(the audio channels, the reverb presets, a color) moves under the label
+instead of wrapping in place. A long name in a list (a LUT, a font, a
+logo) ends in "…" and shows in full when you point at it. A number
+shows as many decimals as its slider moves by (a letterbox ratio of
+2.39:1 reads 2.39). The easing menu opens above its button when there is
+no room below.
+
 In a clip's **Animation** tab, each preset tile pictures its motion: the
 layer where it settles and a dashed outline where it starts (In), ends
 (Out) or swings to (loops); hover a tile to see it move. Picking one plays
@@ -101,7 +111,10 @@ While a project is opening or the old one is being saved for a switch,
 repeated navigation requests are ignored. Home shows **Opening project…**
 and disables creation/deletion during loading; retry after it finishes.
 A focused project card opens with Enter or Space; its Delete button never
-opens it.
+opens it. Right-click a card for **Open**, **Rename…**, **Duplicate** and
+**Delete**. **List view**, beside Search projects, shows each project as a
+row with its canvas size, length and last edit; Home remembers which view
+you chose.
 
 Deleting a project moves it to **Recently deleted** at the bottom of Home,
 and the notice that says so has **Undo**. A deleted project waits there
@@ -122,10 +135,18 @@ backup of the footage. Save errors keep the dialog open for retry.
 
 ## Find and reuse imported media
 
-In **Media**, combine Search media with **All types** and **All usage** to
-find video, audio, images, used files or unused files. **Clear filters**
-shows all imports again. **Audio** uses the same browsing controls but only
-shows audio files. Stickers remain in their separate tab.
+In **Media**, combine Search media with **All types**, **All usage** and
+**All folders** to find video, audio, images, used or unused files, or one
+folder's files; the heart beside the view buttons shows **Favorites only**.
+**Clear filters** shows all imports again. **Audio** uses the same browsing
+controls but only shows audio files. Stickers remain in their separate tab.
+Before anything is imported, the tab shows only Import (and Record).
+
+In a narrow or short library (a small window, the library splitter pulled
+in, or the AI assistant open beside the editor) the tabs show their icons
+alone; point at one, or focus it, for its name. In the narrowest library,
+the categories of Text, Stickers, Effects, Transitions and Filters move from
+the side column to a row above the cards.
 
 Choose **Import order**, a name sort, or shortest/longest source duration.
 Name sorting puts numbered shots in natural order (Shot2 before Shot10).
@@ -133,7 +154,8 @@ Images have no fixed source duration, so they sort after timed media in
 both duration directions. Sorting never rearranges timeline clips.
 
 Switch to **List view** beside the file count to see duration, dimensions,
-frame rate and file size when available. Click a **timeline uses** count
+frame rate and file size when available, with the folder, the timeline uses
+and Preview on one line under them. Click a **timeline uses** count
 to select every referencing clip and seek the earliest one. Counts include
 disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
@@ -291,10 +313,25 @@ that it works offline. A bar shows progress and Cancel stops it. When it
 finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
+**Read a title aloud:** select a title, open Text > Text to speech, pick a
+voice, a speed and a quality, and click **Add voice**. The voice is made on
+this computer and lands on an audio track where the title starts; one
+Undo removes it and its file. Best quality downloads the full speech model
+(325 MB) the first time; Draft downloads a smaller one (92 MB). Voices are
+read at a narrator's pace with natural pauses, one level, and a quiet room
+under the silences.
+
+**Caption a voice:** the Captions tab's **Generate captions** hears the
+timeline on this computer. A voice made by the app (Text to speech, or an
+agent's voiceover) is captioned in the words it was given to read, at the
+times it says them, so a word the recognizer mishears never reaches the
+captions.
+
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
 it (in a window too narrow for four columns the media library steps aside
-until you close it); drag its left edge to resize it. Pick the model server
+until you close it; in a browser window narrower than 1066 px it floats over
+the editor's right side instead); drag its left edge to resize it. Pick the model server
 and model at the top, type what you want in the box at the bottom and
 press Enter to send (Shift with Enter starts a new line). The box grows as
 you type. While the model works, the steps it takes appear as they run;
@@ -309,12 +346,39 @@ OpenFrame to its settings and tells you whether it was added, was already
 there, or the program was not found (with a link to install it). You can
 also copy the ready-made command or, for Codex, the `config.toml` entry.
 Start a new Codex or Claude Code session afterwards, and keep OpenFrame
-open with Allow AI agents on while the agent works.
+open with Allow AI agents on while the agent works. After updating
+OpenFrame, an agent added with the button sees the new tools by itself;
+one connected over HTTP (the copied command) needs a reconnect: in Claude
+Code, type `/mcp`, choose openframe and Reconnect.
+
+While an agent (or the docked assistant) works, each change it makes is
+named in a notice at the top of the window, marked **AI agent** with the
+robot icon, so you can tell its edits from yours; your own notices stay at
+the bottom. Every change it makes is undoable like your own.
 
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection (with step-by-step
 Codex CLI and Claude Code setup), headless rendering, and the `openframe`
 command line. [[AI tools]] records the algorithms and limits.
+
+## Generate music
+
+Open the library's **Audio** tab: under your audio files, the **Generate
+music** card makes an original score on your computer, free to use.
+
+1. Pick a **Style** (Product launch, Cinematic, Upbeat corporate, Lo-fi
+   chill or Ambient); the line under it says what it sounds like.
+2. Set the **Length** in seconds. **Tempo** and **Key** are optional (each
+   style has its own); **Ending** rings out or stops on a final hit.
+3. **Preview** renders it (a few seconds) and plays it; **Stop** stops it.
+   Not the one? The dice button makes a new take with another seed.
+4. **Add** puts it on an audio track at the playhead. With **Bar and drop
+   markers** on, markers show every bar and where the drops land, ready
+   to cut to; **Stems too** also adds the drums, bass, harmony and lead
+   as separate files in your media. One undo removes what Add placed.
+
+Agents get more control through `generate_music` (sections with fixed
+times, the loudness, the stems on their own tracks); see [[Automation]].
 
 ## About OpenFrame
 
@@ -380,7 +444,8 @@ the preview closes. Image previews offer **Add image** instead.
 
 In **Manage media → Organize folders**, create a folder, then choose it beside
 each file. Mark **Favorite** for your preferred takes. Filter the library by
-folder or **Favorites only**, combined with its other filters. Rename and
+folder (**All folders**, beside the other filters) or **Favorites only** (the
+heart beside the view buttons), combined with its other filters. Rename and
 delete folders in the same section; deleting a folder unfiles its media and
 keeps all clips and source files. Organization is saved with this project and
 can be undone. These are virtual folders, so footage stays on disk where it is.
@@ -400,3 +465,77 @@ Choose **Locate…**, pick one replacement, review its path, then **Relink file*
 Every use keeps its cuts and effects; Undo restores the old location. Choose
 the same media kind with the original audio/video streams and at least the
 original duration. When a proxy exists, the check reports that editing copy.
+
+## Titles that fit the frame
+
+A new title's lines wrap inside the frame's safe area: on a vertical (9:16)
+project, inside the column the TikTok, Reels and Shorts buttons leave, so a
+long line breaks onto the next instead of running under them. To break a
+line where you want, press Enter while editing the title on the canvas.
+Titles made before this keep the width they had.
+
+## Inline title styling
+
+In the text inspector, expand **Style range**, choose a word, and set its color or weight. Clear word style restores that word to the title style. Agents can use `style_text_range` with character offsets or a literal match, including all occurrences, to apply color, gradient, weight, italic, underline, or size scale. Ranges use UTF-16 offsets with an exclusive end. Typing shifts and trims ranges; inserted characters inside a range inherit it. Run colors override animated base color. The inline editor preserves styling while typing; its caret and selection use the base font, so use the word picker for precise mixed-font range styling. Preview, alignment, text checks and version exports use the same run-aware raster layout.
+
+## Layout presets
+
+Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. Choose **Fill** to crop each picture to its cell, or **Fit** to show the whole picture centered in it (a screen recording stays readable). The pictures move to Layout tracks just above the highest of their tracks, so a label you already placed above them stays on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
+
+## Group transforms
+
+A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that member’s span.
+
+## Motion path points
+
+Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
+
+## Mix tracks
+
+Open **Mixer** from the timeline toolbar or **View > Mixer**. Move each
+track's vertical fader to balance its level in dB, and use pan to place it
+left or right. **Mute** silences a track; **Solo** plays only soloed tracks.
+The meters show peak and RMS after track gain and pan. The master strip
+controls the whole mix, including exports, and shows stereo levels and
+short-term LUFS; with many tracks, their strips scroll sideways and the
+master stays in view at the right. A drag is one undo step. Double-click a
+fader or pan to reset it. Close the panel with **Close mixer** or Escape.
+
+## Use animated images
+
+Import an animated GIF, WebP or APNG like any image. Supported webviews read
+its frame timing and transparency. A new clip lasts one loop; drag its right
+edge farther to repeat it. Hover across its library card to scrub frames.
+The same animation is drawn during playback and export, including imported
+animated stickers. When ImageDecoder is unavailable the image is treated as
+a still. Loops larger than 256 MiB after decoding are refused; use a smaller
+animation in that case.
+
+## Change the timeline display
+
+Open **Timeline display** on the timeline toolbar to show or hide waveforms,
+video thumbnails or clip names, and choose small, medium or large tracks.
+These choices stay with your profile and do not change exports. Medium
+retains individual heights set in track menus. On taller tracks (audio,
+video and the main track) the name has a line of its own above the lock,
+eye and sound buttons; point at a header to read a long name in full.
+Right-click a track header and choose a **Track color** swatch to tint its
+clips. A clip with its own label color keeps that color instead. **No
+track color** removes the tint.
+
+## Move or open a project file
+
+On desktop, choose **File > Collect files**, then a destination folder.
+OpenFrame creates a new subfolder containing `project.json` and `media`.
+Wait for copying to finish, then move that entire subfolder together. Media,
+proxies, LUTs and background-removal cutouts are included. A missing source
+must be relinked before collecting. The original project and files stay put.
+
+Choose **File > Open project file** and select the JSON. It opens as a new
+saved project; its relative media paths are resolved beside the JSON on
+desktop. If media is missing, open **Media > Manage media** and relink it.
+
+On the web, **Collect files** downloads only the JSON. Media remains in this
+browser profile. Opening that JSON elsewhere does not transfer its media;
+relink the original files there. Automation's `collect_project` is desktop
+only; `open_project_file` accepts a path only on desktop.

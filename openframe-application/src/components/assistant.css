@@ -18,6 +18,14 @@
   grid-template-columns: minmax(0, 1fr);
   animation: fade-in var(--t-med) var(--ease-out);
 }
+/* A window too narrow to dock (a browser tab under 1066 px): over the
+   editor's right side, as a drawer, the editor's layout untouched. */
+.assistant.floating {
+  position: absolute; z-index: 20; top: 0; right: var(--gap); bottom: var(--gap);
+  width: min(300px, calc(100% - 2 * var(--gap)));
+  border: 1px solid var(--line-strong);
+  box-shadow: -12px 0 32px rgb(0 0 0 / 45%);
+}
 /* Chat: model, conversation, composer. */
 .assistant:has(> .assistant-list) { grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
 

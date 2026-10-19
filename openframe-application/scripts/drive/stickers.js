@@ -176,6 +176,8 @@ async (page) => {
   const mono = await cardPixels("Mono");
   let chroma = 0;
   for (let i = 0; i < mono.data.length; i += 4) chroma = Math.max(chroma, Math.max(mono.data[i], mono.data[i + 1], mono.data[i + 2]) - Math.min(mono.data[i], mono.data[i + 1], mono.data[i + 2]));
+  // Each card renders its own preview: wait for this one too, not only Mono.
+  await page.waitForFunction(() => [...document.querySelectorAll(".card")].some((c) => c.textContent === "Vivid" && c.querySelector(".eng-preview.ready")), null, { timeout: 8000 });
   const vivid = await cardPixels("Vivid");
   let vChroma = 0;
   for (let i = 0; i < vivid.data.length; i += 4) vChroma = Math.max(vChroma, Math.max(vivid.data[i], vivid.data[i + 1], vivid.data[i + 2]) - Math.min(vivid.data[i], vivid.data[i + 1], vivid.data[i + 2]));

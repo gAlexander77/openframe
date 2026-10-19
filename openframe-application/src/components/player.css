@@ -54,12 +54,15 @@
 .timecodes { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-sm); }
 /* Keep both frame-exact times on a separate compact row on narrow viewers:
    below about 602 px the seven transport buttons (Go to start and Go to
-   end among them) and the right-hand controls leave them no room. */
+   end among them) and the right-hand controls leave them no room. Below
+   about 470 px (the player's 320 px minimum, with the library or inspector
+   dragged wide) the two groups do not fit one row either: they wrap,
+   each centered, rather than the view controls covering the play button. */
 @container (max-width: 602px) {
-  .transport { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 22px 40px; }
-  .timecodes { grid-column: 1 / -1; grid-row: 1; justify-content: center; font-size: 10px; }
-  .transport-center { grid-column: 1; grid-row: 2; }
-  .transport-right { grid-column: 2; grid-row: 2; }
+  .transport { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; column-gap: 16px; padding-bottom: 2px; }
+  .timecodes { flex: 1 0 100%; height: 22px; align-items: center; justify-content: center; font-size: 10px; }
+  .transport-center { height: 40px; }
+  .transport-right { min-height: 36px; }
 }
 .tc-now { color: var(--accent); font-weight: 600; }
 button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: text; }
@@ -164,15 +167,18 @@ button.tc-now:hover { background: var(--bg-3); }
 /* The tracking box (state/tracking.ts): the preview-axis yellow, so it
    reads as a tool on the picture rather than the layer's own box. */
 /* Motion path: the dashed line an animated picture's center travels. */
-.motion-path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.motion-path { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
 .motion-path polyline { fill: none; stroke: var(--preview-axis); stroke-width: 1.5; stroke-dasharray: 5 4; }
-.motion-path circle { fill: var(--preview-axis); stroke: rgb(0 0 0 / 60%); stroke-width: 1; }
+.motion-path circle { pointer-events: all; cursor: move; fill: var(--preview-axis); stroke: rgb(0 0 0 / 60%); stroke-width: 1; }
 .track-box { position: absolute; border: 1.5px solid var(--preview-axis); box-shadow: 0 0 0 1px rgb(0 0 0 / 45%); cursor: move; pointer-events: auto; }
 
-.crop-bar { display: flex; gap: 12px; justify-content: space-between; }
-.crop-ratios { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+/* On a narrow player the ratios wrap (and the buttons drop to a row of
+   their own) instead of scrolling: with no scrollbar shown, the ratios
+   past the edge could not be found or reached with the mouse. */
+.crop-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; justify-content: space-between; padding-block: 8px; }
+.crop-ratios { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
 .crop-ratios .chip-btn { flex-shrink: 0; }
-.crop-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.crop-actions { display: flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
 
 /* ---- mask handles (ADR-049) ---------------------------------------------------
    Zero-size frames carry the layer's rotation and flips, then the mask's

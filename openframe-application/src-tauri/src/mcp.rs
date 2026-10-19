@@ -7,7 +7,12 @@
 //! the MCP spec requires for local servers).
 //!
 //! Also the `--mcp-stdio` bridge: the same exe run by an MCP client as a
-//! process, piping stdin/stdout lines to the running app's server.
+//! process, piping stdin/stdout lines to the running app's server. A
+//! client lists the tools once, when it connects; every answer names the
+//! tool set it came from (`result._meta["openframe/tools"]`, src/lib/mcp.ts),
+//! and the bridge sends `notifications/tools/list_changed` when that changes
+//! (the app rebuilt with new tools while the client stayed connected), so
+//! the client lists them again. Over HTTP a client reconnects instead.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -326,6 +331,30 @@ fn post(token: &str, body: &str) -> Result<(u16, String), String> {
     Ok((status, body))
 }
 
+/// Where an answer names the tool set it came from (src/lib/mcp.ts TOOLS_META).
+const TOOLS_META: &str = "openframe/tools";
+
+/// What a client is told when the tool set changed.
+const LIST_CHANGED: &str = r#"{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}"#;
+
+/// Whether this answer comes from another tool set than the last answer
+/// that named one; remembers this one. The first answer only sets it.
+pub fn tools_changed(last: &mut Option<String>, reply: &str) -> bool {
+    let mark = serde_json::from_str::<serde_json::Value>(reply)
+        .ok()
+        .and_then(|v| {
+            v.get("result")?
+                .get("_meta")?
+                .get(TOOLS_META)?
+                .as_str()
+                .map(str::to_string)
+        });
+    let Some(mark) = mark else { return false };
+    let changed = last.as_ref().is_some_and(|l| *l != mark);
+    *last = Some(mark);
+    changed
+}
+
 /// `openframe --mcp-stdio`: one JSON-RPC message per line in, one out.
 pub fn run_stdio_bridge() {
     let token = config_dir_for_bridge()
@@ -333,6 +362,7 @@ pub fn run_stdio_bridge() {
         .unwrap_or_default();
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
+    let mut tools: Option<String> = None;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
         if line.trim().is_empty() {
@@ -351,6 +381,9 @@ pub fn run_stdio_bridge() {
         };
         if let Some(r) = reply {
             let _ = writeln!(out, "{}", r.trim());
+            if tools_changed(&mut tools, &r) {
+                let _ = writeln!(out, "{LIST_CHANGED}");
+            }
             let _ = out.flush();
         }
     }
@@ -383,6 +416,29 @@ mod tests {
         assert!(!origin_allowed(Some(
             &"http://localhost.evil.example".to_string()
         )));
+    }
+
+    #[test]
+    fn says_when_the_tool_set_changes() {
+        let answer = |mark: &str| {
+            format!(
+                r#"{{"jsonrpc":"2.0","id":1,"result":{{"content":[],"_meta":{{"openframe/tools":"{mark}"}}}}}}"#
+            )
+        };
+        let mut last = None;
+        // The first answer only sets it; the same set again is no change.
+        assert!(!tools_changed(&mut last, &answer("aa-1")));
+        assert!(!tools_changed(&mut last, &answer("aa-1")));
+        // An answer without a mark (an error, a refusal) changes nothing.
+        assert!(!tools_changed(
+            &mut last,
+            r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32000,"message":"x"}}"#
+        ));
+        assert!(tools_changed(&mut last, &answer("bb-2")));
+        assert!(!tools_changed(&mut last, &answer("bb-2")));
+        let note: serde_json::Value = serde_json::from_str(LIST_CHANGED).unwrap();
+        assert_eq!(note["method"], "notifications/tools/list_changed");
+        assert!(note.get("id").is_none());
     }
 
     #[test]

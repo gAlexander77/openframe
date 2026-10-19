@@ -17,7 +17,7 @@ import { CLIP_LABELS } from "../lib/catalog";
 import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
-import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
+import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
@@ -38,6 +38,8 @@ import { ClipView, type ClipZone } from "./ClipView";
 import { KeyframePanel } from "./KeyframePanel";
 import { MenuList, type MenuItem } from "./Menu";
 import { rangeGesture } from "./inspector/controls";
+import { timelineDisplay, useTimelineDisplay } from "../state/timelineDisplay";
+import { Mixer } from "./Mixer";
 import { TimelineToolbar } from "./TimelineToolbar";
 import "./timeline.css";
 
@@ -87,7 +89,8 @@ async function replaceFromPicker(id: Id) {
 function layoutRows(p: Project): { rows: Row[]; height: number } {
   let y = 0;
   const rows = p.tracks.map((track) => {
-    const h = trackHeight(track);
+    const choice = timelineDisplay().height;
+    const h = trackHeight({ ...track, height: choice === "medium" ? track.height : choice });
     const r = { track, top: y, height: h };
     y += h + ROW_GAP;
     return r;
@@ -208,7 +211,8 @@ export function Timeline() {
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
 
-  const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project]);
+  const display = useTimelineDisplay();
+  const { rows, height: rowsH } = useMemo(() => layoutRows(project), [project, display]);
   const duration = ops.projectDuration(project);
   const timelineEnd = project.markers.reduce((end, m) => Math.max(end, m.frame), duration);
   const fpsN = project.fps.num / project.fps.den;
@@ -263,7 +267,21 @@ export function Timeline() {
     const el = scrollRef.current!;
     const update = () => setView({ left: el.scrollLeft, width: el.clientWidth });
     update();
-    const ro = new ResizeObserver(update);
+    let previousWidth = el.clientWidth;
+    let resizeRaf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        const width = el.clientWidth;
+        if (previousWidth > HEADER_W && width > HEADER_W && width !== previousWidth) {
+          const next = refitTimeline(store.get().zoom, el.scrollLeft, previousWidth - HEADER_W, width - HEADER_W);
+          store.set({ zoom: next.zoom });
+          el.scrollLeft = next.left;
+        }
+        previousWidth = width;
+        update();
+      });
+    });
     ro.observe(el);
     let raf = 0;
     const onScroll = () => {
@@ -273,6 +291,7 @@ export function Timeline() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       ro.disconnect();
+      cancelAnimationFrame(resizeRaf);
       el.removeEventListener("scroll", onScroll);
     };
   }, []);
@@ -810,6 +829,7 @@ export function Timeline() {
 
   return (
     <section className="panel timeline-panel" aria-label="Timeline">
+      <Mixer />
       <TimelineToolbar />
       <CompoundPath />
       <div
@@ -829,6 +849,11 @@ export function Timeline() {
       >
         <div className="tl-content" style={{ width: contentW, height: RULER_H + rowsH + 40 }}>
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
+          <div className="tl-ruler-overlays">
+            <InOutRange zoom={zoom} />
+            <MarkersLayer zoom={zoom} />
+            <Playhead zoom={zoom} height={RULER_H} cap />
+          </div>
           <div className="tl-corner" style={{ width: HEADER_W }} />
           <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown} onKeyDown={onClipKey}>
             {rows.map((row) => (
@@ -899,8 +924,6 @@ export function Timeline() {
             )}
             {drop && <DropBox drop={drop} rows={rows} rowsH={rowsH} zoom={zoom} />}
           </div>
-          <MarkersLayer zoom={zoom} />
-          <InOutRange zoom={zoom} />
           {snapLine !== null && <div className="tl-snap" style={{ left: HEADER_W + snapLine * zoom, height: RULER_H + rowsH }} />}
           <PreviewAxis zoom={zoom} height={RULER_H + rowsH} />
           <Playhead zoom={zoom} height={RULER_H + rowsH} />
@@ -1008,6 +1031,17 @@ type OpenMenu = (x: number, y: number, items: MenuItem[]) => void;
  * track volume; the mixer's fader in Resolve). One undo step per drag. */
 function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y: number }; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Inside the window, as menus are: from the lowest track's header it
+  // opened below the window's bottom edge. Upward from the pointer when
+  // there is no room under it.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const room = 8;
+    const dy = at.y + el.offsetHeight > innerHeight - room ? Math.max(room, at.y - el.offsetHeight) - at.y : 0;
+    const dx = Math.min(0, innerWidth - room - at.x - el.offsetWidth);
+    el.style.translate = `${dx}px ${dy}px`;
+  }, [at]);
   useEffect(() => {
     ref.current?.querySelector("input")?.focus();
     const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
@@ -1081,6 +1115,10 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
     const height = (h: Track["height"], label: string) => ({ label, checked: track.height === h, onSelect: () => set({ height: h }, "Track height") });
     openMenu(at.x, at.y, [
       { label: "Rename track…", onSelect: () => setRenaming(true) },
+      { title: "Track color", current: track.color ?? null,
+        swatches: [{ value: null, label: "No track color" }, ...Object.entries(CLIP_LABELS).map(([value, l]) => ({ value, label: l.label, color: l.color }))],
+        onPick: (v) => set({ color: (v ?? undefined) as ClipLabel | undefined }, "Track color"),
+      },
       ...(sounds
         ? ([
             { label: "Solo", checked: !!track.solo, onSelect: solo },
@@ -1123,7 +1161,8 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
           }}
         />
       ) : (
-        <span className="tl-kind" data-tip={track.main ? "Main track" : track.name}>
+        // The tip carries the whole name: the column shows only its start.
+        <span className="tl-kind" data-tip={track.main ? (track.name === "Main" ? "Main track" : `${track.name} (main track)`) : track.name}>
           {kindIcon}
           <span className="tl-track-name">{track.name}</span>
         </span>
@@ -1188,11 +1227,11 @@ function Ruler({ zoom, left, width, onDown }: { zoom: number; left: number; widt
   );
 }
 
-function Playhead({ zoom, height }: { zoom: number; height: number }) {
+function Playhead({ zoom, height, cap = false }: { zoom: number; height: number; cap?: boolean }) {
   const f = useEditor((s) => s.playhead);
   return (
     <div className="tl-playhead" style={{ transform: `translateX(${HEADER_W + f * zoom}px)`, height }}>
-      <div className="tl-playhead-cap" />
+      {cap && <div className="tl-playhead-cap" />}
     </div>
   );
 }

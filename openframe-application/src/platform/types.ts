@@ -96,6 +96,8 @@ export interface Platform {
     finish(ok: boolean, line: string): Promise<void>;
   };
 
+  openProjectFile(path?: string): Promise<unknown | null>;
+  collectProject(project: Project, onProgress: (value: number) => void): Promise<string | null>;
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;
   saveProject(project: Project, summary: ProjectSummary): Promise<void>;

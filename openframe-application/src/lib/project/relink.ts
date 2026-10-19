@@ -22,6 +22,6 @@ export function relinkAsset(p: Project, id: string, replacement: Asset): Project
   const used = Math.max(0, ...allTracks(p).flatMap((t) => t.clips).filter(isTimed).filter((c) => "assetId" in c && c.assetId === id).map((c) => Math.max(...sourceRange(c, p.fps))));
   if (replacement.kind !== "image" && replacement.duration + 0.001 < used) throw new Error(`The replacement must be at least ${used.toFixed(3)} seconds long to cover the clips that use it.`);
   // Identity, label and library annotations belong to the original asset.
-  const { src, proxy, duration, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } = replacement;
-  return { ...p, assets: p.assets.map((a) => a.id === id ? { ...a, src, proxy, duration, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } : a) };
+  const { src, proxy, animated, duration, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } = replacement;
+  return { ...p, assets: p.assets.map((a) => a.id === id ? { ...a, src, proxy, animated, duration, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } : a) };
 }

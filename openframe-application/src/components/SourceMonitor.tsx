@@ -54,7 +54,7 @@ export function SourceMonitor({ asset, onClose }: { asset: Asset; onClose: () =>
       tick();
     } catch (e) { stop(); setError(e instanceof Error ? e.message : String(e)); }
   };
-  const still = asset.kind === "image";
+  const still = asset.kind === "image" && !asset.animated;
   // Add follows the timeline's own placement (CapCut); Insert and Overwrite
   // land exactly at the playhead (Premiere's).
   const place = (mode?: PlaceMode) => {

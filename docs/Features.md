@@ -13,7 +13,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and is then deleted for good. Agents never see it there
   ([[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]]).
   **Rename** (in place, without opening) and **Duplicate** ("Name copy",
-  sharing the same media files) sit on each card, as in CapCut.
+  sharing the same media files) sit on each card, as in CapCut, and in
+  its right-click menu (Open, Rename…, Duplicate, Delete). A **list view**
+  beside the search (CapCut's toggle) shows a row per project with its
+  canvas, length and last edit; the choice is remembered per viewer.
 - **Canvas size in pixels** (project Details > Size, CapCut's custom
   ratio): any width and height from 16 to 8192, rounded to even numbers
   as encoders need; `set_project` also takes the frame rate.
@@ -98,7 +101,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   labels too, such as "Add clip" and "Change opacity".
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
-  deactivate clip; markers; in/out range.
+  deactivate clip; markers; in/out range (a cyan band on the ruler,
+  which stays in view as the tracks scroll).
 - **Linked picture and sound** (Premiere's linked clips, for J and L
   cuts): Extract audio keeps the video and its sound linked as a group,
   so they select, move and delete together; Alt-click takes one side
@@ -546,7 +550,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
-  stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
+  stroke, shadow, background box, in/out/loop animations. **A new title
+  wraps inside the safe area** where it stands (`titleWrap`): a centered
+  one within 90% of the width (the old default, so 16:9 is unchanged), on
+  9:16 within the column the apps' buttons leave (0.62 centered, 0.7 on the
+  column's own center), one off center within twice the room on its nearer
+  side, so a long line wraps instead of running off. A width asked for is
+  kept; titles already made keep theirs, so older projects draw the same;
+  `export_versions` gives the titles it lays out again the new frame's
+  width. A word wider than that still runs past it (`check_project` says
+  so). **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
 - **Font weight** (100 thin to 900 black): the Text tab's Weight list
@@ -567,7 +580,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
   (capitals with the spoken word highlighted), Neon and Minimal, each
   previewed on its card; one click restyles and places every caption,
-  words and timings kept (`set_caption_look`).
+  words and timings kept (`set_caption_look`). On a tall canvas a look,
+  and `add_captions`' default style, is sized by the short side: a caption
+  has the same pixels on 1080x1920 as on 1920x1080, instead of growing
+  with the height to a dozen letters a line (a size asked for is kept).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
@@ -621,19 +637,60 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stops highlighting. `add_captions` takes `words`; `set_text` takes
   `highlight`.
 - **Text to speech on this machine** (Text tab > Text to speech, as in
-  CapCut): eight English voices from Kokoro-82M (Apache-2.0), Slow/Normal/
-  Fast; the voice lands on an audio track at the title's start, one undo
-  step. The first voice downloads the model (about 90 MB) once
-  ([[ADR-050 Text to speech runs Kokoro on the user's machine]]).
-- **Voiceover from a script** (agents: `add_voiceover`): every line spoken,
-  laid one after another at its real length on a new Voiceover track (a
-  line can be pinned to a time), with a caption per line timed to its
-  voice, as one undo step; the answer says where each line landed so the
-  footage can be cut to it. Two lines take about five seconds.
+  CapCut): thirteen English voices from Kokoro-82M (Apache-2.0), Slow/
+  Normal/Fast and Best or Draft quality; the voice lands on an audio track
+  at the title's start, one undo step with its speech file. The first
+  voice downloads the model once: 325 MB at Best (full precision, on
+  WebGPU or the CPU), 92 MB at Draft (8-bit)
+  ([[ADR-050 Text to speech runs Kokoro on the user's machine]],
+  [[ADR-084 Voiceover is read at full precision and finished like a recording]]).
+- **Natural voice** (every voice the app makes; [[Natural voiceover 2026-10-19]]):
+  read whole, a sentence at a time, at a narrator's speed (0.95); pauses
+  at commas and sentence ends lengthened to a reader's (0.28 s, 0.55 s);
+  a line the voice rushed read again slower; a low cut and a little
+  presence; every line at one loudness; quiet room tone under the pauses
+  instead of digital silence; faded edges; the voice compressor and a
+  touch of room on the clip. `finish: clean` or `raw` for less.
+- **Voiceover from a script, directed** (agents: `add_voiceover`): every
+  line read and laid one after another at its real length on a new
+  Voiceover track, with a caption per line timed to its voice, as one
+  undo step with its speech files (undo leaves nothing in the library).
+  Each line can have its own voice (several speakers in one call; blends
+  such as `af_heart:70,af_bella:30`), speed, time (`at`, on a beat or a
+  cut) and pause after; the gap after a line otherwise follows its ending
+  (a comma runs on, a sentence rests, a paragraph rests longer). Pauses
+  inside a line are written in it (`[pause 0.4]`, `[beat]`,
+  `<break time="0.4s"/>`) and lengthen the voice's own pause there, so
+  the sentence keeps its intonation; captions never show them.
+  `pronounce` respells names and acronyms for the voice while captions
+  keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
+- **Listen back** (agents: `review_voiceover`): Whisper hears each line
+  and it is compared with the script word by word; each line's pace
+  (words and syllables a second), silences, longest pause, loudness, true
+  peak, pitch range and margin over the music are measured, with a verdict
+  and the tool calls that fix what is wrong. A line that differs from its
+  script is heard again by a larger Whisper (small) before the voice is
+  blamed: what only the first one misheard needs no retake, and each
+  difference says whether the recognizer or the voice is likely wrong. A
+  misread word gets a respelling as it sounds ("does" "duz", "home"
+  "hohm"), or a slower read and the advice to reword when it was respelled
+  already; never a placeholder. A line marked `pace: slow` (an end-card
+  tagline) is not flagged as slow ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
+- **Retake one line** (agents: `retake_voiceover`): new words, a voice, a
+  speed or a pronunciation, read and put in the line's place; its caption
+  follows, the old take leaves the library, and `ripple` moves the lines
+  after it; one undo step.
+- **Voices to cast** (`list_catalog` section `voices`): each voice's
+  accent, gender, its author's grade, character (measured pitch, melody
+  and pace) and what it suits, the most natural first.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption
-  list editing; apply style to all; SRT/VTT import and export.
+  list editing; apply style to all; SRT/VTT import and export. A voice
+  read from a script (a voiceover line, text to speech) is captioned in its
+  script's words, timed by what Whisper heard, so a synthetic voice's "All
+  of it, home" is no longer "Olivet Helmed"; the transcript of a whole take
+  says its script too ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
   and case as chosen, with a live match count; titles are left alone.
@@ -644,6 +701,49 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Pieces of a cut clip read on without hearing it again. Agents:
   `get_transcript` then `cut_ranges`. The words are kept for the session,
   not in the project; clips with a speed curve or reversed are left out.
+
+## Generated music
+
+An original, royalty-free score made on this computer, for agents first
+and in the Audio tab's **Generate music** card
+([[ADR-085 Music is composed and synthesized in the app, seeded and offline]],
+[[ADR-086 A score fits an edit by whole bars and a nudged tempo]],
+[[Music generation 2026-10-19]]). Nothing is downloaded or sampled; the
+same arguments and seed give the same music.
+
+- **Five styles**: product launch (four on the floor, a pumping supersaw
+  pad, sub and offbeat bass, a 16th arp, a bright hook), cinematic (string
+  ostinato, legato strings, horns and choir, taiko and toms, braams and
+  hits, a long hall), upbeat corporate (piano eighths, a plucked guitar
+  strum, glockenspiel, claps and shaker, an eighth-note bass), lo-fi chill
+  (a swung boom-bap, Rhodes sevenths and ninths, a round bass on the
+  kick, vinyl and tape wow) and ambient (evolving pads, glass bells, a
+  tonic drone, a soft pulse).
+- **Composed, not looped**: each style's chord progressions in any key
+  and mode, voice-led bar to bar; a four-bar hook in key that repeats in
+  every drop and is teased in the intro and breakdown; drums with
+  velocity, swing and fills into each change; risers, reverse cymbals,
+  impacts and a beat of silence into drops; sidechain pumping; breakdowns
+  that thin out; a final hit that rings out (or a hard stop).
+- **Mixed and mastered**: stereo width with a mono low end, convolution
+  reverb sends, a ping-pong delay on the lead, each stem's loudness set
+  to the style's balance, then a glue compressor and a true-peak limiter
+  to -14 LUFS (or any target) under -1 dBTP. **Brightness** (agents:
+  `brightness`, -1..1) tilts the master about 1 kHz (at 1 the highs 6 dB up
+  from 3 kHz and the lows 3 dB down under 300 Hz), darker under a busy
+  voice or brighter for a launch, the loudness and true peak held; the
+  launch style leans bright by default (0.4), as its measurements against
+  the hand-made track it imitates asked.
+- **Fits the edit**: a length, or sections with bars, seconds or fixed
+  times (a drop at 8.0 s, an outro ending at 56 s); the tempo moves a
+  little so they land on bar lines, and the answer says how each fit.
+- **A cue sheet**: tempo, key, chords, every bar and beat, the sections,
+  drops, the final hit, cut points, and Bar, section and Drop markers on
+  request, so `cut_to_beats` and `add_beat_hits` work on it at once.
+- **Stems**: drums, bass, harmony and lead as files of their own (they add
+  up to the mix), on four grouped tracks if asked.
+- **One section again**: a section's own seed regenerates its drums,
+  fills and touches and leaves the rest note for note.
 
 ## Epic edits
 
@@ -848,6 +948,14 @@ makes a 13 s one). Times are timeline seconds.
   again around it, a window compound sliding in from off the edge still
   does on 9:16, and a one-word wordmark too wide to wrap shrinks to the
   safe width ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+  A tall version of a wide film stacks what stood side by side: a window
+  above the headline beside it, a split screen's halves one above the
+  other (cut again wider), each as wide as the safe column, a label or a
+  glow on a window moving with it; a square version moves each such pair
+  as one group. Captions are burned in on tall versions by default (even
+  from a hidden caption track), sized by the short side and kept clear of
+  the stacks; `captions` says `burn`, `none` or `as_project`
+  ([[ADR-091 Tall versions stack what stood side by side]]).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
@@ -977,6 +1085,9 @@ Three doors, one engine ([[Automation]]):
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
+  Every answer names the tool set it came from, so the stdio bridge tells
+  a connected client (`notifications/tools/list_changed`) when a newer
+  build brings other tools; over HTTP the client reconnects ([[Automation]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.
@@ -1021,7 +1132,13 @@ results include an icon, title and next-step hint. See [[Icons]] for the mapping
 
 ### Compact layouts and keyboard controls
 
-Library tabs wrap with their icons and labels, keeping every destination visible.
+Library tabs lay out in balanced rows (all eleven in one row at 2560 px, six
+and five below), keeping every destination visible; where labels would need a
+third row or a quarter of a short panel, the tabs show icons alone, named by
+tooltips (`src/lib/libraryLayout.ts`). Below 300 px the catalog categories
+move above the cards as wrapping chips, so cards keep two columns. The media
+browser's folder filter sits with the others and Favorites only is a heart
+toggle beside the views; AI tool cards tile two across in a wide library.
 Details ratios and canvas dimensions fit the narrow inspector; text style, case
 and audio channel choices wrap between whole buttons. Segmented radio controls
 support arrow keys, Home and End with one tab stop. Fit, Fill and Stretch share
@@ -1039,3 +1156,56 @@ whether an unlocked clip can be edited at the playhead. Add marker remains
 available on empty timelines and at existing markers because both are valid
 operations. Mirror and Rotate use the shared edit boundary. Title-bar project
 renaming accepts at most 120 characters, matching Home.
+
+## Inline title styling
+
+In the text inspector, expand **Style range**, choose a word, and set its color or weight. Clear word style restores that word to the title style. Agents can use `style_text_range` with character offsets or a literal match, including all occurrences, to apply color, gradient, weight, italic, underline, or size scale. Ranges use UTF-16 offsets with an exclusive end. Typing shifts and trims ranges; inserted characters inside a range inherit it. Run colors override animated base color. Preview, alignment, text checks and version exports use the same run-aware raster layout.
+
+## Layout presets
+
+Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. **Fill** (the default) crops each picture to its cell; **Fit** shows the whole picture centered in it, for screen recordings (`fit: "contain"`, with `background` filling the cell behind it as an editable shape). The Layout tracks go directly above the highest of the chosen clips' tracks, so labels already above them stay on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
+
+## Group transforms
+
+A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that member’s span.
+
+## Motion path points
+
+Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
+
+## Mixer, animated images, and timeline display
+
+- **Audio track mixer:** open Mixer from the timeline toolbar or View menu.
+  Every audio track and visual track carrying audio has a dB fader, pan,
+  mute, solo, and live post-fader peak/RMS readings. Master has a fader,
+  stereo readings and the player's short-term LUFS. Dragging a fader or
+  pan makes one undo step; double-click resets it. Master gain is included
+  in preview, offline loudness measurement and export. Commands:
+  `update_track`, `set_project` (`master_volume`).
+- **Animated GIF, WebP and APNG:** when ImageDecoder supports the format,
+  import reads real frame durations and retains alpha. The initial clip
+  lasts one loop; extending it repeats the loop. Timeline thumbnails,
+  library hover scrub, player and export share these frames. Platforms
+  without ImageDecoder use their still-image decoder. A decoded loop over
+  256 MiB is refused with a readable error (ADR-089).
+- **Timeline display:** the toolbar's display menu remembers waveforms,
+  video thumbnails, clip names, and small/medium/large track height per
+  browser profile. Track header color swatches use the clip-label palette;
+  a clip's own label wins. `update_track.color` sets or clears a track tint.
+
+## Portable project files
+
+**File > Collect files** on desktop creates a new folder inside the chosen
+folder, with `project.json` and a `media` folder. Originals, proxies, LUTs,
+and cutout files are copied once per distinct path; the JSON uses relative
+paths. Existing files are not overwritten. Progress reports completed files;
+missing or nonlocal sources fail the collection. On the web, this downloads
+JSON only and explains that media stays in the browser.
+
+**File > Open project file** imports JSON through normalization with a fresh
+project id, preserving existing saved projects. Desktop resolves relative
+media beside the JSON. Missing media uses Manage media's existing relink
+workflow. On the web, browser media keys work in the same profile; files
+from another computer need relinking. Commands: `collect_project` (desktop
+only), `open_project_file` (optional absolute desktop path, otherwise picker).
+See ADR-090. Native dialogs and copying still need a desktop validation pass.

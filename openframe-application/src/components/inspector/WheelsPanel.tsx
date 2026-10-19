@@ -92,7 +92,9 @@ function WheelCard({ clip, name }: { clip: Clip; name: WheelName }) {
     <div className={`wheel-card${edited ? " edited" : ""}`}>
       <div className="wheel-head">
         <span className="wheel-title">{label}</span>
-        <span className="wheel-tone">{TONES[name]}</span>
+        <span className="wheel-tone" data-tip={`${label}: ${TONES[name].toLowerCase()}`}>
+          {TONES[name]}
+        </span>
         <button
           className={`key-toggle${balanceKeyed ? " on" : ""}${balanceAnimated ? " has" : ""}`}
           aria-label={`${balanceKeyed ? "Remove" : "Add"} ${label.toLowerCase()} color keyframe`}

@@ -24,7 +24,7 @@ import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic"
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
-import { duckDepth, isDialog, loudnessDifference } from "../lib/analysis/balance";
+import { combinedLoudness, duckDepth, isDialog, loudnessDifference, speechWindows } from "../lib/analysis/balance";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
@@ -211,7 +211,7 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
-  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove_keyframes path volume first";
+  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove its volume keyframes first";
   // ponytail: the cleaned sound is a new file of the source window; a
   // retimed clip would need the retimer's window instead.
   if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
@@ -742,15 +742,27 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     const start = framesToSeconds(Math.min(...overlaps.map(s => s[0])), fps);
     const end = framesToSeconds(Math.max(...overlaps.map(s => s[1])), fps);
     const stem = (p: typeof original, ids: string[]) => ({ ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(x => ids.includes(x.id)) })) });
-    const voice = await measureMix(stem(original, voices.map(v => v.clip.id)), start, end, { signal: scope });
+    // Measure only while someone speaks. One window from the first word to
+    // the last took in the bed between lines too, where the dip releases,
+    // and the target then pushed every line's dip to its 40 dB limit.
+    const windows = speechWindows(overlaps as [number, number][], frames(1)).map(([a, b]) => [framesToSeconds(a, fps), framesToSeconds(b, fps)] as const);
+    const measureSpeech = async (p: typeof original) => {
+      const parts: { lufs: number; seconds: number }[] = [];
+      for (const [a, b] of windows) {
+        const m = await measureMix(p, a, b, { signal: scope });
+        parts.push({ lufs: m.integrated, seconds: m.seconds });
+      }
+      return { integrated: combinedLoudness(parts) };
+    };
+    const voice = await measureSpeech(stem(original, voices.map(v => v.clip.id)));
     const flat = withKeys(original, keysAt(0));
-    const bed = await measureMix(stem(flat, [c.id]), start, end, { signal: scope });
+    const bed = await measureSpeech(stem(flat, [c.id]));
     depth = duckDepth(voice.integrated, bed.integrated, target);
     // Render the actual keyed bed too: fades, gaps and effect tails can
     // keep the achieved attenuation from matching the requested depth.
     for (let attempt = 0; attempt < 4; attempt++) {
       keys = keysAt(depth);
-      const measured = await measureMix(stem(withKeys(original, keys), [c.id]), start, end, { signal: scope });
+      const measured = await measureSpeech(stem(withKeys(original, keys), [c.id]));
       const difference = loudnessDifference(voice.integrated, measured.integrated);
       if (difference === null) throw new Error("Cannot measure voice balance in this window.");
       balance = { start, end, dialog_lufs: voice.integrated, music_lufs: measured.integrated,

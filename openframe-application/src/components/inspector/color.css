@@ -3,6 +3,9 @@
 /* five sub-tabs share the row evenly so they fit the narrowest inspector */
 .adjust-sub .segmented { display: flex; width: 100%; }
 .adjust-sub .segmented button { flex: 1 1 auto; min-width: 0; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Where they cannot (under about 245 px of row), three over two rather
+   than four over a lone LUT. */
+@container (max-width: 279px) { .adjust-sub .segmented button { flex-basis: 30%; } }
 
 .grade-pane { animation: rise-in var(--t-med) var(--ease-out); }
 .grade-foot { display: flex; justify-content: flex-end; padding: 6px 12px; }
@@ -11,6 +14,9 @@
 
 /* ---- HSL ---------------------------------------------------------------------- */
 .hsl-swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; justify-items: center; padding: 14px 12px 10px; }
+/* Eight in a row need 220 px: a narrower inspector puts them in two rows,
+   apart enough for the edited dot under the first. */
+@container (max-width: 259px) { .hsl-swatches { grid-template-columns: repeat(4, 1fr); row-gap: 14px; } }
 .hsl-swatch {
   position: relative; width: 24px; height: 24px; padding: 0;
   border: 0; border-radius: 50%; background: var(--swatch);
@@ -26,9 +32,10 @@
 }
 
 /* ---- curves --------------------------------------------------------------------- */
-.curve-channels { display: flex; gap: 4px; padding: 12px 12px 2px; }
+/* Two to a line when four do not fit (Green spilled its button at 203 px). */
+.curve-channels { display: flex; flex-wrap: wrap; gap: 4px; padding: 12px 12px 2px; }
 .curve-ch {
-  flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 1 1 0; min-width: max-content; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 26px; padding: 0 4px; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg-inset); color: var(--text-2); font-size: var(--fs-xs);
   transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast);
@@ -68,7 +75,8 @@
 .wheel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px; }
 @container (max-width: 300px) { .wheel-grid { grid-template-columns: 1fr; } }
 .wheel-card {
-  display: grid; gap: 7px; min-width: 0; padding: 8px 8px 6px;
+  container-type: inline-size;
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; min-width: 0; padding: 8px 8px 6px;
   border-radius: var(--radius); background: var(--bg-inset);
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow var(--t-med);
@@ -77,8 +85,15 @@
 .wheel-head { display: flex; align-items: center; gap: 2px; min-height: 22px; }
 .wheel-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); }
 .wheel-tone { flex: 1; margin-left: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Two wheels a row in a 320-480 px inspector cut the tone to "Mi…": there
+   it takes the line under the title. */
+@container (max-width: 239px) {
+  .wheel-head { flex-wrap: wrap; }
+  .wheel-title { margin-right: auto; }
+  .wheel-tone { order: 1; flex-basis: 100%; margin-left: 0; }
+}
 .wheel-face {
-  position: relative; justify-self: center; width: 100%; max-width: 124px; aspect-ratio: 1;
+  position: relative; justify-self: center; width: 100%; max-width: 168px; aspect-ratio: 1;
   border-radius: 50%; cursor: crosshair; touch-action: none;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 3px #222, 0 0 0 4px var(--line-strong);
   transition: box-shadow var(--t-fast);
@@ -99,11 +114,18 @@
 }
 .wheel-puck:hover, .wheel-puck:focus-visible { transform: translate(-50%, -50%) scale(1.2); }
 .wheel-face.active .wheel-puck { transform: translate(-50%, -50%) scale(1.25); cursor: grabbing; }
-.wheel-values { display: flex; justify-content: space-between; gap: 2px; font-size: 10px; color: var(--text-3); }
+/* Under the wheel, not spread across a wide card (576 px inspector). */
+.wheel-values { display: flex; justify-content: space-between; gap: 2px; justify-self: center; width: 100%; max-width: 168px; font-size: 10px; color: var(--text-3); }
 .wv-r { color: #ff8a84; }
 .wv-g { color: #6fdc8f; }
 .wv-b { color: #7ab6ff; }
 .wheel-lum { display: grid; grid-template-columns: minmax(0, 1fr) 34px auto; align-items: center; gap: 4px; }
+/* Two wheels a row left the luminance slider 9 px beside its number and
+   keys (324 to 383 px inspectors): there it takes a line of its own. */
+@container (max-width: 199px) {
+  .wheel-lum { grid-template-columns: 40px minmax(0, 1fr); row-gap: 2px; }
+  .wheel-lum > .insp-slider { grid-column: 1 / -1; }
+}
 .wheel-num { width: 100%; height: 22px; padding: 0 4px; text-align: right; font-size: var(--fs-xs); background: var(--bg-0); }
 .wheel-hint { margin: 0; padding: 0 12px; }
 

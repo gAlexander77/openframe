@@ -11,7 +11,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Ripple / roll / slip / slide tool | FoldHorizontal / ArrowLeftRight / ChevronsLeftRight / MoveHorizontal |
 | Reset / rotate clockwise | RotateCcw / RotateCw |
 | Undo / redo / history | Undo2 / Redo2 / History |
-| AI assistant | Bot |
+| AI assistant, an AI agent's notices | Bot |
 | Automatic tools, captions, adjustment | WandSparkles |
 | Effects | Sparkles |
 | Main track magnet / snapping | Magnet / SeparatorVertical |
@@ -31,6 +31,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Scopes | ChartColumnBig |
 | Maximize / restore window | Square / PanelsTopLeft |
 | Duplicate / rename / delete | Copy / Pencil / Trash2 |
+| Grid view / list view (media library, Home) | LayoutGrid / List |
 | Keyframe / animation graph | Diamond / ChartSpline |
 | Markers / search / shortcuts | Bookmark / Search / Keyboard |
 | Play / pause / stop / loop | Play / Pause / Square / Repeat |
@@ -44,6 +45,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Recording / voiceover | Video / Mic |
 | Speed / freeze | Gauge / Snowflake |
 | Favorite / selected | Heart / Check |
+| A new take (another seed) / generated music | Dices / Music |
 | Busy / error | Loader2 / CircleAlert |
 
 Clip badges are 11 px; keyframe diamonds are 12 px. Empty states pair a

@@ -6,13 +6,13 @@
 import { useSyncExternalStore } from "react";
 import { prepare } from "../engine/thumbs";
 import { player } from "../engine/player";
-import { createProject, normalizeProject, type ProjectInit } from "../lib/project/defaults";
+import { createProject, normalizeProject, uid, type ProjectInit } from "../lib/project/defaults";
 import { projectSummary } from "../lib/project/summary";
 import type { Project } from "../lib/project/types";
 import { platform, type ProjectSummary } from "../platform";
 import { provide } from "./actions";
 import { store } from "./store";
-import { toast } from "./toast";
+import { dismiss, updateToast, toast } from "./toast";
 import { projectWork } from "./projectWork";
 import { copyProject } from "../lib/project/copy";
 import { markDeleted, markRestored, splitTrash } from "../lib/projectTrash";
@@ -259,3 +259,25 @@ provide({
   openProject: () => void closeProject(true),
   saveProject: () => void saveNow().then((saved) => { if (saved) toast("Project saved"); }),
 });
+
+/** Importing a document always gives it a new identity, preserving saved originals. */
+export function openProjectFile(path?: string) {
+  return navigate(async () => {
+    const raw = await platform.openProjectFile(path);
+    if (raw === null) return false;
+    const p = { ...normalizeProject(raw), id: uid("p") };
+    if (!await saveNow()) return false;
+    await platform.saveProject(p, projectSummary(p));
+    enter(p);
+    return true;
+  });
+}
+export async function collectProject(desktopOnly = false) {
+  if (desktopOnly && platform.kind !== "desktop") throw new Error("collect_project is desktop only. File > Collect files downloads project JSON on the web; media stays in the browser.");
+  const id = toast("Collecting project files", "progress");
+  try {
+    const result = await platform.collectProject(store.document(), progress => updateToast(id, { progress }));
+    if (result) toast(result);
+    return result;
+  } finally { dismiss(id); }
+}

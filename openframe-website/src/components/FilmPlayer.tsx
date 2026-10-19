@@ -75,13 +75,13 @@ export default function FilmPlayer({ src, poster, captions, duration, chapters, 
       <div className="film-frame">
         <video ref={video} controls={!hydrated || started} preload="none" playsInline poster={poster} width={1920} height={1080} aria-label={title}>
           <source src={src} type="video/mp4" />
-          <track kind="captions" srcLang="en" label="English (music and sound)" src={captions} />
+          <track kind="captions" srcLang="en" label="English" src={captions} />
         </video>
         {hydrated && !started && (
           <button type="button" className="film-play" onClick={() => playFrom(0)} aria-label={`Play the ${title}, ${duration} seconds, with sound`}>
             <span className="film-play-icon" aria-hidden="true" dangerouslySetInnerHTML={{ __html: playSvg }} />
             <span className="film-play-text">
-              Play the film <span className="film-play-len">0:{String(duration).padStart(2, "0")}, sound on</span>
+              Play the film <span className="film-play-len">{clock(duration)}, sound on</span>
             </span>
           </button>
         )}

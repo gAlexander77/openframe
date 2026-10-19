@@ -57,7 +57,7 @@ export type LayerSource =
       /** Frame blending: the following source frame and its share, 0..1. */
       next?: { time: number; w: number };
     }
-  | { kind: "image"; assetId: Id }
+  | { kind: "image"; assetId: Id; time?: number }
   /** `kinetic`: the animations its letters, words or lines play now. */
   | { kind: "text"; clip: TextClip; word?: number; kinetic?: KineticFrame }
   | { kind: "color"; color: string }
@@ -280,7 +280,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
       }
     }
     source = { kind: "video", assetId: clip.assetId, time: Math.min(Math.max(t, 0), max), ...(clip.reverse && !clip.freeze ? { reverse: true as const } : {}), ...(next ? { next } : {}) };
-  } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId };
+  } else if (clip.type === "image") source = { kind: "image", assetId: clip.assetId, time: (clip.imageIn ?? 0) + framesToSeconds(f - clip.start, p.fps) };
   else if (clip.type === "text") {
     const word = clip.style.highlight ? spokenWord(clip.text, clip.wordTimes, r) : undefined;
     const kinetic = kineticAt(clip, r, ANIMATIONS);

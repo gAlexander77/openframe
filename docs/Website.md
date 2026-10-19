@@ -63,16 +63,40 @@ check before any media lands in the repository.
 
 ## Media
 
-- **The launch film:** `public/media/launch-film.mp4`, H.264 1080p30 at
-  about 1.9 Mbit/s, AAC 128 kbit/s, `+faststart`, 13.1 MB, from the 115 MB
-  master. Captions describe the music (the film has no voice; its words
-  are on screen), and the page offers the whole film as text.
+- **The launch film:** `public/media/launch-film.mp4`, the 68-second
+  voiced film from [[Launch film 3 through MCP 2026-10-19]]: H.264 1080p30
+  at 1.75 Mbit/s (two-pass), the master's own AAC track copied as it is
+  (192 kbit/s, -14.2 LUFS, -1.0 dBTP), `+faststart`, 16.6 MB, from the
+  82 MB master. Re-encoding that AAC at 128 kbit/s kept the loudness but
+  raised the true peak to -0.7 dBTP, so `make-media.mjs` copies an AAC
+  track and encodes only anything else.
+- **Its captions** (`launch-film.en.vtt`) are the narration, converted by
+  `make-media.mjs --captions` from the SRT the export wrote. The page's
+  transcript reads the same file and adds what is on screen in each
+  chapter, so captions and transcript cannot drift.
+- **The music lane's loudness** is the score's, before it was ducked under
+  the voice. The film's mix flattens the sections (the narration runs
+  through all of them), and the score is not kept beside the film. But
+  generate_music is deterministic
+  ([[ADR-085 Music is composed and synthesized in the app, seeded and offline]]):
+  bundling the app's `src/lib/music` for Node and rendering the film's own arguments
+  and seed gave the same master report as the film (gain, limiting,
+  -14.02 LUFS), and ffmpeg's ebur128 measured that render section by
+  section. `src/data/film.ts` says how.
 - **Loops:** nine 5-to-8-second muted clips, 1280x720, VP9 WebM and H.264
   MP4, 0.14 to 1.5 MB each, cut from the agents' 2560x1440 recordings and
   cropped to the feature. They load and play only while on screen, have a
   pause button, and wait to be played under reduced motion.
 - **Screenshots:** `src/assets/screens/*.webp` from `scripts/capture.mjs`
   (near-lossless WebP at 2x); Astro serves AVIF and WebP at several widths.
+- **The README's GIFs** (`docs/media/*.gif`): `scripts/make-readme-media.mjs`
+  cuts a teaser of the film and four of the loops, and the agent-live GIF
+  from a `capture.mjs --record <dir>` run: that run films itself, paces the
+  main demo's MCP calls like an agent's, so each AI agent notice can be
+  read, and prints where the build starts and ends. GitHub plays a
+  README's GIFs in the page but not a committed video; each is
+  palette-built to stay at 1 to 4.5 MB. The README shows the site's
+  screenshots in place, so one capture refreshes both.
 - **Full-range video fails in Edge.** The recordings are full-range (JPEG)
   YUV, as the browser's screencast writes them. VP9 encoded from them
   played in nothing on Edge for Windows: `PIPELINE_ERROR_DECODE` on the

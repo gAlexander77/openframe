@@ -1,5 +1,5 @@
 import { EmptyState } from "./EmptyState";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { thumbs } from "../engine/thumbs";
 import {
   AudioLines,
@@ -7,6 +7,7 @@ import {
   Bookmark,
   Captions,
   Film,
+  Heart,
   Image,
   LayoutGrid,
   List,
@@ -27,6 +28,7 @@ import {
 } from "../icons";
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { formatBytes } from "../lib/export";
+import { libraryLayout, type LibraryLayout } from "../lib/libraryLayout";
 import { filterMedia, mediaUsage, type MediaBrowser, type MediaUse } from "../lib/mediaLibrary";
 import { organizeMedia, removeMedia } from "../lib/project/mediaOrganization";
 import type { Asset } from "../lib/project/types";
@@ -48,6 +50,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
+import { MusicCard } from "./MusicCard";
 import { MenuList, useDismiss, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
 import { RenameField } from "./RenameField";
@@ -67,16 +70,46 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "markers", label: "Markers", icon: Bookmark },
 ];
 
+/** Text cut short by its ellipsis or line clamp (marked data-cut) names
+ * itself in full in a tooltip, and only then. The tip is set as the pointer
+ * arrives: React's root sees the event before the tooltip layer, which
+ * listens on the document. */
+function tipIfCut(e: React.PointerEvent) {
+  const el = (e.target as Element).closest?.("[data-cut]");
+  if (!(el instanceof HTMLElement)) return;
+  if (el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1) el.dataset.tip = el.textContent?.trim() ?? "";
+  else delete el.dataset.tip;
+}
+
 export function LibraryPanel() {
   const tab = useEditor((s) => s.leftTab);
+  const ref = useRef<HTMLElement>(null);
+  // The panel's size picks the tab rows and where category lists go
+  // (lib/libraryLayout.ts); state changes only when that layout does, so a
+  // splitter drag does not re-render the cards on every frame.
+  const [layout, setLayout] = useState<LibraryLayout | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current!;
+    const measure = () => {
+      const next = libraryLayout(TABS.length, el.clientWidth, el.clientHeight);
+      setLayout((l) => (l && l.columns === next.columns && l.labels === next.labels && l.narrow === next.narrow ? l : next));
+    };
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+  const icons = layout?.labels === false;
   return (
-    <section className="panel library-panel" aria-label="Library">
-      <nav className="lib-tabs" role="tablist">
+    <section ref={ref} className={`panel library-panel${layout?.narrow ? " narrow" : ""}`} aria-label="Library" onPointerOver={tipIfCut}>
+      <nav className={`lib-tabs${icons ? " icons" : ""}`} role="tablist" style={layout ? { gridTemplateColumns: `repeat(${layout.columns}, minmax(0, 1fr))` } : undefined}>
         {TABS.map((t) => (
           <button
             key={t.id}
             role="tab"
             aria-selected={tab === t.id}
+            aria-label={t.label}
+            data-tip={icons ? t.label : undefined}
             className={`lib-tab${tab === t.id ? " on" : ""}`}
             onClick={() => store.set({ leftTab: t.id })}
           >
@@ -136,41 +169,49 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
 
   return (
     <div className="lib-content media-browser">
-      <div className="lib-toolbar">
+      {/* Nothing to search, filter, sort or manage yet: the Import box (and
+          Record), as CapCut's empty Media panel; the empty Audio tab's
+          Import button sat right above its Import box. */}
+      {(total > 0 || kind === "all") && <div className="lib-toolbar">
         <button className="btn import-btn" onClick={() => void pickAndImport()}>
           <Upload size={14} /> Import
         </button>
         {kind === "all" && <RecordButton />}
-        <label className="lib-search">
+        {total > 0 && <label className="lib-search">
           <Search size={14} />
           <input className="field" aria-label={kind === "audio" ? "Search audio" : "Search media"} placeholder={kind === "audio" ? "Search audio" : "Search media"} value={options.query} onChange={(e) => change({ query: e.target.value })} />
-        </label>
-      </div>
-      <div className="media-filters">
-        {kind === "all" && <select className="field" aria-label="Media type" value={options.kind} onChange={(e) => change({ kind: e.target.value as MediaBrowser["kind"] })}>
-          <option value="all">All types</option><option value="video">Video</option><option value="audio">Audio</option><option value="image">Images</option>
-        </select>}
-        <select className="field" aria-label="Timeline usage" value={options.usage} onChange={(e) => change({ usage: e.target.value as MediaBrowser["usage"] })}>
-          <option value="all">All usage</option><option value="used">Used</option><option value="unused">Unused</option>
-        </select>
-        <select className="field" aria-label="Sort media" value={options.sort} onChange={(e) => change({ sort: e.target.value as MediaBrowser["sort"] })}>
-          <option value="import">Import order</option><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option>
-          <option value="duration">Shortest first</option><option value="duration-desc">Longest first</option>
-        </select>
-      </div>
-      <div className="media-results">
-        <button className="media-clear" onClick={() => setManaging(true)}>Manage media</button>
-        <span role="status">{list.length} of {total} {kind === "audio" ? "audio files" : "media files"}</span>
-        {filtered && <button className="media-clear" onClick={clearFilters}>Clear filters</button>}
-        <div className="media-views" role="group" aria-label="Media view">
-          <button className="icon-btn" aria-label="Grid view" data-tip="Grid view" aria-pressed={options.view === "grid"} onClick={() => change({ view: "grid" })}><LayoutGrid size={14} /></button>
-          <button className="icon-btn" aria-label="List view" data-tip="List view" aria-pressed={options.view === "list"} onClick={() => change({ view: "list" })}><List size={14} /></button>
+        </label>}
+      </div>}
+      {/* The folder is one more filter beside the others, and Favorites a
+          toggle beside the views: a row of its own each pushed the first
+          cards below a short panel's edge. */}
+      {total > 0 && (<>
+        <div className="media-filters">
+          {kind === "all" && <select className="field" aria-label="Media type" value={options.kind} onChange={(e) => change({ kind: e.target.value as MediaBrowser["kind"] })}>
+            <option value="all">All types</option><option value="video">Video</option><option value="audio">Audio</option><option value="image">Images</option>
+          </select>}
+          <select className="field" aria-label="Timeline usage" value={options.usage} onChange={(e) => change({ usage: e.target.value as MediaBrowser["usage"] })}>
+            <option value="all">All usage</option><option value="used">Used</option><option value="unused">Unused</option>
+          </select>
+          <select className="field" aria-label="Filter by folder" value={JSON.stringify(options.folder)} onChange={(e) => change({ folder: JSON.parse(e.target.value) })}><option value="null">All folders</option><option value={'""'}>Unfiled</option>{folders?.map((f) => <option key={f} value={JSON.stringify(f)}>{f}</option>)}</select>
+          <select className="field" aria-label="Sort media" value={options.sort} onChange={(e) => change({ sort: e.target.value as MediaBrowser["sort"] })}>
+            <option value="import">Import order</option><option value="name">Name A–Z</option><option value="name-desc">Name Z–A</option>
+            <option value="duration">Shortest first</option><option value="duration-desc">Longest first</option>
+          </select>
         </div>
-      </div>
-      <div className="media-organization media-folder-filter">
-        <select className="field" aria-label="Filter by folder" value={JSON.stringify(options.folder)} onChange={(e) => change({ folder: JSON.parse(e.target.value) })}><option value="null">All folders</option><option value={'""'}>Unfiled</option>{folders?.map((f) => <option key={f} value={JSON.stringify(f)}>{f}</option>)}</select>
-        <label><input type="checkbox" checked={options.favorites} onChange={(e) => change({ favorites: e.target.checked })} />Favorites only</label>
-      </div>
+        <div className="media-results">
+          <button className="media-clear" onClick={() => setManaging(true)}>Manage media</button>
+          <span role="status">{list.length} of {total} {kind === "audio" ? "audio files" : "media files"}</span>
+          {filtered && <button className="media-clear" onClick={clearFilters}>Clear filters</button>}
+          <div className="media-toggles">
+            <button className="icon-btn" aria-label="Favorites only" data-tip="Favorites only" aria-pressed={options.favorites} onClick={() => change({ favorites: !options.favorites })}><Heart size={14} /></button>
+            <div className="media-views" role="group" aria-label="Media view">
+              <button className="icon-btn" aria-label="Grid view" data-tip="Grid view" aria-pressed={options.view === "grid"} onClick={() => change({ view: "grid" })}><LayoutGrid size={14} /></button>
+              <button className="icon-btn" aria-label="List view" data-tip="List view" aria-pressed={options.view === "list"} onClick={() => change({ view: "list" })}><List size={14} /></button>
+            </div>
+          </div>
+        </div>
+      </>)}
       {total === 0 ? (
         <button className={`drop-box${kind === "audio" ? " compact" : ""}`} onClick={() => void pickAndImport()}>
           <Upload size={22} />
@@ -206,6 +247,12 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
           <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
         </div>
+      )}
+      {kind === "audio" && (
+        <section className="lib-section">
+          <h4 className="lib-group">Music</h4>
+          <MusicCard />
+        </section>
       )}
       {kind === "audio" && <SoundEffects />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
@@ -322,7 +369,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
 function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
-  const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
+  const metadata = [asset.animated ? `Animated image · ${formatDuration(asset.duration)}` : asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
     asset.width && asset.height ? `${asset.width}×${asset.height}` : null,
     asset.fps ? `${Number(asset.fps.toFixed(3))} fps` : null,
     asset.size ? formatBytes(asset.size) : null].filter(Boolean).join(" · ");
@@ -343,7 +390,7 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
-        {!list && asset.kind === "video" && asset.hasVideo && <HoverScrub asset={asset} />}
+        {!list && (asset.kind === "video" || asset.animated) && asset.hasVideo && <HoverScrub asset={asset} />}
         {!list && asset.kind !== "image" && <span className="chip num">{formatDuration(asset.duration)}</span>}
         {!list && uses.length > 0 && <span className="badge-added">Added</span>}
         {!list && add}
@@ -359,9 +406,9 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
           <span className="card-label" onDoubleClick={list ? undefined : (e) => (e.stopPropagation(), onRename())}>{asset.name}</span>
         )}
         <button className="media-preview-button" aria-label={`Preview ${asset.name}`} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onPreview(); }}>Preview</button>
-        {(asset.folder || asset.favorite) && <span className="media-details">{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}
+        {(asset.folder || asset.favorite) && <span className="media-details media-folder" data-cut>{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}
         {list && <>
-          <span className="media-details">{metadata}</span>
+          <span className="media-details media-meta">{metadata}</span>
           {uses.length ? <button className="media-uses" aria-label={`Select ${uses.length} timeline uses of ${asset.name}`}
             onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}
             onClick={(e) => { e.stopPropagation(); store.select(uses.map((u) => u.clipId)); store.set({ hoverFrame: null }); store.seek(uses[0].start); }}>
@@ -413,7 +460,7 @@ function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => 
           <Plus size={14} strokeWidth={2.4} />
         </button>
       </div>
-      <span className="card-label">{props.label}</span>
+      <span className="card-label" data-cut>{props.label}</span>
     </div>
   );
 }

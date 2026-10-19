@@ -1,6 +1,6 @@
 # ADR-050: Text to speech runs Kokoro on the user's machine
 
-**Date:** 2026-10-16. **Status:** accepted.
+**Date:** 2026-10-16. **Status:** accepted; the CPU precision (q8) is superseded by [[ADR-084 Voiceover is read at full precision and finished like a recording]].
 
 ## Context
 

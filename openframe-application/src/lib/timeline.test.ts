@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createTrack } from "./project/defaults";
-import { fitZoom, rulerTicks, snapSpan, trackHeight } from "./timeline";
+import { fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } from "./timeline";
 
 describe("snapSpan", () => {
   const targets = [0, 100, 250];
@@ -37,4 +37,15 @@ it("sizes a track row by its kind and its chosen height", () => {
   expect(trackHeight(a)).toBe(46);
   expect(trackHeight({ ...a, height: "small" })).toBe(30);
   expect(trackHeight({ ...a, height: "large" })).toBe(78);
+});
+
+it("keeps the visible frame interval when the dock changes the lane width", () => {
+  const next = refitTimeline(2, 200, 1000, 700);
+  expect(next.left / next.zoom).toBe(100);
+  expect(700 / next.zoom).toBeCloseTo(500);
+  const restored = refitTimeline(next.zoom, next.left, 700, 1000);
+  expect(restored.zoom).toBeCloseTo(2);
+  expect(restored.left).toBeCloseTo(200);
+  expect(refitTimeline(2, 200, 0, 700)).toEqual({ zoom: 2, left: 200 });
+  expect(refitTimeline(60, 200, 700, 1000).zoom).toBe(60);
 });

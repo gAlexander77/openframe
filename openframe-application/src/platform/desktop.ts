@@ -2,6 +2,8 @@
 // referenced by absolute path; Rust serves its bytes over the `media:`
 // protocol (ADR-010), and writes projects (ADR-011) and exports (ADR-012).
 
+import { rewriteProjectPaths, resolveProjectPath } from "../lib/projectFiles";
+import type { Project } from "../lib/project/types";
 import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -13,7 +15,7 @@ import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob }
 const MEDIA_EXTENSIONS = {
   video: ["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "flv", "mts", "m2ts", "ts", "mxf", "3gp", "ogv"],
   audio: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "oga", "opus", "wma", "aif", "aiff"],
-  image: ["png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg"],
+  image: ["apng", "png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg"],
 };
 
 /** The protocol never answers more than this per request (media.rs). */
@@ -116,6 +118,14 @@ export const desktop: Platform = {
   },
 
   kind: "desktop",
+  async openProjectFile(path) {
+    const result = await invoke<{ project: Project; path: string } | null>("project_open_file", { path: path ?? null });
+    return result ? rewriteProjectPaths(result.project, src => resolveProjectPath(src, result.path)) : null;
+  },
+  collectProject: (project, onProgress) => {
+    const progress = new Channel<number>(); progress.onmessage = onProgress;
+    return invoke("project_collect", { project: JSON.stringify(project), progress });
+  },
 
   openLink: (page) => invoke<void>("about_open", { page }),
 

@@ -23,12 +23,28 @@ const CODEC_NAMES: Record<string, string> = {
 };
 const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCase()) : undefined);
 
-const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|png|jpe?g|gif|webp|bmp|avif|svg)$/i;
+const MEDIA_NAME = /\.(mp4|m4v|mov|mkv|webm|avi|wmv|flv|mts|m2ts|ts|mxf|3gp|ogv|mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?|a?png|jpe?g|gif|webp|bmp|avif|svg)$/i;
 export const looksLikeMedia = (name: string) => MEDIA_NAME.test(name);
 
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
 export async function importFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+  const added = await probeFiles(files, signal);
+  if (added.length && !signal.aborted) {
+    store.edit(added.length === 1 ? `Import ${added[0].name}` : `Import ${added.length} files`, (p) => ({
+      ...p,
+      assets: [...p.assets, ...added],
+    }));
+    added.forEach(prepare);
+  }
+  return signal.aborted ? [] : added;
+}
+
+/** The assets `files` would add, probed but not added: a caller that makes
+ * media as part of an edit (a voiceover's speech) adds them inside that
+ * edit, so one undo takes the clips and their media together. Call
+ * `prepare` on each once they are in the project. */
+export async function probeFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
   if (signal.aborted) return [];
   // A dropped .cube is a LUT for the project, not media for the library.
   const luts = files.filter((f) => isLutName(f.name));
@@ -69,6 +85,7 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
       added.push({
         id: uid("a"),
         kind: info.kind,
+        animated: info.animated,
         name: f.name,
         src: f.src,
         proxy,
@@ -87,13 +104,6 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
       if (signal.aborted) return [];
       toast(`Couldn't open ${f.name}: ${e instanceof Error ? e.message : e}`, "error");
     }
-  }
-  if (added.length) {
-    store.edit(added.length === 1 ? `Import ${added[0].name}` : `Import ${added.length} files`, (p) => ({
-      ...p,
-      assets: [...p.assets, ...added],
-    }));
-    added.forEach(prepare);
   }
   return added;
 }
@@ -167,6 +177,15 @@ export async function adoptAndImport(files: File[]): Promise<Asset[]> {
   const signal = projectWork.signal();
   return importFiles(await platform.adoptFiles(files), signal);
 }
+
+/** Files made in the app (speech), saved where the project keeps media
+ * and probed, for the caller's edit to add (probeFiles). */
+export async function adoptAndProbe(files: File[]): Promise<Asset[]> {
+  const signal = projectWork.signal();
+  return probeFiles(await platform.adoptFiles(files), signal);
+}
+
+export { prepare };
 
 // The menu item and the shortcut open the same picker as the Import button.
 provide({ importMedia: () => void pickAndImport() });

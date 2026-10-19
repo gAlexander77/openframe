@@ -1,3 +1,4 @@
+import { DraftNumber } from "./DraftNumber";
 // The export dialog, after CapCut's (docs/research/CapCut desktop.md §6.1):
 // name and location, a Video section (resolution, bit rate, codec, format,
 // frame rate), an Audio section, the range, and a footer with the duration
@@ -286,7 +287,7 @@ function SettingsView() {
 
         <div className="export-fields">
           <Row label="Name" htmlFor="export-name">
-            <input id="export-name" className="field" data-autofocus value={s.name} spellCheck={false} onChange={(e) => set({ name: e.target.value })} />
+            <input id="export-name" className="field" data-autofocus value={s.name} spellCheck={false} onFocus={(e) => e.currentTarget.setSelectionRange(0, e.currentTarget.value.length, "backward")} onChange={(e) => set({ name: e.target.value })} />
           </Row>
           <Row label="Preset" htmlFor="export-preset">
             <div className="export-pair">
@@ -393,15 +394,14 @@ function SettingsView() {
                 </Select>
                 {s.quality === "custom" && (
                   <label className="export-mbps">
-                    <input
+                    <DraftNumber
                       className="field num"
-                      type="number"
                       min={0.5}
                       max={400}
                       step={0.5}
                       aria-label="Bit rate in megabits per second"
                       value={s.customMbps}
-                      onChange={(e) => set({ customMbps: Math.max(0.2, Number(e.target.value) || 0) })}
+                      onCommit={v => set({ customMbps: Number(v) })}
                     />
                     Mbps
                   </label>
@@ -476,7 +476,7 @@ function SettingsView() {
           {captionClips(project).length > 0 && <CaptionsRow s={s} set={set} />}
 
           <Row label="Range">
-            <div className="segmented" role="radiogroup" aria-label="Range">
+            <div className="export-segmented" role="radiogroup" aria-label="Range">
               <button role="radio" aria-checked={s.range === "all"} className={s.range === "all" ? "on" : ""} onClick={() => set({ range: "all" })}>
                 Whole timeline
               </button>
