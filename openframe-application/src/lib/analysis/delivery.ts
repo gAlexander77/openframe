@@ -82,6 +82,37 @@ export function loudnessRange(shortTerm: number[]): number {
   return at(95) - at(10);
 }
 
+/** What a mix is for, for judging its loudness range. */
+export type ProgramKind = "film" | "ad" | "social" | "podcast" | "any";
+export const PROGRAM_KINDS: ProgramKind[] = ["film", "ad", "social", "podcast", "any"];
+
+/**
+ * The loudness range (EBU Tech 3342 LRA, LU) a mix of each kind usually
+ * spans, as rules of thumb from EBU Tech 3343's guidance and broadcast and
+ * streaming practice: a film or documentary breathes (quiet and loud
+ * passages, 5-15 LU); an ad is dense by design (3-8); social video and
+ * podcasts sit between, played on phones (3-10, 3-8). Not a spec: R128
+ * sets no LRA limit for programmes.
+ */
+export const RANGE_FOR_KIND: Record<ProgramKind, [number, number]> = { film: [5, 15], ad: [3, 8], social: [3, 10], podcast: [3, 8], any: [3, 15] };
+
+const KIND_NAMES: Record<ProgramKind, string> = { film: "a film", ad: "an ad", social: "social video", podcast: "a podcast", any: "most video" };
+
+/** How a mix's loudness range compares with its kind's, and what to do
+ * when it is far off. */
+export function rangeVerdict(lra: number, kind: ProgramKind = "any"): { kind: ProgramKind; typical_lu: [number, number]; verdict: "very flat" | "flat" | "typical" | "wide"; note?: string } {
+  const [lo, hi] = RANGE_FOR_KIND[kind];
+  const name = KIND_NAMES[kind];
+  const v = lra < lo / 2 ? "very flat" : lra < lo ? "flat" : lra > hi ? "wide" : "typical";
+  const note =
+    v === "very flat" || v === "flat"
+      ? `${v === "very flat" ? "Very flat" : "Flat"} for ${name}: its loud and quiet passages sit within ${lra.toFixed(1)} LU, where ${name} usually spans ${lo}-${hi} LU. Let it breathe: the music up between lines (duck_under_speech min_line_lu dips each line only as deep as it needs), quiet parts kept quiet, light compression and limiting.`
+      : v === "wide"
+        ? `Wide for ${name} (${lra.toFixed(1)} LU, usually ${lo}-${hi}): the quiet passages may be lost on a phone or in a noisy room; bring them up or compress gently.`
+        : undefined;
+  return { kind, typical_lu: [lo, hi], verdict: v, ...(note ? { note } : {}) };
+}
+
 export interface LoudnessStats {
   /** Gated integrated loudness, LUFS; -Infinity for silence. */
   integrated: number;

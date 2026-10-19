@@ -688,12 +688,17 @@ Example:
 
 ### analyze_music
 
-Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest, or null). Sections may be as short as two bars and their bounds follow bars or phrases. All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every detected drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
+Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The music clip (audio, or a video with sound) |
 | `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Kinds of markers to add (default none) |
+| `bpm` | number |  | The tempo, when known: beats are tracked at it (40..240) |
+| `first_downbeat` | number |  | A bar's first beat, in the music file's own seconds (0 for a score that starts on a bar): sets where bars start; with bpm, the whole grid (0..) |
+| `cues` | { at, label }[] |  | The parts, when known, in the music file's own seconds: each starts at its at and runs to the next; a drop cue after another part is a drop. [{at: 0, label: 'intro'}, {at: 4, label: 'build'}, {at: 8, label: 'drop'}, {at: 32, label: 'breakdown'}, {at: 36, label: 'drop'}, {at: 48, label: 'outro'}] |
+| `cues[].at` | number | yes | Source seconds the part starts (0..) |
+| `cues[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
 
 Example:
 
@@ -1964,21 +1969,24 @@ Voice, music, effects and the mix.
 
 ### add_voiceover
 
-Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.
+Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), or words_per_second [lowest, highest], per call or per line; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `lines` | { text, caption, at, voice, speed, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
+| `lines` | { text, caption, at, voice, speed, words_per_second, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
 | `lines[].text` | string | yes | Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/> |
 | `lines[].caption` | string |  | What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL) |
 | `lines[].at` | number |  | Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before (0..) |
 | `lines[].voice` | string |  | This line's voice (another speaker); default the call's |
-| `lines[].speed` | number |  | This line's speed; default the call's (0.5..2) |
+| `lines[].speed` | number |  | This line's speed, kept as given; default the call's, or chosen to land on its words a second (0.5..2) |
+| `lines[].words_per_second` | number[] |  | This line's [lowest, highest] words a second; default the call's |
 | `lines[].pause_after` | number |  | Seconds of silence before the next line (overrides gap and the line's ending) (0..10) |
 | `lines[].paragraph` | boolean |  | This line ends a paragraph: 0.8 s before the next |
-| `lines[].pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast; review_voiceover then flags it only past 2 or 7.5 syllables a second, and a fast line is not read again slower for being rushed (default normal) |
+| `lines[].pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast moves its words a second half a word down or up, for the read and the review (default normal) |
 | `voice` | string |  | Voice id, or a blend of voices' styles ("af_heart:60,af_bella:40"); default af_heart, the most natural |
-| `speed` | number |  | 1 is the model's own pace (about 3.3 words a second inside a line); default 0.95, a narrator's (0.5..2) |
+| `read_as` | "narration" \| "ad" \| "social" |  | The kind of read, whose words a second lines land on: narration 2.3-2.8, ad 2.6-3.1, social 2.8-3.4 (default narration) |
+| `words_per_second` | number[] |  | [lowest, highest] words a second over each line's speech, first word to last (narration [2.3, 2.8]); the speed is chosen to land on it |
+| `speed` | number |  | Every line's speed, kept as given (1 is the model's own pace, about 4.6 syllables a second); default: chosen per line to land on its words a second (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `start` | number |  | Seconds the first line starts, default 0 (0..) |
 | `gap` | number |  | Seconds between every pair of lines, instead of each line's ending choosing (0..) |
@@ -2028,12 +2036,12 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 Example:
 
 ```json
-{"name":"add_voiceover","arguments":{"lines":[{"text":"Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer."},{"text":"Every edit is a tool an agent can call,","voice":"am_michael"},{"text":"so a whole film can be made by asking.","voice":"am_michael","pause_after":0.8},{"text":"Free. [beat] Open source. Yours.","at":12,"caption":"Free, open source, yours."}],"voice":"af_heart","pronounce":{"OpenFrame":"Open Frame"}}}
+{"name":"add_voiceover","arguments":{"lines":[{"text":"Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer."},{"text":"Every edit is a tool an agent can call,","voice":"am_michael"},{"text":"so a whole film can be made by asking.","voice":"am_michael","pause_after":0.8},{"text":"Free. [beat] Open source. Yours.","at":12,"caption":"Free, open source, yours.","pace":"slow"}],"voice":"af_heart","read_as":"ad","pronounce":{"OpenFrame":"Open Frame"}}}
 ```
 
 ### review_voiceover
 
-Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. A line meant to be slow or fast (add_voiceover's pace) is held to that. The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
+Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last, and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves it), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2049,7 +2057,7 @@ Example:
 
 ### retake_voiceover
 
-Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice. When the rushed-line rule chooses a speed, speed_chosen is true and a note explains it.
+Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, words_per_second or read_as (the speed is then chosen by reading and measuring, as add_voiceover does), a speed (kept as given) or pronunciations (the pronounce fix review_voiceover suggests). With none of these, a line whose speed was chosen is landed on its words a second again, and a line read at a speed given keeps it. The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second; when the speed was chosen, speed_chosen is true and a note says how many reads it took.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2057,7 +2065,9 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 | `text` | string |  | New words, with pause marks; default the line's own |
 | `caption` | string |  | What the caption shows, when it should differ from the words; default the new text as written |
 | `voice` | string |  | Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default af_heart |
-| `speed` | number |  | 1 is the model's own pace; default 0.95 (0.5..2) |
+| `read_as` | "narration" \| "ad" \| "social" |  | The kind of read, whose words a second lines land on: narration 2.3-2.8, ad 2.6-3.1, social 2.8-3.4 (default narration) |
+| `words_per_second` | number[] |  | [lowest, highest] words a second over the line's speech; default the line's own |
+| `speed` | number |  | Kept as given; default the line's own speed, or chosen again when it was chosen (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice, replacing the line's own map ({} clears it) |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
@@ -2067,18 +2077,19 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 Example:
 
 ```json
-{"name":"retake_voiceover","arguments":{"clip_id":"c_vo2","pronounce":{"MCP":"M C P"},"ripple":true}}
+{"name":"retake_voiceover","arguments":{"clip_id":"c_vo2","pronounce":{"MCP":"M C P"},"words_per_second":[2.3,2.8],"ripple":true}}
 ```
 
 ### text_to_speech
 
-Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. Voices (list_catalog section voices describes each): af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model.
+Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. With no speed given it lands on a narrator's words a second (2.3-2.8; pace slow or fast moves it half a word), its speed chosen by reading and measuring. Voices (list_catalog section voices describes each): af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The title (text clip) |
 | `voice` | string |  | Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default af_heart |
-| `speed` | number |  | 1 is the model's own pace; default 0.95 (0.5..2) |
+| `pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast moves its words a second half a word down or up, for the read and the review (default normal) |
+| `speed` | number |  | 1 is the model's own pace; kept as given. Default: chosen per line to land on its words a second (Heart narrates at 0.6-0.9) (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
@@ -2233,18 +2244,19 @@ Measure clips' loudness (EBU R128) and set their volume to reach a target withou
 
 ### duck_under_speech
 
-Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). voice_above_music_lu measures the rendered voice and bed, selects a depth, and reports the achieved difference.
+Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives programme (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the least dip). Both are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins (with min_line_lu, each line with its own dip). Plain depth lowers by that many dB without measuring.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The music clip |
-| `voice_above_music_lu` | number |  | Measure and choose attenuation (0-40 dB) to place voice this many LU above music over the detected speech window; overrides depth and reports achieved balance (0..30) |
-| `depth` | number |  | dB to lower, default 12 (1..40) |
+| `voice_above_music_lu` | number |  | LU the voice sits over the music while it speaks (all lines together; 10-15 for a promo); measured and met, overrides depth (0..30) |
+| `min_line_lu` | number |  | LU every line sits over the music at least (each line alone, its first word to its last); a line short of it dips deeper, measured and met (0..30) |
+| `depth` | number |  | dB to lower, default 12; with min_line_lu alone, the least dip under every line (default none) (1..40) |
 
 Example:
 
 ```json
-{"name":"duck_under_speech","arguments":{"clip_id":"c_music","depth":12}}
+{"name":"duck_under_speech","arguments":{"clip_id":"c_music","voice_above_music_lu":12,"min_line_lu":10}}
 ```
 
 ### reduce_noise
@@ -2367,11 +2379,13 @@ Example:
 
 ### measure_loudness
 
-Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: "ebu_r128", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.
+Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA) with range (the LRA against what kind usually spans: film 5-15 LU, ad 3-8, social 3-10, podcast 3-8; a very flat or wide mix gets a note), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: "ebu_r128", loudness: -23}. by_track measures each audio track alone as mixed (integrated, loudest three seconds, LRA) and, with a Voiceover track and music, the voice over the music in three named windows that differ by design: programme (the whole stretch, music between lines included), speech (while the voice speaks, its lines together) and per_line (each line alone: lowest, median, highest, and where the lowest is). start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `by_track` | boolean |  | Report each audio track as mixed (integrated and three-second loudness), plus Voiceover minus other audio tracks excluding SFX; ignores master normalization for stems |
+| `by_track` | boolean |  | Each audio track measured alone as mixed (before master normalization), and the voice's margin over the music by window: programme, speech and per_line |
+| `per_second` | boolean |  | With by_track, each track's three-second loudness every second too (long; default false: summaries only) |
+| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |

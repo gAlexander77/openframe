@@ -664,11 +664,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   the sentence keeps its intonation; captions never show them.
   `pronounce` respells names and acronyms for the voice while captions
   keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
+  Each line lands on a pace: a narrator's 2.3-2.8 words a second (or an
+  ad's, a social video's, or as asked), its speed chosen by reading and
+  measuring it, never by stretching the audio. A word cannot be marked
+  for emphasis: the voice model has no such control, measured
+  ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]).
 - **Listen back** (agents: `review_voiceover`): Whisper hears each line
   and it is compared with the script word by word; each line's pace
-  (words and syllables a second), silences, longest pause, loudness, true
-  peak, pitch range and margin over the music are measured, with a verdict
-  and the tool calls that fix what is wrong. A line that differs from its
+  (words and syllables a second over its speech and over its clip, judged
+  against the pace it was read to), silences, longest pause, loudness, true
+  peak, pitch range and margin over the music (that line alone) are
+  measured, with a verdict, the tool calls that fix what fails, and advice
+  that does not fail it. A line that differs from its
   script is heard again by a larger Whisper (small) before the voice is
   blamed: what only the first one misheard needs no retake, and each
   difference says whether the recognizer or the voice is likely wrong. A

@@ -49,7 +49,7 @@ import { stretchClip } from "../../lib/project/stretch";
 import { autoAdjustClip } from "../../state/autoColor";
 import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
-import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "../../lib/tts";
+import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
 import { applyTextStyle, deleteTextStyle, saveTextStyle, useTextStyles } from "../../state/textStyles";
 import { beginTrackBox, cancelTrackBox, cancelTracking, cannotTrack, trackMotion, useTrackBox, useTracking } from "../../state/tracking";
@@ -1513,7 +1513,9 @@ function TextTab({ clip }: { clip: TextClip }) {
 function SpeechSection({ clip }: { clip: TextClip }) {
   const speaking = useSpeaking();
   const [voice, setVoice] = useState(DEFAULT_VOICE);
-  const [speed, setSpeed] = useState(DEFAULT_SPEED);
+  // A pace, not a speed: the speed is chosen to land the read on a
+  // narrator's words a second, moved for slow or fast (ADR-096).
+  const [pace, setPace] = useState<"slow" | "normal" | "fast">("normal");
   const [quality, setQuality] = useState<"best" | "draft">("best");
   const busy = speaking?.clipId === clip.id;
   return (
@@ -1525,8 +1527,8 @@ function SpeechSection({ clip }: { clip: TextClip }) {
           ))}
         </select>
       </Row>
-      <Row label="Speed">
-        <Segmented value={String(speed)} onChange={(v) => setSpeed(Number(v))} options={[{ value: "0.85", label: "Slow" }, { value: String(DEFAULT_SPEED), label: "Normal" }, { value: "1.1", label: "Fast" }]} />
+      <Row label="Pace">
+        <Segmented value={pace} onChange={(v) => setPace(v as typeof pace)} options={[{ value: "slow", label: "Slow" }, { value: "normal", label: "Normal" }, { value: "fast", label: "Fast" }]} />
       </Row>
       <Row label="Quality">
         <Segmented value={quality} onChange={(v) => setQuality(v as "best" | "draft")} options={[{ value: "best", label: "Best" }, { value: "draft", label: "Draft" }]} />
@@ -1538,7 +1540,7 @@ function SpeechSection({ clip }: { clip: TextClip }) {
             <button className="btn ghost" onClick={cancelSpeech}>Cancel</button>
           </>
         ) : (
-          <button className="btn" disabled={!!speaking || !clip.text.trim()} onClick={() => void textToSpeech(clip.id, { voice, speed, quality }).catch(() => undefined)}>
+          <button className="btn" disabled={!!speaking || !clip.text.trim()} onClick={() => void textToSpeech(clip.id, { voice, pace, quality }).catch(() => undefined)}>
             Add voice
           </button>
         )}

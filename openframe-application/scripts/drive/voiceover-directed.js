@@ -44,7 +44,8 @@ async (page) => {
     engine: vo.engine,
     seconds,
   };
-  details.voices = { ok: L[0].voice === "af_heart" && L[1].voice === "am_michael" && L[2].voice === "am_michael" && L[3].voice === "af_heart:70,af_bella:30" && L.every((l) => l.speed === 0.95), voices: L.map((l) => l.voice) };
+  // No speed given: each line's speed is chosen to land on narration's words a second (ADR-096).
+  details.voices = { ok: L[0].voice === "af_heart" && L[1].voice === "am_michael" && L[2].voice === "am_michael" && L[3].voice === "af_heart:70,af_bella:30" && L.every((l) => l.speed_chosen && l.speed >= 0.6 && l.speed <= 1.3), voices: L.map((l) => l.voice), speeds: L.map((l) => [l.speed, l.words_per_second]) };
   // The gaps follow each line's ending: 0.4 after a sentence, 0.1 after a
   // comma; the third line's own pause_after sends nothing past the pinned 16 s.
   details.timing = {
@@ -103,8 +104,8 @@ async (page) => {
   const review = await call("review_voiceover", {});
   const R = review.lines;
   details.review = {
-    ok: R.length === 4 && R.every((l) => l.match >= 0.85 && l.words_per_second > 1.8 && l.words_per_second < 4 && l.pitch && l.voice_above_music_lu !== null && Number.isFinite(l.loudness_lufs)),
-    lines: R.map((l) => ({ heard: l.heard, match: l.match, differences: l.differences, wps: l.words_per_second, lead: l.lead_silence, tail: l.tail_silence, pause: l.longest_pause, lufs: l.loudness_lufs, tp: l.true_peak_dbtp, pitch: l.pitch, over: l.voice_above_music_lu, verdict: l.verdict, fixes: l.fixes })),
+    ok: R.length === 4 && R.every((l) => l.match >= 0.85 && l.pace.over_speech.words_per_second > 1.8 && l.pace.over_speech.words_per_second < 4 && l.pitch && l.voice_above_music_lu !== null && Number.isFinite(l.loudness_lufs)),
+    lines: R.map((l) => ({ heard: l.heard, match: l.match, differences: l.differences, wps: l.pace.over_speech.words_per_second, lead: l.lead_silence, tail: l.tail_silence, pause: l.longest_pause, lufs: l.loudness_lufs, tp: l.true_peak_dbtp, pitch: l.pitch, over: l.voice_above_music_lu, verdict: l.verdict, fixes: l.fixes })),
     summary: review.summary,
   };
   // The marked pause is heard at its length; the lines sit at one level.

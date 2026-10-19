@@ -4,6 +4,7 @@
 // caller's (state/voiceReview.ts).
 
 import { numberWords, parseLine } from "./voiceScript";
+import { judgePace, PACE_BANDS, targetBand, type Pace } from "./voicePace";
 
 // ---- words --------------------------------------------------------------------------
 
@@ -145,20 +146,12 @@ export function judgeHearings(first: Difference[], second: Difference[]): Differ
 
 // ---- verdicts -----------------------------------------------------------------------------
 
-/** What review_voiceover holds a line to. Pace is judged in syllables,
- * since words per second runs high on short words ("so a whole film can be
- * made" is 4 words a second at an ordinary 4.4 syllables): read speech
- * moves at about 4-5.5 syllables a second inside a phrase. A line is read
- * in one breath, so its words a second run faster than a script's (which
- * counts the pauses between lines): 2.4-3.3 inside a line reads as 2.3-2.8
- * across a script. */
+/** What review_voiceover holds a line to. Pace is judged in words a second
+ * over the line's speech against the band it was read to (lib/voicePace.ts,
+ * ADR-096: narration 2.3-2.8 unless asked otherwise), syllables a second
+ * only to catch a rushed read of long words; it used to be judged in
+ * syllables alone, and flagged lines read at the asked 2.3-2.8 as slow. */
 export const REVIEW = {
-  fastSps: 5.6,
-  slowSps: 3.2,
-  /** A line meant to be slow (an end-card tagline, pace slow) or fast
-   * (pace fast) is held to these instead. */
-  slowIntentSps: 2,
-  fastIntentSps: 7.5,
   /** Silence before the first word and after the last, seconds. */
   leadMax: 0.3,
   tailMax: 0.6,
@@ -186,14 +179,19 @@ export interface LineMeasure {
   voice?: string;
   speed?: number;
   pronounce?: Record<string, string>;
-  /** The line's intended pace (add_voiceover's pace): a slow line is not
-   * flagged as slow, nor a fast one as fast. */
+  /** The line's intended pace (add_voiceover's pace): its band moves for it. */
   pace?: Pace;
+  /** The words a second it was read to, as asked (before its pace moves
+   * them); none: narration's. */
+  asked?: [number, number];
+  /** The speed was chosen to land on the band (a miss is then the voice's
+   * limit, not a speed to change). */
+  speedChosen?: boolean;
   /** The clip's volume (linear). */
   volume: number;
   compressed: boolean;
+  /** Words and syllables a second over the speech (first word to last). */
   wps: number | null;
-  /** Syllables a second over the speech. */
   sps: number | null;
   lead: number;
   tail: number;
@@ -211,7 +209,7 @@ export interface LineMeasure {
   differences: Difference[];
 }
 
-export type Pace = "slow" | "normal" | "fast";
+export type { Pace };
 export const PACES: Pace[] = ["slow", "normal", "fast"];
 
 export interface Fix {
@@ -219,6 +217,16 @@ export interface Fix {
   tool: string;
   args: Record<string, unknown>;
 }
+
+/** A note that does not fail the line: it may name a call to try. */
+export interface Advice {
+  note: string;
+  tool?: string;
+  args?: Record<string, unknown>;
+}
+
+/** The band a line is held to: as asked, or narration's, moved for its pace. */
+export const bandOf = (m: Pick<LineMeasure, "asked" | "pace">) => targetBand("narration", m.asked, m.pace ?? "normal");
 
 /** Words whose spelling a reader cannot sound out, as they sound: the
  * voice model's guess at them, and Whisper's, goes wrong more than most. */
@@ -294,11 +302,17 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
     else if (d.kind === "missing") fixes.push({ problem: `"${d.script}" was not heard${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
     else fixes.push({ problem: `"${d.heard}" was heard but is not in the script${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
   }
-  // A speed change of more than 15% at once drags or rushes the voice;
-  // review again after the retake.
-  const fast = m.pace === "fast" ? R.fastIntentSps : R.fastSps, slow = m.pace === "slow" ? R.slowIntentSps : R.slowSps;
-  if (m.sps !== null && m.sps > fast) fixes.push({ problem: `fast: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.max(0.5, (m.speed ?? 1) * Math.max(0.85, 4.8 / m.sps))) } });
-  if (m.sps !== null && m.sps < slow) fixes.push({ problem: `slow: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.min(2, (m.speed ?? 1) * Math.min(1.15, 4.5 / m.sps))) } });
+  // Pace: a read off its band is read again to land on it (the retake
+  // measures and corrects its speed); a line whose speed was already
+  // chosen that way and still misses is at the voice's limit: advice.
+  for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
+    if (p.level !== "fix") continue;
+    if (/^rushed/.test(p.problem)) {
+      // Long words: aim the words a second where 5 syllables a second land.
+      const w = (5 * m.wps!) / m.sps!;
+      fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: [round(w - 0.25), round(w + 0.25)] } });
+    } else if (!m.speedChosen) fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: m.asked ?? PACE_BANDS.narration } });
+  }
   if (m.lead > R.leadMax) fixes.push({ problem: `${m.lead} s of silence before the first word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "start", to: round(m.start + m.lead - 0.06) } });
   if (m.tail > R.tailMax) fixes.push({ problem: `${m.tail} s of silence after the last word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "end", to: round(m.end - m.tail + 0.2) } });
   if (m.longestPause > R.pauseMax && !m.marks.some((s) => Math.abs(s - m.longestPause) < 0.25)) fixes.push({ problem: `a ${m.longestPause} s pause inside the line that no mark asked for`, tool: "retake_voiceover", args: { clip_id: m.clipId } });
@@ -308,12 +322,26 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
   }
   if (m.truePeak !== null && m.truePeak > R.truePeakMax)
     fixes.push(m.compressed ? { problem: `peaks at ${m.truePeak} dBTP`, tool: "set_param", args: { clip_ids: [m.clipId], path: "volume", value: round(m.volume * Math.pow(10, (R.truePeakMax - 0.5 - m.truePeak) / 20), 3) } } : { problem: `peaks at ${m.truePeak} dBTP`, tool: "set_compressor", args: { clip_ids: [m.clipId], preset: "voice" } });
-  // A depth measured here, line by line: voice_above_music_lu aims over
-  // the whole span from the first word to the last, gaps between lines
-  // included, so it ducks a voiceover with long gaps far too deep.
-  const depth = (m.musicDuckDb ?? 0) + R.overMusicAim - (m.overMusic ?? 0);
-  if (m.overMusic !== null && m.overMusic < R.overMusicMin && m.musicClip) fixes.push({ problem: `only ${m.overMusic} LU over the music`, tool: "duck_under_speech", args: { clip_id: m.musicClip, depth: round(Math.min(40, Math.max(1, depth)), 1) } });
-  if (m.overMusic !== null && m.overMusic > R.overMusicMax && m.musicClip && (m.musicDuckDb ?? 0) > 0) fixes.push({ problem: `the music is ${m.overMusic} LU under the voice: ducked to nearly nothing`, tool: "duck_under_speech", args: { clip_id: m.musicClip, depth: round(Math.min(40, Math.max(1, depth)), 1) } });
+  // The margin is this line's alone (the line window): duck_under_speech's
+  // min_line_lu holds every line to a minimum, each dipping as deep as it
+  // needs, the music's present dip kept as the least.
+  const duck = round(m.musicDuckDb ?? 0, 1);
+  if (m.overMusic !== null && m.overMusic < R.overMusicMin && m.musicClip) fixes.push({ problem: `only ${m.overMusic} LU over the music (this line, its first word to its last)`, tool: "duck_under_speech", args: { clip_id: m.musicClip, min_line_lu: R.overMusicMin + 2, ...(duck >= 1 ? { depth: duck } : {}) } });
+  if (m.overMusic !== null && m.overMusic > R.overMusicMax && m.musicClip && (m.musicDuckDb ?? 0) > 0) fixes.push({ problem: `the music is ${m.overMusic} LU under the voice: ducked to nearly nothing`, tool: "duck_under_speech", args: { clip_id: m.musicClip, min_line_lu: R.overMusicAim } });
   if (m.rangeSt !== null && m.rangeSt < R.flatSt) fixes.push({ problem: `a flat read (its pitch moves ${m.rangeSt} semitones)`, tool: "retake_voiceover", args: { clip_id: m.clipId, voice: "af_heart" } });
   return fixes;
+}
+
+/** What is worth knowing about a line that does not fail it: a pace a
+ * little off its band, one the voice could not land within its natural
+ * speeds, short words drawn out. */
+export function advise(m: LineMeasure): Advice[] {
+  const out: Advice[] = [];
+  for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
+    if (p.level === "advice" && /^short words/.test(p.problem)) out.push({ note: p.problem });
+    else if (p.level === "advice") out.push({ note: `${p.problem}: within a tenth of its band, so it passes${m.speedChosen ? "" : "; a retake with words_per_second lands it"}`, ...(m.speedChosen ? {} : { tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: m.asked ?? PACE_BANDS.narration } }) });
+    else if (m.speedChosen && !/^rushed/.test(p.problem))
+      out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3); ${/^slow/.test(p.problem) ? "fewer pause marks, or pace slow if the line is meant so" : "a [pause] at a phrase boundary, or pace fast if the line is meant so"}` });
+  }
+  return out;
 }

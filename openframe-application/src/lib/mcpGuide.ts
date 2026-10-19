@@ -17,8 +17,9 @@ import { SFX } from "./sfx";
 import { PRESETS as SPEED_PRESETS } from "./speed";
 import { searchStickers, STICKER_CATEGORIES, STICKER_MOTIONS, STICKERS } from "./stickers";
 import { TEXT_TEMPLATES } from "./templates";
-import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "./tts";
+import { DEFAULT_VOICE, VOICES } from "./tts";
 import { REVIEW } from "./voiceReview";
+import { PACE_BANDS } from "./voicePace";
 
 export interface ToolInfo {
   name: string;
@@ -149,15 +150,16 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
       { text: "Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer." },
       { text: "Every edit is a tool an agent can call,", voice: "am_michael" },
       { text: "so a whole film can be made by asking.", voice: "am_michael", pause_after: 0.8 },
-      { text: "Free. [beat] Open source. Yours.", at: 12, caption: "Free, open source, yours." },
+      { text: "Free. [beat] Open source. Yours.", at: 12, caption: "Free, open source, yours.", pace: "slow" },
     ],
     voice: "af_heart",
+    read_as: "ad",
     pronounce: { OpenFrame: "Open Frame" },
   },
   review_voiceover: {},
   remove_keyframes: { clip_ids: ["c_title"], path: "opacity" },
-  retake_voiceover: { clip_id: "c_vo2", pronounce: { MCP: "M C P" }, ripple: true },
-  duck_under_speech: { clip_id: "c_music", depth: 12 },
+  retake_voiceover: { clip_id: "c_vo2", pronounce: { MCP: "M C P" }, words_per_second: [2.3, 2.8], ripple: true },
+  duck_under_speech: { clip_id: "c_music", voice_above_music_lu: 12, min_line_lu: 10 },
   set_caption_look: { look: "pop" },
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
   preview_frames: { times: [0.5, 2, 4, 6, 8, 10, 12, 14] },
@@ -287,12 +289,12 @@ ${DESIGN}`,
     title: "A directed voiceover",
     text: `Voicing a video so it sounds read by a person (add_voiceover, review_voiceover, retake_voiceover):
 1. Cast: list_catalog section voices describes every voice (accent, gender, the model author's grade, character, what it suits). ${DEFAULT_VOICE} (grade A) is the most natural and the default; am_michael is the US man to cast first, bf_emma and bm_george the British pair. Two speakers in one call are lines with different voices: a question and its answer, a host and a product. A blend ("af_heart:70,af_bella:30") mixes two voices' styles.
-2. Write for the ear: one breath per line (8-16 words, a sentence or two); short words; no parentheses or symbols the voice cannot say; numbers as they are said, with caption for how they are written ("twenty percent off" shown as "20% off"). pronounce respells names and acronyms the voice gets wrong ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the written words.
-3. Pace: speed ${DEFAULT_SPEED} (the default) reads about 2.8 words a second over a script, pauses included; narration and explainers sit at 2.3-2.6 (speed 0.9), ads at 2.7-3.0 (speed 1), a trailer slower with beats. review_voiceover reports each line's words and syllables a second (it judges by syllables, since short words run the word count up: read speech moves at 4-5.5 a second, it flags over ${REVIEW.fastSps} or under ${REVIEW.slowSps}) and the script's words a second. A line meant to be slow (an end-card tagline) or fast takes pace: slow or fast, kept with it, so the review does not flag it for that.
+2. Write for the ear: one breath per line (8-16 words, a sentence or two); short words; no parentheses or symbols the voice cannot say; numbers as they are said, with caption for how they are written ("twenty percent off" shown as "20% off"). pronounce respells names and acronyms the voice gets wrong ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the written words. Emphasis cannot be directed: the voice takes no mark that stresses a word (raising a word's stress was measured and changed nothing a listener would hear, so *word* stars are dropped with a note). To make a word stand out, write it last in its phrase, where English puts the main stress and the voice lengthens it ("The one I meant was her."), or [pause 0.2] before it.
+3. Pace: each line lands on its words a second over its speech (first word to last, its own pauses in): read_as narration ${PACE_BANDS.narration.join("-")} (the default, a natural narrator), ad ${PACE_BANDS.ad.join("-")} or social ${PACE_BANDS.social.join("-")}, or words_per_second [lowest, highest]; pace slow (an end-card tagline) or fast moves a line's band half a word a second. Leave speed out: each line is read, measured and read again at the speed that lands it (up to three reads, never time-stretched), and its answer gives the speed, the words a second and the band. With Heart, narration lands at speeds 0.6-0.9 (short words need the slowest); the old fixed 0.9 read the same lines at 3.7-4.2 words a second. A speed given is kept as given. review_voiceover reports each line's words and syllables a second over its speech and over its clip, and the script's words a second with the gaps between lines in (lower: 2.3-2.8 inside lines reads about 1.8-2.4 across a script).
 4. Breathe: a comma rests 0.25-0.35 s, a sentence 0.5-0.8 s, a paragraph or section 1-1.5 s; each line's ending sets the gap after it (pause_after or paragraph: true for more). Inside a line, [pause 0.4] before a reveal or the product's name and [beat] before a punchline; not more than one every four to six words. at puts a line on a beat or a cut; the lines after it follow.
 5. Finish: natural (the default) gives every line a reader's pauses, a low cut and a little presence, one loudness, room tone under the pauses, the voice compressor and a touch of room; clean or raw when the voice is processed elsewhere.
-6. Mix: the voice ${REVIEW.overMusicAim} LU over the music (10-15 for a promo, never under ${REVIEW.overMusicMin}): duck_under_speech the music, then review_voiceover measures each line's margin and its fix names the depth that meets it (voice_above_music_lu aims over the whole span, gaps between lines included, so with long gaps it ducks too deep); the voice at one loudness across lines (review_voiceover flags any line ${REVIEW.levelSpread} LU off); export at loudness -14 for online.
-7. Listen back: review_voiceover after every voiceover and retake. Each line answers what was heard against the script, its pace, silences, pitch range (under ${REVIEW.flatSt} semitones sounds flat), loudness and margin over the music, and a verdict with fixes, the tool and arguments to call. retake_voiceover fixes one line in place (new text, voice, speed or pronounce; ripple true when it grows); the voice reads the same input the same way, so change something. A difference heard again by the larger model and called likely recognizer needs no retake; one called likely voice comes with a respelling to try, and when a respelling did not help, reword the line. Review again until every line is ok, then cut the picture to the lines' final times (describe_project).`,
+6. Mix: the voice ${REVIEW.overMusicAim} LU over the music (10-15 for a promo, never under ${REVIEW.overMusicMin}). How far over depends on the window, and every answer names it: programme (the whole stretch, the music between lines counted: it reads lowest), speech (while the voice speaks, its lines together) and line (each line alone). duck_under_speech voice_above_music_lu aims the speech window; min_line_lu holds every line to a minimum, each dipping only as deep as it needs (both together: the speech target with no line under the minimum). review_voiceover measures each line; measure_loudness by_track gives all three windows, and kind film, ad or social judges the mix's loudness range (a film that measures 2 LU is very flat). The voice at one loudness across lines (review_voiceover flags any line ${REVIEW.levelSpread} LU off); export at loudness -14 for online.
+7. Listen back: review_voiceover after every voiceover and retake. Each line answers what was heard against the script, its pace against its band, silences, pitch range (under ${REVIEW.flatSt} semitones sounds flat), loudness and margin over the music, and a verdict: ok when nothing fails, otherwise fixes, the tool and arguments to call; advice is a note that does not fail the line (a pace a tenth off its band, short words drawn out). retake_voiceover fixes one line in place (new text, voice, words_per_second, speed or pronounce; ripple true when it grows); the voice reads the same input the same way, so change something. A difference heard again by the larger model and called likely recognizer needs no retake; one called likely voice comes with a respelling to try, and when a respelling did not help, reword the line. Review again until every line is ok, then cut the picture to the lines' final times (describe_project).`,
   },
   social_short: {
     title: "A short for TikTok, Reels or Shorts",

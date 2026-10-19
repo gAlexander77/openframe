@@ -383,6 +383,26 @@ export interface MusicStructure {
   drop: number | null;
   /** Every qualifying rise into a loud section, chronological seconds. */
   drops: number[];
+  /** How far each drop rises over the two bars before it, dB (drops' order). */
+  rises: number[];
+  /** How sure each reading is, 0..1: tempo, the share of beats that land
+   * on an onset; bars, how clearly one beat of four is accented (0 when
+   * nothing tells them apart and the first beat was taken); sections, how
+   * clearly the sound changes at each boundary (1 with none to find).
+   * Whatever a hint gave is 1. */
+  confidence: { tempo: number; bars: number; sections: number };
+}
+
+/** What is known about a piece already (a cue sheet, the composer's
+ * notes), in its own seconds: it replaces what would be detected. */
+export interface StructureHints {
+  /** The tempo: beats are tracked at it. */
+  bpm?: number;
+  /** A bar's first beat, seconds: it sets which beat bars start on, and with
+   * bpm the whole grid. */
+  firstDownbeat?: number;
+  /** The parts, each from its `at` to the next one's. */
+  cues?: { at: number; label: SectionLabel }[];
 }
 
 /** dB the bars on each side of a bar line must differ by to start a section. */
@@ -391,6 +411,7 @@ export const SECTION_CHANGE_DB = 3;
 const ENERGY_RANGE_DB = 24;
 
 const round4 = (t: number) => Math.round(t * 1e4) / 1e4;
+const round2 = (x: number) => Math.round(x * 100) / 100;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const mean = (xs: ArrayLike<number>) => {
   let s = 0;
@@ -474,46 +495,74 @@ function meanRows(rows: number[][], from: number, to: number): number[] {
  * beats differ only by rounding, and pure tones beat against each other in
  * patterns that repeat every few beats.
  */
-function barPhase(accent: number[], bass: number[], change: number[]): number {
+function barPhase(accent: number[], bass: number[], change: number[]): { phase: number; sure: number } {
   const [ma, mb, mc] = [mean(accent), mean(bass), mean(change)];
   const at = (xs: number[], ph: number) => mean(xs.filter((_, i) => i % BEATS_PER_BAR === ph));
   const score = [0, 1, 2, 3].map((ph) => (at(accent, ph) / Math.max(1e-9, ma) - 1) / 0.2 + (at(bass, ph) - mb) / 2 + (at(change, ph) - mc) / 2);
   let best = 0;
   for (let ph = 1; ph < BEATS_PER_BAR; ph++) if (score[ph] > score[best]) best = ph;
-  return score[best] - score[0] < 1 ? 0 : best;
+  if (score[best] - score[0] < 1) best = 0;
+  // Sure by how far the winner leads the runner-up, in points (three is plain).
+  const lead = score[best] - Math.max(...score.filter((_, ph) => ph !== best));
+  return { phase: best, sure: clamp01(lead / 3) };
 }
 
-/** Drop leading and trailing beats with next to no onset (the tracker's
- * own trim also drops a quiet intro's beats, which a song's parts need). */
-function trimSilent(frames: number[], accent: (f: number) => number): number[] {
-  if (frames.length < 3) return frames;
+/** The span [a, b) of beats left once leading and trailing beats with next
+ * to no onset are dropped (the tracker's own trim also drops a quiet
+ * intro's beats, which a song's parts need). */
+function trimSilent(frames: number[], accent: (f: number) => number): [number, number] {
+  if (frames.length < 3) return [0, frames.length];
   const rms = Math.sqrt(mean(frames.map((f) => accent(f) ** 2)));
   let a = 0;
   let b = frames.length;
   while (a < b && accent(frames[a]) < 0.1 * rms) a++;
   while (b > a && accent(frames[b - 1]) < 0.1 * rms) b--;
-  return frames.slice(a, b);
+  return [a, b];
+}
+
+/** Index of the time in `ts` nearest `t`. */
+function nearest(ts: number[], t: number): number {
+  let k = 0;
+  for (let i = 1; i < ts.length; i++) if (Math.abs(ts[i] - t) < Math.abs(ts[k] - t)) k = i;
+  return k;
 }
 
 /** The music's beat grid and parts, from mono PCM; times are seconds from
- * the PCM's start. */
-export function musicStructure(pcm: Float32Array, rate: number, options: Partial<TempoOptions & { tightness: number }> = {}): MusicStructure {
+ * the PCM's start. Hints (a cue sheet's tempo, downbeat or parts) replace
+ * what would be detected. */
+export function musicStructure(pcm: Float32Array, rate: number, options: Partial<TempoOptions & { tightness: number }> & StructureHints = {}): MusicStructure {
   const o = { ...BEAT_DEFAULTS, ...options };
   const duration = pcm.length / rate;
   const { env, fps, offset } = onsetEnvelope(pcm, rate);
-  const { period } = estimateTempo(env, fps, o);
+  const period = o.bpm ? (60 * fps) / o.bpm : estimateTempo(env, fps, o).period;
   const peakNear = (f: number) => {
     let m = 0;
     for (let j = Math.max(0, f - 3); j <= Math.min(env.length - 1, f + 3); j++) m = Math.max(m, env[j]);
     return m;
   };
-  const frames = trimSilent(trackBeats(env, period, o.tightness, false), peakNear);
-  const beats = frames.map((f) => Math.max(0, round4(f / fps + offset)));
+  // With the tempo and a downbeat given, the grid is given: every beat from
+  // the downbeat, both ways. Otherwise the tracker places the beats.
+  let times: number[];
+  if (o.bpm && o.firstDownbeat !== undefined) {
+    const step = 60 / o.bpm;
+    const first = o.firstDownbeat - Math.floor(o.firstDownbeat / step) * step;
+    times = [];
+    for (let k = 0; first + k * step < duration; k++) times.push(first + k * step);
+  } else times = trackBeats(env, period, o.tightness, false).map((f) => f / fps + offset);
+  const allFrames = times.map((t) => Math.max(0, Math.min(env.length - 1, Math.round((t - offset) * fps))));
+  const [ta, tb] = trimSilent(allFrames, peakNear);
+  const frames = allFrames.slice(ta, tb);
+  const beats = times.slice(ta, tb).map((t) => Math.max(0, round4(t)));
   const n = beats.length;
   const hits = hitsOf(env, fps, offset);
-  const bpm = n < 2 ? 0 : Math.round(tempoOf(beats, (60 * fps) / period) * 10) / 10;
+  const bpm = o.bpm ?? (n < 2 ? 0 : Math.round(tempoOf(beats, (60 * fps) / period) * 10) / 10);
+  // Tempo: the share of beats that land on an onset (a pad with no attacks
+  // has a tempo nobody can hear).
+  const envMean = mean(env);
+  const envSd = Math.sqrt(mean(Array.from(env, (x) => (x - envMean) ** 2)));
+  const tempoSure = o.bpm ? 1 : n ? frames.filter((f) => peakNear(f) > envMean + 0.5 * envSd).length / n : 0;
   if (n < 2 * BEATS_PER_BAR) {
-    return { bpm, beats, downbeats: beats.slice(0, 1), phrases: beats.slice(0, 1), energy: beats.map(() => 1), hits, sections: [{ start: 0, end: round4(duration), label: "verse", energy: 1 }], drop: null, drops: [] };
+    return { bpm, beats, downbeats: beats.slice(0, 1), phrases: beats.slice(0, 1), energy: beats.map(() => 1), hits, sections: [{ start: 0, end: round4(duration), label: "verse", energy: 1 }], drop: null, drops: [], rises: [], confidence: { tempo: round2(tempoSure), bars: 0, sections: 1 } };
   }
   const beatLen = 60 / bpm;
   const ends = beats.map((t, i) => (i + 1 < n ? beats[i + 1] : Math.min(duration, t + beatLen)));
@@ -556,45 +605,63 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   const novelty = (i: number) => nov[i];
   // A song changes part on a bar line, which beats accents as a cue: the
   // peaks of novelty vote for the phase; accents decide only without them.
+  // A downbeat given decides it outright.
   const votes = [0, 0, 0, 0];
   nov.forEach((v, i) => {
     if (v >= SECTION_CHANGE_DB && nov.slice(Math.max(0, i - 2), i + 3).every((u) => u <= v)) votes[i % BEATS_PER_BAR] += v;
   });
   const voted = votes.indexOf(Math.max(...votes));
-  const phase = votes[voted] > 0 ? voted : barPhase(accent, bass, change);
+  let phase: number, barSure: number;
+  if (o.firstDownbeat !== undefined) [phase, barSure] = [nearest(beats, o.firstDownbeat) % BEATS_PER_BAR, 1];
+  else if (votes[voted] > 0) {
+    const [best, next] = [...votes].sort((a, b) => b - a);
+    [phase, barSure] = [voted, clamp01((best - next) / best)];
+  } else {
+    const p = barPhase(accent, bass, change);
+    [phase, barSure] = [p.phase, p.sure];
+  }
   const barStarts: number[] = [];
   for (let i = phase; i < n; i += BEATS_PER_BAR) barStarts.push(i);
+  const barOf = (i: number) => (i - phase) / BEATS_PER_BAR;
+  const phraseOf = (i: number) => ((Math.round(barOf(i)) % BARS_PER_PHRASE) + BARS_PER_PHRASE) % BARS_PER_PHRASE;
 
   // Sections: bar lines where the two bars on either side differ most.
   // A two-bar average can peak a bar early during a build. Locate the
   // boundary with adjacent bars, retaining the longer window as evidence.
   const localNovelty = (i: number) => i < BEATS_PER_BAR || i + BEATS_PER_BAR > n ? 0
     : distance(dbOf(meanRows(power, i, i + BEATS_PER_BAR)), dbOf(meanRows(power, i - BEATS_PER_BAR, i)));
-  const candidates = barStarts.map((i) => ({ i, nov: localNovelty(i) }))
-    .filter((c) => c.nov >= SECTION_CHANGE_DB && novelty(c.i) >= SECTION_CHANGE_DB);
+  // Given parts mark the cuts (their nearest beats, for phrases and rises).
+  const cues = (o.cues ?? []).filter((c) => c.at > 0.05 && c.at < duration - 0.05).sort((a, b) => a.at - b.at);
   const cuts: number[] = [];
-  for (const c of [...candidates].sort((a, b) => b.nov - a.nov)) {
-    if (cuts.every((j) => Math.abs(j - c.i) >= 2 * BEATS_PER_BAR)) cuts.push(c.i);
+  if (cues.length) cuts.push(...cues.map((c) => nearest(beats, c.at)));
+  else {
+    const candidates = barStarts.map((i) => ({ i, nov: localNovelty(i) }))
+      .filter((c) => c.nov >= SECTION_CHANGE_DB && novelty(c.i) >= SECTION_CHANGE_DB);
+    for (const c of [...candidates].sort((a, b) => b.nov - a.nov)) {
+      if (cuts.every((j) => Math.abs(j - c.i) >= 2 * BEATS_PER_BAR)) cuts.push(c.i);
+    }
+    cuts.sort((a, b) => a - b);
   }
-  cuts.sort((a, b) => a - b);
+  const sectionSure = cues.length || !cuts.length ? 1 : mean(cuts.map((i) => clamp01(0.5 + (localNovelty(i) - SECTION_CHANGE_DB) / (2 * SECTION_CHANGE_DB))));
 
   // Phrases start where the sections change (or else on the first bar).
   const phraseVotes = [0, 0, 0, 0];
-  const barOf = (i: number) => (i - phase) / BEATS_PER_BAR;
-  for (const i of cuts) phraseVotes[barOf(i) % BARS_PER_PHRASE] += novelty(i);
+  for (const i of cuts) phraseVotes[phraseOf(i)] += cues.length ? 1 : novelty(i);
   let pp = 0;
   for (let k = 1; k < BARS_PER_PHRASE; k++) if (phraseVotes[k] > phraseVotes[pp]) pp = k;
-  const phrases = barStarts.filter((i) => barOf(i) % BARS_PER_PHRASE === pp).map((i) => beats[i]);
+  const phrases = barStarts.filter((i) => phraseOf(i) === pp).map((i) => beats[i]);
 
   // A quieter timbral variation can matter on a phrase line even without
   // a large level jump. Require both scales to change, away from strong cuts.
-  for (const i of barStarts) {
-    if (barOf(i) % BARS_PER_PHRASE === pp && novelty(i) >= SECTION_CHANGE_DB / 3
-      && localNovelty(i) >= 2 && cuts.every(j => Math.abs(j - i) >= w)) cuts.push(i);
+  if (!cues.length) {
+    for (const i of barStarts) {
+      if (phraseOf(i) === pp && novelty(i) >= SECTION_CHANGE_DB / 3
+        && localNovelty(i) >= 2 && cuts.every(j => Math.abs(j - i) >= w)) cuts.push(i);
+    }
+    cuts.sort((a, b) => a - b);
   }
-  cuts.sort((a, b) => a - b);
 
-  // Name the sections by loudness.
+  // Name the sections by loudness (given parts keep their names).
   const bounds = [0, ...cuts, n];
   const parts = bounds.slice(0, -1).map((a, k) => {
     const b = bounds[k + 1];
@@ -606,6 +673,7 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   const loudest = Math.max(...parts.map((s) => s.e));
   const high = parts.map((s) => s.e >= loudest - 0.15);
   const label = (k: number): SectionLabel => {
+    if (cues.length) return k ? cues[k - 1].label : (o.cues ?? []).find((c) => c.at <= 0.05)?.label ?? "intro";
     if (parts.length === 1) return "verse";
     if (high[k]) return "drop";
     const beforeDrop = k + 1 < parts.length && high[k + 1];
@@ -616,21 +684,26 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
     return beforeDrop ? "build" : "verse";
   };
   const sections: MusicSection[] = parts.map((s, k) => ({
-    start: k === 0 ? 0 : beats[s.a],
-    end: k === parts.length - 1 ? round4(duration) : beats[s.b],
+    start: k === 0 ? 0 : cues.length ? round4(cues[k - 1].at) : beats[s.a],
+    end: k === parts.length - 1 ? round4(duration) : cues.length ? round4(cues[k].at) : beats[s.b],
     label: label(k),
     energy: Math.round(s.e * 100) / 100,
   }));
 
-  // The drop: the biggest rise across a cut into a loud section.
+  // The drops: every rise across a cut into a loud section (a drop given in
+  // the cues counts however much it rises); the biggest is the drop.
   const drops: number[] = [];
+  const rises: number[] = [];
   let drop: number | null = null;
-  let rise = SECTION_CHANGE_DB;
+  let rise = cues.length ? -Infinity : SECTION_CHANGE_DB;
   cuts.forEach((i, k) => {
-    if (sections[k + 1].label !== "drop") return;
+    if (sections[k + 1].label !== "drop" || (cues.length && sections[k].label === "drop")) return;
     const r = mean(db.slice(i, i + w)) - mean(db.slice(Math.max(0, i - w), i));
-    if (r >= SECTION_CHANGE_DB) drops.push(beats[i]);
-    if (r >= rise) [drop, rise] = [beats[i], r];
+    if (cues.length || r >= SECTION_CHANGE_DB) {
+      drops.push(sections[k + 1].start);
+      rises.push(Math.round(r * 10) / 10);
+    }
+    if (r >= rise) [drop, rise] = [sections[k + 1].start, r];
   });
-  return { bpm, beats, downbeats: barStarts.map((i) => beats[i]), phrases, energy, hits, sections, drop, drops };
+  return { bpm, beats, downbeats: barStarts.map((i) => beats[i]), phrases, energy, hits, sections, drop, drops, rises, confidence: { tempo: round2(tempoSure), bars: round2(barSure), sections: round2(sectionSure) } };
 }

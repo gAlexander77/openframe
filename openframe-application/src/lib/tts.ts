@@ -37,12 +37,6 @@ export const VOICES: Voice[] = [
 /** The most natural voice, Heart (grade A). */
 export const DEFAULT_VOICE = VOICES[0].id;
 
-/** Kokoro reads about 3.3 words a second inside a line at speed 1; at
- * 0.95, with the natural finish's pauses, a script comes to about 2.8
- * over its length, a narrator's top (2.3-2.8). The research note above
- * has the measurements. */
-export const DEFAULT_SPEED = 0.95;
-
 /** A voice id, or a blend of known voices ("af_heart:60,af_bella:40"):
  * checked, so a typo fails before anything is spoken. */
 export function checkVoice(voice: string): string {

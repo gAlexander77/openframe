@@ -36,7 +36,8 @@ async (page) => {
   const perDip = [];
   for (const [a, b] of dips) {
     const m = await call("measure_loudness", { start: a, end: b, by_track: true });
-    perDip.push({ start: +a.toFixed(2), end: +b.toFixed(2), voice_above_music_lu: m.balance?.voice_above_music_lu });
+    // The dip's own stretch, measured whole (the programme window).
+    perDip.push({ start: +a.toFixed(2), end: +b.toFixed(2), voice_above_music_lu: m.balance?.programme?.voice_above_music_lu });
   }
   const details = {
     target: { ok: duck.balance?.met === true && duck.depth_db < 30, duck },
