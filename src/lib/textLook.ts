@@ -33,3 +33,47 @@ export function gradientLine(cx: number, cy: number, w: number, h: number, angle
 /** The second outline's line width: it surrounds the first, so its pen is
  * as wide as both outlines on each side of the glyph's edge. */
 export const stroke2Width = (stroke: number, stroke2: number) => (stroke + stroke2) * 2;
+
+// ---- font weight -------------------------------------------------------------
+
+/** The weight a title draws with: its own, else 700 when bold, 400 when not. */
+export const fontWeight = (s: Pick<TextStyle, "bold" | "weight">) => s.weight ?? (s.bold ? 700 : 400);
+
+/** A weight from untrusted JSON, whole and within 100..900; undefined when
+ * it is not a number (bold decides then). */
+export function cleanWeight(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) ? Math.round(Math.min(900, Math.max(100, v))) : undefined;
+}
+
+/** The usual names of the nine weights. */
+export const WEIGHT_NAMES: Record<number, string> = {
+  100: "Thin", 200: "Extra light", 300: "Light", 400: "Regular", 500: "Medium",
+  600: "Semibold", 700: "Bold", 800: "Extra bold", 900: "Black",
+};
+
+/** The weights 100, 200 .. 900, in order. */
+export const WEIGHTS = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+
+/**
+ * The weights a font really has, one per face, from how it drew at each of
+ * 100..900 (`drawn[i]` for weight 100 * (i + 1); equal values drew the same
+ * face). The browser draws a weight a font lacks with its nearest face
+ * (CSS font matching), so each face answers for a run of weights; the run
+ * is named by the weight a face usually has there: 400 or 700 when the run
+ * holds it, the heaviest below 400 (light faces are 300, not 100), the
+ * heaviest above 700 (black is 900), else the middle one. Any weight of
+ * the run draws the same face, so the name only labels it.
+ */
+export function distinctWeights(drawn: string[]): number[] {
+  const runs = new Map<string, number[]>();
+  drawn.forEach((sig, i) => runs.set(sig, [...(runs.get(sig) ?? []), WEIGHTS[i]]));
+  return [...runs.values()]
+    .map((run) => {
+      if (run.includes(400)) return 400;
+      if (run.includes(700)) return 700;
+      const top = run[run.length - 1];
+      if (top < 400 || run[0] > 700) return top;
+      return run[Math.floor((run.length - 1) / 2)];
+    })
+    .sort((a, b) => a - b);
+}

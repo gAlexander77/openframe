@@ -24,8 +24,11 @@ import { captionClips, styleAllCaptions } from "../../state/captions";
 import { edit, run, tipFor } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
-import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
-import { CompositingSection, ShapeSection } from "./GraphicsSection";
+import { ColorInput, KeyCluster, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip, useRel } from "./controls";
+import { colorAt, colorKey } from "../../lib/textAnim";
+import { fontWeight, WEIGHT_NAMES } from "../../lib/textLook";
+import { useFontWeights } from "../../state/fontWeights";
+import { CompositingSection, ShadowSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
 import { SoundFxSection } from "./SoundFx";
 import { CurvesPanel } from "./CurvesPanel";
@@ -235,6 +238,7 @@ function VideoTab({ clip }: { clip: Clip }) {
           )}
           {clip.type === "color" && <ShapeSection clip={clip} />}
           <CompositingSection clip={clip} />
+          <ShadowSection clip={clip} />
           {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
           <CropSection clip={clip} />
           {clip.type === "video" && <StabilizeSection clip={clip} />}
@@ -1185,7 +1189,7 @@ function SavedStylesSection({ clip }: { clip: TextClip }) {
           {saved.map((t) => (
             <span key={t.id} className="style-chip">
               <button className="chip-btn" data-tip={`Give this title the ${t.name} style`} onClick={() => applyTextStyle(t.id, [clip.id])}>
-                <span className="style-sample" aria-hidden="true" style={{ fontFamily: t.style.font, color: t.style.color, background: swatchFor(t.style.color), fontWeight: t.style.bold ? 700 : 400, fontStyle: t.style.italic ? "italic" : undefined }}>
+                <span className="style-sample" aria-hidden="true" style={{ fontFamily: t.style.font, color: t.style.color, background: swatchFor(t.style.color), fontWeight: fontWeight(t.style), fontStyle: t.style.italic ? "italic" : undefined }}>
                   Aa
                 </span>
                 {t.name}
@@ -1229,8 +1233,49 @@ function SavedStylesSection({ clip }: { clip: TextClip }) {
   );
 }
 
+/** The weights the title's font has (state/fontWeights.ts), named; a
+ * weight it lacks stays listed while the title uses it. */
+function WeightRow({ style, onChange }: { style: TextStyle; onChange: (weight: number) => void }) {
+  const has = useFontWeights(style.font);
+  const now = fontWeight(style);
+  const list = has.includes(now) ? has : [...has, now].sort((a, b) => a - b);
+  return (
+    <Row label="Weight">
+      <select className="field" aria-label="Font weight" value={now} onChange={(e) => onChange(Number(e.target.value))}>
+        {list.map((w) => (
+          <option key={w} value={w}>
+            {WEIGHT_NAMES[w] ?? "Weight"} {w}
+          </option>
+        ))}
+      </select>
+    </Row>
+  );
+}
+
+/** The text color, keyable (ADR-071): once it has keys, a new color keys
+ * the playhead, and the swatch shows the color there. */
+function TextColorRow({ clip }: { clip: TextClip }) {
+  const rel = useRel(clip);
+  const keys = clip.keyframes?.["style.color"];
+  const value = keys?.length ? colorAt(keys, rel) : clip.style.color;
+  const set = (v: string) =>
+    keys?.length
+      ? store.edit("Text color", (p) => ops.setParam(p, [clip.id], "style.color", colorKey(v) ?? 0, rel))
+      : patchClip(clip.id, "Text color", (c) => ({ ...c, style: { ...(c as TextClip).style, color: v } }) as Clip);
+  return (
+    <div className="insp-row">
+      <label className="insp-label">Color</label>
+      <span className="insp-wide">
+        <ColorInput label="Text color" value={value} onChange={set} />
+      </span>
+      <KeyCluster clip={clip} path="style.color" value={colorKey(value) ?? 0} />
+    </div>
+  );
+}
+
 function TextTab({ clip }: { clip: TextClip }) {
   const s = clip.style;
+  const heavy = fontWeight(s) >= 600;
   const style = (patch: Partial<TextStyle>, label: string) => patchClip(clip.id, label, (c) => ({ ...c, style: { ...(c as TextClip).style, ...patch } }) as Clip);
   return (
     <>
@@ -1261,10 +1306,11 @@ function TextTab({ clip }: { clip: TextClip }) {
         <Row label="Font">
           <FontPicker value={s.font} onChange={(font) => style({ font }, "Font")} />
         </Row>
-        <SliderRow clip={clip} path="style.size" label="Size" min={8} max={400} reset={96} keyframes={false} />
+        <WeightRow style={s} onChange={(weight) => style({ weight, bold: weight >= 600 }, "Font weight")} />
+        <SliderRow clip={clip} path="style.size" label="Size" min={8} max={400} reset={96} />
         <Row label="Style">
           <div className="style-toggles">
-            <button className={`chip-btn${s.bold ? " on" : ""}`} aria-label="Bold" data-tip="Bold" aria-pressed={s.bold} onClick={() => style({ bold: !s.bold }, "Bold")}><Bold size={14} /></button>
+            <button className={`chip-btn${heavy ? " on" : ""}`} aria-label="Bold" data-tip="Bold" aria-pressed={heavy} onClick={() => style({ bold: !heavy, weight: undefined }, "Bold")}><Bold size={14} /></button>
             <button className={`chip-btn${s.italic ? " on" : ""}`} aria-label="Italic" data-tip="Italic" aria-pressed={s.italic} onClick={() => style({ italic: !s.italic }, "Italic")}><Italic size={14} /></button>
             <button className={`chip-btn${s.underline ? " on" : ""}`} aria-label="Underline" data-tip="Underline" aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}><Underline size={14} /></button>
             <Segmented value={s.align} onChange={(v) => style({ align: v }, "Align")} options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]} />
@@ -1282,9 +1328,7 @@ function TextTab({ clip }: { clip: TextClip }) {
             ]}
           />
         </Row>
-        <Row label="Color">
-          <ColorInput label="Text color" value={s.color} onChange={(v) => style({ color: v }, "Text color")} />
-        </Row>
+        <TextColorRow clip={clip} />
         {clip.caption && (
           <Row label="Spoken word">
             <div className="spoken-word">
@@ -1293,7 +1337,7 @@ function TextTab({ clip }: { clip: TextClip }) {
             </div>
           </Row>
         )}
-        <SliderRow clip={clip} path="style.letterSpacing" label="Spacing" min={-20} max={100} reset={0} keyframes={false} />
+        <SliderRow clip={clip} path="style.letterSpacing" label="Spacing" min={-20} max={100} reset={0} />
         <SliderRow clip={clip} path="style.lineHeight" label="Line height" min={0.6} max={3} step={0.05} digits={2} reset={1.2} keyframes={false} />
       </Section>
       <Section title="Stroke" extra={<Toggle label="Stroke" on={!!s.stroke && s.stroke.width > 0} onChange={(v) => style({ stroke: { color: s.stroke?.color ?? "#000000", width: v ? Math.max(4, s.stroke?.width ?? 0) : 0 } }, v ? "Add stroke" : "Remove stroke")} />}>

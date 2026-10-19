@@ -182,6 +182,14 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
   keep their layout in every shape, anchored where they sat, fitted to
   the safe area.
+- [[ADR-069 Large blurs run on a downsampled pyramid]] — blur to a
+  300-pixel radius past the old maximum (which draws as before); radial
+  gradients and feathered edges on shapes.
+- [[ADR-070 Drop shadows are cast by the finished picture]] — after
+  mask, effects and matte, so rounded and compound windows cast their
+  shape.
+- [[ADR-071 Keyed title styles redraw the title]] — font weights, and
+  size, letter spacing and color keyframes (colors as 0xRRGGBB).
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

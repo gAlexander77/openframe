@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createColorClip } from "./project/defaults";
 import type { ColorClip, Shape } from "./project/types";
-import { cleanShape, ellipseOutlineAt, parseColor, rectOutlineAt, resolveShape, shapeExtent, strokePx } from "./shapes";
+import { cleanShape, ellipseOutlineAt, featherReach, parseColor, rectOutlineAt, resolveShape, shapeExtent, strokePx } from "./shapes";
 
 describe("rectOutlineAt", () => {
   // A square of half size 100: perimeter 800, from the top center clockwise.
@@ -121,5 +121,42 @@ describe("cleanShape", () => {
     expect(cleanShape({ kind: "star", width: 1, height: 1 })).toBeUndefined();
     expect(cleanShape("rectangle")).toBeUndefined();
     expect(cleanShape({ kind: "ellipse", width: -2, height: "x", radius: 3, draw: 1, stroke: { color: "#fff" } })).toEqual({ kind: "ellipse", width: 0.001, height: 0.1, radius: 1 });
+  });
+});
+
+describe("feather and radial gradients (ADR-069)", () => {
+  const clip = (shape: Shape, keyframes?: ColorClip["keyframes"]): ColorClip => ({ ...createColorClip("#f00", 0, 60), shape, ...(keyframes ? { keyframes } : {}) });
+
+  it("resolve a crisp edge and a centered radial fill out to the box's sides", () => {
+    const s = resolveShape(clip({ kind: "ellipse", width: 0.3, height: 0.3, gradient: { from: "#fff", to: "#0000", angle: 0, kind: "radial" } }), 0)!;
+    expect(s.feather).toBe(0);
+    expect(s.gradient).toEqual({ from: "#fff", to: "#0000", angle: 0, kind: "radial", x: 0, y: 0, radius: 1 });
+    // A linear one gains nothing.
+    expect(resolveShape(clip({ kind: "rectangle", width: 0.3, height: 0.1, gradient: { from: "#fff", to: "#000", angle: 90 } }), 0)!.gradient).toEqual({ from: "#fff", to: "#000", angle: 90 });
+  });
+
+  it("key the feather and the radial center and radius", () => {
+    const c = clip({ kind: "ellipse", width: 0.3, height: 0.3, feather: 40, gradient: { from: "#fff", to: "#000", angle: 0, kind: "radial" } }, {
+      "shape.feather": [{ f: 0, v: 0 }, { f: 10, v: 200 }],
+      "shape.gradient.radius": [{ f: 0, v: 0.5 }, { f: 10, v: 1.5 }],
+      "shape.gradient.x": [{ f: 0, v: -0.2 }, { f: 10, v: 0.2 }],
+    });
+    const s = resolveShape(c, 5)!;
+    expect(s.feather).toBeCloseTo(100, 6);
+    expect(s.gradient).toMatchObject({ radius: 1, x: 0, y: 0 });
+    expect(resolveShape(clip({ kind: "ellipse", width: 0.3, height: 0.3, feather: 40 }, { "shape.feather": [{ f: 0, v: -9 }] }), 0)!.feather).toBe(0);
+  });
+
+  it("load from JSON: kept when valid, defaults left out, nonsense dropped", () => {
+    const radial = { kind: "ellipse", width: 0.4, height: 0.4, feather: 120, gradient: { from: "#fff", to: "#0000", angle: 0, kind: "radial", x: 0.1, radius: 0.8 } };
+    expect(cleanShape(radial)).toEqual(radial);
+    expect(cleanShape({ kind: "ellipse", width: 0.4, height: 0.4, feather: -3, gradient: { from: "#fff", to: "#000", kind: "radial", x: 0, y: 0, radius: 1 } })).toEqual({ kind: "ellipse", width: 0.4, height: 0.4, gradient: { from: "#fff", to: "#000", angle: 0, kind: "radial" } });
+    expect(cleanShape({ kind: "ellipse", width: 0.4, height: 0.4, gradient: { from: "#fff", to: "#000", kind: "conic" } })!.gradient).toEqual({ from: "#fff", to: "#000", angle: 0 });
+  });
+
+  it("reaches three sigma (three quarters of the feather) past the outline", () => {
+    expect(featherReach(200, 1080)).toBe(150);
+    expect(featherReach(200, 2160)).toBe(300);
+    expect(featherReach(0, 1080)).toBe(0);
   });
 });

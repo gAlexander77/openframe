@@ -76,16 +76,17 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           text styles may carry case?: upper | lower | title (shown so; the
             text itself is kept as typed), stroke2?: { color, width } (a second
             outline), glow?: { color, blur, strength? }, gradient?: { from, to,
-            angle } (fills instead of color) and accent?: the color the
-            highlightSweep and underlineWipe animations draw in
+            angle } (fills instead of color), accent?: the color the
+            highlightSweep and underlineWipe animations draw in, and
+            weight?: 100..900 (wins over bold; absent: 700 bold, 400 not)
           animIn, animOut and animLoop may carry unit?: letter | word | line,
             stagger?: 0..1 and order?: forward | backward | center | random:
             on a text clip the animation then plays per unit (src/lib/kinetic.ts)
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
-          visual clips may carry trackMatte?, motionBlur?, edge?, wiggle?
-            and color clips shape? (see Graphics)
+          visual clips may carry trackMatte?, motionBlur?, edge?, wiggle?,
+            shadow? and color clips shape? (see Graphics)
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
@@ -166,16 +167,20 @@ the edits but may discard folder definitions on saving (ADR-042).
 
 ## Graphics
 
-Shape layers, track mattes, motion blur, edges and wiggle are optional
-fields (ADR-056 to ADR-059, ADR-062); absent means off, so files without them load
-unchanged.
+Shape layers, track mattes, motion blur, edges, wiggle and drop shadows
+are optional fields (ADR-056 to ADR-059, ADR-062, ADR-069, ADR-070);
+absent means off, so files without them load unchanged.
 
 ```json
 { "type": "color", "color": "#0f1218", "start": 60, "duration": 90,
   "transform": { "x": -0.22, "y": 0.3, "scale": 1, "rotation": 0, "flipX": false, "flipY": false },
   "shape": { "kind": "rectangle", "width": 0.36, "height": 0.12, "radius": 0.3,
              "stroke": { "color": "#ffcc00", "width": 4 }, "draw": 1 },
-  "motionBlur": { "shutter": 180 } },
+  "motionBlur": { "shutter": 180 },
+  "shadow": { "color": "#000000", "blur": 60, "x": 0, "y": 24, "opacity": 0.5 } },
+{ "type": "color", "color": "#6a5cff", "start": 0, "duration": 240,
+  "shape": { "kind": "ellipse", "width": 0.6, "height": 0.8, "feather": 120,
+             "gradient": { "kind": "radial", "from": "#6a5cffcc", "to": "#6a5cff00", "angle": 0, "radius": 0.9 } } },
 { "type": "video", "assetId": "a1", "start": 0, "duration": 75, "in": 0,
   "trackMatte": { "clipId": "c_title", "mode": "alpha" },
   "edge": "mirror",
@@ -189,7 +194,13 @@ unchanged.
   unused); `radius` 0..1 of half the shorter side (rectangles; 1 is a
   pill); `fill: false` for an outline only; `gradient: { from, to, angle }`
   replaces the fill color (degrees, 0 left to right, 90 top to bottom; a
-  line's color too); `stroke: { color, width }` centered on the outline,
+  line's color too); with `kind: "radial"` it runs from `from` at the
+  center to `to` at the rim, an ellipse fitting the box, `x` and `y`
+  moving the center by fractions of the box from its middle (absent 0)
+  and `radius` a fraction of its half size (absent 1, its sides); older
+  builds draw a radial gradient as a linear one; `feather` pixels at 1080p
+  of soft edge, centered on the outline, a Gaussian's falloff (absent 0,
+  crisp; older builds draw it crisp); `stroke: { color, width }` centered on the outline,
   width in pixels at 1080p (a line's thickness; 8 when absent); `draw` 0..1
   the share of the outline or line drawn (absent: all), from the top
   center clockwise or a line's left end. Colors are CSS: `#rgb`, `#rrggbb`,
@@ -207,6 +218,12 @@ unchanged.
 - `wiggle`: per value `x`, `y` (canvas fractions), `rotation` (degrees)
   or `scale` (scale factor), each `{ frequency (Hz), amplitude, seed,
   strength? (0..1, absent 1) }`.
+- `shadow: { color, blur, x, y, opacity }` (any visual clip): a drop
+  shadow cast by the finished picture. `blur` 0..600 is twice the
+  Gaussian's sigma, `x` and `y` the fall (y down), all pixels at 1080p;
+  `opacity` 0..1 multiplies the color's alpha. Missing numbers load as the
+  defaults (60, 0, 24, 0.5), out-of-range ones clamped; anything that is
+  not an object is dropped.
 
 ## Color grading
 
@@ -250,9 +267,15 @@ Mask numbers animate the same way (`mask.x`, `mask.y`, `mask.width`,
 `mask.height`, `mask.rotation`, `mask.feather`, `mask.radius`), as CapCut
 keys every mask parameter; crop edges do not. So do a shape's
 (`shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`,
-`shape.draw`, `shape.gradient.angle`) and a wiggle's
+`shape.draw`, `shape.feather`, `shape.gradient.angle`, `shape.gradient.x`,
+`shape.gradient.y`, `shape.gradient.radius`), a drop shadow's
+(`shadow.blur`, `shadow.x`, `shadow.y`, `shadow.opacity`) and a wiggle's
 (`wiggle.x.strength`, `wiggle.x.amplitude`, and the same for `y`,
-`rotation` and `scale`).
+`rotation` and `scale`). A title's `style.size` and `style.letterSpacing`
+key as numbers; `style.color` keys hold the color as a 0xRRGGBB number
+(`#ff3366` is 16724838) and move channel by channel; keyed colors are
+opaque ([[ADR-071 Keyed title styles redraw the title]]). Older builds
+draw such a title at its stored style.
 
 ## Crop and masks
 

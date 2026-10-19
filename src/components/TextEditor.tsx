@@ -4,6 +4,7 @@ import { player } from "../engine/player";
 import type { Project, TextClip } from "../lib/project/types";
 import type { Layer } from "../lib/render/plan";
 import { editBox } from "../lib/textBox";
+import { fontWeight } from "../lib/textLook";
 import { beginTyping, endTyping, splitCaptionAt, typeText } from "../state/textEdit";
 import { useEditor } from "../state/store";
 
@@ -34,11 +35,14 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
     };
   }, [clip.id]);
 
-  const s = clip.style;
+  // The title as drawn at this frame: keyed size, spacing and color applied
+  // (ADR-071), so the caret sits on the letters the viewer shows.
+  const shown = layer.source.kind === "text" ? layer.source.clip : clip;
+  const s = shown.style;
   // Layout at the renderer's target: raster rounding and font metrics at
   // preview resolution differ from a scaled full-project raster.
   const target = player.renderSize(project, previewScale);
-  const b = editBox(rasterizeText(clip, target.w, target.h).layout, s.align, layer, { width, height }, target.w);
+  const b = editBox(rasterizeText(shown, target.w, target.h).layout, s.align, layer, { width, height }, target.w);
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Escape") {
@@ -95,7 +99,7 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
           // alone changed between renders.
           fontFamily: textFamily(s),
           fontSize: b.fontSize,
-          fontWeight: s.bold ? 700 : 400,
+          fontWeight: fontWeight(s),
           fontStyle: s.italic ? "italic" : "normal",
           lineHeight: `${b.lineHeight}px`,
           letterSpacing: `${b.letterSpacing}px`,

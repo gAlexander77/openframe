@@ -12,10 +12,13 @@ import type { ColorClip, Shape } from "./project/types";
 export const SHAPE_KINDS = ["rectangle", "ellipse", "line"] as const;
 
 /** A shape's numbers at one frame, keyframes applied. */
-export type ResolvedShape = Shape & { radius: number; draw: number };
+export type ResolvedShape = Shape & { radius: number; draw: number; feather: number };
 
-/** Paths that keyframe (every number of a shape). */
-export const SHAPE_PARAMS = ["width", "height", "radius", "draw", "stroke.width", "gradient.angle"] as const;
+/** Paths that keyframe (every number of a shape), as shape.<param>. */
+export const SHAPE_PARAMS = ["width", "height", "radius", "draw", "stroke.width", "gradient.angle", "feather", "gradient.x", "gradient.y", "gradient.radius"] as const;
+
+/** A feather wider than this (pixels at 1080p) is clamped. */
+export const FEATHER_MAX = 1000;
 
 /** The shape at clip frame `r`: animated numbers read from their keys. */
 export function resolveShape(clip: ColorClip, r: number): ResolvedShape | undefined {
@@ -28,10 +31,25 @@ export function resolveShape(clip: ColorClip, r: number): ResolvedShape | undefi
     height: Math.max(0, at("height", s.height)),
     radius: clamp01(at("radius", s.radius ?? 0)),
     draw: clamp01(at("draw", s.draw ?? 1)),
+    feather: Math.min(FEATHER_MAX, Math.max(0, at("feather", s.feather ?? 0))),
     ...(s.stroke ? { stroke: { ...s.stroke, width: Math.max(0, at("stroke.width", s.stroke.width)) } } : {}),
-    ...(s.gradient ? { gradient: { ...s.gradient, angle: at("gradient.angle", s.gradient.angle) } } : {}),
+    ...(s.gradient ? { gradient: resolveGradient(s.gradient, at) } : {}),
   };
 }
+
+/** A gradient's numbers at one frame: a radial one's center and radius
+ * filled in (center of the box, out to its sides). */
+function resolveGradient(g: NonNullable<Shape["gradient"]>, at: (k: string, fallback: number) => number): NonNullable<Shape["gradient"]> {
+  const angle = at("gradient.angle", g.angle);
+  if (g.kind !== "radial") return { ...g, angle };
+  return { ...g, angle, x: at("gradient.x", g.x ?? 0), y: at("gradient.y", g.y ?? 0), radius: Math.max(0.001, at("gradient.radius", g.radius ?? 1)) };
+}
+
+/** Pixels of soft edge a feather of `feather` (1080p pixels) reaches
+ * past the outline, on a canvas `height` tall: three sigma, where its
+ * Gaussian falloff is spent. The compositor grows the shape's quad by
+ * this. */
+export const featherReach = (feather: number, height: number) => (Math.max(0, feather) * 0.75 * height) / 1080;
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
@@ -139,9 +157,18 @@ export function cleanShape(raw: unknown): Shape | undefined {
   if (fin(raw.radius) && raw.radius > 0) out.radius = clamp01(raw.radius);
   if (raw.fill === false) out.fill = false;
   const g = raw.gradient;
-  if (isObj(g) && typeof g.from === "string" && typeof g.to === "string") out.gradient = { from: g.from, to: g.to, angle: fin(g.angle) ? g.angle : 0 };
+  if (isObj(g) && typeof g.from === "string" && typeof g.to === "string") {
+    out.gradient = { from: g.from, to: g.to, angle: fin(g.angle) ? g.angle : 0 };
+    if (g.kind === "radial") {
+      out.gradient.kind = "radial";
+      if (fin(g.x) && g.x !== 0) out.gradient.x = Math.max(-2, Math.min(2, g.x));
+      if (fin(g.y) && g.y !== 0) out.gradient.y = Math.max(-2, Math.min(2, g.y));
+      if (fin(g.radius) && g.radius !== 1) out.gradient.radius = Math.max(0.001, Math.min(10, g.radius));
+    }
+  }
   const st = raw.stroke;
   if (isObj(st) && typeof st.color === "string" && fin(st.width) && st.width >= 0) out.stroke = { color: st.color, width: st.width };
   if (fin(raw.draw) && raw.draw < 1) out.draw = clamp01(raw.draw);
+  if (fin(raw.feather) && raw.feather > 0) out.feather = Math.min(FEATHER_MAX, raw.feather);
   return out;
 }

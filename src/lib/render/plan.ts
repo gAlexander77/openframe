@@ -9,12 +9,14 @@ import { resolveGrade, type GradeParams } from "../grade";
 import { ease, paramAt } from "../keyframes";
 import { findCompound, getAsset, sourceTimeAt, timelineEnd } from "../project/ops";
 import { correctionAt } from "../analysis/stabilize";
-import { fittedSize } from "./size";
+import { fittedSize, sourceSize } from "./size";
 import { spokenWord } from "../captions";
 import { isKinetic, kineticAt, unitOf, type KineticFrame } from "../kinetic";
 import { frameAt, framesToSeconds } from "../time";
 import { MOTION_SAMPLES, MOVING_TRANSITIONS, samplesFor, shutterOffsets, travel, type Placement } from "../motionBlur";
 import { resolveShape, type ResolvedShape } from "../shapes";
+import { resolveShadow } from "../shadow";
+import { styleKeyed, textStyleAt } from "../textAnim";
 import { matteClip, mattesAt } from "../trackMatte";
 import { wiggleAt } from "../wiggle";
 import type {
@@ -24,6 +26,7 @@ import type {
   ChromaKey,
   Clip,
   Crop,
+  DropShadow,
   EdgeMode,
   Id,
   Mask,
@@ -115,6 +118,8 @@ export interface Layer {
   /** Track matte (ADR-056): the matte clip's own layer at this frame
    * (null: it has no picture here) and how it cuts this one. */
   trackMatte?: { layer: Layer | null; mode: MatteMode };
+  /** Drop shadow (ADR-070), keyframes applied; cast by the finished layer. */
+  shadow?: DropShadow;
 }
 
 export type PlanItem =
@@ -276,7 +281,9 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   else if (clip.type === "text") {
     const word = clip.style.highlight ? spokenWord(clip.text, clip.wordTimes, r) : undefined;
     const kinetic = kineticAt(clip, r, ANIMATIONS);
-    source = { kind: "text", clip, ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
+    // Keyed size, spacing and color (ADR-071): the title as it is now.
+    const style = textStyleAt(clip, r);
+    source = { kind: "text", clip: style === clip.style ? clip : { ...clip, style }, ...(word !== undefined ? { word } : {}), ...(kinetic ? { kinetic } : {}) };
   }
   else if (clip.type === "color") {
     const shape = resolveShape(clip, r);
@@ -297,6 +304,11 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   // Stabilization's correction for this source frame, applied to every
   // shutter sample alike: it undoes the camera's shake, not a move.
   const stab = clip.type === "video" && clip.stabilize && source.kind === "video" ? { s: clip.stabilize, c: correctionAt(clip.stabilize, source.time), a: getAsset(p, clip.assetId) } : null;
+  // A keyed title that is not centered: its width at rest, and which way
+  // its growth goes.
+  // Measured at whole frames (motion blur's samples share their frame's),
+  // so a blurred title is not measured once per shutter sample.
+  const grows = clip.type === "text" && clip.style.align !== "center" && styleKeyed(clip) ? { clip, rest: sourceSize(p, clip).w, side: clip.style.align === "left" ? 1 : -1, at: new Map<number, number>() } : null;
   /** The picture's placement at clip frame `rr` (fractional for motion
    * blur's samples): keyframes, animations, wiggle, stabilization, anchor. */
   const placeAt = (rr: number) => {
@@ -321,6 +333,18 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
       scale *= s.zoom;
       if (scaleY !== undefined) scaleY *= s.zoom;
     }
+    // A keyed title grows from its aligned side (ADR-071): left-aligned type
+    // keeps its left edge as it tracks out or grows, as After Effects'
+    // does; centered type grows both ways.
+    if (grows) {
+      const fr = Math.round(rr);
+      const now = grows.at.get(fr) ?? sourceSize(p, { ...grows.clip, style: textStyleAt(grows.clip, fr) }).w;
+      grows.at.set(fr, now);
+      const lx = ((now - grows.rest) / 2) * grows.side * scale * (clip.transform.flipX ? -1 : 1);
+      const rad = (rotation * Math.PI) / 180;
+      x += (Math.cos(rad) * lx) / p.width;
+      y += (Math.sin(rad) * lx) / p.height;
+    }
     // The anchor point sits at the position; the picture's center moves off
     // it by the anchor's offset, scaled, mirrored and turned with the picture.
     const ax = paramAt(clip, "transform.anchorX", rr), ay = paramAt(clip, "transform.anchorY", rr);
@@ -334,6 +358,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   const { anim, x, y, scale, scaleY, rotation } = placeAt(r);
   const motion = clip.motionBlur ? shutterPath(p, clip, r, clip.motionBlur.shutter, opts, placeAt) : undefined;
   const cut = clip.type === "video" && clip.cutout?.enabled ? clip.cutout : undefined;
+  const shadow = resolveShadow(clip, r);
   return {
     clipId: prefix + clip.id,
     source,
@@ -363,6 +388,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     time: framesToSeconds(r, p.fps),
     ...(motion ? { motion } : {}),
     ...(clip.edge ? { edge: clip.edge } : {}),
+    ...(shadow ? { shadow } : {}),
   };
 }
 
@@ -406,7 +432,7 @@ export function anchorShift(
 export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer | null {
   const fill = clip.canvas;
   if (!fill) return null;
-  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0 };
+  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined };
   if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
   if (clip.type !== "video" && clip.type !== "image") return null;
   const a = getAsset(p, clip.assetId);

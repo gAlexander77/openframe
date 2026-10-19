@@ -54,6 +54,8 @@
   min-height: 32px;
 }
 .insp-row.plain { grid-template-columns: 82px 1fr; }
+/* A control as wide as a slider and its number, beside a key cluster. */
+.insp-row > .insp-wide { grid-column: 2 / span 2; min-width: 0; }
 /* At the splitter's narrowest (260 px) the four columns left the slider no
    width, just its thumb; a narrow inspector gives the slider its own line.
    The panel's layout containment traps no popover: EaseMenu is portaled
@@ -62,6 +64,7 @@
 @container (max-width: 339px) {
   .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px 74px; row-gap: 0; }
   .insp-row:not(.plain) > .insp-slider { grid-column: 1 / -1; grid-row: 2; }
+  .insp-row:not(.plain) > .insp-wide { grid-column: 1 / span 2; grid-row: 2; }
 }
 .insp-label { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .insp-control { min-width: 0; }

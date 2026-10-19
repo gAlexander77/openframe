@@ -4,6 +4,7 @@ import { Captions, Download, Search, Upload, WandSparkles } from "../icons";
 import { replaceText } from "../lib/captions";
 import { CAPTION_LOOKS, lookStyle } from "../lib/captionLooks";
 import type { TextStyle } from "../lib/project/types";
+import { fontWeight } from "../lib/textLook";
 import { runCommand } from "../lib/commands";
 import { cancelCaptions, captionClips, exportCaptions, generateCaptions, importCaptions } from "../state/captions";
 import { store, useEditor } from "../state/store";
@@ -40,7 +41,7 @@ function lookCss(s: TextStyle): React.CSSProperties {
   return {
     fontFamily: s.font,
     color: s.color,
-    fontWeight: s.bold ? 700 : 400,
+    fontWeight: fontWeight(s),
     textTransform: s.case === "upper" ? "uppercase" : s.case === "lower" ? "lowercase" : s.case === "title" ? "capitalize" : undefined,
     WebkitTextStroke: s.stroke?.width ? `${Math.min(2, s.stroke.width / 4)}px ${s.stroke.color}` : undefined,
     paintOrder: "stroke fill",
