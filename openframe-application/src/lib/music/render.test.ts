@@ -100,3 +100,30 @@ describe("balance", { timeout: 90000 }, () => {
     }
   });
 });
+
+describe("brightness", { timeout: 120000 }, () => {
+  it("tilts the balance both ways, the loudness and true peak held, the stems still adding up", () => {
+    const plan = short("corporate");
+    const at = (b: number) => renderMusic(plan, { rate: RATE, brightness: b, stems: b === 1 });
+    const [dark, plain, bright] = [at(-1), at(0), at(1)];
+    const bal = (r: ReturnType<typeof at>) => balance(r.mix[0], r.mix[1], RATE);
+    const [d, p, b] = [bal(dark), bal(plain), bal(bright)];
+    expect(b.high).toBeGreaterThan(p.high * 2);
+    expect(d.high).toBeLessThan(p.high / 2);
+    expect(b.low).toBeLessThan(p.low);
+    expect(b.slope).toBeGreaterThan(p.slope);
+    for (const r of [dark, plain, bright]) {
+      expect(Math.abs(r.master.lufs + 14)).toBeLessThan(0.3);
+      expect(r.master.true_peak_dbtp).toBeLessThanOrEqual(-0.95);
+    }
+    let worst = 0;
+    for (let i = 0; i < bright.mix[0].length; i += 7) worst = Math.max(worst, Math.abs(STEMS.reduce((a, s) => a + bright.stems![s][0][i], 0) - bright.mix[0][i]));
+    expect(worst).toBeLessThan(1e-5);
+  });
+
+  it("brightens the launch style by default, as measured against its reference", () => {
+    const plan = short("launch");
+    const def = renderMusic(plan, { rate: RATE }), set = renderMusic(plan, { rate: RATE, brightness: 0.4 });
+    expect(Array.from(def.mix[0].subarray(0, 4000))).toEqual(Array.from(set.mix[0].subarray(0, 4000)));
+  });
+});

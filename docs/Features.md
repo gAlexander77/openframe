@@ -724,7 +724,12 @@ same arguments and seed give the same music.
 - **Mixed and mastered**: stereo width with a mono low end, convolution
   reverb sends, a ping-pong delay on the lead, each stem's loudness set
   to the style's balance, then a glue compressor and a true-peak limiter
-  to -14 LUFS (or any target) under -1 dBTP.
+  to -14 LUFS (or any target) under -1 dBTP. **Brightness** (agents:
+  `brightness`, -1..1) tilts the master about 1 kHz (at 1 the highs 6 dB up
+  from 3 kHz and the lows 3 dB down under 300 Hz), darker under a busy
+  voice or brighter for a launch, the loudness and true peak held; the
+  launch style leans bright by default (0.4), as its measurements against
+  the hand-made track it imitates asked.
 - **Fits the edit**: a length, or sections with bars, seconds or fixed
   times (a drop at 8.0 s, an outro ending at 56 s); the tempo moves a
   little so they land on bar lines, and the answer says how each fit.

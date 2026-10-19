@@ -18,6 +18,8 @@ export interface Measured {
   gain_db: number;
   compression_db: number;
   limiting_db: number;
+  /** The master tilt the render used (-1..1; the answer fills it in). */
+  brightness?: number;
 }
 
 let worker: Worker | null = null;

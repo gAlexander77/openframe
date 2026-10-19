@@ -84,6 +84,9 @@ export interface StyleSpec {
   padCutoff: [number, number];
   /** The master's coloring: a low-pass (Hz), tape wow (cents), saturation. */
   color: { lowpass?: number; wow?: number; drive?: number; crackle?: number };
+  /** The master's tilt when generate_music names no brightness (-1..1,
+   * render.ts tilt): where the measured balance asked for it. */
+  brightness?: number;
   /** Beats of silence before a drop (the breath), 0 for none. */
   breath: number;
 }
@@ -95,6 +98,10 @@ export const STYLES: Record<StyleId, StyleSpec> = {
   // pumps, a sub and an offbeat mid bass, a 16th arp and a bright hook.
   launch: {
     label: "Product launch",
+    // A 68 s score in the film's form measured 71% of its power below
+    // 250 Hz and 1.3% above 4 kHz untilted, darker than the hand-made
+    // track it imitates (63%, 2.7%); 0.4 lands at 65% and 2.5%.
+    brightness: 0.4,
     blurb: "modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook",
     bpm: 120,
     bpmRange: [100, 140],

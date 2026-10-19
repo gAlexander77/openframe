@@ -147,6 +147,7 @@ export function readMusicArgs(a: Record<string, unknown>, randomSeed: () => numb
       ending,
       fx: a.fx === undefined ? undefined : !!a.fx,
       max_nudge: num(a.max_nudge, "max_nudge", 0, 0.2),
+      brightness: num(a.brightness, "brightness", -1, 1),
     },
     loudness: num(a.loudness, "loudness", -30, -8) ?? -14,
     stems: !!a.stems || place === "stems",

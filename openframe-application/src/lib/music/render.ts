@@ -24,6 +24,9 @@ export interface RenderOptions {
   ceiling?: number;
   /** Keep the four stems (default false: only the mix). */
   stems?: boolean;
+  /** The master's tilt, -1 (darker) .. 1 (brighter); default the style's
+   * (0 for most). */
+  brightness?: number;
   onProgress?: (fraction: number) => void;
 }
 
@@ -81,6 +84,15 @@ function duckCurve(n: number, rate: number, kicks: number[], beat: number): Floa
     }
   });
   return d;
+}
+
+/** Brightness as a tilt: the highs shelved up `TILT_DB` times `b` from 3 kHz
+ * and the lows down half as far below 300 Hz (b < 0 the other way), so
+ * the balance leans without a band of its own sticking out. */
+export const TILT_DB = 6;
+export function tiltEq(x: Float32Array, rate: number, b: number) {
+  filter(x, biquad("highshelf", 3000, rate, Math.SQRT1_2, TILT_DB * b));
+  filter(x, biquad("lowshelf", 300, rate, Math.SQRT1_2, (-TILT_DB / 2) * b));
 }
 
 /** High-pass the side channel only, so everything low stays in the middle. */
@@ -207,6 +219,11 @@ export function renderMusic(plan: MusicPlan, o: RenderOptions = {}): RenderResul
     const g = 10 ** ((offsets[i] - top) / 20);
     for (const x of stems[stem]) for (let k = 0; k < n; k++) x[k] *= g;
   });
+
+  // Brightness: a tilt about 1 kHz on every stem alike (so they still add
+  // up to the mix), before the master sets the loudness again.
+  const tilt = Math.max(-1, Math.min(1, o.brightness ?? spec.brightness ?? 0));
+  if (tilt) for (const stem of STEMS) for (const x of stems[stem]) tiltEq(x, rate, tilt);
 
   // The ending: everything fades to silence by the end of the file.
   const [f0, f1] = plan.fadeOut;

@@ -235,6 +235,7 @@ function musicSchema(files: boolean): JsonSchema {
     fx: { type: "boolean", description: "Risers, impacts, reverse cymbals and braams into and on the drops (default true)" },
     max_nudge: { type: "number", minimum: 0, maximum: 0.2, description: "How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06)" },
     start: { type: "number", minimum: 0, description: "Timeline seconds the music starts at (default 0); the answer's times include it" },
+    brightness: { type: "number", minimum: -1, maximum: 1, description: "The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0)" },
   };
   if (files) {
     Object.assign(p, {

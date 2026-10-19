@@ -174,6 +174,8 @@ and from the launch film's track (made by hand in Python, mastered to
 | analyze_music | the tempo within 2%, every drop and every section start but a ring-out outro's within a bar |
 | Slope, 125 Hz to 4 kHz (dB an octave) | launch and corporate -4.5 to -0.5, cinematic -5 to -0.5, lo-fi -6 to -1.5 (dark by design), ambient -4 to +1 (pad-led) |
 | Power below 250 Hz | launch 50-90%, cinematic 35-85%, corporate 40-85%, lo-fi 40-85%, ambient 20-70% |
+| Power above 4 kHz | launch 1.8-4.5% (the reference track 2.7%), cinematic 0.4-3%, corporate 1-4%, lo-fi under 1% (dark by design), ambient 0.1-2% |
+| Launch at 68 s in the third film's form | the same ranges at the default brightness; brightness -1 and 1 tilting it each way at -14 LUFS ±0.1, true peak at most -0.95 dBTP |
 
 The slopes are flatter than the 4.5 dB average [36] on purpose: dance and
 pop masters are brighter (the launch film's track measured -1.5), and the
@@ -223,6 +225,34 @@ sections: a four-bar ring outro's echo, and phrase lines in twelve-bar
 drops. The fitting example of the brief, an
 intro of four bars, a drop at 8.4 s and an outro ending at 56 s, plays at
 114.29 BPM with the drop on 8.400 s and the file ending on 56.000 s.
+
+## Brightness (2026-10-19, after the third launch film)
+
+The third launch film's score (launch, 68 s, F minor, drops at 8 and 40 s,
+the final hit at 60) measured dark: about three quarters of its power
+below 250 Hz and well under the reference track's 2.7% above 4 kHz.
+Nobody has listened to it; these are measurements. Rendered in Node at
+48 kHz, seed 7, as `balance()` measures (below 250 Hz / to 4 kHz /
+above, the 125 Hz-4 kHz slope):
+
+| Launch | Untilted | brightness 0.3 | 0.4 | 0.5 | 1 | -1 |
+|---|---|---|---|---|---|---|
+| 60 s, default form | 74.3 / 24.4 / 1.38%, -1.71 | 69.8 / 27.9 / 2.28%, -1.32 | | 66.5 / 30.3 / 3.16%, -1.09 | 56.7 / 36.5 / 6.76%, -0.44 | 84.8 / 15.0 / 0.24%, -2.96 |
+| 68 s, default form | 72.7 / 25.8 / 1.49%, -1.71 | 68.1 / 29.4 / 2.46%, -1.33 | | 64.7 / 31.9 / 3.40%, -1.07 | 54.8 / 38.0 / 7.19%, -0.42 | 83.6 / 16.1 / 0.27%, -2.97 |
+| 68 s, the film's form | 71.1 / 27.5 / 1.34%, -1.93 | | 65.0 / 32.4 / 2.60%, -1.41 | | | |
+| 68 s, the film's form, seed 21 | 71.4 / 27.4 / 1.26%, -1.96 | | 65.4 / 32.2 / 2.45%, -1.45 | | | |
+
+Every render held -14.0 LUFS and -1.0 dBTP. `brightness` is a tilt about
+1 kHz (a high shelf at 3 kHz, `6 x b` dB, and a low shelf at 300 Hz, `-3 x b`
+dB, slope 0.707) on every stem alike before the master, so the stems still
+add up to the mix. The launch style defaults to 0.4: the film's form then
+measures 65 / 32 / 2.6%, -1.4 dB an octave, beside the hand-made track's
+63 / 34 / 2.7%, -1.5. The other styles stay untilted: cinematic (0.8-0.9%
+above 4 kHz, strings and a long hall), corporate (1.6-1.8%), lo-fi (0.24%,
+dark by design) and ambient (0.35%, pad-led) sit where their references
+put them. Through MCP in the web build the drive measured launch at 60 s
+68 / 29 / 2.7%, and the film's form at 68 s 65 / 32 / 2.6% (brightness -1:
+0.24%, 1: 6.4% above 4 kHz), all at -14.0 LUFS and -1.0 dBTP.
 
 ## What analyze_music taught
 

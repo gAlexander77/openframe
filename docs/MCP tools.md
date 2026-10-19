@@ -641,6 +641,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 | `loudness` | number |  | Integrated loudness to master to, LUFS (default -14, online video) (-30..-8) |
 | `stems` | boolean |  | Also import the drums, bass, harmony and lead stems (default false) |
 | `place` | "mix" \| "stems" \| "none" |  | mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only |
@@ -677,6 +678,7 @@ The cue sheet generate_music would answer for these arguments, at once and witho
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 
 Example:
 

@@ -25,7 +25,7 @@ self.onmessage = (e: MessageEvent<Msg>) => {
     const plan = planMusic(request);
     let last = 0;
     // Progress rides workerRequest's "download" messages.
-    const r = renderMusic(plan, { stems, loudness, onProgress: (p) => p - last >= 0.02 && post({ id, type: "download", progress: (last = p) }) });
+    const r = renderMusic(plan, { stems, loudness, brightness: request.brightness, onProgress: (p) => p - last >= 0.02 && post({ id, type: "download", progress: (last = p) }) });
     const b = balance(r.mix[0], r.mix[1], r.rate);
     const s = stats(r.mix[0], r.mix[1]);
     const measured = { ...r.master, plr: +(r.master.true_peak_dbtp - r.master.lufs).toFixed(2), correlation: s.correlation, clipped: s.clipped, low: b.low, mid: b.mid, high: b.high, slope_db_per_octave: b.slope };

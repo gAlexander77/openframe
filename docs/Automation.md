@@ -297,7 +297,7 @@ Original music ([[Features]], Generated music;
   ambient, bpm?, key?, mode?, length? | sections?: [{name, bars? |
   seconds? | at? | end_at?, energy?, seed?}], seed?, ending?: ring | stop,
   fx?, max_nudge?, loudness?, stems?, place?: mix | stems | none, start?,
-  markers?, name?}` composes and renders a score on this computer (about
+  markers?, name?, brightness?}` composes and renders a score on this computer (about
   10-15 s for a minute with stems, in a worker), imports it (and the drums, bass, harmony
   and lead stems when asked) and places it, as one undo step. It answers
   the cue sheet in timeline seconds: `bpm`, `key`, `progression`, `beat`,
@@ -306,10 +306,14 @@ Original music ([[Features]], Generated music;
   `kind`: drop, section, phrase, bar), `fit` (each asked-for time, what it
   got, the error and the tempo nudge), `measured` (LUFS, true peak, PLR,
   stereo correlation, the power below 250 Hz, to 4 kHz and above, the
-  octave slope) and the new `asset_id`, `clip_id` and `stems`. A drop at
+  octave slope, the `brightness` used) and the new `asset_id`, `clip_id` and `stems`. A drop at
   8.4 s after a four-bar intro: `{"style": "launch", "sections": [{"name":
   "intro", "bars": 4}, {"name": "drop", "at": 8.4, "bars": 8}, {"name":
   "outro", "end_at": 30}]}` plays at 114.3 BPM.
+- `brightness` (-1..1, default the style's: launch 0.4, the rest 0) tilts
+  the master about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the
+  lows 3 dB under 300 Hz; the loudness and true peak are met after it, and
+  the stems still add up to the mix.
 - `plan_music` (read-only) answers the same cue sheet, and the chord of
   every bar, without rendering: try a form, then generate with the seed
   it answers.
