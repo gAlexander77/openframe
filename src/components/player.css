@@ -52,8 +52,10 @@
 .play-btn:active { transform: scale(0.94); }
 
 .timecodes { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-sm); }
-/* Keep both frame-exact times on a separate compact row on narrow viewers. */
-@container (max-width: 532px) {
+/* Keep both frame-exact times on a separate compact row on narrow viewers:
+   below about 602 px the seven transport buttons (Go to start and Go to
+   end among them) and the right-hand controls leave them no room. */
+@container (max-width: 602px) {
   .transport { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 22px 40px; }
   .timecodes { grid-column: 1 / -1; grid-row: 1; justify-content: center; font-size: 10px; }
   .transport-center { grid-column: 1; grid-row: 2; }

@@ -14,6 +14,9 @@ export function useCopiedEffects() {
   );
 }
 
+/** What Copy effects holds, for menus that read it when they open. */
+export const copiedEffects = () => copied;
+
 export function copyEffects(id: Id) {
   copied = copyEffectStack(store.get().project, id);
   listeners.forEach(l => l());

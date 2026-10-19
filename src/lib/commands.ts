@@ -37,6 +37,7 @@ import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
+import { NAME_MAX, renameClips, renameMedia } from "./project/rename";
 import { syncClip, syncProblem } from "./project/sync";
 import { groupClips, regroupCopies, ungroupClips } from "./project/groups";
 import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
@@ -78,6 +79,15 @@ export interface Command {
 }
 
 export class CommandError extends Error {}
+
+/** Run an op that throws plain errors, reporting them as command errors. */
+function commandError(fn: () => Project): Project {
+  try {
+    return fn();
+  } catch (e) {
+    throw e instanceof CommandError ? e : new CommandError((e as Error).message);
+  }
+}
 
 /** Run an epic-edit op, reporting its problems as command errors. */
 function epic(fn: () => Project): Project {
@@ -787,6 +797,18 @@ export const COMMANDS: Command[] = [
         return rest as Clip;
       }), p);
     },
+  },
+  {
+    name: "rename_clip",
+    description: "Name clips (Premiere's Rename): the timeline shows the name instead of the media's file name or a title's words. An empty name gives each clip its default name back. The media file keeps its name.",
+    input: S.obj({ clip_ids: S.ids("Clips to name"), name: S.str(`The name, up to ${NAME_MAX} characters; empty clears it`) }, ["clip_ids", "name"]),
+    run: (p, a) => commandError(() => renameClips(p, a.clip_ids as Id[], String(a.name))),
+  },
+  {
+    name: "rename_media",
+    description: "Rename an imported media file in the project's library; the file on disk keeps its name. Clips without a name of their own show the new name.",
+    input: S.obj({ asset_id: S.str("Media id from assets in describe_project"), name: S.str(`The new name, 1 to ${NAME_MAX} characters`) }, ["asset_id", "name"]),
+    run: (p, a) => commandError(() => renameMedia(p, String(a.asset_id), String(a.name))),
   },
   {
     name: "group_clips",
@@ -2141,9 +2163,8 @@ export const COMMANDS: Command[] = [
     input: S.obj({ clip_id: S.str("Video or audio clip id"), reverse: S.bool("Backward") }, ["clip_id", "reverse"]),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
-      if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips cannot play backward`);
-      if (clip.freeze) throw new CommandError("a freeze frame has no direction");
-      if (clip.type === "compound") throw new CommandError("compound clips cannot play backward yet; reverse the clips inside with edit_compound");
+      const problem = ops.reverseProblem(clip);
+      if (problem) throw new CommandError(problem);
       return ops.setReverse(p, clip.id, a.reverse === true);
     },
   },

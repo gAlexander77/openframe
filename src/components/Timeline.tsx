@@ -2,6 +2,7 @@ import { addSoundEffect } from "../state/sfx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
+import { scrubEnd, scrubTo } from "../engine/scrub";
 import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Image, Sticker, SlidersHorizontal, Square, Captions, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { fromDb, toDb } from "../lib/audio";
 import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
@@ -27,6 +28,9 @@ import { syncAudio } from "../state/ai";
 import { replaceClip } from "../lib/project/replace";
 import { toast } from "../state/toast";
 import { addSticker } from "../state/stickers";
+import { renameClip } from "../state/rename";
+import { copiedEffects, copyEffects, pasteEffects } from "../state/effects";
+import { showInspectorTab } from "./inspector/Inspector";
 import { store, useEditor } from "../state/store";
 import { openMarkers } from "../state/markers";
 import { projectWork } from "../state/projectWork";
@@ -194,6 +198,13 @@ export function Timeline() {
   const dropKey = useRef("");
   const dragging = useDragging();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** The clip whose name strip is a text field (Rename). */
+  const [renaming, setRenaming] = useState<Id | null>(null);
+  const onRename = useCallback((c: Clip, name?: string | null) => {
+    if (name === undefined) return setRenaming(c.id);
+    setRenaming(null);
+    if (name !== null) renameClip(c.id, name);
+  }, []);
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -376,6 +387,7 @@ export function Timeline() {
     const s = store.get();
     if (g.kind === "scrub") {
       store.seek(frameAtX(e.clientX));
+      scrubTo(store.get().playhead);
       return;
     }
     if (g.kind === "marquee") {
@@ -500,6 +512,7 @@ export function Timeline() {
     setMarquee(null);
     setReadout(null);
     store.set({ trimPreview: null });
+    if (g?.kind === "scrub") scrubEnd();
     if (!g || g.kind === "scrub" || g.kind === "marquee") return;
     if (!g.started) return;
     const label =
@@ -545,6 +558,7 @@ export function Timeline() {
   const onRulerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     store.seek(frameAtX(e.clientX));
+    scrubTo(store.get().playhead);
     gesture.current = { kind: "scrub" };
     attachWindowListeners();
   };
@@ -695,31 +709,63 @@ export function Timeline() {
     const syncVideo = picked.length === 2 ? picked.find((c) => c?.type === "video") : undefined;
     const syncSound = picked.length === 2 ? picked.find((c) => c?.type === "audio") : undefined;
     const sync = (muteCamera: boolean) => void syncAudio(syncSound!.id, { videoId: syncVideo!.id, muteCamera }).catch(() => {});
+    const lockedTrack = !!ops.findClip(store.get().project, clip.id)?.track.locked;
+    const p0 = store.get().project;
+    const sel = store.get().selection.map((id) => ops.findClip(p0, id)).filter((l) => !!l);
+    // Reverse acts on every selected clip that can play backward
+    // (set_reverse's rule), toward the right-clicked clip's opposite.
+    const reversible = sel.filter((l) => !l.track.locked && !ops.reverseProblem(l.clip)).map((l) => l.clip.id);
+    const reversed = ops.isTimed(clip) && !!clip.reverse;
+    const reverse = () => {
+      try {
+        edit(reversed ? "Play forward" : "Reverse", (p) => reversible.reduce((q, id) => runCommand(q, "set_reverse", { clip_id: id, reverse: !reversed }), p));
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    };
+    // Effects go to unlocked clips that carry them, as the inspector's
+    // Paste effects does.
+    const effectTargets = sel.filter((l) => "effects" in l.clip && !l.track.locked).map((l) => l.clip.id);
     const items: MenuItem[] = [
       { action: "cut" },
       { action: "copy" },
       { action: "paste" },
       { action: "duplicate" },
       { action: "delete" },
+      { action: "rippleDelete" },
       "-",
       { action: "split" },
+      {
+        label: "Speed…",
+        disabled: !ops.isTimed(clip),
+        onSelect: () => {
+          store.select([clip.id]);
+          store.set({ transitionEdit: null });
+          showInspectorTab("speed");
+        },
+      },
+      { label: "Reverse", checked: reversed, disabled: !reversible.includes(clip.id), onSelect: reverse },
+      { action: "freeze", disabled: clip.type !== "video" },
+      { action: "detachAudio", disabled: clip.type !== "video" },
       {
         label: "Replace clip…",
         disabled: clip.type !== "video" && clip.type !== "image" && clip.type !== "audio",
         onSelect: () => void replaceFromPicker(clip.id),
       },
-      { action: "freeze", disabled: clip.type !== "video" },
-      { action: "detachAudio", disabled: clip.type !== "video" },
       ...(syncVideo && syncSound
         ? ([
             { label: "Sync audio by waveform", onSelect: () => sync(false) },
             { label: "Sync audio and mute camera sound", onSelect: () => sync(true) },
           ] as MenuItem[])
         : []),
-      { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
-      { action: "groupClips", disabled: store.get().selection.length < 2 },
-      ...(clip.group ? ([{ action: "ungroupClips" }] as MenuItem[]) : []),
       "-",
+      { label: "Copy effects", disabled: !("effects" in clip) || !clip.effects.length, onSelect: () => copyEffects(clip.id) },
+      { label: "Paste effects", disabled: !copiedEffects()?.effects.length || !effectTargets.length, onSelect: () => pasteEffects(effectTargets) },
+      "-",
+      { label: "Rename…", disabled: lockedTrack, onSelect: () => setRenaming(clip.id) },
+      { action: "groupClips", disabled: store.get().selection.length < 2 },
+      { action: "ungroupClips", disabled: !sel.some((l) => l.clip.group) },
+      { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
       { action: "createCompound" },
       ...(clip.type === "compound"
         ? ([{ label: "Open compound clip", onSelect: () => openCompound(clip.id) }, { action: "breakCompound", label: "Break apart" }] as MenuItem[])
@@ -811,6 +857,8 @@ export function Timeline() {
                         onDown={onClipDown}
                         onContext={onContext}
                         onOpen={onOpenClip}
+                        renaming={renaming === c.id}
+                        onRename={onRename}
                       />
                     );
                   })}

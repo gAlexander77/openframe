@@ -27,7 +27,7 @@ import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
-import { currentScreen, newProject, openProject, saveProjectCopy } from "./state/project";
+import { currentScreen, listSaved, newProject, openProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -313,7 +313,8 @@ const mcpHost: McpHost = {
   ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
-    const saved = await platform.listProjects();
+    // Recently deleted projects are not offered (ADR-078).
+    const { live: saved } = await listSaved();
     // A new project is saved once it is touched (state/project.ts); until
     // then it is listed as the open one all the same.
     const doc = store.document();

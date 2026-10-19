@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   audioWindows,
+  CAPTION_EXPORTS,
+  captionPlan,
+  withFormat,
   defaultExportSettings,
   defaultResolution,
   estimateBytes,
@@ -230,5 +233,36 @@ describe("presets made for a canvas shape", () => {
     );
     expect(shapeWarning(social, tall, { width: 1080, height: 1920 })).toBeNull();
     expect(shapeWarning(EXPORT_PRESETS[0], tall, null)).toBeNull();
+  });
+});
+
+describe("MP3 and captions on export", () => {
+  it("plans an MP3 as an audio-only export", () => {
+    const p = withClip(createProject(), 60);
+    const plan = planExport(p, withFormat(defaultExportSettings(p), "mp3"), noRange);
+    expect(plan).toMatchObject({ container: "mp3", extension: "mp3", mime: "audio/mpeg", video: null, frames: 0 });
+    expect(plan.audio).toMatchObject({ codec: "mp3", bitrate: 256_000, sampleRate: 48000, channels: 2 });
+    expect(EXPORT_PRESETS.find((x) => x.id === "mp3")!.settings).toEqual({ video: false, audio: true, audioFormat: "mp3" });
+  });
+
+  it("takes a format by name, fitting the codec to a video container", () => {
+    const s = defaultExportSettings(createProject());
+    expect(withFormat(s, undefined)).toBe(s);
+    expect(withFormat(s, "wav")).toMatchObject({ video: false, audio: true, audioFormat: "wav" });
+    expect(withFormat(s, "webm")).toMatchObject({ video: true, format: "webm", codec: "vp9" });
+    expect(withFormat({ ...s, video: false }, "mov")).toMatchObject({ video: true, format: "mov", codec: "avc" });
+    expect(() => withFormat(s, "avi")).toThrow("Unknown format avi");
+  });
+
+  it("burns captions in by default; an SRT goes beside the file when asked", () => {
+    const s = defaultExportSettings(createProject());
+    expect(s.captions).toBe("burn");
+    expect(captionPlan(s)).toEqual({ burn: true, sidecar: false });
+    expect(captionPlan({ ...s, captions: "srt" })).toEqual({ burn: false, sidecar: true });
+    expect(captionPlan({ ...s, captions: "both" })).toEqual({ burn: true, sidecar: true });
+    expect(captionPlan({ ...s, captions: "none" })).toEqual({ burn: false, sidecar: false });
+    // Sound alone has no picture to burn into.
+    expect(captionPlan({ ...s, video: false, captions: "both" })).toEqual({ burn: false, sidecar: true });
+    expect(CAPTION_EXPORTS.map((c) => c.id)).toEqual(["burn", "srt", "both", "none"]);
   });
 });

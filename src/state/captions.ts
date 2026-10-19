@@ -4,22 +4,15 @@
 // produce the same clips.
 
 import { transcribeTimeline, type TranscribeProgress } from "../engine/transcribe";
-import { DEFAULT_LINES, parseSubtitles, toSrt, toVtt, wordsToCaptions, type Caption } from "../lib/captions";
+import { currentCaptions, DEFAULT_LINES, parseSubtitles, toSrt, toVtt, wordsToCaptions } from "../lib/captions";
 import { runCommand } from "../lib/commands";
-import type { Project, TextClip, TextStyle } from "../lib/project/types";
-import { framesToSeconds } from "../lib/time";
+import type { TextStyle } from "../lib/project/types";
 import { platform } from "../platform";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export function captionClips(p: Project): TextClip[] {
-  return p.tracks.flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption)).sort((a, b) => a.start - b.start);
-}
-
-export function currentCaptions(p: Project): Caption[] {
-  return captionClips(p).map((c) => ({ start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps), text: c.text }));
-}
+export { captionClips, currentCaptions } from "../lib/captions";
 
 let running: AbortController | null = null;
 

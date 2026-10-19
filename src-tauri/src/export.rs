@@ -257,6 +257,45 @@ pub async fn export_finish(
     Ok(())
 }
 
+/// Where a finished export's sidecar goes: beside it, with its name and
+/// `extension` ("srt"); `None` for an extension that is not plain letters.
+fn sidecar_path(export: &Path, extension: &str) -> Option<PathBuf> {
+    let plain = !extension.is_empty()
+        && extension.len() <= 8
+        && extension.chars().all(|c| c.is_ascii_alphanumeric());
+    plain.then(|| export.with_extension(extension))
+}
+
+/// Write a text file beside a finished export (captions as `.srt`): the
+/// page names the export by id and the extension, never a path. A file of
+/// that name there is replaced, as the export itself was when the person
+/// chose its name. Answers the sidecar's path.
+#[tauri::command]
+pub async fn export_sidecar(
+    id: u32,
+    extension: String,
+    text: String,
+    exports: tauri::State<'_, Exports>,
+) -> Result<String, String> {
+    let export = exports
+        .done
+        .lock()
+        .unwrap()
+        .get(&id)
+        .cloned()
+        .ok_or("unknown export")?;
+    let dest = sidecar_path(&export, &extension).ok_or("a sidecar needs a plain extension")?;
+    let tmp = dest.with_extension(format!("{extension}.part"));
+    tauri::async_runtime::spawn_blocking(move || {
+        let shown = |e: std::io::Error| format!("{}: {e}", dest.display());
+        std::fs::write(&tmp, text.as_bytes()).map_err(shown)?;
+        files::replace(&tmp, &dest).map_err(shown)?;
+        Ok(dest.display().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// Show a finished export in the system file manager.
 #[tauri::command]
 pub async fn export_reveal(id: u32, exports: tauri::State<'_, Exports>) -> Result<(), String> {
@@ -348,6 +387,18 @@ mod tests {
         write_all_at(&ex.file(id).unwrap(), b"partial", 0).unwrap();
         complete(ex.take(id).unwrap(), false).unwrap();
         assert_eq!(std::fs::read_dir(&d).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn sidecars_sit_beside_their_export() {
+        let v = Path::new("C:/Videos/Trip (2).mp4");
+        assert_eq!(
+            sidecar_path(v, "srt"),
+            Some(PathBuf::from("C:/Videos/Trip (2).srt"))
+        );
+        assert_eq!(sidecar_path(v, "../x"), None);
+        assert_eq!(sidecar_path(v, ""), None);
+        assert_eq!(sidecar_path(v, "s.rt"), None);
     }
 
     #[test]

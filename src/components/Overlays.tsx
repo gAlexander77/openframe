@@ -31,6 +31,17 @@ export function Toasts() {
               <span style={{ transform: `scaleX(${t.progress})` }} />
             </span>
           )}
+          {t.action && (
+            <button
+              className="toast-action"
+              onClick={() => {
+                dismiss(t.id);
+                t.action!.run();
+              }}
+            >
+              {t.action.label}
+            </button>
+          )}
           {t.kind !== "progress" && (
             <button className="toast-x" aria-label="Dismiss" onClick={() => dismiss(t.id)}>
               <X size={12} />

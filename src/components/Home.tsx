@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Copy, Pencil, Plus, Search, Trash2 } from "../icons";
+import { Clapperboard, Copy, Pencil, Plus, RotateCcw, Search, Trash2 } from "../icons";
+import { expiryText, TRASH_DAYS } from "../lib/projectTrash";
 import { formatDuration } from "../lib/time";
 import { platform, type ProjectSummary } from "../platform";
-import { duplicateProject, newProject, openProject, renameProject, useSession } from "../state/project";
+import { duplicateProject, listSaved, newProject, openProject, renameProject, restoreProject, trashProject, useSession } from "../state/project";
 import { toast } from "../state/toast";
 import "./home.css";
 
@@ -32,16 +33,36 @@ export function Home() {
   const { openRequest, transitioning } = useSession();
   const search = useRef<HTMLInputElement>(null);
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
+  /** Recently deleted (ADR-078). */
+  const [trash, setTrash] = useState<ProjectSummary[]>([]);
   const [q, setQ] = useState("");
+  /** A trashed project armed for Delete forever: that one cannot be undone. */
   const [confirm, setConfirm] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
   const failed = (e: unknown) => toast(e instanceof Error ? e.message : String(e), "error");
 
   const refresh = () =>
-    platform
-      .listProjects()
-      .then(setProjects)
+    listSaved()
+      .then(({ live, trash }) => {
+        setProjects(live);
+        setTrash(trash);
+      })
       .catch(() => setProjects([]));
+  // Delete moves a project to Recently deleted at once, with Undo on the
+  // toast; Delete forever there asks twice.
+  const remove = (p: ProjectSummary) =>
+    void trashProject(p).then(() => {
+      void refresh();
+      toast(`Moved “${p.name}” to Recently deleted`, "info", 8000, { label: "Undo", run: () => void restoreProject(p).then(refresh, failed) });
+    }, failed);
+  const deleteForever = (p: ProjectSummary) => {
+    if (confirm !== p.id) {
+      setConfirm(p.id);
+      setTimeout(() => setConfirm((c) => (c === p.id ? null : c)), 3000);
+      return;
+    }
+    void platform.deleteProject(p.id).then(refresh, failed);
+  };
   useEffect(() => {
     void refresh();
   }, []);
@@ -89,8 +110,8 @@ export function Home() {
         {projects === null ? null : shown.length === 0 ? (
           <div className="home-empty">
             <Clapperboard size={28} strokeWidth={1.4} />
-            <strong>{q ? `No project matches “${q}”` : "No projects yet"}</strong>
-            <span>{q ? "Try another name." : "Projects save automatically as you edit. Create one to get started."}</span>
+            <strong>{q ? `No project matches “${q}”` : trash.length ? "No projects here" : "No projects yet"}</strong>
+            <span>{q ? "Try another name." : trash.length ? "Restore one from Recently deleted below, or create one." : "Projects save automatically as you edit. Create one to get started."}</span>
           </div>
         ) : (
           <div className="project-grid">
@@ -121,22 +142,16 @@ export function Home() {
                     </button>
                   </span>
                   <button
-                    className={`project-delete${confirm === p.id ? " armed" : ""}`}
+                    className="project-delete"
                     disabled={transitioning}
-                    aria-label={confirm === p.id ? `Confirm delete ${p.name}` : `Delete ${p.name}`}
-                    data-tip={confirm === p.id ? "Click again to delete" : "Delete project"}
+                    aria-label={`Delete ${p.name}`}
+                    data-tip="Delete project (it waits in Recently deleted)"
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm !== p.id) {
-                        setConfirm(p.id);
-                        setTimeout(() => setConfirm((c) => (c === p.id ? null : c)), 3000);
-                        return;
-                      }
-                      void platform.deleteProject(p.id).then(refresh);
+                      remove(p);
                     }}
                   >
                     <Trash2 size={13} />
-                    {confirm === p.id && <span>Delete?</span>}
                   </button>
                 </div>
                 {renaming === p.id ? (
@@ -167,6 +182,36 @@ export function Home() {
               </div>
             ))}
           </div>
+        )}
+        {trash.length > 0 && (
+          <details className="home-trash">
+            <summary>
+              Recently deleted <span className="num">({trash.length})</span>
+            </summary>
+            <p className="home-trash-note">Deleted projects wait here for {TRASH_DAYS} days, then they are deleted for good. Their media files are never touched.</p>
+            <ul className="trash-list">
+              {trash.map((p) => (
+                <li key={p.id} className="trash-row">
+                  <span className="trash-thumb">{p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Clapperboard size={16} strokeWidth={1.3} />}</span>
+                  <span className="trash-info">
+                    <strong className="project-card-name">{p.name}</strong>
+                    <span className="project-meta">{expiryText(p.deletedAt!, Date.now())}</span>
+                  </span>
+                  <button className="btn" disabled={transitioning} aria-label={`Restore ${p.name}`} onClick={() => void restoreProject(p).then(refresh, failed)}>
+                    <RotateCcw size={13} /> Restore
+                  </button>
+                  <button
+                    className={`btn ghost trash-forever${confirm === p.id ? " armed" : ""}`}
+                    disabled={transitioning}
+                    aria-label={confirm === p.id ? `Confirm delete ${p.name} forever` : `Delete ${p.name} forever`}
+                    onClick={() => deleteForever(p)}
+                  >
+                    <Trash2 size={13} /> {confirm === p.id ? "Click again to delete forever" : "Delete forever"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
         {platform.kind === "web" && <p className="home-note">Web projects and imported media are kept in this browser's private storage. Clearing site data removes them.</p>}
       </section>

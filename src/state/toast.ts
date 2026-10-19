@@ -9,6 +9,8 @@ export interface Toast {
   kind: "info" | "error" | "progress";
   /** 0..1 for progress toasts. */
   progress?: number;
+  /** A button on the toast (Undo); pressing it dismisses the toast. */
+  action?: { label: string; run: () => void };
 }
 
 let toasts: Toast[] = [];
@@ -16,9 +18,9 @@ let next = 1;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
-export function toast(text: string, kind: Toast["kind"] = "info", ms = kind === "error" ? 6000 : 2600): number {
+export function toast(text: string, kind: Toast["kind"] = "info", ms = kind === "error" ? 6000 : 2600, action?: Toast["action"]): number {
   const id = next++;
-  toasts = [...toasts.slice(-3), { id, text, kind }];
+  toasts = [...toasts.slice(-3), { id, text, kind, ...(action ? { action } : {}) }];
   emit();
   if (kind !== "progress") setTimeout(() => dismiss(id), ms);
   return id;

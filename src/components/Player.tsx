@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player } from "../engine/player";
-import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
+import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat, SkipBack, SkipForward } from "../icons";
 import { toast } from "../state/toast";
 import { boxesAt, hitClipAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
@@ -216,6 +216,9 @@ function Transport() {
     <div className="transport">
       <Timecodes />
       <div className="transport-center">
+        <button className="icon-btn" aria-label="Go to start" data-tip={tipFor("goStart")} onClick={() => run("goStart")}>
+          <SkipBack />
+        </button>
         <button className="icon-btn" aria-label="Previous frame" data-tip={tipFor("stepBack")} onClick={() => run("stepBack")}>
           <ChevronLeft />
         </button>
@@ -224,6 +227,9 @@ function Transport() {
         </button>
         <button className="icon-btn" aria-label="Next frame" data-tip={tipFor("stepForward")} onClick={() => run("stepForward")}>
           <ChevronRight />
+        </button>
+        <button className="icon-btn" aria-label="Go to end" data-tip={tipFor("goEnd")} onClick={() => run("goEnd")}>
+          <SkipForward />
         </button>
         <button className={`icon-btn loop-btn${loop ? " on" : ""}`} aria-label="Loop playback" aria-pressed={loop} data-tip={tipFor("toggleLoop", "Loop playback")} onClick={() => run("toggleLoop")}>
           <Repeat />

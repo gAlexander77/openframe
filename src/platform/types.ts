@@ -3,6 +3,7 @@
 // app branches on platform.
 
 import type { Source, StreamTargetChunk } from "mediabunny";
+import type { AboutLink } from "../lib/about";
 import type { AgentCli, AgentCliResult } from "../lib/agentSetup";
 import type { Project } from "../lib/project/types";
 
@@ -24,6 +25,9 @@ export interface ProjectSummary {
   duration: number;
   /** Small JPEG data URL of a frame, when one was saved. */
   thumbnail?: string;
+  /** When it went to Home's Recently deleted (ms since 1970); absent
+   * while it is live (lib/projectTrash.ts, ADR-078). */
+  deletedAt?: number;
 }
 
 export interface ExportTarget {
@@ -37,6 +41,10 @@ export interface ExportTarget {
    * when the file is already where the user chose and there is nothing to
    * reveal. */
   revealLabel?: string;
+  /** After the export finished: a text file beside it with its name and
+   * `extension` (captions as .srt). Desktop writes it in the same folder;
+   * the web downloads it. Answers where it went, as displayName does. */
+  sidecar?(extension: string, text: string): Promise<string>;
 }
 
 export interface Platform {
@@ -70,6 +78,10 @@ export interface Platform {
     /** Desktop: open the CLI's install guide in the default browser. */
     openInstallPage?(cli: AgentCli): Promise<void>;
   };
+
+  /** Open one of Help > About's pages in the default browser (desktop:
+   * by name, through Rust; web: a new tab). */
+  openLink(page: AboutLink): Promise<void>;
 
   /** fetch for the local model servers (Ollama, LM Studio). The desktop
    * webview's origin is refused by Ollama's CORS, so Rust makes the call. */

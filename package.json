@@ -14,6 +14,7 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.1",
     "@mediabunny/aac-encoder": "^1.61.4",
+    "@mediabunny/mp3-encoder": "^1.61.4",
     "@tauri-apps/api": "^2.12.3",
     "@tauri-apps/plugin-dialog": "^2.8.2",
     "gifenc": "^1.0.3",

@@ -86,6 +86,7 @@ Vaidhyanathan, CC0, Wikimedia Commons.
 | @img/colour | 1.1.0 | MIT |
 | @img/sharp-win32-x64 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later |
 | @mediabunny/aac-encoder | 1.61.4 | MPL-2.0 |
+| @mediabunny/mp3-encoder | 1.61.4 | MPL-2.0 (added 2026-10-18 for MP3 export; bundles a WebAssembly build of the LAME MP3 Encoder, LGPL, credited with a link in Help > About as LAME's license page asks) |
 | @protobufjs/aspromise | 1.1.2 | BSD-3-Clause |
 | @protobufjs/base64 | 1.1.2 | BSD-3-Clause |
 | @protobufjs/codegen | 2.0.5 | BSD-3-Clause |

@@ -117,6 +117,8 @@ export const desktop: Platform = {
 
   kind: "desktop",
 
+  openLink: (page) => invoke<void>("about_open", { page }),
+
   async pickMedia() {
     const picked = await open({
       multiple: true,
@@ -222,10 +224,16 @@ export const desktop: Platform = {
       writable: writeJob(begun.id),
       displayName: begun.displayName,
       reveal: () => invoke<void>("export_reveal", { id: begun.id }),
+      sidecar: (extension, text) => invoke<string>("export_sidecar", { id: begun.id, extension, text }),
     };
   },
   async createAgentExportTarget(suggestedName, extension) {
     const begun = await invoke<{ id: number; displayName: string }>("export_begin_auto", { suggestedName, extension });
-    return { writable: writeJob(begun.id), displayName: begun.displayName, reveal: () => invoke<void>("export_reveal", { id: begun.id }) };
+    return {
+      writable: writeJob(begun.id),
+      displayName: begun.displayName,
+      reveal: () => invoke<void>("export_reveal", { id: begun.id }),
+      sidecar: (extension, text) => invoke<string>("export_sidecar", { id: begun.id, extension, text }),
+    };
   },
 };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { casedText, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, wordsToCaptions, type Word } from "./captions";
+import { captionClips, captionsInRange, casedText, currentCaptions, DEFAULT_LINES, parseSubtitles, quietCuts, replaceText, rms10ms, toSrt, toVtt, withoutCaptions, wordsToCaptions, type Word } from "./captions";
+import { createProject, createTextClip } from "./project/defaults";
 
 const words = (s: string, step = 0.3, gapAfter: Record<number, number> = {}): Word[] => {
   let t = 0;
@@ -104,4 +105,32 @@ it("shows text in a style's case and keeps the typed text", () => {
   expect(casedText("Hello World", "lower")).toBe("hello world");
   expect(casedText("hello wörld\nnew LINE", "title")).toBe("Hello Wörld\nNew LINE");
   expect(casedText("as typed", undefined)).toBe("as typed");
+});
+
+describe("captions on export", () => {
+  it("times captions from the export's start and cuts them at its ends", () => {
+    const caps = [
+      { start: 0, end: 1.5, text: "before" },
+      { start: 1.5, end: 3, text: "across the start" },
+      { start: 3, end: 5, text: "inside" },
+      { start: 5.5, end: 7, text: "across the end" },
+      { start: 8, end: 9, text: "after" },
+    ];
+    expect(captionsInRange(caps, 2, 6)).toEqual([
+      { start: 0, end: 1, text: "across the start" },
+      { start: 1, end: 3, text: "inside" },
+      { start: 3.5, end: 4, text: "across the end" },
+    ]);
+  });
+
+  it("switches caption clips off and leaves other titles drawn", () => {
+    const p = createProject();
+    const cap = { ...createTextClip("Hi", 30, 30), caption: true };
+    const title = createTextClip("Title", 0, 30);
+    p.tracks[0] = { ...p.tracks[0], clips: [title, cap].sort((a, b) => a.start - b.start) };
+    expect(currentCaptions(p)).toEqual([{ start: 1, end: 2, text: "Hi" }]);
+    const q = withoutCaptions(p);
+    expect(captionClips(q)[0].disabled).toBe(true);
+    expect(q.tracks[0].clips.find((c) => c.id === title.id)!.disabled).toBeUndefined();
+  });
 });

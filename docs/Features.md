@@ -7,7 +7,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Home screen** with a Create project card and canvas presets named for
   where the video goes (16:9 YouTube, 9:16 TikTok/Reels/Shorts, 1:1, 4:5,
-  21:9), and searchable project cards with thumbnails. Delete asks twice;
+  21:9), and searchable project cards with thumbnails. **Delete** moves a
+  project to **Recently deleted** at once, with **Undo** on the toast;
+  there it waits 30 days (Restore, or Delete forever, which asks twice)
+  and is then deleted for good. Agents never see it there
+  ([[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]]).
   **Rename** (in place, without opening) and **Duplicate** ("Name copy",
   sharing the same media files) sit on each card, as in CapCut.
 - **Canvas size in pixels** (project Details > Size, CapCut's custom
@@ -67,6 +71,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
+- **Rename media** (right-click a media card > Rename, or double-click
+  its name; `rename_media`): the project's name for the file, which stays
+  as it is on disk; clips without a name of their own follow it. A
+  double-click on the name no longer adds the file to the timeline (the
+  rest of the card still does).
 - **Folders and favorites:** saved virtual folders, undoable folder rename/delete
   and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame
@@ -107,6 +116,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
+- **The clip menu** (right-click a clip; CapCut's and Premiere's): Cut,
+  Copy, Paste, Duplicate, Delete, **Ripple delete**; Split, **Speed…**
+  (opens the inspector's Speed tab), **Reverse** (a check: every selected
+  clip that can play backward turns, by `set_reverse`'s own rule), Freeze
+  frame, Extract audio, Replace clip; **Copy effects** and **Paste
+  effects** (the inspector's effect clipboard, onto every selected clip
+  that takes effects); Rename, Group, **Ungroup** (always listed, off
+  unless a selected clip is grouped), Activate, compound clips; keyframes,
+  range and Label. Every row runs the action or command the rest of the
+  app uses. A menu taller than the window scrolls inside it.
 - **Library drags land where the preview shows**, by CapCut's rules: video
   and images dropped above the tracks become a picture-in-picture overlay
   on a new track at the drop time; on the magnetic main track they insert
@@ -122,6 +141,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   move, copy and delete together across tracks, each keeping its own
   settings; Alt+click picks one alone, as in Premiere. Pasted copies form
   their own group.
+- **Rename clips** (right-click > Rename, or double-click the name on a
+  clip's strip; `rename_clip`; Premiere's Rename): the name shows on the
+  timeline instead of the file's name, a title's words or an effect
+  layer's effects; an empty name gives the default back. Titles keep
+  CapCut's double-click for their words, so they rename from the menu.
+  One undo step each.
 - **Clip labels** (right-click > Label; `set_clip_label`; Premiere's
   Label, Resolve's Clip Color): eight muted colors paint the selected
   clips' body and name strip, so an edit can be sorted by eye. Splits and
@@ -210,10 +235,19 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   are kept as shares of the window, so a bigger screen grows them all
   (CapCut's behavior). Drag the splitters (double-click resets one); View
   has Default, Large preview and Large timeline layouts and Reset layout.
-- **Preferences** (Edit > Preferences, Ctrl+,; Premiere's Timeline
-  preferences): the lengths new pictures (5 s), titles and effect layers
-  (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap
-  and layout, never in a project.
+- **About** (Help > About, on Home and in the editor): name, version and
+  platform; the GPL-3.0-only license with a link to its text; links to the
+  source code, the user guide and [[Third-party licenses]]; and the
+  open-source packages the app uses directly, with versions and licenses,
+  read from `package.json`, the installed packages, `Cargo.toml` and
+  `Cargo.lock` when the app is built (`src/lib/about.ts`), so the list
+  cannot drift. The desktop app opens these pages by name through Rust
+  (`about_open`), never a URL from the webview; the web build opens a tab.
+- **Preferences** (the gear in the title bar, Edit > Preferences, Ctrl+,;
+  Home too; Premiere's Timeline preferences): the lengths new pictures
+  (5 s), titles and effect layers (3 s) and transitions (0.5 s) start at,
+  and audio scrubbing. Per viewer, kept with the keymap and layout, never
+  in a project.
 
 ## Viewer
 
@@ -280,13 +314,21 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
-  shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
+  shuttle; **Go to start** and **Go to end** buttons around the frame
+  steps in the transport (CapCut's and Premiere's, the keymap's Home and
+  End actions, so their tooltips name the keys as rebound); **Loop** (the transport's repeat button, Mod+L) goes round the
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
   click the current timecode to **type where to go** (Premiere's Playhead
   Position): a timecode, digits read right to left (1000 is ten seconds),
   or +/- an offset (+15 is fifteen frames on);
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
+- **Audio scrubbing** (CapCut's, Premiere's "Play audio while
+  scrubbing"): dragging the playhead on the ruler while paused plays
+  90 ms snippets of the mix where it lands, one after another, through
+  playback's own scheduler, so every effect and fade is heard; never while
+  playing. Preferences > Playback turns it off
+  ([[ADR-079 Audio scrubbing plays snippets through the playback scheduler]]).
 - Stereo peak meter, and a **loudness line** under it (Premiere's
   Loudness Meter in one row): momentary, short-term and integrated LUFS
   of what plays (EBU R128, an AudioWorklet K-weighting the master bus),
@@ -818,7 +860,19 @@ makes a 13 s one). Times are timeline seconds.
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
-  rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+  rate, in/out range, audio-only (AAC in M4A, MP3, WAV) and still frames.
+- **MP3** (audio only, and the Audio only (MP3) preset): 256 kbps, 48 kHz
+  stereo, encoded by LAME in WebAssembly (`@mediabunny/mp3-encoder`), loaded
+  by the first MP3 export, on the desktop and the web alike;
+  `export_video` format `mp3` (or `m4a`, `wav`) for agents.
+- **Captions on export** (the dialog's Captions row, shown when the
+  project has captions; `export_video` `captions`; Premiere's burn-in or
+  sidecar): **Burn into the picture** (the default), **SRT file beside
+  it** with the picture left clean, both, or leave them out. The SRT is
+  timed to the exported range (an In-to-Out export starts at 0). The
+  desktop app saves `<name>.srt` beside the export; the web build
+  downloads it. Agents get its path as `captions_file`
+  ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
 - **Save frame as PNG** from the player (the camera button, File menu,
   Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
   at the project's size, without the export dialog.

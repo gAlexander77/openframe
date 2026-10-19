@@ -67,6 +67,19 @@ exported (a 16:9 project stays 1920×1080) and offers **Make the canvas
 When a mix is normalized to its loudness target, the finished export says
 so in green; an amber note means something did not go as asked.
 
+For the sound alone, turn **Video** off and choose MP3, AAC (M4A) or WAV,
+or pick the **Audio only (MP3)** preset. When the project has captions,
+the **Captions** row decides what becomes of them: burned into the
+picture (as you see them), an **SRT file beside it** for YouTube and other
+sites that take one (the picture stays clean), both, or none. The SRT
+matches the exported range. The desktop app saves it next to the video
+with the same name; the browser version downloads it.
+
+Under the player, the outer buttons jump to the start and the end of the
+timeline, and the inner ones step a frame. Drag the playhead along the
+ruler to hear short snippets of the sound under it, to find a word or a
+beat by ear; turn this off in **Preferences** under Playback. The gear at the top right opens
+**Preferences** (also on Home); the keyboard beside it lists the shortcuts.
 The app's shortcut panel is the source for the current keyboard bindings.
 [[Features]] explains the deeper trim, color, keyframe, and audio tools.
 
@@ -87,8 +100,14 @@ Edits made while a save is running are saved before navigation completes.
 While a project is opening or the old one is being saved for a switch,
 repeated navigation requests are ignored. Home shows **Opening project…**
 and disables creation/deletion during loading; retry after it finishes.
-A focused project card opens with Enter or Space. Activating its Delete
-button with the keyboard only arms deletion, just like clicking it.
+A focused project card opens with Enter or Space; its Delete button never
+opens it.
+
+Deleting a project moves it to **Recently deleted** at the bottom of Home,
+and the notice that says so has **Undo**. A deleted project waits there
+for 30 days: open the section to **Restore** it (it returns to its place)
+or **Delete forever** (click twice; this cannot be undone). After 30 days
+it is deleted for good. Your media files are never deleted.
 
 Closing or switching projects cancels unfinished captions/analysis and
 discards late import results. Reopening the same project starts a new session;
@@ -119,6 +138,11 @@ to select every referencing clip and seek the earliest one. Counts include
 disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
 
+To rename a file in the project, right-click its card and choose
+**Rename…**, or double-click its name; Enter keeps the new name and Escape
+the old one. The file on disk keeps its own name, and clips you have not
+renamed show the new one.
+
 Drag a row, double-click it, or use its Add button to place media, just as
 with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
@@ -137,6 +161,15 @@ a music bed covering two or more complete shots stays at its timeline time.
 Adding a title or sticker briefly previews its In animation, then restores
 the playhead. Reduced motion skips that preview. Pausing a preview stops it
 without a later jump back.
+
+Right-click a clip for the everyday edits in one place: Ripple delete,
+Split, **Speed…** (opens the Speed tab), **Reverse** (shows a check while
+the clip plays backward), **Copy effects** and **Paste effects** (onto
+every selected clip), Rename, Ungroup and Duplicate, among others.
+
+Name a clip with right-click > **Rename…**, or double-click the name on
+its strip (a title's double-click edits its words, so use the menu for
+titles). Clear the name to show the file's name again.
 
 Add a transition between touching clips, or click its timeline marker, to
 open **Transition** settings. Undo history gives agent edits readable names
@@ -282,6 +315,14 @@ External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection (with step-by-step
 Codex CLI and Claude Code setup), headless rendering, and the `openframe`
 command line. [[AI tools]] records the algorithms and limits.
+
+## About OpenFrame
+
+**Help → About OpenFrame** shows the version, the license (GPL-3.0-only:
+you may share and change the app under its terms) and the open-source
+packages it is built with. Its links open the license text, the source
+code, this guide and the full list of third-party licenses in your
+browser.
 
 ## Report a problem or help improve it
 

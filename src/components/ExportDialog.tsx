@@ -10,6 +10,8 @@ import { encodableVideoCodecs } from "../engine/export";
 import { Check, ChevronDown, CircleAlert, Download, Clock, Film, FolderOpen, ImageDown, Loader2, X } from "../icons";
 import {
   AUDIO_FORMATS,
+  CAPTION_EXPORTS,
+  captionPlan,
   CODEC_LABELS,
   QUALITY_LEVELS,
   RESOLUTIONS,
@@ -33,6 +35,7 @@ import {
   planExport,
   sameRate,
   type AudioFormat,
+  type CaptionExport,
   type ExportSettings,
   type QualityLevel,
   type ResolutionId,
@@ -40,6 +43,7 @@ import {
   type VideoFormat,
 } from "../lib/export";
 import type { Project } from "../lib/project/types";
+import { captionClips } from "../lib/captions";
 import { canvasSize } from "../lib/canvas";
 import { formatDuration } from "../lib/time";
 import { platform } from "../platform";
@@ -59,7 +63,7 @@ const markKey = (id: "markIn" | "markOut") => {
 
 /** Choices remembered between exports (not the name, rate or range, which
  * belong to the project). */
-const REMEMBERED = ["video", "format", "codec", "resolution", "quality", "customMbps", "audio", "audioFormat", "loudness"] as const;
+const REMEMBERED = ["video", "format", "codec", "resolution", "quality", "customMbps", "audio", "audioFormat", "loudness", "captions"] as const;
 
 function loadSettings(p: Project): ExportSettings {
   const base = defaultExportSettings(p);
@@ -469,6 +473,8 @@ function SettingsView() {
             </Row>
           </Section>
 
+          {captionClips(project).length > 0 && <CaptionsRow s={s} set={set} />}
+
           <Row label="Range">
             <div className="segmented" role="radiogroup" aria-label="Range">
               <button role="radio" aria-checked={s.range === "all"} className={s.range === "all" ? "on" : ""} onClick={() => set({ range: "all" })}>
@@ -622,6 +628,32 @@ function ProgressView({ view }: { view: Extract<ExportView, { phase: "running" }
   );
 }
 
+/** What becomes of the captions (ADR-080): burned into the picture, an SRT
+ * file beside the export, both, or neither. Audio-only has no picture, so
+ * it offers the file or nothing. */
+function CaptionsRow({ s, set }: { s: ExportSettings; set: (patch: Partial<ExportSettings>) => void }) {
+  const plan = captionPlan(s);
+  const value: CaptionExport = s.video ? s.captions : plan.sidecar ? "srt" : "none";
+  return (
+    <>
+      <Row label="Captions" htmlFor="export-captions">
+        <Select id="export-captions" value={value} onChange={(x) => set({ captions: x as CaptionExport })}>
+          {CAPTION_EXPORTS.filter((o) => s.video || o.id === "srt" || o.id === "none").map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+        </Select>
+      </Row>
+      {plan.sidecar && (
+        <p className="export-row-hint">
+          {platform.kind === "desktop" ? "The .srt file is saved beside the export, with its name." : "The .srt file downloads when the export is done, with its name."}
+        </p>
+      )}
+    </>
+  );
+}
+
 function DoneView({ view }: { view: Extract<ExportView, { phase: "done" }> }) {
   const r = view.result;
   return (
@@ -631,6 +663,7 @@ function DoneView({ view }: { view: Extract<ExportView, { phase: "done" }> }) {
       </div>
       <h3 className="export-title">Export complete</h3>
       <div className="export-file">{view.fileName}</div>
+      {view.captionsFile && <div className="export-file export-sidecar">Captions: {view.captionsFile.split(/[\\/]/).pop()}</div>}
       <div className="export-stats num">
         {formatDuration(r.seconds)} · {formatBytes(r.bytes)} · made in {r.elapsed < 10 ? r.elapsed.toFixed(1) : Math.round(r.elapsed)} s
         {r.videoCodec ? ` · ${CODEC_LABELS[r.videoCodec]}` : ""}
