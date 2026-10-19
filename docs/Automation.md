@@ -398,8 +398,20 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `export_versions` renders the deliverables in one call: `{"ratios":
 ["16:9", "9:16", "1:1"], "durations": [15, 6], "textless": true,
 "loudness": -14}` (or `versions` spelled out, each `ratio`, `duration`,
-`textless`, `fit`, `name`), one file each, the project untouched; with
-`"check": true` it answers a contact sheet of every version instead.
+`textless`, `fit`, `name`, `reframe`, `focus`), one file each, the project
+untouched; with `"check": true` it answers a contact sheet of every
+version instead, and with `"save_projects": true` it saves each version as
+a project of its own (named as its file, sharing the media) to fine-tune
+and export with `export_video`. Footage a new shape crops is framed on its
+subject and follows it ([[ADR-097 Checks and versions judge by the picture]]):
+the app looks at every full-frame shot every half second, finds what
+stands out (minimum barrier distance plus spectral residual), places the
+crop over it inside what the master showed (keyed pushes and pans kept),
+and keys the shot's position; `reframe: "center"` keeps the old centered
+crop and `focus: [{clip_id, x, y}]` puts a point of a clip's picture at
+the frame's center. The check sheet outlines in orange a subject a
+framing still cuts and lists each in `subjects`, with the focus that
+keeps it.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
 length). `captions` (on the call or a version) is `burn`, `none` or
 `as_project`: a tall version (9:16, 4:5) burns them by default, even from

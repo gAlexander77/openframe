@@ -45,7 +45,11 @@ function host() {
     },
     async versionsSheet(o: unknown) {
       h.versionCalls.push(o);
-      return "iVBOR";
+      return { image: "iVBOR", subjects: [{ version: "Roast 9x16", reports: [{ clip_id: "c1", at: 1, kept: 0.4 }] }] };
+    },
+    async saveVersions(o: unknown) {
+      h.versionCalls.push(o);
+      return [{ id: "p_v", name: "Roast 9x16" }];
     },
     voiced: [] as unknown[][],
     async voiceover(lines: unknown, options: unknown) {
@@ -277,6 +281,20 @@ describe("MCP ad tools", () => {
     expect(h.versionCalls).toEqual([{ versions: [{ ratio: "1:1", fit: "blur" }] }]);
     const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
     expect(none!.result).toMatchObject({ isError: true });
+  });
+
+  it("frames versions on their subject or by hand, says what a framing cuts, and saves versions as projects", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "9:16", focus: [{ clip_id: "c1", x: 0.7 }] }, { ratio: "1:1" }], reframe: "center", check: true } });
+    expect(h.versionCalls.at(-1)).toEqual({ versions: [{ ratio: "9:16", reframe: "center", focus: [{ clip_id: "c1", x: 0.7 }] }, { ratio: "1:1", reframe: "center" }] });
+    const said = JSON.parse((r!.result as { content: { text: string }[] }).content[1].text);
+    expect(said.subjects).toEqual([{ version: "Roast 9x16", reports: [{ clip_id: "c1", at: 1, kept: 0.4 }] }]);
+    expect(said.note).toMatch(/orange outline marks a subject/);
+    const saved = JSON.parse(text(await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], save_projects: true } })));
+    expect(saved.projects).toEqual([{ id: "p_v", name: "Roast 9x16" }]);
+    expect(saved.note).toMatch(/^Nothing exported\. Each version is a project of its own: open_project/);
+    const bad = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], reframe: "left" } });
+    expect(bad!.result).toMatchObject({ isError: true });
   });
 
   it("passes captions to every version that does not say", async () => {

@@ -21,6 +21,12 @@ answers:
 - **Subtitles at 3.7% of the frame's height passed.** The film's
   subtitles ("A WAY HOME") were size 40 on 1080p, exactly the old floor
   (`minTextSize`, 40 on a 1080 short side), and did not read on a phone.
+- **Versions cut the subject out.** `export_versions` filled a 9:16 frame
+  from the 16:9 shots by keeping their centers: the speedboat (left of
+  center) and the Eiffel Tower (right of center) fell out of frame. The
+  agent saved a project copy, set it to 9:16 and placed every shot with
+  `frame_region` by hand. The launch film's list (LIMITS #12) had asked
+  for the same: versions that adapt, and an editable result.
 - **Two of the launch film's leftovers** (LIMITS #11). Music that fades
   out over its last second in its own audio was still called abrupt: the
   rule compared the last quarter second with the body, and a one-second
@@ -114,8 +120,80 @@ tracks"`), and an epic edit's cuts on the beat are checked there. A
 designed film whose cuts are floating windows over a background still
 counts on its busiest track.
 
+### Versions keep the subject in frame
+
+- **The app looks at every full-frame shot first** (`state/subjects.ts`):
+  every half second of what it plays (at most 24 times a shot), 128 pixels
+  wide, a saliency map each (`lib/analysis/subject.ts`), kept for the
+  session by media and source second so the check sheet and the export
+  decode once.
+- **What stands out is two classic cues summed**, each cheap, offline and
+  deterministic: the minimum barrier distance of the L\*a\*b\* planes
+  (Zhang et al. 2015: sky, sea and ground reach the border smoothly, a
+  tower or a boat is walled off by its edges) and the spectral residual
+  of the lightness (Hou and Zhang 2007: the small unusual thing). On the
+  launch footage the first alone put a 9:16 window on the island behind
+  the boat; the second alone was pulled by the frame's edges until they
+  were tapered. The research note
+  [[Versions keep the subject 2026-10-19]] has the trials.
+- **A window the version's size is placed over the map**: the salience it
+  holds, counted to the fourth power (what stands out most decides; a
+  wide, fainter region does not win by area), its middle counting more
+  than its edges, so the subject sits toward the middle.
+- **Through a shot the windows are chosen together** (`followPath`, a
+  Viterbi path over a hundred positions): a pan costs in proportion to
+  how far it moves, so the frame holds still on a still subject and
+  follows one that moves; the path is smoothed lightly.
+- **The window stays inside what the master showed** at each moment, so a
+  push-in or a pan the editor keyed (`frame_region`) keeps its framing,
+  only narrower; and the picture always covers the frame.
+- **The shot is keyed there** (`reframeShot`): its position put so the
+  window fills the frame, at each sample, thinned to a pixel; one value
+  and no keys when it holds still. A turned or cropped picture, or one
+  inside a compound clip, keeps the old framing.
+- **The caller can override**: `reframe: "center"` (on the call or a
+  version) keeps the old centered crop; `focus: [{clip_id, x, y}]` puts a
+  point of a clip's picture (fractions from its top left, as
+  `preview_media` shows it) at the frame's center in that version, an
+  axis left out staying on the subject.
+- **The check sheet flags a cut subject**: the subject is the strongest
+  blob of the map (over 60% of its peak, the most salience); a framing
+  that keeps under 65% of it where the subject framing would keep 90%
+  (center, or a focus elsewhere) is outlined in orange on the tile, with a
+  triangle on the edge when it is off the frame, and listed in
+  `subjects` with the focus that keeps it. A subject wider than the frame
+  (a figure, not a band like a horizon's glow) is flagged as such, with
+  fit `blur` or `fit` as the way to show it whole. Only where the shot
+  is seen: not under an end card or another shot (`seenShots` with solid
+  cards counted, judged in the middle of each stretch). An export lists
+  the same per version.
+- **A version can be saved as a project** (`save_projects: true`): each
+  version becomes a project of its own, named as its file would be,
+  sharing the master's media, laid out in its shape and framed as it
+  would export; nothing is exported and the master stays open and
+  unchanged. It is then fine-tuned with the ordinary tools and exported
+  with `export_video`, instead of being laid out again from a copy.
+
+On the launch footage, a 9:16 version keeps the Eiffel Tower in frame
+through a push-in (the window at 0.61 of the width, the tower at 0.67)
+and the speedboat (the window at 0.38), then follows its wake as it
+leaves the shot; the center crop of each is flagged, with 39% and 59% of
+the subject in frame.
+
 ## Consequences
 
+- A version takes a moment longer the first time: the shots' pictures
+  are decoded small (Codex's 13 shots, about 150 frames at 128 pixels).
+- Saliency is not recognition: what stands out is not always what the
+  film is about (a bright sail beside the person who speaks). The sheet
+  shows the framing and `focus` corrects one shot; the ad-hoc trials on
+  the launch footage are in the research note.
+  ponytail: two classic cues; a learned salient-object model (the
+  background model already downloads ormbg) when they fail on real work.
+- Overlays, groups and keyframed layouts keep ADR-063, ADR-067 and
+  ADR-091; text wider than the new frame still wraps and shrinks to it.
+- `scripts/drive/versions-subject.js` checks it in the web build with two
+  shots it makes with ffmpeg.
 - `check_project` renders more: three to five frames a title instead of
   one frame per unguarded title. Codex's film is 6 titles, about 20
   renders at 640 pixels.

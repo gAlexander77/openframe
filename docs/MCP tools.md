@@ -118,7 +118,7 @@ Example:
 
 ### save_project_copy
 
-Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.
+Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand, or a try that may be thrown away; the original stays as it was. For another shape of the same film, export_versions with save_projects saves it already laid out in that shape, to fine-tune.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2406,22 +2406,33 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `versions` | { ratio, duration, textless, fit, captions, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions` | { ratio, duration, textless, fit, captions, name, reframe, focus }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
 | `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
 | `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
 | `versions[].textless` | boolean |  | Titles and captions off |
 | `versions[].fit` | "fill" \| "blur" \| "fit" |  | How full-frame footage meets a new shape: fill (default), blur, fit |
 | `versions[].captions` | "burn" \| "none" \| "as_project" |  | burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest) |
 | `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
+| `versions[].reframe` | "subject" \| "center" |  | Footage the new shape crops: framed on its subject, following it (default), or center |
+| `versions[].focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
+| `versions[].focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `versions[].focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
+| `versions[].focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
 | `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
 | `textless` | boolean |  | Also a textless version, in the first ratio |
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
 | `captions` | "burn" \| "none" \| "as_project" |  | For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest |
+| `reframe` | "subject" \| "center" |  | For every version that does not say: subject (default) or center |
+| `focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
+| `focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
+| `focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
+| `save_projects` | boolean |  | true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
 | `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92] |

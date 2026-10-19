@@ -14,6 +14,7 @@ import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type Json
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
+import { REFRAMES, type Focus, type Reframe } from "./reframe";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -64,8 +65,11 @@ export interface McpHost {
   exportStatus(): unknown;
   /** export_versions: one file per version, the project left as it is. */
   exportVersions(options: VersionsRequest): Promise<unknown>;
-  /** One JPEG (base64) of every version at a few moments, nothing exported. */
-  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<string>;
+  /** One JPEG (base64) of every version at a few moments, nothing
+   * exported, and where each version's framing cuts a shot's subject. */
+  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<{ image: string; subjects?: unknown }>;
+  /** Each version saved as a project of its own, nothing exported. */
+  saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
   voiceover(lines: Record<string, unknown>[], options: Record<string, unknown>): Promise<unknown>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
@@ -195,6 +199,19 @@ export function projectSummary(d: unknown): unknown {
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
+/** export_versions' focus: clips framed by hand, each the point of its
+ * picture to keep at the frame's center (lib/reframe.ts). */
+const FOCUS_SCHEMA: JsonSchema = {
+  type: "array",
+  description: "Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say",
+  items: {
+    type: "object",
+    properties: { clip_id: { type: "string", description: "A full-frame video or picture clip" }, x: { type: "number", minimum: 0, maximum: 1, description: "Across its picture, 0 left to 1 right" }, y: { type: "number", minimum: 0, maximum: 1, description: "Down its picture, 0 top to 1 bottom" } },
+    required: ["clip_id"],
+    additionalProperties: false,
+  },
+};
+
 interface AppTool {
   name: string;
   description: string;
@@ -315,7 +332,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "save_project_copy",
-    description: "Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.",
+    description: "Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand, or a try that may be thrown away; the original stays as it was. For another shape of the same film, export_versions with save_projects saves it already laid out in that shape, to fine-tune.",
     inputSchema: obj({ name: { type: "string", description: "The copy's name, e.g. 'Ember Roast 16x9'" }, open: { type: "boolean", description: "Open the copy to edit it (default true)" } }, ["name"]),
     call: async (h, a) => json(await h.saveCopy(String(a.name), a.open !== false)),
   },
@@ -732,7 +749,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -745,6 +762,8 @@ APP_TOOLS.push(
             fit: { type: "string", enum: VERSION_FITS, description: "How full-frame footage meets a new shape: fill (default), blur, fit" },
             captions: { type: "string", enum: VERSION_CAPTIONS, description: "burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest)" },
             name: { type: "string", description: "File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s'" },
+            reframe: { type: "string", enum: REFRAMES, description: "Footage the new shape crops: framed on its subject, following it (default), or center" },
+            focus: FOCUS_SCHEMA,
           },
           ["ratio"],
         ),
@@ -754,6 +773,9 @@ APP_TOOLS.push(
       textless: { type: "boolean", description: "Also a textless version, in the first ratio" },
       fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
       captions: { type: "string", enum: VERSION_CAPTIONS, description: "For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest" },
+      reframe: { type: "string", enum: REFRAMES, description: "For every version that does not say: subject (default) or center" },
+      focus: FOCUS_SCHEMA,
+      save_projects: { type: "boolean", description: "true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
       check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
@@ -764,12 +786,15 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
-      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined }, master);
+      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined, reframe: a.reframe as Reframe | undefined, focus: a.focus as Focus[] | undefined }, master);
       const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
+      if (a.save_projects === true) return json({ projects: await h.saveVersions(req), note: "Nothing exported. Each version is a project of its own: open_project one to fine-tune it (frame_region, set_param, set_text), then export_video; the master is open and unchanged." });
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
-        return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
+        const sheet = await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) });
+        const subjects = Array.isArray(sheet.subjects) && sheet.subjects.length ? { subjects: sheet.subjects } : {};
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on its subject, and an orange outline marks a subject a framing still cuts (listed in subjects).`, ...subjects }) }] };
       }
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure

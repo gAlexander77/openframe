@@ -12,7 +12,7 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
@@ -341,11 +341,16 @@ const mcpHost: McpHost = {
   versionsSheet: async (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     // A sheet of photographs too: sent as JPEG (jpeg above).
-    const bmp = await createImageBitmap(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[] });
+    const bmp = await createImageBitmap(sheet.blob);
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return jpeg(c);
+    return { image: await jpeg(c), subjects: sheet.subjects };
+  },
+  saveVersions: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return saveVersionProjects(options as VersionsOptions);
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>

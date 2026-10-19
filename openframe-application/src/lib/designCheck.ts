@@ -153,19 +153,19 @@ function cutTrack(p: Project): Track {
   return p.tracks.filter((t) => t.kind === "video" && !t.hidden).reduce((best, t) => (shots(t) > shots(best) ? t : best), main);
 }
 
-const isShot = (c: Clip): c is VisualClip => (c.type === "video" || c.type === "image" || c.type === "compound") && !c.disabled;
-
 /**
  * The shots as the viewer sees them, across every visible track: the runs
  * of the frontmost picture that fills most of the frame (a video, picture
  * or compound clip covering 60% of it or more, nearly opaque), each from
  * the cut that brings it to the next. An edit that cuts between two tracks
  * (A and B rolls, cutaways over an interview) has its cuts here and not on
- * any one track.
+ * any one track. With `solids`, a color card that covers the frame (an end
+ * card's ground) is seen too, for what is visible rather than what is cut.
  */
-export function seenShots(p: Project): { start: number; duration: number; clipId: Id }[] {
+export function seenShots(p: Project, solids = false): { start: number; duration: number; clipId: Id }[] {
   const tracks = p.tracks.filter((t) => t.kind === "video" && !t.hidden);
-  const clips = tracks.flatMap((t) => t.clips.filter(isShot));
+  const counts = (c: Clip): c is VisualClip => (c.type === "video" || c.type === "image" || c.type === "compound" || (solids && c.type === "color")) && !c.disabled;
+  const clips = tracks.flatMap((t) => t.clips.filter(counts));
   const bounds = [...new Set(clips.flatMap((c) => [c.start, c.start + c.duration]))].sort((a, b) => a - b);
   const area = p.width * p.height;
   const covers = (c: VisualClip, f: number) => {
@@ -177,11 +177,12 @@ export function seenShots(p: Project): { start: number; duration: number; clipId
   };
   const runs: { start: number; duration: number; clipId: Id }[] = [];
   for (let i = 0; i + 1 < bounds.length; i++) {
-    const f = bounds[i];
-    // tracks[0] is the top: the first track with a covering clip is seen.
+    const f = bounds[i], mid = Math.floor((f + bounds[i + 1] - 1) / 2);
+    // tracks[0] is the top: the first track with a covering clip is seen,
+    // judged in the middle of the stretch (a card fading in covers by then).
     let seen: VisualClip | undefined;
     for (const t of tracks) {
-      seen = t.clips.find((c): c is VisualClip => isShot(c) && c.start <= f && f < c.start + c.duration && covers(c, f));
+      seen = t.clips.find((c): c is VisualClip => counts(c) && c.start <= f && f < c.start + c.duration && covers(c, mid));
       if (seen) break;
     }
     if (!seen) continue;
