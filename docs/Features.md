@@ -98,7 +98,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   labels too, such as "Add clip" and "Change opacity".
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
-  deactivate clip; markers; in/out range.
+  deactivate clip; markers; in/out range (a cyan band on the ruler,
+  which stays in view as the tracks scroll).
 - **Linked picture and sound** (Premiere's linked clips, for J and L
   cuts): Extract audio keeps the video and its sound linked as a group,
   so they select, move and delete together; Alt-click takes one side

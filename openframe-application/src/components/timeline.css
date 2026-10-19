@@ -1,17 +1,23 @@
-/* The last row is the keyframe panel when it is open (keyframes.css). */
-.timeline-panel { display: grid; grid-template-rows: 38px 1fr auto; }
+/* The last row is the keyframe panel when it is open (keyframes.css). The
+   toolbar's row is one line of tools, two when they wrap. */
+.timeline-panel { display: grid; grid-template-rows: auto 1fr auto; }
 /* The compound clip path (breadcrumb) takes a row of its own. */
-.timeline-panel:has(> .tl-path) { grid-template-rows: 38px auto 1fr auto; }
+.timeline-panel:has(> .tl-path) { grid-template-rows: auto auto 1fr auto; }
 
 /* ---- toolbar ------------------------------------------------------------------ */
 .tl-toolbar {
-  display: flex; justify-content: space-between; align-items: center; gap: 12px;
-  padding: 0 8px; border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 12px;
+  min-height: 38px; padding: 4px 8px; border-bottom: 1px solid var(--line);
   /* Clip only sideways (narrow windows): hidden on both axes also clipped
      the tool picker's menu and the voiceover panel that open below. */
   min-width: 0; overflow-x: clip;
 }
-.tl-tools { display: flex; align-items: center; gap: 2px; min-width: 0; }
+/* Buttons keep their size: shrinking, they squeezed to 27 px beside the
+   docked AI assistant. What does not fit wraps to a second line, the
+   right-hand group still on the right. */
+.tl-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-width: 0; }
+.tl-tools > *, .tl-tools .icon-btn { flex: none; }
+.tl-tools.right { margin-left: auto; justify-content: flex-end; }
 /* Inside a compound clip: where you are, and the way back out. */
 .tl-path {
   display: flex; align-items: center; gap: 4px; min-width: 0; height: 26px;
@@ -37,13 +43,21 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 .tool-picker .menu { position: fixed; top: auto; left: auto; margin-top: 4px; min-width: 220px; }
 .fit-btn { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
 .zoom-slider { width: 110px; accent-color: var(--text-1); }
-/* The toolbar queries its own width. Its two tool groups take 844 px
-   (416 each and the gap, measured 2026-10-18); beside the docked AI
-   assistant (ADR-064) the timeline can be narrower, so the zoom slider
-   goes first and Fit and the zoom buttons stay. Remeasure when a tool
-   joins the bar (the dock drive checks the toolbar fits). */
+/* The toolbar queries its own width. Its two tool groups take 902 px
+   (476 and 414 and the gap, measured 2026-10-19, when Crop, Mirror and
+   Rotate had joined); beside the docked AI assistant (ADR-064) or in a
+   narrow browser the timeline can be narrower, so the zoom slider goes
+   first and Fit and the zoom buttons stay; then the separators and gaps
+   tighten, so one line still fits down to 748 px, the timeline's width
+   beside the widest assistant in the 1100 px window (dock.ts); only then
+   does the right-hand group wrap to a second line.
+   Remeasure when a tool joins the bar (sizes-timeline.js checks it). */
 .tl-toolbar { container-type: inline-size; }
-@container (max-width: 844px) { .zoom-slider { display: none; } }
+@container (max-width: 901px) { .zoom-slider { display: none; } }
+@container (max-width: 789px) {
+  .tl-tools { gap: 1px; }
+  .tl-sep { margin: 0 3px; }
+}
 
 /* ---- scroller and layers ----------------------------------------------------------- */
 .tl-scroll { position: relative; overflow: auto; min-height: 0; }
@@ -51,8 +65,13 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 .tl-scroll.os-drop { box-shadow: inset 0 0 0 2px var(--accent); }
 .tl-content { position: relative; min-height: 100%; }
 
+/* Layers, bottom to top: clips (2-5), the ruler (6), the in/out range,
+   drop previews and snap lines (7-8), the playhead and markers (9), the
+   track headers (10) and the corner (11). Scrolled sideways, the playhead
+   and markers pass under the header column, as in CapCut and Premiere;
+   above it they drew over the track names and toggles. */
 .tl-ruler { position: sticky; top: 0; z-index: 6; cursor: pointer; background: var(--bg-1); }
-.tl-corner { position: sticky; left: 0; top: 0; z-index: 8; height: 28px; margin-top: -28px; background: var(--bg-1); }
+.tl-corner { position: sticky; left: 0; top: 0; z-index: 11; height: 28px; margin-top: -28px; background: var(--bg-1); }
 .tl-rows { position: absolute; left: 0; right: 0; bottom: 0; }
 
 .tl-row { position: absolute; left: 0; right: 0; }
@@ -64,16 +83,32 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 .tl-row.main .tl-lane { background: #262626; }
 
 .tl-header {
-  position: sticky; left: 0; z-index: 5;
+  position: sticky; left: 0; z-index: 10;
   height: 100%;
   display: flex; align-items: center; justify-content: space-between;
   padding: 0 6px 0 10px;
   background: var(--bg-1);
   border-right: 1px solid var(--line);
+  /* Covers the 4 px gap under the row too (ROW_GAP), so the playhead
+     does not show through between the headers. */
+  box-shadow: 0 4px var(--bg-1);
+  /* Two lines where the row is tall enough (below). */
+  flex-wrap: wrap; align-content: center; row-gap: 2px;
+  container-type: size;
+}
+/* Beside its three toggles a name had 34 px ("Overl…" for two different
+   overlay tracks). A row 44 px or taller (audio, video and the main track)
+   gives the name its own line with the toggles under it, as Resolve's
+   track headers do; short title and effect rows keep one line. */
+@container (min-height: 44px) {
+  .tl-header > .tl-kind, .tl-header > .tl-rename { flex: 1 0 100%; }
+  .tl-header > .tl-toggles { margin-left: -4px; }
 }
 .tl-track-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 .tl-kind > svg { flex: none; }
-.tl-kind { min-width: 0; display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); }
+/* Basis 0: on a one-line row the name takes what the toggles leave and
+   never wraps them under it. */
+.tl-kind { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; gap: 5px; color: var(--text-3); }
 .tl-main-chip { font-size: 10px; color: var(--text-2); }
 /* One fixed slot per toggle (lock, eye, speaker), so each icon sits in the
    same column on every track whichever toggles the track has. */
@@ -200,7 +235,10 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
    border triangle's, so the padding box (where ::before is placed from)
    sits 5 px in and 9 px down. */
 .tl-marker::before { content: ""; position: absolute; left: -12px; top: -9px; width: 24px; height: 24px; }
-.tl-range { position: absolute; top: 0; height: 28px; z-index: 5; background: rgb(0 193 205 / 18%); border-bottom: 2px solid var(--accent); pointer-events: none; }
+/* In the ruler's sticky overlays, under the markers: placed in the
+   content at z-index 5 it sat under the ruler (6), so a marked range never
+   showed, and it would have scrolled away with the tracks. */
+.tl-range { position: absolute; top: 0; height: 28px; background: rgb(0 193 205 / 18%); border-bottom: 2px solid var(--accent); pointer-events: none; }
 .tl-drop {
   position: absolute; z-index: 7; display: flex; align-items: center; padding: 0 8px;
   border: 1.5px dashed var(--accent); border-radius: 4px;
@@ -232,7 +270,7 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 }
 .ctx-anchor { position: fixed; z-index: 200; width: 0; height: 0; }
 .tl-tog-solo.on { color: var(--accent); }
-.tl-rename { width: 64px; height: 22px; padding: 0 4px; font-size: var(--fs-xs); }
+.tl-rename { flex: 1 1 0; min-width: 0; height: 22px; padding: 0 4px; font-size: var(--fs-xs); }
 .menu.tl-vol-pop { position: fixed; z-index: 210; min-width: 0; width: 220px; padding: 10px 12px; display: grid; gap: 6px; }
 .tl-vol-pop label { display: flex; justify-content: space-between; font-size: var(--fs-xs); color: var(--text-2); }
 .tl-vol-pop input { width: 100%; accent-color: var(--text-1); }

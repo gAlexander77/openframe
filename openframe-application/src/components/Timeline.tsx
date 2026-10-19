@@ -850,6 +850,7 @@ export function Timeline() {
         <div className="tl-content" style={{ width: contentW, height: RULER_H + rowsH + 40 }}>
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
           <div className="tl-ruler-overlays">
+            <InOutRange zoom={zoom} />
             <MarkersLayer zoom={zoom} />
             <Playhead zoom={zoom} height={RULER_H} cap />
           </div>
@@ -923,7 +924,6 @@ export function Timeline() {
             )}
             {drop && <DropBox drop={drop} rows={rows} rowsH={rowsH} zoom={zoom} />}
           </div>
-          <InOutRange zoom={zoom} />
           {snapLine !== null && <div className="tl-snap" style={{ left: HEADER_W + snapLine * zoom, height: RULER_H + rowsH }} />}
           <PreviewAxis zoom={zoom} height={RULER_H + rowsH} />
           <Playhead zoom={zoom} height={RULER_H + rowsH} />
@@ -1031,6 +1031,17 @@ type OpenMenu = (x: number, y: number, items: MenuItem[]) => void;
  * track volume; the mixer's fader in Resolve). One undo step per drag. */
 function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y: number }; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Inside the window, as menus are: from the lowest track's header it
+  // opened below the window's bottom edge. Upward from the pointer when
+  // there is no room under it.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const room = 8;
+    const dy = at.y + el.offsetHeight > innerHeight - room ? Math.max(room, at.y - el.offsetHeight) - at.y : 0;
+    const dx = Math.min(0, innerWidth - room - at.x - el.offsetWidth);
+    el.style.translate = `${dx}px ${dy}px`;
+  }, [at]);
   useEffect(() => {
     ref.current?.querySelector("input")?.focus();
     const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && onClose();
@@ -1150,7 +1161,8 @@ function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) 
           }}
         />
       ) : (
-        <span className="tl-kind" data-tip={track.main ? "Main track" : track.name}>
+        // The tip carries the whole name: the column shows only its start.
+        <span className="tl-kind" data-tip={track.main ? (track.name === "Main" ? "Main track" : `${track.name} (main track)`) : track.name}>
           {kindIcon}
           <span className="tl-track-name">{track.name}</span>
         </span>
