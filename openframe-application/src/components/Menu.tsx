@@ -71,6 +71,7 @@ export function MenuBar(props: { menus: { label: string; items: () => MenuItem[]
               key={i}
               items={m.items()}
               autoFocus={byKey}
+              drop
               onDone={() => setOpen(null)}
               onNav={(d) => {
                 const j = (i + d + n) % n;
@@ -96,6 +97,9 @@ export function MenuList(props: {
   /** The button a dropdown hangs from: a menu that has to open upward
    * goes above it instead of covering it. */
   anchor?: Element | null;
+  /** Hangs from the menubar: stays under it and scrolls in a short window
+   * (sliding up, it covered its own menubar button). */
+  drop?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const opener = useRef<Element | null>(null);
@@ -114,7 +118,10 @@ export function MenuList(props: {
     const room = 8;
     let dy = 0;
     const above = props.anchor ? props.anchor.getBoundingClientRect().top - 4 : top;
-    if (top + h > innerHeight - room) dy = above - h >= room ? above - h - top : Math.max(room - top, innerHeight - room - top - h);
+    if (top + h > innerHeight - room) {
+      if (props.drop) el.style.maxHeight = `${innerHeight - room - top}px`;
+      else dy = above - h >= room ? above - h - top : Math.max(room - top, innerHeight - room - top - h);
+    }
     const dx = Math.min(0, innerWidth - room - left - el.offsetWidth);
     if (dx || dy) el.style.translate = `${dx}px ${dy}px`;
     // eslint-disable-next-line react-hooks/exhaustive-deps

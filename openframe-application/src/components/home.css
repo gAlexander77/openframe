@@ -3,7 +3,10 @@
   padding: 18px 28px 40px;
   animation: fade-in var(--t-slow) ease-out;
 }
-.home-hero { display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 16px; margin-bottom: 30px; }
+/* The banner takes the room; the presets keep tile sizes. With the tiles
+   stretched over the rest, a 1920 px window showed five 276 px boxes, each
+   mostly empty, beside a banner capped at 420 px. */
+.home-hero { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(auto, min(58%, 780px)); gap: 16px; margin-bottom: 30px; }
 
 /* CapCut's hero: a wide cyan gradient Create project banner. */
 .create-card {
@@ -22,7 +25,7 @@
 .create-text strong { font-size: 20px; }
 .create-text span { font-size: var(--fs-sm); opacity: 0.8; }
 
-.presets { display: grid; grid-template-columns: repeat(5, minmax(96px, 1fr)); gap: 10px; }
+.presets { display: grid; grid-template-columns: repeat(5, minmax(88px, 148px)); gap: 10px; }
 .preset {
   display: grid; align-content: start; grid-template-rows: 34px 18px auto; justify-items: center; gap: 5px;
   padding: 14px 8px; border: 1px solid var(--line); border-radius: 12px;
@@ -34,11 +37,15 @@
 .preset-box { height: 34px; max-width: 60px; border: 2px solid currentColor; border-radius: 4px; color: var(--text-3); }
 .preset:hover .preset-box { color: var(--accent); }
 
-.home-projects-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.home-projects-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
 .home-projects-head h2 { margin: 0; font-size: var(--fs-lg); font-weight: 600; }
-.home-projects-head .home-search { flex: 0 1 260px; }
+.home-head-tools { display: flex; align-items: center; gap: 8px; flex: 0 1 340px; min-width: 0; margin-left: auto; }
+.home-projects-head .home-search { flex: 1 1 260px; min-width: 0; }
+.home-views { display: flex; gap: 2px; flex: none; }
 
-.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 18px 16px; }
+/* Cards grow with the screen: 210 px cards made eleven small columns at
+   2560 px. */
+.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(200px, 13vw, 300px), 1fr)); gap: 18px 16px; }
 .project-card { display: grid; gap: 4px; cursor: pointer; outline: none; animation: rise-in var(--t-med) var(--ease-out) both; }
 .project-thumb {
   position: relative; aspect-ratio: 16 / 10;
@@ -76,7 +83,7 @@
 }
 .project-tool:hover { background: rgb(0 0 0 / 85%); }
 .project-card:hover .project-tool, .project-card:focus-within .project-tool { opacity: 1; }
-.project-rename { width: 100%; height: 24px; }
+.project-rename { width: 100%; min-width: 0; height: 24px; }
 
 .home-empty {
   display: grid; justify-items: center; gap: 8px; padding: 60px 20px;
@@ -100,3 +107,35 @@
 .trash-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .trash-info { display: grid; gap: 2px; min-width: 0; }
 .trash-forever.armed { background: var(--danger); color: #fff; }
+
+/* The list view (CapCut's Projects toggle): a row per project with its
+   canvas, length and last edit, the tools on hover or focus. */
+.project-list { display: grid; gap: 2px; }
+.project-row {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) 96px 64px minmax(96px, 150px) 84px; align-items: center; gap: 14px;
+  padding: 6px 10px; border-radius: 8px; cursor: pointer; outline: none;
+  transition: background var(--t-fast);
+  animation: rise-in var(--t-med) var(--ease-out) both;
+}
+.project-row:hover, .project-row:focus-within { background: var(--bg-1); }
+.project-row:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.project-list-head {
+  cursor: default; padding-top: 0; padding-bottom: 6px; border-bottom: 1px solid var(--line); border-radius: 0;
+  color: var(--text-3); font-size: var(--fs-xs); animation: none;
+}
+.project-list-head:hover { background: none; }
+.project-row-thumb {
+  position: relative; display: grid; place-items: center; aspect-ratio: 16 / 10;
+  border-radius: 6px; overflow: hidden; background: #000; color: var(--text-3);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.project-row-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.project-row .project-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-row-tools { display: flex; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity var(--t-fast); }
+.project-row-tools .icon-btn { width: 26px; height: 26px; }
+.project-row:hover .project-row-tools, .project-row:focus-within .project-row-tools { opacity: 1; }
+/* A narrow browser tab: the canvas column gives way to the name. */
+@media (max-width: 760px) {
+  .project-row { grid-template-columns: 56px minmax(0, 1fr) 56px minmax(80px, 120px) 84px; }
+  .project-row > :nth-child(3) { display: none; }
+}

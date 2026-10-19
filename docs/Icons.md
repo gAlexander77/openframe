@@ -31,6 +31,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Scopes | ChartColumnBig |
 | Maximize / restore window | Square / PanelsTopLeft |
 | Duplicate / rename / delete | Copy / Pencil / Trash2 |
+| Grid view / list view (media library, Home) | LayoutGrid / List |
 | Keyframe / animation graph | Diamond / ChartSpline |
 | Markers / search / shortcuts | Bookmark / Search / Keyboard |
 | Play / pause / stop / loop | Play / Pause / Square / Repeat |

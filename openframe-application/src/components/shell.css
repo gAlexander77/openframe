@@ -8,6 +8,7 @@
   display: grid;
   padding: 0 var(--gap) var(--gap);
   min-height: 0;
+  position: relative; /* the floating assistant's frame (assistant.css) */
 }
 .top-row { display: grid; min-height: 0; }
 
@@ -39,19 +40,27 @@
 
 /* ---- title bar -------------------------------------------------------------- */
 
+/* The sides keep their whole width; the project name in the middle stays
+   centered while there is room, then gives way and ellipsizes. With
+   `1fr auto 1fr` the name kept its full width and the sides overflowed
+   their columns: in the 1100 px desktop window the save state ran under
+   the AI assistant button, and at 900 px the keyboard and settings
+   buttons were squeezed into each other. */
 .titlebar {
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(max-content, 1fr) minmax(0, max-content) minmax(max-content, 1fr);
   align-items: center;
   height: 40px;
   padding: 0 0 0 10px;
 }
-.titlebar-left, .titlebar-right { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.titlebar-right { justify-content: flex-end; }
+.titlebar-left, .titlebar-right { display: flex; align-items: center; gap: 6px; }
+.titlebar-left > *, .titlebar-right > * { flex: none; }
+.titlebar-right { justify-content: flex-end; padding-left: 12px; }
+.titlebar-left { padding-right: 12px; }
 /* Window buttons sit flush with the edge; without them (web, macOS) the
    last button needs the same margin as the left side. */
 .titlebar-right:not(:has(.window-controls)) { padding-right: 10px; }
-.titlebar-center { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.titlebar-center { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 0; }
 
 .app-mark {
   width: 18px; height: 18px; border-radius: 5px; margin-right: 4px;
@@ -101,8 +110,10 @@
 .menu-hint { color: var(--text-3); font-size: var(--fs-xs); }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 
+/* Wider on a big screen: at 2560 px a 360 px cap cut a long name with
+   half the bar empty. */
 .project-name {
-  max-width: 360px; height: 26px; padding: 0 10px;
+  min-width: 0; max-width: clamp(360px, 30vw, 640px); height: 26px; padding: 0 10px;
   border: 1px solid transparent; border-radius: var(--radius);
   background: transparent; color: var(--text-1);
   font-size: var(--fs-md); font-weight: 600;
@@ -110,8 +121,8 @@
   transition: border-color var(--t-fast), background var(--t-fast);
 }
 .project-name:hover { border-color: var(--line-strong); background: var(--bg-1); }
-.project-name-input { width: 280px; text-align: center; font-weight: 600; }
-.save-state { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+.project-name-input { width: clamp(160px, 32vw, 420px); min-width: 0; text-align: center; font-weight: 600; }
+.save-state { flex: none; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
 
 .export-btn { height: 28px; padding: 0 14px; margin-left: 4px; margin-right: 6px; }
 

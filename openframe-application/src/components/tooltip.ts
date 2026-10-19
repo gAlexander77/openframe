@@ -24,6 +24,11 @@ export function installTooltips(): () => void {
   const show = (el: HTMLElement) => {
     const text = el.dataset.tip;
     if (!text) return;
+    // A modal <dialog> sits in the browser's top layer, above any z-index:
+    // the tip goes inside it, or the source monitor's Insert and Overwrite
+    // tips showed under the dialog.
+    const host = el.closest("dialog[open]") ?? document.body;
+    if (tip.parentElement !== host) host.appendChild(tip);
     tip.textContent = text;
     tip.classList.add("on");
     place(el);

@@ -66,8 +66,9 @@ function Elapsed({ since }: { since: number }) {
 
 /** The AI assistant: a column docked at the editor's right (ADR-064) where
  * a model on this computer edits the timeline, and where other agents are
- * connected over MCP. */
-export function AssistantPanel() {
+ * connected over MCP. `floating`: over the editor, in a window too narrow
+ * to dock (src/lib/dock.ts). */
+export function AssistantPanel({ floating = false }: { floating?: boolean }) {
   const c = useAssistant();
   const [view, setView] = useState<"chat" | "agents">("chat");
   const [text, setTextState] = useState(draft.text);
@@ -108,7 +109,7 @@ export function AssistantPanel() {
   const provider = PROVIDERS.find((p) => p.id === c.provider) ?? PROVIDERS[0];
 
   return (
-    <aside className="panel assistant" aria-label="AI assistant">
+    <aside className={`panel assistant${floating ? " floating" : ""}`} aria-label="AI assistant">
       <header className="assistant-head">
         <Bot size={15} className="assistant-mark" />
         <strong>AI assistant</strong>

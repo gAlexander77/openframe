@@ -58,8 +58,24 @@ covered: `scripts/drive/assistant.js` checks the column against every
 panel, the scopes toggle, the meter and the zoom controls at the three
 sizes, and the style sweep audits both of the panel's views there.
 
-Below about 1066 px (a narrow browser tab; the desktop window stops at
-1100) the column keeps its 300 px minimum and the editor squeezes, as it
-already does there without the panel. A new tool in the timeline toolbar
-or the player's transport changes the measured widths: remeasure them
-(the comments in `dock.ts`, `timeline.css` and `player.css` say where).
+A new tool in the timeline toolbar or the player's transport changes the
+measured widths: remeasure them (the comments in `dock.ts`,
+`timeline.css` and `player.css` say where).
+
+## Addendum, 2026-10-19: floating below 1066 px, the player's floor
+
+Below 1066 px (the editor's 760 plus the gap and the column's 300; only a
+browser tab, as the desktop window stops at 1100) the column used to keep
+its minimum while the editor squeezed: at 900 x 600 the player was 330 px
+and its play button sat under the zoom menu, and the timeline's tools
+were crowded below the toolbar's 748 px. There the column now **floats over the editor's right side**
+(`canDock` in `dock.ts`), as a drawer with a shadow: the editor keeps the
+layout it has without the panel, and closing the panel uncovers it. No
+splitter there; the column is 300 px.
+
+The same width floor now holds for the splitters: a side panel dragged
+toward its cap (library 640 px, inspector 560) stops where the player
+would drop under 456 px (`sideMax`). At 1100 px a library at its cap had
+left the player 320 px. `scripts/drive/sizes-shell.js` checks the player's
+width with every splitter at its limits at seven window sizes, and the
+floating column at 1024 and 900.
