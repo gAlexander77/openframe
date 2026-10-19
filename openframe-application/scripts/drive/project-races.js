@@ -11,7 +11,7 @@ async (page) => {
   const details = {};
   const file = async (name) => {
     await page.locator(".menubar-button", { hasText: /^File$/ }).click();
-    await page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).click();
+    await page.getByRole("menuitem", { name: new RegExp(`^${name}(?! file)`) }).click();
   };
   const first = await page.evaluate(() => window.videoEditor.project().id);
   await page.evaluate(() => {

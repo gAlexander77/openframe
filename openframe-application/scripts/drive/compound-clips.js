@@ -240,7 +240,7 @@ async (page) => {
   await page.keyboard.press("Control+Z");
   const { id: pid, name } = await page.evaluate(() => window.videoEditor.project());
   await page.locator(".menubar-button", { hasText: /^File$/ }).click();
-  await page.getByRole("menuitem", { name: /^Open project/ }).click();
+  await page.getByRole("menuitem", { name: /^Open project(?! file)/ }).click();
   await page.locator(".create-card").waitFor();
   await page.locator(".home-search input").fill(name);
   await page.waitForFunction(() => document.querySelectorAll(".project-card").length === 1);
