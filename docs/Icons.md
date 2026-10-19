@@ -44,6 +44,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Recording / voiceover | Video / Mic |
 | Speed / freeze | Gauge / Snowflake |
 | Favorite / selected | Heart / Check |
+| A new take (another seed) / generated music | Dices / Music |
 | Busy / error | Loader2 / CircleAlert |
 
 Clip badges are 11 px; keyframe diamonds are 12 px. Empty states pair a

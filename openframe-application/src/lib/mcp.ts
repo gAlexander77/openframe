@@ -6,6 +6,9 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
+import { STYLE_IDS, STYLES } from "./music/styles";
+import { MODE_IDS } from "./music/theory";
+import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
@@ -98,7 +101,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject";
+export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -204,6 +207,45 @@ interface ToolResult {
 }
 
 const json = (v: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(v) }] });
+
+/** generate_music's parameters (plan_music's are the same less the files). */
+function musicSchema(files: boolean): JsonSchema {
+  const section = obj(
+    {
+      name: { type: "string", description: "intro, verse, build, drop (or chorus, climax), breakdown (or bridge), outro, or any name (its energy then decides)" },
+      bars: { type: "integer", minimum: 1, maximum: 128, description: "Its length in bars of 4 beats" },
+      seconds: { type: "number", minimum: 0.5, description: "Its length in seconds instead, rounded to whole bars" },
+      at: { type: "number", minimum: 0, description: "Seconds into the music where it must start (a drop at the edit's climax)" },
+      end_at: { type: "number", minimum: 0.5, description: "Seconds into the music where it must end (the outro at the video's end)" },
+      energy: { type: "number", minimum: 0, maximum: 1, description: "How full and loud, 0..1 (default by name: drop 1, build 0.65, verse 0.5, breakdown 0.35, intro and outro 0.3)" },
+      seed: { type: "integer", minimum: 0, description: "Regenerate only this section's drums, fills and touches with another seed" },
+    },
+    ["name"],
+  );
+  const p: Record<string, JsonSchema> = {
+    style: { type: "string", enum: STYLE_IDS, description: "launch (product launch: electronic, driving), cinematic (big, swelling), corporate (upbeat corporate), lofi (lo-fi chill), ambient" },
+    bpm: { type: "number", minimum: 40, maximum: 220, description: "Tempo; default the style's (launch 120, cinematic 90, corporate 116, lofi 80, ambient 92)" },
+    key: { type: "string", description: "The tonic, such as A, F# or Bb; Am or A minor also sets the mode (default the style's)" },
+    mode: { type: "string", enum: MODE_IDS, description: "major, minor, dorian, mixolydian, lydian, phrygian or harmonic_minor (default the style's)" },
+    length: { type: "number", minimum: 2, maximum: 300, description: "Seconds in all, when no sections are given: the style's form is fitted to it (default 60, at most 300)" },
+    sections: { type: "array", items: section, description: "The form, in order; any mix of bars, seconds and fixed times" },
+    seed: { type: "integer", minimum: 0, description: "The same seed and arguments give the same music; default a new one, answered" },
+    ending: { type: "string", enum: ["ring", "stop"], description: "ring (default): the final chord rings out over the last section; stop: a short final hit, then silence" },
+    fx: { type: "boolean", description: "Risers, impacts, reverse cymbals and braams into and on the drops (default true)" },
+    max_nudge: { type: "number", minimum: 0, maximum: 0.2, description: "How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06)" },
+    start: { type: "number", minimum: 0, description: "Timeline seconds the music starts at (default 0); the answer's times include it" },
+  };
+  if (files) {
+    Object.assign(p, {
+      loudness: { type: "number", minimum: -30, maximum: -8, description: "Integrated loudness to master to, LUFS (default -14, online video)" },
+      stems: { type: "boolean", description: "Also import the drums, bass, harmony and lead stems (default false)" },
+      place: { type: "string", enum: ["mix", "stems", "none"], description: "mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only" },
+      markers: { type: "array", items: { type: "string", enum: [...MUSIC_MARKER_KINDS] }, description: "Markers to add, as analyze_music names them: beats (Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop)" },
+      name: { type: "string", description: "The media's name (default style, tempo, key and seed)" },
+    });
+  }
+  return obj(p, ["style"]);
+}
 
 const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = []): JsonSchema => ({ type: "object", properties, required, additionalProperties: false });
 
@@ -542,6 +584,19 @@ APP_TOOLS.push(
     ),
     call: async (h, a) => json(await h.ai("reframeClip", String(a.clip_id), given({ ratio: a.ratio, box: a.box }))),
   },
+  // ---- music: an original score (lib/music) ----
+  {
+    name: "generate_music",
+    description: `Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: ${STYLE_IDS.map((id) => `${id} (${STYLES[id].label}: ${STYLES[id].blurb}; ${STYLES[id].bpm} BPM)`).join("; ")}. Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.`,
+    inputSchema: musicSchema(true),
+    call: async (h, a) => json(await h.ai("generateMusic", "", a)),
+  },
+  {
+    name: "plan_music",
+    description: "The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.",
+    inputSchema: musicSchema(false),
+    call: (_h, a) => json(planMusicAnswer(a)),
+  },
   // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
   {
     name: "analyze_music",
@@ -674,6 +729,7 @@ To make a video:
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 

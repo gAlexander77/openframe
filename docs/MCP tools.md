@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 146 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 148 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -22,6 +22,7 @@ To make a video:
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 
@@ -34,7 +35,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
-- **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
+- **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
@@ -584,7 +585,74 @@ Move the playhead to a time in seconds: what the viewer shows and where tools th
 
 ## Music, beats and markers
 
-Read the music's structure, cut and hit on it, fit it to the picture; mark moments.
+Compose an original score that fits the edit, or read an imported track's structure; cut and hit on it, fit it to the picture; mark moments.
+
+### generate_music
+
+Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: launch (Product launch: modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook; 120 BPM); cinematic (Cinematic: big and swelling: string ostinato, legato strings and horns, choir, taiko and big hits, long hall reverb; 90 BPM); corporate (Upbeat corporate: bright and positive: piano eighths, plucked guitar strums, glockenspiel hook, claps, shaker and an eighth-note bass; 116 BPM); lofi (Lo-fi chill: laid back: swung boom-bap drums, Rhodes sevenths and ninths, round bass, sparse melody, vinyl crackle and tape wow; 80 BPM); ambient (Ambient: calm and spacious: evolving pads, glassy bells, a sub drone and a soft pulse, long hall reverb; 92 BPM). Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `style` | "launch" \| "cinematic" \| "corporate" \| "lofi" \| "ambient" | yes | launch (product launch: electronic, driving), cinematic (big, swelling), corporate (upbeat corporate), lofi (lo-fi chill), ambient |
+| `bpm` | number |  | Tempo; default the style's (launch 120, cinematic 90, corporate 116, lofi 80, ambient 92) (40..220) |
+| `key` | string |  | The tonic, such as A, F# or Bb; Am or A minor also sets the mode (default the style's) |
+| `mode` | "major" \| "minor" \| "dorian" \| "mixolydian" \| "lydian" \| "phrygian" \| "harmonic_minor" |  | major, minor, dorian, mixolydian, lydian, phrygian or harmonic_minor (default the style's) |
+| `length` | number |  | Seconds in all, when no sections are given: the style's form is fitted to it (default 60, at most 300) (2..300) |
+| `sections` | { name, bars, seconds, at, end_at, energy, seed }[] |  | The form, in order; any mix of bars, seconds and fixed times |
+| `sections[].name` | string | yes | intro, verse, build, drop (or chorus, climax), breakdown (or bridge), outro, or any name (its energy then decides) |
+| `sections[].bars` | integer |  | Its length in bars of 4 beats (1..128) |
+| `sections[].seconds` | number |  | Its length in seconds instead, rounded to whole bars (0.5..) |
+| `sections[].at` | number |  | Seconds into the music where it must start (a drop at the edit's climax) (0..) |
+| `sections[].end_at` | number |  | Seconds into the music where it must end (the outro at the video's end) (0.5..) |
+| `sections[].energy` | number |  | How full and loud, 0..1 (default by name: drop 1, build 0.65, verse 0.5, breakdown 0.35, intro and outro 0.3) (0..1) |
+| `sections[].seed` | integer |  | Regenerate only this section's drums, fills and touches with another seed (0..) |
+| `seed` | integer |  | The same seed and arguments give the same music; default a new one, answered (0..) |
+| `ending` | "ring" \| "stop" |  | ring (default): the final chord rings out over the last section; stop: a short final hit, then silence |
+| `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
+| `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
+| `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `loudness` | number |  | Integrated loudness to master to, LUFS (default -14, online video) (-30..-8) |
+| `stems` | boolean |  | Also import the drums, bass, harmony and lead stems (default false) |
+| `place` | "mix" \| "stems" \| "none" |  | mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only |
+| `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Markers to add, as analyze_music names them: beats (Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop) |
+| `name` | string |  | The media's name (default style, tempo, key and seed) |
+
+Example:
+
+```json
+{"name":"generate_music","arguments":{"style":"launch","key":"Am","sections":[{"name":"intro","bars":2},{"name":"build","bars":2},{"name":"drop","at":8},{"name":"breakdown","bars":4},{"name":"build","bars":2},{"name":"drop","bars":8},{"name":"outro","end_at":56}],"seed":7,"stems":true,"markers":["bars","drop"]}}
+```
+
+### plan_music
+
+The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `style` | "launch" \| "cinematic" \| "corporate" \| "lofi" \| "ambient" | yes | launch (product launch: electronic, driving), cinematic (big, swelling), corporate (upbeat corporate), lofi (lo-fi chill), ambient |
+| `bpm` | number |  | Tempo; default the style's (launch 120, cinematic 90, corporate 116, lofi 80, ambient 92) (40..220) |
+| `key` | string |  | The tonic, such as A, F# or Bb; Am or A minor also sets the mode (default the style's) |
+| `mode` | "major" \| "minor" \| "dorian" \| "mixolydian" \| "lydian" \| "phrygian" \| "harmonic_minor" |  | major, minor, dorian, mixolydian, lydian, phrygian or harmonic_minor (default the style's) |
+| `length` | number |  | Seconds in all, when no sections are given: the style's form is fitted to it (default 60, at most 300) (2..300) |
+| `sections` | { name, bars, seconds, at, end_at, energy, seed }[] |  | The form, in order; any mix of bars, seconds and fixed times |
+| `sections[].name` | string | yes | intro, verse, build, drop (or chorus, climax), breakdown (or bridge), outro, or any name (its energy then decides) |
+| `sections[].bars` | integer |  | Its length in bars of 4 beats (1..128) |
+| `sections[].seconds` | number |  | Its length in seconds instead, rounded to whole bars (0.5..) |
+| `sections[].at` | number |  | Seconds into the music where it must start (a drop at the edit's climax) (0..) |
+| `sections[].end_at` | number |  | Seconds into the music where it must end (the outro at the video's end) (0.5..) |
+| `sections[].energy` | number |  | How full and loud, 0..1 (default by name: drop 1, build 0.65, verse 0.5, breakdown 0.35, intro and outro 0.3) (0..1) |
+| `sections[].seed` | integer |  | Regenerate only this section's drums, fills and touches with another seed (0..) |
+| `seed` | integer |  | The same seed and arguments give the same music; default a new one, answered (0..) |
+| `ending` | "ring" \| "stop" |  | ring (default): the final chord rings out over the last section; stop: a short final hit, then silence |
+| `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
+| `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
+| `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+
+Example:
+
+```json
+{"name":"plan_music","arguments":{"style":"cinematic","length":45,"ending":"stop"}}
+```
 
 ### analyze_music
 

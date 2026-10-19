@@ -17,6 +17,7 @@ import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
@@ -107,7 +108,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject, generateMusic },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -310,7 +311,10 @@ const mcpHost: McpHost = {
     return jpeg(c);
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
-  ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
+  ai: (tool, target, options) =>
+    tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    : tool === "generateMusic" ? (needProject(), generateMusic(options))
+    : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
     // Recently deleted projects are not offered (ADR-078).

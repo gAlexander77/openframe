@@ -77,6 +77,10 @@ of the documentation and how agents use it as shared working memory.
 - [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
   entirely through MCP: how it was made, what worked, fourteen limits
   ranked by what they cost, and eleven product issues met while recording
+- [[Music generation 2026-10-19]] — how professional tracks of five
+  styles are built (tempo, swing, progressions, drums, builds and drops,
+  mix and master, with sources), what generate_music does with it, and
+  what it measures since nobody can listen
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,
@@ -257,3 +261,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   `docs/` at the root for both.
 - [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
   agents run the gates locally and never start it; Pages deploys on its own.
+- [[ADR-085 Music is composed and synthesized in the app, seeded and offline]] —
+  generate_music synthesizes in TypeScript in a worker (no samples, the
+  same samples in every webview and test), four stems that add up to the
+  mix, the balance measured and the master's gains shared.
+- [[ADR-086 A score fits an edit by whole bars and a nudged tempo]] —
+  sections in bars, seconds or fixed times, the tempo scanned to land
+  them, phrase-aligned default forms, the cue sheet as the answer and
+  what analyze_music reads back.

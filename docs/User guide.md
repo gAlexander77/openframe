@@ -316,6 +316,25 @@ External agents connect only after the user enables "Allow AI agents".
 Codex CLI and Claude Code setup), headless rendering, and the `openframe`
 command line. [[AI tools]] records the algorithms and limits.
 
+## Generate music
+
+Open the library's **Audio** tab: under your audio files, the **Generate
+music** card makes an original score on your computer, free to use.
+
+1. Pick a **Style** (Product launch, Cinematic, Upbeat corporate, Lo-fi
+   chill or Ambient); the line under it says what it sounds like.
+2. Set the **Length** in seconds. **Tempo** and **Key** are optional (each
+   style has its own); **Ending** rings out or stops on a final hit.
+3. **Preview** renders it (a few seconds) and plays it; **Stop** stops it.
+   Not the one? The dice button makes a new take with another seed.
+4. **Add** puts it on an audio track at the playhead. With **Bar and drop
+   markers** on, markers show every bar and where the drops land, ready
+   to cut to; **Stems too** also adds the drums, bass, harmony and lead
+   as separate files in your media. One undo removes what Add placed.
+
+Agents get more control through `generate_music` (sections with fixed
+times, the loudness, the stems on their own tracks); see [[Automation]].
+
 ## About OpenFrame
 
 **Help → About OpenFrame** shows the version, the license (GPL-3.0-only:

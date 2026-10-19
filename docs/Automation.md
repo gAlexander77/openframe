@@ -226,6 +226,36 @@ shows the whole region; the picture slides back where it would uncover
 empty canvas. `to_region` (with optional `from`/`to` seconds) eases from
 one to the other: the push-in on a screen recording.
 
+Original music ([[Features]], Generated music;
+[[ADR-085 Music is composed and synthesized in the app, seeded and offline]],
+[[ADR-086 A score fits an edit by whole bars and a nudged tempo]]):
+
+- `generate_music` `{style: launch | cinematic | corporate | lofi |
+  ambient, bpm?, key?, mode?, length? | sections?: [{name, bars? |
+  seconds? | at? | end_at?, energy?, seed?}], seed?, ending?: ring | stop,
+  fx?, max_nudge?, loudness?, stems?, place?: mix | stems | none, start?,
+  markers?, name?}` composes and renders a score on this computer (about
+  10-15 s for a minute with stems, in a worker), imports it (and the drums, bass, harmony
+  and lead stems when asked) and places it, as one undo step. It answers
+  the cue sheet in timeline seconds: `bpm`, `key`, `progression`, `beat`,
+  `bar`, `sections` (`name`, `role`, `start`, `end`, `bars`, `energy`),
+  `drops`, `final_hit`, `breaths`, `bars`, `beats`, `cut_points` (`at`,
+  `kind`: drop, section, phrase, bar), `fit` (each asked-for time, what it
+  got, the error and the tempo nudge), `measured` (LUFS, true peak, PLR,
+  stereo correlation, the power below 250 Hz, to 4 kHz and above, the
+  octave slope) and the new `asset_id`, `clip_id` and `stems`. A drop at
+  8.4 s after a four-bar intro: `{"style": "launch", "sections": [{"name":
+  "intro", "bars": 4}, {"name": "drop", "at": 8.4, "bars": 8}, {"name":
+  "outro", "end_at": 30}]}` plays at 114.3 BPM.
+- `plan_music` (read-only) answers the same cue sheet, and the chord of
+  every bar, without rendering: try a form, then generate with the seed
+  it answers.
+- `analyze_music` on a generated score finds its tempo, drops and section
+  starts within a bar, except a ring-out outro (its final chord has no
+  onsets for the beat tracker; it reads as the end of the last drop): the
+  cue sheet is the authority on the ending.
+- `window.videoEditor.ai.generateMusic(args)` is the same call for scripts.
+
 Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 
 - `analyze_music` `{clip_id, markers?}`: tempo, beats, downbeats, phrases,
