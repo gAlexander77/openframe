@@ -172,7 +172,7 @@ export function CaptionsTab() {
             <Download size={14} /> Export SRT
           </button>
           <button className="btn ghost" disabled={!count} onClick={() => void exportCaptions("vtt")}>
-            Export VTT
+            <Download size={14} /> Export VTT
           </button>
         </div>
         <input

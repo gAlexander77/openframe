@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Diamond, RotateCw } from "../../icons";
+import { Diamond, RotateCcw } from "../../icons";
 import { balanceToPuck, puckToBalance, wheelColor, WHEELS } from "../../lib/grade";
 import { paramAt } from "../../lib/keyframes";
 import { setParam, toggleKeyframe } from "../../lib/project/ops";
@@ -99,10 +99,10 @@ function WheelCard({ clip, name }: { clip: Clip; name: WheelName }) {
           data-tip={balanceKeyed ? "Remove color keyframe" : "Add color keyframe"}
           onClick={toggleBalanceKeys}
         >
-          <Diamond size={11} fill={balanceKeyed ? "currentColor" : "none"} />
+          <Diamond size={12} fill={balanceKeyed ? "currentColor" : "none"} />
         </button>
         <button className="icon-btn small" aria-label={`Reset ${label}`} data-tip="Reset" disabled={!edited} onClick={() => setGradePart(clip.id, `Reset ${label.toLowerCase()}`, "wheels", withoutWheel(clip, name), `adjust.wheels.${name}.`)}>
-          <RotateCw size={12} />
+          <RotateCcw size={12} />
         </button>
       </div>
       <div

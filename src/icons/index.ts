@@ -4,6 +4,18 @@
 // lets a custom-drawn icon replace one without touching its callers.
 export {
   Video,
+  Focus,
+  FoldHorizontal,
+  ArrowLeftRight,
+  ChevronsLeftRight,
+  MoveHorizontal,
+  RotateCcw,
+  SeparatorVertical,
+  Merge,
+  Funnel,
+  ChartColumnBig,
+  PanelsTopLeft,
+  Clock,
   Pipette,
   SquareDashed,
   PaintBucket,

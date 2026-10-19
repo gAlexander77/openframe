@@ -955,3 +955,32 @@ Three doors, one engine ([[Automation]]):
 - Loudness reports can include isolated audio tracks and Voiceover-to-music
   balance. Ducking can target a measured LU difference, returning the
   achieved result and editable keys rather than only taking a fixed depth.
+
+### Icon consistency
+
+The toolbar uses drawn icons for every trim tool and timeline Fit. Reset is
+counterclockwise; Rotate is clockwise. The assistant uses Bot, automatic tools
+use WandSparkles, and effects use Sparkles. Track icons reflect their contents,
+including pictures, captions, stickers, shapes and adjustment layers. Empty
+results include an icon, title and next-step hint. See [[Icons]] for the mapping.
+
+### Compact layouts and keyboard controls
+
+Library tabs wrap with their icons and labels, keeping every destination visible.
+Details ratios and canvas dimensions fit the narrow inspector; text style, case
+and audio channel choices wrap between whole buttons. Segmented radio controls
+support arrow keys, Home and End with one tab stop. Fit, Fill and Stretch share
+an inset button group.
+
+Home thumbnails draw hover and keyboard focus rings over their images, project
+names have styled tooltips, and preset cards align their image and text rows.
+Track headers show their names with ellipsis and a tooltip when space is short.
+Marker editing preserves a multi-row list. Shortcut search keeps the dialog size
+stable. The keyframe dock reserves room to scroll the timeline's tracks.
+
+Narrow viewers keep current and total frame-exact timecodes on a compact row.
+Toasts appear at the bottom, clear of Guides. Toolbar Split and trims reflect
+whether an unlocked clip can be edited at the playhead. Add marker remains
+available on empty timelines and at existing markers because both are valid
+operations. Mirror and Rotate use the shared edit boundary. Title-bar project
+renaming accepts at most 120 characters, matching Home.

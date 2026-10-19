@@ -1,13 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player } from "../engine/player";
-import { Activity, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
+import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
 import { toast } from "../state/toast";
 import { boxesAt, hitClipAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
 import { expandGroups } from "../lib/project/groups";
 import { projectDuration } from "../lib/project/ops";
 import { formatTimecode, parseJump } from "../lib/time";
-import { isMac } from "../platform/env";
 import { provide, run, tipFor } from "../state/actions";
 import { store, useEditor } from "../state/store";
 import { Meter } from "./Meter";
@@ -205,7 +204,7 @@ function ScopesToggle() {
       data-tip={on ? "Hide scopes" : "Scopes: waveform, parade, vectorscope, histogram"}
       onClick={() => store.set({ scopes: !on })}
     >
-      <Activity size={14} />
+      <ChartColumnBig size={14} />
     </button>
   );
 }
@@ -298,7 +297,7 @@ function ViewerZoom() {
     <select
       className="quality-select"
       aria-label="Viewer zoom"
-      data-tip={`Viewer zoom (${isMac ? "⌘" : "Ctrl"}+wheel; wheel or middle-drag pans)`}
+      data-tip={tipFor("viewerZoom", "Viewer zoom; wheel or middle-drag pans")}
       value={value}
       onChange={(e) => store.set(e.target.value === "fit" ? { viewerZoom: null, viewerPan: { x: 0, y: 0 } } : { viewerZoom: Number(e.target.value) / 100 / dpr, viewerPan: { x: 0, y: 0 } })}
     >
@@ -329,7 +328,7 @@ function CanvasRatio() {
         store.edit("Canvas size", (q) => ({ ...q, width: nw, height: nh, canvasFixed: true }));
       }}
     >
-      {!ratio && <option value="">{w}x{h}</option>}
+      {!ratio && <option value="">{w}×{h}</option>}
       {RATIOS.map((r) => (
         <option key={r.label} value={r.label}>{r.label}</option>
       ))}

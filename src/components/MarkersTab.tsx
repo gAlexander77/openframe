@@ -1,5 +1,6 @@
+import { EmptyState } from "./EmptyState";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, Plus, Search, Trash2 } from "../icons";
+import { Bookmark, ChevronLeft, ChevronRight, Download, Plus, Search, Trash2 } from "../icons";
 import { runCommand } from "../lib/commands";
 import { adjacentMarker, filterMarkers } from "../lib/markers";
 import type { Marker } from "../lib/project/types";
@@ -63,7 +64,7 @@ export function MarkersTab() {
         <button className="btn ghost" aria-label="Delete shown markers" disabled={!list.length} onClick={() => store.edit(`Delete ${list.length === 1 ? "marker" : `${list.length} markers`}`, (p) => runCommand(p, "delete_markers", { marker_ids: list.map((m) => m.id) }))}><Trash2 size={14} /> Delete shown</button>
       </div>
       <div className="marker-list" aria-label="Timeline markers" ref={listRef}>
-        {!list.length && <p className="lib-hint">{markers.length ? "No markers match. Clear the search or color filter." : "Mark chapters, beats or editing notes. Add a marker at the playhead to get started."}</p>}
+        {!list.length && <EmptyState icon={<Bookmark size={24} />} title={markers.length ? "No markers match" : "No markers yet"} hint={markers.length ? "Clear the search or color filter." : "Add a marker at the playhead for chapters, beats or editing notes."} />}
         {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
           <button className="marker-jump" aria-label={`Go to ${m.label || "Untitled marker"} at ${formatTimecode(m.frame, fps)}`} aria-pressed={selected === m.id} onClick={() => openMarkers(m.id)}>
             <i className="marker-dot" style={{ background: m.color }} />

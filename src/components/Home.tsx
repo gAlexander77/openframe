@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Clapperboard, Copy, Film, Pencil, Plus, Search, Trash2 } from "../icons";
+import { Clapperboard, Copy, Pencil, Plus, Search, Trash2 } from "../icons";
 import { formatDuration } from "../lib/time";
 import { platform, type ProjectSummary } from "../platform";
 import { duplicateProject, newProject, openProject, renameProject, useSession } from "../state/project";
@@ -101,7 +101,7 @@ export function Home() {
                 void openProject(p.id);
               }}>
                 <div className="project-thumb">
-                  {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Film size={24} strokeWidth={1.3} />}
+                  {p.thumbnail ? <img src={p.thumbnail} alt="" /> : <Clapperboard size={24} strokeWidth={1.3} />}
                   {p.duration > 0 && <span className="chip num">{formatDuration(p.duration)}</span>}
                   <span className="project-tools">
                     <button className="project-tool" disabled={transitioning} aria-label={`Rename ${p.name}`} data-tip="Rename" onClick={(e) => (e.stopPropagation(), setRenaming(p.id))}>
@@ -159,7 +159,7 @@ export function Home() {
                     }}
                   />
                 ) : (
-                  <strong className="project-card-name">{p.name}</strong>
+                  <strong className="project-card-name" data-tip={p.name}>{p.name}</strong>
                 )}
                 <span className="project-meta num">
                   {p.width}×{p.height} · {ago(p.updatedAt)}

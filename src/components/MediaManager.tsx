@@ -1,3 +1,5 @@
+import { Upload } from "../icons";
+import { EmptyState } from "./EmptyState";
 import { useEffect, useState } from "react";
 import { probe } from "../engine/media";
 import type { Asset } from "../lib/project/types";
@@ -37,7 +39,7 @@ export function MediaManager({ onClose }: { onClose: () => void }) {
     <p className="lib-hint">Locate moved or missing files. Relinking updates every use in this project and preserves your edits. Undo restores the previous location.</p>
     <MediaFolders />
     <div className="media-file-list">
-      {assets.length === 0 && <p>No media imported. Use Import in the Media tab, or drop files on the window.</p>}
+      {assets.length === 0 && <EmptyState icon={<Upload size={24} />} title="No media imported" hint="Use Import in the Media tab, or drop files on the window." />}
       {assets.map((a) => <div className="media-file" key={a.id}>
         <div><strong>{a.name}</strong><span className="media-path">{a.src}</span>{a.proxy && <span className="media-path">Editing copy: {a.proxy}</span>}<span role="status">{status[a.id] ?? "Checking…"}</span>
           <div className="media-organization"><select className="field" aria-label={`Folder for ${a.name}`} value={a.folder ?? ""} onChange={(e) => store.edit("Move media to folder", (p) => organizeMedia(p, [a.id], { folder: e.target.value }))}><option value="">Unfiled</option>{folders?.map((f) => <option key={f}>{f}</option>)}</select>

@@ -34,7 +34,7 @@ try {
 // __REPO__ is this checkout (desktop imports take real paths), so no
 // drive carries a machine's folder layout.
 const repo = resolve(".").replace(/\\/g, "/");
-const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base).replaceAll("__REPO__", repo));
+const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base).replaceAll("__REPO__", repo).replaceAll("scripts/drive/shots/", "scratch/drive-shots/"));
 // A fake microphone, granted without a prompt, for the voiceover drive.
 const browser = await chromium.launch({
   channel: "msedge",
@@ -44,6 +44,7 @@ const browser = await chromium.launch({
 let result;
 try {
   const page = await browser.newPage({ viewport: { width, height } });
+  await page.context().route("**/api/tags", (route) => route.fulfill({ headers: { "Access-Control-Allow-Origin": "*" }, json: { models: [{ name: "llama3.1:8b" }] } }));
   page.on("pageerror", (e) => console.error("pageerror:", e.message));
   // Drives written for an attached page (the desktop WebView) start with a
   // reload, which needs a page already on the app.

@@ -1,4 +1,4 @@
-import { AudioLines, Blend, Film, Palette, SlidersHorizontal, Sparkles, Sticker, Type, X } from "../icons";
+import { AudioLines, Blend, Film, Image, Palette, SlidersHorizontal, Sparkles, Sticker, Type, X } from "../icons";
 import { useDrag } from "../state/drag";
 import { dismiss, useToasts } from "../state/toast";
 
@@ -8,7 +8,7 @@ export function DragGhost() {
   if (!d) return null;
   const p = d.payload;
   const Icon =
-    p.kind === "asset" ? (p.asset.kind === "audio" ? AudioLines : Film) : p.kind === "sfx" ? AudioLines : p.kind === "text" || p.kind === "template" ? Type : p.kind === "transition" ? Blend : p.kind === "filter" || p.kind === "color" ? Palette : p.kind === "adjustment" ? SlidersHorizontal : p.kind === "sticker" ? Sticker : Sparkles;
+    p.kind === "asset" ? (p.asset.kind === "audio" ? AudioLines : p.asset.kind === "image" ? (p.asset.sticker ? Sticker : Image) : Film) : p.kind === "sfx" ? AudioLines : p.kind === "text" || p.kind === "template" ? Type : p.kind === "transition" ? Blend : p.kind === "filter" || p.kind === "color" ? Palette : p.kind === "adjustment" ? SlidersHorizontal : p.kind === "sticker" ? Sticker : Sparkles;
   const label = p.kind === "asset" ? p.asset.name : p.label;
   return (
     <div className="drag-ghost" style={{ transform: `translate(${d.x + 12}px, ${d.y + 12}px)` }}>
@@ -18,7 +18,7 @@ export function DragGhost() {
   );
 }
 
-/** CapCut-style toasts: small dark pills near the top of the window. */
+/** CapCut-style toasts: small dark pills near the bottom of the window. */
 export function Toasts() {
   const toasts = useToasts();
   return (

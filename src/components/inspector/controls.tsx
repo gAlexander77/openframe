@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCw } from "../../icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCcw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
 import { parseTyped } from "../../lib/numberInput";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
@@ -40,7 +40,7 @@ export function Section(props: { title: string; id?: string; children: ReactNode
           {props.extra}
           {props.onReset && (
             <button className="icon-btn small" aria-label={`Reset ${props.title}`} data-tip="Reset" onClick={props.onReset}>
-              <RotateCw size={12} />
+              <RotateCcw size={12} />
             </button>
           )}
         </div>
@@ -214,7 +214,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
         data-tip={on ? "Remove keyframe" : "Add keyframe"}
         onClick={() => store.edit(on ? "Remove keyframe" : "Add keyframe", (p) => toggleKeyframe(p, clip.id, path, rel, value))}
       >
-        <Diamond size={11} fill={on ? "currentColor" : "none"} />
+        <Diamond size={12} fill={on ? "currentColor" : "none"} />
       </button>
       <button className="key-nav" disabled={!next} aria-label="Next keyframe" data-tip="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
         <ChevronRight size={11} />
@@ -241,6 +241,17 @@ export function Segmented<T extends string>(props: { value: T; options: { value:
           key={o.value}
           role="radio"
           aria-checked={props.value === o.value}
+          tabIndex={props.value === o.value || (!props.options.some((item) => item.value === props.value) && o === props.options[0]) ? 0 : -1}
+          onKeyDown={(e) => {
+            const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+            if (!step && e.key !== "Home" && e.key !== "End") return;
+            e.preventDefault();
+            e.stopPropagation();
+            const i = props.options.indexOf(o);
+            const next = e.key === "Home" ? 0 : e.key === "End" ? props.options.length - 1 : (i + step + props.options.length) % props.options.length;
+            props.onChange(props.options[next].value);
+            e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("button")[next]?.focus();
+          }}
           className={props.value === o.value ? "on" : ""}
           data-tip={o.tip}
           aria-label={o.tip}

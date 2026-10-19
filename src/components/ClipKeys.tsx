@@ -133,7 +133,7 @@ export function ClipKeys({ clip, zoom, locked }: { clip: Clip; zoom: number; loc
               store.seek(clip.start + f);
             }}
           >
-            <Diamond size={9} fill="currentColor" />
+            <Diamond size={12} fill="currentColor" />
           </button>
         );
       })}

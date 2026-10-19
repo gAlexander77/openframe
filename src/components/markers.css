@@ -5,7 +5,7 @@
 .marker-count { margin-left: auto; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
 .marker-search .lib-search { min-width: 0; }
 .marker-search select { max-width: 100px; height: 28px; font-size: var(--fs-xs); }
-.marker-list { flex: 1; min-height: 60px; overflow-y: auto; }
+.marker-list { flex: 1 0 132px; min-height: 132px; overflow-y: auto; }
 .marker-row { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-radius: var(--radius-sm); }
 .marker-row:hover { background: var(--bg-2); }
 .marker-row.on { background: var(--accent-soft); }
@@ -13,7 +13,7 @@
 .marker-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; }
 .marker-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .marker-note small { display: block; margin-top: 3px; color: var(--text-3); font-size: var(--fs-xs); }
-.marker-editor { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); overflow-y: auto; flex-shrink: 1; }
+.marker-editor { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); overflow-y: visible; flex-shrink: 0; }
 .marker-editor label { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); }
 .marker-editor .field { min-width: 0; width: 100%; height: 28px; }
 .marker-editor [aria-invalid="true"] { border-color: #ff6b75; }

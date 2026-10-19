@@ -24,7 +24,7 @@
 
 .presets { display: grid; grid-template-columns: repeat(5, minmax(96px, 1fr)); gap: 10px; }
 .preset {
-  display: grid; align-content: center; justify-items: center; gap: 5px;
+  display: grid; align-content: start; grid-template-rows: 34px 18px auto; justify-items: center; gap: 5px;
   padding: 14px 8px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--bg-1); color: var(--text-2); font-size: var(--fs-xs);
   transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-med) var(--ease-out);
@@ -48,7 +48,9 @@
   box-shadow: inset 0 0 0 1px var(--line);
   transition: box-shadow var(--t-fast), transform var(--t-med) var(--ease-out);
 }
-.project-card:hover .project-thumb, .project-card:focus-visible .project-thumb { box-shadow: inset 0 0 0 2px var(--accent); transform: translateY(-2px); }
+.project-thumb::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 1px var(--line); }
+.project-card:hover .project-thumb::after, .project-card:focus-visible .project-thumb::after { box-shadow: inset 0 0 0 2px var(--accent); }
+.project-card:hover .project-thumb, .project-card:focus-visible .project-thumb { transform: translateY(-2px); }
 /* Absolutely placed so a tall image cannot override the card's aspect ratio
    (a grid item's intrinsic height wins over aspect-ratio otherwise). */
 .project-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Check, CircleAlert, Loader2, SendHorizontal, Square, SquarePen, Undo2, WandSparkles, X } from "../icons";
+import { Check, CircleAlert, Loader2, SendHorizontal, Square, SquarePen, Undo2, Bot, X } from "../icons";
 import { ask, discoverModels, draft, PROVIDERS, resetChat, retry, setModel, setProvider, stop, toggleAssistant, undoTurn, useAssistant, type Entry } from "../state/assistant";
 import type { Step } from "../lib/assistant";
 import { AgentsSection } from "./AgentsSection";
@@ -110,7 +110,7 @@ export function AssistantPanel() {
   return (
     <aside className="panel assistant" aria-label="AI assistant">
       <header className="assistant-head">
-        <WandSparkles size={15} className="assistant-mark" />
+        <Bot size={15} className="assistant-mark" />
         <strong>AI assistant</strong>
         <span className={`assistant-status ${c.status}`} role="status" data-tip={c.status === "offline" ? "No local model server found" : "Runs on this computer"}>
           <i aria-hidden />
@@ -190,7 +190,7 @@ export function AssistantPanel() {
             {c.entries.length === 0 && c.status !== "offline" && (
               <div className="assistant-empty">
                 <span className="assistant-empty-mark" aria-hidden>
-                  <WandSparkles size={18} />
+                  <Bot size={18} />
                 </span>
                 <strong>Describe an edit</strong>
                 <span>A model on this computer makes it with the editor's own tools. Each answer can be undone in one step.</span>

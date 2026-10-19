@@ -6,7 +6,12 @@ import {
   ChartSpline,
   ChevronDown,
   Crop,
-  Crosshair,
+  SeparatorVertical,
+  FoldHorizontal,
+  ArrowLeftRight,
+  ChevronsLeftRight,
+  MoveHorizontal,
+  Maximize2,
   FlipHorizontal2,
   Link2,
   Magnet,
@@ -22,11 +27,10 @@ import {
   ZoomIn,
   ZoomOut,
 } from "../icons";
-import { chordText, type ActionId, ACTION_LABELS } from "../lib/keymap";
+import { type ActionId, ACTION_LABELS } from "../lib/keymap";
 import * as ops from "../lib/project/ops";
 import { clampZoom, ZOOM_MAX, ZOOM_MIN } from "../lib/timeline";
-import { isMac } from "../platform/env";
-import { chordFor, run, tipFor } from "../state/actions";
+import { edit, run, tipFor } from "../state/actions";
 import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
@@ -50,14 +54,8 @@ function Tool(props: { id: ActionId; icon: React.ReactNode; on?: boolean; disabl
   );
 }
 
-/** The trim tools show their key on the picker, as Premiere's toolbar
- * does, until they get drawn icons: the key as bound now, so a rebound
- * tool shows its new key. */
-const TOOL_ACTION: Record<string, ActionId> = { ripple: "toolRipple", roll: "toolRoll", slip: "toolSlip", slide: "toolSlide" };
-const toolLetter = (tool: string) => {
-  const c = chordFor(TOOL_ACTION[tool]);
-  return c ? chordText(c, isMac) : tool[0].toUpperCase();
-};
+const TOOL_ACTION: Record<string, ActionId> = { select: "toolSelect", blade: "toolBlade", stretch: "toolStretch", ripple: "toolRipple", roll: "toolRoll", slip: "toolSlip", slide: "toolSlide" };
+const TOOL_ICON = { select: MousePointer2, blade: Scissors, stretch: StretchHorizontal, ripple: FoldHorizontal, roll: ArrowLeftRight, slip: ChevronsLeftRight, slide: MoveHorizontal };
 
 // Zoom slider is logarithmic: equal travel = equal zoom ratio.
 const toSlider = (z: number) => Math.log(z / ZOOM_MIN) / Math.log(ZOOM_MAX / ZOOM_MIN);
@@ -65,12 +63,17 @@ const fromSlider = (v: number) => clampZoom(ZOOM_MIN * (ZOOM_MAX / ZOOM_MIN) ** 
 
 export function TimelineToolbar() {
   const tool = useEditor((s) => s.tool);
+  const ToolIcon = TOOL_ICON[tool];
   const magnet = useEditor((s) => s.magnet);
   const snapping = useEditor((s) => s.snapping);
   const linkage = useEditor((s) => s.linkage);
   const axis = useEditor((s) => s.previewAxis);
   const keyframes = useEditor((s) => s.keyframePanel);
   const zoom = useEditor((s) => s.zoom);
+  const canSplit = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration && (!s.selection.length || s.selection.includes(c.id)))));
+  const canTrim = useEditor((s) => s.project.tracks.some((t) => !t.locked && t.clips.some((c) => c.start < s.playhead && s.playhead < c.start + c.duration)));
+  // Markers are valid on an empty timeline and may share a frame.
+  const canMark = useEditor((s) => Number.isFinite(s.playhead) && s.playhead >= 0);
   const hasSel = useEditor((s) => s.selection.length > 0);
   const undo = useEditor((s) => s.undoLabel);
   const redo = useEditor((s) => s.redoLabel);
@@ -92,14 +95,14 @@ export function TimelineToolbar() {
   const steps = history ? store.history()[history.kind].slice(0, 20) : [];
 
   const flip = () =>
-    store.edit("Mirror", (p) => {
+    edit("Mirror", (p) => {
       for (const id of store.get().selection) {
         p = ops.updateClip(p, id, (c) => ("transform" in c ? ({ ...c, transform: { ...c.transform, flipX: !c.transform.flipX } } as typeof c) : c));
       }
       return p;
     });
   const rotate = () =>
-    store.edit("Rotate", (p) => {
+    edit("Rotate", (p) => {
       for (const id of store.get().selection) {
         p = ops.updateClip(p, id, (c) => ("transform" in c ? ({ ...c, transform: { ...c.transform, rotation: (c.transform.rotation + 90) % 360 } } as typeof c) : c));
       }
@@ -110,8 +113,8 @@ export function TimelineToolbar() {
     <div className="tl-toolbar">
       <div className="tl-tools">
         <div className="tool-picker" ref={picker}>
-          <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tool === "blade" ? tipFor("toolBlade") : tipFor("toolSelect")} onClick={() => setToolMenu((v) => !v)}>
-            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : tool === "stretch" ? <StretchHorizontal /> : <span className="tool-letter">{toolLetter(tool)}</span>}
+          <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tipFor(TOOL_ACTION[tool])} onClick={() => setToolMenu((v) => !v)}>
+            <ToolIcon />
             <ChevronDown size={11} />
           </button>
           {toolMenu && (
@@ -166,11 +169,11 @@ export function TimelineToolbar() {
           )}
         </div>
         <span className="tl-sep" />
-        <Tool id="split" icon={<Scissors />} />
-        <Tool id="trimStartToPlayhead" icon={<ArrowLeftToLine />} />
-        <Tool id="trimEndToPlayhead" icon={<ArrowRightToLine />} />
+        <Tool id="split" icon={<Scissors />} disabled={!canSplit} />
+        <Tool id="trimStartToPlayhead" icon={<ArrowLeftToLine />} disabled={!canTrim} />
+        <Tool id="trimEndToPlayhead" icon={<ArrowRightToLine />} disabled={!canTrim} />
         <Tool id="delete" icon={<Trash2 />} disabled={!hasSel} />
-        <Tool id="addMarker" icon={<Bookmark />} />
+        <Tool id="addMarker" icon={<Bookmark />} disabled={!canMark} />
         <button className="icon-btn" aria-label="Crop" data-tip="Crop" disabled={!croppable} onClick={() => beginCrop(store.get().selection[0])}>
           <Crop />
         </button>
@@ -187,13 +190,13 @@ export function TimelineToolbar() {
         <VoiceoverButton />
         <span className="tl-sep" />
         <Tool id="toggleMagnet" icon={<Magnet />} on={magnet} label="Main track magnet" />
-        <Tool id="toggleSnapping" icon={<Crosshair />} on={snapping} label="Auto snapping" />
+        <Tool id="toggleSnapping" icon={<SeparatorVertical />} on={snapping} label="Auto snapping" />
         <Tool id="toggleLinkage" icon={<Link2 />} on={linkage} label="Linkage" />
         <Tool id="togglePreviewAxis" icon={<ScanLine />} on={axis} label="Preview axis" />
         <Tool id="toggleKeyframePanel" icon={<ChartSpline />} on={keyframes} />
         <span className="tl-sep" />
-        <button className="btn ghost fit-btn" data-tip={tipFor("zoomFit")} onClick={() => run("zoomFit")}>
-          Fit
+        <button className="icon-btn fit-btn" aria-label="Fit timeline" data-tip={tipFor("zoomFit")} onClick={() => run("zoomFit")}>
+          <Maximize2 />
         </button>
         <Tool id="zoomOut" icon={<ZoomOut />} />
         <input

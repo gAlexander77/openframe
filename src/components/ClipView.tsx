@@ -5,7 +5,7 @@ import { store } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, Group, Image, Layers, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
+import { AudioLines, Captions, Square, Sticker, Group, Image, Layers, Snowflake, Sparkles, SlidersHorizontal, Type } from "../icons";
 import { CLIP_LABELS, EFFECTS, FILTERS } from "../lib/catalog";
 import type { Asset, Clip, Compound, Project, Track } from "../lib/project/types";
 import { PRESETS } from "../lib/speed";
@@ -214,7 +214,7 @@ export const ClipView = memo(function ClipView(p: Props) {
 
   const name =
     c.type === "video" || c.type === "image" || c.type === "audio" ? (c.name ?? p.asset?.name ?? "") : c.type === "compound" ? (c.name ?? p.compound?.name ?? "Compound clip") : describe(c);
-  const Icon = c.type === "text" ? Type : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? Image : c.type === "compound" ? Layers : null;
+  const Icon = c.type === "text" ? (c.caption ? Captions : Type) : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? (p.asset?.sticker ? Sticker : Image) : c.type === "color" ? Square : c.type === "compound" ? Layers : null;
   const fxCount = "effects" in c ? c.effects.length + ("filter" in c && c.filter ? 1 : 0) : 0;
   const curve = isTimed(c) && c.speedCurve ? (PRESETS[c.speedCurve.preset ?? ""]?.label ?? "Curve") : null;
   const speed = curve ?? ("speed" in c && c.speed !== 1 ? `${+c.speed.toFixed(2)}x` : null);
@@ -262,7 +262,7 @@ export const ClipView = memo(function ClipView(p: Props) {
         {c.group && !tiny && <Group size={11} className="clip-badge-icon" aria-label="Grouped" />}
         {fxCount > 0 && !tiny && c.type !== "adjustment" && (
           <span className="clip-badge">
-            <Sparkles size={10} /> {fxCount}
+            <Sparkles size={11} /> {fxCount}
           </span>
         )}
       </div>

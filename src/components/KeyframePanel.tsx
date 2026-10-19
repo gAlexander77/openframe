@@ -1,3 +1,4 @@
+import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ChartSpline, ChevronDown, Diamond, X } from "../icons";
 import { interpolate, paramAt, upsertKey } from "../lib/keyframes";
@@ -20,7 +21,7 @@ const ROW_H = 22;
 const PAD_Y = 16;
 const SNAP_PX = 10;
 const DEFAULT_H = 240;
-const MIN_H = 150;
+const MIN_H = 90;
 
 const loadHeight = () => {
   try {
@@ -55,8 +56,17 @@ export function KeyframePanel(props: Props) {
       /* private window: the height just won't persist */
     }
   }, [height]);
-  // Leave the tracks at least a couple of rows.
-  const maxH = () => Math.max(MIN_H, (dock.current?.parentElement?.clientHeight ?? 600) - 140);
+  // Measure the actual dock, including window and workspace splitter changes.
+  // Reserve the toolbar, ruler and two normal track rows above the graph.
+  const [available, setAvailable] = useState(MIN_H);
+  useLayoutEffect(() => {
+    const parent = dock.current?.parentElement;
+    if (!parent) return;
+    const observer = new ResizeObserver(() => setAvailable(Math.max(MIN_H, parent.clientHeight - 210)));
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+  const maxH = () => available;
   const animated = !!clip?.keyframes && Object.keys(clip.keyframes).length > 0;
   return (
     <div className="kf-dock" ref={dock} style={{ height: Math.min(height, maxH()) }}>
@@ -67,7 +77,7 @@ export function KeyframePanel(props: Props) {
         ) : (
           <>
             <Head headerW={props.headerW}>{clip && <ClipName clip={clip} />}</Head>
-            <div className="kf-empty">{clip ? <QuickAdd clip={clip} /> : <span>Select a clip to see and edit its keyframes.</span>}</div>
+            <div className="kf-empty">{clip ? <QuickAdd clip={clip} /> : <EmptyState icon={<Diamond size={24} />} title="No clip selected" hint="Select a clip to see and edit its keyframes." />}</div>
           </>
         )}
       </div>
@@ -110,11 +120,11 @@ function QuickAdd({ clip }: { clip: Clip }) {
   };
   return (
     <div className="kf-quick">
-      <span>No keyframes on this clip yet. Add one at the playhead:</span>
+      <EmptyState icon={<Diamond size={24} />} title="No keyframes yet" hint="Add a property at the playhead to start animating." />
       <div className="kf-quick-chips">
         {paths.map((p) => (
           <button key={p} className="chip-btn" onClick={() => add(p)}>
-            <Diamond size={10} /> {paramInfo(p, clip, { width: w, height: h }).label}
+            <Diamond size={12} /> {paramInfo(p, clip, { width: w, height: h }).label}
           </button>
         ))}
       </div>
@@ -509,7 +519,7 @@ function LaneLabel(props: { clip: Clip; path: string; label: string; focused: bo
           store.edit(on ? "Remove keyframe" : "Add keyframe", (p) => toggleKeyframe(p, props.clip.id, props.path, rel, paramAt(props.clip, props.path, rel)));
         }}
       >
-        <Diamond size={10} fill={on ? "currentColor" : "none"} />
+        <Diamond size={12} fill={on ? "currentColor" : "none"} />
       </button>
     </div>
   );
