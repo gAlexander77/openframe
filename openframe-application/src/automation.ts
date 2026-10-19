@@ -38,7 +38,7 @@ import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } fr
 import { secondsToFrames } from "./lib/time";
 import { decodeMono, sourceFrames } from "./engine/analyze";
 import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
-import { measureBackdrop, tailLevels } from "./lib/contrast";
+import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
 import type { Project } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
@@ -184,38 +184,55 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * What check_project measures before it judges (ADR-068): each title's
- * contrast with the picture behind it, rendered as export draws it with
- * every title off, and each long music clip's last seconds, decoded. A
- * failure to measure falls back to the check's own guess, never fails it.
+ * What check_project measures before it judges (ADR-068, ADR-097): every
+ * title's contrast with the picture behind it at a few moments of its life
+ * (designCheck.titleMoments), rendered as export draws it with every title
+ * off, its box, shadow and outline counted, and the fixes it names tried
+ * on the same pixels; and each long music clip's last seconds, decoded. A
+ * failure to measure falls back to the check's own guess and the answer
+ * says why; it never fails the check.
  */
 async function measureForCheck(p: Project): Promise<Measured> {
   const out: Measured = {};
-  const targets = contrastTargets(p);
+  const { targets, skipped } = contrastTargets(p);
   if (targets.length) {
     try {
       // Without its titles, at a width that is plenty for a luminance.
       const bare: Project = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.type === "text" ? { ...c, disabled: true } : c)) })) };
       const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
-      const frames = [...new Set(targets.map((t) => t.frame))];
-      const pics = await exportStills(bare, frames, w, h);
+      const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
+      const contrast: NonNullable<Measured["contrast"]> = {};
       const canvas = new OffscreenCanvas(w, h);
       const g = canvas.getContext("2d", { willReadFrequently: true })!;
-      out.contrast = {};
-      for (const [i, frame] of frames.entries()) {
-        const bmp = await createImageBitmap(pics[i]);
-        g.drawImage(bmp, 0, 0, w, h);
-        bmp.close();
-        const px = g.getImageData(0, 0, w, h).data;
-        for (const t of targets.filter((x) => x.frame === frame)) {
-          const m = measureBackdrop(t.colors, px, w, { left: t.box.left * k, right: t.box.right * k, top: t.box.top * k, bottom: t.box.bottom * k });
-          if (m) out.contrast[t.clipId] = m;
+      // A few frames a render, so a long film's titles do not hold every
+      // picture in memory at once.
+      for (let i = 0; i < frames.length; i += 8) {
+        const batch = frames.slice(i, i + 8);
+        const pics = await exportStills(bare, batch, w, h);
+        for (const [j, frame] of batch.entries()) {
+          const bmp = await createImageBitmap(pics[j]);
+          g.drawImage(bmp, 0, 0, w, h);
+          bmp.close();
+          const rgba = g.getImageData(0, 0, w, h).data;
+          for (const t of targets) {
+            const s = t.samples.find((x) => x.frame === frame);
+            if (!s) continue;
+            const px = boxPixels(rgba, w, { left: s.box.left * k, right: s.box.right * k, top: s.box.top * k, bottom: s.box.bottom * k });
+            const m = measureLook(t.look, px);
+            if (!m || (contrast[t.clipId] && contrast[t.clipId].ratio <= m.ratio)) continue;
+            contrast[t.clipId] = { ...m, frame, fixes: t.fixes.map((x) => ({ say: x.say, ratio: measureLook(x.look, px)?.ratio ?? 0 })) };
+          }
         }
       }
-    } catch {
-      delete out.contrast;
+      out.contrast = contrast;
+      out.moments = frames.length;
+      const missed = [skipped && `${skipped} titles past the first 40 were not measured`, p.compounds?.some((k) => k.tracks.some((t) => t.clips.some((c) => c.type === "text"))) && "titles inside compound clips are part of their picture and were not measured"].filter(Boolean);
+      if (missed.length) out.contrastNote = missed.join("; ");
+    } catch (e) {
+      // Say why, so an agent knows the contrast findings are guesses.
+      out.contrastNote = `not measured, the picture could not be rendered here (${e instanceof Error ? e.message : String(e)}); titles over footage without an outline, shadow or box are tips instead`;
     }
-  }
+  } else if (p.tracks.some((t) => t.clips.some((c) => c.type === "text" && !c.disabled))) out.contrastNote = "no title is on screen long enough to measure";
   for (const t of tailTargets(p)) {
     const a = getAsset(p, t.assetId);
     if (!a?.hasAudio) continue;

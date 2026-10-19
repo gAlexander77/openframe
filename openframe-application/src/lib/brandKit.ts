@@ -87,11 +87,20 @@ export function withAlpha(c: string, a: number): string {
  * frame; this keeps it to the same share of the width as on 4:5. */
 export const typeScale = (width: number, height: number) => Math.min(1, (1.2 * width) / height);
 
+/** How big the smallest type is, a share of the frame's short side: a
+ * phone shows every shape at its width (a tall one held upright, a wide
+ * one turned or in a feed), about 6.5 cm, where 4.5% is a 2.9 mm letter,
+ * a phone's body text; social video (a tall frame, or a short for TikTok,
+ * Reels or Shorts) is read in passing over the apps' buttons, so 5%
+ * (ADR-097). Codex's 2026-10-19 film set its subtitles at 3.7% (the old
+ * floor, 40 on 16:9) and they did not read on a phone. */
+export const MIN_TEXT_SHARE = { any: 0.045, social: 0.05 };
+
 /** The smallest text that reads on a phone, as a style size (pixels at a
- * 1080-tall canvas): 40 px on a frame whose short side is 1080, so 40 on
- * 16:9 and 1:1, 32 on 4:5 and 22.5 on 9:16, where the canvas is 1920 tall
- * but the phone shows its 1080 width. */
-export const minTextSize = (width: number, height: number) => (40 * Math.min(width, height)) / height;
+ * 1080-tall canvas): MIN_TEXT_SHARE of the short side, so 49 on 16:9 and
+ * 1:1, 43 on 4:5 and 31 on 9:16 (54 for a 16:9 social short). As a share
+ * of the frame's height: 4.5% on 16:9, 2.8% on 9:16. */
+export const minTextSize = (width: number, height: number, social = height > width) => ((social ? MIN_TEXT_SHARE.social : MIN_TEXT_SHARE.any) * 1080 * Math.min(width, height)) / height;
 
 /** A soft shadow that lifts light type off busy footage (firm enough for
  * white over a bright, busy shot; the ad drive's contact sheet asked). */
@@ -99,10 +108,11 @@ export const LIFT = { color: "#000000cc", blur: 22, x: 0, y: 4 };
 
 /** The style a text role takes from the brand. Headlines run about 9% of
  * the frame's height (ad typography: 8 to 12%); type over footage gets a
- * shadow, and labels on fills pick a readable color. */
-export function roleStyle(b: Brand, role: TextRole, k = 1): Partial<TextStyle> {
+ * shadow, and labels on fills pick a readable color. No size under
+ * `floor` (minTextSize of the canvas). */
+export function roleStyle(b: Brand, role: TextRole, k = 1, floor = 0): Partial<TextStyle> {
   const c = b.colors;
-  const size = (n: number) => Math.round(n * k);
+  const size = (n: number) => Math.max(Math.ceil(floor), Math.round(n * k));
   switch (role) {
     case "headline":
       return { font: b.fonts.heading, size: size(100), bold: true, color: c.text, shadow: LIFT, lineHeight: 1.1 };
@@ -126,9 +136,9 @@ export function roleStyle(b: Brand, role: TextRole, k = 1): Partial<TextStyle> {
  * bold display type, a box takes the primary color with a readable label,
  * plain type the brand's text color, and any glow, gradient or sweep color
  * the accent. Words, size and layout stay. */
-export function brandedStyle(s: TextStyle, b: Brand, role?: TextRole, k = 1): TextStyle {
+export function brandedStyle(s: TextStyle, b: Brand, role?: TextRole, k = 1, floor = 0): TextStyle {
   if (role) {
-    const look = roleStyle(b, role, k);
+    const look = roleStyle(b, role, k, floor);
     const out: TextStyle = { ...s, ...look };
     // A role without a box or shadow drops the old ones.
     if (!look.background) delete out.background;

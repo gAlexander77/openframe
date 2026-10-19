@@ -105,8 +105,9 @@ describe("ad elements", () => {
   });
 
   it("keeps every part's text at the readable floor or above, on every shape", () => {
-    // 40 px at a 1080 short side: 40 on 16:9 and 1:1, 32 on 4:5, 22.5 on 9:16.
-    expect(SHAPES.map(([w, h]) => minTextSize(w, h))).toEqual([40, 40, 32, 22.5]);
+    // 4.5% of the short side (5% on a tall, social frame), ADR-097: 48.6 on
+    // 16:9 and 1:1, 43.2 on 4:5, 30.4 on 9:16.
+    expect(SHAPES.map(([w, h]) => +minTextSize(w, h).toFixed(1))).toEqual([48.6, 48.6, 43.2, 30.4]);
     const words = { headline: "Fresh roast", subline: "Today only", cta: "Order now", url: "roast.example" };
     for (const [w, h] of SHAPES)
       for (const element of AD_ELEMENTS) {

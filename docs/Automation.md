@@ -143,12 +143,21 @@ titles), `save_project_copy` (a variant to work by hand, the original
 kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
 `"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
-vertical apps' buttons, text size and reading time, the WCAG contrast of
-each title with the rendered picture behind it, caption speed, fonts,
-flashes over 3 a second, black gaps, music that stops dead (its last
-second decoded, so a track that fades out in its own audio passes), an
-ad's end card, an epic edit's cuts on the beat; shots counted on the
-busiest picture track; each finding names the fixing tool, [[ADR-068 check_project measures the picture and the sound it judges]]),
+vertical apps' buttons, text too small for a phone (named by its share of
+the frame's height; the floor is 4.5% of the short side, 5% on a tall
+frame or `kind: social_short`) and reading time, the WCAG contrast of
+every title with the rendered picture behind it at a few moments of its
+life, its box, shadow and outline counted, each low one named with its
+time and a box or outline measured on the same pixels (`contrast.lowest`
+lists every ratio), caption speed, fonts, flashes over 3 a second, black
+gaps, music that stops dead (its last second decoded, so a track that
+fades out in its own audio passes), an ad's end card, an epic edit's cuts
+on the beat; shots counted where the viewer sees them, across tracks, or
+on the busiest picture track; `ok` is true when there are no errors and
+`verdict` says what is left in words; `not_checked` says what was not
+measured and why; each finding names the fixing tool,
+[[ADR-068 check_project measures the picture and the sound it judges]],
+[[ADR-097 Checks and versions judge by the picture]]),
 `preview_motion` (consecutive frames of a stretch, with the cuts and beats
 in it, tiles up to 640 wide as `preview_frames`'), `preview_media` (an imported video's own frames, to choose
 moments), `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades

@@ -55,8 +55,8 @@ export interface McpHost {
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The design check (lib/designCheck.ts) of the open project; the app
-   * measures the picture behind each title and each music clip's last
-   * second first, so it may take a moment. */
+   * renders the picture behind every title at a few moments and decodes
+   * each music clip's last seconds first, so it may take a moment. */
   checkProject(kind: string): unknown | Promise<unknown>;
   /** Export without a dialog (desktop); resolves when the file is done. */
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
@@ -396,7 +396,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat (cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
     inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
     call: async (h, a) => json(await h.checkProject(String(a.kind ?? "any"))),
   },
