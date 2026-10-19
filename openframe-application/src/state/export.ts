@@ -13,6 +13,15 @@ import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
 import { versionProject, type VersionSpec } from "../lib/versions";
+import { copyProject } from "../lib/project/copy";
+import { projectSummary } from "../lib/project/summary";
+import { findClip } from "../lib/project/ops";
+import { onCanvas } from "../lib/follow";
+import { layerAt } from "../lib/render/plan";
+import type { SubjectNote } from "../lib/reframe";
+import type { VisualClip } from "../lib/project/types";
+import { lookAtShots } from "./subjects";
+import { seenShots } from "../lib/designCheck";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { rootInPoint, rootOutPoint, store } from "./store";
@@ -303,13 +312,59 @@ export interface VersionFile {
   textless?: true;
   /** Set when the file took a numbered name (renamedNote). */
   note?: string;
+  /** Where its framing cuts a shot's subject, if anywhere. */
+  subjects?: SubjectReport[];
 }
 
-/** The versions as projects, from the document as it is now. */
-function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
+/** A subject a version's framing cuts, as an agent reads it. */
+export interface SubjectReport {
+  clip_id: string;
+  /** Version seconds. */
+  at: number;
+  /** The share of the subject inside the frame. */
+  kept: number;
+  /** The subject, fractions of the clip's picture from its top left. */
+  subject: { x: number; y: number; w: number; h: number };
+  note: string;
+}
+
+/** One report per shot: its worst moment. */
+function reportOf(notes: SubjectNote[]): SubjectReport[] {
+  const worst = new Map<string, SubjectNote>();
+  for (const n of notes) if (!worst.has(n.clipId) || n.kept < worst.get(n.clipId)!.kept) worst.set(n.clipId, n);
+  return [...worst.values()].map((n) => {
+    const s = n.subject, cx = +((s.left + s.right) / 2).toFixed(2), cy = +((s.top + s.bottom) / 2).toFixed(2);
+    return {
+      clip_id: n.clipId,
+      at: n.at,
+      kept: n.kept,
+      subject: { x: +s.left.toFixed(3), y: +s.top.toFixed(3), w: +(s.right - s.left).toFixed(3), h: +(s.bottom - s.top).toFixed(3) },
+      note: n.wide
+        ? `the subject is wider than this frame (${Math.round(n.kept * 100)}% of it shows): fit "blur" or "fit" shows it whole`
+        : `the subject is cut by the frame (${Math.round(n.kept * 100)}% of it shows): reframe "subject" (the default), or focus {clip_id: "${n.clipId}", x: ${cx}, y: ${cy}}`,
+    };
+  });
+}
+
+/** The versions as projects, from the document as it is now: footage a
+ * version crops is framed on its subject (state/subjects.ts looks at the
+ * shots once, lib/reframe.ts places each crop). */
+async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
   const master = store.document();
   const keep = o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps);
-  return o.versions.map((v) => ({ spec: v, project: versionProject(master, v, keep) }));
+  const reshaped = o.versions.some((v) => v.ratio !== "original");
+  const looks = reshaped ? await lookAtShots(master) : undefined;
+  return o.versions.map((v) => {
+    const notes: SubjectNote[] = [];
+    const project = versionProject(master, v, keep, looks, notes);
+    // Only where the shot is seen: not under an end card or another shot.
+    const runs = notes.length ? seenShots(project, true) : [];
+    const seen = (n: SubjectNote) => {
+      const f = secondsToFrames(n.at, project.fps);
+      return runs.some((r) => r.clipId === n.clipId && f >= r.start && f < r.start + r.duration);
+    };
+    return { spec: v, project, notes: notes.filter(seen) };
+  });
 }
 
 /**
@@ -322,12 +377,12 @@ function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
 export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   if (o.folder !== undefined && !platform.createAgentExportTarget) throw new Error(FOLDER_DESKTOP_ONLY);
   if (job) throw new Error("An export is already running.");
-  const items = versionProjects(o);
+  const items = await versionProjects(o);
   const made: VersionFile[] = [];
   job = new AbortController();
   const tid = toast(`Exporting ${items.length} versions`, "progress");
   try {
-    for (const [i, { spec, project: q }] of items.entries()) {
+    for (const [i, { spec, project: q, notes }] of items.entries()) {
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
@@ -348,7 +403,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
       const renamed = platform.createAgentExportTarget ? renamedNote(`${name}.${plan.extension}`, path) : undefined;
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...(renamed ? { note: renamed } : {}) });
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...(renamed ? { note: renamed } : {}), ...(notes.length ? { subjects: reportOf(notes) } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);
@@ -364,18 +419,20 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
 
 /** One PNG with a row per version: the frames at those shares of each
  * version, each stamped with its time, so an agent sees every shape and
- * cut before rendering any. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<Blob> {
-  const items = versionProjects(o);
+ * cut before rendering any. A tile where the framing cuts a shot's
+ * subject outlines the subject in orange and says so; the reports list
+ * every such shot with its worst moment. */
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[] }> {
+  const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
   const th = o.tileHeight ?? 220, gap = 6, label = 22;
-  const rows = items.map(({ project: q }) => ({ q, tw: Math.round((th * q.width) / q.height) }));
+  const rows = items.map(({ project: q, notes }) => ({ q, notes, tw: Math.round((th * q.width) / q.height) }));
   const width = Math.max(...rows.map((r) => gap + at.length * (r.tw + gap)), 480);
   const out = new OffscreenCanvas(width, gap + rows.length * (label + th + gap));
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw }] of rows.entries()) {
+  for (const [ri, { q, tw, notes }] of rows.entries()) {
     const y = gap + ri * (label + th + gap);
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
@@ -393,11 +450,68 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
       g.fillRect(x + 4, y + label + 4, g.measureText(t).width + 10, 18);
       g.fillStyle = "#fff";
       g.fillText(t, x + 9, y + label + 17);
+      // A subject this framing cuts near this moment: outlined where it is.
+      const sec = framesToSeconds(frame, q.fps);
+      const shown = seenShots(q, true).find((r) => frame >= r.start && frame < r.start + r.duration)?.clipId;
+      const n = notes.filter((m) => m.clipId === shown && Math.abs(m.at - sec) <= 0.6).sort((a, b) => Math.abs(a.at - sec) - Math.abs(b.at - sec))[0];
+      const c = n && (findClip(q, n.clipId)?.clip as VisualClip | undefined);
+      const l = c && layerAt(q, c, frame);
+      if (n && c && l) {
+        const k = tw / q.width;
+        const a = onCanvas(q, c, l, n.subject.left, n.subject.top), b = onCanvas(q, c, l, n.subject.right, n.subject.bottom);
+        const bx = x + Math.min(a.x, b.x) * k, by = y + label + Math.min(a.y, b.y) * k, bw = Math.abs(b.x - a.x) * k, bh = Math.abs(b.y - a.y) * k;
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = g.fillStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(bx, by, bw, bh);
+        g.setLineDash([]);
+        // Off the frame: a triangle on the edge it lies past, at its height.
+        const cy = Math.max(y + label + 8, Math.min(y + label + th - 8, by + bh / 2));
+        const side = bx >= x + tw ? 1 : bx + bw <= x ? -1 : 0;
+        if (side) {
+          const ex = side > 0 ? x + tw - 2 : x + 2;
+          g.beginPath();
+          g.moveTo(ex, cy);
+          g.lineTo(ex - side * 12, cy - 8);
+          g.lineTo(ex - side * 12, cy + 8);
+          g.fill();
+        }
+        g.restore();
+        const say = n.wide ? "subject too wide" : "subject cut";
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 24, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 11);
+      }
     }
   }
   // JPEG like the other contact sheets: a PNG sheet of footage can pass the
   // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
-  return out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
+  const blob = await out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
+  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length) };
+}
+
+/**
+ * export_versions with save_projects: each version saved as a project of
+ * its own (named as its file would be, sharing the master's media), to
+ * fine-tune by hand or with tools and export from there; nothing is
+ * exported and the master stays open and as it was.
+ */
+export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[] }[]> {
+  const items = await versionProjects(o);
+  const saved = [];
+  for (const { project: q, notes } of items) {
+    const copy = copyProject(q, q.name);
+    await platform.saveProject(copy, projectSummary(copy));
+    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}) });
+  }
+  toast(`Saved ${saved.length} version${saved.length === 1 ? "" : "s"} as projects`);
+  return saved;
 }
 
 provide({ export: openExportDialog, saveFrame: () => void saveFrame() });

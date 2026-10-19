@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { runCommand } from "./commands";
-import { checkProject, contrastTargets, tailTargets } from "./designCheck";
+import { checkProject, contrastTargets, seenShots, tailTargets } from "./designCheck";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -86,7 +86,8 @@ it("puts captions above the apps' zone on a tall canvas, and scales the size flo
   v = runCommand(v, "add_captions", { captions: [{ start: 0, end: 2, text: "hello there" }] });
   const cap = v.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
   expect("transform" in cap && cap.transform.y).toBe(0.05);
-  v = runCommand(v, "add_text", { text: "Small but fine", start: 0, duration: 3, style: { size: 26 } });
+  // Size counts pixels at a 1080-tall frame: on 9:16 a smaller size is as big on a phone.
+  v = runCommand(v, "add_text", { text: "Small but fine", start: 0, duration: 3, style: { size: 32 } });
   expect(rules(v)).not.toContain("text_too_small");
 });
 
@@ -117,38 +118,77 @@ function designed(): Project {
 const textId = (p: Project) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!.id;
 const songId = (p: Project) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === "audio")!.id;
 
-it("asks to measure the unguarded titles and the music that ends with the video", () => {
-  const p = designed();
-  const [t] = contrastTargets(p);
-  expect(t.clipId).toBe(textId(p));
-  expect(t.colors).toEqual([[1, 1, 1, 1]]);
-  expect(t.box.right - t.box.left).toBeGreaterThan(100);
+it("asks to measure every title at a few moments of its life, shadowed and boxed ones too, and the music that ends with the video", () => {
+  let p = designed();
+  p = runCommand(p, "add_text", { text: "A WAY HOME", start: 2, duration: 8, y: 0.41, style: { size: 40, color: "#BBD9DC", shadow: { color: "#000000cc", blur: 16, x: 0, y: 0 } } });
+  const shadowed = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text" && c.text === "A WAY HOME")!.id;
+  p = runCommand(p, "set_animation", { clip_id: shadowed, slot: "in", type: "fade", duration: 0.5 });
+  const { targets, skipped } = contrastTargets(p);
+  expect(skipped).toBe(0);
+  const plain = targets.find((t) => t.clipId !== shadowed)!, soft = targets.find((t) => t.clipId === shadowed)!;
+  expect(targets.map((t) => t.clipId)).toEqual([plain.clipId, shadowed]);
+  expect(plain.look.fills).toEqual([[1, 1, 1, 1]]);
+  expect(plain.look.around).toEqual([]);
+  // A 3 s title without animations: its first frame, middle and last.
+  expect(plain.samples.map((s) => s.frame)).toEqual([0, 45, 89]);
+  expect(plain.samples[0].box.right - plain.samples[0].box.left).toBeGreaterThan(100);
+  // Over six seconds: quarters too, from where its fade-in has played.
+  expect(soft.clipId).toBe(shadowed);
+  expect(soft.samples.map((s) => s.frame)).toEqual([75, 131, 187, 243, 299]);
+  expect(soft.look.around.map((a) => a.what)).toEqual(["shadow"]);
+  expect(soft.fixes.map((f) => f.say)).toEqual([expect.stringMatching(/^style.background/), expect.stringMatching(/^style.stroke/)]);
   expect(tailTargets(p)).toEqual([{ clipId: songId(p), assetId: "song", from: 6, to: 10 }]);
   const faded = runCommand(p, "set_fades", { clip_ids: [songId(p)], fade_out: 1.5 });
   expect(tailTargets(faded)).toEqual([]);
 });
 
-it("trusts the measured contrast over the guess: white on the dark film passes, white on a bright shot is named with its ratio", () => {
+it("trusts the measured contrast over the guess: white on the dark film passes, white on a bright shot is named with its ratio, time and fix", () => {
   const p = designed();
   expect(rules(p)).toContain("text_contrast_risk");
-  const dark = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 17.8, backdrop: [0.03, 0.04, 0.08] } } });
+  const id = textId(p);
+  const dark = checkProject(p, "any", { contrast: { [id]: { ratio: 17.8, backdrop: [0.03, 0.04, 0.08], frame: 45 } }, moments: 3 });
   expect(dark.findings.map((f) => f.rule)).not.toContain("text_contrast_risk");
   expect(dark.findings.map((f) => f.rule)).not.toContain("text_low_contrast");
-  const bright = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 1.3, backdrop: [0.86, 0.9, 0.94] } } });
+  expect(dark.contrast).toMatchObject({ lowest: [{ clip_id: id, ratio: 17.8, at: 1.5 }] });
+  expect(dark.not_checked).not.toMatch(/Contrast/);
+  const bright = checkProject(p, "any", { contrast: { [id]: { ratio: 1.3, backdrop: [0.86, 0.9, 0.94], frame: 60, fixes: [{ say: 'style.background {color: "#000000a6"}', ratio: 7.9 }, { say: 'style.stroke {color: "#000000", width: 8}', ratio: 12.4 }] } } });
   const f = bright.findings.find((x) => x.rule === "text_low_contrast")!;
   expect(f.level).toBe("warning");
-  expect(f.message).toMatch(/measures 1.3:1 against the picture behind it \(#dbe6f0/);
-  const middling = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 3.6, backdrop: [0.5, 0.5, 0.5] } } });
+  expect(f.at).toBe(2);
+  expect(f.message).toMatch(/measures 1.3:1 against the picture behind it at 2 s \(backdrop #dbe6f0\)/);
+  // The fixes as measured on the same pixels, the best first.
+  expect(f.fix).toMatch(/^set_text style.stroke .* \(measures 12.4:1 there\), or style.background .* \(measures 7.9:1 there\)/);
+  const middling = checkProject(p, "any", { contrast: { [id]: { ratio: 3.6, backdrop: [0.5, 0.5, 0.5], frame: 45 } } });
   expect(middling.findings.find((x) => x.rule === "text_low_contrast")!.level).toBe("tip");
 });
 
-it("lets music that fades out in its own audio end, and names the level of one that stops dead", () => {
+it("says why contrast was not measured, and names what ok means", () => {
+  const p = designed();
+  const guessed = checkProject(p, "any", { contrastNote: "not measured, the picture could not be rendered here (no WebGL)" });
+  expect(guessed.not_checked).toMatch(/Contrast: not measured, the picture could not be rendered here \(no WebGL\); look with preview_frames/);
+  expect(checkProject(p).not_checked).toMatch(/Contrast: not measured on the picture/);
+  // No titles, nothing to say about contrast.
+  expect(checkProject(base()).not_checked).not.toMatch(/Contrast/);
+  // ok: true beside a warning is said in words.
+  const r = checkProject(runCommand(p, "add_text", { text: "fine print", start: 4, duration: 3, style: { size: 30, stroke: { color: "#000", width: 3 } } }));
+  expect(r.ok).toBe(true);
+  expect(r.summary.warnings).toBeGreaterThan(0);
+  expect(r.verdict).toMatch(/^ok means no errors; \d+ warnings? still to fix before delivering/);
+  let gap = base();
+  gap = runCommand(gap, "add_color_clip", { color: "#000", start: 8, duration: 1, track_id: gap.tracks[0].id });
+  expect(checkProject(gap).verdict).toMatch(/^Not ok: 1 error to fix before export/);
+});
+
+it("lets music that fades out in its own audio end, judged by its last second, and names the level of one that stops dead", () => {
   const p = designed();
   expect(rules(p)).toContain("music_ends_abruptly");
   const fades = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -48, bodyDb: -14 } } });
   expect(fades.findings.map((f) => f.rule)).not.toContain("music_ends_abruptly");
-  const dead = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -15, bodyDb: -14 } } });
-  expect(dead.findings.find((f) => f.rule === "music_ends_abruptly")!.message).toMatch(/-15 dBFS against -14 dBFS/);
+  // A one-second fade in the audio that the clip ends a little early.
+  const early = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -27, bodyDb: -14, lastSecond: [-15, -18, -22, -26] } } });
+  expect(early.findings.map((f) => f.rule)).not.toContain("music_ends_abruptly");
+  const dead = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -15, bodyDb: -14, lastSecond: [-14, -15, -14, -15] } } });
+  expect(dead.findings.find((f) => f.rule === "music_ends_abruptly")!.message).toMatch(/its last second runs -14, -15, -14, -15 dBFS by quarters and ends at -15, against -14 dBFS before/);
   // Volume keys that fade it count as a fade.
   let k = runCommand(p, "add_keyframe", { clip_id: songId(p), path: "volume", at: 8, value: 1 });
   k = runCommand(k, "add_keyframe", { clip_id: songId(k), path: "volume", at: 9.96, value: 0 });
@@ -158,4 +198,52 @@ it("lets music that fades out in its own audio end, and names the level of one t
 it("counts the shots on the busiest picture track, not the one-clip background", () => {
   const r = checkProject(designed());
   expect(r.summary).toMatchObject({ shots: 4, shots_on: "Windows", average_shot: 1.5 });
+});
+
+it("counts the cuts the viewer sees across tracks: A and B rolls, cutaways over an interview", () => {
+  const assets = [{ id: "v", kind: "video" as const, name: "v.mp4", src: "v.mp4", duration: 60, hasVideo: true, hasAudio: false, width: 1920, height: 1080 }];
+  // An interview on the main track, b-roll cut in above it twice.
+  let p: Project = { ...createProject(), assets };
+  const main = p.tracks.find((t) => t.main)!.id;
+  p = runCommand(p, "add_media_clip", { asset_id: "v", start: 0, duration: 12, track_id: main });
+  p = runCommand(p, "add_track", { kind: "video", name: "B-roll" });
+  const broll = p.tracks.find((t) => t.name === "B-roll")!.id;
+  for (const s of [3, 8]) p = runCommand(p, "add_media_clip", { asset_id: "v", start: s, duration: 2, in: 30 + s, track_id: broll });
+  const r = checkProject(p);
+  expect(r.summary).toMatchObject({ shots: 5, shots_on: "the picture, across tracks", average_shot: 2.4 });
+  expect(seenShots(p).map((s) => s.start / 30)).toEqual([0, 3, 5, 8, 10]);
+  // On the beat check, those cuts count: 3, 5, 8 and 10 on the grid, 5 off.
+  p = runCommand(p, "add_markers", { times: [3, 8, 10], label: "Beat" });
+  const off = checkProject(p, "epic_edit").findings.find((f) => f.rule === "cuts_off_beat")!;
+  expect(off.message).toMatch(/^1 of 4 cuts on the picture \(across tracks\) miss a beat/);
+  expect(off.at).toBe(5);
+});
+
+it("flags text too small for the frame by its share of the height, stricter for social", () => {
+  // Codex's subtitle: size 40 on 1080p was the old floor, and did not read on a phone.
+  let p = base();
+  p = runCommand(p, "add_text", { text: "A WAY HOME", start: 0, duration: 4, y: 0.3, style: { size: 40, stroke: { color: "#000", width: 3 } } });
+  const f = checkProject(p).findings.find((x) => x.rule === "text_too_small")!;
+  expect(f.message).toMatch(/is 3.7% of the frame's height \(size 40\); on a 1920x1080 frame, letters under 4.5% of its height \(size 49/);
+  expect(f.fix).toMatch(/^set_text style.size 49 or more/);
+  const ok = runCommand(base(), "add_text", { text: "A WAY HOME", start: 0, duration: 4, y: 0.3, style: { size: 50, stroke: { color: "#000", width: 3 } } });
+  expect(rules(ok)).not.toContain("text_too_small");
+  // A short for the apps holds a 16:9 frame to 5% of its height.
+  expect(rules(ok, "social_short")).toContain("text_too_small");
+  // On 9:16 the floor is 5% of the 1080 width: size 31, 2.8% of the height.
+  let v = createProject({ width: 1080, height: 1920 });
+  v = runCommand(v, "add_text", { text: "Small", start: 0, duration: 3, style: { size: 26 } });
+  expect(checkProject(v).findings.find((x) => x.rule === "text_too_small")!.message).toMatch(/2.4% of the frame's height .* social frame, letters under 2.8% of its height \(size 31/);
+  v = runCommand(createProject({ width: 1080, height: 1920 }), "add_text", { text: "Big enough", start: 0, duration: 3, style: { size: 32 } });
+  expect(rules(v)).not.toContain("text_too_small");
+});
+
+it("names small captions once, with how many", () => {
+  let p = base();
+  p = runCommand(p, "add_captions", { captions: [{ start: 0, end: 2, text: "first words" }, { start: 2, end: 4, text: "second words" }] });
+  const ids = p.tracks.flatMap((t) => t.clips).filter((c) => c.type === "text").map((c) => c.id);
+  p = runCommand(p, "set_text", { clip_ids: ids, style: { size: 36 } });
+  const small = checkProject(p).findings.filter((x) => x.rule === "text_too_small");
+  expect(small).toHaveLength(1);
+  expect(small[0].message).toMatch(/^2 captions are 3.3% of the frame's height/);
 });

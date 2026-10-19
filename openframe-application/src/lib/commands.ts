@@ -57,7 +57,7 @@ import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
-import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
+import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
 import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
@@ -469,7 +469,7 @@ export const COMMANDS: Command[] = [
       ["text", "start", "duration"],
     ),
     run: (p, a) => {
-      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
+      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
       // running off the frame (9:16: off the apps' column).
@@ -534,7 +534,7 @@ export const COMMANDS: Command[] = [
         const role = a.role as string | undefined;
         if (clip.type === "text") {
           if (role && !TEXT_ROLES.includes(role as TextRole)) throw new CommandError(`${role} is a color role; titles take ${TEXT_ROLES.join(", ")}`);
-          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k) }) as Clip);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k, minTextSize(p.width, p.height)) }) as Clip);
         } else if (clip.type === "color") {
           if (role && !COLOR_ROLES.includes(role as ColorRole)) throw new CommandError(`${role} is a text role; solids take ${COLOR_ROLES.join(", ")}`);
           p = ops.updateClip(p, clip.id, (c) => ({ ...c, color: b.colors[(role as ColorRole | undefined) ?? "primary"] }) as Clip);
@@ -546,7 +546,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under 40 px at a 1080 short side. Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
