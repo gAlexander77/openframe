@@ -1437,3 +1437,60 @@ one at a time.
   tools needed a direct call to the app's HTTP endpoint.
 - **Re-laying out a designed film for 9:16 is still hand work.** The
   checker's app-zone findings made it quick: each names the box to move.
+
+## 2026-10-19 — Every window size, and the agent's mark (Claude Code)
+
+The owner asked for:
+- the third film as the site's main video (it already was);
+- every part of the UI walked with Playwright and its styling fixed
+  across window sizes, with any bugs or gaps found on the way fixed too;
+- the AI robot icon on the notifications of AI actions, so the user knows
+  it is their AI agent making the changes;
+- then all of it merged into main.
+
+- **The agent's mark**
+  ([[ADR-093 An AI agent's changes are announced at the top, under the Bot]]):
+  - every MCP tool call, from the desktop bridge or the docked assistant,
+    is the agent's;
+  - an edit raises one notice at the top of the window, marked "AI agent"
+    with the Bot icon, which retitles as the edits come;
+  - the user's own toasts stay at the bottom.
+- **Four sweep lanes** (Claude), one area each: the shell and dialogs, the
+  library, the inspector, and the player and timeline.
+  - **Sizes:** nine window sizes, from 1100 x 680 to 2560 x 1440 plus two
+    browser-tab sizes, with every splitter at its limits and the
+    assistant docked.
+  - **Drives:** each lane left one (`sizes-*.js`), more than a thousand
+    states together.
+  - **Findings:** [[UI at every window size 2026-10-19]].
+  - **What changed:**
+    - the player keeps a 456 px floor (the splitters stop, the assistant
+      floats below 1066 px, the transport wraps);
+    - library tabs drop to icons when their labels would not fit
+      ([[ADR-094 Library tabs keep their labels only while they fit]]);
+    - the inspector reflows below 340 px;
+    - the track headers stay above the playhead;
+    - the in/out range shows on the ruler;
+    - the mixer sizes to its strips;
+    - Home has a list view and a right-click menu;
+    - tooltips work inside dialogs and appear only where text is cut;
+    - popovers open on the side that has room.
+- **Follow-ups from the lanes' reports:**
+  - the zoom keys use the timeline's own limits;
+  - the source preview is centered in short windows;
+  - long names show their start when renamed;
+  - the export dialog's range control has its own class;
+  - the keyframe hint reads its gesture from the keymap.
+
+### Lessons paid for in this round
+
+- **A size matrix finds what three sizes miss.** The 2026 x 1084, 1600
+  and 1280 audit of 2026-10-16 never reached:
+  - a splitter at its cap in the smallest window;
+  - the docked assistant in a browser tab;
+  - the 2560 px screens where fixed sizes leave half the room empty.
+- **Global class names collide quietly.** Two `.segmented` rules each
+  looked right alone.
+- **Give each lane a list of files it owns.** Four lanes touching CSS
+  merged with one docs conflict; what crossed a boundary came back as a
+  note in the report, and the lead fixed it after the merges.

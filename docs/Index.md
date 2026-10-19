@@ -45,6 +45,9 @@ of the documentation and how agents use it as shared working memory.
   user's walk, what was fixed, and what to keep
 - [[UI polish 2026-10-16]] — styling audit at three window sizes and the
   splitter extremes: what clipped or overflowed, why, and rules of thumb
+- [[UI at every window size 2026-10-19]] — the four-lane sweep at nine window
+  sizes: the player's floor, fixed sizes in a fluid shell, layers, the
+  inspector below 340 px, and Chromium layout lessons
 - [[AI tools]] — the local tools' algorithms, defaults, credits and measurements
 - [[Driving the app]] — the web build through Playwright, the desktop app over
   WebView2's debug port; native dialogs, OS drops, the drive scripts
@@ -304,3 +307,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
   every MCP tool call (desktop bridge or docked assistant) is the agent's;
   an edit raises one retitled notice at the top marked AI agent with the
   Bot icon, and the user's own toasts stay at the bottom.
+- [[ADR-094 Library tabs keep their labels only while they fit]] — balanced
+  rows of labeled tabs while two rows fit in a modest share of the panel,
+  else icons named by tooltips; category lists become chips below 300 px.
