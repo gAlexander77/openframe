@@ -50,7 +50,7 @@ no errors and no warnings.
 | `src/icons/` | The app's own icon set as SVG files (Lucide, ISC; see `LICENSE` there) |
 | `src/assets/screens/` | Screenshots from `scripts/capture.mjs` (Astro makes AVIF and WebP sizes) |
 | `src/assets/media/` | Poster frames for the film and the loops |
-| `public/media/` | The launch film (H.264) and the feature loops (VP9 WebM and H.264 MP4) |
+| `public/media/` | The launch film (H.264) and its captions (WebVTT), and the feature loops (VP9 WebM and H.264 MP4) |
 | `scripts/` | `capture.mjs`, `make-media.mjs`, `make-images.mjs`, `copy-icons.mjs` |
 
 ## Screenshots
@@ -81,15 +81,17 @@ image before committing it (the checklist is in docs/Website.md).
 ## Media
 
 ```sh
-node scripts/make-media.mjs --film "<OpenFrame launch film.mp4>" --footage "<footage folder>"
+node scripts/make-media.mjs --film "<OpenFrame launch film.mp4>" --captions "<its .srt>" --footage "<footage folder>"
 node scripts/make-images.mjs      # icons from public/favicon.svg, and public/og.png
 node scripts/copy-icons.mjs <app icons index.ts> <lucide-react/dist/esm> src/icons
 ```
 
-`make-media.mjs` makes the web film (H.264 1080p, about 13 MB, faststart),
-the loops (1280x720, 5 to 8 seconds, cropped to the feature) and their
-posters, with all metadata stripped. Crops and in and out points are in
-its `LOOPS` table.
+`make-media.mjs` makes the web film (H.264 1080p, about 17 MB, faststart,
+the master's AAC copied) and its poster, the film's WebVTT captions from
+the SRT the export wrote, the loops (1280x720, 5 to 8 seconds, cropped to
+the feature) and their posters, with all metadata stripped. Crops and in
+and out points are in its `LOOPS` table; `--only film` remakes just the
+film.
 
 ## Deploy
 
