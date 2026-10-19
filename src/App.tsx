@@ -17,7 +17,9 @@ import { platform } from "./platform";
 import { onHomeKeyDown, onKeyDown, provide } from "./state/actions";
 import { addToTimeline, adoptAndImport, importFiles } from "./state/media";
 import { useSession } from "./state/project";
+import { assistantShare, dockColumns, DOCK } from "./lib/dock";
 import { DEFAULT_LAYOUT, toPixels, type Layout } from "./lib/layout";
+import { setAssistantWidth, useAssistantValue } from "./state/assistant";
 import { setLayout, useLayout } from "./state/layout";
 import { useEditor } from "./state/store";
 import "./components/shell.css";
@@ -34,6 +36,11 @@ export default function App() {
     return () => window.removeEventListener("resize", on);
   }, []);
   const layout = toPixels(shares, win.w, win.h);
+  // The AI assistant docks as a column the editor makes room for
+  // (ADR-064); null while it is closed. The editor then lays out as if the
+  // window were the editor's width.
+  const assistantWidth = useAssistantValue((s) => (s.open ? s.width : null));
+  const dock = assistantWidth === null ? null : dockColumns(shares, win.w, assistantWidth);
 
   // Desktop OS drops arrive as paths, not HTML5 events: import them and add
   // each at the playhead, like the media panel's +.
@@ -46,7 +53,7 @@ export default function App() {
   );
 
   const resize = (k: keyof Layout, d: number, lo: number, hi: number) => {
-    const of = k === "top" ? innerHeight : innerWidth;
+    const of = k === "top" ? innerHeight : (dock?.editor ?? innerWidth);
     setLayout((l) => ({ ...l, [k]: clamp(l[k] * of + d, lo, hi) / of }));
   };
   const reset = (k: keyof Layout) => setLayout((l) => ({ ...l, [k]: DEFAULT_LAYOUT[k] }));
@@ -99,28 +106,54 @@ export default function App() {
         <Home />
       ) : (
       <div
-        className="workspace"
+        className={`workspace${dock ? " docked" : ""}`}
         // The top row gives way the same way the side panels do: a fixed
         // 520 px pushed the timeline 26 px below a 720 px tall window,
         // cutting off its scrollbar and last track.
-        style={{ gridTemplateRows: `minmax(${Math.min(260, layout.top)}px, ${layout.top}px) var(--gap) minmax(180px, 1fr)` }}
+        style={{
+          gridTemplateRows: `minmax(${Math.min(260, layout.top)}px, ${layout.top}px) var(--gap) minmax(180px, 1fr)`,
+          gridTemplateColumns: dock ? `minmax(0, 1fr) var(--gap) ${dock.assistant}px` : undefined,
+        }}
       >
         <div
           className="top-row"
           // The side panels keep their saved widths but give way when the
           // window is narrow (down to the splitters' own minimums), so the
           // row never overflows: fixed widths cut off the inspector and the
-          // Export button at the desktop app's minimum window size.
-          style={{ gridTemplateColumns: `minmax(${Math.min(240, layout.left)}px, ${layout.left}px) var(--gap) minmax(320px, 1fr) var(--gap) minmax(${Math.min(260, layout.right)}px, ${layout.right}px)` }}
+          // Export button at the desktop app's minimum window size. Beside
+          // the assistant the widths are worked out (src/lib/dock.ts).
+          style={{
+            gridTemplateColumns: !dock
+              ? `minmax(${Math.min(240, layout.left)}px, ${layout.left}px) var(--gap) minmax(320px, 1fr) var(--gap) minmax(${Math.min(260, layout.right)}px, ${layout.right}px)`
+              : dock.left
+                ? `${dock.left}px var(--gap) minmax(0, 1fr) var(--gap) ${dock.right}px`
+                : `minmax(0, 1fr) var(--gap) ${dock.right}px`,
+          }}
         >
-          {scopes ? <ScopesPanel /> : <LibraryPanel />}
-          <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => reset("left")} />
+          {/* One slot whether shown or not, so the player keeps its place
+              (and its canvas) when the library steps aside. */}
+          {(!dock || dock.left > 0) && (
+            <>
+              {scopes ? <ScopesPanel /> : <LibraryPanel />}
+              <Splitter dir="x" onDrag={(d) => resize("left", d, 240, 640)} onReset={() => reset("left")} />
+            </>
+          )}
           <PlayerPanel />
           <Splitter dir="x" onDrag={(d) => resize("right", -d, 260, 560)} onReset={() => reset("right")} />
           <InspectorPanel />
         </div>
         <Splitter dir="y" onDrag={(d) => resize("top", d, 260, window.innerHeight - 260)} onReset={() => reset("top")} />
         <Timeline />
+        {dock && (
+          <>
+            <Splitter
+              dir="x"
+              onDrag={(d) => setAssistantWidth(assistantShare(dock.assistant - d, innerWidth))}
+              onReset={() => setAssistantWidth(DOCK.assistantShare)}
+            />
+            <AssistantPanel />
+          </>
+        )}
       </div>
       )}
       {dropping && (
@@ -132,7 +165,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {screen === "editor" && <AssistantPanel />}
       <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
       {prefs && <PreferencesDialog onClose={() => setPrefs(false)} />}
       <DragGhost />

@@ -620,6 +620,22 @@ makes a 13 s one). Times are timeline seconds.
   Chroma key sits under it on the same sub-tab.
 - **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
+  It docks as a resizable full-height column the editor makes room for,
+  like Premiere's side panels, instead of covering the inspector and the
+  timeline's zoom; the library steps aside in a window too narrow for four
+  columns ([[ADR-064 The AI assistant docks as a column the editor makes room for]]).
+  The composer grows to five lines, sends on Enter, and shows the steps
+  as they run with a Stop; failed requests can be tried again, and a
+  stopped or failed turn's edits stay undoable as one. Offline, it says
+  whether the server is not answering or has no model that can call tools.
+- **Connect agents** (desktop, the AI assistant's second tab): after Allow
+  AI agents, **Add to Codex** and **Add to Claude Code** run that CLI's own
+  `mcp add` for the stdio bridge, reporting added, already added (never
+  replaced), not found (with its install guide) or the CLI's error; the
+  ready-made `codex mcp add` and `claude mcp add` lines and a Codex
+  `config.toml` entry are there to copy
+  ([[ADR-065 One-click agent setup runs the agent's own CLI]],
+  [[Automation]]).
 
 ## Sound design and delivery
 

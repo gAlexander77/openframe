@@ -247,15 +247,16 @@ no token since it listens only on this machine.
 
 `scripts/drive/style-sweep.js` opens every library tab, every inspector
 tab of a video, picture, audio and text clip, a multi-selection, every
-title-bar menu, the clip, track and media-card menus and the dialogs, at
-1600 x 950, 1280 x 720 and the desktop window's 1100 x 680 minimum (129
-states, about a minute). In each it checks: page scroll; text cut off by
-its own box or a non-scrolling parent with no ellipsis; text spilling out
-of a control; controls cut off by a non-scrolling parent; controls
-overlapping each other (popups and modal `<dialog>`s excepted); controls
-with no accessible name; and text contrast under WCAG AA. Elements a
-scroller hides count as unseen, not cut. Screenshots land in
-`scratch/style/`, for a look by eye at what the checks cannot judge.
+title-bar menu, the clip, track and media-card menus, the dialogs and the
+AI assistant's two views (Ollama stubbed, so no installed model's name is
+captured), at 1600 x 950, 1280 x 720 and the desktop window's 1100 x 680
+minimum (135 states, about a minute). In each it checks: page scroll;
+text cut off by its own box or a non-scrolling parent with no ellipsis;
+text spilling out of a control; controls cut off by a non-scrolling
+parent; controls overlapping each other (popups and modal `<dialog>`s
+excepted); controls with no accessible name; and text contrast under WCAG
+AA. Elements a scroller hides count as unseen, not cut. Screenshots land
+in `scratch/style/`, for a look by eye at what the checks cannot judge.
 
 ## Header interaction check — 2026-10-15
 

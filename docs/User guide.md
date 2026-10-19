@@ -212,10 +212,30 @@ that it works offline. A bar shows progress and Cancel stops it. When it
 finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
+**Ask the AI assistant for an edit:** click **AI assistant** in the title
+bar. It opens as a column at the right of the editor, which makes room for
+it (in a window too narrow for four columns the media library steps aside
+until you close it); drag its left edge to resize it. Pick the model server
+and model at the top, type what you want in the box at the bottom and
+press Enter to send (Shift with Enter starts a new line). The box grows as
+you type. While the model works, the steps it takes appear as they run;
+**Stop** ends the turn. Each answer that changed the timeline has an
+**Undo** button for all of its changes at once, and a failed request can be
+tried again. The examples in an empty conversation fill the box for you.
+
+**Connect Codex or Claude Code (desktop app):** open the AI assistant's
+**Connect agents** tab and turn on **Allow AI agents**. Then click **Add to
+Codex** or **Add to Claude Code**: the app asks that program to add
+OpenFrame to its settings and tells you whether it was added, was already
+there, or the program was not found (with a link to install it). You can
+also copy the ready-made command or, for Codex, the `config.toml` entry.
+Start a new Codex or Claude Code session afterwards, and keep OpenFrame
+open with Allow AI agents on while the agent works.
+
 External agents connect only after the user enables "Allow AI agents".
-[[Automation]] explains the controls, MCP connection, headless rendering,
-and the `openframe` command line. [[AI tools]] records the
-algorithms and limits.
+[[Automation]] explains the controls, MCP connection (with step-by-step
+Codex CLI and Claude Code setup), headless rendering, and the `openframe`
+command line. [[AI tools]] records the algorithms and limits.
 
 ## Report a problem or help improve it
 

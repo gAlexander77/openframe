@@ -28,13 +28,63 @@ line says why); 2 bad arguments. Try it with `scripts/render-example/`.
 
 ## 2. Drive the running editor (agents, MCP)
 
-Turn on **AI assistant → Connect other AI agents → Allow AI agents**. Then:
+Turn on **AI assistant → Connect agents → Allow AI agents** (desktop app).
+Then:
 
 - **HTTP** (Streamable HTTP): `http://127.0.0.1:47280/mcp` with
-  `Authorization: Bearer <token>` (the panel shows and copies it). For
-  Claude Code: the panel's ready-made `claude mcp add` line.
+  `Authorization: Bearer <token>` (the panel shows and copies it).
 - **stdio**: run `openframe --mcp-stdio` as the server command (the exe was
   `video-editor` before 2026-10-17; the panel always shows the current path).
+  The bridge reads the token itself, so its command line holds no secret.
+
+The app must be running with Allow AI agents on whenever the agent works;
+start a new agent session after adding the server.
+
+### Connect Codex CLI
+
+1. Under **Connect agents → Codex**, click **Add to Codex**. The app runs
+   Codex's own `codex mcp add` for the stdio bridge and says what happened:
+   added, already added (an entry named `openframe` exists and is left
+   alone), the `codex` command not found (with a link to its install
+   guide), or Codex's error.
+2. Or paste the panel's line into a terminal:
+
+   ```
+   codex mcp add openframe -- "<path to openframe.exe>" --mcp-stdio
+   ```
+
+3. Or add the panel's `config.toml` entry to `~/.codex/config.toml` by
+   hand. It also raises the tool timeout to 300 s (Codex's default is 60)
+   for long exports:
+
+   ```toml
+   [mcp_servers.openframe]
+   command = "<path to openframe.exe>"
+   args = ["--mcp-stdio"]
+   tool_timeout_sec = 300
+   ```
+
+`codex mcp list` shows it; in a session, `/mcp` lists its tools.
+
+### Connect Claude Code
+
+1. Under **Connect agents → Claude Code**, click **Add to Claude Code**: the
+   app runs `claude mcp add --scope user --transport stdio openframe --
+   "<exe>" --mcp-stdio`, so OpenFrame is there in every project. Claude Code
+   refuses a name it already has, which the panel reports as already added.
+2. Or paste the panel's line, which connects over HTTP with the token:
+
+   ```
+   claude mcp add --transport http --scope user openframe http://127.0.0.1:47280/mcp --header "Authorization: Bearer <token>"
+   ```
+
+`claude mcp list` shows it and whether it connects.
+
+The buttons need the desktop app and the CLI on PATH; they never write an
+agent's config files themselves
+([[ADR-065 One-click agent setup runs the agent's own CLI]]). The web
+build has no MCP server, so its panel explains how to connect through the
+desktop app instead.
 
 **Start with [[MCP tools]]**: every tool, generated from the code, grouped
 in the order a video gets made, with each parameter (nested fields
