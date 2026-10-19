@@ -25,6 +25,9 @@ export interface ProjectSummary {
   duration: number;
   /** Small JPEG data URL of a frame, when one was saved. */
   thumbnail?: string;
+  /** When it went to Home's Recently deleted (ms since 1970); absent
+   * while it is live (lib/projectTrash.ts, ADR-078). */
+  deletedAt?: number;
 }
 
 export interface ExportTarget {

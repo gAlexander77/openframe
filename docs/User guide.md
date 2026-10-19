@@ -90,8 +90,14 @@ Edits made while a save is running are saved before navigation completes.
 While a project is opening or the old one is being saved for a switch,
 repeated navigation requests are ignored. Home shows **Opening project…**
 and disables creation/deletion during loading; retry after it finishes.
-A focused project card opens with Enter or Space. Activating its Delete
-button with the keyboard only arms deletion, just like clicking it.
+A focused project card opens with Enter or Space; its Delete button never
+opens it.
+
+Deleting a project moves it to **Recently deleted** at the bottom of Home,
+and the notice that says so has **Undo**. A deleted project waits there
+for 30 days: open the section to **Restore** it (it returns to its place)
+or **Delete forever** (click twice; this cannot be undone). After 30 days
+it is deleted for good. Your media files are never deleted.
 
 Closing or switching projects cancels unfinished captions/analysis and
 discards late import results. Reopening the same project starts a new session;

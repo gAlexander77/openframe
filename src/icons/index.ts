@@ -86,6 +86,7 @@ export {
   Plus,
   Redo2,
   Repeat,
+  RotateCcw,
   RotateCw,
   ScanLine,
   Scissors,

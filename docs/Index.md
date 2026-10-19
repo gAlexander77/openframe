@@ -228,3 +228,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
 
 - [[ADR-075 Measure music structure and voice balance on the timeline]] -
   two-bar sections, multiple drops and measured ducking before one edit.
+- [[ADR-078 Deleted projects wait in Recently deleted, marked in their summary]] —
+  one click deletes with Undo, thirty days to restore, no new platform
+  calls, agents never see the trash.

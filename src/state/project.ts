@@ -16,6 +16,7 @@ import { store } from "./store";
 import { toast } from "./toast";
 import { projectWork } from "./projectWork";
 import { copyProject } from "../lib/project/copy";
+import { markDeleted, markRestored, splitTrash } from "../lib/projectTrash";
 
 export type Screen = "home" | "editor";
 
@@ -224,6 +225,27 @@ export async function renameProject(s: ProjectSummary, name: string): Promise<vo
   const named = { ...p, name: clean, updatedAt: Date.now() };
   await platform.saveProject(named, { ...s, name: clean, updatedAt: named.updatedAt });
 }
+
+// ---- Recently deleted (ADR-078) ------------------------------------------------
+
+/** Saved projects Home lists, the trash and what has expired; Home deletes
+ * the expired ones for good as it lists them. */
+export async function listSaved(): Promise<{ live: ProjectSummary[]; trash: ProjectSummary[] }> {
+  const { live, trash, expired } = splitTrash(await platform.listProjects(), Date.now());
+  for (const s of expired) void platform.deleteProject(s.id).catch(() => undefined);
+  return { live, trash };
+}
+
+/** Write a saved project's summary again, its project as it was on disk. */
+async function resummarize(next: ProjectSummary) {
+  await platform.saveProject((await platform.loadProject(next.id)) as Project, next);
+}
+
+/** Home's Delete: to Recently deleted, where it waits TRASH_DAYS. */
+export const trashProject = (s: ProjectSummary) => resummarize(markDeleted(s, Date.now()));
+
+/** Back from Recently deleted, where it was in the list. */
+export const restoreProject = (s: ProjectSummary) => resummarize(markRestored(s));
 
 /** Persist a detached version before switching; retries reuse the draft ID. */
 export function saveProjectCopy(name: string, openCopy: boolean, id?: string) {
