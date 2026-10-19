@@ -56,12 +56,12 @@ const RENDER = `openframe --render project.json --out video.mp4`;
       <h2 id="ways-title" class="visually-hidden">Three ways to use AI with OpenFrame</h2>
       <ul class="ways">
         <li style="--hue: var(--blue)">
-          <span class="mark"><Icon name="bot" size={20} /></span>
+          <span class="mark"><Icon name="plug" size={20} /></span>
           <h3>An agent over MCP</h3>
           <p>Claude Code, Codex or any MCP client connects to the desktop app and works on your timeline with {facts.tools} tools.</p>
         </li>
         <li style="--hue: var(--blue)">
-          <span class="mark"><Icon name="wand-sparkles" size={20} /></span>
+          <span class="mark"><Icon name="bot" size={20} /></span>
           <h3>The AI assistant</h3>
           <p>Describe an edit in the assistant column. A model on your computer, through Ollama or LM Studio, makes it with the same tools.</p>
         </li>
@@ -155,7 +155,7 @@ const RENDER = `openframe --render project.json --out video.mp4`;
   <section class="section" aria-labelledby="assistant-title">
     <div class="wrap feature-row flip">
       <div class="feature-text">
-        <span class="feature-name" style="--hue: var(--blue)"><span class="mark"><Icon name="wand-sparkles" size={20} /></span>AI assistant</span>
+        <span class="feature-name" style="--hue: var(--blue)"><span class="mark"><Icon name="bot" size={20} /></span>AI assistant</span>
         <h2 id="assistant-title">Or type it, to a model on your machine.</h2>
         <p>
           The AI assistant docks as a column beside the editor. Pick the model server and a model, type what you want, and watch
@@ -185,7 +185,7 @@ const RENDER = `openframe --render project.json --out video.mp4`;
           <div><h3>Off until you turn it on</h3><p>No server listens until you switch on Allow AI agents. The app remembers your choice, and switching it off stops the server.</p></div>
         </li>
         <li style="--hue: var(--blue)">
-          <span class="mark"><Icon name="bot" size={18} /></span>
+          <span class="mark"><Icon name="plug" size={18} /></span>
           <div><h3>Local only</h3><p>The server binds to 127.0.0.1, so other computers cannot reach it, and it refuses requests from web pages other than localhost, which blocks DNS-rebinding tricks.</p></div>
         </li>
         <li style="--hue: var(--violet)">

@@ -32,7 +32,7 @@ export const DOC_PAGES = [
   { slug: "", title: "Getting started", source: null, icon: "play" },
   { slug: "user-guide", title: "User guide", source: "User guide.md", icon: "scroll-text" },
   { slug: "keyboard-shortcuts", title: "Keyboard shortcuts", source: "Keyboard shortcuts.md", icon: "keyboard" },
-  { slug: "mcp-tools", title: "MCP tool reference", source: "MCP tools.md", icon: "bot" },
+  { slug: "mcp-tools", title: "MCP tool reference", source: "MCP tools.md", icon: "plug" },
   { slug: "agent-playbook", title: "Agent playbook", source: "Agent playbook.md", icon: "list" },
   { slug: "architecture", title: "Architecture", source: "Architecture.md", icon: "layers" },
   { slug: "contributing", title: "Contributing", source: null, icon: "heart" },

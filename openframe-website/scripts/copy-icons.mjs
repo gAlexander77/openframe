@@ -8,8 +8,7 @@
 //   node scripts/copy-icons.mjs <app icons index.ts> <lucide-react/dist/esm> src/icons
 //
 // Example from a checkout where the app's dependencies are installed:
-//   node scripts/copy-icons.mjs ../src/icons/index.ts ../node_modules/lucide-react/dist/esm src/icons
-// (after the move, ../openframe-application/... for both paths)
+//   node scripts/copy-icons.mjs ../openframe-application/src/icons/index.ts ../openframe-application/node_modules/lucide-react/dist/esm src/icons
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";

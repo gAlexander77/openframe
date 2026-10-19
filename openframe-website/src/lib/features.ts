@@ -163,7 +163,7 @@ export const FEATURES: Feature[] = [
   {
     id: "mcp",
     name: "MCP for agents",
-    icon: "bot",
+    icon: "plug",
     hue: "blue",
     title: "Any AI agent can edit with you.",
     summary: "Turn on Allow AI agents and Claude Code, Codex or any MCP client works on your timeline, live.",
