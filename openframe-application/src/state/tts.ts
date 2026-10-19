@@ -1,6 +1,7 @@
 // Text to speech for a title (CapCut's Text to speech): speak its words in
 // a chosen voice on this machine, save the voice as WAV and place it under
-// the title, starting with it, as one undo step.
+// the title, starting with it, as one undo step. The speech files are
+// added inside that edit, so undoing it leaves none in the library.
 
 import { useSyncExternalStore } from "react";
 import { speak } from "../engine/tts";
@@ -12,7 +13,7 @@ import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { DEFAULT_VOICE, layoutLines, speechFileName, speechText, trimSpeech } from "../lib/tts";
 import { encodeWav } from "../lib/wav";
 import { edit } from "./actions";
-import { adoptAndImport } from "./media";
+import { adoptAndProbe, prepare } from "./media";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
@@ -46,16 +47,18 @@ export async function textToSpeech(clipId?: Id, opts: { voice?: string; speed?: 
     // The first run downloads the model (about 90 MB); then it is cached.
     const { audio, rate } = await speak(text, opts.voice ?? DEFAULT_VOICE, opts.speed ?? 1, (x) => progress(x * 0.9), signal);
     signal.throwIfAborted();
-    const [asset] = await adoptAndImport([new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" })]);
+    const [asset] = await adoptAndProbe([new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" })]);
     signal.throwIfAborted();
+    if (!asset) throw new Error("The speech file could not be read back");
     const at = findClip(store.get().project, loc.clip.id)?.clip.start ?? loc.clip.start;
     let placed = "";
     edit("Text to speech", (q) => {
       const before = new Set(q.tracks.flatMap((t) => t.clips.map((c) => c.id)));
-      const next = runCommand(q, "add_media_clip", { asset_id: asset.id, start: framesToSeconds(at, q.fps) });
+      const next = runCommand({ ...q, assets: [...q.assets, asset] }, "add_media_clip", { asset_id: asset.id, start: framesToSeconds(at, q.fps) });
       placed = next.tracks.flatMap((t) => t.clips).find((c) => !before.has(c.id))?.id ?? "";
       return next;
     });
+    prepare(asset);
     toast(`Added the voice, ${(audio.length / rate).toFixed(1)} s`);
     return { clipId: placed, seconds: audio.length / rate };
   } catch (e) {
@@ -121,14 +124,17 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       files.push(new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" }));
       updateToast(tid, { progress: (i + 1) / (texts.length + 1) });
     }
-    const assets = await adoptAndImport(files);
+    // Probed, not imported: the edit below adds them with their clips.
+    const assets = await adoptAndProbe(files);
     signal.throwIfAborted();
+    if (assets.length !== files.length) throw new Error("A speech file could not be read back");
     const times = layoutLines(lines.map((l, i) => ({ at: l.at, seconds: seconds[i] })), opts.start ?? 0, opts.gap ?? 0.4);
     const placed: { text: string; start: number; end: number; voice_clip: string; caption_clip?: string }[] = [];
     edit("Voiceover", (q) => {
       placed.length = 0;
       const ids = (x: Project) => new Set(x.tracks.flatMap((t) => t.clips.map((c) => c.id)));
       const added = (before: Set<string>, x: Project) => x.tracks.flatMap((t) => t.clips).filter((c) => !before.has(c.id));
+      q = { ...q, assets: [...q.assets, ...assets] };
       const track = createTrack("audio", "Voiceover");
       q = addTrack(q, track);
       assets.forEach((asset, i) => {
@@ -149,6 +155,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       }
       return q;
     });
+    assets.forEach(prepare);
     toast(`Added the voiceover, ${times.at(-1)!.end.toFixed(1)} s`);
     return { lines: placed, end: times.at(-1)!.end };
   } catch (e) {
