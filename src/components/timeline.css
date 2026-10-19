@@ -127,6 +127,12 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
   white-space: nowrap; overflow: hidden;
 }
 .clip-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+/* Rename: the name strip becomes a field, wide enough on a short clip. */
+.clip-rename {
+  flex: 1; min-width: 90px; height: 14px; padding: 0 3px;
+  border: 1px solid var(--accent); border-radius: 3px; outline: none;
+  background: var(--bg-0); color: var(--text-1); font: inherit;
+}
 .clip-dur { color: rgb(255 255 255 / 60%); }
 .clip-badge { display: inline-flex; align-items: center; gap: 2px; padding: 0 4px; border-radius: 3px; background: rgb(0 0 0 / 35%); font-size: 9.5px; }
 .clip-badge-icon { color: #bfefff; }

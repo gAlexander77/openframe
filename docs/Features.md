@@ -67,6 +67,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
+- **Rename media** (right-click a media card > Rename, or double-click
+  its name; `rename_media`): the project's name for the file, which stays
+  as it is on disk; clips without a name of their own follow it. A
+  double-click on the name no longer adds the file to the timeline (the
+  rest of the card still does).
 - **Folders and favorites:** saved virtual folders, undoable folder rename/delete
   and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame
@@ -122,6 +127,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   move, copy and delete together across tracks, each keeping its own
   settings; Alt+click picks one alone, as in Premiere. Pasted copies form
   their own group.
+- **Rename clips** (right-click > Rename, or double-click the name on a
+  clip's strip; `rename_clip`; Premiere's Rename): the name shows on the
+  timeline instead of the file's name, a title's words or an effect
+  layer's effects; an empty name gives the default back. Titles keep
+  CapCut's double-click for their words, so they rename from the menu.
+  One undo step each.
 - **Clip labels** (right-click > Label; `set_clip_label`; Premiere's
   Label, Resolve's Clip Color): eight muted colors paint the selected
   clips' body and name strip, so an edit can be sorted by eye. Splits and

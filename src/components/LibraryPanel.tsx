@@ -49,6 +49,8 @@ import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
 import { MenuList, useDismiss, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
+import { RenameField } from "./RenameField";
+import { renameMedia } from "../state/rename";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
@@ -164,6 +166,8 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   useDismiss(!!menu, menuRef, () => setMenu(null));
+  /** The card whose name is a text field (Rename). */
+  const [renaming, setRenaming] = useState<string | null>(null);
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const compounds = useEditor((s) => s.project.compounds);
@@ -236,7 +240,13 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
               onPreview={() => setSource(a)}
               onMenu={(e) => {
                 e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a)) });
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id)) });
+              }}
+              renaming={renaming === a.id}
+              onRename={(name) => {
+                if (name === undefined) return setRenaming(a.id);
+                setRenaming(null);
+                if (name !== null) renameMedia(a.id, name);
               }}
             />
           ))}
@@ -339,7 +349,7 @@ function RecordButton() {
 
 /** A media card's right-click menu. Removing takes the media out of the
  * project only; a file the timeline uses says so and takes its clips. */
-function mediaMenu(asset: Asset, uses: number, preview: () => void): MenuItem[] {
+function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void): MenuItem[] {
   const remove = (withClips: boolean) => {
     try {
       edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
@@ -350,6 +360,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void): MenuItem[] 
   return [
     { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
     { label: "Preview", onSelect: preview },
+    { label: "Rename…", onSelect: rename },
     { label: "Favorite", checked: !!asset.favorite, onSelect: () => edit("Favorite media", (p) => organizeMedia(p, [asset.id], { favorite: !asset.favorite })) },
     "-",
     uses
@@ -358,7 +369,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void): MenuItem[] 
   ];
 }
 
-function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void }) {
+function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -388,7 +399,13 @@ function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; use
         {!list && add}
       </div>
       <div className="media-info">
-        <span className="card-label">{asset.name}</span>
+        {renaming ? (
+          <RenameField name={asset.name} label={`New name for ${asset.name}`} className="field card-rename" onDone={onRename} />
+        ) : (
+          // Double-click the name to rename; elsewhere on the card it adds
+          // the file to the timeline.
+          <span className="card-label" onDoubleClick={(e) => (e.stopPropagation(), onRename())}>{asset.name}</span>
+        )}
         <button className="media-preview-button" aria-label={`Preview ${asset.name}`} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onPreview(); }}>Preview</button>
         {(asset.folder || asset.favorite) && <span className="media-details">{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}
         {list && <>

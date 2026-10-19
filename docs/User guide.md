@@ -119,6 +119,11 @@ to select every referencing clip and seek the earliest one. Counts include
 disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
 
+To rename a file in the project, right-click its card and choose
+**Rename…**, or double-click its name; Enter keeps the new name and Escape
+the old one. The file on disk keeps its own name, and clips you have not
+renamed show the new one.
+
 Drag a row, double-click it, or use its Add button to place media, just as
 with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
@@ -137,6 +142,10 @@ a music bed covering two or more complete shots stays at its timeline time.
 Adding a title or sticker briefly previews its In animation, then restores
 the playhead. Reduced motion skips that preview. Pausing a preview stops it
 without a later jump back.
+
+Name a clip with right-click > **Rename…**, or double-click the name on
+its strip (a title's double-click edits its words, so use the menu for
+titles). Clear the name to show the file's name again.
 
 Add a transition between touching clips, or click its timeline marker, to
 open **Transition** settings. Undo history gives agent edits readable names

@@ -11,6 +11,7 @@ import type { Asset, Clip, Compound, Project, Track } from "../lib/project/types
 import { PRESETS } from "../lib/speed";
 import { formatDuration, framesToSeconds } from "../lib/time";
 import { ClipKeys } from "./ClipKeys";
+import { RenameField } from "./RenameField";
 
 export type ClipZone = "body" | "start" | "end";
 
@@ -39,6 +40,10 @@ interface Props {
   onContext: (e: React.MouseEvent, clip: Clip) => void;
   /** Double-click on a compound clip: edit what is inside. */
   onOpen?: (clip: Clip) => void;
+  /** The name strip is a text field (Rename). */
+  renaming?: boolean;
+  /** Double-click on the name: start renaming; `name` ends it (null cancels). */
+  onRename?: (clip: Clip, name?: string | null) => void;
 }
 
 const LABEL_H = 16;
@@ -212,8 +217,9 @@ export const ClipView = memo(function ClipView(p: Props) {
     [v, x0, visW, zoom, c, waveH, p.compound],
   );
 
+  // A clip's own name (Rename) wins over its media's, words or effects.
   const name =
-    c.type === "video" || c.type === "image" || c.type === "audio" ? (c.name ?? p.asset?.name ?? "") : c.type === "compound" ? (c.name ?? p.compound?.name ?? "Compound clip") : describe(c);
+    c.name ?? (c.type === "video" || c.type === "image" || c.type === "audio" ? (p.asset?.name ?? "") : c.type === "compound" ? (p.compound?.name ?? "Compound clip") : describe(c));
   const Icon = c.type === "text" ? Type : c.type === "adjustment" ? (c.effects.length ? Sparkles : SlidersHorizontal) : c.type === "audio" ? AudioLines : c.type === "image" ? Image : c.type === "compound" ? Layers : null;
   const fxCount = "effects" in c ? c.effects.length + ("filter" in c && c.filter ? 1 : 0) : 0;
   const curve = isTimed(c) && c.speedCurve ? (PRESETS[c.speedCurve.preset ?? ""]?.label ?? "Curve") : null;
@@ -248,7 +254,24 @@ export const ClipView = memo(function ClipView(p: Props) {
     >
       <div className="clip-label" style={{ height: LABEL_H }}>
         {!tiny && Icon && <Icon size={11} strokeWidth={2} />}
-        {!tiny && <span className="clip-name">{name}</span>}
+        {p.renaming ? (
+          <RenameField name={name} label="Clip name" className="clip-rename" onDone={(v) => p.onRename?.(c, v)} />
+        ) : (
+          !tiny && (
+            <span
+              className="clip-name"
+              // Titles keep CapCut's double-click for their words; their
+              // menu has Rename.
+              onDoubleClick={c.type === "text" || !p.onRename ? undefined : (e) => {
+                if (store.get().tool !== "select") return;
+                e.stopPropagation();
+                p.onRename!(c);
+              }}
+            >
+              {name}
+            </span>
+          )
+        )}
         {!tiny && w > 120 && <span className="clip-dur num">{formatDuration(framesToSeconds(c.duration, p.fps))}</span>}
         {speed && !tiny && <span className="clip-badge num">{speed}</span>}
         {reversed && !tiny && <span className="clip-badge">Reverse</span>}

@@ -27,6 +27,7 @@ import { syncAudio } from "../state/ai";
 import { replaceClip } from "../lib/project/replace";
 import { toast } from "../state/toast";
 import { addSticker } from "../state/stickers";
+import { renameClip } from "../state/rename";
 import { store, useEditor } from "../state/store";
 import { openMarkers } from "../state/markers";
 import { projectWork } from "../state/projectWork";
@@ -194,6 +195,13 @@ export function Timeline() {
   const dropKey = useRef("");
   const dragging = useDragging();
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** The clip whose name strip is a text field (Rename). */
+  const [renaming, setRenaming] = useState<Id | null>(null);
+  const onRename = useCallback((c: Clip, name?: string | null) => {
+    if (name === undefined) return setRenaming(c.id);
+    setRenaming(null);
+    if (name !== null) renameClip(c.id, name);
+  }, []);
   const [osDrop, setOsDrop] = useState(false);
   const [readout, setReadout] = useState<{ x: number; y: number; text: string } | null>(null);
 
@@ -695,6 +703,7 @@ export function Timeline() {
     const syncVideo = picked.length === 2 ? picked.find((c) => c?.type === "video") : undefined;
     const syncSound = picked.length === 2 ? picked.find((c) => c?.type === "audio") : undefined;
     const sync = (muteCamera: boolean) => void syncAudio(syncSound!.id, { videoId: syncVideo!.id, muteCamera }).catch(() => {});
+    const lockedTrack = !!ops.findClip(store.get().project, clip.id)?.track.locked;
     const items: MenuItem[] = [
       { action: "cut" },
       { action: "copy" },
@@ -725,6 +734,7 @@ export function Timeline() {
         ? ([{ label: "Open compound clip", onSelect: () => openCompound(clip.id) }, { action: "breakCompound", label: "Break apart" }] as MenuItem[])
         : []),
       "-",
+      { label: "Rename…", disabled: lockedTrack, onSelect: () => setRenaming(clip.id) },
       { action: "toggleKeyframePanel", label: "Show keyframe animation", checked: store.get().keyframePanel },
       { action: "rangeToClip" },
       "-",
@@ -811,6 +821,8 @@ export function Timeline() {
                         onDown={onClipDown}
                         onContext={onContext}
                         onOpen={onOpenClip}
+                        renaming={renaming === c.id}
+                        onRename={onRename}
                       />
                     );
                   })}
