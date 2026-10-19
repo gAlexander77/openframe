@@ -1,0 +1,60 @@
+---
+import { SITE, href } from "../lib/site";
+const year = 2026;
+---
+<footer class="site-footer">
+  <div class="wrap grid">
+    <div class="about">
+      <a class="brand" href={href()}>
+        <img src={href("favicon.svg")} width="28" height="28" alt="" />
+        <span>OpenFrame</span>
+      </a>
+      <p>Made with OpenFrame: the launch film on this site was edited in it, by an AI agent, through its own MCP tools.</p>
+    </div>
+    <nav aria-label="Product">
+      <h2>Product</h2>
+      <ul>
+        <li><a href={href("features/")}>Features</a></li>
+        <li><a href={href("ai/")}>AI and MCP</a></li>
+        <li><a href={href("experiment/")}>How it was built</a></li>
+        <li><a href={href("privacy/")}>Privacy</a></li>
+      </ul>
+    </nav>
+    <nav aria-label="Documentation">
+      <h2>Docs</h2>
+      <ul>
+        <li><a href={href("docs/")}>Build from source</a></li>
+        <li><a href={href("docs/user-guide/")}>User guide</a></li>
+        <li><a href={href("docs/mcp-tools/")}>MCP tool reference</a></li>
+        <li><a href={href("docs/contributing/")}>Contributing</a></li>
+      </ul>
+    </nav>
+    <nav aria-label="Project">
+      <h2>Project</h2>
+      <ul>
+        <li><a href={SITE.repo}>Source on GitHub</a></li>
+        <li><a href={SITE.licenseUrl}>License: GPL-3.0-only</a></li>
+        <li><a href={href("credits/")}>Credits</a></li>
+        <li><a href={`${SITE.repo}/issues`}>Report an issue</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="wrap legal">
+    <p>Copyright {year} The OpenFrame contributors. Free software under the GNU General Public License, version 3 only. No cookies, no analytics.</p>
+  </div>
+</footer>
+
+<style>
+  .site-footer { border-top: 1px solid var(--line); margin-top: 120px; padding: 56px 0 40px; background: linear-gradient(180deg, transparent, rgb(255 255 255 / 1.5%)); }
+  .grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; }
+  .brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text-1); text-decoration: none; font-weight: 680; letter-spacing: -0.02em; }
+  .brand img { border-radius: 7px; }
+  .about p { margin-top: 14px; color: var(--text-2); max-width: 38ch; font-size: 0.9375rem; }
+  h2 { font-size: 0.875rem; font-weight: 600; color: var(--text-1); letter-spacing: 0; margin-bottom: 12px; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  nav a { color: var(--text-2); text-decoration: none; font-size: 0.9375rem; }
+  nav a:hover { color: var(--text-1); text-decoration: underline; }
+  .legal { margin-top: 48px; padding-top: 20px; border-top: 1px solid var(--line); }
+  .legal p { color: var(--text-3); font-size: 0.8125rem; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr 1fr; } .about { grid-column: 1 / -1; } }
+</style>

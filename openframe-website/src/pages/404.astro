@@ -1,0 +1,23 @@
+---
+import Base from "../layouts/Base.astro";
+import { href } from "../lib/site";
+---
+<Base noindex title="Page not found" description="This page is not on the OpenFrame site. The home page, the features and the documentation are linked here.">
+  <section class="section">
+    <div class="wrap notfound">
+      <h1>Nothing at this frame.</h1>
+      <p class="lede">The page you asked for is not on this site. It may have moved when the documentation was reorganized.</p>
+      <ul>
+        <li><a href={href()}>The home page</a></li>
+        <li><a href={href("features/")}>Every feature</a></li>
+        <li><a href={href("docs/")}>The documentation</a></li>
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .notfound h1 { font-size: var(--step-4); }
+  .notfound .lede { margin-top: 20px; }
+  .notfound ul { margin-top: 28px; display: grid; gap: 10px; padding-left: 20px; }
+</style>

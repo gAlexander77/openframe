@@ -1,0 +1,16 @@
+---
+// Where a feature lives in the app, as the app names it: "Inspector >
+// Adjust > Color wheel", drawn with the app's chevron.
+import Icon from "./Icon.astro";
+interface Props { path: string[] }
+const { path } = Astro.props;
+---
+<span class="where">
+  <span class="visually-hidden">In the app: </span>
+  {path.map((p, i) => (
+    <>
+      {i > 0 && <Icon name="chevron-right" size={13} />}
+      <span>{p}</span>
+    </>
+  ))}
+</span>

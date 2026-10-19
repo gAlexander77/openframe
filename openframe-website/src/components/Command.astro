@@ -1,0 +1,33 @@
+---
+// A shell command block with a copy button. The copy button is a small
+// script, shared by every block on a page; without script the text is
+// still selectable.
+import Icon from "./Icon.astro";
+interface Props { code: string; label?: string; lang?: string }
+const { code, label, lang = "sh" } = Astro.props;
+---
+<div class="command">
+  {label && <div class="command-label">{label}</div>}
+  <pre data-lang={lang}><code>{code}</code></pre>
+  <button type="button" class="copy" aria-label={`Copy ${label ?? "the command"}`} hidden>
+    <Icon name="copy" size={15} class="when-idle" />
+    <Icon name="check" size={15} class="when-done" />
+  </button>
+</div>
+
+<script>
+  for (const block of document.querySelectorAll<HTMLElement>(".command")) {
+    const pre = block.querySelector("pre")!;
+    const button = block.querySelector<HTMLButtonElement>(".copy")!;
+    button.hidden = false;
+    button.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(pre.innerText.trimEnd());
+        button.dataset.done = "true";
+        setTimeout(() => delete button.dataset.done, 1400);
+      } catch {
+        /* the text stays selectable */
+      }
+    });
+  }
+</script>

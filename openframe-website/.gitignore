@@ -1,0 +1,6 @@
+# Astro build output and generated types
+dist/
+.astro/
+node_modules/
+# Local scratch: capture browser profile, contact sheets, logs
+.cache/
