@@ -36,18 +36,41 @@ export function cleanRuns(raw: unknown, length: number): TextRun[] {
   return out;
 }
 
-/** A single replacement found by common prefix/suffix. Insertion within a
- * range inherits it; insertion at its boundary stays outside it. */
+/** Map surviving UTF-16 characters with a linear-space LCS. Offsets match
+ * the textarea and stored runs. Insertions inside surviving runs inherit. */
 export function shiftRuns(runs: TextRun[] | undefined, before: string, after: string): TextRun[] {
-  let start = 0;
-  while (start < before.length && start < after.length && before[start] === after[start]) start++;
-  let end = before.length, nextEnd = after.length;
-  while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) end--, nextEnd--;
-  const delta = nextEnd - end;
-  return cleanRuns((runs ?? []).map(r => ({ ...r,
-    start: r.start >= end ? r.start + delta : r.start > start ? start : r.start,
-    end: r.end <= start ? r.end : r.end >= end ? r.end + delta : start,
-  })), after.length);
+  if (!runs?.length) return [];
+  if (before.length === after.length) return cleanRuns(runs, after.length);
+  const positions = new Map<number, number>();
+  const lengths = (a: string, b: string) => {
+    let row = new Uint32Array(b.length + 1);
+    for (let i = 0; i < a.length; i++) {
+      const next = new Uint32Array(b.length + 1);
+      for (let j = 0; j < b.length; j++) next[j + 1] = a[i] === b[j] ? row[j] + 1 : Math.max(row[j + 1], next[j]);
+      row = next;
+    }
+    return row;
+  };
+  const match = (a: string, b: string, ai: number, bi: number): void => {
+    if (!a.length || !b.length) return;
+    if (a.length === 1) {
+      const j = b.indexOf(a);
+      if (j >= 0) positions.set(ai, bi + j);
+      return;
+    }
+    const mid = Math.floor(a.length / 2);
+    const left = lengths(a.slice(0, mid), b);
+    const right = lengths(a.slice(mid).split("").reverse().join(""), b.split("").reverse().join(""));
+    let cut = 0;
+    for (let j = 1; j <= b.length; j++) if (left[j] + right[b.length - j] > left[cut] + right[b.length - cut]) cut = j;
+    match(a.slice(0, mid), b.slice(0, cut), ai, bi);
+    match(a.slice(mid), b.slice(cut), ai + mid, bi + cut);
+  };
+  match(before, after, 0, 0);
+  return cleanRuns(runs.flatMap(r => {
+    const kept = [...positions].filter(([i]) => i >= r.start && i < r.end).map(([, j]) => j);
+    return kept.length ? [{ ...r, start: Math.min(...kept), end: Math.max(...kept) + 1 }] : [];
+  }), after.length);
 }
 
 export function runStyle(base: TextStyle, offset: number): TextStyle {

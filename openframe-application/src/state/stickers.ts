@@ -76,13 +76,13 @@ export function setStickerMotion(m: string) {
 /** The add_sticker command for automation: draw the sticker's file when the
  * project lacks it, then run the command with the asset added — one undo
  * step, like a click. Throws the command's validation errors. */
-export async function execAddSticker(args: unknown) {
+export async function execAddSticker(args: unknown, report?: import("../lib/commands").CommandReport) {
   const signal = projectWork.signal();
   const name = typeof args === "object" && args !== null ? (args as { name?: unknown }).name : undefined;
   const s = typeof name === "string" ? findSticker(name) : undefined;
   const asset = s ? await stickerAssetFor(s) : null;
   signal.throwIfAborted();
-  store.edit("Add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args));
+  store.edit("Add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args, report));
   if (asset) prepare(asset);
 }
 

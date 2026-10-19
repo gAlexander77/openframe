@@ -7,6 +7,7 @@
 // so one undo leaves nothing behind in the library.
 
 import { useSyncExternalStore } from "react";
+import { voiceSpeedReport } from "../lib/voiceSpeed";
 import { speak, type Quality } from "../engine/tts";
 import { dips, speechActivity } from "../lib/analysis/speech";
 import { runCommand } from "../lib/commands";
@@ -61,6 +62,7 @@ export interface Take {
   pauses: { seconds: number; how: "stretched" | "split" }[];
   info: SpeechInfo;
   engine: { device?: string; dtype?: string };
+  speedChosen?: boolean;
 }
 
 const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
@@ -172,7 +174,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
   }
   const { audio } = finishTake(out.audio, out.rate, f, hash(text));
   const info: SpeechInfo = { text, voice: opts.voice, speed, quality: opts.quality, finish: opts.finish, ...(pronounce && Object.keys(pronounce).length ? { pronounce } : {}) };
-  return { audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine };
+  return { speedChosen: speed !== opts.speed, audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine };
 }
 
 /** The takes as probed assets carrying their scripts, not yet in the
@@ -387,6 +389,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
       seconds: +take.seconds.toFixed(3),
       voice: take.info.voice,
       speed: take.info.speed,
+      ...voiceSpeedReport(o.speed, take.info.speed, take.speedChosen === true, was?.speed !== undefined),
       ...(take.pauses.length ? { pauses: take.pauses } : {}),
       ...(o.ripple ? { shifted: +framesToSeconds(answer.shift, fps).toFixed(3) } : {}),
     };

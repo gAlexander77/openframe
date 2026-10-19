@@ -134,7 +134,7 @@ const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
 export function describeChanges(before: unknown, after: unknown): unknown {
   const b = before as Desc, a = after as Desc;
   if (!a?.tracks || !b?.tracks) return after;
-  const out: Record<string, unknown> = { duration: a.duration };
+  const out: Record<string, unknown> = { duration: a.duration, ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(a.notes ? { notes: a.notes } : {}) };
   const diff = <T extends { id: string }>(was: Map<string, T>, now: Map<string, T>, key: string) => {
     const added = [...now.values()].filter((x) => !was.has(x.id));
     const changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
@@ -687,7 +687,7 @@ APP_TOOLS.push(
   {
     name: "retake_voiceover",
     description:
-      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice.",
+      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice. When the rushed-line rule chooses a speed, speed_chosen is true and a note explains it.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The voice clip (add_voiceover's voice_clip)" },

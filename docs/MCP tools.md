@@ -247,7 +247,7 @@ Place, cut, move and arrange clips. batch runs many edits as one undo step.
 
 ### add_media_clip
 
-Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track).
+Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -266,7 +266,7 @@ Example:
 
 ### add_color_clip
 
-Add a solid color layer (backgrounds, flashes, title cards).
+Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -901,13 +901,20 @@ Shape the curve leaving keyframes toward the next one. ease is a preset (linear,
 
 ### remove_keyframes
 
-Remove keyframes from a clip. at lists timeline times in seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keyframes goes back to its static value.
+Remove keyframes from clip_ids (or clip_id). at lists timeline seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keys returns to its static value. No matching keys is a reported no-op, including in a batch.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_id` | string | yes | Clip id |
+| `clip_id` | string |  | Clip id; alternatively use clip_ids |
+| `clip_ids` | string[] |  | Clips whose matching keys are removed |
 | `path` | string |  | Parameter path; omit for all keyed parameters |
 | `at` | number[] |  | Timeline seconds of the keyframes to remove |
+
+Example:
+
+```json
+{"name":"remove_keyframes","arguments":{"clip_ids":["c_title"],"path":"opacity"}}
+```
 
 ### frame_region
 
@@ -1183,7 +1190,7 @@ Shapes (bars, boxes, lines that draw on, soft glows), drop shadows and perspecti
 
 ### add_shape
 
-Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Soft light without image files: an ellipse with feather (a soft edge, pixels) or a radial gradient to transparent is a glow; add a blur effect (amount up to 500) for more. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}; a background glow: {kind: 'ellipse', start: 0, duration: 8, width: 0.6, height: 0.8, gradient: {kind: 'radial', from: '#6a5cffcc', to: 'transparent'}, feather: 120}.
+Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Soft light without image files: an ellipse with feather (a soft edge, pixels) or a radial gradient to transparent is a glow; add a blur effect (amount up to 500) for more. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}; a background glow: {kind: 'ellipse', start: 0, duration: 8, width: 0.6, height: 0.8, gradient: {kind: 'radial', from: '#6a5cffcc', to: 'transparent'}, feather: 120}. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1443,7 +1450,7 @@ Titles, templates, stickers, captions and the transcript.
 
 ### add_text
 
-Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom).
+Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1500,12 +1507,13 @@ Example:
 
 ### set_text
 
-Change a text clip's words and/or style.
+Change text clips' style with clip_ids (or clip_id). New text requires exactly one clip. Styled runs keep their positions for same-length changes; otherwise surviving characters carry their style.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `clip_id` | string | yes | Text clip id |
-| `text` | string |  | New words |
+| `clip_id` | string |  | Text clip id; alternatively use clip_ids |
+| `clip_ids` | string[] |  | Text clips receiving the same style; text requires one clip |
+| `text` | string |  | New words; one clip only |
 | `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
@@ -1547,7 +1555,7 @@ Change a text clip's words and/or style.
 Example:
 
 ```json
-{"name":"set_text","arguments":{"clip_id":"c_123","style":{"background":{"color":"#000000b3","padding":18,"radius":12}}}}
+{"name":"set_text","arguments":{"clip_ids":["c_123"],"style":{"background":{"color":"#000000b3","padding":18,"radius":12}}}}
 ```
 
 ### style_text_range
@@ -1620,7 +1628,7 @@ Restyle text clips with a word-art look (fill, stroke, shadow, box), keeping the
 
 ### add_sticker
 
-Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it.
+Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2034,7 +2042,7 @@ Example:
 
 ### retake_voiceover
 
-Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice.
+Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice. When the rushed-line rule chooses a speed, speed_chosen is true and a note explains it.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

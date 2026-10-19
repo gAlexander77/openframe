@@ -3,6 +3,7 @@
 // style, length, tempo, key, ending and seed; Preview plays it without
 // adding it, Add puts it on an audio track at the playhead.
 
+import { DraftNumber } from "./DraftNumber";
 import { useEffect, useRef, useState } from "react";
 import { Dices, Loader2, Music, Play, Plus, Square, X } from "../icons";
 import { STYLE_IDS, STYLES, type StyleId } from "../lib/music/styles";
@@ -108,11 +109,11 @@ export function MusicCard() {
       <div className="music-grid">
         <label className="music-field">
           <span>Length (s)</span>
-          <input className="field num" type="number" min={4} max={300} step={1} value={length} onChange={(e) => setLength(Math.max(4, Math.min(300, Number(e.target.value) || 30)))} />
+          <DraftNumber className="field num" min={4} max={300} step={1} value={length} onCommit={v => setLength(Number(v))} />
         </label>
         <label className="music-field">
           <span>Tempo (BPM)</span>
-          <input className="field num" type="number" min={STYLES[style].bpmRange[0]} max={STYLES[style].bpmRange[1]} placeholder={String(STYLES[style].bpm)} value={bpm} onChange={(e) => setBpm(e.target.value === "" ? "" : Math.max(40, Math.min(220, Number(e.target.value))))} />
+          <DraftNumber className="field num" min={40} max={220} placeholder={String(STYLES[style].bpm)} value={bpm} optional onCommit={setBpm} />
         </label>
         <label className="music-field">
           <span>Key</span>
@@ -133,7 +134,7 @@ export function MusicCard() {
         <label className="music-field">
           <span>Seed</span>
           <span className="music-seed">
-            <input className="field num" type="number" min={0} value={seed} onChange={(e) => setSeed(Math.max(0, Math.floor(Number(e.target.value) || 0)))} />
+            <DraftNumber className="field num" min={0} value={seed} integer onCommit={v => setSeed(Number(v))} />
             <button className="icon-btn" aria-label="New take" data-tip="New take" onClick={() => setSeed(newSeed())}>
               <Dices size={15} />
             </button>

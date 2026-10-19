@@ -17,7 +17,7 @@ import { CLIP_LABELS } from "../lib/catalog";
 import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
-import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
+import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
@@ -267,7 +267,21 @@ export function Timeline() {
     const el = scrollRef.current!;
     const update = () => setView({ left: el.scrollLeft, width: el.clientWidth });
     update();
-    const ro = new ResizeObserver(update);
+    let previousWidth = el.clientWidth;
+    let resizeRaf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(() => {
+        const width = el.clientWidth;
+        if (previousWidth > HEADER_W && width > HEADER_W && width !== previousWidth) {
+          const next = refitTimeline(store.get().zoom, el.scrollLeft, previousWidth - HEADER_W, width - HEADER_W);
+          store.set({ zoom: next.zoom });
+          el.scrollLeft = next.left;
+        }
+        previousWidth = width;
+        update();
+      });
+    });
     ro.observe(el);
     let raf = 0;
     const onScroll = () => {
@@ -277,6 +291,7 @@ export function Timeline() {
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => {
       ro.disconnect();
+      cancelAnimationFrame(resizeRaf);
       el.removeEventListener("scroll", onScroll);
     };
   }, []);
@@ -834,6 +849,10 @@ export function Timeline() {
       >
         <div className="tl-content" style={{ width: contentW, height: RULER_H + rowsH + 40 }}>
           <Ruler zoom={zoom} left={view.left} width={view.width} onDown={onRulerDown} />
+          <div className="tl-ruler-overlays">
+            <MarkersLayer zoom={zoom} />
+            <Playhead zoom={zoom} height={RULER_H} cap />
+          </div>
           <div className="tl-corner" style={{ width: HEADER_W }} />
           <div className="tl-rows" style={{ top: RULER_H }} onPointerDown={onLanesDown} onKeyDown={onClipKey}>
             {rows.map((row) => (
@@ -904,7 +923,6 @@ export function Timeline() {
             )}
             {drop && <DropBox drop={drop} rows={rows} rowsH={rowsH} zoom={zoom} />}
           </div>
-          <MarkersLayer zoom={zoom} />
           <InOutRange zoom={zoom} />
           {snapLine !== null && <div className="tl-snap" style={{ left: HEADER_W + snapLine * zoom, height: RULER_H + rowsH }} />}
           <PreviewAxis zoom={zoom} height={RULER_H + rowsH} />
@@ -1197,11 +1215,11 @@ function Ruler({ zoom, left, width, onDown }: { zoom: number; left: number; widt
   );
 }
 
-function Playhead({ zoom, height }: { zoom: number; height: number }) {
+function Playhead({ zoom, height, cap = false }: { zoom: number; height: number; cap?: boolean }) {
   const f = useEditor((s) => s.playhead);
   return (
     <div className="tl-playhead" style={{ transform: `translateX(${HEADER_W + f * zoom}px)`, height }}>
-      <div className="tl-playhead-cap" />
+      {cap && <div className="tl-playhead-cap" />}
     </div>
   );
 }

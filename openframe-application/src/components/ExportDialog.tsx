@@ -1,3 +1,4 @@
+import { DraftNumber } from "./DraftNumber";
 // The export dialog, after CapCut's (docs/research/CapCut desktop.md §6.1):
 // name and location, a Video section (resolution, bit rate, codec, format,
 // frame rate), an Audio section, the range, and a footer with the duration
@@ -393,15 +394,14 @@ function SettingsView() {
                 </Select>
                 {s.quality === "custom" && (
                   <label className="export-mbps">
-                    <input
+                    <DraftNumber
                       className="field num"
-                      type="number"
                       min={0.5}
                       max={400}
                       step={0.5}
                       aria-label="Bit rate in megabits per second"
                       value={s.customMbps}
-                      onChange={(e) => set({ customMbps: Math.max(0.2, Number(e.target.value) || 0) })}
+                      onCommit={v => set({ customMbps: Number(v) })}
                     />
                     Mbps
                   </label>

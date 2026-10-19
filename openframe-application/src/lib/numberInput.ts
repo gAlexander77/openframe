@@ -19,3 +19,9 @@ export function parseTyped(raw: string): number | null {
   const n = Number(m[0]);
   return Number.isFinite(n) ? n : null;
 }
+
+/** Clamp a committed draft; invalid input leaves the caller's value alone. */
+export function boundedNumber(raw: string, min = -Infinity, max = Infinity, integer = false): number | null {
+  const n = parseTyped(raw);
+  return n === null ? null : Math.max(min, Math.min(max, integer ? Math.floor(n) : n));
+}
