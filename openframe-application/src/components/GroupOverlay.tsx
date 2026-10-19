@@ -1,3 +1,5 @@
+import { setParam } from "../lib/project/ops";
+import { transformGroup } from "../lib/groupTransform";
 import { useRef, useState } from "react";
 import { groupBoxes, nudgeClips, otherBoxes, scaleClips, SNAP, snapBox, snapLines, type Box } from "../lib/align";
 import { paramAt } from "../lib/keyframes";
@@ -6,7 +8,8 @@ import { store, useEditor } from "../state/store";
 
 type Drag =
   | { kind: "move"; px: number; py: number; box: Box; lines: { x: number[]; y: number[] } }
-  | { kind: "scale"; d0: number };
+  | { kind: "scale"; d0: number; cx: number; cy: number }
+  | { kind: "rotate"; a0: number; cx: number; cy: number };
 
 /**
  * One box around a multi-selection's showing pictures, as CapCut and
@@ -34,6 +37,7 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
   const begin = (e: React.PointerEvent, d: Drag) => {
+    if (e.button !== 0) return;
     e.stopPropagation(); // not the viewer's click-to-select
     e.currentTarget.setPointerCapture(e.pointerId);
     drag.current = d;
@@ -55,10 +59,14 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
       if (gy !== undefined) dy += hit.dy;
       setGuides({ x: gx, y: gy });
       store.previewGesture((p) => nudgeClips(p, shown, dx, dy, frame));
-    } else {
-      let s = Math.hypot(m.x - box.cx * k, m.y - box.cy * k) / d.d0;
+    } else if (d.kind === "scale") {
+      let s = Math.max(0.01, Math.hypot(m.x - d.cx, m.y - d.cy) / d.d0);
       if (!free && Math.abs(s - 1) < 0.02) s = 1;
-      store.previewGesture((p) => scaleClips(p, shown, s, frame));
+      store.previewGesture((p) => shown.length === 1 ? scaleClips(p, shown, s, frame) : transformGroup(p, shown, { scale: s }, frame));
+    } else {
+      let rotation = (Math.atan2(m.y - d.cy, m.x - d.cx) - d.a0) * 180 / Math.PI;
+      if (!free && Math.abs(rotation - Math.round(rotation / 45) * 45) < 3) rotation = Math.round(rotation / 45) * 45;
+      store.previewGesture(p => shown.length === 1 ? setParam(p, shown, "transform.rotation", paramAt(g.items[0].clip, "transform.rotation", g.items[0].rel) + rotation, g.items[0].rel) : transformGroup(p, shown, { rotation }, frame));
     }
   };
   const end = () => {
@@ -66,7 +74,7 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
     if (!d) return;
     drag.current = null;
     setGuides({});
-    store.endGesture(d.kind === "move" ? "Move" : "Scale");
+    store.endGesture(d.kind === "move" ? "Move" : d.kind === "scale" ? "Scale" : "Rotate group");
   };
 
   const corner = (pos: string) => (
@@ -75,7 +83,7 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
       className={`tf-handle tf-${pos}`}
       onPointerDown={(e) => {
         const m = local(e);
-        begin(e, { kind: "scale", d0: Math.max(1, Math.hypot(m.x - box.cx * k, m.y - box.cy * k)) });
+        begin(e, { kind: "scale", cx: box.cx * k, cy: box.cy * k, d0: Math.max(1, Math.hypot(m.x - box.cx * k, m.y - box.cy * k)) });
       }}
     />
   );
@@ -96,6 +104,10 @@ export function GroupOverlay({ ids, width: W }: { ids: Id[]; width: number }) {
         }}
       >
         {["nw", "ne", "sw", "se"].map(corner)}
+        <div className="tf-rotate" onPointerDown={e => {
+          const m = local(e), cx = box.cx * k, cy = box.cy * k;
+          begin(e, { kind: "rotate", cx, cy, a0: Math.atan2(m.y - cy, m.x - cx) });
+        }} />
       </div>
     </div>
   );

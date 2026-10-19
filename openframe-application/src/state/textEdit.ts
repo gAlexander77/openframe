@@ -1,3 +1,4 @@
+import { shiftRuns } from "../lib/textRuns";
 // Typing into a text clip, from the editor on the canvas or the inspector's
 // Text box (ADR-031). Every keystroke reaches the project at once, so the
 // viewer redraws the real text as it is typed, and the whole session is one
@@ -38,7 +39,10 @@ export function beginTyping(id: Id, el: HTMLElement) {
 export function typeText(text: string) {
   if (!session) return;
   const { id } = session;
-  store.previewGesture((p) => ops.updateClip(p, id, (c) => (c.type === "text" ? { ...c, text } : c)));
+  const current = ops.findClip(store.get().project, id)?.clip;
+  if (current?.type !== "text") return;
+  const runs = current.style.runs && shiftRuns(current.style.runs, current.text, text);
+  store.previewGesture((p) => ops.updateClip(p, id, (c) => (c.type === "text" ? { ...c, text, style: { ...c.style, ...(runs ? { runs } : {}) } } : c)));
 }
 
 /** Commit the session as one undo step; typing that came back to the

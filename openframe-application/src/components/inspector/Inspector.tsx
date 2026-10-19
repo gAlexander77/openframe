@@ -1,3 +1,5 @@
+import { LayoutsSection } from "./LayoutsSection";
+import { runStyle } from "../../lib/textRuns";
 import { EmptyState } from "../EmptyState";
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
@@ -1343,6 +1345,23 @@ function TextColorRow({ clip }: { clip: TextClip }) {
   );
 }
 
+function WordStyle({ clip }: { clip: TextClip }) {
+  const [index, setIndex] = useState(0);
+  const words = [...clip.text.matchAll(/\S+/g)];
+  const word = words[Math.min(index, words.length - 1)];
+  if (!word) return null;
+  const current = runStyle(clip.style, word.index);
+  const apply = (patch: Record<string, unknown>) => edit("Style text range", p => runCommand(p, "style_text_range", { clip_id: clip.id, start: word.index, end: word.index + word[0].length, ...patch }));
+  return <Section title="Style range">
+    <Row label="Word"><select className="field" aria-label="Style word" value={Math.min(index, words.length - 1)} onChange={e => setIndex(Number(e.target.value))}>
+      {words.map((w, i) => <option key={i} value={i}>{i + 1}. {w[0]}</option>)}
+    </select></Row>
+    <Row label="Color"><ColorInput label="Word color" value={current.color} onChange={color => apply({ color })} /></Row>
+    <WeightRow style={current} onChange={weight => apply({ weight })} />
+    <button className="btn" onClick={() => apply({ clear: true })}>Clear word style</button>
+  </Section>;
+}
+
 function TextTab({ clip }: { clip: TextClip }) {
   const s = clip.style;
   const heavy = fontWeight(s) >= 600;
@@ -1357,6 +1376,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </button>
         </div>
       )}
+      <WordStyle clip={clip} />
       <Section title="Text">
         {/* Live, like the canvas editor: the viewer redraws as you type, and
             the canvas editor's typing shows up here (ADR-031). */}
@@ -1816,6 +1836,7 @@ function MultiSelection({ count }: { count: number }) {
           <EffectClipboard />
           <AttributeClipboard />
         </Section>
+        <LayoutsSection ids={pictures.map(c => c.id)} />
         {pictures.length > 1 && (
           <Section title={`Picture (${pictures.length} clips)`}>
             <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="transform.scale" label="Scale" min={1} max={500} unit="%" reset={1} keyframes={false} {...pct} />

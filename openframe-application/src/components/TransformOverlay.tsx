@@ -1,3 +1,4 @@
+import { moveMotionPoint } from "../lib/motionPoint";
 import { useMemo, useRef, useState } from "react";
 import { layerBox, otherBoxes, SNAP, snapBox, snapLines, tidy, type Box } from "../lib/align";
 import { paramAt } from "../lib/keyframes";
@@ -176,10 +177,15 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
 }
 
 /** Premiere's motion path: where an animated picture's center travels
- * over the clip, with a dot at each position keyframe, so a tracked or
- * reframed path can be seen at a glance. Drawn only: the keys are edited
- * in the keyframe panel. */
+ * over the clip, with a draggable dot at each position-key time. A drag
+ * updates both axes and commits one undo step. */
 function MotionPath({ project, clip, k }: { project: Project; clip: VisualClip; k: number }) {
+  const drag = useRef<{ f: number; px: number; py: number; x: number; y: number } | null>(null);
+  const finish = (e: React.PointerEvent, cancel = false) => {
+    if (!drag.current) return;
+    e.stopPropagation(); drag.current = null;
+    if (cancel) store.cancelGesture(); else store.endGesture("Move motion point");
+  };
   const path = useMemo(() => {
     const keyed = [...(clip.keyframes?.["transform.x"] ?? []), ...(clip.keyframes?.["transform.y"] ?? [])];
     if (!keyed.length) return null;
@@ -194,15 +200,35 @@ function MotionPath({ project, clip, k }: { project: Project; clip: VisualClip; 
       const q = at(f);
       if (q) line.push(q);
     }
-    const dots = [...new Set(keyed.map((x) => x.f))].flatMap((f) => (f >= 0 && f < clip.duration ? [at(f)!] : [])).filter(Boolean);
+    const dots = [...new Set(keyed.map((x) => x.f))].flatMap((f) => (f >= 0 && f < clip.duration && at(f) ? [{ ...at(f)!, f }] : [])).filter(Boolean);
     return { line, dots };
   }, [project, clip]);
-  if (!path) return null;
+  if (!path || project.tracks.some(t => t.locked && t.clips.some(c => c.id === clip.id))) return null;
   return (
-    <svg className="motion-path" aria-hidden="true">
+    <svg className="motion-path" aria-label="Motion path">
       <polyline points={path.line.map((q) => `${(q.x * k).toFixed(1)},${(q.y * k).toFixed(1)}`).join(" ")} />
       {path.dots.map((q, i) => (
-        <circle key={i} cx={q.x * k} cy={q.y * k} r={3} />
+        <circle key={i} cx={q.x * k} cy={q.y * k} r={5} aria-label={`Motion point ${i + 1}`} role="button" tabIndex={0}
+          onPointerDown={e => {
+            if (e.button !== 0) return;
+            e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId);
+            drag.current = { f: q.f, px: e.clientX, py: e.clientY, x: paramAt(clip, "transform.x", q.f), y: paramAt(clip, "transform.y", q.f) };
+            store.beginGesture();
+          }}
+          onPointerMove={e => {
+            const d = drag.current;
+            if (!d) return;
+            e.stopPropagation();
+            store.previewGesture(p => moveMotionPoint(p, clip.id, clip.start + d.f, d.x + (e.clientX - d.px) / (k * project.width), d.y + (e.clientY - d.py) / (k * project.height)));
+          }}
+          onPointerUp={e => finish(e)} onPointerCancel={e => finish(e, true)}
+          onKeyDown={e => {
+            const delta = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+            if (!delta) return;
+            e.preventDefault(); e.stopPropagation();
+            store.edit("Move motion point", p => moveMotionPoint(p, clip.id, clip.start + q.f, paramAt(clip, "transform.x", q.f) + delta[0] / project.width, paramAt(clip, "transform.y", q.f) + delta[1] / project.height));
+          }}
+        />
       ))}
     </svg>
   );

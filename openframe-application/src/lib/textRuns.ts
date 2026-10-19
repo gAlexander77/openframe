@@ -1,0 +1,72 @@
+import type { TextRun, TextStyle } from "./project/types";
+import { cleanWeight } from "./textLook";
+
+/** Canonical nonoverlapping ranges; later ranges override only fields they set. */
+export function cleanRuns(raw: unknown, length: number): TextRun[] {
+  if (!Array.isArray(raw)) return [];
+  const runs: TextRun[] = [];
+  for (const v of raw) {
+    if (!v || typeof v !== "object" || !Number.isFinite(v.start) || !Number.isFinite(v.end)) continue;
+    const r: TextRun = { start: Math.max(0, Math.floor(v.start)), end: Math.min(length, Math.floor(v.end)) };
+    if (r.end <= r.start) continue;
+    if (typeof v.color === "string" && v.color.trim()) r.color = v.color;
+    if (v.gradient && typeof v.gradient.from === "string" && typeof v.gradient.to === "string" && Number.isFinite(v.gradient.angle)) r.gradient = { from: v.gradient.from, to: v.gradient.to, angle: v.gradient.angle };
+    const weight = cleanWeight(v.weight);
+    if (weight !== undefined) r.weight = weight;
+    for (const k of ["italic", "underline"] as const) if (typeof v[k] === "boolean") r[k] = v[k];
+    if (typeof v.scale === "number" && Number.isFinite(v.scale)) r.scale = Math.min(4, Math.max(0.25, v.scale));
+    if (Object.keys(r).length > 2) runs.push(r);
+  }
+  const points = [...new Set(runs.flatMap(r => [r.start, r.end]))].sort((a, b) => a - b);
+  const out: TextRun[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const start = points[i - 1], end = points[i];
+    const active = runs.filter(r => r.start <= start && r.end >= end);
+    if (!active.length) continue;
+    const r = active.reduce<TextRun>((a, b) => {
+      const next = { ...a, ...b, start, end };
+      if (b.color !== undefined && !b.gradient) delete next.gradient;
+      if (b.gradient) delete next.color;
+      return next;
+    }, { start, end });
+    const last = out.at(-1);
+    if (last && last.end === start && JSON.stringify({ ...last, start: 0, end: 0 }) === JSON.stringify({ ...r, start: 0, end: 0 })) last.end = end;
+    else out.push(r);
+  }
+  return out;
+}
+
+/** A single replacement found by common prefix/suffix. Insertion within a
+ * range inherits it; insertion at its boundary stays outside it. */
+export function shiftRuns(runs: TextRun[] | undefined, before: string, after: string): TextRun[] {
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
+  let end = before.length, nextEnd = after.length;
+  while (end > start && nextEnd > start && before[end - 1] === after[nextEnd - 1]) end--, nextEnd--;
+  const delta = nextEnd - end;
+  return cleanRuns((runs ?? []).map(r => ({ ...r,
+    start: r.start >= end ? r.start + delta : r.start > start ? start : r.start,
+    end: r.end <= start ? r.end : r.end >= end ? r.end + delta : start,
+  })), after.length);
+}
+
+export function runStyle(base: TextStyle, offset: number): TextStyle {
+  const r = base.runs?.find(r => r.start <= offset && offset < r.end);
+  if (!r) return base;
+  return { ...base, ...r, size: base.size * (r.scale ?? 1), ...(r.color && !r.gradient ? { gradient: undefined } : {}) };
+}
+
+export function runSegments(text: string, start: number, style: TextStyle) {
+  const ends = [...new Set([start, start + text.length, ...(style.runs ?? []).flatMap(r => [r.start, r.end]).filter(n => n > start && n < start + text.length)])].sort((a,b) => a-b);
+  return ends.slice(1).filter((end, i) => end > ends[i]).map((end, i) => ({ text: text.slice(ends[i] - start, end - start), start: ends[i], style: runStyle(style, ends[i]) }));
+}
+
+export function measureRuns(text: string, start: number, style: TextStyle, measure: (text: string, style: TextStyle) => number): number {
+  return runSegments(text, start, style).reduce((width, r) => width + measure(r.text, r.style), 0);
+}
+
+export function styleRange(text: string, runs: TextRun[] | undefined, start: number, end: number, style: Partial<TextRun>, clear = false): TextRun[] {
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > text.length || start >= end) throw new Error("Text range must be within the text, with start before end");
+  if (!clear) return cleanRuns([...(runs ?? []), { ...style, start, end }], text.length);
+  return cleanRuns((runs ?? []).flatMap(r => r.end <= start || r.start >= end ? [r] : [{ ...r, end: start }, { ...r, start: end }]), text.length);
+}
