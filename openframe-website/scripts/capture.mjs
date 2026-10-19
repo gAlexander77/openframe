@@ -18,6 +18,10 @@
 //   near-lossless WebP.
 //   Astro turns them into AVIF/WebP at build time. Look at every image
 //   before committing (docs/Website.md, "Privacy checklist for media").
+// - --record <dir>: also films the run (WebM in <dir>), with the main demo's
+//   MCP calls paced like an agent's, and prints where that build starts and
+//   ends in the video. make-readme-media.mjs cuts it into the README's
+//   "an agent edits live" GIF, AI agent notices and all.
 //
 // The media folder must hold: launch.mp4 orbit.mp4 desert.mp4 station.mp4
 // speedboat.mp4 harbor.mp4 falls.mp4 paris.mp4 skyline.mp4 golden.mp4
@@ -43,6 +47,7 @@ const MEDIA = resolve(args.media);
 const OUT = resolve(ROOT, args.out ?? "src/assets/screens");
 const only = args.only ? new Set(args.only.split(",")) : null;
 const W = 1440, H = 900, DSF = 2;
+const REC = args.record ? resolve(args.record) : null;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const FILES = [
@@ -93,6 +98,7 @@ const ctx = await chromium.launchPersistentContext(profile, {
   locale: "en-US",
   timezoneId: "UTC",
   colorScheme: "dark",
+  ...(REC ? { recordVideo: { dir: REC, size: { width: W, height: H } } } : {}),
   args: ["--hide-scrollbars", "--autoplay-policy=no-user-gesture-required", "--ignore-gpu-blocklist"],
 });
 const appOrigin = new URL(APP).origin;
@@ -113,7 +119,10 @@ const page = ctx.pages()[0] ?? (await ctx.newPage());
 page.setDefaultTimeout(30000);
 page.on("pageerror", (e) => console.error("page error:", e.message));
 
+const t0 = Date.now();
+let pace = 0;
 async function mcp(name, a = {}) {
+  if (pace) await sleep(pace);
   const res = await page.evaluate(({ name, a }) => window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: a } }), { name, a });
   const text = (res?.result?.content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   if (res?.error || res?.result?.isError) throw new Error(`${name}: ${text || JSON.stringify(res?.error)}`);
@@ -183,6 +192,10 @@ await makeSmall("Launch Day Recap", 1920, 1080, [["launch.mp4", "Launch.mp4", 6,
 
 // The main demo: "Beyond Blue", the project inside the launch film's footage.
 await mcp("new_project", { name: "Beyond Blue" });
+if (REC) {
+  pace = 900;
+  console.log(`record: the agent's build starts at ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+}
 const assets = await mcp("import_media", { files: FILES.map(([f, n]) => ({ src: M + f, name: n })) });
 const id = Object.fromEntries(assets.map((a) => [a.name, a.id]));
 const bar = (60 / 128) * 4;
@@ -240,6 +253,11 @@ d = await describe();
 await mcp("set_filter", { clip_id: d.tracks.find((k) => k.name === "Look").clips[0].id, type: "cinematic", intensity: 0.45 });
 await mcp("add_markers", { times: [0, 8 * bar, 16 * bar], label: "Section", color: "#7c5cff" }).catch(() => {});
 await page.evaluate(() => window.videoEditor.action("zoomFit"));
+if (REC) {
+  await sleep(3500);
+  pace = 0;
+  console.log(`record: the agent's build ends at ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+}
 d = await describe();
 const clipNamed = (name) => d.tracks.flatMap((k) => k.clips).find((c) => d.assets.find((a) => a.id === c.asset)?.name === name);
 
@@ -300,6 +318,8 @@ await page.locator("button[aria-label='Close AI assistant']").first().click().ca
 // Export: the dialog with its presets.
 await page.locator(".titlebar .export-btn").first().click();
 await page.waitForSelector("[role='dialog']");
+// The name field opens selected; a still shows it unselected.
+await page.evaluate(() => document.activeElement?.blur());
 await shot("export", { wait: 1800, element: "[role='dialog']" });
 await page.keyboard.press("Escape");
 

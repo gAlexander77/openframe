@@ -89,6 +89,14 @@ check before any media lands in the repository.
   pause button, and wait to be played under reduced motion.
 - **Screenshots:** `src/assets/screens/*.webp` from `scripts/capture.mjs`
   (near-lossless WebP at 2x); Astro serves AVIF and WebP at several widths.
+- **The README's GIFs** (`docs/media/*.gif`): `scripts/make-readme-media.mjs`
+  cuts a teaser of the film and four of the loops, and the agent-live GIF
+  from a `capture.mjs --record <dir>` run: that run films itself, paces the
+  main demo's MCP calls like an agent's, so each AI agent notice can be
+  read, and prints where the build starts and ends. GitHub plays a
+  README's GIFs in the page but not a committed video; each is
+  palette-built to stay at 1 to 4.5 MB. The README shows the site's
+  screenshots in place, so one capture refreshes both.
 - **Full-range video fails in Edge.** The recordings are full-range (JPEG)
   YUV, as the browser's screencast writes them. VP9 encoded from them
   played in nothing on Edge for Windows: `PIPELINE_ERROR_DECODE` on the
