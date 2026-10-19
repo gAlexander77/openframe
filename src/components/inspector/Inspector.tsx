@@ -54,7 +54,17 @@ import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
 
-type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
+export type Tab = "video" | "audio" | "speed" | "animation" | "adjust" | "effects" | "text" | "captions" | "transition";
+
+// The clip menu's Speed opens that tab: a request waits for the clip's
+// inspector if it is not showing yet (the menu selects the clip first).
+let requestedTab: Tab | null = null;
+const tabListeners = new Set<(t: Tab) => void>();
+/** Show a tab of the selected clip's inspector. */
+export function showInspectorTab(t: Tab) {
+  requestedTab = t;
+  tabListeners.forEach((l) => l(t));
+}
 
 const TAB_LABEL: Record<Tab, string> = {
   video: "Video",
@@ -101,7 +111,19 @@ export function InspectorPanel() {
 function ClipInspector({ id }: { id: Id }) {
   const clip = useClip(id);
   const project = useEditor((s) => s.project);
-  const [tab, setTab] = useState<Tab | null>(null);
+  const [tab, setTab] = useState<Tab | null>(() => {
+    const t = requestedTab;
+    requestedTab = null;
+    return t;
+  });
+  useEffect(() => {
+    const l = (t: Tab) => {
+      requestedTab = null;
+      setTab(t);
+    };
+    tabListeners.add(l);
+    return () => void tabListeners.delete(l);
+  }, []);
   const transitionEdit = useEditor(s => s.transitionEdit);
   if (!clip) return null;
   const tabs = tabsFor(clip, project);

@@ -116,6 +116,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Alt-drag to duplicate, edge drags to trim (ripple on the magnetic main
   track), marquee select, Ctrl+wheel zoom at the cursor, ruler scrub,
   page-flip follow during playback, right-click menu.
+- **The clip menu** (right-click a clip; CapCut's and Premiere's): Cut,
+  Copy, Paste, Duplicate, Delete, **Ripple delete**; Split, **Speed…**
+  (opens the inspector's Speed tab), **Reverse** (a check: every selected
+  clip that can play backward turns, by `set_reverse`'s own rule), Freeze
+  frame, Extract audio, Replace clip; **Copy effects** and **Paste
+  effects** (the inspector's effect clipboard, onto every selected clip
+  that takes effects); Rename, Group, **Ungroup** (always listed, off
+  unless a selected clip is grouped), Activate, compound clips; keyframes,
+  range and Label. Every row runs the action or command the rest of the
+  app uses. A menu taller than the window scrolls inside it.
 - **Library drags land where the preview shows**, by CapCut's rules: video
   and images dropped above the tracks become a picture-in-picture overlay
   on a new track at the drop time; on the magnetic main track they insert

@@ -594,6 +594,15 @@ export function setSpeedCurve(p: Project, clipId: Id, norm: NormPoint[] | null, 
   });
 }
 
+/** Why a clip cannot play backward, or null when it can: the one rule
+ * set_reverse and the clip menu's Reverse share. */
+export function reverseProblem(c: Clip): string | null {
+  if (!isTimed(c)) return `${c.type} clips cannot play backward`;
+  if (c.freeze) return "a freeze frame has no direction";
+  if (c.type === "compound") return "compound clips cannot play backward yet; reverse the clips inside with edit_compound";
+  return null;
+}
+
 /** Play a clip backward (or forward again) over the same source range.
  * `in` moves to the other end, since it is where playback begins. */
 export function setReverse(p: Project, clipId: Id, reverse: boolean): Project {

@@ -2163,9 +2163,8 @@ export const COMMANDS: Command[] = [
     input: S.obj({ clip_id: S.str("Video or audio clip id"), reverse: S.bool("Backward") }, ["clip_id", "reverse"]),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
-      if (!ops.isTimed(clip)) throw new CommandError(`${clip.type} clips cannot play backward`);
-      if (clip.freeze) throw new CommandError("a freeze frame has no direction");
-      if (clip.type === "compound") throw new CommandError("compound clips cannot play backward yet; reverse the clips inside with edit_compound");
+      const problem = ops.reverseProblem(clip);
+      if (problem) throw new CommandError(problem);
       return ops.setReverse(p, clip.id, a.reverse === true);
     },
   },

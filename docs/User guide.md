@@ -152,6 +152,11 @@ Adding a title or sticker briefly previews its In animation, then restores
 the playhead. Reduced motion skips that preview. Pausing a preview stops it
 without a later jump back.
 
+Right-click a clip for the everyday edits in one place: Ripple delete,
+Split, **Speed…** (opens the Speed tab), **Reverse** (shows a check while
+the clip plays backward), **Copy effects** and **Paste effects** (onto
+every selected clip), Rename, Ungroup and Duplicate, among others.
+
 Name a clip with right-click > **Rename…**, or double-click the name on
 its strip (a title's double-click edits its words, so use the menu for
 titles). Clear the name to show the file's name again.

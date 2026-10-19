@@ -4,12 +4,13 @@
 
 import { describe, expect, it } from "vitest";
 import { PRESETS, speedAt } from "../speed";
-import { clipForAsset, createProject, normalizeProject } from "./defaults";
+import { clipForAsset, createColorClip, createProject, normalizeProject } from "./defaults";
 import {
   addClip,
   detachAudio,
   findClip,
   freezeFrame,
+  reverseProblem,
   roomLeft,
   roomRight,
   rollEdit,
@@ -288,5 +289,16 @@ describe("normalizeProject and retiming fields", () => {
     expect(c).not.toHaveProperty("speedCurve");
     expect(c).not.toHaveProperty("reverse");
     expect(c).not.toHaveProperty("changePitch");
+  });
+});
+
+describe("reverseProblem", () => {
+  it("lets video and audio play backward, not stills, freezes or compounds", () => {
+    const asset: Asset = { id: "v", src: "v.mp4", name: "v", kind: "video", duration: 10, width: 640, height: 360, fps: 30, hasAudio: true, hasVideo: true };
+    const v = clipForAsset(asset, 0, { num: 30, den: 1 }) as VideoClip;
+    expect(reverseProblem(v)).toBeNull();
+    expect(reverseProblem({ ...v, freeze: true } as Clip)).toMatch(/freeze/);
+    expect(reverseProblem(createColorClip("#fff", 0, 30))).toMatch(/cannot play backward/);
+    expect(reverseProblem({ ...v, type: "compound", compoundId: "k" } as unknown as Clip)).toMatch(/compound/);
   });
 });
