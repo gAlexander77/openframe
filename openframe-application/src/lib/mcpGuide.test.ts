@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validate, type JsonSchema } from "./commands";
-import { handleMcp, instructions, listTools, type McpHost } from "./mcp";
+import { guide, handleMcp, instructions, listTools, type McpHost } from "./mcp";
 import { agentPlaybook, EXAMPLES, fullCatalog, groupOf, helpText, HELP_TOPICS, promptMessages, PROMPTS, TOOL_GROUPS, toolReference } from "./mcpGuide";
 
 const tools = listTools();
@@ -16,12 +16,16 @@ describe("the MCP guide", () => {
   });
 
   it("gives every tool a title and hints, and only read tools are read-only", () => {
+    // A hint is given where it departs from the spec's default: read-only
+    // tools say so; the rest say whether they destroy (default true).
     for (const t of tools) {
       expect(t.title, t.name).toBeTruthy();
-      expect(typeof t.annotations.readOnlyHint).toBe("boolean");
+      expect(t.annotations.readOnlyHint === true || typeof t.annotations.destructiveHint === "boolean", t.name).toBe(true);
     }
-    expect(tools.find((t) => t.name === "describe_project")!.annotations.readOnlyHint).toBe(true);
-    expect(tools.find((t) => t.name === "delete_clips")!.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect(tools.find((t) => t.name === "describe_project")!.annotations).toEqual({ readOnlyHint: true, openWorldHint: false });
+    expect(tools.find((t) => t.name === "delete_clips")!.annotations).toEqual({ destructiveHint: true, openWorldHint: false });
+    expect(tools.find((t) => t.name === "add_text")!.annotations).toEqual({ destructiveHint: false, openWorldHint: false });
+    expect(tools.find((t) => t.name === "import_media")!.annotations).toEqual({ destructiveHint: false });
   });
 
   it("explains every parameter, nested ones included: an unexplained field is one a model guesses", () => {
@@ -46,9 +50,9 @@ describe("the MCP guide", () => {
   });
 
   it("answers every topic and every tool, and says what exists when asked wrong", () => {
-    for (const topic of HELP_TOPICS) expect(helpText(topic, tools, instructions()).length).toBeGreaterThan(100);
-    for (const t of tools) expect(helpText(t.name, tools, instructions())).toContain(`## ${t.name}`);
-    expect(() => helpText("efects", tools, instructions())).toThrow("Topics:");
+    for (const topic of HELP_TOPICS) expect(helpText(topic, tools, guide()).length).toBeGreaterThan(100);
+    for (const t of tools) expect(helpText(t.name, tools, guide())).toContain(`## ${t.name}`);
+    expect(() => helpText("efects", tools, guide())).toThrow("Topics:");
   });
 
   it("serves a catalog index and each section, and searches stickers", () => {
@@ -83,7 +87,7 @@ describe("the MCP guide", () => {
   });
 
   it("keeps docs/MCP tools.md and docs/Agent playbook.md in step with the tools", () => {
-    for (const [file, want] of [[DOC, toolReference(tools, instructions())], ["../docs/Agent playbook.md", agentPlaybook()]]) {
+    for (const [file, want] of [[DOC, toolReference(tools, instructions(), guide())], ["../docs/Agent playbook.md", agentPlaybook()]]) {
       if (process.env.UPDATE_MCP_DOCS) writeFileSync(file, want);
       const have = readFileSync(file, "utf8").replace(/\r\n/g, "\n");
       // Out of date: run UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts

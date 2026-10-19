@@ -318,6 +318,17 @@ export function safeFileName(name: string): string {
   return clean || "Untitled";
 }
 
+/**
+ * What an agent's export answers when its file took a numbered name because
+ * one was already there ("Trip (2).mp4"): an agent export never replaces a
+ * file, and says so instead of leaving the agent to find the other path
+ * (ADR-095). Undefined when the file has the name asked for.
+ */
+export function renamedNote(wanted: string, path: string): string | undefined {
+  const got = path.split(/[\\/]/).pop() ?? path;
+  return got === wanted ? undefined : `${wanted} was already there, so this file is ${got}; nothing was replaced.`;
+}
+
 export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: number | null; outPoint: number | null }): ExportPlan {
   const range = exportRange(p, s.range, inOut.inPoint, inOut.outPoint);
   const timelineFrames = range.to - range.from;

@@ -32,6 +32,8 @@ resizing does not submit an unfinished project rename.
    canvas size and frame rate on an empty timeline.
 2. Import your own video, audio, or images with the media picker or by
    dropping files into the app. Dropping onto the timeline also places them.
+   What a file is comes from the file itself: its extension, or its
+   contents when its name has none. A file that cannot be imported says why.
 3. Arrange clips on the timeline. Drag to move them, drag an edge to trim,
    and use the toolbar or context menu to split. The magnet keeps the main
    track gapless; snapping helps align edits, and linkage makes overlays
@@ -507,8 +509,9 @@ Import an animated GIF, WebP or APNG like any image. Supported webviews read
 its frame timing and transparency. A new clip lasts one loop; drag its right
 edge farther to repeat it. Hover across its library card to scrub frames.
 The same animation is drawn during playback and export, including imported
-animated stickers. When ImageDecoder is unavailable the image is treated as
-a still. Loops larger than 256 MiB after decoding are refused; use a smaller
+animated stickers. Renaming it in the library keeps it moving: its format
+comes from the file, not the name it shows. When ImageDecoder is
+unavailable the image is treated as a still. Loops larger than 256 MiB after decoding are refused; use a smaller
 animation in that case.
 
 ## Change the timeline display
@@ -538,4 +541,9 @@ desktop. If media is missing, open **Media > Manage media** and relink it.
 On the web, **Collect files** downloads only the JSON. Media remains in this
 browser profile. Opening that JSON elsewhere does not transfer its media;
 relink the original files there. Automation's `collect_project` is desktop
-only; `open_project_file` accepts a path only on desktop.
+only, and can name the destination folder itself (`folder`) instead of
+asking; `open_project_file` accepts a path only on desktop.
+
+An AI agent exporting over MCP writes into your Videos folder, in a folder
+named OpenFrame, or into a folder it names. It never replaces a file: a
+second export of the same name is saved as "Name (2)", and the agent is told.

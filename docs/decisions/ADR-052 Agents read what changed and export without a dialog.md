@@ -1,6 +1,6 @@
 # ADR-052: Agents read what changed and export without a dialog
 
-**Date:** 2026-10-17. **Status:** accepted.
+**Date:** 2026-10-17. **Status:** accepted; the fixed export folder is revised by [[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]] (an agent may name an absolute folder; it still never replaces a file).
 
 ## Context
 
