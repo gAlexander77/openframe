@@ -257,3 +257,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   `docs/` at the root for both.
 - [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
   agents run the gates locally and never start it; Pages deploys on its own.
+
+- [[ADR-087 Inline title ranges share the raster layout]]
+
+- [[ADR-088 Layout and group geometry use canvas pixels]]

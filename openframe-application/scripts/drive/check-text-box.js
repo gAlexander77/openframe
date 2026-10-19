@@ -19,7 +19,9 @@ async (page) => {
   await call("set_project", { width: 1080, height: 1920 });
   await call("add_color_clip", { color: "#3a2a20", start: 0, duration: 4 });
   const look = { size: 50, bold: true, stroke: { color: "#000000", width: 8 }, shadow: { color: "#000000", blur: 20, x: 0, y: 4 } };
-  const mid = (await call("add_text", { text: "SMALL-BATCH BEANS", start: 0, duration: 3, x: -0.07, y: -0.02, style: look })).added_clips[0].id;
+  // Keep the intended safe title inside the app-safe width. Its long first
+  // word fits; the second wraps, regardless of the installed font metrics.
+  const mid = (await call("add_text", { text: "SMALL-BATCH BEANS", start: 0, duration: 3, x: -0.07, y: -0.02, style: { ...look, maxWidth: 0.6 } })).added_clips[0].id;
   const low = (await call("add_text", { text: "SHOP NOW", start: 0, duration: 3, y: 0.3, style: look })).added_clips[0].id;
   await call("add_captions", { captions: [{ start: 0, end: 2, text: "wake up to fire" }] });
   const r = await call("check_project", { kind: "social_short" });

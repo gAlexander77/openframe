@@ -306,3 +306,8 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .style-chip .chip-btn { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
 .style-sample { display: inline-grid; place-items: center; width: 22px; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
 .style-name { flex: 1; min-width: 0; }
+
+.layout-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.layout-tile { flex-direction: column; height: auto; padding: 8px; white-space: normal; text-transform: capitalize; }
+.layout-preview { position: relative; display: block; width: 70px; height: 45px; }
+.layout-preview > span { position: absolute; border: 1px solid currentColor; border-radius: 2px; background: var(--bg-panel); }

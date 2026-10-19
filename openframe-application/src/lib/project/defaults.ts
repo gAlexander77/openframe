@@ -1,3 +1,4 @@
+import { cleanRuns } from "../textRuns";
 // Factories for every project object, and `normalizeProject`, the trust
 // boundary for project JSON. Whatever comes in — a file saved by an older
 // version, a hand-written agent script with half the fields missing — leaves
@@ -336,6 +337,8 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     const style = { ...DEFAULT_TEXT_STYLE, ...(isObj(c.style) ? c.style : {}) } as Record<string, unknown>;
     // A weight out of range or not a number is dropped: bold decides then.
     optional(style, "weight", cleanWeight(style.weight));
+    const runs = cleanRuns(style.runs, (c.text as string).length);
+    optional(style, "runs", runs.length ? runs : undefined);
     // A color set as a key's number (0xRRGGBB, ADR-071) is stored as CSS.
     if (typeof style.color === "number") style.color = keyColor(style.color);
     else if (typeof style.color !== "string") style.color = DEFAULT_TEXT_STYLE.color;

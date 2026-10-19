@@ -651,7 +651,20 @@ export interface Timed {
   freeze?: boolean;
 }
 
+export interface TextRun {
+  /** UTF-16 offsets, end exclusive, in the original text. */
+  start: number;
+  end: number;
+  color?: string;
+  gradient?: { from: string; to: string; angle: number };
+  weight?: number;
+  italic?: boolean;
+  underline?: boolean;
+  scale?: number;
+}
+
 export interface TextStyle {
+  runs?: TextRun[];
   font: string;
   /** Pixels at a 1080-pixel-tall canvas; scales with the canvas.
    * style.size, style.letterSpacing and style.color animate (ADR-071). */

@@ -1,3 +1,4 @@
+import { measureRuns, runSegments } from "../lib/textRuns";
 // Text clips rasterized with Canvas2D at render resolution, then drawn by
 // the compositor as a "native" source (already canvas-scale pixels). The
 // raster is cached by content: transform animation moves the quad, so only
@@ -24,19 +25,22 @@ export const textFamily = (s: TextStyle) => `"${s.font}", ${FALLBACK_FONTS}`;
 const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${fontWeight(s)} ${size}px ${textFamily(s)}`;
 
 /** Break text into lines that fit `maxWidth`, keeping explicit newlines. */
-function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+function wrap(measure: (text: string, start: number) => number, text: string, maxWidth: number): string[] {
+  let offset = 0;
   const lines: string[] = [];
   for (const para of text.split("\n")) {
     const words = para.split(/(\s+)/);
     let line = "";
     for (const w of words) {
       const next = line + w;
-      if (line && ctx.measureText(next.trimEnd()).width > maxWidth) {
+      if (line && measure(next.trimEnd(), offset) > maxWidth) {
         lines.push(line.trimEnd());
+        offset += line.length + w.length - w.trimStart().length;
         line = w.trimStart();
       } else line = next;
     }
     lines.push(line.trimEnd());
+    offset += line.length + 1;
   }
   return lines;
 }
@@ -55,6 +59,8 @@ const MARKER = "#ffd84d";
  * center). `spoken` marks the karaoke word. */
 interface Piece {
   text: string;
+  start?: number;
+  style?: TextStyle;
   x: number;
   y: number;
   align: CanvasTextAlign;
@@ -73,7 +79,12 @@ interface Piece {
  * spoken word (karaoke), `kinetic` the per-unit animations playing now.
  */
 export function rasterizeText(clip: TextClip, width: number, height: number, word?: number, kinetic?: KineticFrame): TextRaster {
-  const s: TextStyle = clip.style;
+  // Casing can expand a character (for example sharp s to SS). Saved ranges
+  // address original text; map their boundaries into the displayed text.
+  const s: TextStyle = clip.style.case && clip.style.runs?.length ? { ...clip.style, runs: clip.style.runs.map(r => ({ ...r,
+    start: casedText(clip.text.slice(0, r.start), clip.style.case).length,
+    end: casedText(clip.text.slice(0, r.end), clip.style.case).length,
+  })) } : clip.style;
   const kin = kinetic && (kinetic.in || kinetic.out || kinetic.loop) ? kinetic : undefined;
   const key = `text:${height}:${width}:${clip.text}:${JSON.stringify(s)}${word !== undefined && s.highlight ? `:w${word}` : ""}${kin ? `:k${kineticKey(kin)}` : ""}`;
   const hit = cache.get(key);
@@ -87,9 +98,17 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   ctx.font = font;
   ctx.letterSpacing = `${s.letterSpacing * k}px`;
   const wrapWidth = s.maxWidth * width;
-  const lines = wrap(ctx, casedText(clip.text, s.case) || " ", wrapWidth);
-  const lineH = size * s.lineHeight;
-  const textW = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
+  const shownText = casedText(clip.text, s.case) || " ";
+  const measure = (text: string, start: number) => measureRuns(text, start, s, (part, style) => {
+    ctx.font = textFont(style, style.size * k);
+    return ctx.measureText(part).width;
+  });
+  const lines = wrap(measure, shownText, wrapWidth);
+  let cursor = 0;
+  const starts = lines.map(line => { const at = shownText.indexOf(line, cursor); cursor = Math.max(cursor, at) + line.length; return Math.max(0, at); });
+  const lineH = size * s.lineHeight * Math.max(1, ...(s.runs ?? []).map(r => r.scale ?? 1));
+  const textW = Math.max(1, ...lines.map((l, i) => measure(l, starts[i])));
+  ctx.font = font;
   const reach = lookReach(s, k);
   // Moving units need room to rise, pop and slide without being cut off;
   // a settled title keeps the tight raster the editor and snapping measure.
@@ -115,23 +134,23 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
 
   // Each line's left edge and width, whichever way it is aligned.
   const geo = lines.map((line, i) => {
-    const lw = ctx.measureText(line).width;
+    const lw = measure(line, starts[i]);
     return { line, y: pad + lineH * (i + 0.5), lw, left: s.align === "left" ? x : s.align === "right" ? x - lw : x - lw / 2 };
   });
 
-  const fine = kin && finestUnit(kin);
+  const fine = (kin && finestUnit(kin)) || (s.runs?.length && word !== undefined && s.highlight ? "word" : undefined);
   let pieces: Piece[];
   let caretAt: { x: number; y: number } | undefined;
   if (fine) {
     const laid = layoutAtoms(lines, fine);
-    const states = unitStates(laid.atoms, laid, kin!, ANIMATIONS);
+    const states = kin ? unitStates(laid.atoms, laid, kin, ANIMATIONS) : laid.atoms.map(() => undefined);
     pieces = laid.atoms.map((a, i) => {
       const g = geo[a.line];
-      const ax = g.left + ctx.measureText(g.line.slice(0, a.start)).width;
-      const aw = ctx.measureText(g.line.slice(a.start, a.end)).width;
-      return { text: g.line.slice(a.start, a.end), x: ax, y: g.y, align: "left", cx: ax + aw / 2, width: aw, state: states[i], spoken: word !== undefined && !!s.highlight && a.word === word };
+      const ax = g.left + measure(g.line.slice(0, a.start), starts[a.line]);
+      const aw = measure(g.line.slice(a.start, a.end), starts[a.line] + a.start);
+      return { start: starts[a.line] + a.start, text: g.line.slice(a.start, a.end), x: ax, y: g.y, align: "left", cx: ax + aw / 2, width: aw, state: states[i], spoken: word !== undefined && !!s.highlight && a.word === word };
     });
-    const shown = caretAfter(kin!, laid.letters, ANIMATIONS);
+    const shown = kin && caretAfter(kin, laid.letters, ANIMATIONS);
     if (shown !== undefined) {
       const last = laid.atoms.filter((a) => a.letter < shown).at(-1);
       const p = last && pieces[laid.atoms.indexOf(last)];
@@ -139,14 +158,27 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
     }
   } else {
     let firstWord = 0; // index of each line's first word in the whole text
-    pieces = geo.map((g) => {
+    pieces = geo.map((g, i) => {
       const lineWords = [...g.line.matchAll(/\S+/g)];
       const j = word !== undefined && s.highlight ? word - firstWord : -1;
       firstWord += lineWords.length;
       const m = j >= 0 && j < lineWords.length ? lineWords[j] : undefined;
-      return { text: g.line, x, y: g.y, align: s.align, width: g.lw, ...(m ? { word: { text: m[0], x: g.left + ctx.measureText(g.line.slice(0, m.index)).width } } : {}) };
+      return { start: starts[i], text: g.line, x, y: g.y, align: s.align, width: g.lw, ...(m ? { word: { text: m[0], x: g.left + measure(g.line.slice(0, m.index), starts[i]) } } : {}) };
     });
   }
+
+  if (s.runs?.length) {
+    pieces = pieces.flatMap(p => {
+      let left = p.align === "left" ? p.x : p.align === "right" ? p.x - p.width : p.x - p.width / 2;
+      return runSegments(p.text, p.start ?? 0, s).map(r => {
+        const width = measure(r.text, r.start);
+        const piece = { ...p, text: r.text, start: r.start, style: r.style, x: left, width, align: "left" as const, word: undefined };
+        left += width;
+        return piece;
+      });
+    });
+  }
+  ctx.font = font;
 
   // The box arrives and leaves with the units: its opacity follows the
   // most visible one, so a boxed title whose letters fade in does not
@@ -181,21 +213,24 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // The gradient runs across the whole text block, in raster pixels; a unit
   // drawn moved maps its ends into its own coordinates, so the colors stay
   // put while the letters travel through them.
-  const grad = s.gradient && gradientLine(w / 2, h / 2, textW, lineH * lines.length, s.gradient.angle);
-  const fillStyle = (spoken?: boolean): string | CanvasGradient => {
-    if (spoken) return s.highlight!;
-    if (!grad || !s.gradient) return s.color;
+  const fillStyle = (p: Piece): string | CanvasGradient => {
+    const style = p.style ?? s;
+    if (p.spoken && !s.runs?.some(r => r.start <= (p.start ?? 0) && r.end > (p.start ?? 0) && (r.color || r.gradient))) return s.highlight!;
+    const gradient = style.gradient;
+    const grad = gradient && gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle);
+    if (!grad || !gradient) return style.color;
     const m = ctx.getTransform().invertSelf();
     const a = m.transformPoint({ x: grad[0], y: grad[1] }), b = m.transformPoint({ x: grad[2], y: grad[3] });
     const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-    g.addColorStop(0, s.gradient.from);
-    g.addColorStop(1, s.gradient.to);
+    g.addColorStop(0, gradient.from);
+    g.addColorStop(1, gradient.to);
     return g;
   };
 
   /** Draw every piece once, in the given pass, each with its own move. */
   const each = (draw: (p: Piece) => void) => {
     for (const p of pieces) {
+      ctx.font = textFont(p.style ?? s, (p.style?.size ?? s.size) * k);
       const st = p.state;
       if (st && st.opacity <= 0.002) continue;
       if (!st) {
@@ -268,10 +303,10 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   }
   each((p) => {
     if (s.shadow && outer === "fill") shadowOn();
-    ctx.fillStyle = fillStyle(p.spoken);
+    ctx.fillStyle = fillStyle(p);
     ctx.fillText(p.text, p.x, p.y);
     shadowOff();
-    if (s.underline) {
+    if ((p.style ?? s).underline) {
       const left = p.state ? p.x : p.align === "left" ? p.x : p.align === "right" ? p.x - p.width : p.x - p.width / 2;
       ctx.fillRect(left, p.y + size * 0.42, p.width, Math.max(1, size * 0.06));
     }

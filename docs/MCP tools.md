@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 146 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 150 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -33,12 +33,12 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Start here**: `help`, `describe_project`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
-- **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
+- **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
-- **Text and captions**: `add_text`, `set_text`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
+- **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
 - **Sound**: `add_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
@@ -463,6 +463,20 @@ Break up the groups the given clips belong to.
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Clips |
 
+### transform_group
+
+Move, scale and rotate visual group members about their combined bounds in canvas pixels, preserving their arrangement. Audio members stay unchanged. Specify group_id or clip_ids. at creates keys for every member transform at timeline seconds; omitted, evaluate at the latest member start and update existing keyed paths there. Times outside a member clamp to its first or last frame. One undo step.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `group_id` | string |  | Existing group id; use this or clip_ids |
+| `clip_ids` | string[] |  | Explicit members; at least two visuals |
+| `x` | number |  | Horizontal offset as a fraction of canvas width; default 0 |
+| `y` | number |  | Vertical offset as a fraction of canvas height; default 0 |
+| `scale` | number |  | Uniform multiplier about the group center; default 1 (0.01..) |
+| `rotation` | number |  | Clockwise rotation offset in degrees; default 0 |
+| `at` | number |  | Timeline seconds to key every member; clamped to each member span (0..) |
+
 ### set_clip_label
 
 Color-label clips (Premiere's Label): the timeline paints them with it. "none" removes the label.
@@ -778,6 +792,17 @@ Retime a keyframe and/or change its value. at is the keyframe's current timeline
 | `to` | number |  | Timeline seconds to move it to |
 | `value` | number |  | New value |
 
+### move_motion_point
+
+Move an existing position-key point in one undo step. Sets x and y keys at its time, preserving ease and other keys. Use add_keyframe to create a new time first.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Visual clip id |
+| `at` | number | yes | Timeline seconds of an existing x or y key (0..) |
+| `x` | number | yes | Position as a fraction of canvas width from center |
+| `y` | number | yes | Position as a fraction of canvas height from center |
+
 ### set_keyframe_ease
 
 Shape the curve leaving keyframes toward the next one. ease is a preset (linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce); bezier [x1, y1, x2, y2] is a CSS cubic-bezier (x in 0..1, y may overshoot) and overrides it. Without path, applies to every parameter keyed at that time; without at, to every keyframe on the path(s).
@@ -836,6 +861,22 @@ Frame pictures on the canvas, centered: fit shows the whole picture, fill covers
 | `clip_ids` | string[] | yes | Visual clips |
 | `mode` | "fit" \| "fill" \| "stretch" | yes | How to frame |
 | `at` | number |  | Timeline seconds, for animated scale |
+
+### apply_layout
+
+Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | 2 to 4 distinct visual clip ids in cell order; PIP main first |
+| `layout` | "split-vertical" \| "split-horizontal" \| "grid-2x2" \| "triptych" \| "pip-top-right" \| "pip-top-left" \| "pip-bottom-right" \| "pip-bottom-left" \| "pip-center-card" | yes | Cell arrangement |
+| `gap` | number |  | Gutter as fraction of the shorter canvas side; default 0.02 (0..0.3) |
+| `margin` | number |  | Outer margin as fraction of the shorter canvas side; default 0.04 (0..0.4) |
+| `radius` | number |  | Rounded mask radius, 0 square to 1 half the shorter cell side; default 0 (0..1) |
+| `border` | { width, color } |  | Optional editable border shapes |
+| `border.width` | number | yes | Stroke width in pixels at 1080p (0..100) |
+| `border.color` | string | yes | CSS border color |
+| `animate` | "none" \| "slide" \| "scale" |  | Entrance over 0.4 seconds, clipped to clip duration; default none |
 
 ### align_clips
 
@@ -1424,6 +1465,29 @@ Example:
 ```json
 {"name":"set_text","arguments":{"clip_id":"c_123","style":{"background":{"color":"#000000b3","padding":18,"radius":12}}}}
 ```
+
+### style_text_range
+
+Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Text clip id |
+| `match` | string |  | Literal word or phrase to find |
+| `occurrence` | number |  | 1-based match occurrence; default 1 (1..) |
+| `all` | boolean |  | Style every match |
+| `start` | number |  | Start UTF-16 character offset, inclusive (0..) |
+| `end` | number |  | End UTF-16 character offset, exclusive (1..) |
+| `color` | string |  | CSS fill color; replaces the range gradient |
+| `gradient` | { from, to, angle } |  | Linear fill gradient |
+| `gradient.from` | string | yes | Start CSS color |
+| `gradient.to` | string | yes | End CSS color |
+| `gradient.angle` | number | yes | Angle in degrees |
+| `weight` | number |  | Font weight (100..900) |
+| `italic` | boolean |  | Italic letters |
+| `underline` | boolean |  | Underline letters |
+| `scale` | number |  | Size multiplier relative to the base size (0.25..4) |
+| `clear` | boolean |  | Remove styles from the range, or the entire title without a range |
 
 ### animate_text_style
 

@@ -1,3 +1,7 @@
+import { moveMotionPoint } from "./motionPoint";
+import { transformGroup } from "./groupTransform";
+import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
+import { shiftRuns, styleRange } from "./textRuns";
 // The command registry: every edit an agent can make, by name, with a JSON
 // Schema for its arguments (ADR-006). One surface serves the in-app AI
 // AI assistant (as LLM tool definitions), the automation API, recipes/pipelines,
@@ -811,6 +815,38 @@ export const COMMANDS: Command[] = [
     run: (p, a) => commandError(() => renameMedia(p, String(a.asset_id), String(a.name))),
   },
   {
+    name: "apply_layout",
+    description: "Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.",
+    input: S.obj({ clip_ids: S.ids("2 to 4 distinct visual clip ids in cell order; PIP main first"), layout: S.str("Cell arrangement", { enum: [...LAYOUTS] }),
+      gap: S.num("Gutter as fraction of the shorter canvas side; default 0.02", { minimum: 0, maximum: 0.3 }),
+      margin: S.num("Outer margin as fraction of the shorter canvas side; default 0.04", { minimum: 0, maximum: 0.4 }),
+      radius: S.num("Rounded mask radius, 0 square to 1 half the shorter cell side; default 0", { minimum: 0, maximum: 1 }),
+      border: S.obj({ width: S.num("Stroke width in pixels at 1080p", { minimum: 0, maximum: 100 }), color: S.str("CSS border color") }, ["width", "color"], "Optional editable border shapes"),
+      animate: S.str("Entrance over 0.4 seconds, clipped to clip duration; default none", { enum: ["none", "slide", "scale"] }),
+    }, ["clip_ids", "layout"]),
+    run: (p, a) => commandError(() => applyLayout(p, a.clip_ids as string[], a.layout as Layout, a as LayoutOptions)),
+  },
+  {
+    name: "move_motion_point",
+    description: "Move an existing position-key point in one undo step. Sets x and y keys at its time, preserving ease and other keys. Use add_keyframe to create a new time first.",
+    input: S.obj({ clip_id: S.str("Visual clip id"), at: S.num("Timeline seconds of an existing x or y key", { minimum: 0 }), x: S.num("Position as a fraction of canvas width from center"), y: S.num("Position as a fraction of canvas height from center") }, ["clip_id", "at", "x", "y"]),
+    run: (p, a) => commandError(() => moveMotionPoint(p, String(a.clip_id), f(p, a.at), Number(a.x), Number(a.y))),
+  },
+  {
+    name: "transform_group",
+    description: "Move, scale and rotate visual group members about their combined bounds in canvas pixels, preserving their arrangement. Audio members stay unchanged. Specify group_id or clip_ids. at creates keys for every member transform at timeline seconds; omitted, evaluate at the latest member start and update existing keyed paths there. Times outside a member clamp to its first or last frame. One undo step.",
+    input: S.obj({ group_id: S.str("Existing group id; use this or clip_ids"), clip_ids: S.ids("Explicit members; at least two visuals"),
+      x: S.num("Horizontal offset as a fraction of canvas width; default 0"), y: S.num("Vertical offset as a fraction of canvas height; default 0"),
+      scale: S.num("Uniform multiplier about the group center; default 1", { minimum: 0.01 }), rotation: S.num("Clockwise rotation offset in degrees; default 0"),
+      at: S.num("Timeline seconds to key every member; clamped to each member span", { minimum: 0 }),
+    }),
+    run: (p, a) => commandError(() => {
+      if (!!a.group_id === !!a.clip_ids) throw new Error("Choose group_id or clip_ids");
+      const ids = a.clip_ids as string[] | undefined ?? p.tracks.flatMap(t => t.clips).filter(c => c.group === a.group_id).map(c => c.id);
+      return transformGroup(p, ids, { x: a.x as number | undefined, y: a.y as number | undefined, scale: a.scale as number | undefined, rotation: a.rotation as number | undefined }, a.at === undefined ? undefined : f(p, a.at), a.at !== undefined);
+    }),
+  },
+  {
     name: "group_clips",
     description: "Group two or more clips so they select, move, copy and delete together (Premiere's Group). They keep their tracks and settings.",
     input: S.obj({ clip_ids: S.ids("Clips, two or more") }, ["clip_ids"]),
@@ -1574,6 +1610,35 @@ export const COMMANDS: Command[] = [
       }),
   },
   {
+    name: "style_text_range",
+    description: "Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.",
+    input: S.obj({
+      clip_id: S.str("Text clip id"), match: S.str("Literal word or phrase to find"),
+      occurrence: S.num("1-based match occurrence; default 1", { minimum: 1 }), all: S.bool("Style every match"),
+      start: S.num("Start UTF-16 character offset, inclusive", { minimum: 0 }), end: S.num("End UTF-16 character offset, exclusive", { minimum: 1 }),
+      color: S.str("CSS fill color; replaces the range gradient"),
+      gradient: S.obj({ from: S.str("Start CSS color"), to: S.str("End CSS color"), angle: S.num("Angle in degrees") }, ["from", "to", "angle"], "Linear fill gradient"),
+      weight: S.num("Font weight", { minimum: 100, maximum: 900 }), italic: S.bool("Italic letters"), underline: S.bool("Underline letters"),
+      scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }), clear: S.bool("Remove styles from the range, or the entire title without a range"),
+    }, ["clip_id"]),
+    run: (p, a) => commandError(() => ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, c => {
+      if (c.type !== "text") throw new Error("not a text clip");
+      if (a.match !== undefined && (a.start !== undefined || a.end !== undefined)) throw new Error("Choose match or start and end");
+      let ranges: [number, number][] = [];
+      if (a.match !== undefined) {
+        const match = String(a.match);
+        if (!match) throw new Error("match cannot be empty");
+        for (let at = c.text.indexOf(match); at >= 0; at = c.text.indexOf(match, at + match.length)) ranges.push([at, at + match.length]);
+        if (!a.all) ranges = ranges.slice(Number(a.occurrence ?? 1) - 1, Number(a.occurrence ?? 1));
+        if (!ranges.length) throw new Error("No matching text occurrence");
+      } else if (a.clear && a.start === undefined && a.end === undefined) return { ...c, style: { ...c.style, runs: [] } };
+      else ranges = [[Number(a.start), Number(a.end)]];
+      let runs = c.style.runs ?? [];
+      for (const [start, end] of ranges) runs = styleRange(c.text, runs, start, end, a, a.clear === true);
+      return { ...c, style: { ...c.style, runs } };
+    })),
+  },
+  {
     name: "set_text",
     description: "Change a text clip's words and/or style.",
     input: S.obj({ clip_id: S.str("Text clip id"), text: S.str("New words"), style: TEXT_STYLE_SCHEMA }, ["clip_id"]),
@@ -1581,6 +1646,7 @@ export const COMMANDS: Command[] = [
       ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (c.type !== "text") throw new CommandError("not a text clip");
         const style = styleFrom(c.style, (a.style ?? {}) as Partial<TextStyle>) as TextStyle;
+        if (a.text !== undefined && style.runs) style.runs = shiftRuns(style.runs, c.text, String(a.text));
         return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style };
       }),
   },
@@ -2439,7 +2505,7 @@ export function describeProject(p: Project) {
         ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, speed_curve: c.speedCurve ? (c.speedCurve.preset ?? "custom") : undefined } : {}),
         ...("reverse" in c && c.reverse ? { reverse: true } : {}),
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
-        ...(c.type === "text" ? { text: c.text } : {}),
+        ...(c.type === "text" ? { text: c.text, runs: c.style.runs ?? [] } : {}),
         ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
         ...("fadeIn" in c && c.fadeIn ? { fade_in: s(c.fadeIn) } : {}),

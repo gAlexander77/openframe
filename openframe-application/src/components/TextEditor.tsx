@@ -39,6 +39,9 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
   // (ADR-071), so the caret sits on the letters the viewer shows.
   const shown = layer.source.kind === "text" ? layer.source.clip : clip;
   const s = shown.style;
+  // ponytail: the transparent textarea keeps base-font caret geometry for
+  // mixed runs. The word picker styles exact ranges; a rich caret needs a
+  // separate contenteditable selection model, not per-keystroke DOM patches.
   // Layout at the renderer's target: raster rounding and font metrics at
   // preview resolution differ from a scaled full-project raster.
   const target = player.renderSize(project, previewScale);
@@ -87,6 +90,10 @@ export function TextEditor({ clip, layer, project, width, height }: { clip: Text
           typeText(e.target.value);
         }}
         onKeyDown={onKey}
+        // The editor already fits the whole title. Native caret scrolling
+        // (font descenders can exceed CSS line boxes) must not shift its
+        // selection and glyphs away from the canvas underneath.
+        onScroll={e => { e.currentTarget.scrollTop = 0; e.currentTarget.scrollLeft = 0; }}
         // Switching windows blurs too; the session waits for the return.
         onBlur={() => document.hasFocus() && endTyping()}
         style={{
