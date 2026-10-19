@@ -144,7 +144,11 @@ Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 PNG, drawn as the export draws it and `max_width` pixels wide, at most
 the canvas's width, so an agent can look at its work; it once read the
 viewer's canvas, which is only as big as it is on screen, and a 9:16
-project came back 222 pixels wide whatever was asked), the project tools
+project came back 222 pixels wide whatever was asked; it and the contact
+sheets draw each frame at the canvas's size, its short side at most 1080,
+and bring it down, so a title weighs what it weighs in the exported file:
+drawn at 640 wide, small type came out 3 to 21% heavier,
+[[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), both answering a summary (name, canvas,
@@ -161,8 +165,12 @@ up to 24 moments, each stamped with its time; it, `preview_media` and
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time; `sounds`
-places a list, `[{name, start | end_at, volume}]`, in one call and one
-undo step, since it cannot go in `batch`),
+places a list, `[{name, start | end_at, volume, track_id}]`, in one call and one
+undo step, since it cannot go in `batch`; they land on the SFX track, made
+the first time, never in a gap on the voiceover or the music, or on
+`track_id`), `add_ambience` (a natural sound bed under the pictures, see
+Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
+and its measurements, below),
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `move_track` (up or down the stack, so a grade sits under the
@@ -252,6 +260,39 @@ on video and audio clips:
   `reverb.mix` and `echo.mix`; `describe_project` lists the effects on
   (`lowpass`, `highpass`, `reverb`, `echo`, `tape_stop`).
 
+Sound by role ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]):
+
+- Every audio track is a stem: `role` `dialog`, `music`, `effects` or
+  `ambience`, set by the tool that made it (`add_voiceover`,
+  `generate_music`, `add_sound_effect`, `add_ambience`) or by `add_track`
+  and `update_track` (`role`; `auto` clears it). A track without one is
+  judged by its files (a spoken line is dialog, a made effect effects, a
+  bed ambience, an imported song music), never by its name;
+  `describe_project` names each audio track's `role`. New sounds land on
+  their stem's track; an imported song never in the voiceover's gap.
+- `add_ambience` `{"name", "start", "end" | "length", "fade_in" (default 1),
+  "fade_out" (1.5), "volume", "seed", "track_id"}` lays a bed made on this
+  computer: `wind`, `stream`, `waterfall`, `surf`, `rain`, `rocket`,
+  `city`, `roomTone` (`list_catalog` section `ambience`). Each moves as a
+  recording does (gusts, waves every 6.5 to 13 s, cars passing near and
+  far), is made at a level that sits under a voice at volume 1 (about -27
+  LUFS; waterfall -24, rocket -21, room tone -46) and loops without a seam;
+  past 300 s the file repeats. It answers `clip_ids`, `asset_id`,
+  `track_id`, `start`, `end`, `file_seconds` and `reused` (the same name
+  and seed reuse a long enough file). `{"name": "waterfall", "start": 22,
+  "end": 34, "volume": 0.7}`.
+- `preview_audio` `{"start", "end" (default start + 10, at most 30 s),
+  "solo": "mix" | "voice" | "music" | "effects" | "ambience", "loudness",
+  "audio"}` renders the stretch through the mixer export uses and answers
+  an MCP audio block (`audio/mpeg`, 96 kbps stereo, about 12 KB a second)
+  and, as text, `integrated_lufs`, `short_term_max_lufs`,
+  `momentary_max_lufs`, `true_peak_dbtp`, `per_second_lufs`, `silent`
+  (stretches under -60 LUFS), `spectrum` (`low`, `mid`, `high` shares,
+  `slope_db_per_octave`), `correlation`, `clipped`, and for the mix
+  `stems` (each stem's loudness). `loudness` hears it as `export_video`
+  with that target delivers it; `audio: false` answers the numbers alone.
+  The picture's own sound plays only in the mix.
+
 Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
 
 - `measure_loudness` `{"spec": "online"|"ebu_r128"|"atsc_a85", "loudness",
@@ -260,7 +301,9 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   `momentary_max_lufs`, `true_peak_dbtp`, `sample_peak_dbfs`, `pass` and
   `problems` (every spec when none is named; `clips` when the mix passes
   full scale; a `fix` when it fails). With `loudness` it measures what
-  `export_video` at that target delivers.
+  `export_video` at that target delivers. `by_track` adds each audio
+  track's loudness with its `role`, and the dialog stem against the music
+  stem (by role).
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.

@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 156 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 158 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -26,9 +26,9 @@ To make a video:
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
-6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
@@ -50,8 +50,8 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
-- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
+- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
 ## Start here
 
@@ -79,7 +79,7 @@ No parameters.
 
 ### list_catalog
 
-Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
+Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -297,16 +297,17 @@ Add an adjustment layer: its color settings, filter and effects apply to every l
 
 ### add_track
 
-Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom.
+Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | "video" \| "audio" | yes | Track kind |
 | `name` | string |  | Track name |
+| `role` | "dialog" \| "music" \| "effects" \| "ambience" |  | Audio tracks: the stem it is |
 
 ### update_track
 
-Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.
+Mute, solo, hide, lock, rename, resize, color, or set the volume, pan or role of a track. role (audio tracks: dialog, music, effects, ambience) says which stem it is; a track without one is judged by its files (a spoken line is dialog, a sound effect effects, an imported song music), never by its name.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -320,6 +321,7 @@ Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a tra
 | `solo` | boolean |  | While any track is soloed, only soloed tracks sound |
 | `color` | "none" \| "red" \| "orange" \| "yellow" \| "green" \| "cyan" \| "blue" \| "purple" \| "pink" |  | Track tint; a clip label takes precedence; none clears it |
 | `height` | "small" \| "normal" \| "large" |  | Row height on the timeline |
+| `role` | "dialog" \| "music" \| "effects" \| "ambience" \| "auto" |  | Audio tracks: the stem it is (auto clears it: judged by its files) |
 
 ### move_track
 
@@ -2095,7 +2097,7 @@ Read a title aloud in a voice made on this computer (Kokoro), placing the voice 
 
 ### add_sound_effect
 
-Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). One lands on an audio track at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. `sounds` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.
+Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). One lands at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. They land on the effects stem: an SFX track (made the first time, reused after; overlapping sounds get a second SFX track), never a gap on the voiceover or the music; track_id puts them on a track of your own. `sounds` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. add_ambience lays continuous natural sound (wind, water, rain, city, a rocket's rumble, room tone). Answers the new clip ids.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2103,16 +2105,40 @@ Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish
 | `start` | number |  | Timeline seconds the sound starts (0..) |
 | `end_at` | number |  | Timeline seconds the sound ends instead (start = end_at - its length) (0..) |
 | `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1 (0..4) |
-| `sounds` | { name, start, end_at, volume }[] |  | Many sounds in one call instead of name: each with its own name, start or end_at, and volume |
+| `track_id` | string |  | An audio track to put them on (default the SFX track); where a sound would overlap one there, a new track of its role just below |
+| `sounds` | { name, start, end_at, volume, track_id }[] |  | Many sounds in one call instead of name: each with its own name, start or end_at, volume and track_id |
 | `sounds[].name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect |
 | `sounds[].start` | number |  | Timeline seconds it starts (default the playhead) (0..) |
 | `sounds[].end_at` | number |  | Timeline seconds it ends instead (0..) |
 | `sounds[].volume` | number |  | Gain, default 1 (0..4) |
+| `sounds[].track_id` | string |  | Its audio track; default the call's track_id, else the SFX track |
 
 Example:
 
 ```json
 {"name":"add_sound_effect","arguments":{"sounds":[{"name":"whoosh","start":3.9},{"name":"whoosh","start":7.9,"volume":0.6},{"name":"rise","end_at":12},{"name":"impact","start":12}]}}
+```
+
+### add_ambience
+
+Lay continuous natural sound under the pictures, made on this computer (no recordings, nothing downloaded): wind (open-air wind in gusts, a low buffeting under it); stream (a brook babbling over stones, close); waterfall (a waterfall's steady roar, close enough to feel); surf (waves breaking on a beach and washing back, a distant roar between); rain (steady rain on leaves and ground, drops near and far); rocket (a rocket's launch heard from a distance: a deep roar with its crackle); city (a city street: cars passing near and far over the city's low hum); roomTone (a quiet room's air: ventilation and the room itself, for under and between lines). It runs from start (default the playhead) to end, or for length seconds (default to the end of the timeline), faded in and out (fade_in 1 s and fade_out 1.5 s by default), on the Ambience track (made the first time, reused after; never the voiceover, the music or the effects). Each bed moves slowly and at random as a recording does (gusts, waves arriving every 7 to 13 s, cars passing near and far) and its file loops without a seam; a bed past 300 s repeats it. Made at a level that sits under a voice with volume 1 (about -27 LUFS; the rocket -21, room tone -46): volume 0.5 is 6 dB quieter. The same name and seed reuse the file; another seed is another take. preview_audio with solo ambience hears it. Answers the clip ids, the file's asset id and the track. It cannot go in batch.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | "wind" \| "stream" \| "waterfall" \| "surf" \| "rain" \| "rocket" \| "city" \| "roomTone" | yes | Which bed (list_catalog section ambience describes each) |
+| `start` | number |  | Timeline seconds it starts; default the playhead (0..) |
+| `end` | number |  | Timeline seconds it ends; default the end of the timeline (0..) |
+| `length` | number |  | Seconds it lasts, instead of end (0.5..) |
+| `fade_in` | number |  | Seconds it fades in over; default 1 (0..) |
+| `fade_out` | number |  | Seconds it fades out over; default 1.5 (0..) |
+| `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB); default 1 (0..4) |
+| `seed` | integer |  | Another take of the same bed (default 1) (1..) |
+| `track_id` | string |  | An audio track to put it on; default the Ambience track |
+
+Example:
+
+```json
+{"name":"add_ambience","arguments":{"name":"waterfall","start":22,"end":34,"fade_in":1.5,"fade_out":2,"volume":0.7}}
 ```
 
 ### set_fades
@@ -2361,6 +2387,24 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (at most the canvas width) (64..1920) |
 
+### preview_audio
+
+Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number | yes | Timeline seconds (0..) |
+| `end` | number |  | Timeline seconds; default start + 10, at most start + 30 (0..) |
+| `solo` | "mix" \| "voice" \| "music" \| "effects" \| "ambience" |  | What to hear: the whole mix (default) or one stem by role |
+| `loudness` | number |  | Hear it as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
+| `audio` | boolean |  | false: the measurements only, no MP3 (default true) |
+
+Example:
+
+```json
+{"name":"preview_audio","arguments":{"start":6,"end":14,"solo":"mix"}}
+```
+
 ### check_project
 
 Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
@@ -2381,7 +2425,7 @@ Measure the mix the way export renders it (48 kHz stereo, every clip's effects, 
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `by_track` | boolean |  | Report each audio track as mixed (integrated and three-second loudness), plus Voiceover minus other audio tracks excluding SFX; ignores master normalization for stems |
+| `by_track` | boolean |  | Report each audio track as mixed (integrated and three-second loudness) with its role, plus the dialog tracks minus the music tracks (by role: describe_project names each track's; update_track sets one); ignores master normalization for stems |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |

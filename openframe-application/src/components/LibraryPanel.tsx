@@ -42,6 +42,8 @@ import { toast } from "../state/toast";
 import { cancelCapture, canRecordScreen, startCapture, stopCapture, useCapture } from "../state/capture";
 import { addSoundEffect, auditionSoundEffect } from "../state/sfx";
 import { SFX } from "../lib/sfx";
+import { addAmbience, auditionAmbience } from "../state/ambience";
+import { AMBIENCE } from "../lib/ambience";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import { EnginePreview } from "./EnginePreview";
@@ -255,6 +257,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         </section>
       )}
       {kind === "audio" && <SoundEffects />}
+      {kind === "audio" && <AmbienceBeds />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
       {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
@@ -440,6 +443,35 @@ function SoundEffects() {
             preview={
               <div className="fx-preview">
                 <button className="sfx-play" aria-label={`Play ${s.label}`} data-tip="Listen" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={() => auditionSoundEffect(id)}>
+                  <Play size={16} />
+                </button>
+              </div>
+            }
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Ambience beds (lib/ambience.ts), made on this computer: play eight
+ * seconds from its card; + or a drag lays it from the playhead (or the
+ * drop) to the end of the timeline on the Ambience track. */
+function AmbienceBeds() {
+  const fail = (e: unknown) => toast(e instanceof Error ? e.message : String(e), "error");
+  return (
+    <section className="lib-section">
+      <h4 className="lib-group">Ambience</h4>
+      <div className="card-grid small">
+        {Object.entries(AMBIENCE).map(([id, b]) => (
+          <CatalogCard
+            key={id}
+            label={b.label}
+            payload={{ kind: "ambience", id, label: b.label }}
+            onAdd={() => void addAmbience({ name: id }).catch(fail)}
+            preview={
+              <div className="fx-preview">
+                <button className="sfx-play" aria-label={`Play ${b.label}`} data-tip="Listen" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={() => void auditionAmbience(id).catch(fail)}>
                   <Play size={16} />
                 </button>
               </div>

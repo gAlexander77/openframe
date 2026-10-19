@@ -67,7 +67,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       // As mixed: the voice's track alone, and the music under it.
       const voiceTrack = findClip(p, c.id)!.track.id;
       const voice = await measureMix(isolateTracks(p, [voiceTrack]), start, end, { signal });
-      const beds = p.tracks.filter((t) => isMusic(t) && t.id !== voiceTrack && t.clips.some((m) => m.start < clipEnd(c) && clipEnd(m) > c.start && (m.type === "audio" || m.type === "video")));
+      const beds = p.tracks.filter((t) => isMusic(t, p) && t.id !== voiceTrack && t.clips.some((m) => m.start < clipEnd(c) && clipEnd(m) > c.start && (m.type === "audio" || m.type === "video")));
       let overMusic: number | null = null, musicClip: string | undefined, musicDuck = 0;
       if (opts.music !== false && beds.length) {
         const bed = await measureMix(isolateTracks(p, beds.map((t) => t.id)), start, end, { signal });

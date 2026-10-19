@@ -226,7 +226,7 @@ async function ensureAac(bitrate: number): Promise<string | undefined> {
 
 /** MP3 encoding: no webview has an MP3 encoder (WebCodecs never added
  * one), so LAME in WebAssembly is loaded on first use. */
-async function ensureMp3(bitrate: number): Promise<void> {
+export async function ensureMp3(bitrate: number): Promise<void> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
   if (await canEncodeAudio("mp3", opts)) return;
   const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");
@@ -579,19 +579,35 @@ export async function exportStill(p: Project, frame: number, width: number, heig
 
 /** Frames as PNGs at the export size, drawn as the export draws them,
  * through one compositor and one set of decoders: a contact sheet's
- * frames read on through the same files instead of opening them again. */
-export async function exportStills(p: Project, frames: number[], width: number, height: number): Promise<Blob[]> {
-  const comp = new Compositor(new OffscreenCanvas(width, height));
+ * frames read on through the same files instead of opening them again.
+ * With `drawAt` (a larger size), each is drawn at that size and brought
+ * down to width x height, as a file exported at that size looks at this
+ * one: titles rasterized at a third of their size came out heavier (their
+ * hinting and antialiasing thicken small type; ADR-098). Brought down
+ * bilinearly, as a player scales video and as the compositor scaled
+ * footage before: a smoother filter took a dark sky's grain away and its
+ * JPEG sheet banded (ADR-073). */
+export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }): Promise<Blob[]> {
+  const big = drawAt && drawAt.width > width ? drawAt : { width, height };
+  const comp = new Compositor(new OffscreenCanvas(big.width, big.height));
   const pool = new CursorPool();
+  const small = big.width > width ? new OffscreenCanvas(width, height) : null;
   try {
     await document.fonts.ready;
-    comp.resize(width, height);
+    comp.resize(big.width, big.height);
     const out: Blob[] = [];
     for (const frame of frames) {
       const items = planFrame(p, frame);
       const resolved = await resolveSources(p, items, pool);
-      comp.render(items, sourceImages(resolved, width, height), p.background);
-      out.push(await (comp.canvas as OffscreenCanvas).convertToBlob({ type: "image/png" }));
+      comp.render(items, sourceImages(resolved, big.width, big.height), p.background);
+      if (small) {
+        const bmp = await createImageBitmap(comp.canvas as OffscreenCanvas, { resizeWidth: width, resizeHeight: height, resizeQuality: "low" });
+        const g = small.getContext("2d")!;
+        g.clearRect(0, 0, width, height);
+        g.drawImage(bmp, 0, 0);
+        bmp.close();
+        out.push(await small.convertToBlob({ type: "image/png" }));
+      } else out.push(await (comp.canvas as OffscreenCanvas).convertToBlob({ type: "image/png" }));
     }
     return out;
   } finally {

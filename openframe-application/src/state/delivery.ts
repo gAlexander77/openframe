@@ -3,6 +3,7 @@
 // renders it, against the delivery specs (lib/analysis/delivery.ts).
 
 import { isolateTracks, isDialog, isMusic, loudnessDifference } from "../lib/analysis/balance";
+import { assetsOf, trackRole } from "../lib/audioRoles";
 import { measureMix } from "../engine/mixdown";
 import { checkSpec, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { toDbtp } from "../lib/analysis/truePeak";
@@ -46,12 +47,12 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
       const signal = projectWork.signal();
       for (const t of p.tracks.filter(t => t.kind === "audio")) {
         const stem = await measureMix(isolateTracks(p, [t.id]), start, end, { signal });
-        tracks.push({ track_id: t.id, name: t.name, integrated_lufs: round(stem.integrated),
+        tracks.push({ track_id: t.id, name: t.name, role: trackRole(t, assetsOf(p)), integrated_lufs: round(stem.integrated),
           short_term_max_lufs: round(stem.shortTermMax),
           short_term: stem.shortTerm.map(s => ({ end: round(start + s.end, 2), lufs: round(s.lufs) })) });
       }
-      const dialog = p.tracks.filter(isDialog).map(t => t.id);
-      const music = p.tracks.filter(isMusic).map(t => t.id);
+      const dialog = p.tracks.filter(t => isDialog(t, p)).map(t => t.id);
+      const music = p.tracks.filter(t => isMusic(t, p)).map(t => t.id);
       if (dialog.length && music.length) {
         const voice = await measureMix(isolateTracks(p, dialog), start, end, { signal });
         const bed = await measureMix(isolateTracks(p, music), start, end, { signal });

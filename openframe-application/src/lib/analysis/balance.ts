@@ -1,3 +1,4 @@
+import { assetsOf, trackRole } from "../audioRoles";
 import type { Project, Track } from "../project/types";
 
 /** Isolate stems without changing the document or bypassing mute/solo. */
@@ -6,9 +7,10 @@ export function isolateTracks(p: Project, ids: string[]): Project {
   return { ...p, tracks: p.tracks.map(t => ({ ...t, solo: false, muted: t.muted || (solo && !t.solo) || !ids.includes(t.id) })) };
 }
 
-/** Track names are the current role convention, not a speech classifier. */
-export const isDialog = (t: Track) => /^voiceover(?:\b|$)/i.test(t.name);
-export const isMusic = (t: Track) => t.kind === "audio" && !isDialog(t) && !/sound effects|sfx/i.test(t.name);
+/** Stems by role (lib/audioRoles.ts: the track's, else its files'), not
+ * by track name; `p` lets a track without a role be judged by its files. */
+export const isDialog = (t: Track, p?: Project) => trackRole(t, p && assetsOf(p)) === "dialog";
+export const isMusic = (t: Track, p?: Project) => trackRole(t, p && assetsOf(p)) === "music";
 
 export function loudnessDifference(dialog: number, music: number): number | null {
   return Number.isFinite(dialog) && Number.isFinite(music) ? dialog - music : null;
