@@ -4,6 +4,7 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
+import { clampZoom } from "../lib/timeline";
 import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
@@ -293,8 +294,8 @@ provide({
       outPoint: Math.max(...items.map((i) => i.c.start + i.c.duration)),
     });
   },
-  zoomIn: () => store.set({ zoom: Math.min(64, store.get().zoom * 1.25) }),
-  zoomOut: () => store.set({ zoom: Math.max(0.02, store.get().zoom / 1.25) }),
+  zoomIn: () => store.set({ zoom: clampZoom(store.get().zoom * 1.25) }),
+  zoomOut: () => store.set({ zoom: clampZoom(store.get().zoom / 1.25) }),
 });
 
 function copyClips() {

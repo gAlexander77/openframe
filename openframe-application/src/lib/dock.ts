@@ -14,7 +14,8 @@ import type { Layout } from "./layout";
  * 298, padding 20); the inspector is proven at 248 px, its width in the
  * 1100 px minimum window (the style sweep); the library's splitter stops at
  * 240 px; and the timeline toolbar fits in 748 px once its zoom slider
- * hides (timeline.css), so the editor keeps 760 px with the panel padding. */
+ * hides and its separators tighten (timeline.css), so the editor keeps
+ * 760 px with the panel padding. */
 export const DOCK = {
   gap: 6,
   /** The workspace's padding, both sides. */
