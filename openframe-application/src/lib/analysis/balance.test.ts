@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { createProject, createTrack } from "../project/defaults";
-import { duckDepth, isolateTracks, isDialog, isMusic, loudnessDifference } from "./balance";
+import { combinedLoudness, duckDepth, isolateTracks, isDialog, isMusic, loudnessDifference, speechWindows } from "./balance";
 it("computes attenuation in LU and handles silence without inventing a balance", () => {
   expect(duckDepth(-16, -12, 10)).toBe(14);
   expect(duckDepth(-16, -30, 10)).toBe(0);
@@ -21,4 +21,12 @@ it("isolates stems while retaining mute, solo, gain and the original document", 
   expect(isDialog(voice)).toBe(true);
   expect(isMusic(music)).toBe(true);
   expect(isMusic(createTrack("audio", "Sound effects"))).toBe(false);
+});
+it("measures only where someone speaks: windows joined across short gaps, energies averaged", () => {
+  expect(speechWindows([[30, 40], [0, 10], [11, 20]], 2)).toEqual([[0, 20], [30, 40]]);
+  expect(speechWindows([], 2)).toEqual([]);
+  expect(combinedLoudness([{ lufs: -20, seconds: 4 }, { lufs: -20, seconds: 6 }])).toBeCloseTo(-20, 6);
+  // Half the time 10 dB louder: the louder half dominates the energy.
+  expect(combinedLoudness([{ lufs: -10, seconds: 5 }, { lufs: -20, seconds: 5 }])).toBeCloseTo(-12.6, 1);
+  expect(combinedLoudness([{ lufs: -Infinity, seconds: 5 }])).toBe(-Infinity);
 });
