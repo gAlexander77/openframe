@@ -2,6 +2,7 @@
 // measure_loudness, ADR-061): the open project's mix measured as export
 // renders it, against the delivery specs (lib/analysis/delivery.ts).
 
+import { isolateTracks, isDialog, isMusic, loudnessDifference } from "../lib/analysis/balance";
 import { measureMix } from "../engine/mixdown";
 import { checkSpec, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { toDbtp } from "../lib/analysis/truePeak";
@@ -18,6 +19,8 @@ export interface ReportOptions {
   end?: number;
   /** Measure as export with this loudness target delivers it. */
   loudness?: number;
+  /** Report isolated tracks as mixed, before export normalization. */
+  by_track?: boolean;
 }
 
 const round = (x: number, digits = 1) => (Number.isFinite(x) ? +x.toFixed(digits) : null);
@@ -37,11 +40,32 @@ export async function loudnessReport(spec = "", opts: ReportOptions = {}) {
   const tid = toast("Measuring loudness", "progress");
   try {
     const m = await measureMix(p, start, end, { loudness: opts.loudness, signal: projectWork.signal(), onProgress: (x) => updateToast(tid, { progress: x }) });
+    const tracks = [];
+    let balance;
+    if (opts.by_track) {
+      const signal = projectWork.signal();
+      for (const t of p.tracks.filter(t => t.kind === "audio")) {
+        const stem = await measureMix(isolateTracks(p, [t.id]), start, end, { signal });
+        tracks.push({ track_id: t.id, name: t.name, integrated_lufs: round(stem.integrated),
+          short_term_max_lufs: round(stem.shortTermMax),
+          short_term: stem.shortTerm.map(s => ({ end: round(start + s.end, 2), lufs: round(s.lufs) })) });
+      }
+      const dialog = p.tracks.filter(isDialog).map(t => t.id);
+      const music = p.tracks.filter(isMusic).map(t => t.id);
+      if (dialog.length && music.length) {
+        const voice = await measureMix(isolateTracks(p, dialog), start, end, { signal });
+        const bed = await measureMix(isolateTracks(p, music), start, end, { signal });
+        const difference = loudnessDifference(voice.integrated, bed.integrated);
+        balance = { dialog_tracks: dialog, music_tracks: music, dialog_lufs: round(voice.integrated),
+          music_lufs: round(bed.integrated), voice_above_music_lu: difference === null ? null : round(difference) };
+      }
+    }
     const truePeak = toDbtp(m.truePeak);
     const checks = (spec ? [spec as SpecId] : SPEC_IDS).map((id) => checkSpec({ integrated: m.integrated, truePeak }, LOUDNESS_SPECS[id]));
     const failed = spec && !checks[0].pass ? LOUDNESS_SPECS[spec as SpecId] : null;
     return {
       seconds: round(m.seconds, 2),
+      ...(opts.by_track ? { by_track: tracks, track_measurement: "as mixed, before master normalization", ...(balance ? { balance } : {}) } : {}),
       integrated_lufs: round(m.integrated),
       loudness_range_lu: round(m.range),
       short_term_max_lufs: round(m.shortTermMax),

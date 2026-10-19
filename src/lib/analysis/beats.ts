@@ -381,6 +381,8 @@ export interface MusicStructure {
   sections: MusicSection[];
   /** Start of the biggest rise (3 dB or more) into a loud section, or null. */
   drop: number | null;
+  /** Every qualifying rise into a loud section, chronological seconds. */
+  drops: number[];
 }
 
 /** dB the bars on each side of a bar line must differ by to start a section. */
@@ -511,7 +513,7 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   const hits = hitsOf(env, fps, offset);
   const bpm = n < 2 ? 0 : Math.round(tempoOf(beats, (60 * fps) / period) * 10) / 10;
   if (n < 2 * BEATS_PER_BAR) {
-    return { bpm, beats, downbeats: beats.slice(0, 1), phrases: beats.slice(0, 1), energy: beats.map(() => 1), hits, sections: [{ start: 0, end: round4(duration), label: "verse", energy: 1 }], drop: null };
+    return { bpm, beats, downbeats: beats.slice(0, 1), phrases: beats.slice(0, 1), energy: beats.map(() => 1), hits, sections: [{ start: 0, end: round4(duration), label: "verse", energy: 1 }], drop: null, drops: [] };
   }
   const beatLen = 60 / bpm;
   const ends = beats.map((t, i) => (i + 1 < n ? beats[i + 1] : Math.min(duration, t + beatLen)));
@@ -564,10 +566,15 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   for (let i = phase; i < n; i += BEATS_PER_BAR) barStarts.push(i);
 
   // Sections: bar lines where the two bars on either side differ most.
-  const candidates = barStarts.map((i) => ({ i, nov: novelty(i) })).filter((c) => c.nov >= SECTION_CHANGE_DB);
+  // A two-bar average can peak a bar early during a build. Locate the
+  // boundary with adjacent bars, retaining the longer window as evidence.
+  const localNovelty = (i: number) => i < BEATS_PER_BAR || i + BEATS_PER_BAR > n ? 0
+    : distance(dbOf(meanRows(power, i, i + BEATS_PER_BAR)), dbOf(meanRows(power, i - BEATS_PER_BAR, i)));
+  const candidates = barStarts.map((i) => ({ i, nov: localNovelty(i) }))
+    .filter((c) => c.nov >= SECTION_CHANGE_DB && novelty(c.i) >= SECTION_CHANGE_DB);
   const cuts: number[] = [];
   for (const c of [...candidates].sort((a, b) => b.nov - a.nov)) {
-    if (cuts.every((j) => Math.abs(j - c.i) >= BARS_PER_PHRASE * BEATS_PER_BAR)) cuts.push(c.i);
+    if (cuts.every((j) => Math.abs(j - c.i) >= 2 * BEATS_PER_BAR)) cuts.push(c.i);
   }
   cuts.sort((a, b) => a - b);
 
@@ -578,6 +585,14 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   let pp = 0;
   for (let k = 1; k < BARS_PER_PHRASE; k++) if (phraseVotes[k] > phraseVotes[pp]) pp = k;
   const phrases = barStarts.filter((i) => barOf(i) % BARS_PER_PHRASE === pp).map((i) => beats[i]);
+
+  // A quieter timbral variation can matter on a phrase line even without
+  // a large level jump. Require both scales to change, away from strong cuts.
+  for (const i of barStarts) {
+    if (barOf(i) % BARS_PER_PHRASE === pp && novelty(i) >= SECTION_CHANGE_DB / 3
+      && localNovelty(i) >= 2 && cuts.every(j => Math.abs(j - i) >= w)) cuts.push(i);
+  }
+  cuts.sort((a, b) => a - b);
 
   // Name the sections by loudness.
   const bounds = [0, ...cuts, n];
@@ -608,12 +623,14 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   }));
 
   // The drop: the biggest rise across a cut into a loud section.
+  const drops: number[] = [];
   let drop: number | null = null;
   let rise = SECTION_CHANGE_DB;
   cuts.forEach((i, k) => {
     if (sections[k + 1].label !== "drop") return;
     const r = mean(db.slice(i, i + w)) - mean(db.slice(Math.max(0, i - w), i));
+    if (r >= SECTION_CHANGE_DB) drops.push(beats[i]);
     if (r >= rise) [drop, rise] = [beats[i], r];
   });
-  return { bpm, beats, downbeats: barStarts.map((i) => beats[i]), phrases, energy, hits, sections, drop };
+  return { bpm, beats, downbeats: barStarts.map((i) => beats[i]), phrases, energy, hits, sections, drop, drops };
 }

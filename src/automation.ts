@@ -84,6 +84,13 @@ const automation = {
   importLuts: (srcs: { name: string; src: string }[]) => (needProject(), importLuts(srcs)),
   /** Resolves once the viewer has drawn the current frame. */
   rendered: () => player.idle(),
+  /** Call `fn(frame)` after every frame the viewer draws; returns the
+   * unsubscribe. Drives time playback with it (stalls, dropped frames). */
+  onFrame: (fn: (frame: number) => void) => player.onFrame(fn),
+  /** Playback health: frames dropped in the current run, the measured
+   * decode speed (pixels a second) and the cuts prepared lately, with how
+   * far ahead each started and how long its decode took (ADR-074). */
+  playbackStats: () => ({ dropped: player.drawn.dropped, decodeRate: Math.round(player.decodeRate), prepared: player.prepared.slice() }),
   /** The viewer's pixels as RGBA, top row first (for frame-accuracy checks). */
   pixels: (maxWidth?: number) => player.pixels(maxWidth),
   platform: () => platform.kind,

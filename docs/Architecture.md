@@ -97,3 +97,22 @@ a clock, so no frame is ever dropped
 | `state/ai.ts` | The AI tools: analyze, then one undoable edit |
 | `automation.ts` | `window.videoEditor` |
 | `platform/*` | Web and desktop implementations of `Platform` |
+
+### Decoder preparation (ADR-074)
+
+The preview player uses `lib/render/preroll.ts` to prepare each upcoming
+clip at its first visible frame, including transition handles. Keyframe
+distance and measured decode throughput select 0.75-5 seconds of lead.
+Admission estimates include decoder queue buildup within a 512 MiB budget
+for additional cursors; oversized entries decode on demand. Export keeps
+its own cursor pool and unchanged frame plan.
+
+### Music structure and voice balance (ADR-075)
+
+`analysis/beats.ts` finds boundaries from adjacent bars supported by two-bar
+novelty, allowing two-bar parts; smaller phrase-aligned timbral changes can
+split variations. `drops` lists qualifying rises; `drop` stays the biggest.
+`analysis/balance.ts` owns stem isolation, role conventions and attenuation
+math. `state/delivery.ts` measures each requested stem with the offline
+export mixer. `state/ai.ts` measures candidate ducking keyframes before one
+undoable edit, rejecting results if the project changed during measurement.

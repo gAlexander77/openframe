@@ -62,6 +62,12 @@ function sliding(steps: number[], n: number): number[] {
   return out;
 }
 
+/** Full three-second windows, reported each second; times are window ends. */
+export function shortTermSeries(steps: number[]): { end: number; lufs: number }[] {
+  if (steps.length < 30) return [];
+  return sliding(steps, 30).flatMap((lufs, i) => i % 10 === 0 ? [{ end: (i + 30) / 10, lufs }] : []);
+}
+
 /**
  * EBU Tech 3342 loudness range, LU, from short-term (3 s) loudness values:
  * gated at -70 LUFS, then at 20 LU under the power mean of what passed,

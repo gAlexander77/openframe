@@ -63,6 +63,13 @@ const jobs = {
     ff("-f", "lavfi", "-i", burn(1920, 1080, 30), "-f", "lavfi", "-i", tone(440, 10), "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-shortest", join(out, "h264-1080p30.mp4")),
   "h264-720p60-longgop.mp4": () =>
     ff("-f", "lavfi", "-i", burn(1280, 720, 60), "-f", "lavfi", "-i", tone(660, 8), "-t", "8", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "480", "-c:a", "aac", "-shortest", join(out, "h264-720p60-longgop.mp4")),
+  // ffmpeg's default key frame interval at 30 fps (8 s): key frames at 0 and
+  // 8 s only, so a clip that starts at 7 s decodes 210 frames before its
+  // first one. Busy 1080p picture (decoding costs what real footage costs)
+  // with the frame number in ten blocks across the top band, as in
+  // framecode-30.mp4. The long-GOP playback drive cuts into it.
+  "longgop-1080p30.mp4": () =>
+    ff("-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30", "-f", "lavfi", "-i", "color=c=black:size=1920x120:rate=30,format=gray,geq=lum='255*mod(floor(N/pow(2,floor(X*10/W))),2)',format=yuv420p", "-f", "lavfi", "-i", tone(500, 10), "-filter_complex", "[0][1]overlay=0:0:shortest=1,format=yuv420p[v]", "-map", "[v]", "-map", "2:a", "-t", "10", "-c:v", "libx264", "-preset", "medium", "-g", "240", "-keyint_min", "240", "-sc_threshold", "0", "-bf", "2", "-c:a", "aac", "-shortest", join(import.meta.dirname, "..", "scratch", "longgop-1080p30.mp4")),
   "vp9-opus.webm": () =>
     ff("-f", "lavfi", "-i", burn(1280, 720, 30), "-f", "lavfi", "-i", tone(550, 6), "-t", "6", "-c:v", "libvpx-vp9", "-b:v", "1M", "-deadline", "realtime", "-cpu-used", "8", "-c:a", "libopus", "-shortest", join(out, "vp9-opus.webm")),
   "h264-aac.mkv": () =>

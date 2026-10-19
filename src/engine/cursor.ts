@@ -32,6 +32,15 @@ export class VideoCursor {
     return run;
   }
 
+  /** Seconds of source the decoder runs through to show source time `t`
+   * from a fresh start: from the key frame at or before it. What preparing
+   * this cursor for a cut costs (ADR-074). */
+  async keyGap(t: number): Promise<number> {
+    const at = t + this.offset;
+    const key = await this.keys.getKeyPacket(at, { verifyKeyPackets: true }).catch(() => null);
+    return key ? Math.max(0, at - key.timestamp) : 0;
+  }
+
   private async seek(t: number): Promise<VideoSample | null> {
     if (this.disposed) return null;
     const h = this.head;
@@ -45,11 +54,13 @@ export class VideoCursor {
       rollForward = !key || key.timestamp <= h.timestamp;
     }
     if (!rollForward) await this.restart(t);
+    if (this.disposed) return null;
     try {
       for (;;) {
         const cur = this.head;
         if (cur && cur.timestamp + cur.duration > t) return cur;
         const r = await this.it!.next();
+        if (this.disposed) { if (!r.done) r.value.close(); return null; }
         if (r.done) return this.head; // past the end: hold the last frame
         this.head?.close();
         this.head = r.value;
@@ -59,7 +70,9 @@ export class VideoCursor {
       // disposed input: start over once at the same time.
       if (this.disposed) return null;
       await this.restart(t);
+      if (this.disposed) return null;
       const r = await this.it!.next();
+      if (this.disposed) { if (!r.done) r.value.close(); return null; }
       if (r.done) return this.head;
       this.head?.close();
       this.head = r.value;
@@ -73,14 +86,14 @@ export class VideoCursor {
     await old?.return().catch(() => undefined);
     this.head?.close();
     this.head = null;
-    this.it = this.sink.samples(Math.max(0, t));
+    if (!this.disposed) this.it = this.sink.samples(Math.max(0, t));
   }
 
   dispose() {
     this.disposed = true;
-    const it = this.it;
-    this.it = null;
     this.queue = this.queue.then(async () => {
+      const it = this.it;
+      this.it = null;
       await it?.return().catch(() => undefined);
       this.head?.close();
       this.head = null;

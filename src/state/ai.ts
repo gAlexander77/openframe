@@ -23,6 +23,8 @@ import { BEATS_PER_BAR, detectBeats, musicStructure, type SectionLabel } from ".
 import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
+import { measureMix } from "../engine/mixdown";
+import { duckDepth, isDialog, loudnessDifference } from "../lib/analysis/balance";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
@@ -531,6 +533,7 @@ export interface MusicAnalysis {
   sections: { start: number; end: number; label: SectionLabel; energy: number }[];
   /** Where the biggest rise into a loud section lands, or null. */
   drop: number | null;
+  drops: number[];
   /** Markers added (analyze_music's markers option). */
   markers: number;
 }
@@ -568,6 +571,7 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     hits: all(m.hits),
     beat_energy: kept.map(([, e]) => e),
     sections: m.sections.map((s) => ({ ...s, start: edge(s.start), end: edge(s.end) })).filter((s) => s.end > s.start),
+    drops: all(m.drops),
     drop: m.drop === null ? null : at(m.drop),
     markers: 0,
   };
@@ -578,7 +582,7 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
       kinds.reduce((q, k) => {
         const { label, color } = MUSIC_MARKERS[k];
         if (k === "sections") return out.sections.reduce((r, s) => runCommand(r, "add_markers", { times: [s.start], label: SECTION_NAMES[s.label], color }), q);
-        const times = k === "beats" ? out.beats : k === "bars" ? out.downbeats : k === "phrases" ? out.phrases : out.drop === null ? [] : [out.drop];
+        const times = k === "beats" ? out.beats : k === "bars" ? out.downbeats : k === "phrases" ? out.phrases : out.drops;
         return times.length ? runCommand(q, "add_markers", { times, label, color }) : q;
       }, p),
     );
@@ -655,6 +659,8 @@ export interface DuckEdit {
   /** Stretches of speech the music dips under. */
   dips: number;
   keys: number;
+  depth_db?: number;
+  balance?: { start: number; end: number; dialog_lufs: number; music_lufs: number; voice_above_music_lu: number; target_lu: number; met: boolean };
 }
 
 /** Clips with sound that play under `clip`: not muted, not disabled. */
@@ -683,12 +689,19 @@ const SFX_FILES = new Set(Object.values(SFX).map((s) => `${s.label}.wav`));
  * ponytail: every other audible clip counts as speech, music included; a
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
-export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> = {}): Promise<DuckEdit> {
+export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> & { voice_above_music_lu?: number } = {}): Promise<DuckEdit> {
   const scope = projectWork.signal();
   const { clip, asset } = resolve("ducking", clipId);
-  const depth = opts.depth ?? state.settings.ducking.depth;
+  let depth = opts.depth ?? state.settings.ducking.depth;
+  const target = opts.voice_above_music_lu;
+  if (target !== undefined && (!Number.isFinite(target) || target < 0 || target > 30)) throw new Error("Voice target must be between 0 and 30 LU.");
+  const original = store.get().project;
   const fps = store.get().project.fps;
-  const voices = voicesUnder(clip);
+  let voices = voicesUnder(clip);
+  if (target !== undefined) {
+    const dialogIds = new Set(original.tracks.filter(isDialog).flatMap(t => t.clips.map(c => c.id)));
+    if (dialogIds.size) voices = voices.filter(v => dialogIds.has(v.clip.id));
+  }
   if (!voices.length) {
     const msg = "No other clip with sound plays under it";
     toast(msg, "error");
@@ -713,18 +726,51 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> =
   scope.throwIfAborted();
   const c = stillThere(clip.id);
   const frames = (s: number) => secondsToFrames(s, fps);
-  const keys = duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: depth, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) });
-  const dips = keys.filter((k, i) => k.v < c.volume && !(keys[i - 1]?.v < c.volume)).length;
-  if (!dips) {
+  const keysAt = (db: number) => duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: db, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) });
+  let keys = keysAt(depth);
+  let balance: DuckEdit["balance"];
+  const withKeys = (p: typeof original, ks: typeof keys) => {
+    if (ops.findClip(p, c.id)?.clip.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: c.id, path: "volume" });
+    return ks.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: c.id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
+  };
+  const overlaps = spans.map(([a,b]) => [Math.max(c.start,a), Math.min(c.start+c.duration,b)]).filter(([a,b]) => b>a);
+  if (target !== undefined && !overlaps.length) {
     finish("ducking", "No speech found under it");
     return { voices: voices.length, dips: 0, keys: 0 };
   }
-  edit("Duck under speech", (p) => {
-    if (c.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: c.id, path: "volume" });
-    return keys.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: c.id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
-  });
+  if (target !== undefined && overlaps.length) {
+    const start = framesToSeconds(Math.min(...overlaps.map(s => s[0])), fps);
+    const end = framesToSeconds(Math.max(...overlaps.map(s => s[1])), fps);
+    const stem = (p: typeof original, ids: string[]) => ({ ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(x => ids.includes(x.id)) })) });
+    const voice = await measureMix(stem(original, voices.map(v => v.clip.id)), start, end, { signal: scope });
+    const flat = withKeys(original, keysAt(0));
+    const bed = await measureMix(stem(flat, [c.id]), start, end, { signal: scope });
+    depth = duckDepth(voice.integrated, bed.integrated, target);
+    // Render the actual keyed bed too: fades, gaps and effect tails can
+    // keep the achieved attenuation from matching the requested depth.
+    for (let attempt = 0; attempt < 4; attempt++) {
+      keys = keysAt(depth);
+      const measured = await measureMix(stem(withKeys(original, keys), [c.id]), start, end, { signal: scope });
+      const difference = loudnessDifference(voice.integrated, measured.integrated);
+      if (difference === null) throw new Error("Cannot measure voice balance in this window.");
+      balance = { start, end, dialog_lufs: voice.integrated, music_lufs: measured.integrated,
+        voice_above_music_lu: difference, target_lu: target, met: Math.abs(target - difference) <= 0.5 };
+      if (balance.met || attempt === 3) break;
+      const next = Math.max(0, Math.min(40, depth + target - difference));
+      if (next === depth) break;
+      depth = next;
+    }
+    scope.throwIfAborted();
+    if (store.get().project !== original) throw new Error("The project changed while measuring; run duck_under_speech again.");
+  }
+  const dips = keys.filter((k, i) => k.v < c.volume && !(keys[i - 1]?.v < c.volume)).length;
+  if (!dips && target === undefined) {
+    finish("ducking", "No speech found under it");
+    return { voices: voices.length, dips: 0, keys: 0 };
+  }
+  edit("Duck under speech", (p) => withKeys(p, keys));
   finish("ducking", `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
-  return { voices: voices.length, dips, keys: keys.length };
+  return { voices: voices.length, dips, keys: keys.length, depth_db: depth, ...(balance ? { balance } : {}) };
 }
 
 export interface DenoiseEdit {
