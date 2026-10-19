@@ -11,7 +11,13 @@
 .source-monitor > .lib-hint { margin: 8px 0 14px; }
 .media-preview-button { padding: 3px 0; border: 0; background: none; color: var(--accent); text-align: left; font-size: var(--fs-xs); }
 .media-preview-button:hover { text-decoration: underline; }
-.trim-preview { position: absolute; inset: 0; z-index: 5; background: var(--bg-1); display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 14px; overflow: auto; }
+/* In a short player the frames shrink to what the header and footnote
+   leave (container units); "safe" centering lets anything still too tall
+   scroll from its top instead of spilling past it, where centered
+   overflow cannot be scrolled to. */
+.trim-preview { position: absolute; inset: 0; z-index: 5; background: var(--bg-1); display: flex; flex-direction: column; justify-content: safe center; gap: 12px; padding: 14px; overflow: auto; container-type: size; }
+.trim-preview > * { flex: none; }
+.trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(48px, calc(100cqh - 176px)); }
 .trim-preview header { display: flex; flex-wrap: wrap; gap: 6px 12px; color: var(--accent); }
 .trim-preview header span, .trim-preview p { color: var(--text-3); font-size: var(--fs-xs); }
 .trim-preview p { margin: 0; }
@@ -20,3 +26,10 @@
 .trim-pair figcaption { color: var(--accent); min-height: 28px; }
 .trim-clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trim-audio { display: grid; place-content: center; justify-items: center; gap: 6px; background: #111; aspect-ratio: 16 / 9; }
+/* Shorter still (the Large timeline layout at the smallest window): the
+   captions lose their reserved second line and the figures tighten. */
+@container (max-height: 240px) {
+  .trim-pair figure { gap: 4px; }
+  .trim-pair figcaption { min-height: 0; }
+  .trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(40px, calc(100cqh - 124px)); }
+}

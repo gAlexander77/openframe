@@ -5,7 +5,8 @@ import { paramAt } from "../../lib/keyframes";
 import { setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Project, WheelName } from "../../lib/project/types";
 import { store } from "../../state/store";
-import { KeyCluster, useRel } from "./controls";
+import { KeyCluster, rangeGesture, useCommitOnLeave, useRel } from "./controls";
+import { parseTyped } from "../../lib/numberInput";
 import { hasKeys, setGradePart } from "./gradeEdit";
 import "./color.css";
 
@@ -186,6 +187,13 @@ function LuminanceRow(p: { clip: Clip; path: string; label: string; value: numbe
   const [text, setText] = useState<string | null>(null);
   const undo = `Set ${p.label.toLowerCase()} luminance`;
   const set = (v: number) => (q: Project) => setParam(q, [p.clip.id], p.path, Math.max(-100, Math.min(100, v)), p.rel);
+  // Only what was typed is an edit, kept if the field goes away unblurred.
+  const commit = (raw: string) => {
+    setText(null);
+    const n = parseTyped(raw);
+    if (n !== null) store.edit(undo, set(n));
+  };
+  useCommitOnLeave(text, commit);
   return (
     <div className="wheel-lum">
       <input
@@ -197,22 +205,15 @@ function LuminanceRow(p: { clip: Clip; path: string; label: string; value: numbe
         value={p.value}
         style={{ "--track": "linear-gradient(90deg, #1c1c1c, #8a8a8a, #f2f2f2)" } as React.CSSProperties}
         aria-label={`${p.label} luminance`}
-        onPointerDown={() => store.beginGesture()}
-        onPointerUp={() => store.endGesture(undo)}
-        onKeyDown={() => store.beginGesture()}
-        onKeyUp={() => store.endGesture(undo)}
-        onChange={(e) => store.previewGesture(set(Number(e.target.value)))}
+        {...rangeGesture(undo)}
+        onChange={(e) => store.previewGesture(set(Number(e.target.value)), undo)}
         onDoubleClick={() => store.edit(`Reset ${p.label.toLowerCase()} luminance`, set(0))}
       />
       <input
         className="field num wheel-num"
         value={text ?? Math.round(p.value).toString()}
         onChange={(e) => setText(e.target.value)}
-        onBlur={(e) => {
-          setText(null);
-          const n = Number(e.target.value);
-          if (Number.isFinite(n)) store.edit(undo, set(n));
-        }}
+        onBlur={() => text !== null && commit(text)}
         onKeyDown={(e) => {
           if (e.key === "Enter") (e.target as HTMLInputElement).blur();
           if (e.key === "Escape") setText(null);

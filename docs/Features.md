@@ -22,6 +22,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **The first clip sets the canvas** size and frame rate on an empty
   timeline, so phone footage makes a vertical project — unless a canvas
   was chosen (a Home preset or the Details ratio), which it then keeps.
+- **No empty drafts:** a new project is saved once something is done in
+  it; pressing Create and leaving at once keeps nothing on Home (undoing
+  every edit counts as nothing done)
+  ([[ADR-073 Templates land as a block and the web keeps what it imports]]).
 - **Open JSON format** ([[Project format]]).
 - **Save a copy:** named independent edit versions, optionally opened after
   saving; source media stays shared. Failed writes keep the original open.
@@ -30,6 +34,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Import from the picker, by dropping files anywhere in the window, or on
   the timeline (which also places them).
+- **Web build: imports by address are kept** in the browser's storage, as
+  picked files are, so a project keeps playing when the address goes
+  away; a toast shows the copy. Over 1 GB a file stays linked to its
+  address, and a toast says so.
 - Formats the platform decodes: MP4/MOV/MKV/WebM with H.264, HEVC (where
   the OS has it), VP8/9, AV1; MP3, WAV, AAC/M4A, FLAC, Ogg/Opus; PNG, JPEG,
   WebP, GIF, AVIF. On desktop, what the webview cannot decode (ProRes,
@@ -193,7 +201,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   before. Clips with a speed curve or a freeze keep their length.
 
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
-  clamped source times, one-step Undo and gesture cancellation.
+  clamped source times, one-step Undo and gesture cancellation. In a short
+  player the frames shrink so its header and footnote always show.
 
 ## Workspace
 
@@ -296,7 +305,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   header cover are shaded (the largest of each side in their ad specs:
   14% top, 35% bottom, 11% left, 19% right), and dragged pictures snap to
   the clear area's edges. Follow the canvas in portrait and full screen;
-  preview only, excluded from exported pictures.
+  preview only, excluded from exported pictures. The action box is
+  labeled at its top and the title box at its bottom, so the labels never
+  meet on a small picture.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,
@@ -389,6 +400,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   key's green before keying).
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- **One drag, one undo step**, on every slider (held arrow keys too) and
+  on the color picker's square
+  ([[ADR-072 One drag is one undo step and a typed value is kept]]).
+- **Typed values are kept** however focus leaves the field (Enter, Tab,
+  clicking another clip); Escape reverts. An empty or non-numeric entry
+  changes nothing, a decimal comma reads as a point ("1,5" is 1.5), and a
+  unit after the number is ignored.
+- **Sections remember** being open or closed, per section, across clips
+  and reloads (in this browser, like the layout). A switch that opens
+  rows (Low-pass, Reverb, Echo) scrolls them into view.
 - **Several clips at once** (Premiere 25's Properties panel): with more
   than one clip selected, Scale, Rotate and Opacity for the pictures and
   Volume for the clips with sound set all of them, one undo step; a value
@@ -529,7 +550,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   layer its own clip ([[ADR-025 Stickers and templates are ordinary
   clips]]). Agents: `add_text_template` (with replacement words) and
   `apply_word_art`.
-- New text lands above everything showing at that time.
+- New text lands above everything showing at that time, and never on a
+  footage row (a B-roll row stays B-roll). A multi-layer template lands
+  as one block of Text rows directly above the footage: overlapping
+  layers stacked in order, layers that follow one another on one row; a
+  later template reuses the same rows; its layers are grouped, so they
+  select and move together (Alt+click picks one).
+- **Animation presets preview on pick**, as in CapCut: choosing an In
+  plays the clip from its start to where the In settles, an Out to the
+  clip's last frame, a loop one cycle, once and silently. Each tile shows
+  the motion: the layer settled and a dashed ghost where it starts (In),
+  ends (Out) or swings to (loops), titles' per-letter, word and line
+  presets as units part-way; the tile plays on hover.
 - **Type on the canvas**, as in CapCut: double-click a title or caption in
   the viewer or on the timeline (or press Enter with it selected) and a
   caret appears in the rendered text with everything selected; the frame redraws as you type,
@@ -799,12 +831,19 @@ makes a 13 s one). Times are timeline seconds.
   -1 dBTP, -2 for ATSC's -24 (up to 6 dB of limiting; the whole mix is
   known, so it looks ahead for free).
   The result notes what it measured, what it reached and how much the
-  limiter held. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
+  limiter held: reaching the target shows as success (green, a check);
+  a mix held short of it is a warning, with how far under it landed. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
   with the limiter it measures -14.3 in ffmpeg, peaks at -0.9 dBTP.
 - **Presets** at the top of the dialog: YouTube 1080p and 4K, TikTok,
   Reels and Shorts, Small file (720p), High quality master (HEVC),
   Animated GIF and Audio only (WAV); changed settings read Custom and can
-  be saved under a name (per viewer) and deleted.
+  be saved under a name (per viewer) and deleted. TikTok, Reels and Shorts
+  is made for 9:16: it is never named for a canvas of another shape, and
+  picked there it says what will export (16:9 stays 1920×1080) and offers
+  **Make the canvas 9:16**, which only that click does, as one undo step.
+  A codec the device cannot encode at that size gives way to one it can,
+  and the dialog names both. In to Out, with no marks, is shown disabled
+  with the reason under it.
 - **Animated GIF** (Format: GIF, or the Animated GIF preset): the same
   frames the video export draws, 256 colors per frame (gifenc), 10 to 25
   fps with delays that add up to the real duration, silent, up to 720p
@@ -871,7 +910,9 @@ Three doors, one engine ([[Automation]]):
 - **Headless render**: `openframe --render project.json --out file`,
   JSON-line progress, exit codes.
 - **MCP for agents** (opt-in, token-locked, local only): every editing
-  command plus `preview_frame` and `preview_frames` (a contact sheet) so
+  command plus `preview_frame` and `preview_frames` (a contact sheet,
+  JPEG so it stays under what MCP clients pass a model; as PNG, clients
+  re-encoded big sheets with 256 colors and skies banded) so
   an agent can look at its work, `list_projects`, `open_project` and
   `new_project` to move between projects as the home screen does, and
   `export_video` / `export_status` to make the file; HTTP or

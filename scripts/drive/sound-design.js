@@ -81,7 +81,7 @@ async (page) => {
         const r = await window.videoEditor.render({ video: false, audioFormat: "wav", ...opts });
         const buf = await (await fetch(r.url)).arrayBuffer();
         URL.revokeObjectURL(r.url);
-        return { ...wav(buf), buf, note: r.note ?? "", loudness: r.loudness ?? null };
+        return { ...wav(buf), buf, note: [r.info, r.note].filter(Boolean).join(" "), loudness: r.loudness ?? null };
       },
       rms(planes, rate, a, b) {
         let s = 0, n = 0;

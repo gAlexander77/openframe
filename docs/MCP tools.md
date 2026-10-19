@@ -2081,7 +2081,7 @@ Example:
 
 ### preview_frames
 
-See several moments at once: one PNG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.
+See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

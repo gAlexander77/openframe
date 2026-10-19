@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkSpec, ceilingFor, LOUDNESS_SPECS, loudnessRange, loudnessStats, planLoudness, specForTarget } from "./delivery";
+import { checkSpec, ceilingFor, LOUDNESS_SPECS, loudnessOutcome, loudnessRange, loudnessStats, planLoudness, specForTarget } from "./delivery";
 import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "./loudness";
 import { toDbtp, truePeak, TruePeakMeter } from "./truePeak";
 
@@ -141,4 +141,18 @@ it("passes a true peak that rounds to the ceiling, as the report prints it", () 
   const online = LOUDNESS_SPECS.online;
   expect(checkSpec({ integrated: -14, truePeak: -0.9996 }, online).pass).toBe(true);
   expect(checkSpec({ integrated: -14, truePeak: -0.94 }, online).pass).toBe(false);
+});
+
+describe("loudness outcome (the export-complete card)", () => {
+  it("calls a mix normalized to its target good news", () => {
+    const o = loudnessOutcome(-11.8, -14.2, -14, { limitedBy: null, heldDb: 0, ceilingDb: -1 });
+    expect(o).toEqual({ ok: true, text: "Loudness -11.8 LUFS, normalized to -14.2 LUFS." });
+    expect(loudnessOutcome(-20, -14.1, -14, { limitedBy: null, heldDb: 2.4, ceilingDb: -1 }).ok).toBe(true);
+  });
+  it("warns when the peaks or the gain range held the mix short", () => {
+    const o = loudnessOutcome(-30, -18.6, -14, { limitedBy: "peak", heldDb: 6, ceilingDb: -1 });
+    expect(o.ok).toBe(false);
+    expect(o.text).toMatch(/raised as far as 6 dB of limiting allows to -18\.6 LUFS .*4\.6 LU under the -14 LUFS target\.$/);
+    expect(loudnessOutcome(-80, -68, -14, { limitedBy: "range", heldDb: 0, ceilingDb: -1 }).ok).toBe(false);
+  });
 });

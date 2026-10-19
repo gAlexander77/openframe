@@ -351,7 +351,9 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
       g.fillText(t, x + 9, y + label + 17);
     }
   }
-  return out.convertToBlob({ type: "image/png" });
+  // JPEG like the other contact sheets: a PNG sheet of footage can pass the
+  // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
+  return out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
 }
 
 provide({ export: openExportDialog, saveFrame: () => void saveFrame() });

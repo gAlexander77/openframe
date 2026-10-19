@@ -8,6 +8,7 @@ import {
   EXPORT_PRESETS,
   gifDelays,
   matchingPreset,
+  shapeWarning,
   presetOf,
   exportRange,
   formatBytes,
@@ -209,5 +210,25 @@ describe("export presets", () => {
     expect(matchingPreset({ ...s, resolution: "720p" }, EXPORT_PRESETS)).toBeUndefined();
     expect(presetOf(s)).toMatchObject({ format: "gif", audio: false });
     expect(presetOf({ ...s, video: false, audioFormat: "m4a" })).toEqual({ video: false, audio: true, audioFormat: "m4a" });
+  });
+});
+
+describe("presets made for a canvas shape", () => {
+  const social = EXPORT_PRESETS.find((p) => p.id === "social")!;
+  const wide = createProject({ width: 1920, height: 1080 });
+  const tall = createProject({ width: 1080, height: 1920 });
+  const asSocial = { ...defaultExportSettings(wide), ...social.settings };
+
+  it("names TikTok, Reels and Shorts only on a 9:16 canvas", () => {
+    expect(matchingPreset(asSocial, EXPORT_PRESETS, tall)?.id).toBe("social");
+    expect(matchingPreset(asSocial, EXPORT_PRESETS, wide)?.id).not.toBe("social");
+  });
+
+  it("says what a 16:9 project exports with it, and nothing on 9:16", () => {
+    expect(shapeWarning(social, wide, { width: 1920, height: 1080 })).toBe(
+      "Made for 9:16 video. This project is 16:9, so it exports at 1920×1080: export settings never reshape the canvas.",
+    );
+    expect(shapeWarning(social, tall, { width: 1080, height: 1920 })).toBeNull();
+    expect(shapeWarning(EXPORT_PRESETS[0], tall, null)).toBeNull();
   });
 });

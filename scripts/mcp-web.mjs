@@ -46,7 +46,8 @@ http
       mkdirSync(images, { recursive: true });
       for (const c of [...out.result.content])
         if (c.type === "image") {
-          const file = resolve(images, `${String(++shot).padStart(3, "0")}.png`).replace(/\\/g, "/");
+          const ext = c.mimeType === "image/jpeg" ? "jpg" : "png";
+          const file = resolve(images, `${String(++shot).padStart(3, "0")}.${ext}`).replace(/\\/g, "/");
           writeFileSync(file, Buffer.from(c.data, "base64"));
           out.result.content.push({ type: "text", text: `(image saved to ${file})` });
         }

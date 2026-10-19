@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
+import { parseTyped } from "../../lib/numberInput";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Id } from "../../lib/project/types";
+import { sectionOpen, setSectionOpen } from "../../state/sections";
 import { store, useEditor } from "../../state/store";
 import { EaseButton } from "./KeyTools";
 
@@ -17,12 +19,20 @@ export function useRel(c: Clip): number {
   return Math.min(Math.max(f - c.start, 0), c.duration - 1);
 }
 
-export function Section(props: { title: string; children: ReactNode; onReset?: () => void; defaultOpen?: boolean; extra?: ReactNode }) {
-  const [open, setOpen] = useState(props.defaultOpen ?? true);
+/** A collapsible inspector section. Opening or closing it is remembered
+ * per viewer by its title (or `id`), across clips and reloads; until the
+ * viewer chooses, `defaultOpen` decides. */
+export function Section(props: { title: string; id?: string; children: ReactNode; onReset?: () => void; defaultOpen?: boolean; extra?: ReactNode }) {
+  const id = props.id ?? props.title;
+  const [open, setOpen] = useState(() => sectionOpen(id) ?? props.defaultOpen ?? true);
+  const toggle = () => {
+    setOpen(!open);
+    setSectionOpen(id, !open);
+  };
   return (
     <section className={`insp-section${open ? " open" : ""}`}>
       <header className="insp-section-head">
-        <button className="insp-section-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+        <button className="insp-section-toggle" onClick={toggle} aria-expanded={open}>
           <ChevronDown size={13} className="insp-caret" />
           <span>{props.title}</span>
         </button>
@@ -63,6 +73,59 @@ export interface SliderProps {
   also?: Clip[];
 }
 
+/**
+ * What was typed in a field is kept when the field goes away without a
+ * blur (ADR-072): selecting another clip unmounts the inspector under the
+ * caret, and a press on the timeline keeps the focus, so no blur ever
+ * came. CapCut and Premiere commit a typed value when focus leaves.
+ * `draft` is what was typed (null: nothing pending); `commit` applies it.
+ */
+export function useCommitOnLeave(draft: string | null, commit: (raw: string) => void) {
+  const last = useRef({ draft, commit });
+  last.current = { draft, commit };
+  useEffect(
+    () => () => {
+      const { draft, commit } = last.current;
+      if (draft !== null) commit(draft);
+    },
+    [],
+  );
+}
+
+/**
+ * What makes one drag of a range input, or one held arrow key, a single
+ * undo step (ADR-072): the input's onChange previews with
+ * store.previewGesture, the press opens the gesture and the release closes
+ * it wherever the pointer is let go (a slider thumb dragged off its track
+ * releases outside it). A held key's repeats stay inside the gesture its
+ * first press opened: restarting it per repeat left only the last step to
+ * undo. `label` is read at the release, so it can name the final value.
+ * Pass the label to previewGesture as well: a change with no press (a
+ * script, assistive technology) is then one edit of its own.
+ */
+export function rangeGesture(label: string | (() => string)) {
+  const end = () => store.endGesture(typeof label === "function" ? label() : label);
+  // The release's own change event comes after pointerup; where the shown
+  // value is rounded (speed, a transition's frames, decibels) it re-sends
+  // the value, which must land inside the gesture, not as a second step.
+  const release = () => {
+    window.removeEventListener("pointerup", release, true);
+    window.removeEventListener("pointercancel", release, true);
+    setTimeout(end, 0);
+  };
+  return {
+    onPointerDown: () => {
+      store.beginGesture();
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
+    },
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (!e.repeat) store.beginGesture();
+    },
+    onKeyUp: end,
+  };
+}
+
 /** A labeled slider + numeric field + keyframe cluster. Dragging is one
  * undo step; keyframed paths auto-key at the playhead. */
 export function SliderRow(p: SliderProps) {
@@ -81,12 +144,13 @@ export function SliderRow(p: SliderProps) {
   const set = (v: number) => (p2: Parameters<typeof setParam>[0]) =>
     (p.also ?? []).reduce((q, c) => setParam(q, [c.id], p.path, v, relOf(c)), setParam(p2, [p.clip.id], p.path, v, rel));
   const commit = (raw: string) => {
-    const n = Number(raw.replace(/[^\d.+-]/g, ""));
+    const n = parseTyped(raw);
     setText(null);
-    if (!Number.isFinite(n)) return;
+    if (n === null) return;
     const v = toStore(Math.min(p.max, Math.max(p.min, n)));
     store.edit(`Set ${p.label.toLowerCase()}`, set(v));
   };
+  useCommitOnLeave(text, commit);
   return (
     <div className="insp-row">
       <label className="insp-label">{p.label}</label>
@@ -98,11 +162,8 @@ export function SliderRow(p: SliderProps) {
         step={p.step ?? 1}
         value={Math.min(p.max, Math.max(p.min, shown))}
         style={p.track ? ({ "--track": p.track } as React.CSSProperties) : undefined}
-        onPointerDown={() => store.beginGesture()}
-        onPointerUp={() => store.endGesture(`Set ${p.label.toLowerCase()}`)}
-        onKeyUp={() => store.endGesture(`Set ${p.label.toLowerCase()}`)}
-        onKeyDown={() => store.beginGesture()}
-        onChange={(e) => store.previewGesture(set(toStore(Number(e.target.value))))}
+        {...rangeGesture(`Set ${p.label.toLowerCase()}`)}
+        onChange={(e) => store.previewGesture(set(toStore(Number(e.target.value))), `Set ${p.label.toLowerCase()}`)}
         onDoubleClick={() => p.reset !== undefined && store.edit(`Reset ${p.label.toLowerCase()}`, set(p.reset))}
         aria-label={p.label}
       />
@@ -214,9 +275,34 @@ export function ColorInput(props: { value: string; onChange: (v: string) => void
       // Escape cancels the pick; nothing to do.
     }
   };
+  // The platform picker sends an input per pointer move while its square
+  // is dragged, and a change when it closes: the moves are one undo step
+  // (a run, ADR-072), whichever path the caller edits through.
+  const swatch = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const el = swatch.current;
+    if (!el) return;
+    const end = () => store.endRun();
+    el.addEventListener("change", end);
+    el.addEventListener("blur", end);
+    return () => {
+      el.removeEventListener("change", end);
+      el.removeEventListener("blur", end);
+      end();
+    };
+  }, []);
   return (
     <span className="color-input">
-      <input type="color" value={/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#ffffff"} onChange={(e) => props.onChange(e.target.value)} aria-label={props.label} />
+      <input
+        ref={swatch}
+        type="color"
+        value={/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#ffffff"}
+        onChange={(e) => {
+          store.beginRun();
+          props.onChange(e.target.value);
+        }}
+        aria-label={props.label}
+      />
       <input
         className="field num"
         defaultValue={hex}

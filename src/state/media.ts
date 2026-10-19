@@ -14,6 +14,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 import type { SourceRange } from "../lib/sourceMonitor";
+import { formatLimit, URL_COPY_LIMIT } from "../lib/urlImport";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
 const CODEC_NAMES: Record<string, string> = {
@@ -36,12 +37,14 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
     files = files.filter((f) => !isLutName(f.name));
   }
   const added: Asset[] = [];
-  for (const f of files) {
+  for (let f of files) {
     if (!looksLikeMedia(f.name) && !isImageName(f.name)) {
       toast(`${f.name} isn't a video, audio or image file`, "error");
       continue;
     }
     try {
+      if (platform.adoptUrl && /^https?:/i.test(f.src)) f = await copyFromUrl(f, signal);
+      if (signal.aborted) return [];
       const canProxy = !!platform.makeProxy && !isImageName(f.name);
       // When the webview cannot decode it, or cannot even open it (AVI,
       // MXF), the desktop converts it with FFmpeg and edits the copy.
@@ -93,6 +96,28 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
     added.forEach(prepare);
   }
   return added;
+}
+
+/**
+ * The web build copies a file imported by its address into the browser's
+ * storage, as it does a picked file, so the project keeps working when the
+ * address goes away (ADR-073); the toast says so while it copies. Over
+ * URL_COPY_LIMIT, or when the browser keeps nothing (a private window), it
+ * stays linked to the address, and a toast says that too.
+ */
+async function copyFromUrl(f: ImportedFile, signal: AbortSignal): Promise<ImportedFile> {
+  const id = toast(`Copying ${f.name} into this browser`, "progress");
+  try {
+    const copy = await platform.adoptUrl!(f.src, f.name, (progress) => updateToast(id, { progress }));
+    if (copy || signal.aborted) return copy ?? f;
+    toast(`${f.name} is over ${formatLimit(URL_COPY_LIMIT)}, so it plays from its address and goes offline with it. Import it from a file to keep a copy.`, "info", 8000);
+  } catch (e) {
+    if (signal.aborted) return f;
+    toast(`${f.name} plays from its address and goes offline with it: copying it failed (${e instanceof Error ? e.message : e}).`, "error");
+  } finally {
+    dismiss(id);
+  }
+  return f;
 }
 
 /** The desktop's FFmpeg proxy, with its progress in a toast. */

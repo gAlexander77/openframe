@@ -4,8 +4,8 @@
 // clips — text clips, and color clips cropped to a box — so there is
 // nothing new to render, save or export (ADR-025).
 
-import { placeOnTop } from "./overlays";
-import { createColorClip, createTextClip, DEFAULT_TEXT_STYLE } from "./project/defaults";
+import { placeStack } from "./overlays";
+import { createColorClip, createTextClip, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import type { Animation, Clip, Id, Project, TextStyle } from "./project/types";
 import { secondsToFrames, type Rational } from "./time";
 
@@ -225,11 +225,17 @@ export function templateClips(t: TextTemplate, start: number, fps: Rational): Cl
   });
 }
 
-/** Add a template's layers at `start`, each above the last (placeOnTop). */
+/** Add a template's layers at `start` as one block above what shows
+ * then (placeStack, ADR-073): Text rows of their own, grouped
+ * when there are several, so they select and move together, as an ad
+ * element does (Alt+click picks one layer). */
 export function addTemplate(p: Project, t: TextTemplate, start: number): { project: Project; clipIds: Id[] } {
-  const clips = templateClips(t, start, p.fps);
-  for (const c of clips) p = placeOnTop(p, c, "Text");
-  return { project: p, clipIds: clips.map((c) => c.id) };
+  let clips = templateClips(t, start, p.fps);
+  if (clips.length > 1) {
+    const group = uid("g");
+    clips = clips.map((c) => ({ ...c, group }));
+  }
+  return { project: placeStack(p, clips, "Text"), clipIds: clips.map((c) => c.id) };
 }
 
 /** The look word art sets; size, alignment and wrapping stay the clip's. */

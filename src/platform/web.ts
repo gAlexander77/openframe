@@ -5,6 +5,7 @@
 
 import { BlobSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import type { Project } from "../lib/project/types";
+import { capBytes, TooBigToCopy, tooBigToCopy, URL_COPY_LIMIT } from "../lib/urlImport";
 import type { ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";
 
 // Files imported this session, available before their OPFS copy finishes.
@@ -23,6 +24,9 @@ async function fileFor(src: string): Promise<File> {
   live.set(src, file);
   return file;
 }
+
+/** A media file's name in OPFS: unique, and safe as a file name. */
+const keyFor = (name: string) => `${crypto.randomUUID().slice(0, 8)}-${name.replace(/[^\w.\- ]+/g, "_")}`;
 
 async function copyToOpfs(key: string, file: File) {
   try {
@@ -61,12 +65,37 @@ export const web: Platform = {
   async adoptFiles(files) {
     const out: ImportedFile[] = [];
     for (const file of files) {
-      const key = `${crypto.randomUUID().slice(0, 8)}-${file.name.replace(/[^\w.\- ]+/g, "_")}`;
+      const key = keyFor(file.name);
       live.set(key, file);
       void copyToOpfs(key, file);
       out.push({ name: file.name, src: key, size: file.size });
     }
     return out;
+  },
+
+  async adoptUrl(url, name, onProgress) {
+    const res = await fetch(url);
+    if (!res.ok || !res.body) throw new Error(`the address answered ${res.status} ${res.statusText}`.trim());
+    const length = res.headers.get("content-length");
+    if (tooBigToCopy(length)) {
+      await res.body.cancel();
+      return null;
+    }
+    const total = Number(length) || 0;
+    const key = keyFor(name);
+    const d = await dir("media");
+    const handle = await d.getFileHandle(key, { create: true });
+    try {
+      // Straight to disk: a 1 GB file never sits in memory.
+      await res.body.pipeThrough(capBytes(URL_COPY_LIMIT, (n) => total && onProgress?.(Math.min(1, n / total)))).pipeTo(await handle.createWritable());
+    } catch (e) {
+      await d.removeEntry(key).catch(() => undefined);
+      if (e instanceof TooBigToCopy) return null;
+      throw e;
+    }
+    const file = await handle.getFile();
+    live.set(key, file);
+    return { name, src: key, size: file.size };
   },
 
   async sourceFor(src) {

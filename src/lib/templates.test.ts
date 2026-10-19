@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { ANIMATIONS } from "./catalog";
 import { runCommand } from "./commands";
-import { createProject, createTextClip, DEFAULT_TEXT_STYLE } from "./project/defaults";
-import { findClip } from "./project/ops";
-import type { ColorClip, TextClip } from "./project/types";
+import { createColorClip, createProject, createTextClip, createTrack, DEFAULT_TEXT_STYLE } from "./project/defaults";
+import { addClip, addTrack, findClip, mainTrack } from "./project/ops";
+import type { Clip, ColorClip, TextClip } from "./project/types";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, templateClips, wordArtStyle } from "./templates";
 
 const fps = { num: 30, den: 1 };
@@ -97,5 +97,49 @@ describe("template commands", () => {
     p = runCommand(p, "apply_word_art", { clip_ids: [id], name: "neonPink" });
     expect((p.tracks.flatMap((t) => t.clips)[0] as TextClip).style.shadow?.color).toBe("#ff1fd2");
     expect(() => runCommand(p, "apply_word_art", { clip_ids: [id], name: "lowerThird" })).toThrow(/no word art/);
+  });
+});
+
+describe("addTemplate placement", () => {
+  // A project with footage on the main track and a B-roll row above it
+  // holding a shot later on: the location tag's case from the launch film.
+  const video = (start: number, duration: number) => ({ ...createColorClip("#000000", start, duration), type: "video", assetId: "a1" }) as unknown as Clip;
+  const withBroll = () => {
+    let p = createProject();
+    p = addClip(p, mainTrack(p).id, video(0, 600));
+    const broll = createTrack("video", "B-roll");
+    p = addTrack(p, broll, 0);
+    return { p: addClip(p, broll.id, video(300, 90)), broll: broll.id };
+  };
+
+  it("never puts a layer on a footage row, and lands above it as one grouped block", () => {
+    const { p: base, broll } = withBroll();
+    const { project: p, clipIds } = addTemplate(base, TEXT_TEMPLATES.location, 0);
+    const tracks = clipIds.map((id) => findClip(p, id)!.track);
+    expect(tracks.every((t) => t.id !== broll && !t.main)).toBe(true);
+    const rows = tracks.map((t) => p.tracks.indexOf(t));
+    const brollRow = p.tracks.findIndex((t) => t.id === broll);
+    expect(rows.every((r) => r < brollRow)).toBe(true);
+    expect(rows).toEqual([brollRow - 1, brollRow - 2]);
+    const groups = new Set(clipIds.map((id) => findClip(p, id)!.clip.group));
+    expect(groups.size).toBe(1);
+    expect([...groups][0]).toBeTruthy();
+  });
+
+  it("puts a second template on the same rows instead of adding tracks", () => {
+    const { p: base } = withBroll();
+    const first = addTemplate(base, TEXT_TEMPLATES.location, 0).project;
+    const { project: p, clipIds } = addTemplate(first, TEXT_TEMPLATES.location, 450);
+    expect(p.tracks).toHaveLength(first.tracks.length);
+    expect(new Set(clipIds.map((id) => findClip(p, id)!.clip.group)).size).toBe(1);
+  });
+
+  it("goes above a template already showing, without splitting the block", () => {
+    const { p: base } = withBroll();
+    const first = addTemplate(base, TEXT_TEMPLATES.location, 0);
+    const { project: p, clipIds } = addTemplate(first.project, TEXT_TEMPLATES.nameTag, 30);
+    const rows = clipIds.map((id) => p.tracks.indexOf(findClip(p, id)!.track));
+    const lowest = Math.min(...first.clipIds.map((id) => p.tracks.indexOf(findClip(p, id)!.track)));
+    expect(rows).toEqual([lowest - 1, lowest - 2]);
   });
 });

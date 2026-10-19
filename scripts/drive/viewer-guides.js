@@ -49,6 +49,14 @@ async (page) => {
   await page.setViewportSize({ width: 1100, height: 680 });
   await page.waitForFunction(() => document.querySelector(".player-frame").clientHeight > document.querySelector(".player-frame").clientWidth);
   details.portrait = await geometry();
+  // On a small 9:16 picture the two safe boxes' labels sat on each other
+  // (1.5% apart): the title box now labels its bottom edge.
+  details.labelsApart = await page.evaluate(() => {
+    const [a, t] = [".viewer-safe-action span", ".viewer-safe-title span"].map((s) => document.querySelector(s).getBoundingClientRect());
+    const overlap = a.left < t.right && t.left < a.right && a.top < t.bottom && t.top < a.bottom;
+    const frame = document.querySelector(".player-frame").getBoundingClientRect();
+    return { ok: !overlap && t.bottom <= frame.bottom && a.top >= frame.top, frameWidth: Math.round(frame.width) };
+  });
   details.headerFits = { ok: await select.evaluate(el => {
     const r = el.getBoundingClientRect(), head = el.closest("header").getBoundingClientRect();
     return r.x >= head.x && r.right <= head.right;

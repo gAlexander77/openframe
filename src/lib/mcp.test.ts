@@ -262,7 +262,7 @@ describe("MCP ad tools", () => {
     const h = host();
     const r = await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "1:1", fit: "blur" }], check: true } });
     const content = (r!.result as { content: { type: string }[] }).content;
-    expect(content[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(content[0]).toMatchObject({ type: "image", mimeType: "image/jpeg" });
     expect(h.versionCalls).toEqual([{ versions: [{ ratio: "1:1", fit: "blur" }] }]);
     const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
     expect(none!.result).toMatchObject({ isError: true });

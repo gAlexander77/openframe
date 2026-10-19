@@ -45,7 +45,8 @@ export interface McpHost {
   seek(seconds: number): unknown;
   /** PNG of the frame at `seconds`, base64 without the data: prefix. */
   frame(seconds: number, maxWidth: number): Promise<string>;
-  /** One PNG of several frames in a grid, each stamped with its time. */
+  /** One JPEG of several frames in a grid, each stamped with its time
+   * (photographs: as PNG a sheet ran to megabytes, ADR-073). */
   sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
@@ -59,7 +60,7 @@ export interface McpHost {
   exportStatus(): unknown;
   /** export_versions: one file per version, the project left as it is. */
   exportVersions(options: VersionsRequest): Promise<unknown>;
-  /** One PNG (base64) of every version at a few moments, nothing exported. */
+  /** One JPEG (base64) of every version at a few moments, nothing exported. */
   versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<string>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
   voiceover(lines: { text: string; at?: number }[], options: Record<string, unknown>): Promise<unknown>;
@@ -281,7 +282,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "preview_frames",
-    description: "See several moments at once: one PNG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.",
+    description: "See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.",
     inputSchema: obj(
       {
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
@@ -293,7 +294,7 @@ export const APP_TOOLS: AppTool[] = [
     call: async (h, a) => {
       const times = (a.times as number[]).slice(0, 24);
       if (!times.length) throw new Error("times needs at least one time");
-      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
+      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/jpeg" }] };
     },
   },
   {
@@ -320,7 +321,7 @@ export const APP_TOOLS: AppTool[] = [
       const markers = d.markers.filter((m) => inside(m.at)).map((m) => ({ at: m.at, label: m.label }));
       return {
         content: [
-          { type: "image", data: await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6)), mimeType: "image/png" },
+          { type: "image", data: await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6)), mimeType: "image/jpeg" },
           { type: "text", text: JSON.stringify({ frames: times, cuts, markers }) },
         ],
       };
@@ -345,7 +346,7 @@ export const APP_TOOLS: AppTool[] = [
       if (!asset) throw new Error(`No asset ${a.asset_id}; describe_project lists them`);
       const n = Number(a.count ?? 12);
       const times = asset.kind === "image" ? [0] : a.times ? (a.times as number[]).slice(0, 24) : Array.from({ length: n }, (_, i) => +((asset.duration * (i + 0.5)) / n).toFixed(2));
-      return { content: [{ type: "image", data: await h.mediaSheet(String(a.asset_id), times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/png" }] };
+      return { content: [{ type: "image", data: await h.mediaSheet(String(a.asset_id), times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/jpeg" }] };
     },
   },
   {
@@ -646,7 +647,7 @@ APP_TOOLS.push(
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
-        return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/png" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
+        return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
       }
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure

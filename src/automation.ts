@@ -150,11 +150,20 @@ async function tiles(frames: { src: CanvasImageSource | null; label: string; w: 
     ctx.fillStyle = "#fff";
     ctx.fillText(f.label, x + 9, y + 18);
   }
-  return png(out);
+  return jpeg(out);
 }
 
-/** A canvas as base64 PNG, for MCP image content. */
-const png = async (c: OffscreenCanvas): Promise<string> => blobToBase64(await c.convertToBlob({ type: "image/png" }));
+/**
+ * A contact sheet as base64 JPEG, for MCP image content (ADR-073). A sheet
+ * is photographs: as PNG sixteen 480 px frames of footage ran to 4.6 MB,
+ * past the 3.75 MB an MCP client may pass a model, and Claude Code shrinks
+ * an oversized PNG by re-encoding it with a 256-color palette, which bands
+ * every sky. As JPEG the same sheet is under 1 MB; at 0.98 a dark sky keeps
+ * nine-tenths of its levels (0.92 made 8-pixel blocks of a smooth one), and
+ * a client that still shrinks it re-encodes a JPEG as a JPEG. Single frames
+ * stay PNG: drives compare their pixels exactly.
+ */
+const jpeg = async (c: OffscreenCanvas): Promise<string> => blobToBase64(await c.convertToBlob({ type: "image/jpeg", quality: 0.98 }));
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -293,13 +302,23 @@ const mcpHost: McpHost = {
   },
   versionsSheet: async (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
-    return blobToBase64(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+    // A sheet of photographs too: sent as JPEG (jpeg above).
+    const bmp = await createImageBitmap(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    c.getContext("2d")!.drawImage(bmp, 0, 0);
+    bmp.close();
+    return jpeg(c);
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
   ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
-    return (await platform.listProjects()).map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));
+    const saved = await platform.listProjects();
+    // A new project is saved once it is touched (state/project.ts); until
+    // then it is listed as the open one all the same.
+    const doc = store.document();
+    const listed = open && !saved.some((x) => x.id === open) ? [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt, duration: 0, width: doc.width, height: doc.height }, ...saved] : saved;
+    return listed.map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));
   },
   openProject: async (id) => {
     // false: a navigation was already under way, or it failed (with a toast).
