@@ -253,3 +253,20 @@ describe("soft light, shadows and animated type (ADR-069 to ADR-071)", () => {
     expect((loaded.find((c) => c.type === "color") as ColorClip).shadow).toEqual({ color: "#000000", blur: 600, x: 0, y: 24, opacity: 0.5 });
   });
 });
+
+describe("set_tilt (ADR-070)", () => {
+  it("tilts, keys and lays a picture flat again", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_tilt", { clip_ids: [id], y: -18, x: 6, perspective: 1500 });
+    expect(clips(p)[0]).toMatchObject({ transform: { rotateX: 6, rotateY: -18, perspective: 1500 } });
+    expect(described(p, id).transform).toMatchObject({ rotate_x: 6, rotate_y: -18, perspective: 1500 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "transform.rotateY", at: 0, value: -35 });
+    p = runCommand(p, "set_tilt", { clip_ids: [id], y: 0, at: 1 });
+    expect(clips(p)[0].keyframes!["transform.rotateY"].map((k) => [k.f, k.v])).toEqual([[0, -35], [30, 0]]);
+    p = runCommand(p, "remove_keyframes", { clip_id: id, path: "transform.rotateY" });
+    p = runCommand(p, "set_tilt", { clip_ids: [id], x: 0, y: 0 });
+    expect(["rotateX", "rotateY", "perspective"].filter((k) => k in (clips(p)[0] as ColorClip).transform)).toEqual([]);
+    expect(() => runCommand(p, "set_tilt", { clip_ids: [id], y: 120 })).toThrow(/<= 89/);
+  });
+});

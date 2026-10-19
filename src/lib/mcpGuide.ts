@@ -46,8 +46,8 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   },
   {
     name: "Graphics and compositing",
-    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, track mattes, motion blur, mirrored edges and camera shake.",
-    tools: ["add_shape", "set_shape", "set_shadow", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
+    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), drop shadows and perspective tilt for floating windows, track mattes, motion blur, mirrored edges and camera shake.",
+    tools: ["add_shape", "set_shape", "set_shadow", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
   { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
@@ -125,6 +125,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_motion_blur: { clip_ids: ["c_4", "c_5"], on: true, shutter_angle: 180 },
   set_edge_mode: { clip_ids: ["c_4"], edge: "mirror" },
   set_shadow: { clip_ids: ["c_6"], blur: 80, y: 30, opacity: 0.55 },
+  set_tilt: { clip_ids: ["c_6"], y: -18, x: 6 },
   animate_text_style: { clip_id: "c_5", keys: [{ at: 1, letter_spacing: 0, ease: "easeOut" }, { at: 2.5, letter_spacing: 24 }] },
   set_wiggle: { clip_ids: ["c_4"], target: "position", frequency: 4, amplitude: 12 },
   set_audio_filter: { clip_ids: ["c_3"], type: "lowpass", cutoff: 400, sweep: { to: 18000, start: 6, end: 8.4, ease: "easeIn" } },

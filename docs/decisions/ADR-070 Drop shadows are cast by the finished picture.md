@@ -9,7 +9,8 @@ border and a bar, made one unit as a compound clip) needed a soft shadow
 under them, and the editor could only shadow titles (`style.shadow`,
 drawn with the letters by Canvas2D). The film used a shadow sprite.
 After Effects, CapCut and Premiere all offer a drop shadow on any layer:
-a blurred, offset, tinted copy of its alpha, under it.
+a blurred, offset, tinted copy of its alpha, under it. The film's windows
+could not tilt in 3D either, as product films' often do.
 
 ## Decision
 
@@ -34,8 +35,28 @@ a blurred, offset, tinted copy of its alpha, under it.
 - `set_shadow` (color, blur, x, y, opacity, off, at) and the Shadow
   section of the Video tab run the same command.
 
+### Perspective tilt, for the same windows
+
+Product films also turn their floating windows in depth. A picture's
+`transform.rotateX` and `transform.rotateY` (degrees, CSS's rotateX and
+rotateY, composed rotateY, rotateX, then the turn in the plane) and
+`transform.perspective` (the camera's distance, pixels at 1080p, absent
+2000, looking at the canvas center as a real camera does) tilt it. A flat
+picture stays flat, so its quad maps to the screen by a homography
+(`lib/tilt.ts` tiltMatrix): the layer's matrix becomes projective and
+the vertex shader passes its third row as w, so the GPU divides and
+interpolates the picture perspective-correctly. An untilted matrix's
+third row is (0, 0, 1), so w is exactly 1 and every older picture draws
+as before (the render fingerprint is unchanged). The tilt is applied
+before the shadow, so a tilted window's shadow is tilted too. `set_tilt`
+and the Transform section's Tilt X and Tilt Y set it.
+
 ## Consequences
 
+- A tilted picture's edge mode (mirror, repeat) draws no copies; the
+  copies' extent is solved for flat maps (a ponytail note in the
+  compositor). Motion blur samples the move, not a keyed tilt's turn.
+  The viewer's handles show the untilted box.
 - The shadow lives inside the layer's canvas-sized buffer: a shadow that
   falls past the canvas edge is cut there, and the blurred picture's edge
   repeats past it, as blurs do.

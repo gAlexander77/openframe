@@ -323,6 +323,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   track matte, so a rounded window casts a rounded shadow and a compound
   clip (footage, a border and a bar) casts one shadow for the whole
   floating window. Shadow section of the Video tab (`set_shadow`).
+- **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
+  Tilt Y in the Transform section turn a picture in depth, seen from a
+  camera 2000 pixels (at 1080p) in front of the canvas center, the
+  picture drawn perspective-correct; both keyframe, so a window swings
+  into place, and its shadow follows it (`set_tilt`).
 - **Track mattes** (After Effects', ADR-056): a clip shows only where
   another clip's picture is opaque (Alpha) or bright (Luma), or the
   reverse: video inside text, logo and wipe reveals. The matte is the clip

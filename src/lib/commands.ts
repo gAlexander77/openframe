@@ -54,6 +54,7 @@ import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { colorKey } from "./textAnim";
+import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
 
 export type JsonSchema = {
@@ -1254,6 +1255,45 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_tilt",
+    description:
+      "Tilt a picture in perspective, as product films turn floating UI windows in depth (CSS rotateX and rotateY): x tips the top away (negative: the bottom), y turns the right side away (negative: the left), in degrees, seen from perspective pixels at 1080p in front of the canvas center (default 2000; 800 is dramatic, 4000 gentle). A window at rest, three-quarter view: {y: -18, x: 6}. Values left out keep theirs; x and y 0 lay it flat. Animate with add_keyframe on transform.rotateX, transform.rotateY, transform.perspective (a window swinging into place: y from -35 to 0); keyframed values get a key at `at`. A compound clip tilts as one picture, its shadow (set_shadow) cast by the tilted window.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        x: S.num("Degrees about the horizontal axis: positive tips the top away", { minimum: -TILT_MAX, maximum: TILT_MAX }),
+        y: S.num("Degrees about the vertical axis: positive turns the right side away", { minimum: -TILT_MAX, maximum: TILT_MAX }),
+        perspective: S.num("The camera's distance, pixels at 1080p (default 2000): nearer is stronger", { minimum: 100, maximum: 100000 }),
+        at: S.num("Timeline seconds, for keyframed values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const given: Record<string, unknown> = { rotateX: a.x, rotateY: a.y, perspective: a.perspective };
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to tilt`);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of TILT_PARAMS) {
+          if (given[k] === undefined) continue;
+          if (clip.keyframes?.[`transform.${k}`]?.length) p = ops.setParam(p, [clip.id], `transform.${k}`, Number(given[k]), rel);
+          else p = ops.updateClip(p, clip.id, (c) => ({ ...c, transform: { ...(c as typeof clip).transform, [k]: Number(given[k]) } }) as Clip);
+        }
+        // Laid flat, with nothing keyed: the fields go, so the file stays as before.
+        p = ops.updateClip(p, clip.id, (c) => {
+          const t = { ...(c as typeof clip).transform };
+          if (t.rotateX || t.rotateY || TILT_PARAMS.some((k) => c.keyframes?.[`transform.${k}`]?.length)) return c;
+          if (t.rotateX === undefined && t.rotateY === undefined && t.perspective === undefined) return c;
+          delete t.rotateX;
+          delete t.rotateY;
+          delete t.perspective;
+          return { ...c, transform: t } as Clip;
+        });
+      }
+      return p;
+    },
+  },
+  {
     name: "animate_text_style",
     description:
       "Animate a title's size, letter spacing and color with keyframes: each key sets any of them at a timeline time, and the title moves between keys in the key's ease (the curve toward the next one). A tracking expand: [{at: 1, letter_spacing: 0, ease: 'easeOut'}, {at: 2.5, letter_spacing: 24}]; a title that grows and turns accent-colored: [{at: 0, size: 90, color: '#ffffff'}, {at: 0.6, size: 120, color: '#ffd23f'}]. Keys at a time that already has one replace it. size: pixels at 1080p; letter_spacing: pixels at 1080p; color: CSS (keyed colors are opaque: fade the title with opacity). add_keyframe also keys style.size and style.letterSpacing; style.color keys hold 0xRRGGBB numbers. remove_keyframes on style.size, style.letterSpacing or style.color stops one animating.",
@@ -2394,6 +2434,9 @@ function placement(t: Transform) {
     ...(t.scale !== 1 ? { scale: r(t.scale) } : {}),
     ...(t.scaleY !== undefined ? { scale_y: r(t.scaleY) } : {}),
     ...(t.rotation ? { rotation: r(t.rotation) } : {}),
+    ...(t.rotateX ? { rotate_x: r(t.rotateX) } : {}),
+    ...(t.rotateY ? { rotate_y: r(t.rotateY) } : {}),
+    ...(t.perspective ? { perspective: r(t.perspective) } : {}),
   };
   return Object.keys(out).length ? { transform: out } : {};
 }

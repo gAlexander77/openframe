@@ -10,6 +10,8 @@
 //   color turns it red;
 // - a rounded compound window casts a shadow below it, offset and soft,
 //   with rounded corners;
+// - a box tilted 30 degrees about its vertical axis is taller on its near
+//   side than flat and shorter on its far side;
 // - the Text tab lists the font's weights, and the window's Video tab has
 //   a Shadow section.
 // Then it builds a "floating window on soft glow" scene with only these
@@ -72,6 +74,9 @@ async (page) => {
     call("set_param", { clip_ids: [win.id], path: "transform.scale", value: 0.5 });
     call("set_mask", { clip_ids: [win.id], shape: "rectangle", width: 1, height: 1, radius: 0.2 });
     call("set_shadow", { clip_ids: [win.id], color: "#000000", blur: 20, x: 0, y: 60, opacity: 1 });
+    // 12-13 s: a white box 768 x 540, its right side turned away 30 degrees.
+    call("add_shape", { kind: "rectangle", start: 12, duration: 1, width: 0.4, height: 0.5, color: "#ffffff" });
+    call("set_tilt", { clip_ids: [added().id], y: 30, perspective: 1500 });
     return { tracking: tracking.id, win: win.id, photo: photo.id, main };
   });
 
@@ -188,6 +193,19 @@ async (page) => {
     ...shadow,
   };
 
+  // The tilt: the near (left) side taller than flat, the far side shorter.
+  const tilt = await measure(375, (px, lum) => {
+    const row = Array.from({ length: 1920 }, (_, x) => lum(x, 540));
+    const left = row.findIndex((v) => v > 128), right = row.length - 1 - [...row].reverse().findIndex((v) => v > 128);
+    const height = (x) => {
+      let n = 0;
+      for (let y = 0; y < 1080; y++) if (lum(x, y) > 128) n++;
+      return n;
+    };
+    return { left, right, nearHeight: height(left + 4), farHeight: height(right - 4) };
+  });
+  details.tilt = { ok: tilt.nearHeight > 560 && tilt.farHeight < 520 && tilt.right - tilt.left < 768 && tilt.left < 960 - 332, ...tilt };
+
   // The inspector: Segoe UI lists several weights; the window has Shadow.
   await page.evaluate((id) => window.videoEditor.select([id]), ids.tracking);
   const weights = await page.locator('select[aria-label="Font weight"] option').allTextContents();
@@ -227,6 +245,7 @@ async (page) => {
     call("add_keyframe", { clip_id: win.id, path: "transform.y", at: 10, value: 0.02 });
     call("set_mask", { clip_ids: [win.id], shape: "rectangle", width: 1, height: 1, radius: 0.08 });
     call("set_shadow", { clip_ids: [win.id], blur: 110, y: 44, opacity: 0.75 });
+    call("set_tilt", { clip_ids: [win.id], y: -16, x: 4 });
     call("add_text", { text: "Edit at the\nspeed of thought.", start: 9, duration: 3, y: -0.06, style: { font: "Segoe UI", size: 78, weight: 800, align: "left" } });
     const title = fresh();
     call("align_clips", { clip_ids: [title.id], align: "left", margin: 0.06 });

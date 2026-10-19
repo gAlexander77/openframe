@@ -187,7 +187,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   gradients and feathered edges on shapes.
 - [[ADR-070 Drop shadows are cast by the finished picture]] — after
   mask, effects and matte, so rounded and compound windows cast their
-  shape.
+  shape; perspective tilt for the same windows.
 - [[ADR-071 Keyed title styles redraw the title]] — font weights, and
   size, letter spacing and color keyframes (colors as 0xRRGGBB).
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —

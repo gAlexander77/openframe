@@ -271,7 +271,11 @@ keys every mask parameter; crop edges do not. So do a shape's
 `shape.gradient.y`, `shape.gradient.radius`), a drop shadow's
 (`shadow.blur`, `shadow.x`, `shadow.y`, `shadow.opacity`) and a wiggle's
 (`wiggle.x.strength`, `wiggle.x.amplitude`, and the same for `y`,
-`rotation` and `scale`). A title's `style.size` and `style.letterSpacing`
+`rotation` and `scale`). A picture's tilt keys as
+`transform.rotateX`, `transform.rotateY` and `transform.perspective`:
+degrees (CSS's rotateX and rotateY) and the camera's distance in pixels
+at 1080p (absent 2000), all optional in `transform`; older builds draw the
+picture flat. A title's `style.size` and `style.letterSpacing`
 key as numbers; `style.color` keys hold the color as a 0xRRGGBB number
 (`#ff3366` is 16724838) and move channel by channel; keyed colors are
 opaque ([[ADR-071 Keyed title styles redraw the title]]). Older builds

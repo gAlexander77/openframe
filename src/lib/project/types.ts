@@ -231,6 +231,13 @@ export interface Transform {
   rotation: number;
   flipX: boolean;
   flipY: boolean;
+  /** Perspective tilt (ADR-070), degrees: rotateX tips the top away,
+   * rotateY turns the right side away (CSS's), seen from `perspective`
+   * pixels at 1080p in front of the canvas center (absent 2000). Absent
+   * = flat; readers that predate them draw the picture flat. */
+  rotateX?: number;
+  rotateY?: number;
+  perspective?: number;
 }
 
 export interface Crop {

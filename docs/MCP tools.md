@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts`;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 143 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 144 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -36,7 +36,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `set_clip_label`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
@@ -1027,7 +1027,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 
 ## Graphics and compositing
 
-Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, track mattes, motion blur, mirrored edges and camera shake.
+Shapes (bars, boxes, lines that draw on, soft glows), drop shadows and perspective tilt for floating windows, track mattes, motion blur, mirrored edges and camera shake.
 
 ### add_shape
 
@@ -1119,6 +1119,24 @@ Example:
 
 ```json
 {"name":"set_shadow","arguments":{"clip_ids":["c_6"],"blur":80,"y":30,"opacity":0.55}}
+```
+
+### set_tilt
+
+Tilt a picture in perspective, as product films turn floating UI windows in depth (CSS rotateX and rotateY): x tips the top away (negative: the bottom), y turns the right side away (negative: the left), in degrees, seen from perspective pixels at 1080p in front of the canvas center (default 2000; 800 is dramatic, 4000 gentle). A window at rest, three-quarter view: {y: -18, x: 6}. Values left out keep theirs; x and y 0 lay it flat. Animate with add_keyframe on transform.rotateX, transform.rotateY, transform.perspective (a window swinging into place: y from -35 to 0); keyframed values get a key at `at`. A compound clip tilts as one picture, its shadow (set_shadow) cast by the tilted window.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `x` | number |  | Degrees about the horizontal axis: positive tips the top away (-89..89) |
+| `y` | number |  | Degrees about the vertical axis: positive turns the right side away (-89..89) |
+| `perspective` | number |  | The camera's distance, pixels at 1080p (default 2000): nearer is stronger (100..100000) |
+| `at` | number |  | Timeline seconds, for keyframed values |
+
+Example:
+
+```json
+{"name":"set_tilt","arguments":{"clip_ids":["c_6"],"y":-18,"x":6}}
 ```
 
 ### set_track_matte

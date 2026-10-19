@@ -164,7 +164,9 @@ void main() {
   vec2 q = mix(u_extent.xy, u_extent.zw, a_pos);
   v_local = q;
   vec3 p = u_matrix * vec3(q, 1.0);
-  gl_Position = vec4(p.xy, 0.0, 1.0);
+  // Homogeneous: w is 1 for a flat picture, the perspective divide for a
+  // tilted one (ADR-070), which also makes v_local perspective-correct.
+  gl_Position = vec4(p.xy, 0.0, p.z);
 }`;
 
 /** The layer pass. Shape layers (ADR-057) use the SHAPE build, which adds

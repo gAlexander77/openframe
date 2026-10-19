@@ -136,7 +136,7 @@ function TransformSection({ clip }: { clip: Clip }) {
   const h = useEditor((s) => s.project.height);
   if (!("transform" in clip)) return null;
   const stretched = clip.transform.scaleY !== undefined;
-  const paths = ["transform.scale", ...(stretched ? ["transform.scaleY"] : []), "transform.x", "transform.y", "transform.rotation"];
+  const paths = ["transform.scale", ...(stretched ? ["transform.scaleY"] : []), "transform.x", "transform.y", "transform.rotation", ...(clip.transform.rotateX || clip.keyframes?.["transform.rotateX"] ? ["transform.rotateX"] : []), ...(clip.transform.rotateY || clip.keyframes?.["transform.rotateY"] ? ["transform.rotateY"] : [])];
   return (
     <Section
       title="Transform"
@@ -151,6 +151,9 @@ function TransformSection({ clip }: { clip: Clip }) {
       <SliderRow clip={clip} path="transform.x" label="Position X" min={-w} max={w} unit="px" reset={0} show={(v) => v * w} store={(v) => v / w} />
       <SliderRow clip={clip} path="transform.y" label="Position Y" min={-h} max={h} unit="px" reset={0} show={(v) => -v * h} store={(v) => -v / h} />
       <SliderRow clip={clip} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} />
+      {/* Perspective tilt (ADR-070): a floating window turned in depth. */}
+      <SliderRow clip={clip} path="transform.rotateX" label="Tilt X" min={-80} max={80} step={0.5} digits={1} unit="°" reset={0} />
+      <SliderRow clip={clip} path="transform.rotateY" label="Tilt Y" min={-80} max={80} step={0.5} digits={1} unit="°" reset={0} />
       <SliderRow clip={clip} path="transform.anchorX" label="Anchor X" min={-100} max={100} unit="%" reset={0} {...pct} />
       <SliderRow clip={clip} path="transform.anchorY" label="Anchor Y" min={-100} max={100} unit="%" reset={0} show={(v) => -v * 100} store={(v) => -v / 100} />
       <Row label="Frame">

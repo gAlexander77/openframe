@@ -33,6 +33,7 @@ import type { Placement } from "../lib/motionBlur";
 import type { BlendMode, DropShadow, MatteMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
+import { tiltMatrix } from "../lib/tilt";
 import {
   ADJUST_FS,
   BLEND_FS,
@@ -729,6 +730,12 @@ export class Compositor {
       const oy = cy + sin * (-0.5 * sx + shiftX) + cos * (-0.5 * sy + shiftY);
       // pixels -> clip: x' = x / W * 2 - 1, y' = 1 - y / H * 2
       const ax = 2 / W, ay = -2 / H;
+      // A tilted picture (ADR-070) maps by a homography; its edge mode's
+      // copies are not drawn (ponytail: the extent is solved for flat maps).
+      if (layer.tilt) {
+        const mat = new Float32Array(tiltMatrix({ cx, cy, sx, sy, shiftX, shiftY, rotation: t.rotation }, { ...layer.tilt, distance: (layer.tilt.distance * H) / 1080 }, W, H));
+        return { mat, visW, visH, extent: [0, 0, 1, 1] };
+      }
       // column-major mat3
       const mat = new Float32Array([
         m00 * ax, m10 * ay, 0,

@@ -17,6 +17,7 @@ import { MOTION_SAMPLES, MOVING_TRANSITIONS, samplesFor, shutterOffsets, travel,
 import { resolveShape, type ResolvedShape } from "../shapes";
 import { resolveShadow } from "../shadow";
 import { styleKeyed, textStyleAt } from "../textAnim";
+import { resolveTilt, type Tilt } from "../tilt";
 import { matteClip, mattesAt } from "../trackMatte";
 import { wiggleAt } from "../wiggle";
 import type {
@@ -120,6 +121,8 @@ export interface Layer {
   trackMatte?: { layer: Layer | null; mode: MatteMode };
   /** Drop shadow (ADR-070), keyframes applied; cast by the finished layer. */
   shadow?: DropShadow;
+  /** Perspective tilt (ADR-070), keyframes applied; absent when flat. */
+  tilt?: Tilt;
 }
 
 export type PlanItem =
@@ -359,6 +362,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   const motion = clip.motionBlur ? shutterPath(p, clip, r, clip.motionBlur.shutter, opts, placeAt) : undefined;
   const cut = clip.type === "video" && clip.cutout?.enabled ? clip.cutout : undefined;
   const shadow = resolveShadow(clip, r);
+  const tilt = resolveTilt(clip, r);
   return {
     clipId: prefix + clip.id,
     source,
@@ -389,6 +393,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     ...(motion ? { motion } : {}),
     ...(clip.edge ? { edge: clip.edge } : {}),
     ...(shadow ? { shadow } : {}),
+    ...(tilt ? { tilt } : {}),
   };
 }
 
@@ -432,7 +437,7 @@ export function anchorShift(
 export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer | null {
   const fill = clip.canvas;
   if (!fill) return null;
-  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined };
+  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined, tilt: undefined };
   if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
   if (clip.type !== "video" && clip.type !== "image") return null;
   const a = getAsset(p, clip.assetId);
