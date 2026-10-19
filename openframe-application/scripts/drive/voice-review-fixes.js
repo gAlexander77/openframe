@@ -59,11 +59,13 @@ async (page) => {
   details.slowerRead = { ok: ft?.tool === "retake_voiceover" && typeof ft.args.speed === "number" && /reword/.test(ft.problem), fix: ft };
   const all = review.lines.flatMap((l) => l.fixes ?? []);
   details.noPlaceholder = { ok: all.every((f) => !/[<>]/.test(JSON.stringify(f.args))), fixes: all };
-  // The tagline, meant slow, passes; the same read without the mark is slow.
-  const sps = [R[slow.voice_clip].syllables_per_second, R[plain.voice_clip].syllables_per_second];
+  // The tagline, meant slow, is held to a band half a word a second lower
+  // (ADR-096): it passes; the same read without the mark fails when it is
+  // over a tenth under narration's 2.3.
+  const wps = [R[slow.voice_clip].pace.over_speech.words_per_second, R[plain.voice_clip].pace.over_speech.words_per_second];
   details.paceIntent = {
-    ok: !/slow:/.test(R[slow.voice_clip].verdict) && R[slow.voice_clip].pace === "slow" && (sps[1] >= 3.2 || /slow:/.test(R[plain.voice_clip].verdict)),
-    sps,
+    ok: !/slow:/.test(R[slow.voice_clip].verdict) && R[slow.voice_clip].pace.meant === "slow" && (wps[1] >= 2.3 * 0.9 || /slow:/.test(R[plain.voice_clip].verdict)),
+    wps,
     verdicts: [R[slow.voice_clip].verdict, R[plain.voice_clip].verdict],
   };
   // The applied respelling makes the voice say "home": the retake is heard right.

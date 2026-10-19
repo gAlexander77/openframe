@@ -49,7 +49,7 @@ async (page) => {
       clip_ids: { ok: clip(b).style.size === 100 },
       noop: { ok: batch.notes?.length === 2, notes: batch.notes },
       overwrite: { ok: overwrite.overwritten?.some(c => c.id === a && c.what === "removed"), report: overwrite.overwritten },
-      retake: { ok: retake.speed_chosen === true && /rushed-line/.test(retake.note) && !explicit.speed_chosen, speed: retake.speed, note: retake.note, synthesis: "mocked" },
+      retake: { ok: retake.speed_chosen === true && /words a second/.test(retake.note) && !explicit.speed_chosen, speed: retake.speed, note: retake.note, synthesis: "mocked" },
     };
   });
   details.voiceModelAvailability = { ok: true, cacheCount: modelCacheCount, note: "Fresh isolated browser; no cached speech models. Real voiceover-directed omitted; retake synthesis mocked." };

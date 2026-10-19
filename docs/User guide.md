@@ -316,12 +316,14 @@ finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
 **Read a title aloud:** select a title, open Text > Text to speech, pick a
-voice, a speed and a quality, and click **Add voice**. The voice is made on
+voice, a pace and a quality, and click **Add voice**. The voice is made on
 this computer and lands on an audio track where the title starts; one
 Undo removes it and its file. Best quality downloads the full speech model
-(325 MB) the first time; Draft downloads a smaller one (92 MB). Voices are
-read at a narrator's pace with natural pauses, one level, and a quiet room
-under the silences.
+(325 MB) the first time; Draft downloads a smaller one (92 MB). Normal
+pace is a narrator's 2.3-2.8 words a second (Slow and Fast move it half a
+word): the app reads the title, measures it and reads it again at the
+speed that lands it there, so short words are not rushed. Voices come
+with natural pauses, one level, and a quiet room under the silences.
 
 **Caption a voice:** the Captions tab's **Generate captions** hears the
 timeline on this computer. A voice made by the app (Text to speech, or an

@@ -137,6 +137,12 @@ export interface SpeechInfo {
   /** The pace the line is meant to have: slow (an end card's tagline) or
    * fast, so review_voiceover does not flag it for being so. */
   pace?: "slow" | "normal" | "fast";
+  /** The words a second it was read to, [lowest, highest], before its
+   * pace moves them (lib/voicePace.ts); none: narration's 2.3-2.8. */
+  wps?: [number, number];
+  /** The speed was chosen to land on that, not asked for: a retake with
+   * new words chooses again. */
+  speedChosen?: boolean;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */

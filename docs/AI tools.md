@@ -512,9 +512,18 @@ presence (RBJ peaking, 3.5 kHz, +2 dB, Q 0.9); trim to the speech with a
 60 ms lead-in and a 200 ms tail; gain to -23 LUFS (BS.1770, mono)
 holding the sample peak under -1 dBFS; pink room tone (Paul Kellet's
 filter, seeded by the line's text) at -72 dBFS RMS added under the whole
-take; raised-cosine fades of 12 ms in and 30 ms out. A line read over 5.5
-syllables a second with no speed given is read once more at speed x
-5 / its rate, never below four fifths of the speed asked.
+take; raised-cosine fades of 12 ms in and 30 ms out.
+
+**Landing a pace** ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]).
+With no speed given, a line aims at the middle of its band (narration
+2.3-2.8 words a second over its speech, unless asked otherwise). The
+first read's speed is guessed from its syllables at Heart's 4.6 a second
+at speed 1, less the pauses the finish will set; the read is measured
+(first word to last, after the finish's pauses) and read again at
+speed x voiced / wanted, where voiced is the span less the pauses set to
+a length (they do not scale with speed) and wanted is words / aim less
+the same pauses. Up to three reads, speeds 0.6-1.3, the read nearest the
+band kept; the audio is never stretched.
 
 **Hearing it back.** Whisper (`whisper-base.en_timestamped`) on each
 clip's own file at 16 kHz. The script and what was heard are lowered to
@@ -523,19 +532,18 @@ distance in which up to three words on either side may match when they
 run together ("open frame" = "openframe", "m c p" = "mcp"); neighboring
 differences merge, and one short word a letter off is minor. The script
 is compared as written and as respelled for the voice; the closer wins.
-Pace is syllables (vowel groups, silent e and -es/-ed handled) over the
-speech span. Pitch is YIN (40 ms windows, 60-400 Hz, threshold 0.15)
+Pace is words, and syllables (vowel groups, silent e and -es/-ed
+handled), over the speech span and over the clip, judged in words a
+second against the line's band (a miss beyond a tenth of the band's edge
+fails; within it, advice); syllables only catch long words rushed (over
+5.8 a second). Pitch is YIN (40 ms windows, 60-400 Hz, threshold 0.15)
 with windows more than 1.8 times off the median dropped as octave
 errors; the range is the 10th to 90th percentile in semitones. Loudness
 and true peak come from rendering the voice's track alone over the line
-as export does (`measureMix`), and the margin over the music from the
-music tracks alone over the same span. A fix for a thin margin names a
-`duck_under_speech` depth: the music's current duck at the line's middle
-(its volume there against its loudest key) plus what the line lacks of
-12 LU. `voice_above_music_lu` aims over the span from the first word to
-the last, gaps included, so it ducks a voiceover with long gaps far too
-deep (38 LU under every line in the drive); the measured depth put the
-same lines at 12-13 LU.
+from its first word to its last as export does (`measureMix`), and the
+margin over the music from the music tracks alone over the same span
+(the line window). A fix for a thin margin is `duck_under_speech
+min_line_lu` 10, the music's current dip kept as the least.
 
 ## In the app and for agents
 
@@ -658,18 +666,26 @@ keeping `drop` as the biggest rise. Section bounds follow bars or phrases,
 and two-bar breakdowns are retained. Drop markers cover every detected drop.
 
 `measure_loudness {by_track: true}` reports every audio track's integrated
-LUFS, maximum short-term LUFS and full three-second windows sampled each
-second (the timestamp is the window end). Muted or excluded-by-solo tracks
-report silence. Stems are measured before master export normalization.
-When Voiceover and music tracks exist, `balance.voice_above_music_lu` reports
-the integrated difference between the combined stems. Track names supply
-roles: Voiceover is dialog; other audio tracks except Sound effects/SFX are
-music. This convention is not automatic speech/music classification.
+LUFS, maximum short-term LUFS and loudness range; `per_second: true` adds
+full three-second windows sampled each second (the timestamp is the window
+end). Muted or excluded-by-solo tracks report silence. Stems are measured
+before master export normalization. When Voiceover and music tracks
+exist, `balance` reports the voice over the music in three named windows
+(ADR-096): `program` (the integrated difference over the whole stretch),
+`speech` (both stems' 100 ms steps over the lines, each from its first
+word to its last, taken together) and `per_line` (each line alone: the
+lowest, median and highest margin). A line is a voice clip, trimmed to
+where its stem sounds within 40 dB of its loudest. Track names supply
+roles: Voiceover is dialog; other audio tracks except Sound effects/SFX
+are music. This convention is not automatic speech/music classification.
 
 `duck_under_speech {clip_id, voice_above_music_lu: 10}` measures the voice
 and selected music clip, chooses attenuation up to 40 dB and measures the
-result before applying editable keys. It answers depth, the measurement
-window, achieved difference and whether it met the target within 0.5 LU.
-The window spans the first through last detected speech, including pauses;
-this is a window-level target, not a promise about every word. Without the
-target, fixed-depth ducking behaves as before.
+result before applying editable keys, all from one render of each stem
+over the lines. It answers depth and the speech window's balance, its
+target and whether it met it within 0.5 LU, plus the lines' margins.
+`min_line_lu: N` holds every line to N LU: each line (a voice clip's
+speech, pauses under a second bridged) gets its own depth, deepened by
+what it lacks and measured again (up to four passes); nearby lines share
+a dip, the level moving in the pause between them. Without a target,
+fixed-depth ducking behaves as before.

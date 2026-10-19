@@ -305,14 +305,31 @@ Sound by role ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent 
 Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
 
 - `measure_loudness` `{"spec": "online"|"ebu_r128"|"atsc_a85", "loudness",
-  "start", "end"}` renders the mix as export does and answers
-  `integrated_lufs`, `loudness_range_lu`, `short_term_max_lufs`,
-  `momentary_max_lufs`, `true_peak_dbtp`, `sample_peak_dbfs`, `pass` and
-  `problems` (every spec when none is named; `clips` when the mix passes
-  full scale; a `fix` when it fails). With `loudness` it measures what
-  `export_video` at that target delivers. `by_track` adds each audio
-  track's loudness with its `role`, and the dialog stem against the music
-  stem (by role).
+  "start", "end", "kind", "by_track", "per_second"}` renders the mix as
+  export does and answers `integrated_lufs`, `loudness_range_lu`, `range`
+  (the LRA against what `kind` usually spans: film 5-15 LU, ad 3-8, social
+  3-10, podcast 3-8, any 3-15, with a `verdict` and a note when it is flat
+  or wide), `short_term_max_lufs`, `momentary_max_lufs`, `true_peak_dbtp`,
+  `sample_peak_dbfs`, `pass` and `problems` (every spec when none is
+  named; `clips` when the mix passes full scale; a `fix` when it fails).
+  With `loudness` it measures what `export_video` at that target delivers.
+- `by_track` measures each audio track alone as mixed, with its `role`
+  (`integrated_lufs`,
+  `short_term_max_lufs`, `loudness_range_lu`; `per_second: true` adds the
+  three-second loudness every second) and the voice (the dialog tracks) over
+  the music (the music tracks, by role) in three named windows ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+  `program` (the whole stretch, the music between lines in: it reads
+  lowest), `speech` (while the voice speaks, its lines from first word to
+  last, together) and `per_line` (each line alone: `min_lu`, `median_lu`,
+  `max_lu` and where the lowest is).
+- `duck_under_speech` `{clip_id, voice_above_music_lu?, min_line_lu?,
+  depth?}` keys the music down under speech. `voice_above_music_lu` aims
+  the speech window; `min_line_lu` holds every line to at least that many
+  LU, each line's dip as deep as it needs (`depth`, or the depth the
+  speech target chose, is the least); both are met by rendering the stems
+  and measuring again. `balance` answers the speech window's numbers,
+  `target_lu` and `met`, and `per_line` (with `min_line_lu`, `each` line's
+  margin and dip).
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.
@@ -325,22 +342,36 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   {"text": "Meet OpenFrame. [pause 0.4] The editor on your own computer."},
   {"text": "Every edit is a tool an agent can call,", "voice": "am_michael"},
   {"text": "so a whole film can be made by asking.", "voice": "am_michael", "pause_after": 0.8},
-  {"text": "Free. [beat] Yours.", "at": 12, "caption": "Free and yours."}],
- "voice": "af_heart", "pronounce": {"OpenFrame": "Open Frame", "MCP": "M C P"}}
+  {"text": "Free. [beat] Yours.", "at": 12, "caption": "Free and yours.", "pace": "slow"}],
+ "voice": "af_heart", "read_as": "ad", "pronounce": {"OpenFrame": "Open Frame", "MCP": "M C P"}}
 ```
 
 - Each line is read on this machine, whole, and placed after the one
   before at its real length (or at its `at`, never overlapping) on a new
   Voiceover track, with a caption per line, as one undo step with its
   speech files.
+- Pace ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+  each line lands on its words a second over its speech (first word to
+  last): `read_as` `narration` (2.3-2.8, the default), `ad` (2.6-3.1) or
+  `social` (2.8-3.4), or `words_per_second` `[lowest, highest]` for the
+  call or a line. With no `speed`, a line is read at a speed guessed from
+  its syllables, measured, and read again at the speed the measure calls
+  for (up to three reads, speeds 0.6-1.3; the audio is never stretched).
+  Heart narrates at 0.6-0.9. A `speed` given is kept as given.
 - Per line: `voice` (another speaker, or a blend `"af_heart:70,af_bella:30"`),
-  `speed`, `at`, `pause_after`, `paragraph`, `caption`, `pace` (`slow`,
-  `normal`, `fast`: the pace the line is meant to have, kept with its
-  script; review then flags a slow line only under 2 syllables a second, a
-  fast one only over 7.5, and a fast line is not read again slower). The gap after a
+  `speed`, `words_per_second`, `at`, `pause_after`, `paragraph`, `caption`,
+  `pace` (`slow`, `normal`, `fast`: the pace the line is meant to have,
+  kept with its script; it moves the line's band half a word a second, for
+  the read and the review). The gap after a
   line follows its ending unless `pause_after` or the call's `gap` says
   otherwise: 0.4 s after a sentence, 0.1 s after a comma, 0.6 s after an
   ellipsis, 0.8 s after a paragraph.
+- Emphasis cannot be directed: Kokoro takes phonemes, punctuation and one
+  speed per input, and raising a word's stress (its author's own emphasis
+  mark) or quoting it measured no emphasis (ADR-096). `*word*` stars are
+  dropped from the voice and the caption, and the answer's `notes` says
+  so and what works instead: the word last in its phrase, or
+  `[pause 0.2]` before it.
 - Pause marks inside a line: `[pause]` (0.5 s), `[pause 0.4]`,
   `[pause 300ms]`, `[beat]` (1 s), `<break time="0.4s"/>`. The voice's own
   pause there is lengthened; where it ran through, the line is read in two
@@ -348,25 +379,32 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   `split`). Captions never show a mark.
 - `pronounce` respells words for the voice only; captions keep them.
 - `quality`: `best` (fp32, the default) or `draft` (8-bit); `finish`:
-  `natural` (the default: a reader's pauses, rushed lines read slower, EQ,
-  one loudness, room tone, fades, the voice compressor and a touch of
-  room), `clean` or `raw`
+  `natural` (the default: a reader's pauses, EQ, one loudness, room tone,
+  fades, the voice compressor and a touch of room), `clean` or `raw`
   ([[ADR-084 Voiceover is read at full precision and finished like a recording]]).
   `enhance: false` drops the compressor.
 - It answers `{"lines": [{"text", "start", "end", "seconds", "voice",
-  "speed", "voice_clip", "caption_clip", "pauses"?}], "end", "finish",
+  "speed", "words_per_second", "target_words_per_second", "speed_chosen"?,
+  "reads"?, "voice_clip", "caption_clip", "pauses"?}], "end", "finish",
   "engine": {"quality", "device", "dtype"}}`: cut the footage to those
   times.
 
 `review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
-timeline; a short word a letter off is `minor`), `words_per_second`,
-`syllables_per_second`, `lead_silence`, `tail_silence`,
+timeline; a short word a letter off is `minor`), `pace`
+(`target_words_per_second`, `over_speech` and `over_clip` words and
+syllables a second, `on_target`), `lead_silence`, `tail_silence`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
-`range_st`), `voice_above_music_lu`, a `verdict` (`ok` or the problems)
-and `fixes` (`{problem, tool, args}`), plus a `summary` (lines ok, the
-script's words a second, the loudness spread). A line that differs from
+`range_st`), `voice_above_music_lu` (the line window: this line, first
+word to last), a `verdict` (`ok` when nothing fails, or the problems),
+`fixes` (`{problem, tool, args}`) and `advice` (`{note, tool?, args?}`:
+notes that do not fail the line, such as a pace within a tenth of its
+band), plus a `summary` (lines ok, to fix and with advice; the lines'
+words a second, the script's words a second with the gaps between lines
+in, the lines' margins over the music, the loudness spread). Pace is
+judged in words a second against the band the line was read to;
+syllables a second only catch long words rushed. A line that differs from
 its script is heard again by Whisper small (`recheck`, default true; about
 250 MB downloaded once): each difference gains `likely`, `recognizer` (heard
 right the second time: no fix, a `notes` entry says so) or `voice`, and the
@@ -376,10 +414,12 @@ line `heard_again` and `match_again` ([[ADR-092 A voice's known script decides i
 a slower read with the advice to reword; never a placeholder.
 Automatic captions and `get_transcript` give a whole voice take with a
 known script its script's words, timed by Whisper. `retake_voiceover`
-(`{"clip_id", "text"?, "caption"?, "voice"?, "speed"?, "pronounce"?,
-"quality"?, "finish"?, "pace"?, "ripple"?}`) reads one line again in its place:
-same clip id, its caption follows, the old take leaves the library,
-`ripple` moves the lines and captions after it. `list_catalog` section
+(`{"clip_id", "text"?, "caption"?, "voice"?, "read_as"?,
+"words_per_second"?, "speed"?, "pronounce"?, "quality"?, "finish"?,
+"pace"?, "ripple"?}`) reads one line again in its place: same clip id,
+its caption follows, the old take leaves the library, `ripple` moves the
+lines and captions after it. A pace asked for (or a line whose speed was
+chosen) is landed again by measuring; a speed given before is kept. `list_catalog` section
 `voices` describes every voice for casting; `help` topic `voiceover` is
 the playbook.
 
@@ -426,10 +466,21 @@ Original music ([[Features]], Generated music;
 
 Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 
-- `analyze_music` `{clip_id, markers?}`: tempo, beats, downbeats, phrases,
-  sections (intro, verse, build, drop, breakdown, outro, with energy),
-  per-beat energy, hits and the drop, in timeline seconds; `markers`
-  (`beats`, `bars`, `phrases`, `sections`, `drop`) also drops markers.
+- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?}`:
+  tempo, beats, downbeats, phrases, sections (intro, verse, build, drop,
+  breakdown, outro, with energy), per-beat energy, hits and the drops, in
+  timeline seconds; `markers` (`beats`, `bars`, `phrases`, `sections`,
+  `drop`) also drops markers. The whole music file is read (once per file
+  and hints; files over ten minutes, the clip's stretch and a minute either
+  side) and its grid mapped through the clip's in-point, speed or speed
+  curve and position, so a trimmed or moved clip keeps the file's bar phase
+  and drops; `source` says what was read and whether it was cached.
+  `confidence` (0..1: `tempo`, `bars`, `sections`) says how sure each
+  reading is, with a `note` naming the hint to give when one is low. Hints
+  in the file's own seconds replace what is detected: `bpm`,
+  `first_downbeat` (a bar's first beat; with `bpm`, the whole grid) and
+  `cues` (`[{at, label}]`, each part to the next; a drop cue after another
+  part is a drop).
 - `cut_to_beats` `{media: [{asset_id, in?, beats?}], grid?, beats?,
   every?, pattern?, start?, end?}`: shots end to end on the main track,
   every cut on a beat, bar or phrase.
@@ -627,11 +678,16 @@ headless drive measures gaps and transition coverage using these hooks.
 
 Analysis regression drives: `music-structure` reads the private track and
 cue sheet from `scratch/`, checking every section and drop within one bar.
-`voice-balance` uses `add_voiceover` and the music fixture, checks per-track
-LUFS, a 10 LU target and undo. Its optional `{recorded: true}` argument uses
-`speech-test.wav` when testing the balance path without synthesis; report
-that mode separately. Speech synthesis still requires its initial model
-download. MCP tool reference pages are regenerated from the tool schemas.
+`music-trimmed` generates a score shaped like it and checks that trimmed
+and moved clips keep the file's bar phase and drops, and that hints apply.
+`voice-balance` voices three lines over the music fixture, one turned
+down, and checks the three windows, the speech target, every line held
+to `min_line_lu`, summaries unless `per_second`, and the range for a film.
+`voice-pace` checks that narration lines land on 2.3-2.8 words a second,
+an ad's on 2.6-3.1, a given speed is kept, a retake lands a pace, and
+emphasis stars are dropped from voice and caption with a note. Speech synthesis still requires
+its initial model download. MCP tool reference pages are regenerated from
+the tool schemas.
 
 The `mcp-io-surface` drive checks the edge of the surface as an agent meets
 it in the web build: the short instructions and `help`'s guide, imports by

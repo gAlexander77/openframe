@@ -19,12 +19,13 @@ import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
 import { cutOutImage, makeMatte } from "../engine/cutout";
 import { SFX } from "../lib/sfx";
-import { BEATS_PER_BAR, detectBeats, musicStructure, type SectionLabel } from "../lib/analysis/beats";
+import { BEATS_PER_BAR, detectBeats, musicStructure, type MusicStructure } from "../lib/analysis/beats";
+import { confidenceNote, mapMusic, readMusicHints, type MappedMusic } from "../lib/analysis/musicMap";
 import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
-import { combinedLoudness, duckDepth, isDialog, loudnessDifference, speechWindows } from "../lib/analysis/balance";
+import { activeSpan, BALANCE_WINDOWS, duckDepth, isDialog, lineBalances, lineDepths, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
@@ -520,59 +521,66 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
   return { ...res, markers };
 }
 
-export interface MusicAnalysis {
-  bpm: number;
+export interface MusicAnalysis extends MappedMusic {
   beats_per_bar: number;
-  /** Timeline seconds, all of them: beats, bar starts, phrase starts, hits. */
-  beats: number[];
-  downbeats: number[];
-  phrases: number[];
-  hits: number[];
-  /** Each beat's loudness, 0..1 (1 the loudest beat, 0 24 dB under it). */
-  beat_energy: number[];
-  sections: { start: number; end: number; label: SectionLabel; energy: number }[];
-  /** Where the biggest rise into a loud section lands, or null. */
-  drop: number | null;
-  drops: number[];
+  /** What was read: the music file (its asset), the source seconds
+   * analyzed, whether the reading came from the cache, and how the clip
+   * plays it (in-point and speed) to put it on the timeline. */
+  source: { asset_id: Id; analyzed: [number, number]; whole_file: boolean; cached: boolean; clip_in: number; clip_speed: number | "curve"; reversed?: boolean };
+  /** How sure the reading is, 0..1 each (beats.ts MusicStructure). */
+  confidence: { tempo: number; bars: number; sections: number; note?: string };
+  /** The hints given, as used (source seconds). */
+  given?: { bpm?: number; first_downbeat?: number; cues?: number };
   /** Markers added (analyze_music's markers option). */
   markers: number;
 }
 
+/** A file this long or shorter is read whole; a longer one, the clip's own
+ * stretch with a minute either side (enough for its bars and parts). */
+const WHOLE_FILE_MAX = 600;
+const WINDOW_PAD = 60;
+
+/** Readings of music files, by asset, its length and the hints: a second
+ * clip of the same score, or a second call, reads nothing again. */
+const musicReadings = new Map<string, MusicStructure>();
+
 /**
  * A music clip's beat grid and parts (Final Cut's beat grid: song parts,
- * bars, beats), in TIMELINE seconds, for agents to cut to. `markers` also
+ * bars, beats), in TIMELINE seconds, for agents to cut to (ADR-096). The
+ * whole file is read (once; the reading is kept) and placed through the
+ * clip's in-point, speed and position, so a trimmed clip keeps the file's
+ * bar phase and drops; `hints` (a cue sheet's tempo, downbeat or parts, in
+ * the file's own seconds) replace what would be detected. `markers` also
  * drops markers for the kinds named, as one undoable edit: Beat, Bar,
  * Phrase, each section by name, and Drop (lib/epic.ts MUSIC_MARKERS).
  */
-export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[] } = {}): Promise<MusicAnalysis> {
+export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[]; bpm?: number; first_downbeat?: number; cues?: unknown } = {}): Promise<MusicAnalysis> {
   const signal = projectWork.signal();
+  const hints = readMusicHints(opts);
   const { clip: c0, asset } = resolve("beats", clipId);
   const id = c0.id;
-  const [from, to] = windowOf(c0);
-  const m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE));
+  const [lo, hi] = ops.sourceRange(c0, store.get().project.fps);
+  const whole = !(asset.duration > WHOLE_FILE_MAX);
+  // ponytail: past ten minutes (a long video's sound) only the clip's stretch and a minute either side is read.
+  const [from, to] = whole ? [0, asset.duration] : [Math.max(0, lo - WINDOW_PAD), Math.min(asset.duration, hi + WINDOW_PAD)];
+  const key = `${asset.id}|${from}|${to}|${JSON.stringify(hints)}`;
+  let m = musicReadings.get(key);
+  const cached = !!m;
+  if (!m) {
+    m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE, hints));
+    if (musicReadings.size >= 8) musicReadings.delete(musicReadings.keys().next().value!);
+    musicReadings.set(key, m);
+  }
   signal.throwIfAborted();
   const clip = stillThere(id);
   const fps = store.get().project.fps;
-  const end = clip.start + clip.duration;
-  // Seconds into the decoded window -> timeline seconds; null outside the clip.
-  const at = (t: number) => {
-    const f = frameOfSource(clip, t + from, fps);
-    return f >= clip.start && f < end ? +framesToSeconds(f, fps).toFixed(3) : null;
-  };
-  const all = (ts: number[]) => ts.map(at).filter((t): t is number => t !== null);
-  const kept = m.beats.map((t, i) => [at(t), m.energy[i]] as const).filter(([t]) => t !== null);
-  const edge = (t: number) => at(t) ?? +framesToSeconds(Math.min(end, Math.max(clip.start, frameOfSource(clip, t + from, fps))), fps).toFixed(3);
+  const note = confidenceNote(m.confidence, hints);
   const out: MusicAnalysis = {
-    bpm: m.bpm,
+    ...mapMusic(m, clip, fps, from),
     beats_per_bar: BEATS_PER_BAR,
-    beats: kept.map(([t]) => t!),
-    downbeats: all(m.downbeats),
-    phrases: all(m.phrases),
-    hits: all(m.hits),
-    beat_energy: kept.map(([, e]) => e),
-    sections: m.sections.map((s) => ({ ...s, start: edge(s.start), end: edge(s.end) })).filter((s) => s.end > s.start),
-    drops: all(m.drops),
-    drop: m.drop === null ? null : at(m.drop),
+    source: { asset_id: asset.id, analyzed: [+from.toFixed(3), +to.toFixed(3)], whole_file: whole, cached, clip_in: +clip.in.toFixed(3), clip_speed: clip.speedCurve ? "curve" : clip.speed, ...(clip.reverse ? { reversed: true } : {}) },
+    confidence: { ...m.confidence, ...(note ? { note } : {}) },
+    ...(Object.keys(hints).length ? { given: { ...(hints.bpm !== undefined ? { bpm: hints.bpm } : {}), ...(hints.firstDownbeat !== undefined ? { first_downbeat: hints.firstDownbeat } : {}), ...(hints.cues ? { cues: hints.cues.length } : {}) } } : {}),
     markers: 0,
   };
   const kinds = [...new Set(opts.markers ?? [])].filter((k) => k in MUSIC_MARKERS);
@@ -588,7 +596,7 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     );
     out.markers = store.get().project.markers.length - before;
   }
-  finish("beats", `${Math.round(m.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
+  finish("beats", `${Math.round(out.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
   return out;
 }
 
@@ -659,8 +667,37 @@ export interface DuckEdit {
   /** Stretches of speech the music dips under. */
   dips: number;
   keys: number;
+  /** The dip's depth; with min_line_lu, the least (each line's own is in balance.per_line.each). */
   depth_db?: number;
-  balance?: { start: number; end: number; dialog_lufs: number; music_lufs: number; voice_above_music_lu: number; target_lu: number; met: boolean };
+  balance?: DuckBalance;
+}
+
+/** What the music sits under the voice, measured once the dips are set,
+ * in the windows lib/analysis/balance.ts names (ADR-096). */
+export interface DuckBalance {
+  /** Which window the numbers at this level are: speech. */
+  window: "speech";
+  means: string;
+  start: number;
+  end: number;
+  /** Stretches of speech, and their seconds together. */
+  stretches: number;
+  seconds: number;
+  dialog_lufs: number | null;
+  music_lufs: number | null;
+  voice_above_music_lu: number | null;
+  /** voice_above_music_lu's target, when one was given. */
+  target_lu?: number;
+  /** Every target given was met (within 0.5 LU over speech; every line at its minimum). */
+  met?: boolean;
+  per_line: (NonNullable<ReturnType<typeof marginSummary>> | { lines: 0 }) & {
+    window: "line";
+    means: string;
+    min_target_lu?: number;
+    met?: boolean;
+    /** With min_line_lu: each line, its margin and its own dip. */
+    each?: (LineBalance & { depth_db: number })[];
+  };
 }
 
 /** Clips with sound that play under `clip`: not muted, not disabled. */
@@ -685,20 +722,27 @@ const SFX_FILES = new Set(Object.values(SFX).map((s) => `${s.label}.wav`));
  * Dip a music clip under the speech of every other clip with sound that
  * plays with it, as volume keyframes the user can adjust (one undo step;
  * existing volume keyframes are replaced). Speech is wherever the silence
- * detector finds no silence.
+ * detector finds no silence; a line is one clip's speech, its pauses under
+ * a second bridged. voice_above_music_lu aims the voice that far over the
+ * music while it speaks (all lines together); min_line_lu holds every line
+ * to at least that margin, each line dipping as deep as it needs. Both are
+ * measured on the rendered stems and met by measuring again (ADR-096).
  * ponytail: every other audible clip counts as speech, music included; a
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
-export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> & { voice_above_music_lu?: number } = {}): Promise<DuckEdit> {
+export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> & { voice_above_music_lu?: number; min_line_lu?: number } = {}): Promise<DuckEdit> {
   const scope = projectWork.signal();
   const { clip, asset } = resolve("ducking", clipId);
   let depth = opts.depth ?? state.settings.ducking.depth;
   const target = opts.voice_above_music_lu;
+  const minLine = opts.min_line_lu;
   if (target !== undefined && (!Number.isFinite(target) || target < 0 || target > 30)) throw new Error("Voice target must be between 0 and 30 LU.");
+  if (minLine !== undefined && (!Number.isFinite(minLine) || minLine < 0 || minLine > 30)) throw new Error("min_line_lu must be between 0 and 30 LU.");
+  const measuring = target !== undefined || minLine !== undefined;
   const original = store.get().project;
   const fps = store.get().project.fps;
   let voices = voicesUnder(clip);
-  if (target !== undefined) {
+  if (measuring) {
     const dialogIds = new Set(original.tracks.filter(t => isDialog(t, original)).flatMap(t => t.clips.map(c => c.id)));
     if (dialogIds.size) voices = voices.filter(v => dialogIds.has(v.clip.id));
   }
@@ -707,8 +751,9 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     toast(msg, "error");
     throw new Error(msg);
   }
-  const spans = await job("ducking", clip, `Finding speech under ${asset.name}`, async (progress, signal) => {
-    const out: [number, number][] = [];
+  // Each voice clip's speech, timeline frames.
+  const perClip = await job("ducking", clip, `Finding speech under ${asset.name}`, async (progress, signal) => {
+    const out: [number, number][][] = [];
     for (const [i, v] of voices.entries()) {
       const [from, to] = windowOf(v.clip);
       const pcm = await decodeMono(v.asset, from, to, SILENCE_RATE, (x) => progress((i + x) / voices.length), signal);
@@ -719,69 +764,116 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
         at = r.end;
       }
       if (at < to - from) speech.push({ start: from + at, end: to });
-      out.push(...framesOfRanges(v.clip, speech, fps));
+      out.push(framesOfRanges(v.clip, speech, fps));
     }
     return out;
   });
   scope.throwIfAborted();
   const c = stillThere(clip.id);
   const frames = (s: number) => secondsToFrames(s, fps);
-  const keysAt = (db: number) => duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: db, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) });
+  const inside = (s: [number, number]) => [Math.max(c.start, s[0]), Math.min(c.start + c.duration, s[1])] as [number, number];
+  // The lines: each clip's speech under the music, pauses under a second bridged.
+  const lines = perClip.flatMap((spans) => speechWindows(spans.map(inside).filter(([a, b]) => b > a), frames(1))).sort((x, y) => x[0] - y[0]);
+  const spans = perClip.flat();
+  const lineOf = spans.map(([a, b]) => lines.findIndex(([x, y]) => a < y && b > x));
+  const keysAt = (db: number, lineDb?: number[]) =>
+    duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: db, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) }, lineDb && spans.map((_, i) => (lineOf[i] >= 0 ? lineDb[lineOf[i]] : db)));
   let keys = keysAt(depth);
-  let balance: DuckEdit["balance"];
+  let balance: DuckBalance | undefined;
   const withKeys = (p: typeof original, ks: typeof keys) => {
     if (ops.findClip(p, c.id)?.clip.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: c.id, path: "volume" });
     return ks.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: c.id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
   };
-  const overlaps = spans.map(([a,b]) => [Math.max(c.start,a), Math.min(c.start+c.duration,b)]).filter(([a,b]) => b>a);
-  if (target !== undefined && !overlaps.length) {
+  if (measuring && !lines.length) {
     finish("ducking", "No speech found under it");
     return { voices: voices.length, dips: 0, keys: 0 };
   }
-  if (target !== undefined && overlaps.length) {
-    const start = framesToSeconds(Math.min(...overlaps.map(s => s[0])), fps);
-    const end = framesToSeconds(Math.max(...overlaps.map(s => s[1])), fps);
+  let lineDb: number[] | undefined;
+  if (measuring) {
+    // One render of each stem over the lines serves every window inside it.
+    const sec = (f: number) => framesToSeconds(f, fps);
+    const t0 = sec(lines[0][0]), t1 = sec(Math.max(...lines.map((l) => l[1])));
+    const win = lines.map(([a, b]) => [sec(a), sec(b)] as [number, number]);
     const stem = (p: typeof original, ids: string[]) => ({ ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(x => ids.includes(x.id)) })) });
-    // Measure only while someone speaks. One window from the first word to
-    // the last took in the bed between lines too, where the dip releases,
-    // and the target then pushed every line's dip to its 40 dB limit.
-    const windows = speechWindows(overlaps as [number, number][], frames(1)).map(([a, b]) => [framesToSeconds(a, fps), framesToSeconds(b, fps)] as const);
-    const measureSpeech = async (p: typeof original) => {
-      const parts: { lufs: number; seconds: number }[] = [];
-      for (const [a, b] of windows) {
-        const m = await measureMix(p, a, b, { signal: scope });
-        parts.push({ lufs: m.integrated, seconds: m.seconds });
-      }
-      return { integrated: combinedLoudness(parts) };
-    };
-    const voice = await measureSpeech(stem(original, voices.map(v => v.clip.id)));
-    const flat = withKeys(original, keysAt(0));
-    const bed = await measureSpeech(stem(flat, [c.id]));
-    depth = duckDepth(voice.integrated, bed.integrated, target);
-    // Render the actual keyed bed too: fades, gaps and effect tails can
-    // keep the achieved attenuation from matching the requested depth.
-    for (let attempt = 0; attempt < 4; attempt++) {
+    const render = async (p: typeof original) => (await measureMix(p, t0, t1, { signal: scope })).steps;
+    const voice = await render(stem(original, voices.map(v => v.clip.id)));
+    // Each line from its first word to its last: the voice's own steps say where.
+    const said = win.map(([a, b]): [number, number] => activeSpan(voice, t0, a, b) ?? [a, b]);
+    // Two voices at once count once.
+    const speaking = speechWindows(said, 0.001);
+    const speechLufs = (steps: number[]) => windowLoudness(steps, t0, speaking);
+    const dialogLufs = speechLufs(voice);
+    const flat = await render(stem(withKeys(original, keysAt(0)), [c.id]));
+    if (target !== undefined) {
+      // Measure only while someone speaks. One window from the first word to
+      // the last took in the bed between lines too, where the dip releases,
+      // and the target then pushed every line's dip to its 40 dB limit.
+      depth = +duckDepth(dialogLufs, speechLufs(flat), target).toFixed(1);
+    } else if (opts.depth === undefined) depth = 0;
+    // Render the actual keyed bed: fades, gaps and effect tails can keep
+    // the achieved attenuation from matching the requested depth.
+    let bed = flat;
+    keys = keysAt(depth);
+    for (let attempt = 0; attempt < 4 && (target !== undefined || depth > 0); attempt++) {
       keys = keysAt(depth);
-      const measured = await measureSpeech(stem(withKeys(original, keys), [c.id]));
-      const difference = loudnessDifference(voice.integrated, measured.integrated);
+      bed = await render(stem(withKeys(original, keys), [c.id]));
+      if (target === undefined) break;
+      const difference = loudnessDifference(dialogLufs, speechLufs(bed));
       if (difference === null) throw new Error("Cannot measure voice balance in this window.");
-      balance = { start, end, dialog_lufs: voice.integrated, music_lufs: measured.integrated,
-        voice_above_music_lu: difference, target_lu: target, met: Math.abs(target - difference) <= 0.5 };
-      if (balance.met || attempt === 3) break;
-      const next = Math.max(0, Math.min(40, depth + target - difference));
-      if (next === depth) break;
+      if (Math.abs(target - difference) <= 0.5) break;
+      const next = +Math.max(0, Math.min(40, depth + target - difference)).toFixed(1);
+      if (next === depth || attempt === 3) break;
       depth = next;
+    }
+    // Every line to its minimum: each one's dip as deep as it needs.
+    let each = lineBalances(voice, bed, t0, said);
+    if (minLine !== undefined) {
+      lineDb = lineDepths(said.map(() => depth), each.map((l) => l.voice_above_music_lu), minLine, depth);
+      for (let attempt = 0; attempt < 4 && lineDb.some((d) => d > depth); attempt++) {
+        keys = keysAt(depth, lineDb);
+        bed = await render(stem(withKeys(original, keys), [c.id]));
+        each = lineBalances(voice, bed, t0, said);
+        const next = lineDepths(lineDb, each.map((l) => l.voice_above_music_lu), minLine, depth);
+        // The keys kept are the ones just measured.
+        if (next.every((d, i) => d === lineDb![i]) || attempt === 3) break;
+        lineDb = next;
+      }
     }
     scope.throwIfAborted();
     if (store.get().project !== original) throw new Error("The project changed while measuring; run duck_under_speech again.");
+    const music = speechLufs(bed);
+    const difference = loudnessDifference(dialogLufs, music);
+    const r1 = (x: number | null) => (x === null || !Number.isFinite(x) ? null : +x.toFixed(1));
+    const lineMet = minLine === undefined ? undefined : each.every((l) => l.voice_above_music_lu === null || l.voice_above_music_lu >= minLine - 0.05);
+    const speechMet = target === undefined || difference === null ? undefined : Math.abs(target - difference) <= 0.5;
+    balance = {
+      window: "speech",
+      means: BALANCE_WINDOWS.speech,
+      start: +t0.toFixed(3),
+      end: +t1.toFixed(3),
+      stretches: speaking.length,
+      seconds: +speaking.reduce((n, [a, b]) => n + b - a, 0).toFixed(1),
+      dialog_lufs: r1(dialogLufs),
+      music_lufs: r1(music),
+      voice_above_music_lu: r1(difference),
+      ...(target !== undefined ? { target_lu: target } : {}),
+      ...(speechMet !== undefined || lineMet !== undefined ? { met: speechMet !== false && lineMet !== false } : {}),
+      per_line: {
+        window: "line",
+        means: BALANCE_WINDOWS.line,
+        ...(marginSummary(each) ?? { lines: 0 }),
+        ...(minLine !== undefined ? { min_target_lu: minLine, met: lineMet, each: each.map((l, i) => ({ ...l, depth_db: lineDb?.[i] ?? depth })) } : {}),
+      },
+    };
   }
   const dips = keys.filter((k, i) => k.v < c.volume && !(keys[i - 1]?.v < c.volume)).length;
-  if (!dips && target === undefined) {
+  if (!dips && !measuring) {
     finish("ducking", "No speech found under it");
     return { voices: voices.length, dips: 0, keys: 0 };
   }
   edit("Duck under speech", (p) => withKeys(p, keys));
-  finish("ducking", `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
+  const deepest = lineDb ? Math.max(depth, ...lineDb) : depth;
+  finish("ducking", deepest > depth ? `Lowered ${depth}-${deepest} dB under ${plural(lines.length, "line")}` : `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
   return { voices: voices.length, dips, keys: keys.length, depth_db: depth, ...(balance ? { balance } : {}) };
 }
 

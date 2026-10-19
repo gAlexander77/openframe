@@ -17,28 +17,40 @@ export interface DuckOptions {
 /**
  * Volume keyframes (frames from the clip's start, linear gain) that hold
  * `base` and dip to `base - depthDb` under `speech` (timeline frame spans
- * [a, b)). The clip covers timeline frames [start, end).
+ * [a, b)). The clip covers timeline frames [start, end). `depths` gives
+ * each span its own depth instead (dB, in `speech`'s order: a line the
+ * music covers more dips deeper). Spans close enough to share a dip stay
+ * down between them, and where their depths differ the level moves in the
+ * pause between them, as a mixer rides a fader between lines.
  */
-export function duckKeys(speech: [number, number][], start: number, end: number, base: number, o: DuckOptions): { f: number; v: number }[] {
-  const low = base * Math.pow(10, -o.depthDb / 20);
+export function duckKeys(speech: [number, number][], start: number, end: number, base: number, o: DuckOptions, depths?: number[]): { f: number; v: number }[] {
   const spans = speech
-    .map(([a, b]) => [Math.max(a, start), Math.min(b, end)] as [number, number])
-    .filter(([a, b]) => b > a)
-    .sort((x, y) => x[0] - y[0]);
-  const merged: [number, number][] = [];
+    .map(([a, b], i) => ({ a: Math.max(a, start), b: Math.min(b, end), d: depths?.[i] ?? o.depthDb }))
+    .filter((s) => s.b > s.a)
+    .sort((x, y) => x.a - y.a);
+  // Overlapping spans are one, at the deeper depth; nearby ones share a dip.
+  const groups: { a: number; b: number; d: number }[][] = [];
   for (const s of spans) {
-    const last = merged[merged.length - 1];
-    if (last && s[0] - last[1] <= o.attack + o.release + o.hold) last[1] = Math.max(last[1], s[1]);
-    else merged.push([...s]);
+    const group = groups[groups.length - 1];
+    const last = group?.[group.length - 1];
+    if (last && s.a <= last.b) [last.b, last.d] = [Math.max(last.b, s.b), Math.max(last.d, s.d)];
+    else if (last && s.a - last.b <= o.attack + o.release + o.hold) group.push({ ...s });
+    else groups.push([{ ...s }]);
   }
   const lastFrame = end - start - 1;
+  const low = (d: number) => base * Math.pow(10, -d / 20);
   const keys: { f: number; v: number }[] = [];
-  for (const [a, b] of merged) {
-    const down = a - start;
-    const up = b - start;
+  for (const g of groups) {
+    const down = g[0].a - start;
+    const up = g[g.length - 1].b - start;
     if (down - o.attack > 0) keys.push({ f: down - o.attack, v: base });
-    keys.push({ f: Math.max(0, down), v: low });
-    keys.push({ f: Math.min(lastFrame, up), v: low });
+    keys.push({ f: Math.max(0, down), v: low(g[0].d) });
+    for (let i = 1; i < g.length; i++) {
+      if (g[i].d === g[i - 1].d) continue;
+      keys.push({ f: Math.max(0, g[i - 1].b - start), v: low(g[i - 1].d) });
+      keys.push({ f: Math.max(0, g[i].a - start), v: low(g[i].d) });
+    }
+    keys.push({ f: Math.min(lastFrame, up), v: low(g[g.length - 1].d) });
     if (up + o.release < lastFrame) keys.push({ f: up + o.release, v: base });
   }
   // Same frame twice (a dip from the clip's first frame): the later one wins.

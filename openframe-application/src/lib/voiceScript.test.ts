@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPronounce, breaksOf, chunkSentences, layoutLines, matchPauses, numberWords, parseLine, pauseAfter, syllables, writtenWords } from "./voiceScript";
+import { applyPronounce, asksEmphasis, breaksOf, chunkSentences, EMPHASIS_NOTE, layoutLines, matchPauses, numberWords, parseLine, pauseAfter, syllables, writtenWords } from "./voiceScript";
 
 describe("pause marks", () => {
   it("takes marks out of the caption and puts the pause where the mark was", () => {
@@ -64,6 +64,23 @@ describe("the pronunciation map", () => {
     const l = parseLine("MCP [pause 0.6] OpenFrame.", map);
     expect(l.spoken).toBe("M C P, Open Frame.");
     expect(l.spoken.slice(0, l.pauses[0].at)).toBe("M C P,");
+  });
+});
+
+describe("emphasis", () => {
+  it("drops *word* stars from the voice and the caption, and says so", () => {
+    const l = parseLine("I never said *she* took it. [pause] Not *any day*.");
+    expect(l.spoken).toBe("I never said she took it. Not any day.");
+    expect(l.written).toBe("I never said she took it. Not any day.");
+    expect(writtenWords("We could go *or* stay.")).toEqual(["We", "could", "go", "or", "stay."]);
+    expect(asksEmphasis("We could go *or* stay.")).toBe(true);
+    expect(asksEmphasis("Five * stars")).toBe(false);
+    expect(EMPHASIS_NOTE).toMatch(/not voiced.*last in its phrase.*\[pause 0\.2\]/);
+  });
+
+  it("respells a starred word as respelled, and drops a stray star", () => {
+    expect(parseLine("It speaks *MCP*.", { MCP: "M C P" }).spoken).toBe("It speaks M C P.");
+    expect(parseLine("Five * stars").spoken).toBe("Five stars");
   });
 });
 

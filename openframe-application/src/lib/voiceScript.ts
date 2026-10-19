@@ -52,6 +52,21 @@ export function applyPronounce(text: string, map: Record<string, string> | undef
   return text.replace(re, (m) => map![m] ?? m);
 }
 
+/** `*word*`, markdown's emphasis, as a script may carry it. */
+const STAR = /\*([^*\n]+)\*/g;
+
+/** Stars out: the voice cannot be directed to stress a word (ADR-096:
+ * raising its stress, the voice model's one handle, measured no
+ * emphasis), and neither the voice nor the caption should say them. */
+const unstar = (s: string) => s.replace(STAR, "$1").replace(/\*/g, "");
+
+/** Does the script mark a word for emphasis? (Answered with a note.) */
+export const asksEmphasis = (text: string) => /\*[^*\n]+\*/.test(text);
+
+/** What a voiceover answers when a line asks for emphasis. */
+export const EMPHASIS_NOTE =
+  "*word* emphasis is not voiced, and the stars were dropped: the voice model (Kokoro) takes only phonemes, punctuation and one speed per line, and raising a word's stress, its own emphasis mark, measured no emphasis (ten short words: pitch and level moved either way, length +0.01 s). For a word to stand out, put it last in its phrase, where English puts the main stress and the voice lengthens it, or [pause 0.2] before it.";
+
 /** Split a line at its pause marks into what is written, what is spoken
  * and where the pauses go. */
 export function parseLine(text: string, pronounce?: Record<string, string>): ParsedLine {
@@ -76,7 +91,7 @@ export function parseLine(text: string, pronounce?: Record<string, string>): Par
     }
   }
   const tidy = (s: string) => s.replace(/\s+/g, " ").trim();
-  const written = tidy(parts.join(" "));
+  const written = tidy(unstar(parts.join(" ")));
   let before = 0, after = 0;
   // Marks with no words before them (or after them) are line-edge silence.
   while (marks.length && !letters(parts[0])) {
@@ -90,7 +105,7 @@ export function parseLine(text: string, pronounce?: Record<string, string>): Par
   let spoken = "";
   const ats: number[] = [];
   parts.forEach((raw, i) => {
-    let s = tidy(applyPronounce(raw, pronounce));
+    let s = tidy(unstar(applyPronounce(raw, pronounce)));
     if (i < marks.length && s && !ENDS_PHRASE.test(s)) s += ",";
     spoken = spoken && s ? `${spoken} ${s}` : spoken || s;
     if (i < marks.length) ats.push(spoken.length);

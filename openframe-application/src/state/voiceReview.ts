@@ -10,7 +10,7 @@
 import { decodeMono } from "../engine/analyze";
 import { measureMix } from "../engine/mixdown";
 import { transcribePcm } from "../engine/transcribe";
-import { isMusic, isolateTracks } from "../lib/analysis/balance";
+import { BALANCE_WINDOWS, isMusic, isolateTracks } from "../lib/analysis/balance";
 import { pitchStats, pitchTrack, speechActivity } from "../lib/analysis/speech";
 import { toDbtp } from "../lib/analysis/truePeak";
 import { paramAt } from "../lib/keyframes";
@@ -18,8 +18,9 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { compareScript, judgeHearings, verdict, type LineMeasure } from "../lib/voiceReview";
-import { parseLine, syllables, writtenWords } from "../lib/voiceScript";
+import { advise, bandOf, compareScript, judgeHearings, verdict, type LineMeasure } from "../lib/voiceReview";
+import { paceOf } from "../lib/voicePace";
+import { parseLine } from "../lib/voiceScript";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -48,7 +49,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
   const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress");
   const fps = p.fps;
   try {
-    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; recheck?: { heard: string; match: number | null } })[] = [];
+    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; clipRate: ReturnType<typeof paceOf>["clip"]; recheck?: { heard: string; match: number | null } })[] = [];
     const heardPcm: Float32Array[] = [];
     for (const [k, c] of lines.entries()) {
       const asset = getAsset(p, c.assetId);
@@ -64,13 +65,16 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       const pitch = pitchStats(pitchTrack(pcm, RATE));
       const sp = asset.speech;
       const cmp = sp ? compareScript(sp.text, heard, sp.pronounce) : { words: heardWords.length, matched: heardWords.length, differences: [] };
-      // As mixed: the voice's track alone, and the music under it.
+      // As mixed: the voice's track alone, and the music under it, from the
+      // line's first word to its last (the line window, ADR-096: the music
+      // in its lead-in and tail is not under any word).
       const voiceTrack = findClip(p, c.id)!.track.id;
-      const voice = await measureMix(isolateTracks(p, [voiceTrack]), start, end, { signal });
+      const [said0, said1] = act ? [start + act.first / speed, start + act.last / speed] : [start, end];
+      const voice = await measureMix(isolateTracks(p, [voiceTrack]), said0, said1, { signal });
       const beds = p.tracks.filter((t) => isMusic(t, p) && t.id !== voiceTrack && t.clips.some((m) => m.start < clipEnd(c) && clipEnd(m) > c.start && (m.type === "audio" || m.type === "video")));
       let overMusic: number | null = null, musicClip: string | undefined, musicDuck = 0;
       if (opts.music !== false && beds.length) {
-        const bed = await measureMix(isolateTracks(p, beds.map((t) => t.id)), start, end, { signal });
+        const bed = await measureMix(isolateTracks(p, beds.map((t) => t.id)), said0, said1, { signal });
         overMusic = Number.isFinite(bed.integrated) && Number.isFinite(voice.integrated) ? voice.integrated - bed.integrated : null;
         const music = beds.flatMap((t) => t.clips).find((m) => m.start < clipEnd(c) && clipEnd(m) > c.start);
         musicClip = music?.id;
@@ -82,10 +86,9 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
           musicDuck = at > 0 && top > 0 ? 20 * Math.log10(top / at) : 40;
         }
       }
-      const said = sp ? writtenWords(sp.text) : heardWords.map((w) => w.text);
-      const words = said.length;
-      const syll = said.reduce((n, w) => n + syllables(w), 0);
-      const span = act ? (act.last - act.first) / speed : 0;
+      // Pace in two windows: over the speech (first word to last, its own
+      // pauses in) and over the clip (its lead-in and tail too).
+      const pace = paceOf(sp ? sp.text : heardWords.map((w) => w.text).join(" "), act ? (act.last - act.first) / speed : 0, end - start);
       measured.push({
         clipId: c.id,
         start,
@@ -95,10 +98,13 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         speed: sp?.speed,
         pronounce: sp?.pronounce,
         pace: sp?.pace,
+        asked: sp?.wps,
+        speedChosen: sp?.speedChosen,
         volume: c.volume,
         compressed: !!c.compressor,
-        wps: act && span > 0.3 ? round(words / span) : null,
-        sps: act && span > 0.3 ? round(syll / span) : null,
+        wps: pace.speech?.words_per_second ?? null,
+        sps: pace.speech?.syllables_per_second ?? null,
+        clipRate: pace.clip,
         lead: round(act ? act.first / speed : end - start)!,
         tail: round(act ? (pcm.length / RATE - act.last) / speed : 0)!,
         longestPause: round(Math.max(0, ...(act?.pauses ?? []).map((x) => (x.end - x.start) / speed)))!,
@@ -141,6 +147,8 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
     const median = levels.length ? levels[Math.floor(levels.length / 2)] : null;
     const out = measured.map((m) => {
       const fixes = verdict(m, levels.length > 1 ? median : null);
+      const advice = advise(m);
+      const band = bandOf(m);
       return {
         voice_clip: m.clipId,
         start: round(m.start, 3),
@@ -152,30 +160,49 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         differences: m.differences.map((d, i) => ({ kind: d.kind, ...(d.script ? { script: d.script } : {}), ...(d.heard ? { heard: d.heard } : {}), at: m.diffAt[i], ...(d.likely ? { likely: d.likely } : {}) })),
         ...(m.recheck ? { heard_again: m.recheck.heard, match_again: m.recheck.match } : {}),
         ...(m.differences.some((d) => d.likely === "recognizer") ? { notes: m.differences.filter((d) => d.likely === "recognizer").map((d) => `"${d.script ?? d.heard}": misheard by the first recognizer, heard right by a larger model; the voice is fine`) } : {}),
-        ...(m.pace && m.pace !== "normal" ? { pace: m.pace } : {}),
-        words_per_second: m.wps,
-        syllables_per_second: m.sps,
+        // Over the speech (what the band is held to) and over the clip.
+        pace: {
+          ...(m.pace && m.pace !== "normal" ? { meant: m.pace } : {}),
+          target_words_per_second: band,
+          over_speech: m.wps === null ? null : { words_per_second: m.wps, syllables_per_second: m.sps },
+          over_clip: m.clipRate ? { words_per_second: m.clipRate.words_per_second, syllables_per_second: m.clipRate.syllables_per_second } : null,
+          on_target: m.wps !== null && m.wps >= band[0] && m.wps <= band[1],
+        },
         lead_silence: m.lead,
         tail_silence: m.tail,
         longest_pause: m.longestPause,
         loudness_lufs: m.lufs,
         true_peak_dbtp: m.truePeak,
         pitch: m.pitchHz ? { median_hz: m.pitchHz, range_st: m.rangeSt } : null,
+        // This line alone, its first word to its last (the line window).
         voice_above_music_lu: m.overMusic,
+        // ok: nothing fails it (advice may still say something).
         verdict: fixes.length ? fixes.map((f) => f.problem).join("; ") : "ok",
         ...(fixes.length ? { fixes } : {}),
+        ...(advice.length ? { advice } : {}),
       };
     });
     const ok = out.filter((l) => l.verdict === "ok").length;
     const first = Math.min(...measured.map((m) => m.start + m.lead)), last = Math.max(...measured.map((m) => m.end - m.tail));
     const words = measured.reduce((n, m) => n + m.words, 0);
+    const rates = measured.map((m) => m.wps).filter((x): x is number => x !== null).sort((a, b) => a - b);
+    const margins = measured.map((m) => m.overMusic).filter((x): x is number => x !== null).sort((a, b) => a - b);
+    const mid = (xs: number[]) => xs[Math.floor(xs.length / 2)];
     return {
       lines: out,
       summary: {
         ok,
         to_fix: out.length - ok,
-        // The script's pace with its pauses: 2.3-2.8 for narration, up to 3 for an ad.
-        script_words_per_second: last > first ? round(words / (last - first)) : null,
+        with_advice: out.filter((l) => l.advice).length,
+        pace: {
+          on_target: out.filter((l) => l.pace.on_target).length,
+          ...(rates.length ? { lines_words_per_second: { min: rates[0], median: mid(rates), max: rates.at(-1)!, window: "each line over its speech, first word to last" } } : {}),
+          // The script's pace with every pause between lines in: lower than
+          // the lines' own (2.3-2.8 inside lines reads about 1.8-2.4 here).
+          script_words_per_second: last > first ? round(words / (last - first)) : null,
+          script_window: "the first line's first word to the last line's last word, the gaps between lines included",
+        },
+        ...(margins.length ? { voice_above_music: { window: "line", means: BALANCE_WINDOWS.line, min_lu: margins[0], median_lu: mid(margins), max_lu: margins.at(-1)! } } : {}),
         loudness_spread_lu: levels.length > 1 ? round(levels.at(-1)! - levels[0], 1) : 0,
         heard_with: TRANSCRIPT_MODEL.split("/").pop(),
         ...(measured.some((m) => m.recheck) ? { heard_again_with: RECHECK_MODEL.split("/").pop() } : {}),

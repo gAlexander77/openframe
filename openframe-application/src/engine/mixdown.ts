@@ -54,6 +54,10 @@ export const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChann
 
 export interface MixMeasurement extends LoudnessStats {
   shortTerm: { end: number; lufs: number }[];
+  /** K-weighted mean square of every 100 ms from `from` (LoudnessMeter's
+   * steps): any stretch inside can be measured from them without
+   * rendering again (lib/analysis/balance.ts windowLoudness). */
+  steps: number[];
   seconds: number;
   /** Linear, 4x oversampled. */
   truePeak: number;
@@ -99,5 +103,5 @@ export async function measureMix(p: Project, from: number, to: number, opts: { l
     plan = planLoudness(r.meter.integrated(), r.tp.peak, r.blocks, opts.loudness, ceilingFor(opts.loudness));
     if (plan) r = await pass(1, plan);
   }
-  return { seconds: total / rate, ...loudnessStats(r.meter.steps), shortTerm: shortTermSeries(r.meter.steps), truePeak: r.tp.peak, samplePeak: r.meter.peak, ...(plan !== undefined ? { plan } : {}) };
+  return { seconds: total / rate, ...loudnessStats(r.meter.steps), shortTerm: shortTermSeries(r.meter.steps), steps: r.meter.steps, truePeak: r.tp.peak, samplePeak: r.meter.peak, ...(plan !== undefined ? { plan } : {}) };
 }
