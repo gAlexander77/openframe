@@ -291,6 +291,14 @@ that it works offline. A bar shows progress and Cancel stops it. When it
 finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
+**Read a title aloud:** select a title, open Text > Text to speech, pick a
+voice, a speed and a quality, and click **Add voice**. The voice is made on
+this computer and lands on an audio track where the title starts; one
+Undo removes it and its file. Best quality downloads the full speech model
+(325 MB) the first time; Draft downloads a smaller one (92 MB). Voices are
+read at a narrator's pace with natural pauses, one level, and a quiet room
+under the silences.
+
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
 it (in a window too narrow for four columns the media library steps aside

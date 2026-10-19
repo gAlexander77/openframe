@@ -57,7 +57,11 @@ Brand   { name?, colors: { primary, secondary, accent, background, text },
           url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
-          sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
+          sticker?, folder?, favorite?, speech? }   (sticker: the library sticker an image was drawn from)
+Speech  { text, caption?, voice, speed, pronounce?: { word: respelling },
+          quality?: best|draft, finish?: natural|clean|raw }
+          (on a speech file the app read: the line as written, pause marks included;
+          review_voiceover compares against it, retake_voiceover reads it again)
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
           muted, hidden, locked, volume, pan? (-1..1, added to each clip's),

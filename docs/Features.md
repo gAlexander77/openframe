@@ -621,15 +621,45 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stops highlighting. `add_captions` takes `words`; `set_text` takes
   `highlight`.
 - **Text to speech on this machine** (Text tab > Text to speech, as in
-  CapCut): eight English voices from Kokoro-82M (Apache-2.0), Slow/Normal/
-  Fast; the voice lands on an audio track at the title's start, one undo
-  step. The first voice downloads the model (about 90 MB) once
-  ([[ADR-050 Text to speech runs Kokoro on the user's machine]]).
-- **Voiceover from a script** (agents: `add_voiceover`): every line spoken,
-  laid one after another at its real length on a new Voiceover track (a
-  line can be pinned to a time), with a caption per line timed to its
-  voice, as one undo step; the answer says where each line landed so the
-  footage can be cut to it. Two lines take about five seconds.
+  CapCut): thirteen English voices from Kokoro-82M (Apache-2.0), Slow/
+  Normal/Fast and Best or Draft quality; the voice lands on an audio track
+  at the title's start, one undo step with its speech file. The first
+  voice downloads the model once: 325 MB at Best (full precision, on
+  WebGPU or the CPU), 92 MB at Draft (8-bit)
+  ([[ADR-050 Text to speech runs Kokoro on the user's machine]],
+  [[ADR-084 Voiceover is read at full precision and finished like a recording]]).
+- **Natural voice** (every voice the app makes; [[Natural voiceover 2026-10-19]]):
+  read whole, a sentence at a time, at a narrator's speed (0.95); pauses
+  at commas and sentence ends lengthened to a reader's (0.28 s, 0.55 s);
+  a line the voice rushed read again slower; a low cut and a little
+  presence; every line at one loudness; quiet room tone under the pauses
+  instead of digital silence; faded edges; the voice compressor and a
+  touch of room on the clip. `finish: clean` or `raw` for less.
+- **Voiceover from a script, directed** (agents: `add_voiceover`): every
+  line read and laid one after another at its real length on a new
+  Voiceover track, with a caption per line timed to its voice, as one
+  undo step with its speech files (undo leaves nothing in the library).
+  Each line can have its own voice (several speakers in one call; blends
+  such as `af_heart:70,af_bella:30`), speed, time (`at`, on a beat or a
+  cut) and pause after; the gap after a line otherwise follows its ending
+  (a comma runs on, a sentence rests, a paragraph rests longer). Pauses
+  inside a line are written in it (`[pause 0.4]`, `[beat]`,
+  `<break time="0.4s"/>`) and lengthen the voice's own pause there, so
+  the sentence keeps its intonation; captions never show them.
+  `pronounce` respells names and acronyms for the voice while captions
+  keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
+- **Listen back** (agents: `review_voiceover`): Whisper hears each line
+  and it is compared with the script word by word; each line's pace
+  (words and syllables a second), silences, longest pause, loudness, true
+  peak, pitch range and margin over the music are measured, with a verdict
+  and the tool calls that fix what is wrong.
+- **Retake one line** (agents: `retake_voiceover`): new words, a voice, a
+  speed or a pronunciation, read and put in the line's place; its caption
+  follows, the old take leaves the library, and `ripple` moves the lines
+  after it; one undo step.
+- **Voices to cast** (`list_catalog` section `voices`): each voice's
+  accent, gender, its author's grade, character (measured pitch, melody
+  and pace) and what it suits, the most natural first.
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption

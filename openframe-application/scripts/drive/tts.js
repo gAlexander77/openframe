@@ -1,8 +1,9 @@
 // Text to speech drive (ADR-050): a title's Add voice makes speech with the
-// real Kokoro model (the first run downloads about 90 MB from Hugging
+// real Kokoro model (the first run downloads it from Hugging
 // Face, so it needs the network once) and places it on an audio track at
 // the title's start. Checks the clip, its length, and that it holds sound
-// shaped like speech (loud stretches with quieter gaps), then Undo.
+// shaped like speech (loud stretches with quieter gaps), then Undo, which
+// takes the speech file out of the library too.
 async (page) => {
   await page.setViewportSize({ width: 1600, height: 950 });
   await page.reload();
@@ -50,6 +51,8 @@ async (page) => {
   details.voice = { ok: r.start === 30 && r.duration > 1.5 && r.duration < 8 && /^Speech - Welcome back/.test(r.name), ...r, seconds };
   details.speechLike = { ok: r.loud > 10 && r.quiet > 2, loud: r.loud, quiet: r.quiet };
   await page.evaluate(() => window.videoEditor.action("undo"));
-  details.undo = { ok: !(await page.evaluate(() => window.videoEditor.project().tracks.some((t) => t.kind === "audio" && t.clips.length))) };
+  // One undo takes the voice and its speech file (nothing left in the library).
+  const undone = await page.evaluate(() => ({ clips: window.videoEditor.project().tracks.some((t) => t.kind === "audio" && t.clips.length), assets: window.videoEditor.project().assets.length }));
+  details.undo = { ok: !undone.clips && undone.assets === 0, ...undone };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

@@ -109,6 +109,24 @@ export interface Asset {
   sticker?: string;
   folder?: string;
   favorite?: boolean;
+  /** A voiceover line this file was spoken from on this machine
+   * (add_voiceover, retake_voiceover, text to speech): review_voiceover
+   * compares what it hears with `text`, retake_voiceover reads it again. */
+  speech?: SpeechInfo;
+}
+
+export interface SpeechInfo {
+  /** The line as written, pause marks included ("Meet OpenFrame. [pause 0.4] It's free."). */
+  text: string;
+  /** What its caption shows, when it differs from the words. */
+  caption?: string;
+  /** A voice id, or a blend ("af_heart:60,af_bella:40"). */
+  voice: string;
+  speed: number;
+  /** Words respelled for the voice ({"MCP": "M C P"}). */
+  pronounce?: Record<string, string>;
+  quality?: "best" | "draft";
+  finish?: "natural" | "clean" | "raw";
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */
