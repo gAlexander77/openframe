@@ -279,6 +279,20 @@ excepted); controls with no accessible name; and text contrast under WCAG
 AA. Elements a scroller hides count as unseen, not cut. Screenshots land
 in `scratch/style/`, for a look by eye at what the checks cannot judge.
 
+`scripts/drive/sizes-timeline.js` runs the same checks on the player and
+the timeline at nine window sizes, from a 900 x 600 browser tab to
+2560 x 1440, over a project with every clip kind and long names: zoom at
+both ends, every timeline menu and popover, the mixer, the viewer guides,
+each splitter at its limit (a 320 px player, a short and a tall
+timeline), the docked assistant, crop, the compound path, the source
+monitor, the trim preview and full screen (about 30 states a size, five
+minutes in all; `SIZES=1100x680` in the environment runs one). It adds
+what a sweep of one panel can measure: popups inside the window, toolbar
+buttons at full size, the transport inside the player, track header parts
+inside their header, the playhead and markers hidden under the header
+column when scrolled (read from screen pixels), and the in/out band on
+the ruler.
+
 ## Header interaction check — 2026-10-15
 
 The owner expects the whole header to behave like a desktop caption: drag

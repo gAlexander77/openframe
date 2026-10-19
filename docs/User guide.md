@@ -468,8 +468,9 @@ track's vertical fader to balance its level in dB, and use pan to place it
 left or right. **Mute** silences a track; **Solo** plays only soloed tracks.
 The meters show peak and RMS after track gain and pan. The master strip
 controls the whole mix, including exports, and shows stereo levels and
-short-term LUFS. A drag is one undo step. Double-click a fader or pan to
-reset it. Close the panel with **Close mixer**.
+short-term LUFS; with many tracks, their strips scroll sideways and the
+master stays in view at the right. A drag is one undo step. Double-click a
+fader or pan to reset it. Close the panel with **Close mixer** or Escape.
 
 ## Use animated images
 
@@ -486,9 +487,12 @@ animation in that case.
 Open **Timeline display** on the timeline toolbar to show or hide waveforms,
 video thumbnails or clip names, and choose small, medium or large tracks.
 These choices stay with your profile and do not change exports. Medium
-retains individual heights set in track menus. Right-click a track header
-and choose a **Track color** swatch to tint its clips. A clip with its own
-label color keeps that color instead. **No track color** removes the tint.
+retains individual heights set in track menus. On taller tracks (audio,
+video and the main track) the name has a line of its own above the lock,
+eye and sound buttons; point at a header to read a long name in full.
+Right-click a track header and choose a **Track color** swatch to tint its
+clips. A clip with its own label color keeps that color instead. **No
+track color** removes the tint.
 
 ## Move or open a project file
 
