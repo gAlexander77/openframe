@@ -258,7 +258,7 @@ describe("keyframe commands", () => {
     expect(keys(runCommand(p, "remove_keyframes", { clip_id: id, at: [2] }))).toEqual({ "transform.x": [{ f: 0, v: -0.3 }] });
     expect(Object.keys(keys(runCommand(p, "remove_keyframes", { clip_id: id, path: "transform.x" }))!)).toEqual(["opacity"]);
     expect(keys(runCommand(p, "remove_keyframes", { clip_id: id }))).toBeUndefined();
-    expect(() => runCommand(p, "remove_keyframes", { clip_id: id, at: [4] })).toThrow(/no matching keyframes/);
+    expect(runCommand(p, "remove_keyframes", { clip_id: id, at: [4] })).toBe(p);
   });
 });
 

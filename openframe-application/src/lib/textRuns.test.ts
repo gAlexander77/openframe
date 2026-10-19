@@ -46,3 +46,10 @@ it("keeps ranges when version export reflows a title", () => {
   expect(q.tracks[0].clips[0]).toMatchObject({ text: clip.text, style: { runs: clip.style.runs } });
   expect(p.width).not.toBe(q.width);
 });
+
+it("preserves a run between two equal-length replacements", () => {
+  expect(shiftRuns([{ start: 4, end: 9, color: "red" }], "one STYLE end", "one\nSTYLE\nend")).toEqual([{ start: 4, end: 9, color: "red" }]);
+});
+it("maps surviving run characters across separate unequal edits", () => {
+  expect(shiftRuns([{ start: 4, end: 9, color: "red" }], "one STYLE end", "first STYLE ending")).toEqual([{ start: 6, end: 11, color: "red" }]);
+});

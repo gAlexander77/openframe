@@ -287,3 +287,7 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 /* Right-click Undo or Redo: the history list hangs from the buttons. */
 .history-anchor { display: contents; }
 .history-anchor > span { display: contents; }
+
+/* Zero-height sibling shares the ruler's sticky position without moving rows. */
+.tl-ruler-overlays { position: sticky; top: 28px; height: 0; transform: translateY(-28px); z-index: 9; pointer-events: none; }
+.tl-ruler-overlays .tl-marker { pointer-events: auto; }

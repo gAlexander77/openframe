@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseTyped } from "./numberInput";
+import { boundedNumber, parseTyped } from "./numberInput";
 
 describe("parseTyped", () => {
   it("reads plain, signed and decimal numbers", () => {
@@ -27,4 +27,13 @@ describe("parseTyped", () => {
     expect(parseTyped("440Hz")).toBe(440);
     expect(parseTyped("45°")).toBe(45);
   });
+});
+
+it("bounds committed music and export drafts without treating blanks as zero", () => {
+  expect(boundedNumber("120", 40, 220)).toBe(120);
+  expect(boundedNumber("1", 40, 220)).toBe(40);
+  expect(boundedNumber("900", 4, 300)).toBe(300);
+  expect(boundedNumber("", 4, 300)).toBeNull();
+  expect(boundedNumber("0.75", 0.5, 400)).toBe(0.75);
+  expect(boundedNumber("12.9", 0, Infinity, true)).toBe(12);
 });

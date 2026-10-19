@@ -79,7 +79,18 @@ export interface Command {
   name: string;
   description: string;
   input: JsonSchema;
-  run(p: Project, args: Record<string, unknown>): Project;
+  run(p: Project, args: Record<string, unknown>, report?: CommandReport): Project;
+}
+
+export interface CommandReport {
+  overwritten?: { id: Id; kind: Clip["type"]; what: "removed" | "trimmed" }[];
+  notes?: string[];
+}
+
+function selectedIds(a: Record<string, unknown>): Id[] {
+  const ids = [...new Set(a.clip_ids as Id[] | undefined ?? (a.clip_id ? [String(a.clip_id)] : []))];
+  if (!ids.length) throw new CommandError("give clip_id or clip_ids");
+  return ids;
 }
 
 export class CommandError extends Error {}
@@ -397,7 +408,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_media_clip",
-    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track).",
+    description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
     input: S.obj(
       {
         asset_id: S.str("Asset id, from import_media or describe_project"),
@@ -424,7 +435,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom).",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -550,7 +561,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_color_clip",
-    description: "Add a solid color layer (backgrounds, flashes, title cards).",
+    description: "Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
     input: S.obj({ color: S.str("CSS color"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
     run: (p, a) => {
       const clip = createColorClip(String(a.color), f(p, a.start), span(p, a.start, a.duration));
@@ -1155,7 +1166,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_shape",
     description:
-      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Soft light without image files: an ellipse with feather (a soft edge, pixels) or a radial gradient to transparent is a glow; add a blur effect (amount up to 500) for more. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}; a background glow: {kind: 'ellipse', start: 0, duration: 8, width: 0.6, height: 0.8, gradient: {kind: 'radial', from: '#6a5cffcc', to: 'transparent'}, feather: 120}.",
+      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Soft light without image files: an ellipse with feather (a soft edge, pixels) or a radial gradient to transparent is a glow; add a blur effect (amount up to 500) for more. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}; a background glow: {kind: 'ellipse', start: 0, duration: 8, width: 0.6, height: 0.8, gradient: {kind: 'radial', from: '#6a5cffcc', to: 'transparent'}, feather: 120}. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
     input: S.obj(
       {
         kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
@@ -1644,15 +1655,18 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_text",
-    description: "Change a text clip's words and/or style.",
-    input: S.obj({ clip_id: S.str("Text clip id"), text: S.str("New words"), style: TEXT_STYLE_SCHEMA }, ["clip_id"]),
-    run: (p, a) =>
-      ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
+    description: "Change text clips' style with clip_ids (or clip_id). New text requires exactly one clip. Styled runs keep their positions for same-length changes; otherwise surviving characters carry their style.",
+    input: S.obj({ clip_id: S.str("Text clip id; alternatively use clip_ids"), clip_ids: S.ids("Text clips receiving the same style; text requires one clip"), text: S.str("New words; one clip only"), style: TEXT_STYLE_SCHEMA }),
+    run: (p, a) => {
+      const ids = selectedIds(a);
+      if (a.text !== undefined && ids.length !== 1) throw new CommandError("text requires exactly one clip");
+      return ids.reduce((q, id) => ops.updateClip(q, clipOrThrow(q, id).clip.id, (c) => {
         if (c.type !== "text") throw new CommandError("not a text clip");
         const style = styleFrom(c.style, (a.style ?? {}) as Partial<TextStyle>) as TextStyle;
         if (a.text !== undefined && style.runs) style.runs = shiftRuns(style.runs, c.text, String(a.text));
         return { ...c, ...(a.text !== undefined ? { text: String(a.text) } : {}), style };
-      }),
+      }), p);
+    },
   },
   {
     name: "set_animation",
@@ -2003,20 +2017,17 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "remove_keyframes",
-    description: "Remove keyframes from a clip. at lists timeline times in seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keyframes goes back to its static value.",
-    input: S.obj(
-      {
-        clip_id: S.str("Clip id"),
-        path: S.str("Parameter path; omit for all keyed parameters"),
-        at: { type: "array", items: { type: "number" }, description: "Timeline seconds of the keyframes to remove" },
-      },
-      ["clip_id"],
-    ),
-    run: (p, a) => {
-      const { clip } = clipOrThrow(p, a.clip_id);
-      const refs = keyRefs(p, clip, a.path, a.at as number[] | undefined);
-      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: removeKeys(c.keyframes, refs) }));
-    },
+    description: "Remove keyframes from clip_ids (or clip_id). at lists timeline seconds (omit for every time); path limits it to one parameter (omit for all). A parameter left with no keys returns to its static value. No matching keys is a reported no-op, including in a batch.",
+    input: S.obj({ clip_id: S.str("Clip id; alternatively use clip_ids"), clip_ids: S.ids("Clips whose matching keys are removed"), path: S.str("Parameter path; omit for all keyed parameters"), at: { type: "array", items: { type: "number" }, description: "Timeline seconds of the keyframes to remove" } }),
+    run: (p, a, report) => selectedIds(a).reduce((q, id) => {
+      const { clip } = clipOrThrow(q, id);
+      const refs = keyRefs(q, clip, a.path, a.at as number[] | undefined, true);
+      if (!refs.length) {
+        if (report) (report.notes ??= []).push(`No matching keyframes on clip ${id}; no changes.`);
+        return q;
+      }
+      return ops.updateClip(q, id, (c) => ({ ...c, keyframes: removeKeys(c.keyframes, refs) }));
+    }, p),
   },
   // ---- color grade (ADR-020): static values; animate with add_keyframe on the paths named ----
   {
@@ -2129,7 +2140,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_sticker",
     description:
-      "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it.",
+      "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
     input: S.obj(
       {
         name: S.str("Sticker id, label or emoji"),
@@ -2285,11 +2296,11 @@ export const COMMANDS: Command[] = [
       },
       ["compound_id", "command"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const id = String(a.compound_id);
       if (!ops.findCompound(p, id)) throw new CommandError(`no compound with id ${id}`);
       const view = compoundView(p, id);
-      const inside = runCommand(view, String(a.command), a.args ?? {});
+      const inside = runCommand(view, String(a.command), a.args ?? {}, report);
       if (inside === view) return p;
       const out = withCompoundView(p, id, inside);
       if (out === p) throw new CommandError("a compound clip cannot contain itself");
@@ -2346,7 +2357,7 @@ export const COMMANDS: Command[] = [
       },
       ["commands"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const added: Id[][] = [], addedTracks: Id[][] = [];
       const ids = (q: Project) => q.tracks.flatMap((t) => t.clips.map((c) => c.id));
       // "$2" / "$2.2" / "$2.track": the first / second clip, or the track, step 2 added.
@@ -2366,7 +2377,7 @@ export const COMMANDS: Command[] = [
         if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
           const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
-          const next = runCommand(q, step.command, ref(step.args ?? {}));
+          const next = runCommand(q, step.command, ref(step.args ?? {}), report);
           added.push(ids(next).filter((id) => !before.has(id)));
           addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
@@ -2397,12 +2408,12 @@ function paramPath(clip: Clip, path: string): string {
 
 /** The keyframes a command names: on `path` (or every path) at the given
  * timeline seconds (or every time). Throws when that is none at all. */
-function keyRefs(p: Project, clip: Clip, path: unknown, at: number[] | undefined): KeyRef[] {
+function keyRefs(p: Project, clip: Clip, path: unknown, at: number[] | undefined, allowEmpty = false): KeyRef[] {
   const map = clip.keyframes ?? {};
   const paths = path === undefined ? Object.keys(map) : [paramPath(clip, String(path))];
   const frames = at && new Set(at.map((s) => f(p, s) - clip.start));
   const refs = paths.flatMap((pt) => (map[pt] ?? []).filter((k) => !frames || frames.has(k.f)).map((k) => ({ path: pt, f: k.f })));
-  if (!refs.length) throw new CommandError(`no matching keyframes on clip ${clip.id}`);
+  if (!refs.length && !allowEmpty) throw new CommandError(`no matching keyframes on clip ${clip.id}`);
   return refs;
 }
 
@@ -2462,12 +2473,21 @@ function seedOf(id: string): number {
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 
 /** Run one command with validation. Throws CommandError with every problem. */
-export function runCommand(p: Project, name: string, args: unknown = {}): Project {
+export function runCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport): Project {
   const cmd = COMMAND_INDEX.get(name);
   if (!cmd) throw new CommandError(`unknown command ${name}`);
   const errs = validate(args, cmd.input);
   if (errs.length) throw new CommandError(errs.join("; "));
-  return cmd.run(p, args as Record<string, unknown>);
+  const next = cmd.run(p, args as Record<string, unknown>, report);
+  if (report && ["add_text", "add_shape", "add_color_clip", "add_media_clip", "add_sticker"].includes(name) && (args as Record<string, unknown>).mode !== "insert") {
+    for (const track of p.tracks) for (const clip of track.clips) {
+      const kept = ops.findClip(next, clip.id)?.clip;
+      if (!kept || kept.start !== clip.start || kept.duration !== clip.duration) {
+        (report.overwritten ??= []).push({ id: clip.id, kind: clip.type, what: kept ? "trimmed" : "removed" });
+      }
+    }
+  }
+  return next;
 }
 
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
