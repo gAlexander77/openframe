@@ -306,7 +306,7 @@ async (page, opts = {}) => {
     details.toggle.offShowsBackground &&
     onMs < 1500 &&
     gapKept &&
-    undo.labels.join("|") === "Remove background|Remove background off|add color clip|Remove background" &&
+    undo.labels.join("|") === "Remove background|Remove background off|Add color clip|Remove background" &&
     undo.gone &&
     details.toggle.undoShowsBackground &&
     undo.redone?.enabled === true &&

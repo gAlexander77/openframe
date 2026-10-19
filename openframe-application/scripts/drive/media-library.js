@@ -32,7 +32,7 @@ async (page) => {
   await page.getByRole("textbox", { name: "Search media", exact: true }).fill(" SHOT2 ");
   details.intersectSearch = { ok: JSON.stringify(await names()) === JSON.stringify(["shot2.mp4"]) };
   await choose("Timeline usage", "used");
-  details.emptyFilterState = { ok: await page.getByText("No media matches these filters.").isVisible() };
+  details.emptyFilterState = { ok: await page.getByText("No media matches", { exact: true }).isVisible() };
   await page.getByRole("button", { name: "Clear filters", exact: true }).click();
   await page.getByRole("button", { name: "List view", exact: true }).click();
   details.listMetadata = { ok: (await page.locator(".media-list .media-details").allTextContents()).some((s) => /Video.*fps/.test(s)) && (await page.locator(".media-list .media-details").allTextContents()).some((s) => /Still image.*1920/.test(s)) };

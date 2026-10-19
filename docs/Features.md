@@ -71,11 +71,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
-- **Rename media** (right-click a media card > Rename, or double-click
-  its name; `rename_media`): the project's name for the file, which stays
-  as it is on disk; clips without a name of their own follow it. A
-  double-click on the name no longer adds the file to the timeline (the
-  rest of the card still does).
+- **Rename media** (right-click a media card > Rename, or in the grid
+  view double-click its name; `rename_media`): the project's name for the
+  file, which stays as it is on disk; clips without a name of their own
+  follow it. In the grid a double-click on the name renames and the rest
+  of the card adds the file to the timeline; in the list view, a row's
+  double-click always adds.
 - **Folders and favorites:** saved virtual folders, undoable folder rename/delete
   and assignment, plus intersecting folder/favorite filters.
 - **Source preview:** independent video/audio transport, scrubbing and frame

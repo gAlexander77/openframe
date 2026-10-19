@@ -34,7 +34,9 @@ async (page, base = "http://localhost:1420") => {
   const reopen = async (id) => {
     await page.reload();
     await page.waitForFunction(() => !!window.videoEditor);
-    await page.locator(".project-card").first().click();
+    // By name, not the first card: earlier checks' projects are on Home too,
+    // and one still copying its media in the background can save last.
+    await page.locator(".project-card", { has: page.locator(".project-card-name", { hasText: new RegExp(`^Web check ${id}$`) }) }).click();
     await page.waitForFunction((id) => window.videoEditor.project().id === id, id);
     await page.evaluate(async () => {
       window.videoEditor.seek(15);
@@ -42,7 +44,11 @@ async (page, base = "http://localhost:1420") => {
     });
   };
   const saved = async () => {
-    await page.evaluate(() => window.videoEditor.action("saveProject"));
+    await page.evaluate(() => {
+      const ve = window.videoEditor;
+      ve.exec("set_project", { name: `Web check ${ve.project().id}` });
+      ve.action("saveProject");
+    });
     await page.waitForFunction(async () => {
       const p = window.videoEditor.project();
       try {
@@ -50,7 +56,7 @@ async (page, base = "http://localhost:1420") => {
         const dir = await root.getDirectoryHandle("projects");
         const file = await (await dir.getFileHandle(`${p.id}.json`)).getFile();
         const stored = JSON.parse(await file.text());
-        return stored.assets.length === p.assets.length && stored.tracks.some((t) => t.clips.length);
+        return stored.name === p.name && stored.assets.length === p.assets.length && stored.tracks.some((t) => t.clips.length);
       } catch { return false; }
     });
     return page.evaluate(() => window.videoEditor.project().id);

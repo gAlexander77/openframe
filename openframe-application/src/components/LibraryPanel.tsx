@@ -352,9 +352,11 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
         {renaming ? (
           <RenameField name={asset.name} label={`New name for ${asset.name}`} className="field card-rename" onDone={onRename} />
         ) : (
-          // Double-click the name to rename; elsewhere on the card it adds
-          // the file to the timeline.
-          <span className="card-label" onDoubleClick={(e) => (e.stopPropagation(), onRename())}>{asset.name}</span>
+          // In the grid, double-click the name under the picture to rename;
+          // elsewhere on the card it adds the file to the timeline. A list
+          // row is mostly its name, so there a double-click adds, as the
+          // user guide says; rename is in the menu.
+          <span className="card-label" onDoubleClick={list ? undefined : (e) => (e.stopPropagation(), onRename())}>{asset.name}</span>
         )}
         <button className="media-preview-button" aria-label={`Preview ${asset.name}`} onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onPreview(); }}>Preview</button>
         {(asset.folder || asset.favorite) && <span className="media-details">{[asset.favorite ? "Favorite" : "", asset.folder].filter(Boolean).join(" · ")}</span>}

@@ -33,7 +33,12 @@ async (page) => {
   const imported = await page.evaluate(async () => { window.__release(); return await window.__job; });
   details.lateMediaDiscarded = { ok: imported.length === 0 && await unchanged(before) };
 
-  const current = await page.evaluate(() => window.videoEditor.project().id);
+  // The late import above was discarded, so the project is still untouched;
+  // leaving would discard it too (ADR-073). One edit keeps it on Home.
+  const current = await page.evaluate(() => {
+    window.videoEditor.exec("set_project", { name: "Jobs drive" });
+    return window.videoEditor.project().id;
+  });
   await page.evaluate(() => {
     window.__platform.pickMedia = () => new Promise((resolve) => { window.__picked = resolve; });
     window.__job = window.__media.pickAndImport();

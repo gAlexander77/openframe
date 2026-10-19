@@ -5,6 +5,7 @@
 
 import { BlobSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import { ABOUT_LINKS } from "../lib/about";
+import { projectSummary } from "../lib/project/summary";
 import type { Project } from "../lib/project/types";
 import { capBytes, TooBigToCopy, tooBigToCopy, URL_COPY_LIMIT } from "../lib/urlImport";
 import type { ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";
@@ -116,17 +117,31 @@ export const web: Platform = {
   },
 
   async listProjects() {
-    const out: ProjectSummary[] = [];
+    const summaries = new Map<string, ProjectSummary>();
+    const projects: [string, FileSystemFileHandle][] = [];
     const d = await dir("projects");
     for await (const [name, handle] of d as unknown as AsyncIterable<[string, FileSystemFileHandle]>) {
-      if (!name.endsWith(".summary.json")) continue;
+      if (name.endsWith(".summary.json")) {
+        try {
+          const s: ProjectSummary = JSON.parse(await (await handle.getFile()).text());
+          summaries.set(s.id, s);
+        } catch {
+          /* a half-written summary: the project file below still lists it */
+        }
+      } else if (name.endsWith(".json")) projects.push([name.slice(0, -".json".length), handle]);
+    }
+    // A save is two writes, the project then its summary. A tab closed
+    // between them left a project Home could not see; list it from the
+    // project itself (without its thumbnail, until it is saved again).
+    for (const [id, handle] of projects) {
+      if (summaries.has(id)) continue;
       try {
-        out.push(JSON.parse(await (await handle.getFile()).text()));
+        summaries.set(id, projectSummary(JSON.parse(await (await handle.getFile()).text())));
       } catch {
-        /* a half-written summary: skip it, the project file is still there */
+        /* unreadable: nothing to open either */
       }
     }
-    return out.sort((a, b) => b.updatedAt - a.updatedAt);
+    return [...summaries.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   },
 
   async loadProject(id) {

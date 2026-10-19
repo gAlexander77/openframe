@@ -7,9 +7,8 @@ import { useSyncExternalStore } from "react";
 import { prepare } from "../engine/thumbs";
 import { player } from "../engine/player";
 import { createProject, normalizeProject, type ProjectInit } from "../lib/project/defaults";
-import { projectDuration } from "../lib/project/ops";
+import { projectSummary } from "../lib/project/summary";
 import type { Project } from "../lib/project/types";
-import { framesToSeconds } from "../lib/time";
 import { platform, type ProjectSummary } from "../platform";
 import { provide } from "./actions";
 import { store } from "./store";
@@ -68,15 +67,7 @@ function thumbnail(): string | undefined {
 }
 
 function summaryOf(p: Project): ProjectSummary {
-  return {
-    id: p.id,
-    name: p.name,
-    updatedAt: p.updatedAt,
-    width: p.width,
-    height: p.height,
-    duration: framesToSeconds(projectDuration(p), p.fps),
-    thumbnail: thumbnail(),
-  };
+  return { ...projectSummary(p), thumbnail: thumbnail() };
 }
 
 let saving: Promise<boolean> | null = null;

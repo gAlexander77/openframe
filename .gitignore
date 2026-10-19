@@ -18,9 +18,11 @@ CLAUDE.local.md
 *.suo
 *.sw?
 
-# Rust build output
-openframe-application/src-tauri/target/
-openframe-application/src-tauri/gen/schemas/
+# Rust build output. These and the patterns below match at any depth: a
+# checkout from before the app moved into openframe-application/ (ADR-081)
+# keeps its old root build output and test media, which must stay ignored.
+**/src-tauri/target/
+**/src-tauri/gen/schemas/
 
 # Obsidian's per-machine workspace state — the vault's markdown is the shared
 # artifact, its editor UI state is not
@@ -30,10 +32,10 @@ docs/.obsidian/
 .playwright-mcp/
 
 # Generated test media (openframe-application/scripts/make-fixtures.mjs regenerates it with ffmpeg)
-openframe-application/fixtures/media/
+**/fixtures/media/
 
 # Screenshots the drive scripts write beside themselves
-openframe-application/scripts/drive/shots/
+**/scripts/drive/shots/
 
 # Per-worktree scratch: playwright-core for drives, isolated app data,
 # browser profiles and logs (docs/Driving the app.md)
@@ -41,4 +43,4 @@ scratch/
 
 # UX audit captures: the raw PNGs run to megabytes per round and stay local;
 # the few shots an audit cites are committed as JPEGs beside them
-openframe-application/scripts/ui-review/shots/**/*.png
+**/scripts/ui-review/shots/**/*.png

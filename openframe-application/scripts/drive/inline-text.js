@@ -166,7 +166,7 @@ async (page) => {
   const typed = await frameSig();
   check("the viewer's pixels change while typing", typed !== before, { before, typed });
   check("the inspector's Text box mirrors the canvas", (await page.locator(".inspector-panel .text-area").inputValue()) === "Typed live", null);
-  check("nothing is committed while typing", (await st()).undoLabel === "add text", (await st()).undoLabel);
+  check("nothing is committed while typing", (await st()).undoLabel === "Add text", (await st()).undoLabel);
   await shot("2-typing");
 
   // ---- shortcuts stay off while typing ------------------------------------------

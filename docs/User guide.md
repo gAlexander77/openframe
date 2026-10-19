@@ -139,8 +139,8 @@ disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
 
 To rename a file in the project, right-click its card and choose
-**Rename…**, or double-click its name; Enter keeps the new name and Escape
-the old one. The file on disk keeps its own name, and clips you have not
+**Rename…**, or in the grid view double-click its name; Enter keeps the new
+name and Escape the old one. The file on disk keeps its own name, and clips you have not
 renamed show the new one.
 
 Drag a row, double-click it, or use its Add button to place media, just as

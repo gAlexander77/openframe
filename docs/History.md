@@ -1320,6 +1320,12 @@ its work from the message it left.
   fix returned the playhead after a preview, the UX lane's
   animation-presets drive expected the old place. A merge reruns every
   touched lane's drives, not just the newest one's.
+- **The full drive run earns its hour.** Run after every merge, it found
+  two real bugs no lane's own drives reached:
+  - since 2026-10-13, a web tab closed between a save's two writes left a
+    project Home could not list; Home now lists it from the project file;
+  - rename's double-click on a media name took over list rows, whose
+    double-click the user guide says adds the file.
 - **Write edit scripts to files, and read them as UTF-8.** A Git Bash
   heredoc piped to Python collapsed doubled backslashes and was decoded
   as cp1252, which put mojibake in a doc.
