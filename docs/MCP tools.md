@@ -95,7 +95,7 @@ No parameters.
 
 ### open_project
 
-Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Returns its description, as describe_project does.
+Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -103,7 +103,7 @@ Save the project in the editor and open another, by id or by name (any case; the
 
 ### new_project
 
-Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched.
+Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched. Answers a summary; describe_project has the timeline.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -374,12 +374,19 @@ Move clips by whole frames on their tracks (negative is earlier). Nothing moves 
 
 ### duplicate_clips
 
-Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.
+Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Clips to copy |
 | `at` | number |  | Seconds where the earliest copy starts (0..) |
+| `unique` | boolean |  | Compound clips: copy their nested timelines too, so each copy can change on its own (default false: shared) |
+
+Example:
+
+```json
+{"name":"duplicate_clips","arguments":{"clip_ids":["c_window"],"at":6,"unique":true}}
+```
 
 ### delete_clips
 
@@ -723,20 +730,21 @@ Example:
 
 ### add_keyframe
 
-Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on a path interpolate between them.
+Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on a path interpolate between them, each shaped toward the next by its ease. Only paths that animate on the clip are accepted (help topic params lists them); any other is refused with the list.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Clip id |
-| `path` | string | yes | Parameter path (see set_param) |
+| `path` | string | yes | Parameter path that animates on this clip, e.g. transform.x, opacity, effects.0.amount (help topic params) |
 | `at` | number | yes | Timeline seconds |
 | `value` | number | yes | Value at that time |
-| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "spring" \| "elastic" \| "bounce" |  | Curve toward the next keyframe; spring, elastic and bounce overshoot and settle |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | Curve toward the next keyframe: linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce. fastIn is the modern expo-out (arrives fast, glides to rest); spring, elastic and bounce overshoot and settle |
+| `bezier` | number[] |  | [x1, y1, x2, y2], a CSS cubic-bezier (x1 and x2 in 0..1, y may overshoot); overrides ease |
 
 Example:
 
 ```json
-{"name":"add_keyframe","arguments":{"clip_id":"c_123","path":"transform.scale","at":0,"value":1,"ease":"easeInOut"}}
+{"name":"add_keyframe","arguments":{"clip_id":"c_123","path":"transform.x","at":1,"value":0.75,"ease":"fastIn"}}
 ```
 
 ### move_keyframe
@@ -760,8 +768,8 @@ Shape the curve leaving keyframes toward the next one. ease is a preset (linear,
 | `clip_id` | string | yes | Clip id |
 | `path` | string |  | Parameter path; omit for all keyed parameters |
 | `at` | number |  | Timeline seconds of the keyframe; omit for all keyframes |
-| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | Preset name |
-| `bezier` | number[] |  | [x1, y1, x2, y2] |
+| `ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | Curve toward the next keyframe: linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce. fastIn is the modern expo-out (arrives fast, glides to rest); spring, elastic and bounce overshoot and settle |
+| `bezier` | number[] |  | [x1, y1, x2, y2], a CSS cubic-bezier (x1 and x2 in 0..1, y may overshoot); overrides ease |
 
 ### remove_keyframes
 
@@ -1251,7 +1259,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `duration` | number | yes | Seconds (0.001..) |
 | `x` | number |  | Horizontal offset, -0.5..0.5 |
 | `y` | number |  | Vertical offset, -0.5..0.5 |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1285,6 +1293,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
 | `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 | `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id |
@@ -1303,7 +1312,7 @@ Change a text clip's words and/or style.
 |---|---|---|---|
 | `clip_id` | string | yes | Text clip id |
 | `text` | string |  | New words |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1337,6 +1346,7 @@ Change a text clip's words and/or style.
 | `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
 | `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 
 Example:
@@ -1395,7 +1405,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `captions[].end` | number | yes | Seconds (0..) |
 | `captions[].text` | string | yes | Words shown |
 | `captions[].words` | number[] |  | Seconds each word of text starts, for the spoken-word highlight |
-| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
+| `style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
 | `style.font` | string |  | Font family |
 | `style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `style.color` | string |  | CSS color |
@@ -1429,6 +1439,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
 | `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 | `y` | number |  | Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons |
 | `replace` | boolean |  | Remove existing captions first |
@@ -1715,7 +1726,7 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `gap` | number |  | Seconds between lines, default 0.4 (0..) |
 | `captions` | boolean |  | A caption per line (default true) |
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true) |
-| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, maxWidth } |  | The captions' look: the same fields as add_text's style |
+| `caption_style` | { font, size, color, bold, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The captions' look: the same fields as add_text's style |
 | `caption_style.font` | string |  | Font family |
 | `caption_style.size` | number |  | Pixels at 1080p canvas height (4..) |
 | `caption_style.color` | string |  | CSS color |
@@ -1749,6 +1760,7 @@ Narrate a script: every line is spoken on this computer (Kokoro) and placed one 
 | `caption_style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
 | `caption_style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `caption_style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
+| `caption_style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
 | `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
 
@@ -1770,19 +1782,24 @@ Read a title aloud in a voice made on this computer (Kokoro), placing the voice 
 
 ### add_sound_effect
 
-Add a built-in sound effect, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). It lands on an audio track at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. The file is made once per project and reused.
+Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). One lands on an audio track at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. `sounds` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect (list_catalog section sound_effects has their lengths) |
+| `name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" |  | Which effect (list_catalog section sound_effects has their lengths) |
 | `start` | number |  | Timeline seconds the sound starts (0..) |
 | `end_at` | number |  | Timeline seconds the sound ends instead (start = end_at - its length) (0..) |
 | `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1 (0..4) |
+| `sounds` | { name, start, end_at, volume }[] |  | Many sounds in one call instead of name: each with its own name, start or end_at, and volume |
+| `sounds[].name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect |
+| `sounds[].start` | number |  | Timeline seconds it starts (default the playhead) (0..) |
+| `sounds[].end_at` | number |  | Timeline seconds it ends instead (0..) |
+| `sounds[].volume` | number |  | Gain, default 1 (0..4) |
 
 Example:
 
 ```json
-{"name":"add_sound_effect","arguments":{"name":"whoosh","start":3.9}}
+{"name":"add_sound_effect","arguments":{"sounds":[{"name":"whoosh","start":3.9},{"name":"whoosh","start":7.9,"volume":0.6},{"name":"rise","end_at":12},{"name":"impact","start":12}]}}
 ```
 
 ### set_fades
@@ -1815,7 +1832,7 @@ Filter a video or audio clip's sound, 24 dB per octave. type lowpass keeps the l
 | `sweep.to` | number | yes | Cutoff at the end of the sweep, Hz (20..20000) |
 | `sweep.start` | number | yes | Timeline seconds the sweep begins (0..) |
 | `sweep.end` | number | yes | Timeline seconds it arrives (0..) |
-| `sweep.ease` | "linear" \| "easeIn" \| "easeOut" \| "easeInOut" |  | Curve of the sweep (default linear: the same octaves each second) |
+| `sweep.ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | Curve of the sweep (default linear: the same octaves each second); the keyframe tools' eases |
 | `off` | boolean |  | Remove this filter |
 
 Example:
@@ -2013,7 +2030,7 @@ See movement and timing: consecutive frames of a stretch of the timeline (defaul
 | `end` | number |  | Timeline seconds; default start + 2 (0..) |
 | `fps` | number |  | Frames a second, default 8 (1..30) |
 | `columns` | integer |  | Default 6 (1..8) |
-| `tile_width` | integer |  | Default 240 (120..480) |
+| `tile_width` | integer |  | Default 240 (120..640) |
 
 Example:
 
@@ -2032,7 +2049,7 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 
 ### check_project
 
-Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music ending without a fade, and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
+Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2099,6 +2116,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
+| `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92] |
 | `format` | "mp4" \| "mov" \| "webm" \| "mkv" |  | Default mp4 (H.264 + AAC) |
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
 | `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |

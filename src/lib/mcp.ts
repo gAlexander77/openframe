@@ -49,8 +49,10 @@ export interface McpHost {
   sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
-  /** The design check (lib/designCheck.ts) of the open project. */
-  checkProject(kind: string): unknown;
+  /** The design check (lib/designCheck.ts) of the open project; the app
+   * measures the picture behind each title and each music clip's last
+   * second first, so it may take a moment. */
+  checkProject(kind: string): unknown | Promise<unknown>;
   /** Export without a dialog (desktop); resolves when the file is done. */
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
   /** The last export_video: running (with progress), done or failed. */
@@ -95,7 +97,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffect" | "analyzeMusic" | "loudnessReport" | "textBehindSubject";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -109,6 +111,11 @@ export interface VersionsRequest {
 }
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
+type CompoundDesc = Desc & { id: string; name: string; duration: number; tracks: { clips: unknown[] }[] };
+
+/** A nested timeline in a few words: what an edit answers about a compound
+ * it touched, instead of its whole timeline (describe_project has that). */
+const compoundSummary = (k: CompoundDesc) => ({ id: k.id, name: k.name, duration: k.duration, clips: k.tracks.reduce((n, t) => n + t.clips.length, 0) });
 
 const same = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y);
 
@@ -144,10 +151,40 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   const ba = assets(b), aa = assets(a);
   if ([...aa.keys()].some((id) => !ba.has(id))) out.added_assets = [...aa.values()].filter((x) => !ba.has(x.id));
   if ([...ba.keys()].some((id) => !aa.has(id))) out.removed_assets = [...ba.keys()].filter((id) => !aa.has(id));
+  // Compounds: only those that changed, summed up, with what changed inside
+  // (an edit_compound's clips). Every compound's whole timeline cost ~3 KB
+  // an edit on the launch film's six windows.
+  const comps = (d: Desc) => new Map(((d.compounds ?? []) as CompoundDesc[]).map((k) => [k.id, k] as const));
+  const bk = comps(b), ak = comps(a);
+  const addedK = [...ak.values()].filter((k) => !bk.has(k.id));
+  const changedK = [...ak.values()].filter((k) => bk.has(k.id) && !same(bk.get(k.id), k));
+  const removedK = [...bk.keys()].filter((id) => !ak.has(id));
+  if (addedK.length) out.added_compounds = addedK.map(compoundSummary);
+  if (changedK.length)
+    out.changed_compounds = changedK.map((k) => {
+      const { duration: _d, unchanged: _u, ...inside } = describeChanges(bk.get(k.id), k) as Record<string, unknown>;
+      return { ...compoundSummary(k), ...inside };
+    });
+  if (removedK.length) out.removed_compounds = removedK;
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
-    if (!["duration", "tracks", "assets", "markers"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
+    if (!["duration", "tracks", "assets", "markers", "compounds"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
   }
   return Object.keys(out).length === 1 ? { unchanged: true, duration: a.duration } : out;
+}
+
+/** A project in a few words, for open_project and new_project: the whole
+ * timeline was about 20 KB on the launch film, and describe_project has it. */
+export function projectSummary(d: unknown): unknown {
+  const x = d as Desc & { compounds?: unknown[]; markers?: unknown[] };
+  if (!x?.tracks) return d;
+  return {
+    name: x.name,
+    canvas: x.canvas,
+    fps: x.fps,
+    duration: x.duration,
+    counts: { tracks: x.tracks.length, clips: x.tracks.reduce((n, t) => n + t.clips.length, 0), assets: x.assets?.length ?? 0, markers: x.markers?.length ?? 0, compounds: x.compounds?.length ?? 0 },
+    note: "describe_project has the timeline: every track and clip with ids, times and settings.",
+  };
 }
 
 /** Options with the unset ones dropped, so the tool's defaults apply. */
@@ -220,15 +257,15 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "open_project",
-    description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Returns its description, as describe_project does.",
+    description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.",
     inputSchema: obj({ project: { type: "string", description: "Project id or name" } }, ["project"]),
-    call: async (h, a) => json(await h.openProject(findProject(await h.listProjects(), String(a.project)).id)),
+    call: async (h, a) => json(projectSummary(await h.openProject(findProject(await h.listProjects(), String(a.project)).id))),
   },
   {
     name: "new_project",
-    description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched.",
+    description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched. Answers a summary; describe_project has the timeline.",
     inputSchema: obj({ name: { type: "string", description: "Project name; default: the date and time" } }),
-    call: async (h, a) => json(await h.newProject(a.name === undefined ? undefined : String(a.name))),
+    call: async (h, a) => json(projectSummary(await h.newProject(a.name === undefined ? undefined : String(a.name)))),
   },
   {
     name: "save_project_copy",
@@ -268,7 +305,7 @@ export const APP_TOOLS: AppTool[] = [
         end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 2" },
         fps: { type: "number", minimum: 1, maximum: 30, description: "Frames a second, default 8" },
         columns: { type: "integer", minimum: 1, maximum: 8, description: "Default 6" },
-        tile_width: { type: "integer", minimum: 120, maximum: 480, description: "Default 240" },
+        tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 240" },
       },
       ["start"],
     ),
@@ -313,9 +350,9 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music ending without a fade, and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
     inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
-    call: (h, a) => json(h.checkProject(String(a.kind ?? "any"))),
+    call: async (h, a) => json(await h.checkProject(String(a.kind ?? "any"))),
   },
   {
     name: "export_video",
@@ -457,21 +494,35 @@ APP_TOOLS.push(
   },
   {
     name: "add_sound_effect",
-    description: `Add a built-in sound effect, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. It lands on an audio track at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. The file is made once per project and reused.`,
-    inputSchema: obj(
-      {
-        name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
-        start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
-        end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
-        volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1" },
+    description: `Add built-in sound effects, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. One lands on an audio track at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. \`sounds\` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.`,
+    inputSchema: obj({
+      name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
+      start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
+      end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
+      volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1" },
+      sounds: {
+        type: "array",
+        description: "Many sounds in one call instead of name: each with its own name, start or end_at, and volume",
+        items: obj(
+          {
+            name: { type: "string", enum: Object.keys(SFX), description: "Which effect" },
+            start: { type: "number", minimum: 0, description: "Timeline seconds it starts (default the playhead)" },
+            end_at: { type: "number", minimum: 0, description: "Timeline seconds it ends instead" },
+            volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, default 1" },
+          },
+          ["name"],
+        ),
       },
-      ["name"],
-    ),
+    }),
     call: async (h, a) => {
+      if ((a.name === undefined) === (a.sounds === undefined)) throw new Error("give name (one sound) or sounds (a list), not both");
+      const list = (a.sounds ?? [a]) as { name: string; start?: number; end_at?: number; volume?: number }[];
+      if (!list.length) throw new Error("sounds needs at least one sound");
       const before = h.describe();
-      const r = (await h.ai("addSoundEffect", String(a.name), given({ at: a.start, endAt: a.end_at }))) as { clipId: string };
-      if (a.volume !== undefined && a.volume !== 1) await h.exec("set_param", { clip_ids: [r.clipId], path: "volume", value: a.volume });
-      return json({ clip_id: r.clipId, ...(describeChanges(before, h.describe()) as object) });
+      const cues = list.map((x) => given({ name: x.name, at: x.start, endAt: x.end_at, volume: x.volume }));
+      const r = (await h.ai("addSoundEffects", "", { sounds: cues })) as { clipIds: string[] };
+      const ids = a.sounds === undefined ? { clip_id: r.clipIds[0] } : { clip_ids: r.clipIds };
+      return json({ ...ids, ...(describeChanges(before, h.describe()) as object) });
     },
   },
   {
@@ -581,6 +632,7 @@ APP_TOOLS.push(
       fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
+      check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv"], description: "Default mp4 (H.264 + AAC)" },
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
@@ -590,7 +642,11 @@ APP_TOOLS.push(
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
       const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined }, master);
       const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
-      if (a.check === true) return { content: [{ type: "image", data: await h.versionsSheet(req), mimeType: "image/png" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: "Nothing exported. Each row is a version at 15%, 50% and 92% of its length." }) }] };
+      if (a.check === true) {
+        const at = (a.check_at as number[] | undefined)?.slice(0, 8);
+        const shares = at?.length ? at : [0.15, 0.5, 0.92];
+        return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/png" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
+      }
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);

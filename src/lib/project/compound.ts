@@ -121,6 +121,43 @@ export function createCompound(p: Project, ids: Id[], name?: string): { project:
   return { project: q, clipId: clip.id };
 }
 
+// ---- copy ------------------------------------------------------------------------
+
+/**
+ * An independent copy of compound `id` (Premiere's Make Subsequence of a
+ * copy, Resolve's Decompose-then-recompose done in one step): the same
+ * tracks and clips under fresh ids, so a styled precomp (a floating
+ * window: footage, mask, border, shadow) is a template, and the copy can
+ * take other footage (replace_clip inside edit_compound) without touching
+ * the original. Track mattes and groups inside follow the new ids.
+ * ponytail: compound clips inside the copy still play their compounds,
+ * shared; copy those too when a nested precomp must differ.
+ */
+export function copyCompound(p: Project, id: Id): { project: Project; compoundId: Id } {
+  const k = findCompound(p, id);
+  if (!k) return { project: p, compoundId: id };
+  const ids = new Map(k.tracks.flatMap((t) => t.clips.map((c) => [c.id, uid("c")] as const)));
+  const groups = new Map<Id, Id>();
+  const tracks = k.tracks.map((t) => ({
+    ...t,
+    id: uid("t"),
+    clips: t.clips.map((c) => {
+      const out = { ...c, id: ids.get(c.id)! } as Clip;
+      if (c.group) {
+        if (!groups.has(c.group)) groups.set(c.group, uid("g"));
+        out.group = groups.get(c.group);
+      }
+      if ("trackMatte" in out && out.trackMatte?.clipId) out.trackMatte = { ...out.trackMatte, clipId: ids.get(out.trackMatte.clipId) ?? out.trackMatte.clipId };
+      return out;
+    }),
+  }));
+  const names = new Set((p.compounds ?? []).map((x) => x.name));
+  let name = `${k.name} copy`;
+  for (let n = 2; names.has(name); n++) name = `${k.name} copy ${n}`;
+  const copy: Compound = { id: uid("k"), name, tracks, markers: k.markers.map((m) => ({ ...m, id: uid("m") })) };
+  return { project: { ...p, compounds: [...(p.compounds ?? []), copy] }, compoundId: copy.id };
+}
+
 // ---- break apart ----------------------------------------------------------------
 
 /** Why a compound clip cannot be broken apart, or null. */

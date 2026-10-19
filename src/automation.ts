@@ -9,13 +9,14 @@ import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
-import { findClip, projectDuration } from "./lib/project/ops";
+import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
 import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
-import { addSoundEffect } from "./state/sfx";
+import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
@@ -31,8 +32,10 @@ import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { secondsToFrames } from "./lib/time";
-import { sourceFrames } from "./engine/analyze";
-import { checkProject, type CheckKind } from "./lib/designCheck";
+import { decodeMono, sourceFrames } from "./engine/analyze";
+import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
+import { measureBackdrop, tailLevels } from "./lib/contrast";
+import type { Project } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -96,7 +99,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, analyzeMusic, loudnessReport, textBehindSubject },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -150,6 +153,52 @@ async function blobToBase64(blob: Blob): Promise<string> {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
+}
+
+/**
+ * What check_project measures before it judges (ADR-068): each title's
+ * contrast with the picture behind it, rendered as export draws it with
+ * every title off, and each long music clip's last seconds, decoded. A
+ * failure to measure falls back to the check's own guess, never fails it.
+ */
+async function measureForCheck(p: Project): Promise<Measured> {
+  const out: Measured = {};
+  const targets = contrastTargets(p);
+  if (targets.length) {
+    try {
+      // Without its titles, at a width that is plenty for a luminance.
+      const bare: Project = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.type === "text" ? { ...c, disabled: true } : c)) })) };
+      const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
+      const frames = [...new Set(targets.map((t) => t.frame))];
+      const pics = await exportStills(bare, frames, w, h);
+      const canvas = new OffscreenCanvas(w, h);
+      const g = canvas.getContext("2d", { willReadFrequently: true })!;
+      out.contrast = {};
+      for (const [i, frame] of frames.entries()) {
+        const bmp = await createImageBitmap(pics[i]);
+        g.drawImage(bmp, 0, 0, w, h);
+        bmp.close();
+        const px = g.getImageData(0, 0, w, h).data;
+        for (const t of targets.filter((x) => x.frame === frame)) {
+          const m = measureBackdrop(t.colors, px, w, { left: t.box.left * k, right: t.box.right * k, top: t.box.top * k, bottom: t.box.bottom * k });
+          if (m) out.contrast[t.clipId] = m;
+        }
+      }
+    } catch {
+      delete out.contrast;
+    }
+  }
+  for (const t of tailTargets(p)) {
+    const a = getAsset(p, t.assetId);
+    if (!a?.hasAudio) continue;
+    try {
+      const rate = 8000;
+      (out.tails ??= {})[t.clipId] = tailLevels(await decodeMono(a, t.from, t.to, rate), rate);
+    } catch {
+      // Unreadable sound: the check keeps its plain rule.
+    }
+  }
+  return out;
 }
 
 /** describeProject of the whole document, plus the compound clips the user
@@ -220,7 +269,11 @@ const mcpHost: McpHost = {
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
-  checkProject: (kind) => (needProject(), checkProject(store.document(), kind as CheckKind)),
+  checkProject: async (kind) => {
+    needProject();
+    const p = store.document();
+    return checkProject(p, kind as CheckKind, await measureForCheck(p));
+  },
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     return exportForAgent(options as RenderOptions);
@@ -235,7 +288,7 @@ const mcpHost: McpHost = {
     return blobToBase64(await versionsSheet(options as VersionsOptions & { at?: number[] }));
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
-  ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
+  ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
     return (await platform.listProjects()).map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));

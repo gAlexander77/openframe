@@ -19,17 +19,18 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { NAMED_EASES, upsertKey } from "./keyframes";
+import { upsertKey } from "./keyframes";
+import { keyframeProblem } from "./animatable";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
-import { EASE_IDS, easeById, liveRefs, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
+import { EASE_IDS, easeById, liveRefs, presetOf, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
 import { replaceText, type Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
-import { breakCompound, breakProblem, compoundProblem, compoundView, createCompound, withCompoundView } from "./project/compound";
+import { breakCompound, breakProblem, compoundProblem, compoundView, copyCompound, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
 import { deleteMarkers, updateMarker } from "./markers";
@@ -192,6 +193,7 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   gradient: S.obj({ from: S.str("CSS color at the start"), to: S.str("CSS color at the end"), angle: S.num("Degrees: 0 left to right (default), 90 top to bottom", { minimum: -360, maximum: 360 }) }, ["from", "to"], "A two-color fill instead of color"),
   accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
   letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
+  lineHeight: S.num("Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines)", { minimum: 0.5, maximum: 3 }),
   maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
 }, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
@@ -230,6 +232,21 @@ function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial
   if (s.accent === "") delete s.accent;
   if ((s.case as string) === "none") delete s.case;
   return s;
+}
+
+/** One ease vocabulary for every keyframe tool: the easing menu's presets
+ * (keyframeEdit.ts) and a CSS cubic-bezier. */
+const EASE_SCHEMA = S.str(`Curve toward the next keyframe: ${EASE_IDS.join(", ")}. fastIn is the modern expo-out (arrives fast, glides to rest); spring, elastic and bounce overshoot and settle`, { enum: EASE_IDS });
+const BEZIER_SCHEMA: JsonSchema = { type: "array", items: { type: "number" }, description: "[x1, y1, x2, y2], a CSS cubic-bezier (x1 and x2 in 0..1, y may overshoot); overrides ease" };
+
+/** The ease a command names: a preset, or a bezier, which wins. */
+function easeArg(name: unknown, bezier: unknown): Ease | undefined {
+  if (bezier !== undefined) {
+    const b = bezier as number[];
+    if (b.length !== 4 || b[0] < 0 || b[0] > 1 || b[2] < 0 || b[2] > 1) throw new CommandError("bezier must be [x1, y1, x2, y2] with x1 and x2 in 0..1");
+    return [b[0], b[1], b[2], b[3]];
+  }
+  return name === undefined ? undefined : easeById(String(name));
 }
 
 // ---- the registry ------------------------------------------------------------------
@@ -600,7 +617,7 @@ export const COMMANDS: Command[] = [
             to: S.num("Cutoff at the end of the sweep, Hz", { minimum: 20, maximum: 20000 }),
             start: S.num("Timeline seconds the sweep begins", { minimum: 0 }),
             end: S.num("Timeline seconds it arrives", { minimum: 0 }),
-            ease: S.str("Curve of the sweep (default linear: the same octaves each second)", { enum: ["linear", "easeIn", "easeOut", "easeInOut"] }),
+            ease: S.str("Curve of the sweep (default linear: the same octaves each second); the keyframe tools' eases", { enum: EASE_IDS }),
           },
           ["to", "start", "end"],
           "Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export",
@@ -612,7 +629,8 @@ export const COMMANDS: Command[] = [
     run: (p, a) => {
       const kind = a.type as FilterKind;
       const path = `${kind}.cutoff`;
-      const sweep = a.sweep as { to: number; start: number; end: number; ease?: Ease } | undefined;
+      const sweep = a.sweep as { to: number; start: number; end: number; ease?: string } | undefined;
+      const sweepEase = sweep?.ease === undefined ? undefined : easeById(sweep.ease);
       return fxEdit(p, a, "filter", (c) => {
         if (a.off === true) return withoutFx(c, kind, [path]);
         const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
@@ -622,7 +640,7 @@ export const COMMANDS: Command[] = [
         const k1 = f(p, sweep.end) - c.start;
         if (k1 <= k0) throw new CommandError("sweep.end must come at least a frame after sweep.start");
         const to = cleanFx(kind, { cutoff: sweep.to }, filter)!.cutoff;
-        return { ...out, keyframes: { ...c.keyframes, [path]: [{ f: k0, v: filter.cutoff, ...(sweep.ease && sweep.ease !== "linear" ? { ease: sweep.ease } : {}) }, { f: k1, v: to }] } };
+        return { ...out, keyframes: { ...c.keyframes, [path]: [{ f: k0, v: filter.cutoff, ...(sweepEase && sweepEase !== "linear" ? { ease: sweepEase } : {}) }, { f: k1, v: to }] } };
       });
     },
   },
@@ -726,7 +744,14 @@ export const COMMANDS: Command[] = [
       ids.forEach((id) => clipOrThrow(p, id));
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
-      return ids.reduce((q, id) => ops.setParam(q, [id], paramPath(clipOrThrow(q, id).clip, String(a.path)), Number(a.value), rel), p);
+      return ids.reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        const path = paramPath(clip, String(a.path));
+        // A keyed path takes a key here: refuse one nothing would read (ADR-066).
+        const problem = clip.keyframes?.[path]?.length && rel !== undefined ? keyframeProblem(clip, path) : null;
+        if (problem) throw new CommandError(`${problem}; remove_keyframes path ${a.path} clears the dead keys`);
+        return ops.setParam(q, [id], path, Number(a.value), rel);
+      }, p);
     },
   },
   {
@@ -920,14 +945,22 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "duplicate_clips",
-    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.",
-    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }) }, ["clip_ids"]),
+    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.",
+    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }), unique: S.bool("Compound clips: copy their nested timelines too, so each copy can change on its own (default false: shared)") }, ["clip_ids"]),
     run: (p, a) => {
       const found = (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id));
       const origin = Math.min(...found.map((x) => x.clip.start));
       const at = a.at === undefined ? Math.max(...found.map((x) => x.clip.start + x.clip.duration)) : f(p, a.at);
       const copies = regroupCopies(found.map((x) => x.clip));
-      return copies.reduce((q, c, i) => ops.placeClip(q, found[i].track.id, { ...c, id: uid("c"), start: at + c.start - origin } as Clip, { collision: "newTrack" }), p);
+      return copies.reduce((q, c, i) => {
+        let clip = { ...c, id: uid("c"), start: at + c.start - origin } as Clip;
+        if (a.unique === true && clip.type === "compound") {
+          const made = copyCompound(q, clip.compoundId);
+          q = made.project;
+          clip = { ...clip, compoundId: made.compoundId };
+        }
+        return ops.placeClip(q, found[i].track.id, clip, { collision: "newTrack" });
+      }, p);
     },
   },
   {
@@ -1296,21 +1329,25 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_keyframe",
-    description: "Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on a path interpolate between them.",
+    description: "Animate a parameter: add a keyframe at a timeline time. Two or more keyframes on a path interpolate between them, each shaped toward the next by its ease. Only paths that animate on the clip are accepted (help topic params lists them); any other is refused with the list.",
     input: S.obj(
       {
         clip_id: S.str("Clip id"),
-        path: S.str("Parameter path (see set_param)"),
+        path: S.str("Parameter path that animates on this clip, e.g. transform.x, opacity, effects.0.amount (help topic params)"),
         at: S.num("Timeline seconds"),
         value: S.num("Value at that time"),
-        ease: S.str("Curve toward the next keyframe; spring, elastic and bounce overshoot and settle", { enum: NAMED_EASES }),
+        ease: EASE_SCHEMA,
+        bezier: BEZIER_SCHEMA,
       },
       ["clip_id", "path", "at", "value"],
     ),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
-      const key = { f: f(p, a.at) - clip.start, v: Number(a.value), ...(a.ease ? { ease: a.ease as "linear" } : {}) };
       const path = paramPath(clip, String(a.path));
+      const problem = keyframeProblem(clip, path);
+      if (problem) throw new CommandError(problem);
+      const e = easeArg(a.ease, a.bezier);
+      const key = { f: f(p, a.at) - clip.start, v: Number(a.value), ...(e && e !== "linear" ? { ease: e } : {}) };
       return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
     },
   },
@@ -1689,7 +1726,7 @@ export const COMMANDS: Command[] = [
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (a.to === undefined && a.value === undefined) throw new CommandError("give to, value or both");
-      const path = String(a.path);
+      const path = paramPath(clip, String(a.path));
       const ref = { path, f: f(p, a.at) - clip.start };
       if (!liveRefs(clip.keyframes, [ref]).length) throw new CommandError(`no ${path} keyframe at ${a.at}s on clip ${clip.id}`);
       let keys = clip.keyframes!;
@@ -1707,19 +1744,14 @@ export const COMMANDS: Command[] = [
         clip_id: S.str("Clip id"),
         path: S.str("Parameter path; omit for all keyed parameters"),
         at: S.num("Timeline seconds of the keyframe; omit for all keyframes"),
-        ease: S.str("Preset name", { enum: EASE_IDS }),
-        bezier: { type: "array", items: { type: "number" }, description: "[x1, y1, x2, y2]" },
+        ease: EASE_SCHEMA,
+        bezier: BEZIER_SCHEMA,
       },
       ["clip_id"],
     ),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
-      let e: Ease | undefined = a.ease !== undefined ? easeById(String(a.ease)) : undefined;
-      if (a.bezier !== undefined) {
-        const b = a.bezier as number[];
-        if (b.length !== 4 || b[0] < 0 || b[0] > 1 || b[2] < 0 || b[2] > 1) throw new CommandError("bezier must be [x1, y1, x2, y2] with x1 and x2 in 0..1");
-        e = [b[0], b[1], b[2], b[3]];
-      }
+      const e = easeArg(a.ease, a.bezier);
       if (!e) throw new CommandError("give ease or bezier");
       const refs = keyRefs(p, clip, a.path, a.at === undefined ? undefined : [Number(a.at)]);
       return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: setEase(c.keyframes!, refs, e) }));
@@ -2258,10 +2290,30 @@ export function describeProject(p: Project) {
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
         ...("filter" in c && c.filter ? { filter: c.filter.type, ...(c.filter.intensity !== 1 ? { filter_intensity: c.filter.intensity } : {}) } : {}),
         ...animSummary(c),
-        ...(c.keyframes && Object.values(c.keyframes).some((k) => k.length) ? { keyframed: Object.keys(c.keyframes).filter((k) => c.keyframes![k].length) } : {}),
+        ...keySummary(c, s),
       })),
     };
   }
+}
+
+/** A clip's keyframes for describeProject, each path's keys as [at, value]
+ * or [at, value, ease] in timeline seconds (ease a preset's name or a
+ * bezier), so an edit to a key shows in the change answer. A dense path
+ * (tracking, ducking) is summed up instead. */
+function keySummary(c: Clip, s: (frames: number) => number) {
+  const paths = Object.entries(c.keyframes ?? {}).filter(([, k]) => k.length);
+  if (!paths.length) return {};
+  const r = (v: number) => +v.toFixed(4);
+  const key = (k: Keyframe) => {
+    const e = k.ease && k.ease !== "linear" ? (presetOf(k.ease)?.id ?? k.ease) : undefined;
+    return e === undefined ? [s(c.start + k.f), r(k.v)] : [s(c.start + k.f), r(k.v), e];
+  };
+  const MAX = 24;
+  return {
+    keyframes: Object.fromEntries(
+      paths.map(([path, ks]) => [path, ks.length <= MAX ? ks.map(key) : { count: ks.length, first: key(ks[0]), last: key(ks.at(-1)!), range: [r(Math.min(...ks.map((k) => k.v))), r(Math.max(...ks.map((k) => k.v)))] }]),
+    ),
+  };
 }
 
 /** A clip's animations by slot, for describeProject: pictures carry no

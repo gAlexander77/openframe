@@ -57,7 +57,9 @@ viewer's canvas, which is only as big as it is on screen, and a 9:16
 project came back 222 pixels wide whatever was asked), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
-leave the user's projects alone), `preview_frames` (one contact sheet of
+leave the user's projects alone), both answering a summary (name, canvas,
+fps, duration, counts) rather than the whole timeline (about 20 KB on the
+launch film), `preview_frames` (one contact sheet of
 up to 24 moments, each stamped with its time), `export_video`,
 `export_versions` (every shape and cut-down of an ad, one file each) and
 `export_status`, and the local AI tools:
@@ -67,7 +69,9 @@ up to 24 moments, each stamped with its time), `export_video`,
 `sync_to_clip` command places one by a known offset),
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
-`add_sound_effect` (a built-in whoosh, pop, ding... at a time),
+`add_sound_effect` (a built-in whoosh, pop, ding... at a time; `sounds`
+places a list, `[{name, start | end_at, volume}]`, in one call and one
+undo step, since it cannot go in `batch`),
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `move_track` (up or down the stack, so a grade sits under the
@@ -75,11 +79,14 @@ titles), `save_project_copy` (a variant to work by hand, the original
 kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
 `"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
-vertical apps' buttons, text size and reading time, caption speed, fonts,
-flashes over 3 a second, black gaps, music endings, an ad's end card, an
-epic edit's cuts on the beat; each finding names the fixing tool),
+vertical apps' buttons, text size and reading time, the WCAG contrast of
+each title with the rendered picture behind it, caption speed, fonts,
+flashes over 3 a second, black gaps, music that stops dead (its last
+second decoded, so a track that fades out in its own audio passes), an
+ad's end card, an epic edit's cuts on the beat; shots counted on the
+busiest picture track; each finding names the fixing tool, [[ADR-068 check_project measures the picture and the sound it judges]]),
 `preview_motion` (consecutive frames of a stretch, with the cuts and beats
-in it), `preview_media` (an imported video's own frames, to choose
+in it, tiles up to 640 wide as `preview_frames`'), `preview_media` (an imported video's own frames, to choose
 moments), `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
 in seconds) and `duplicate_clips` (what the inspector could do and agents
 could not), `text_behind_subject` (titles behind a video's subject) and
@@ -92,8 +99,27 @@ Edits answer with what they changed, not the whole timeline:
 `{"duration": 6, "added_clips": [...], "changed_clips": [...],
 "removed_clips": ["c_..."]}` (and `*_tracks`, `added_assets`, any other
 part that differs), each clip as `describe_project` shows it plus its
-`track`; `{"unchanged": true}` when nothing did. `undo` and `redo` answer
-the same way. `describe_project` is still the whole picture.
+`track`; `{"unchanged": true}` when nothing did. Compounds are answered
+only when they changed, summed up (`added_compounds`, `changed_compounds`:
+`{id, name, duration, clips}`, plus the clips changed inside, as an
+`edit_compound` changes them; `removed_compounds`), never with their whole
+nested timelines (3 KB an edit on the launch film's six windows). `undo`
+and `redo` answer the same way. `describe_project` is still the whole
+picture, keyframes included: each keyed path's keys as `[at, value]` or
+`[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
+"fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,
+first, last, range}`), so an edit to a key shows in its answer.
+
+Keyframes go only where something moves ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]):
+`add_keyframe` refuses a path the renderer or the mixer does not read on
+that clip, and the error lists the ones it does (`help` topic `params`
+has them all; `src/lib/animatable.ts` is the one table). `set_param` with
+`at` refuses to add a key to dead keys. `add_keyframe`,
+`set_keyframe_ease` and `set_audio_filter`'s sweep share one ease
+vocabulary, the easing menu's twelve presets, and the keyframe tools take
+a `bezier` `[x1, y1, x2, y2]` too: `fastIn` is the modern expo-out, so a
+window sliding in is `{"path": "transform.x", "at": 3, "value": 0.75,
+"ease": "fastIn"}` then the landing key. Text styles take `lineHeight`.
 
 `batch` runs `{"commands": [{"command": "set_animation", "args": {...}},
 ...]}` in order as one edit and one undo step, all or nothing: a failing
@@ -202,7 +228,15 @@ Cut-downs keep the end card (`keep_end` seconds, default the end card's
 length). In another shape an ad element, or any group, moves and scales
 as one unit: its parts keep their layout, it stays against the edges it
 was against (or centered), and it shrinks to fit the safe area when it
-must ([[ADR-063 Versions fit a group as one unit]]). Long runs answer
+must ([[ADR-063 Versions fit a group as one unit]]). Hand-animated
+layouts adapt too ([[ADR-067 Versions lay keyframed motion out again around its rest]]):
+each layer is placed where it rests (a slide-in where it lands), its keyed
+motion laid out again around that (a slide from off the edge still starts
+off the edge); a compound clip moved or scaled as a picture (a floating
+window) is refit as one picture and placed like a logo, shrunk into the
+safe area when the frame would cut it; a word too wide to wrap shrinks to
+the safe width. `check_at` (fractions of each version's length) picks the
+moments the check sheet shows. Long runs answer
 `running`; `export_status` follows them and lists the `versions` when
 done.
 `describe_project` now names a clip's `name` and `group`, so an
@@ -232,7 +266,7 @@ Graphics and compositing, for ads and title sequences
 - `set_motion_blur` `{clip_ids, on, shutter_angle}`: moving clips (and slides, pushes, zooms, spins) blur over the shutter, 180 degrees by default.
 - `set_edge_mode` `{clip_ids, edge: none | mirror | repeat}`: copies of the picture fill the canvas around it when it moves, shrinks or shakes.
 - `set_wiggle` `{clip_ids, target: position | x | y | rotation | scale, frequency, amplitude, strength, seed, at}`: seeded shake or drift (pixels, degrees, percent); `strength` with `at` keys a ramp; amplitude 0 removes it.
-- `add_keyframe` and `set_keyframe_ease` take `spring`, `elastic` and `bounce`, which overshoot and settle.
+- `add_keyframe` and `set_keyframe_ease` take `spring`, `elastic` and `bounce`, which overshoot and settle, among the twelve presets they share.
 
 `describe_project` shows a color clip's `color`, a shape's `shape`, and
 `track_matte`, `motion_blur`, `edge` and `wiggle` where set.
@@ -275,7 +309,14 @@ under `compounds` (`id`, `name`, `duration`, `tracks` in the same shape as
 the project's, times their own), and a compound clip names its `compound`.
 `edit_compound` runs any other command inside one: `compound_id`,
 `command`, `args`, with the nested timeline's ids and times;
-`rename_compound` takes `compound_id` and `name`. Agents always see and
+`rename_compound` takes `compound_id` and `name`. A compound is one
+shared timeline, so `duplicate_clips` of a compound clip plays the same
+one, unless `unique: true`: then the copy gets its own timeline under
+fresh ids (answered under `added_compounds`). That makes a styled precomp
+a template, as the launch film's floating windows wanted: build one window
+(footage, mask, border, shadow) and `create_compound_clip` it, then for
+each use `duplicate_clips` it with `unique: true` and `edit_compound`
+`replace_clip` its footage, keyframing each copy's own slide. Agents always see and
 edit the whole project, even while the user has a compound clip open
 (`describe_project` then adds `open_compounds`, outermost first).
 

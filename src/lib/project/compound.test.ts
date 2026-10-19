@@ -305,3 +305,51 @@ describe("commands for agents", () => {
     expect(() => runCommand(p, "break_compound_clip", { clip_id: "A" })).toThrow(/compound clip/);
   });
 });
+
+describe("a compound clip as a template (duplicate_clips unique)", () => {
+  /** A styled window: footage with a mask and a border shape, as one compound clip. */
+  function window(): { p: Project; clipId: string; compoundId: string } {
+    const shot2: Asset = { ...video, id: "v2", name: "v2.mp4" };
+    let p: Project = { ...createProject(), assets: [video, shot2] };
+    p = runCommand(p, "add_media_clip", { asset_id: "v", start: 0, duration: 2 });
+    const ui = p.tracks.flatMap((t) => t.clips)[0].id;
+    p = runCommand(p, "set_mask", { clip_ids: [ui], shape: "rectangle", radius: 0.2 });
+    p = runCommand(p, "add_shape", { kind: "rounded_rectangle", start: 0, duration: 2, fill: false, stroke_width: 2 });
+    const border = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "color")!.id;
+    p = runCommand(p, "set_track_matte", { clip_id: border, matte_clip_id: ui });
+    const made = createCompound(p, [ui, border], "Window");
+    const clip = findClip(made.project, made.clipId!)!.clip as CompoundClip;
+    return { p: made.project, clipId: clip.id, compoundId: clip.compoundId };
+  }
+
+  it("shares the nested timeline by default, as before", () => {
+    const { p, clipId, compoundId } = window();
+    const q = runCommand(p, "duplicate_clips", { clip_ids: [clipId] });
+    const copies = q.tracks.flatMap((t) => t.clips).filter((c): c is CompoundClip => c.type === "compound");
+    expect(copies.map((c) => c.compoundId)).toEqual([compoundId, compoundId]);
+    expect(q.compounds).toHaveLength(1);
+  });
+
+  it("gives a unique copy its own timeline under fresh ids, that takes other footage without touching the original", () => {
+    const { p, clipId, compoundId } = window();
+    let q = runCommand(p, "duplicate_clips", { clip_ids: [clipId], unique: true });
+    const copy = q.tracks.flatMap((t) => t.clips).find((c): c is CompoundClip => c.type === "compound" && c.id !== clipId)!;
+    expect(copy.compoundId).not.toBe(compoundId);
+    const [orig, mine] = [findCompound(q, compoundId)!, findCompound(q, copy.compoundId)!];
+    expect(mine.name).toBe("Window copy");
+    const ids = (k: typeof orig) => k.tracks.flatMap((t) => [t.id, ...t.clips.map((c) => c.id)]);
+    expect(ids(mine).some((id) => ids(orig).includes(id))).toBe(false);
+    // The border's track matte follows the copy's footage.
+    const inner = mine.tracks.flatMap((t) => t.clips);
+    const ui = inner.find((c) => c.type === "video")!;
+    expect((inner.find((c) => c.type === "color") as Clip & { trackMatte?: { clipId?: string } }).trackMatte?.clipId).toBe(ui.id);
+    // Other footage in the copy: the original keeps its own.
+    q = runCommand(q, "edit_compound", { compound_id: copy.compoundId, command: "replace_clip", args: { clip_id: ui.id, asset_id: "v2" } });
+    const asset = (id: string) => (findCompound(q, id)!.tracks.flatMap((t) => t.clips).find((c) => c.type === "video") as Clip & { assetId: string }).assetId;
+    expect([asset(compoundId), asset(copy.compoundId)]).toEqual(["v", "v2"]);
+    // A second unique copy is numbered.
+    q = runCommand(q, "duplicate_clips", { clip_ids: [clipId], unique: true });
+    expect(q.compounds!.map((k) => k.name)).toEqual(["Window", "Window copy", "Window copy 2"]);
+    expect(describeProject(q).compounds!.map((k) => k.name)).toContain("Window copy 2");
+  });
+});
