@@ -234,7 +234,7 @@ export async function ask(text: string) {
   if (!state.model) {
     await discoverModels();
     if (!state.model) {
-      set({ entries: [...state.entries, { role: "error", text: `No local model found. Start ${provider().label} with a model that supports tool calling (for example qwen3.5 in Ollama).` }] });
+      set({ entries: [...state.entries, { role: "error", text: `No local model found. Start ${provider().label} with a model that supports tool calling (for example llama3.1 in Ollama).` }] });
       return;
     }
   }

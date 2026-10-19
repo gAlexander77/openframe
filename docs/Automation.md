@@ -290,7 +290,7 @@ Graphics and compositing, for ads and title sequences
 ## 3. Ask in plain words (AI assistant)
 
 The AI assistant panel runs a model on this computer (Ollama or LM Studio,
-found automatically) over the same tools. With qwen3.5:9b, "add a title
+found automatically) over the same tools. With a 9B local model, "add a title
 Welcome from 1 to 4 seconds" takes about 10 s; "split at 5 s and put a
 dissolve between the parts" about 2 s. Each answer can be undone as a whole.
 

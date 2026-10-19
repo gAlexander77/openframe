@@ -178,8 +178,8 @@ export function AssistantPanel() {
                   <p>
                     The AI assistant uses a model on this computer; nothing is uploaded.{" "}
                     {c.problem === "no-models"
-                      ? "Install one that can call tools (for example qwen3.5), then look again."
-                      : `Start ${provider.label} with a model that can call tools (for example qwen3.5), then look again.`}
+                      ? "Install one that can call tools (for example llama3.1), then look again."
+                      : `Start ${provider.label} with a model that can call tools (for example llama3.1), then look again.`}
                   </p>
                   <button className="btn" onClick={() => void discoverModels()}>
                     Look again
