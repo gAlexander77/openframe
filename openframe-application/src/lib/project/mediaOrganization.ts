@@ -25,7 +25,7 @@ export function organizeMedia(p: Project, ids: string[], patch: { folder?: strin
 
 const shows = (gone: Set<string>) => (c: Clip) => "assetId" in c && gone.has(c.assetId);
 /** Every asset a clip shows, on the timeline or inside a compound clip. */
-const usedAssets = (p: Project) => new Set([...p.tracks, ...(p.compounds ?? []).flatMap((k) => k.tracks)].flatMap((t) => t.clips.flatMap((c) => ("assetId" in c ? [c.assetId] : []))));
+export const usedAssets = (p: Project) => new Set([...p.tracks, ...(p.compounds ?? []).flatMap((k) => k.tracks)].flatMap((t) => t.clips.flatMap((c) => ("assetId" in c ? [c.assetId] : []))));
 
 /** Media no clip uses (stickers, which the library does not list, are
  * left alone). */

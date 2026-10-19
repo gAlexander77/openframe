@@ -1,9 +1,8 @@
 // What a spoken take sounds like, measured: where the speech starts and
 // ends, the pauses inside it, how loud its silences are, and its pitch
-// (YIN). The natural finish finds the voice's pauses by them, and the
-// naturalness research (docs/research/Natural voiceover 2026-10-19.md)
-// compared the voice model's reads with natural ones by them, since no
-// model can listen.
+// (YIN). review_voiceover reports these per line, and the naturalness
+// research (docs/research/Natural voiceover 2026-10-19.md) compared the
+// voice model's reads with natural ones by them, since no model can listen.
 
 /** Energy per 10 ms window, in dBFS (RMS); -120 for digital silence. */
 export function envelopeDb(pcm: Float32Array, rate: number): Float32Array {

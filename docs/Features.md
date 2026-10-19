@@ -648,6 +648,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   the sentence keeps its intonation; captions never show them.
   `pronounce` respells names and acronyms for the voice while captions
   keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
+- **Listen back** (agents: `review_voiceover`): Whisper hears each line
+  and it is compared with the script word by word; each line's pace
+  (words and syllables a second), silences, longest pause, loudness, true
+  peak, pitch range and margin over the music are measured, with a verdict
+  and the tool calls that fix what is wrong.
+- **Retake one line** (agents: `retake_voiceover`): new words, a voice, a
+  speed or a pronunciation, read and put in the line's place; its caption
+  follows, the old take leaves the library, and `ripple` moves the lines
+  after it; one undo step.
 - **Voices to cast** (`list_catalog` section `voices`): each voice's
   accent, gender, its author's grade, character (measured pitch, melody
   and pace) and what it suits, the most natural first.

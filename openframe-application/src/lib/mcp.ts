@@ -99,7 +99,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject";
+export type AiTool = "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -580,7 +580,7 @@ APP_TOOLS.push(
   },
   {
     name: "add_voiceover",
-    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.`,
+    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.`,
     inputSchema: obj(
       {
         lines: {
@@ -617,6 +617,36 @@ APP_TOOLS.push(
       const lines = (a.lines as Record<string, unknown>[]).map((l) => given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, pauseAfter: l.pause_after, paragraph: l.paragraph }));
       return json(await h.voiceover(lines, given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
     },
+  },
+  {
+    name: "review_voiceover",
+    description:
+      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
+    inputSchema: obj({
+      clip_ids: { type: "array", items: { type: "string" }, description: "Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line" },
+      music: { type: "boolean", description: "Measure each line's margin over the music tracks under it (default true)" },
+    }),
+    call: async (h, a) => json(await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music }))),
+  },
+  {
+    name: "retake_voiceover",
+    description:
+      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice.",
+    inputSchema: obj(
+      {
+        clip_id: { type: "string", description: "The voice clip (add_voiceover's voice_clip)" },
+        text: { type: "string", description: "New words, with pause marks; default the line's own" },
+        caption: { type: "string", description: "What the caption shows, when it should differ from the words; default the new text as written" },
+        voice: VOICE,
+        speed: SPEED,
+        pronounce: { ...PRONOUNCE, description: "Words respelled for the voice, replacing the line's own map ({} clears it)" },
+        quality: QUALITY,
+        finish: FINISH,
+        ripple: { type: "boolean", description: "Move the lines and captions after it by the change in length (default false)" },
+      },
+      ["clip_id"],
+    ),
+    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, ripple: a.ripple }))),
   },
   {
     name: "auto_adjust",
@@ -695,7 +725,7 @@ Before you start: help (the tools by step), help with topic ad, epic_edit, voice
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
-3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed.
+3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.

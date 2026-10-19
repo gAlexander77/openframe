@@ -1,4 +1,4 @@
-// A voiceover script line, directed (add_voiceover):
+// A voiceover script line, directed (add_voiceover, retake_voiceover):
 // pause marks written in the text, a pronunciation map that respells words
 // for the voice while captions keep them as written, the pause a line's
 // ending calls for, and where the voice model's own pauses fall so a mark

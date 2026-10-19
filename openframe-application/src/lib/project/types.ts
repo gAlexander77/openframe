@@ -106,8 +106,8 @@ export interface Asset {
   folder?: string;
   favorite?: boolean;
   /** A voiceover line this file was spoken from on this machine
-   * (add_voiceover, text to speech): the script and how it was read, kept
-   * with the take. */
+   * (add_voiceover, retake_voiceover, text to speech): review_voiceover
+   * compares what it hears with `text`, retake_voiceover reads it again. */
   speech?: SpeechInfo;
 }
 

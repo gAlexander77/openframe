@@ -475,11 +475,11 @@ and the AI tools tab has a card for it.
   `src/engine/cutout.ts`), drawn above the title like any picture. With the title hidden, the copy over the original
   changes no pixel by more than 3 of 765: the matte's edges add no fringe.
 
-## Voiceover: pauses and finish
+## Voiceover: pauses, finish and review
 
 The voice model (Kokoro-82M) reads a line whole; what follows is sample
 math on its output (`src/lib/voiceScript.ts`, `voiceTake.ts`,
-`analysis/speech.ts`; [[ADR-083 Voiceover lines are directed in the script and keep it]],
+`analysis/speech.ts`, `voiceReview.ts`; [[ADR-083 Voiceover lines are directed in the script and keep it]],
 [[ADR-084 Voiceover is read at full precision and finished like a recording]],
 measurements in [[Natural voiceover 2026-10-19]]).
 
@@ -515,6 +515,27 @@ filter, seeded by the line's text) at -72 dBFS RMS added under the whole
 take; raised-cosine fades of 12 ms in and 30 ms out. A line read over 5.5
 syllables a second with no speed given is read once more at speed x
 5 / its rate, never below four fifths of the speed asked.
+
+**Hearing it back.** Whisper (`whisper-base.en_timestamped`) on each
+clip's own file at 16 kHz. The script and what was heard are lowered to
+words (punctuation out, numbers spelled, % and & said) and aligned by edit
+distance in which up to three words on either side may match when they
+run together ("open frame" = "openframe", "m c p" = "mcp"); neighboring
+differences merge, and one short word a letter off is minor. The script
+is compared as written and as respelled for the voice; the closer wins.
+Pace is syllables (vowel groups, silent e and -es/-ed handled) over the
+speech span. Pitch is YIN (40 ms windows, 60-400 Hz, threshold 0.15)
+with windows more than 1.8 times off the median dropped as octave
+errors; the range is the 10th to 90th percentile in semitones. Loudness
+and true peak come from rendering the voice's track alone over the line
+as export does (`measureMix`), and the margin over the music from the
+music tracks alone over the same span. A fix for a thin margin names a
+`duck_under_speech` depth: the music's current duck at the line's middle
+(its volume there against its loudest key) plus what the line lacks of
+12 LU. `voice_above_music_lu` aims over the span from the first word to
+the last, gaps included, so it ducks a voiceover with long gaps far too
+deep (38 LU under every line in the drive); the measured depth put the
+same lines at 12-13 LU.
 
 ## In the app and for agents
 

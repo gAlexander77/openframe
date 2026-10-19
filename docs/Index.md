@@ -263,7 +263,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-083 Voiceover lines are directed in the script and keep it]] —
   per-line voice, speed, time and pause; pause marks lengthen the voice's
   own pause; pronunciations for the voice only; the script kept with the
-  take.
+  take for review and retakes; one undo takes the speech files too.
 - [[ADR-084 Voiceover is read at full precision and finished like a recording]] —
   fp32 everywhere by default, the natural finish (a reader's pauses,
   rushed lines read slower, EQ, one loudness, room tone, fades, a touch of

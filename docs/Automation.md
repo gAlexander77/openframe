@@ -248,7 +248,20 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   "engine": {"quality", "device", "dtype"}}`: cut the footage to those
   times.
 
-`list_catalog` section `voices` describes every voice for casting; `help` topic `voiceover` is
+`review_voiceover` (`{"clip_ids"?, "music"?}`, read-only) hears each voice
+line with Whisper and answers per line `script`, `heard`, `match` and
+`differences` (`missing`, `extra` or `misheard`, with `at` on the
+timeline; a short word a letter off is `minor`), `words_per_second`,
+`syllables_per_second`, `lead_silence`, `tail_silence`,
+`longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
+`range_st`), `voice_above_music_lu`, a `verdict` (`ok` or the problems)
+and `fixes` (`{problem, tool, args}`), plus a `summary` (lines ok, the
+script's words a second, the loudness spread). `retake_voiceover`
+(`{"clip_id", "text"?, "caption"?, "voice"?, "speed"?, "pronounce"?,
+"quality"?, "finish"?, "ripple"?}`) reads one line again in its place:
+same clip id, its caption follows, the old take leaves the library,
+`ripple` moves the lines and captions after it. `list_catalog` section
+`voices` describes every voice for casting; `help` topic `voiceover` is
 the playbook.
 
 `frame_region` shows part of a picture full screen: `region` is a

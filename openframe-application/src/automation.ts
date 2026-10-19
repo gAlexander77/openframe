@@ -13,7 +13,8 @@ import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
-import { textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
+import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
+import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
@@ -107,7 +108,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),

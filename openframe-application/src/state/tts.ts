@@ -1,5 +1,6 @@
 // Speech made on this machine: text to speech for a title (CapCut's Text to
-// speech) and a whole narrated script (MCP add_voiceover). Every line is read whole, a sentence at a time,
+// speech), a whole narrated script (MCP add_voiceover) and one line read
+// again (retake_voiceover). Every line is read whole, a sentence at a time,
 // so its intonation is the voice's own; pauses the script asks for lengthen
 // the voice's own pauses (ADR-083); the take is finished to sit like a
 // recorded read (ADR-084). Each edit adds its speech files with its clips,
@@ -14,6 +15,7 @@ import { addTrack, findClip } from "../lib/project/ops";
 import type { Asset, Id, Project, SpeechInfo, TextStyle } from "../lib/project/types";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { checkVoice, DEFAULT_SPEED, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
+import { retakeLine } from "../lib/voiceLines";
 import { breaksOf, checkPronounce, chunkSentences, layoutLines, matchPauses, parseLine, pauseAfter, syllables } from "../lib/voiceScript";
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
@@ -323,6 +325,74 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
   } catch (e) {
     if (signal.aborted) toast("Canceled");
     else toast(`The voiceover was not made: ${(e as Error).message || e}`, "error");
+    throw e;
+  } finally {
+    dismiss(tid);
+    set(null);
+  }
+}
+
+export interface RetakeOptions extends ReadOptions {
+  /** New words (with pause marks); default the line's own. */
+  text?: string;
+  /** The caption's new words; default the new text as written. */
+  caption?: string;
+  /** Move the lines and captions after it by the change in length. */
+  ripple?: boolean;
+}
+
+/**
+ * Read one voiceover line again (MCP retake_voiceover), with new words, a
+ * voice, a speed or pronunciations, and put the take in the line's place
+ * as one undo step: the clip keeps its id and settings, its caption takes
+ * the new words and length, and the old take leaves the library.
+ */
+export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
+  if (running) throw new Error("A voice is already being made");
+  const doc = store.document();
+  const loc = findClip(doc, clipId);
+  if (!loc || loc.clip.type !== "audio") throw new Error(`No voice line ${clipId}: describe_project lists the Voiceover track's clips`);
+  const was = doc.assets.find((a) => a.id === (loc.clip as { assetId: Id }).assetId)?.speech;
+  const text = o.text ?? was?.text;
+  if (!text) throw new Error(`${clipId} was not spoken from a script (it was recorded or imported): give text to read in its place`);
+  const abort = new AbortController();
+  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
+  const tid = toast("Reading the line again", "progress");
+  set({ clipId, progress: 0, abort });
+  try {
+    const take = await readLine(text, { voice: o.voice ?? was?.voice, speed: o.speed ?? was?.speed, pronounce: o.pronounce ?? was?.pronounce, quality: o.quality ?? was?.quality, finish: o.finish ?? was?.finish }, signal);
+    const caption = o.caption ?? (o.text !== undefined ? take.written : undefined);
+    if (caption !== undefined) take.info.caption = o.caption;
+    else if (was?.caption) take.info.caption = was.caption;
+    const [asset] = await takeAssets([take], signal);
+    let answer: { shift: number; captionId?: Id } = { shift: 0 };
+    let start = 0;
+    store.editDocument("Retake voiceover line", (q) => {
+      const r = retakeLine(q, { clipId, asset, frames: secondsToFrames(take.seconds, q.fps), caption, ripple: o.ripple });
+      answer = r;
+      start = framesToSeconds(findClip(r.project, clipId)!.clip.start, q.fps);
+      const finish = take.info.finish ?? "natural";
+      // A new finish brings its clip settings; the line's own stay otherwise.
+      return o.finish && o.finish !== was?.finish ? finishClips(r.project, [clipId], finish, undefined) : r.project;
+    });
+    prepare(asset);
+    toast(`Read the line again, ${take.seconds.toFixed(1)} s`);
+    const fps = store.document().fps;
+    return {
+      voice_clip: clipId,
+      caption_clip: answer.captionId,
+      text: take.written,
+      start,
+      end: +(start + take.seconds).toFixed(3),
+      seconds: +take.seconds.toFixed(3),
+      voice: take.info.voice,
+      speed: take.info.speed,
+      ...(take.pauses.length ? { pauses: take.pauses } : {}),
+      ...(o.ripple ? { shifted: +framesToSeconds(answer.shift, fps).toFixed(3) } : {}),
+    };
+  } catch (e) {
+    if (signal.aborted) toast("Canceled");
+    else toast(`The line was not read again: ${(e as Error).message || e}`, "error");
     throw e;
   } finally {
     dismiss(tid);

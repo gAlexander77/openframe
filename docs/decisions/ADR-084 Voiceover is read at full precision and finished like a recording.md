@@ -57,8 +57,8 @@ of a natural read.
 ## Consequences
 
 - Six lines that the old read left with digital silence in four, a
-  sentence pause of 0.13 s and a line at 6.3 syllables a second now land
-  inside every target the research sets ([[Natural voiceover 2026-10-19]]).
+  sentence pause of 0.13 s and a line at 6.3 syllables a second now pass
+  every check `review_voiceover` makes ([[Natural voiceover 2026-10-19]]).
 - A first voiceover on a computer without WebGPU downloads 325 MB instead
   of 92 MB, and every line takes several seconds on the CPU: a long script
   there can pass the desktop bridge's 300 s for one call (a ponytail noted

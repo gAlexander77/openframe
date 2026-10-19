@@ -32,7 +32,8 @@ here:
 | Level | lines within about 1 LU of each other | BS.1770 per line, as mixed |
 
 `src/lib/analysis/speech.ts` holds the measures (`speechActivity`,
-`dips`, `pitchTrack`, `pitchStats`). All runs below were headless Edge on this machine, which offers
+`dips`, `pitchTrack`, `pitchStats`); `review_voiceover` reports them per
+line. All runs below were headless Edge on this machine, which offers
 WebGPU, through scratch drives against the dev server.
 
 ## What Kokoro does
@@ -146,7 +147,7 @@ edges compare equal.
 | | Before | After |
 |---|---|---|
 | Script pace | 2.82 words/s | 2.63 words/s |
-| Lines inside every target | 5 of 6 | 6 of 6 |
+| Lines review_voiceover passes | 5 of 6 | 6 of 6 |
 | Fastest line | 6.29 syllables/s | 4.61 (read again slower) |
 | Comma pauses inside lines | 0.19-0.37 s | 0.29-0.39 s |
 | Sentence pauses inside lines | 0.13, 0.40 s | 0.54, 0.54 s |
@@ -162,6 +163,20 @@ own comma pause (heard back as 0.58 s), "It's free. [pause 1] It's
 yours." lengthened its 80 ms dip to 1.0 s, and "Faster [pause 0.5] than
 you think." found no pause to lengthen (the voice ran through), so it
 was read as two parts, the first ending on a comma, joined with 0.5 s.
+
+## Ducking under a voiceover
+
+Four lines over a loud music bed, a 4.5 s gap before the last (it was
+pinned with `at`), voice 1.4-2.2 LU under the music at first.
+`duck_under_speech` with `voice_above_music_lu: 12` aims over the whole
+span from the first word to the last, gaps included; the unducked music
+in the gaps pulled the span's music loudness up, so it ducked to its
+40 dB limit and every line came out 38 LU over the music, the bed all but
+gone. `review_voiceover` measures each line's margin and the music's
+current duck instead, and names a depth: 14.2 dB put the four lines at
+12.0-12.8 LU, every verdict ok. A margin over 25 LU is now flagged too.
+The window target is the mixer's; this note leaves it as it is and
+records the limit.
 
 ## What was not measured
 
