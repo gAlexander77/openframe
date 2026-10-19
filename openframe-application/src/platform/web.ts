@@ -64,7 +64,8 @@ export const web: Platform = {
     const [file] = await pickFiles(".json,application/json");
     return file ? JSON.parse(await file.text()) : null;
   },
-  async collectProject(project, onProgress) {
+  async collectProject(project, onProgress, folder) {
+    if (folder) throw new Error("Collecting into a folder is desktop only: a page cannot write into a folder of your choosing. File > Collect files downloads the project JSON here.");
     const url = URL.createObjectURL(new Blob([JSON.stringify(project, null, 2)], { type: "application/json" }));
     Object.assign(document.createElement("a"), { href: url, download: "project.json" }).click();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -126,6 +127,25 @@ export const web: Platform = {
   async blobFor(src) {
     if (/^https?:/.test(src)) return (await fetch(src)).blob();
     return fileFor(src);
+  },
+
+  async head(src, bytes) {
+    if (!/^https?:/.test(src)) return new Uint8Array(await (await fileFor(src)).slice(0, bytes).arrayBuffer());
+    // A server that ignores Range sends it all: read only what is needed.
+    const res = await fetch(src, { headers: { Range: `bytes=0-${bytes - 1}` } });
+    if (!res.ok || !res.body) throw new Error(`the address answered ${res.status} ${res.statusText}`.trim());
+    const reader = res.body.getReader();
+    const out = new Uint8Array(bytes);
+    let n = 0;
+    while (n < bytes) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const take = value.subarray(0, bytes - n);
+      out.set(take, n);
+      n += take.length;
+    }
+    await reader.cancel().catch(() => undefined);
+    return out.subarray(0, n);
   },
 
   async listProjects() {

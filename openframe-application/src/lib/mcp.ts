@@ -13,6 +13,7 @@ import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
+import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -43,6 +44,8 @@ export interface McpHost {
   describe(): unknown;
   projectJson(): unknown;
   catalog(): unknown;
+  /** One entry per file, in order: the asset, a LUT ({lut_id}), or
+   * {src, name, error}; empty when the project closed meanwhile. */
   importMedia(files: { src: string; name?: string }[]): Promise<unknown>;
   undo(): unknown;
   redo(): unknown;
@@ -113,6 +116,8 @@ export interface VersionsRequest {
   resolution?: string;
   quality?: string;
   loudness?: number;
+  /** Desktop: the absolute folder to write into instead of the Videos folder. */
+  folder?: string;
 }
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
@@ -249,7 +254,14 @@ function musicSchema(files: boolean): JsonSchema {
   return obj(p, ["style"]);
 }
 
-const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = []): JsonSchema => ({ type: "object", properties, required, additionalProperties: false });
+const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = []): JsonSchema => ({ type: "object", properties, ...(required.length ? { required } : {}), additionalProperties: false });
+
+/** Where an agent's export goes instead of the Videos folder (ADR-095). */
+const FOLDER: JsonSchema = { type: "string", description: "An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it)" };
+const FOLDER_DESKTOP_ONLY = "folder is desktop only: this build (the browser) cannot write into a folder of your choosing. Leave folder out and ask the user to export from the app, or use the desktop app.";
+
+/** A contact sheet's tiles a row: one limit for every preview tool. */
+const columns = (dflt: number): JsonSchema => ({ type: "integer", minimum: 1, maximum: 8, description: `Tiles a row, at most 8; default ${dflt}` });
 
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
@@ -257,7 +269,7 @@ export const APP_TOOLS: AppTool[] = [
     name: "help",
     description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
-    call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), instructionsFor(h)) }] }),
+    call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), guideFor(h)) }] }),
   },
   {
     name: "describe_project",
@@ -274,12 +286,21 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "import_media",
-    description: "Import media files into the project by absolute path (desktop) or URL. Returns the new assets with their ids, for add_media_clip.",
+    description:
+      "Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.",
     inputSchema: obj(
-      { files: { type: "array", description: "Files to import", items: obj({ src: { type: "string", description: "Absolute path or URL" }, name: { type: "string", description: "Display name" } }, ["src"]) } },
+      { files: { type: "array", description: "Files to import", items: obj({ src: { type: "string", description: "Absolute path or URL" }, name: { type: "string", description: "The name the library shows (default the file's name); any text, it does not decide the format" } }, ["src"]) } },
       ["files"],
     ),
-    call: async (h, a) => json(await h.importMedia(a.files as { src: string; name?: string }[])),
+    call: async (h, a) => {
+      const files = a.files as { src: string; name?: string }[];
+      if (!files.length) throw new Error("files needs at least one file");
+      const got = (await h.importMedia(files)) as { src?: string; error?: string }[];
+      // Every file failed: an error that says why, never an empty answer.
+      if (!got.length) throw new Error("Nothing was imported: the project closed during the import.");
+      if (got.every((x) => x.error)) throw new Error(`Nothing was imported. ${got.map((x) => `${x.src}: ${x.error}`).join("; ")}`);
+      return json(got);
+    },
   },
   { name: "undo", description: "Undo the last edit; returns what that changed back.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.undo())) },
   { name: "redo", description: "Redo the last undone edit; returns what changed.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.redo())) },
@@ -300,7 +321,16 @@ export const APP_TOOLS: AppTool[] = [
           .map((p) => ({ id: p.id, name: p.name, updated: new Date(p.updatedAt).toISOString(), duration: +p.duration.toFixed(2), canvas: `${p.width}x${p.height}`, ...(p.open ? { open: true } : {}) })),
       ),
   },
-  ...PROJECT_FILE_COMMANDS.map(c => ({ name: c.name, description: c.description, inputSchema: c.input, call: async (h: McpHost, a: Record<string, unknown>) => json(await h.exec(c.name, a)) })),
+  ...PROJECT_FILE_COMMANDS.map((c) => ({
+    name: c.name,
+    description: c.description,
+    inputSchema: c.input,
+    call: async (h: McpHost, a: Record<string, unknown>) => {
+      const r = (await h.exec(c.name, a)) as { project?: unknown } | null;
+      // open_project_file answers a summary, as open_project does, not the timeline.
+      return json(r && typeof r === "object" && r.project ? { ...r, project: projectSummary(r.project) } : r);
+    },
+  })),
   {
     name: "open_project",
     description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.",
@@ -331,7 +361,7 @@ export const APP_TOOLS: AppTool[] = [
     inputSchema: obj(
       {
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
-        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Width of each frame, default 320" },
       },
       ["times"],
@@ -350,7 +380,7 @@ export const APP_TOOLS: AppTool[] = [
         start: { type: "number", minimum: 0, description: "Timeline seconds" },
         end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 2" },
         fps: { type: "number", minimum: 1, maximum: 30, description: "Frames a second, default 8" },
-        columns: { type: "integer", minimum: 1, maximum: 8, description: "Default 6" },
+        columns: columns(6),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 240" },
       },
       ["start"],
@@ -380,7 +410,7 @@ export const APP_TOOLS: AppTool[] = [
         asset_id: { type: "string", description: "A video or picture asset id from describe_project or import_media" },
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
         count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
-        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 320" },
       },
       ["asset_id"],
@@ -403,7 +433,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "export_video",
     description:
-      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
     inputSchema: obj({
       name: { type: "string", description: "File name without extension; default the project's name" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif", "mp3", "m4a", "wav"], description: "Default mp4 (H.264 + AAC); mp3, m4a and wav are sound only" },
@@ -413,9 +443,11 @@ export const APP_TOOLS: AppTool[] = [
       start: { type: "number", minimum: 0, description: "Export from this second" },
       end: { type: "number", minimum: 0, description: "Export to this second" },
       captions: { type: "string", enum: ["burn", "srt", "both", "none"], description: "The captions: burn into the picture (default), srt file beside it, both, or none" },
+      folder: FOLDER,
     }),
     call: async (h, a) => {
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions }));
+      if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, folder: a.folder }));
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
@@ -732,7 +764,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -761,16 +793,18 @@ APP_TOOLS.push(
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for every version's mix, e.g. -14; default as mixed" },
+      folder: FOLDER,
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
       const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined }, master);
-      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
+      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, folder: a.folder }) } as VersionsRequest;
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
         return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
       }
+      if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
@@ -781,8 +815,17 @@ APP_TOOLS.push(
 
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
-/** What an agent reads first: the moves, in the order a video gets made. */
-const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
+/**
+ * The server's instructions: what a model reads before any tool. Kept to a
+ * few lines on purpose (ADR-095): some clients copy them into every tool's
+ * description (Codex's tool discovery did, 156 times: about 135,000 tokens
+ * for the old 3.5 KB guide), so the guide itself is the help tool's
+ * overview, read once when asked for.
+ */
+const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.`;
+
+/** The guide: the moves, in the order a video gets made (help's overview). */
+const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
@@ -794,16 +837,18 @@ To make a video:
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 
 For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_fades on the music, and export_versions for every shape and cut-down (check: true shows them first).`;
 
-/** The instructions, with a word on export where this build cannot. */
-const instructionsFor = (h: McpHost) =>
-  h.canExport?.() === false ? `${INSTRUCTIONS}\nIn this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.` : INSTRUCTIONS;
+const NO_EXPORT = "In this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.";
+
+/** The instructions and the guide, with a word on export where this build cannot. */
+const instructionsFor = (h: McpHost) => (h.canExport?.() === false ? `${INSTRUCTIONS}\n${NO_EXPORT}` : INSTRUCTIONS);
+const guideFor = (h: McpHost) => (h.canExport?.() === false ? `${GUIDE}\n${NO_EXPORT}` : GUIDE);
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {
@@ -818,13 +863,15 @@ export function listTools() {
 
 /** Guides served as resources, for clients that read them into context. */
 const GUIDES: Record<string, { name: string; text: () => string }> = {
-  "guide://overview": { name: "How to use these tools", text: () => helpText("overview", listTools(), INSTRUCTIONS) },
+  "guide://overview": { name: "How to use these tools", text: () => helpText("overview", listTools(), GUIDE) },
   "guide://design": { name: "Design rules", text: () => DESIGN },
   ...Object.fromEntries(Object.entries(PLAYBOOKS).map(([k, b]) => [`guide://${k}`, { name: `Playbook: ${b.title}`, text: () => b.text }])),
 };
 
-/** The server's first words to a model, for the generated reference. */
+/** The server's first words to a model, and help's overview guide, for the
+ * generated reference. */
 export const instructions = () => INSTRUCTIONS;
+export const guide = () => GUIDE;
 
 /** Where every answer names the tool set it came from (_meta), for the
  * stdio bridge (src-tauri/src/mcp.rs) to watch. */
@@ -885,7 +932,10 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           if (errs.length) throw new Error(errs.join("; "));
           return ok(req.id, await app.call(host, args));
         }
-        if (!COMMANDS.some((c) => c.name === name)) return fail(req.id, -32602, `unknown tool ${name}`);
+        if (!COMMANDS.some((c) => c.name === name)) {
+          const meant = didYouMean(name, listTools().map((t) => t.name));
+          return fail(req.id, -32602, `unknown tool ${name}${meant ? `; did you mean ${meant}?` : ""}`);
+        }
         const before = host.describe();
         return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
       } catch (e) {

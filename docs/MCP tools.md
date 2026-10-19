@@ -8,6 +8,14 @@ Every tool the editor offers an AI model over MCP, 156 in all, in the order a vi
 
 ## What the server tells a model first
 
+The server's instructions, kept short because some clients copy them into every tool's description ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):
+
+```text
+You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.
+```
+
+## The guide (help's overview)
+
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
@@ -21,7 +29,7 @@ To make a video:
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
 7. Make many small edits at once with batch: one call, one undo step.
 8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
@@ -133,7 +141,7 @@ Example:
 
 ### open_project_file
 
-Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.
+Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -141,9 +149,11 @@ Open a project JSON as a new project identity. Desktop resolves relative media b
 
 ### collect_project
 
-Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.
+Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder, so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.
 
-No parameters.
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `folder` | string |  | Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog |
 
 ### set_project
 
@@ -170,18 +180,18 @@ Bring files in and keep the library tidy.
 
 ### import_media
 
-Import media files into the project by absolute path (desktop) or URL. Returns the new assets with their ids, for add_media_clip.
+Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `files` | { src, name }[] | yes | Files to import |
 | `files[].src` | string | yes | Absolute path or URL |
-| `files[].name` | string |  | Display name |
+| `files[].name` | string |  | The name the library shows (default the file's name); any text, it does not decide the format |
 
 Example:
 
 ```json
-{"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4"},{"src":"C:/Music/track.mp3"}]}}
+{"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4","name":"Product hero"},{"src":"C:/Music/track.mp3"}]}}
 ```
 
 ### remove_media
@@ -2299,7 +2309,7 @@ Look inside imported media before using it: a video's own frames at source secon
 | `asset_id` | string | yes | A video or picture asset id from describe_project or import_media |
 | `times` | number[] |  | Source seconds, up to 24 |
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
-| `columns` | integer |  | Default 4 (1..6) |
+| `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Default 320 (120..640) |
 
 Example:
@@ -2315,7 +2325,7 @@ See several moments at once: one JPEG contact sheet of the frames at the given t
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `times` | number[] | yes | Seconds, up to 24 |
-| `columns` | integer |  | Default 4 (1..6) |
+| `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
 
 Example:
@@ -2333,7 +2343,7 @@ See movement and timing: consecutive frames of a stretch of the timeline (defaul
 | `start` | number | yes | Timeline seconds (0..) |
 | `end` | number |  | Timeline seconds; default start + 2 (0..) |
 | `fps` | number |  | Frames a second, default 8 (1..30) |
-| `columns` | integer |  | Default 6 (1..8) |
+| `columns` | integer |  | Tiles a row, at most 8; default 6 (1..8) |
 | `tile_width` | integer |  | Default 240 (120..640) |
 
 Example:
@@ -2385,7 +2395,7 @@ Example:
 
 ### export_video
 
-Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2397,16 +2407,17 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `start` | number |  | Export from this second (0..) |
 | `end` | number |  | Export to this second (0..) |
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 
 Example:
 
 ```json
-{"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14}}
+{"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14,"folder":"D:/Deliveries/Spring sale"}}
 ```
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2429,6 +2440,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
 | `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
 | `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 
 Example:
 

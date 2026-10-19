@@ -1,5 +1,6 @@
-//! Portable project copies: the native dialog owns the destination; each
-//! collection creates a new directory and never overwrites existing files.
+//! Portable project copies: the native dialog, or a folder an agent named
+//! (collect_project's `folder`, ADR-095), chooses where; each collection
+//! creates a new directory and never overwrites existing files.
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -120,6 +121,7 @@ pub async fn project_collect(
     app: tauri::AppHandle,
     project: String,
     progress: tauri::ipc::Channel<f64>,
+    folder: Option<String>,
 ) -> Result<Option<String>, String> {
     if project.len() > 32 * 1024 * 1024 {
         return Err("Project is too large".into());
@@ -128,15 +130,24 @@ pub async fn project_collect(
     if !value.is_object() {
         return Err("Project must be an object".into());
     }
-    let Some(folder) = app
-        .dialog()
-        .file()
-        .set_title("Collect files")
-        .blocking_pick_folder()
-    else {
-        return Ok(None);
+    let parent = match folder {
+        Some(f) => {
+            let dir = crate::export::agent_folder(&f)?;
+            fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            dir
+        }
+        None => {
+            let Some(picked) = app
+                .dialog()
+                .file()
+                .set_title("Collect files")
+                .blocking_pick_folder()
+            else {
+                return Ok(None);
+            };
+            picked.into_path().map_err(|e| e.to_string())?
+        }
     };
-    let parent = folder.into_path().map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
         collect(&parent, value, |v| {
             let _ = progress.send(v);

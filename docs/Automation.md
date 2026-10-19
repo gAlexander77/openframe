@@ -108,8 +108,34 @@ guidance from the `help` tool (topics `overview`, `ad`, `epic_edit`,
 `social_short`, `design`, `params`, or a tool's name), from the MCP prompts
 `make_ad`, `epic_edit` and `social_short`, and from the resources
 `guide://...` and `catalog://all`. Tools carry MCP titles and behavior
-hints (read-only, destructive, open-world), so clients can run reads
-without asking ([[ADR-055 The MCP guide is generated from the tools]]).
+hints (read-only, destructive, open-world; each only where it differs from
+the spec's default), so clients can run reads without asking
+([[ADR-055 The MCP guide is generated from the tools]]).
+
+The server's instructions are four sentences: call `help` first, and the
+conventions every tool shares. The guide itself (the steps that make a
+video, tool by tool) is `help`'s overview, read once when asked for. Some
+clients copy the instructions into every tool's description: Codex's
+discovery did, and with the old 3.5 KB guide as the instructions it came to
+188,924 tokens for 156 tools; about 63,000 now. `initialize` answers 794
+bytes (was 3,760) and `tools/list` 190,654 (was 193,013)
+([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]).
+
+An argument a tool does not take is refused with the one it most likely
+meant: `seek({"time": 11})` answers `args.at is required; args.time is not
+a known argument; did you mean at? (known: at)`. The same goes for a nested
+field (`style.fontSize`: did you mean `size`?), an unknown tool and a batch
+step's command.
+
+`import_media` (`{"files": [{"src", "name"?}]}`) knows a file by the file:
+its path's or address's extension, else its first bytes (an MP4, PNG, MP3
+and the rest by their signatures), never by `name`, which is only the label
+the library shows; `{"src": "D:/promo/launch.mp4", "name": "launch"}` once
+answered `[]`. It answers one entry per file in the order given: the asset
+(`id`, `name`, `kind`, `duration`, `width`, `height`), a `.cube` as
+`{"lut_id", "name", "kind": "lut"}` for `apply_lut`, or `{"src", "name",
+"error"}` saying why that file failed. When every file fails, the call is
+an error naming each reason.
 
 Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
@@ -123,8 +149,9 @@ project came back 222 pixels wide whatever was asked), the project tools
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), both answering a summary (name, canvas,
 fps, duration, counts) rather than the whole timeline (about 20 KB on the
-launch film), `preview_frames` (one contact sheet of
-up to 24 moments, each stamped with its time), `export_video`,
+launch film), as `open_project_file` does too, `preview_frames` (one contact sheet of
+up to 24 moments, each stamped with its time; it, `preview_media` and
+`preview_motion` all take up to 8 `columns`), `export_video`,
 `export_versions` (every shape and cut-down of an ad, one file each) and
 `export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
@@ -172,7 +199,15 @@ and `redo` answer the same way. `describe_project` is still the whole
 picture, keyframes included: each keyed path's keys as `[at, value]` or
 `[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
 "fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,
-first, last, range}`), so an edit to a key shows in its answer.
+first, last, range}`), so an edit to a key shows in its answer. A title
+shows the type that departs from the default look under `style`, named as
+`add_text` takes it (`"style": {"font": "Georgia", "maxWidth": 0.5,
+"letterSpacing": 12, "lineHeight": 0.95}`; also `align`, `italic`,
+`underline`, `stroke2`, `gradient`, `glow`, `accent`, `highlight`), beside
+its `size`, `color` and `weight` (shown whenever it is not 700). A speed
+curve shows its name and its points: `"speed_curve": "custom",
+"speed_points": [[0, 2], [0.5, 0.5], [1, 2]]`, each `[t, speed]` with `t`
+from 0 to 1 over the clip, as `set_speed_curve` takes them.
 
 Keyframes go only where something moves ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]):
 `add_keyframe` refuses a path the renderer or the mixer does not read on
@@ -427,10 +462,17 @@ animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
 0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
-`start`, `end`) writes to `<Videos>\OpenFrame\` with no dialog and never
-replaces a file, answering with the path, size and a note (what the
-loudness pass did). Past about four minutes it answers `running`; follow
-it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
+`start`, `end`, `folder`) writes to `<Videos>\OpenFrame\` with no dialog, or
+into `folder` (an absolute path, created if missing), and never replaces a
+file: a name already there gets a number (`Trip (2).mp4`) and the answer's
+note says so. It answers with the path, size and a note (what the loudness
+pass did, and any new name). Past about four minutes it answers `running`;
+follow it with `export_status`. `export_versions` takes the same `folder`
+for every version, and `collect_project` (`{"folder"}`) makes its new
+`OpenFrame-<time>` folder inside the one named instead of asking in a
+dialog. In the browser build `folder` is refused with the reason, not
+ignored. ([[ADR-052 Agents read what changed and export without a dialog]],
+[[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]])
 
 Graphics and compositing, for ads and title sequences
 ([[ADR-056 Track mattes cut a layer with another clip]] to
@@ -526,3 +568,12 @@ LUFS, a 10 LU target and undo. Its optional `{recorded: true}` argument uses
 `speech-test.wav` when testing the balance path without synthesis; report
 that mode separately. Speech synthesis still requires its initial model
 download. MCP tool reference pages are regenerated from the tool schemas.
+
+The `mcp-io-surface` drive checks the edge of the surface as an agent meets
+it in the web build: the short instructions and `help`'s guide, imports by
+a label without an extension, by URLs without one (a video, an animated
+GIF), a `.cube` and a text file, a renamed GIF still moving after a reload,
+`folder` refused in the browser, the "did you mean" hints, 8 columns, a
+title's type and a curve's points in answers, and an edit beside three
+compound clips answering 164 bytes. The desktop half of `folder` (Rust's
+`agent_folder` and `free_name`) is covered by `cargo test`.

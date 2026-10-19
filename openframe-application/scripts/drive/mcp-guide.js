@@ -23,7 +23,9 @@ async (page) => {
   };
   const details = {};
   const init = await rpc("initialize");
-  details.initialize = { ok: !!init.result.capabilities.prompts && /help/.test(init.result.instructions) && /list_catalog/.test(init.result.instructions) };
+  // The instructions point at help; help's overview is the guide (ADR-095).
+  const overview = (await rpc("tools/call", { name: "help", arguments: {} })).result.content[0].text;
+  details.initialize = { ok: !!init.result.capabilities.prompts && /Call help first/.test(init.result.instructions) && /list_catalog/.test(overview) };
   const tools = (await rpc("tools/list")).result.tools;
   const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
   details.hints = { ok: tools.every((t) => t.title && t.annotations) && byName.preview_frames.annotations.readOnlyHint && byName.delete_clips.annotations.destructiveHint, count: tools.length };

@@ -12,7 +12,7 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
@@ -24,7 +24,8 @@ import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
-import { importFiles } from "./state/media";
+import { importEach, importFiles } from "./state/media";
+import { sourceName } from "./lib/mediaKind";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
@@ -57,7 +58,7 @@ const automation = {
     if (fileCommand) {
       const problems = validate(args, fileCommand.input);
       if (problems.length) throw new Error(problems.join("; "));
-      if (name === "collect_project") { needProject(); return collectProject(true); }
+      if (name === "collect_project") { needProject(); return collectProject(true, (args as { folder?: string }).folder); }
       return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
     }
     const report: CommandReport = {};
@@ -271,8 +272,14 @@ const mcpHost: McpHost = {
   projectJson: () => store.document(),
   catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
   importMedia: async (files) => {
-    const assets = await automation.import(files.map((f) => ({ name: f.name ?? f.src.split(/[\\/]/).pop()!, src: f.src })));
-    return assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, duration: a.duration, width: a.width, height: a.height }));
+    needProject();
+    // `name` is only the library's label; the file says what it is (ADR-095).
+    const out = await importEach(files.map((f) => ({ name: f.name ?? sourceName(f.src), src: f.src, size: 0 })));
+    return out.map((o) =>
+      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height }
+      : "lut" in o ? { lut_id: o.lut.id, name: o.lut.name, kind: "lut" }
+      : { src: o.file.src, name: o.file.name, error: o.error },
+    );
   },
   undo: () => {
     store.undo();
@@ -314,7 +321,7 @@ const mcpHost: McpHost = {
   },
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
-    return exportForAgent(options as RenderOptions);
+    return exportForAgent(options as AgentExportOptions);
   },
   exportStatus: () => agentExportStatus(),
   exportVersions: (options) => {

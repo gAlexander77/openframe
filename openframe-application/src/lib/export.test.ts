@@ -21,6 +21,7 @@ import {
   outputFrameCount,
   outputSize,
   planExport,
+  renamedNote,
   safeFileName,
   timelineFrameFor,
   videoBitrate,
@@ -182,6 +183,10 @@ describe("plan", () => {
     expect(safeFileName('a/b:c*?"<>|d')).toBe("a b c d");
     expect(safeFileName("  name. ")).toBe("name");
     expect(safeFileName("")).toBe("Untitled");
+  });
+  it("says when an agent's export took a numbered name, never silently", () => {
+    expect(renamedNote("Trip.mp4", "D:\\Out\\Trip.mp4")).toBeUndefined();
+    expect(renamedNote("Trip.mp4", "/home/x/Videos/OpenFrame/Trip (2).mp4")).toBe("Trip.mp4 was already there, so this file is Trip (2).mp4; nothing was replaced.");
   });
 });
 

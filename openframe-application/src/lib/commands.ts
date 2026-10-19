@@ -20,6 +20,7 @@ import {
   createMarker,
   createTextClip,
   createTrack,
+  DEFAULT_TEXT_STYLE,
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
@@ -62,6 +63,7 @@ import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW
 import { COLOR_PATHS, colorKey } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
+import { didYouMean } from "./didYouMean";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -124,7 +126,7 @@ const S = {
     type: "object",
     ...(description ? { description } : {}),
     properties,
-    required,
+    ...(required.length ? { required } : {}),
     additionalProperties: false,
   }),
 };
@@ -142,7 +144,11 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     for (const [k, v] of Object.entries(o)) {
       const sub = schema.properties?.[k];
       if (!sub) {
-        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument (known: ${Object.keys(schema.properties ?? {}).join(", ")})`);
+        if (schema.additionalProperties === false) {
+          const known = Object.keys(schema.properties ?? {});
+          const meant = didYouMean(k, known.filter((x) => o[x] === undefined));
+          errs.push(`${path}.${k} is not a known argument${meant ? `; did you mean ${meant}?` : ""} (known: ${known.join(", ")})`);
+        }
         continue;
       }
       if (v !== undefined) errs.push(...validate(v, sub, `${path}.${k}`));
@@ -2481,7 +2487,10 @@ export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 /** Run one command with validation. Throws CommandError with every problem. */
 export function runCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport): Project {
   const cmd = COMMAND_INDEX.get(name);
-  if (!cmd) throw new CommandError(`unknown command ${name}`);
+  if (!cmd) {
+    const meant = didYouMean(name, COMMANDS.map((c) => c.name));
+    throw new CommandError(`unknown command ${name}${meant ? `; did you mean ${meant}?` : ""}`);
+  }
   const errs = validate(args, cmd.input);
   if (errs.length) throw new CommandError(errs.join("; "));
   const next = cmd.run(p, args as Record<string, unknown>, report);
@@ -2535,7 +2544,7 @@ export function describeProject(p: Project) {
         start: s(c.start),
         end: s(c.start + c.duration),
         ...("assetId" in c ? { asset: c.assetId } : {}),
-        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, speed_curve: c.speedCurve ? (c.speedCurve.preset ?? "custom") : undefined } : {}),
+        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, ...speedCurveSummary(c) } : {}),
         ...("reverse" in c && c.reverse ? { reverse: true } : {}),
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
         ...(c.type === "image" && c.imageIn ? { in: c.imageIn } : {}),
@@ -2563,8 +2572,8 @@ export function describeProject(p: Project) {
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...graphicsSummary(c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
-        ...(c.type === "text" && c.style.weight !== undefined ? { weight: c.style.weight } : {}),
-        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}) } : {}),
+        ...(c.type === "text" && (c.style.weight !== undefined || !c.style.bold) ? { weight: c.style.weight ?? 400 } : {}),
+        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}), ...typeSummary(c.style) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
         ...("filter" in c && c.filter ? { filter: c.filter.type, ...(c.filter.intensity !== 1 ? { filter_intensity: c.filter.intensity } : {}) } : {}),
@@ -2573,6 +2582,38 @@ export function describeProject(p: Project) {
       })),
     };
   }
+}
+
+/** A speed curve for describeProject: its preset's name (or custom) and its
+ * points as [t, speed], t from 0 (the clip's start) to 1 (its end) as
+ * set_speed_curve takes them, so a custom ramp can be checked (ADR-095). */
+function speedCurveSummary(c: Clip): { speed_curve?: string; speed_points?: number[][] } {
+  if (!("speedCurve" in c) || !c.speedCurve) return {};
+  const r = (v: number) => +v.toFixed(3);
+  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: c.speedCurve.points.map((pt) => [r(pt.f / c.duration), r(pt.speed)]) };
+}
+
+/** A title's type where it departs from the default look, named as
+ * add_text's style takes it (size, color, weight, case, box, outline and
+ * shadow are told apart already): what the Codex film test could not check
+ * (ADR-095). */
+function typeSummary(st: TextStyle): { style?: Record<string, unknown> } {
+  const d = DEFAULT_TEXT_STYLE;
+  const out = {
+    ...(st.font !== d.font ? { font: st.font } : {}),
+    ...(st.italic ? { italic: true } : {}),
+    ...(st.underline ? { underline: true } : {}),
+    ...(st.align !== d.align ? { align: st.align } : {}),
+    ...(st.maxWidth !== d.maxWidth ? { maxWidth: +st.maxWidth.toFixed(4) } : {}),
+    ...(st.letterSpacing ? { letterSpacing: st.letterSpacing } : {}),
+    ...(st.lineHeight !== d.lineHeight ? { lineHeight: st.lineHeight } : {}),
+    ...(st.stroke2 ? { stroke2: st.stroke2 } : {}),
+    ...(st.gradient ? { gradient: st.gradient } : {}),
+    ...(st.glow ? { glow: st.glow } : {}),
+    ...(st.accent ? { accent: st.accent } : {}),
+    ...(st.highlight ? { highlight: st.highlight } : {}),
+  };
+  return Object.keys(out).length ? { style: out } : {};
 }
 
 /** A clip's keyframes for describeProject, each path's keys as [at, value]
@@ -2736,6 +2777,6 @@ function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
 
 /** Lifecycle operations use the app host; their schemas live beside edits. */
 export const PROJECT_FILE_COMMANDS = [
-  { name: "collect_project", description: "Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.", input: S.obj({}) },
-  { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
+  { name: "collect_project", description: "Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder, so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.", input: S.obj({ folder: S.str("Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog") }) },
+  { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
 ];

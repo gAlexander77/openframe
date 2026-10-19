@@ -6,7 +6,7 @@
 import { useSyncExternalStore } from "react";
 import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { exportGif } from "../engine/gif";
-import { captionPlan, defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, VIDEO_FORMATS, withFormat, type AudioFormat, type ExportPlan, type ExportSettings, type VideoFormat } from "../lib/export";
+import { captionPlan, defaultExportSettings, outputSize, planExport, renamedNote, RESOLUTIONS, safeFileName, VIDEO_FORMATS, withFormat, type AudioFormat, type ExportPlan, type ExportSettings, type VideoFormat } from "../lib/export";
 import { captionsInRange, currentCaptions, toSrt, withoutCaptions } from "../lib/captions";
 import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
@@ -132,6 +132,12 @@ export async function startExport(settings: ExportSettings) {
  * an audio format (mp3, wav, m4a) makes an audio-only export. */
 export type RenderOptions = Partial<Omit<ExportSettings, "format">> & { format?: VideoFormat | AudioFormat; start?: number; end?: number };
 
+/** An agent's export: the options, plus the folder to write into (desktop). */
+export type AgentExportOptions = RenderOptions & { folder?: string };
+
+/** Why a folder cannot be honored here, said rather than ignored (ADR-095). */
+const FOLDER_DESKTOP_ONLY = "folder is desktop only: the browser cannot write into a folder of your choosing. Leave folder out, or export from the desktop app.";
+
 /**
  * Export to memory and return a Blob URL with what was made. The headless
  * renderer and the drive scripts use this; the project is not changed.
@@ -176,13 +182,13 @@ export const agentExportStatus = () => agentExport;
  * name that replaces nothing. Resolves when the file is complete; a toast
  * shows the user it is happening, agentExportStatus() follows it.
  */
-export async function exportForAgent(options: RenderOptions = {}): Promise<AgentExport> {
+export async function exportForAgent(options: AgentExportOptions = {}): Promise<AgentExport> {
   const make = platform.createAgentExportTarget;
-  if (!make) throw new Error("Agents can export from the desktop app only.");
+  if (!make) throw new Error(options.folder !== undefined ? FOLDER_DESKTOP_ONLY : "Agents can export from the desktop app only.");
   if (job) throw new Error("An export is already running.");
   const s = exportSubject();
   const p = s.project;
-  const { start, end, format, ...rest } = options;
+  const { start, end, format, folder, ...rest } = options;
   const settings: ExportSettings = withFormat({ ...defaultExportSettings(p), ...rest }, format);
   const ranged = start !== undefined || end !== undefined;
   const inOut = ranged
@@ -194,15 +200,17 @@ export async function exportForAgent(options: RenderOptions = {}): Promise<Agent
   job = new AbortController();
   const tid = toast("Exporting the video", "progress");
   try {
-    const target = await make.call(platform, safeFileName(settings.name), plan.extension);
+    const target = await make.call(platform, safeFileName(settings.name), plan.extension, folder);
     const path = target.displayName;
+    const renamed = renamedNote(`${safeFileName(settings.name)}.${plan.extension}`, path);
     agentExport = { state: "running", path, fraction: 0, eta: null };
     const result = await exportProject(drawn.project, plan, target, (pr) => {
       agentExport = { state: "running", path, fraction: +pr.fraction.toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1) };
       updateToast(tid, { progress: pr.fraction });
     }, job.signal);
     const side = await writeSidecar(target, drawn.srt);
-    if (side.note) result.note = [result.note, side.note].filter(Boolean).join(" ");
+    const note = [result.note, side.note, renamed].filter(Boolean).join(" ");
+    if (note) result.note = note;
     agentExport = { state: "done", path, ...result, ...(side.file ? { captions_file: side.file } : {}) };
     toast(`Exported ${path.split(/[\\/]/).pop()}`);
     return agentExport;
@@ -277,6 +285,9 @@ export async function saveFrame() {
 
 export interface VersionsOptions extends Partial<Pick<ExportSettings, "format" | "resolution" | "quality" | "loudness">> {
   versions: VersionSpec[];
+  /** Desktop: an absolute folder to write every version into instead of
+   * the Videos folder (created if missing). */
+  folder?: string;
   /** Seconds of the end kept in every cut-down; default the end card's. */
   keepEnd?: number;
 }
@@ -290,6 +301,8 @@ export interface VersionFile {
   seconds: number;
   bytes: number;
   textless?: true;
+  /** Set when the file took a numbered name (renamedNote). */
+  note?: string;
 }
 
 /** The versions as projects, from the document as it is now. */
@@ -307,6 +320,7 @@ function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
  * it; the answer lists every file.
  */
 export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
+  if (o.folder !== undefined && !platform.createAgentExportTarget) throw new Error(FOLDER_DESKTOP_ONLY);
   if (job) throw new Error("An export is already running.");
   const items = versionProjects(o);
   const made: VersionFile[] = [];
@@ -320,7 +334,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       if (!codecs.includes(settings.codec)) settings.codec = codecs[0];
       const plan = planExport(q, settings, { inPoint: null, outPoint: null });
       const name = safeFileName(q.name);
-      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension) : await platform.createExportTarget(name, plan.extension);
+      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension, o.folder) : await platform.createExportTarget(name, plan.extension);
       if (!target) throw new Error("The save dialog was canceled or could not open (a browser opens it only after a click; the desktop app saves without one).");
       const path = target.displayName;
       const version = `${i + 1} of ${items.length}`;
@@ -332,7 +346,9 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       }, job.signal);
       // The web without a save dialog renders into private storage first.
       if (target.revealLabel === "Download") await target.reveal();
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}) });
+      // The web's dialog names the file as the person chooses: no note there.
+      const renamed = platform.createAgentExportTarget ? renamedNote(`${name}.${plan.extension}`, path) : undefined;
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...(renamed ? { note: renamed } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);

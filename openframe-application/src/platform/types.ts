@@ -97,7 +97,11 @@ export interface Platform {
   };
 
   openProjectFile(path?: string): Promise<unknown | null>;
-  collectProject(project: Project, onProgress: (value: number) => void): Promise<string | null>;
+  /** Copy the project and its media into a new folder inside `folder`
+   * (desktop: an absolute path an agent named, created if missing), or
+   * inside one the user picks when it is absent. Answers the project
+   * file's path, or null when the user cancels. */
+  collectProject(project: Project, onProgress: (value: number) => void, folder?: string): Promise<string | null>;
   listProjects(): Promise<ProjectSummary[]>;
   loadProject(id: string): Promise<unknown>;
   saveProject(project: Project, summary: ProjectSummary): Promise<void>;
@@ -108,9 +112,13 @@ export interface Platform {
   /** Ask where to save an export; null when the user cancels. */
   createExportTarget(suggestedName: string, extension: string): Promise<ExportTarget | null>;
   /** Desktop: start an export without a dialog, for agents (export_video),
-   * in the user's Videos folder under a name that replaces nothing.
-   * displayName is the whole path. */
-  createAgentExportTarget?(suggestedName: string, extension: string): Promise<ExportTarget>;
+   * in the user's Videos folder, or in `folder` (an absolute path the agent
+   * named, created if missing), under a name that replaces nothing ("Trip
+   * (2).mp4" when Trip.mp4 is there). displayName is the whole path. */
+  createAgentExportTarget?(suggestedName: string, extension: string, folder?: string): Promise<ExportTarget>;
+  /** The first `bytes` of a media file, to tell its format by content when
+   * its name says nothing (an import by a path without an extension). */
+  head(src: string, bytes: number): Promise<Uint8Array>;
 }
 
 export interface AgentEndpoint {

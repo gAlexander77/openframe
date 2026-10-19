@@ -80,13 +80,16 @@ const OPEN_WORLD = new Set(["import_media", "export_video", "export_versions", "
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
-/** MCP's tool title and behavior hints (spec 2025-06-18). */
-export function annotations(name: string) {
+/** MCP's tool title and behavior hints (spec 2025-06-18), each hint only
+ * where it differs from the spec's default (readOnlyHint false,
+ * destructiveHint true and meaningful only for a tool that writes,
+ * openWorldHint true): 156 tools spelling out the defaults cost 3 KB of
+ * every tools/list (ADR-095). */
+export function annotations(name: string): { title: string; readOnlyHint?: true; destructiveHint?: boolean; openWorldHint?: false } {
   return {
     title: title(name),
-    readOnlyHint: READ_ONLY.has(name),
-    destructiveHint: DESTRUCTIVE.has(name),
-    openWorldHint: OPEN_WORLD.has(name),
+    ...(READ_ONLY.has(name) ? { readOnlyHint: true as const } : { destructiveHint: DESTRUCTIVE.has(name) }),
+    ...(OPEN_WORLD.has(name) ? {} : { openWorldHint: false as const }),
   };
 }
 
@@ -99,7 +102,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   list_catalog: { section: "effects" },
   new_project: { name: "Spring sale ad" },
   set_project: { width: 1080, height: 1920, fps: "30" },
-  import_media: { files: [{ src: "C:/Footage/product.mp4" }, { src: "C:/Music/track.mp3" }] },
+  import_media: { files: [{ src: "C:/Footage/product.mp4", name: "Product hero" }, { src: "C:/Music/track.mp3" }] },
   add_media_clip: { asset_id: "a_123", start: 0, duration: 3.5, in: 12 },
   add_text: { text: "50% OFF", start: 1, duration: 2.5, y: -0.1, style: { size: 160, bold: true, color: "#ffffff", font: "Arial Black", stroke: { color: "#000000", width: 8 } } },
   set_text: { clip_ids: ["c_123"], style: { background: { color: "#000000b3", padding: 18, radius: 12 } } },
@@ -164,7 +167,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   preview_motion: { start: 7.5, end: 9.5, fps: 10 },
   preview_media: { asset_id: "a_123", count: 12 },
   check_project: { kind: "ad" },
-  export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14 },
+  export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14, folder: "D:/Deliveries/Spring sale" },
   slip_clip: { clip_id: "c_4", by: 1.5 },
   save_project_copy: { name: "Ember Roast 16x9", open: true },
   move_track: { track_id: "t_grade", below_track_id: "t_captions" },
@@ -408,7 +411,7 @@ export function promptMessages(name: string, args: Record<string, string>) {
 // ---- the reference ------------------------------------------------------------
 
 /** docs/MCP tools.md, generated: every tool by group with its parameters. */
-export function toolReference(tools: ToolInfo[], instructions: string): string {
+export function toolReference(tools: ToolInfo[], instructions: string, guide: string): string {
   const byName = new Map(tools.map((t) => [t.name, t]));
   const groups = [...TOOL_GROUPS.map((g) => ({ ...g, list: g.tools.filter((n) => byName.has(n)) })), { name: "More", blurb: "Not filed in a group yet.", list: tools.filter((t) => groupOf(t.name) === "More").map((t) => t.name) }].filter((g) => g.list.length);
   return [
@@ -422,8 +425,16 @@ export function toolReference(tools: ToolInfo[], instructions: string): string {
     "",
     "## What the server tells a model first",
     "",
+    "The server's instructions, kept short because some clients copy them into every tool's description ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):",
+    "",
     "```text",
     instructions,
+    "```",
+    "",
+    "## The guide (help's overview)",
+    "",
+    "```text",
+    guide,
     "```",
     "",
     "## Contents",

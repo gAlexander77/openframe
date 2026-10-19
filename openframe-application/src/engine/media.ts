@@ -16,6 +16,7 @@ import {
 import type { Asset, AssetKind } from "../lib/project/types";
 import { animationFor, animatedBitmap, closeAnimation } from "./animatedImage";
 import { platform } from "../platform";
+import { AUDIO_EXT, IMAGE_EXT, SNIFF_BYTES, sniffFormat, sourceName } from "../lib/mediaKind";
 
 export interface MediaFile {
   input: Input;
@@ -51,10 +52,15 @@ export interface Probe {
   decodable: boolean;
 }
 
-const IMAGE_EXT = /\.(a?png|jpe?g|gif|webp|bmp|avif|svg|ico)$/i;
-const AUDIO_EXT = /\.(mp3|wav|m4a|aac|flac|ogg|oga|opus|wma|aiff?)$/i;
+export { isImageName } from "../lib/mediaKind";
 
-export const isImageName = (name: string) => IMAGE_EXT.test(name);
+/** A picture's bytes as the browser decodes them: an SVG must say it is
+ * one (a path without the .svg extension gives an untyped blob). */
+async function decodable(blob: Blob): Promise<Blob> {
+  if (blob.type) return blob;
+  const head = new Uint8Array(await blob.slice(0, SNIFF_BYTES).arrayBuffer());
+  return sniffFormat(head) === "svg" ? new Blob([blob], { type: "image/svg+xml" }) : blob;
+}
 
 /**
  * Where a file's source time 0 is, in container time. AAC's encoder priming
@@ -125,12 +131,13 @@ const images = new Map<string, Promise<ImageBitmap>>();
 /** Decoded still for an image asset, cached for the session. */
 export async function imageFor(asset: Asset, time = 0): Promise<ImageBitmap> {
   if (asset.animated) {
-    const frame = await animatedBitmap(asset.src, asset.name, time);
+    // The source names the format; the library's name is only a label.
+    const frame = await animatedBitmap(asset.src, sourceName(asset.src), time);
     if (frame) return frame;
   }
   let img = images.get(asset.src);
   if (!img) {
-    img = platform.blobFor(asset.src).then((b) => createImageBitmap(b, { imageOrientation: "from-image" }));
+    img = platform.blobFor(asset.src).then(decodable).then((b) => createImageBitmap(b, { imageOrientation: "from-image" }));
     images.set(asset.src, img);
     img.catch(() => images.delete(asset.src));
   }
@@ -139,12 +146,15 @@ export async function imageFor(asset: Asset, time = 0): Promise<ImageBitmap> {
 
 // ---- probing ----------------------------------------------------------------------
 
-/** Everything the media panel and the project need to know about a file. */
+/** Everything the media panel and the project need to know about a file.
+ * `name` is the one whose extension says its format (lib/mediaKind.ts
+ * formatName: the source's own, or what its bytes are), never the label
+ * the library shows. */
 export async function probe(src: string, name: string): Promise<Probe> {
   if (IMAGE_EXT.test(name)) {
     const animation = await animationFor(src, name);
     if (animation) return { kind: "image", animated: true, duration: animation.durations.reduce((a, b) => a + b, 0), width: animation.frames[0].width, height: animation.frames[0].height, hasVideo: true, hasAudio: false, decodable: true };
-    const bmp = await createImageBitmap(await platform.blobFor(src));
+    const bmp = await createImageBitmap(await decodable(await platform.blobFor(src)));
     const out: Probe = { kind: "image", duration: 0, width: bmp.width, height: bmp.height, hasVideo: true, hasAudio: false, decodable: true };
     bmp.close();
     return out;

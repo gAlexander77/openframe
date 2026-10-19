@@ -122,9 +122,9 @@ export const desktop: Platform = {
     const result = await invoke<{ project: Project; path: string } | null>("project_open_file", { path: path ?? null });
     return result ? rewriteProjectPaths(result.project, src => resolveProjectPath(src, result.path)) : null;
   },
-  collectProject: (project, onProgress) => {
+  collectProject: (project, onProgress, folder) => {
     const progress = new Channel<number>(); progress.onmessage = onProgress;
-    return invoke("project_collect", { project: JSON.stringify(project), progress });
+    return invoke("project_collect", { project: JSON.stringify(project), progress, folder: folder ?? null });
   },
 
   openLink: (page) => invoke<void>("about_open", { page }),
@@ -205,6 +205,11 @@ export const desktop: Platform = {
     }
   },
 
+  async head(src, bytes) {
+    const { id, size } = await register(src);
+    return size ? readRange(convertFileSrc(id, "media"), 0, Math.min(size, bytes)) : new Uint8Array();
+  },
+
   /** For stills only: the whole file lands in memory. */
   async blobFor(src) {
     const { id, size } = await register(src);
@@ -237,8 +242,8 @@ export const desktop: Platform = {
       sidecar: (extension, text) => invoke<string>("export_sidecar", { id: begun.id, extension, text }),
     };
   },
-  async createAgentExportTarget(suggestedName, extension) {
-    const begun = await invoke<{ id: number; displayName: string }>("export_begin_auto", { suggestedName, extension });
+  async createAgentExportTarget(suggestedName, extension, folder) {
+    const begun = await invoke<{ id: number; displayName: string }>("export_begin_auto", { suggestedName, extension, folder: folder ?? null });
     return {
       writable: writeJob(begun.id),
       displayName: begun.displayName,
