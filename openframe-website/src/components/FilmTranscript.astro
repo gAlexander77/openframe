@@ -1,0 +1,28 @@
+---
+// The launch film as text: what is on screen in each chapter, and the music.
+// The film has no voice, so this is its full text alternative.
+import { CHAPTERS, clock } from "../data/film";
+---
+<details class="transcript">
+  <summary>Read the film as text</summary>
+  <ol>
+    {CHAPTERS.map((c) => (
+      <li><span class="t">{clock(c.start)}</span> {c.text}</li>
+    ))}
+  </ol>
+  <p>Music: an original 120 BPM electronic track, synthesized in code for the film. It builds for eight seconds, drops as the logo appears, breaks down for "Then there's AI." and drops again for the agent.</p>
+</details>
+
+<style>
+  .transcript { font-size: 0.9375rem; color: var(--text-2); }
+  .transcript summary {
+    cursor: pointer; color: var(--text-1); font-weight: 600; white-space: nowrap;
+    list-style-position: inside;
+  }
+  .transcript[open] { grid-column: 1 / -1; }
+  .transcript ol { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 6px; columns: 2; }
+  .transcript li { break-inside: avoid; }
+  .transcript .t { display: inline-block; min-width: 3.2em; color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .transcript p { margin-top: 12px; }
+  @media (max-width: 760px) { .transcript ol { columns: 1; } }
+</style>

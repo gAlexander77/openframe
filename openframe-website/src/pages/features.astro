@@ -1,0 +1,94 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Loop from "../components/Loop.astro";
+import Shot from "../components/Shot.astro";
+import { FEATURES, MORE } from "../lib/features";
+import { getFacts } from "../lib/docs";
+import { href, repoFile } from "../lib/site";
+
+const facts = getFacts();
+---
+<Base
+  title="Features"
+  description="Everything OpenFrame does today: editing, color, kinetic titles, captions, effects, audio and loudness, local AI tools, export and deliverables, and MCP for AI agents."
+>
+  <section class="page-hero">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <h1>Everything it does today.</h1>
+      <p class="lede">
+        CapCut's ease on the surface, the depth of Premiere, Resolve and VEGAS underneath, and an AI agent that can drive it
+        all. Every item on this page is in the editor now; what is planned is on the
+        <a href={repoFile("docs/Roadmap.md")}>roadmap</a>.
+      </p>
+      <ul class="chips" aria-label="Feature groups">
+        {FEATURES.map((f) => (
+          <li><a href={`#${f.id}`} style={`--hue: var(--${f.hue})`}><Icon name={f.icon} size={16} />{f.name}</a></li>
+        ))}
+      </ul>
+    </div>
+  </section>
+
+  {FEATURES.map((f, i) => (
+    <section class="section feature-group" id={f.id} aria-labelledby={`${f.id}-title`} style={`--hue: var(--${f.hue})`}>
+      <div class:list={["wrap", "feature-row", { flip: i % 2 === 1 }]}>
+        <div class="feature-text">
+          <span class="feature-name"><span class="mark"><Icon name={f.icon} size={20} /></span>{f.name}</span>
+          <h2 id={`${f.id}-title`}>{f.title}</h2>
+          <p>{f.summary}</p>
+          <ul class="clip-list">{f.points.map((p) => <li>{p}</li>)}</ul>
+          {f.id === "mcp" && (
+            <p class="links"><a href={href("ai/")}>Connect an agent</a><a href={href("docs/mcp-tools/")}>All {facts.tools} tools</a></p>
+          )}
+        </div>
+        {f.loop ? (
+          <Loop name={f.loop} alt={f.alt} where={f.where} hue={f.hue} />
+        ) : (
+          <Shot name={f.shot!} alt={f.alt} where={f.where} hue={f.hue} sizes="(min-width: 1240px) 700px, (min-width: 900px) 58vw, 100vw" />
+        )}
+      </div>
+    </section>
+  ))}
+
+  <section class="section more" aria-labelledby="more-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="more-title">And the rest of a professional editor.</h2>
+        <p class="lede">The details that make long edits fast, from a keyframe graph to custom shortcuts.</p>
+      </div>
+      <div class="more-grid">
+        <Shot
+          name="keyframes"
+          hue="cyan"
+          where={["Timeline", "Keyframe animation"]}
+          alt="The keyframe panel under the timeline: a Scale lane with two keys and a value graph rising from 100 to 130 percent on the orbit shot, with the Transform settings in the inspector."
+        />
+        <ul class="rule-list three">
+          {MORE.map((m) => (
+            <li style={`--hue: var(--${m.hue})`}>
+              <span class="mark"><Icon name={m.icon} size={18} /></span>
+              <div><h3>{m.title}</h3><p>{m.text}</p></div>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p class="source-note">
+        This page follows the project's feature map, <a href={repoFile("docs/Features.md")}>docs/Features.md</a>, which the
+        agents keep true to the code. The <a href={href("docs/user-guide/")}>user guide</a> shows how to use each part.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .feature-group { padding-block: clamp(56px, 7vw, 96px); scroll-margin-top: 64px; }
+  .feature-group h2 { font-size: var(--step-3); }
+  .links { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 24px; }
+  .links a { font-weight: 600; }
+  .more-grid { display: grid; gap: 56px; margin-top: 48px; }
+  .rule-list.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 1000px) { .rule-list.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 640px) { .rule-list.three { grid-template-columns: minmax(0, 1fr); } }
+  .source-note { margin-top: 56px; color: var(--text-3); font-size: 0.9375rem; max-width: 70ch; }
+</style>

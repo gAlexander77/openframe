@@ -1,0 +1,258 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Loop from "../components/Loop.astro";
+import Shot from "../components/Shot.astro";
+import Command from "../components/Command.astro";
+import { feature } from "../lib/features";
+import { getFacts, mcpReference } from "../lib/docs";
+import { href, repoFile } from "../lib/site";
+
+const facts = getFacts();
+const ref = mcpReference();
+const mcp = feature("mcp");
+
+// The app's own icon for each part of the tool list, the same one its
+// feature uses everywhere on the site.
+const GROUP_ICONS: Record<string, string> = {
+  "Start here": "play",
+  Projects: "clapperboard",
+  Media: "film",
+  Timeline: "scissors",
+  "Music, beats and markers": "music",
+  "Picture and motion": "diamond",
+  "Graphics and compositing": "layers",
+  Speed: "gauge",
+  "Text and captions": "type",
+  "Brand and ad elements": "sticker",
+  "Effects, transitions and color": "sparkles",
+  Sound: "audio-lines",
+  "Check and deliver": "download",
+};
+
+const CLAUDE = `claude mcp add --transport http --scope user openframe http://127.0.0.1:47280/mcp --header "Authorization: Bearer <token>"`;
+const CODEX = `codex mcp add openframe -- "<path to openframe.exe>" --mcp-stdio`;
+const STDIO = `openframe --mcp-stdio`;
+const RENDER = `openframe --render project.json --out video.mp4`;
+---
+<Base
+  title="AI and MCP"
+  description="Connect Claude Code, Codex or any MCP client to OpenFrame and an AI agent edits your video live, on your computer. What agents can do, and how the connection stays safe."
+>
+  <section class="page-hero" style="--glow-a: rgb(47 123 255 / 26%); --glow-b: rgb(59 224 240 / 12%);">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <h1>Edit with an AI agent, live.</h1>
+      <p class="lede">
+        OpenFrame speaks MCP, the open protocol AI agents use to call tools. Turn it on, connect Claude Code, Codex or any MCP
+        client, and the agent edits your project while you watch: every change on your timeline, every change undoable,
+        nothing sent anywhere but your own computer.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-tight" aria-labelledby="ways-title">
+    <div class="wrap">
+      <h2 id="ways-title" class="visually-hidden">Three ways to use AI with OpenFrame</h2>
+      <ul class="ways">
+        <li style="--hue: var(--blue)">
+          <span class="mark"><Icon name="bot" size={20} /></span>
+          <h3>An agent over MCP</h3>
+          <p>Claude Code, Codex or any MCP client connects to the desktop app and works on your timeline with {facts.tools} tools.</p>
+        </li>
+        <li style="--hue: var(--blue)">
+          <span class="mark"><Icon name="wand-sparkles" size={20} /></span>
+          <h3>The AI assistant</h3>
+          <p>Describe an edit in the assistant column. A model on your computer, through Ollama or LM Studio, makes it with the same tools.</p>
+        </li>
+        <li style="--hue: var(--cyan)">
+          <span class="mark"><Icon name="film" size={20} /></span>
+          <h3>A render from a script</h3>
+          <p>Write a project as JSON and render it from the command line, with progress as JSON lines: <code>{RENDER}</code></p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="connect-title">
+    <div class="wrap connect">
+      <div>
+        <h2 id="connect-title">Connect an agent in a minute.</h2>
+        <ol class="steps">
+          <li>
+            <h3>Open the desktop app</h3>
+            <p><a href={href("docs/")}>Build it from source</a> and open a project. Agents connect to the desktop app; the web build has no MCP server.</p>
+          </li>
+          <li>
+            <h3>Allow AI agents</h3>
+            <p>Click <strong>AI assistant</strong> in the title bar, open the <strong>Connect agents</strong> tab and turn on <strong>Allow AI agents</strong>.</p>
+          </li>
+          <li>
+            <h3>Add OpenFrame to your agent</h3>
+            <p>
+              Click <strong>Add to Claude Code</strong> or <strong>Add to Codex</strong>. The app runs that program's own
+              <code>mcp add</code> command and tells you whether it was added, was already there, or the program was not found.
+              Or copy the ready-made command; the panel fills in your token and the app's path.
+            </p>
+          </li>
+          <li>
+            <h3>Ask for the video you want</h3>
+            <p>Start a new agent session and describe the edit. Keep OpenFrame open, with Allow AI agents on, while the agent works.</p>
+          </li>
+        </ol>
+      </div>
+      <div class="connect-commands">
+        <Command label="Claude Code (HTTP, with the install's token)" code={CLAUDE} />
+        <Command label="Codex CLI (stdio bridge)" code={CODEX} />
+        <Command label="Any other MCP client: run this as the server command, or use HTTP at 127.0.0.1:47280/mcp with the token" code={STDIO} />
+        <p class="small">
+          The token and the exe path above are placeholders: the Connect agents tab shows your own. Step-by-step setup, the Codex
+          <code>config.toml</code> entry and every option are in
+          <a href={repoFile("docs/Automation.md")}>docs/Automation.md</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section agent-work" aria-labelledby="work-title" style={`--hue: var(--${mcp.hue})`}>
+    <div class="wrap feature-row">
+      <div class="feature-text">
+        <h2 id="work-title">What an agent can do.</h2>
+        <p>
+          Everything you can: import footage, cut it to a voiceover or to the beat, frame and push in, add titles that move,
+          grade, mix, caption, and export every version. The tools tell it to start a new project, so your own projects stay as
+          they are.
+        </p>
+        <p>
+          It also checks its work the way an editor would: <code>preview_frames</code> returns a contact sheet of the cut,
+          <code>preview_motion</code> the frames around a move, <code>check_project</code> measures the edit against design rules
+          (title safe areas, text size and reading time, caption speed, flashes, black gaps), and <code>measure_loudness</code>
+          reports the mix against online and broadcast specs before export.
+        </p>
+      </div>
+      <Loop name="agent" alt={mcp.alt} where={["MCP", "import_media, add_media_clip, set_transition, set_filter"]} hue="blue" />
+    </div>
+    <div class="wrap">
+      <ul class="tool-groups" aria-label="The MCP tools, by step">
+        {ref.groups.map((g) => (
+          <li>
+            <a href={href(`docs/mcp-tools/#${g.id}`)}>
+              <Icon name={GROUP_ICONS[g.name] ?? "list"} size={18} />
+              <span class="g-name">{g.name}</span>
+              <span class="g-count">{g.tools.length}</span>
+            </a>
+            <p>{g.tools.slice(0, 4).map((t) => t.name).join(", ")}{g.tools.length > 4 ? ", ..." : ""}</p>
+          </li>
+        ))}
+      </ul>
+      <p class="links">
+        <a href={href("docs/mcp-tools/")}>The full reference of {facts.tools} tools</a>
+        <a href={href("docs/agent-playbook/")}>The agent playbook</a>
+      </p>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="assistant-title">
+    <div class="wrap feature-row flip">
+      <div class="feature-text">
+        <span class="feature-name" style="--hue: var(--blue)"><span class="mark"><Icon name="wand-sparkles" size={20} /></span>AI assistant</span>
+        <h2 id="assistant-title">Or type it, to a model on your machine.</h2>
+        <p>
+          The AI assistant docks as a column beside the editor. Pick the model server and a model, type what you want, and watch
+          the steps run; each answer that changed the timeline has one Undo for all of it. It finds Ollama or LM Studio on your
+          computer; the model never leaves it.
+        </p>
+      </div>
+      <Shot
+        name="assistant"
+        hue="blue"
+        where={["AI assistant", "Chat"]}
+        sizes="(min-width: 1240px) 700px, (min-width: 900px) 58vw, 100vw"
+        alt="The AI assistant column docked at the right of the editor, with Ollama and a model selected, example requests, and a box to describe an edit."
+      />
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="safety-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="safety-title">Safe by default.</h2>
+        <p class="lede">An agent can do a lot with your project, so the connection is closed until you open it, and only programs on your own computer can use it.</p>
+      </div>
+      <ul class="rule-list">
+        <li style="--hue: var(--green)">
+          <span class="mark"><Icon name="unlink-2" size={18} /></span>
+          <div><h3>Off until you turn it on</h3><p>No server listens until you switch on Allow AI agents. The app remembers your choice, and switching it off stops the server.</p></div>
+        </li>
+        <li style="--hue: var(--blue)">
+          <span class="mark"><Icon name="bot" size={18} /></span>
+          <div><h3>Local only</h3><p>The server binds to 127.0.0.1, so other computers cannot reach it, and it refuses requests from web pages other than localhost, which blocks DNS-rebinding tricks.</p></div>
+        </li>
+        <li style="--hue: var(--violet)">
+          <span class="mark"><Icon name="lock" size={18} /></span>
+          <div><h3>A token for this install</h3><p>Every request needs the install's own bearer token, made on first use and kept in the app's data folder. The stdio bridge reads it itself, so no command line holds it.</p></div>
+        </li>
+        <li style="--hue: var(--cyan)">
+          <span class="mark"><Icon name="undo-2" size={18} /></span>
+          <div><h3>Visible and undoable</h3><p>Agent edits appear on your timeline as they happen and undo like your own. An agent's exports go to your Videos folder and never replace an existing file.</p></div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section proof" aria-labelledby="proof-title">
+    <div class="wrap copy-block proof-block">
+      <h2 id="proof-title">The launch film is the demo.</h2>
+      <p>
+        The film on the home page was edited this way: an agent placed every clip, title, keyframe, mask, transition and sound
+        through the MCP tools, in about 90 calls, most of them batches, and checked each section on contact sheets before moving
+        on. It also wrote down every limit it met, from missing soft light to keyframes on properties that do not animate, and
+        the next round of work fixed the tools it found wanting.
+      </p>
+      <p class="links"><a href={href("experiment/")}>How the film and the editor were made</a></p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .section-tight { padding-bottom: clamp(24px, 4vw, 48px); }
+  .ways { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line); }
+  .ways li { padding: 28px 28px 8px 0; }
+  .ways li + li { padding-left: 28px; border-left: 1px solid var(--line); }
+  .ways h3 { margin-top: 18px; }
+  .ways p { margin-top: 10px; color: var(--text-2); font-size: 0.9375rem; }
+  .ways code { white-space: normal; overflow-wrap: anywhere; }
+  @media (max-width: 860px) {
+    .ways { grid-template-columns: minmax(0, 1fr); }
+    .ways li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  }
+
+  .connect { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
+  .steps { list-style: none; margin: 32px 0 0; padding: 0; counter-reset: step; display: grid; gap: 26px; }
+  .steps li { counter-increment: step; display: grid; grid-template-columns: 36px 1fr; column-gap: 14px; }
+  .steps li::before {
+    content: counter(step); grid-row: span 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid rgb(59 224 240 / 45%); color: var(--cyan); font-weight: 650; font-size: 0.9375rem;
+  }
+  .steps h3 { font-size: 1.0625rem; align-self: center; }
+  .steps p { margin-top: 6px; color: var(--text-2); font-size: 0.9375rem; }
+  .connect-commands { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .connect-commands :global(pre code) { white-space: pre-wrap; word-break: break-all; }
+  .small a { color: var(--cyan); }
+  @media (max-width: 960px) { .connect { grid-template-columns: minmax(0, 1fr); } }
+
+  .agent-work { border-block: 1px solid var(--line); }
+  .agent-work .feature-text > p + p { margin-top: 14px; }
+  .tool-groups { list-style: none; margin: 56px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .tool-groups li { padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-card); background: rgb(255 255 255 / 1.5%); }
+  .tool-groups a { display: flex; align-items: center; gap: 10px; color: var(--text-1); text-decoration: none; font-weight: 600; }
+  .tool-groups a:hover .g-name { text-decoration: underline; }
+  .tool-groups .icon { color: var(--blue); flex: none; }
+  .tool-groups .g-count { margin-left: auto; color: var(--text-3); font-weight: 500; font-size: 0.875rem; }
+  .tool-groups p { margin-top: 8px; color: var(--text-3); font-size: 0.8125rem; font-family: var(--mono); overflow-wrap: anywhere; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 28px; }
+  .links a { font-weight: 600; }
+  .rule-list { margin-top: 40px; }
+  .proof-block { max-width: 760px; }
+  .proof-block h2 { font-size: var(--step-3); }
+</style>

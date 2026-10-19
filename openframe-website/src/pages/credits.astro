@@ -1,0 +1,102 @@
+---
+import Base from "../layouts/Base.astro";
+import { repoFile } from "../lib/site";
+
+// The footage inside the demo project the film and the clips show, from the
+// footage folder's CREDITS.md (each clip trimmed and re-encoded, no sound).
+const FOOTAGE = [
+  { name: "Speedboat", title: "Aerial Shot Of Sea With Speedboat", url: "https://commons.wikimedia.org/wiki/File:Aerial_Shot_Of_Sea_With_Speedboat.webm", author: "bellergy", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Paris dusk", title: "Sunset on Eiffel Tower in Paris", url: "https://commons.wikimedia.org/wiki/File:Sunset_on_Eiffel_Tower_in_Paris_-_Vimeo.webm", author: "Mythomen", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Skyline", title: "Hochhäusern", url: "https://commons.wikimedia.org/wiki/File:Hochh%C3%A4usern.webm", author: "AbdulrasheedGambo", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Golden hour", title: "Golden sunset filmed in January", url: "https://commons.wikimedia.org/wiki/File:Golden_sunset_filmed_in_January.webm", author: "Vicky Ponce", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Morning fog", title: "Morning Fog on Lake BRoll 10s", url: "https://commons.wikimedia.org/wiki/File:Morning_Fog_on_Lake_BRoll_10s.webm", author: "Alabama Extension", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Harbor", title: "Aerial view of sea and boats", url: "https://commons.wikimedia.org/wiki/File:Aerial_view_of_sea_and_boats.webm", author: "Wayne McKelvie", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Lake drone", title: "Drone video of Kakerdi lake and Kakerdaja bog in Estonia", url: "https://commons.wikimedia.org/wiki/File:Drone_video_of_Kakerdi_lake_and_Kakerdaja_bog_in_Estonia,_september_2021.webm", author: "Sillerkiil", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Falls", title: "Athirapally falls", url: "https://commons.wikimedia.org/wiki/File:Athirapally_falls.webm", author: "Shyamal", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Sea sparkle", title: "Sea Shining under Sunshine", url: "https://commons.wikimedia.org/wiki/File:Sea_Shining_under_Sunshine.webm", author: "RachelDsj", license: "CC0", where: "Wikimedia Commons" },
+  { name: "Launch", title: "Artemis II Launch from OSB II Balcony, slow motion (KSC-04012026-C4829)", url: "https://images.nasa.gov/details/KSC-04012026-C4829", author: "NASA", license: "Public domain", where: "NASA Image and Video Library" },
+  { name: "Orbit, Coastline from orbit, Station", title: "Earth from Space in 4K, Expedition 65 Edition (jsc2022m000172)", url: "https://images.nasa.gov/details/jsc2022m000172_Earth_in_4K_Expedition_65_Edition", author: "NASA", license: "Public domain", where: "NASA Image and Video Library" },
+];
+
+const SOFTWARE = [
+  { name: "Tauri", what: "the desktop shell", url: "https://tauri.app/" },
+  { name: "React", what: "the interface (and this site's interactive parts)", url: "https://react.dev/" },
+  { name: "Mediabunny", what: "reading and writing media with WebCodecs", url: "https://mediabunny.dev/" },
+  { name: "Transformers.js", what: "running Whisper and the background-removal models on your device", url: "https://huggingface.co/docs/transformers.js" },
+  { name: "kokoro-js", what: "text to speech with Kokoro-82M", url: "https://www.npmjs.com/package/kokoro-js" },
+  { name: "Lucide", what: "the icons, in the app and on this site (ISC license)", url: "https://lucide.dev/" },
+  { name: "Inter", what: "this site's typeface, served from this site (SIL Open Font License)", url: "https://rsms.me/inter/" },
+  { name: "Astro", what: "this site", url: "https://astro.build/" },
+];
+---
+<Base
+  title="Credits"
+  description="The public-domain and CC0 footage in OpenFrame's launch film and product clips, the music made for it, and the open-source projects OpenFrame and this site are built on."
+>
+  <section class="page-hero">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <h1>Credits.</h1>
+      <p class="lede">
+        The footage you see inside the editor, in the launch film and in every clip on this site, is public-domain and CC0
+        video. The music was made for the film. And OpenFrame stands on other people's open-source work.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-tight">
+    <div class="wrap copy-block credits">
+      <h2>Footage</h2>
+      <p>Each clip was trimmed and re-encoded without sound for the demo project. Titles and authors are as their sources list them.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>In the project</th><th>Source</th><th>Author</th><th>License</th></tr></thead>
+          <tbody>
+            {FOOTAGE.map((f) => (
+              <tr>
+                <td>{f.name}</td>
+                <td><a href={f.url}>{f.title}</a><span class="where">{f.where}</span></td>
+                <td>{f.author}</td>
+                <td>{f.license}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p class="small">
+        NASA media are not copyrighted in the United States. NASA's guidelines ask that its insignia not be used to imply
+        endorsement; none of these clips shows it prominently, and NASA does not endorse OpenFrame.
+      </p>
+
+      <h2>Music</h2>
+      <p>
+        The launch film's 120 BPM track and the 128 BPM track inside the demo project were synthesized in code for this
+        project, from oscillators, noise and filters, with no samples, loops or outside audio.
+      </p>
+
+      <h2>Open source</h2>
+      <p>OpenFrame and this site are built on these projects, among many others:</p>
+      <ul>
+        {SOFTWARE.map((s) => <li><a href={s.url}>{s.name}</a>: {s.what}.</li>)}
+      </ul>
+      <p>
+        The full inventory of dependencies, models and their licenses is in
+        <a href={repoFile("docs/Third-party licenses.md")}>docs/Third-party licenses.md</a>. Models and libraries keep their own
+        licenses; OpenFrame's own code is <a href={repoFile("LICENSE")}>GPL-3.0-only</a>.
+      </p>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .section-tight { padding-bottom: 40px; }
+  .credits { max-width: 980px; }
+  .credits h2 { font-size: var(--step-3); margin-top: 1.6em; }
+  .credits h2:first-child { margin-top: 0; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-card); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--text-2); }
+  th { color: var(--text-1); font-weight: 600; background: rgb(255 255 255 / 3%); }
+  tr:last-child td { border-bottom: 0; }
+  td .where { display: block; color: var(--text-3); font-size: 0.8125rem; }
+</style>
