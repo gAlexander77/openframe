@@ -338,3 +338,27 @@ describe("liftRange", () => {
     expect(liftRange(locked, 30, 60, true).tracks[1]).toBe(locked.tracks[1]);
   });
 });
+
+
+it("moves the last equal-length shot to the very front with magnet", () => {
+  const p = project([0, 120, 0], [120, 120, 0], [240, 120, 0]);
+  expect(moveClip(p, "c3", p.tracks[0].id, 0, { magnet: true }).tracks[0].clips.map(c => c.id)).toEqual(["c3", "c1", "c2"]);
+});
+
+it("keeps a bed spanning two unequal shots fixed when inserting at the front", () => {
+  const p = project([0, 180, 0], [180, 240, 0]);
+  const bed = { ...clipForAsset(asset, 0, p.fps), type: "audio", id: "bed", duration: 420 } as Clip;
+  p.tracks.push({ ...createTrack("audio", "Music"), clips: [bed] });
+  const after = { ...p, tracks: p.tracks.map(t => t.main ? { ...t, clips: [createColorClip("#fff", 0, 150), ...t.clips.map(c => ({ ...c, start: c.start + 150 }))] } : t) };
+  expect(findClip(settle(p, after, { magnet: true, linkage: true }), "bed")!.clip.start).toBe(0);
+});
+
+
+it("inserts unequal clips before the first shot and resolves center ties before", () => {
+  const p = project([0, 60, 0], [60, 120, 0], [180, 240, 0]);
+  for (const start of [0, -90]) {
+    expect(moveClip(p, "c3", p.tracks[0].id, start, { magnet: true }).tracks[0].clips.map(c => c.id)).toEqual(["c3", "c1", "c2"]);
+  }
+  const equal = project([0, 120, 0], [120, 120, 0], [240, 120, 0]);
+  expect(moveClip(equal, "c3", equal.tracks[0].id, 120, { magnet: true }).tracks[0].clips.map(c => c.id)).toEqual(["c1", "c3", "c2"]);
+});

@@ -823,10 +823,12 @@ export function Timeline() {
                         key={`tr-${c.id}`}
                         className="tl-transition"
                         style={{ left: (c.start + c.duration + (drop?.shifts.get(c.id) ?? 0)) * zoom - w / 2, width: w, height: Math.min(22, row.height - 8), top: (row.height - Math.min(22, row.height - 8)) / 2 }}
-                        data-tip="Transition: select the clip before it to edit"
+                        data-tip="Edit transition"
+                        aria-label="Edit transition"
                         onPointerDown={(e) => {
                           e.stopPropagation();
                           store.select([c.id]);
+                          store.set({ transitionEdit: c.id });
                         }}
                       >
                         <Blend size={12} />

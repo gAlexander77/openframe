@@ -312,7 +312,9 @@ async (page) => {
       window.videoEditor.exec("group_clips", { clip_ids: [ids.green, ids.blue] });
       window.videoEditor.select([]);
     }, ids);
-    const at = await screen(1500, 150);
+    // Click the blue picture itself, not empty canvas above it.
+    const blue = await clip(ids.blue);
+    const at = await screen(960 + blue.transform.x * 1920, 540 + blue.transform.y * 1080);
     await page.mouse.click(at[0], at[1]);
     const both = (await state()).selection.length;
     await page.keyboard.press("Escape");

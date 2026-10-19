@@ -354,3 +354,19 @@ export function distributeClips(p: Project, ids: Id[], axis: Axis, frame: number
   const items = boxesAt(p, ids, frame);
   return shift(p, items, distributeShifts(items.map((i) => i.box), axis));
 }
+
+/** Pick the top unlocked picture under a project-pixel pointer. Uses the
+ * resting boxes also drawn by the transform handles. */
+export function hitClipAt(p: Project, frame: number, x: number, y: number): VisualClip | undefined {
+  if (x < 0 || y < 0 || x > p.width || y > p.height) return;
+  for (const track of p.tracks) {
+    if (track.kind !== "video" || track.hidden || track.locked) continue;
+    const ids = track.clips.filter(c => !c.disabled && c.start <= frame && frame < c.start + c.duration).map(c => c.id);
+    for (const { clip, rel, box } of boxesAt(p, ids, frame)) {
+      const r = -paramAt(clip, "transform.rotation", rel) * Math.PI / 180;
+      const dx = x - box.cx, dy = y - box.cy;
+      if (Math.abs(dx * Math.cos(r) - dy * Math.sin(r)) <= box.w / 2 &&
+          Math.abs(dx * Math.sin(r) + dy * Math.cos(r)) <= box.h / 2) return clip;
+    }
+  }
+}

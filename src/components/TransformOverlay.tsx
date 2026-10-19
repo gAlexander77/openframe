@@ -145,7 +145,7 @@ export function TransformOverlay({ width: W, height: H }: { width: number; heigh
   return (
     <div className="tf-layer" ref={frameRef} onPointerMove={onMove} onPointerUp={end} onPointerCancel={end}>
       {guides.x !== undefined && <div className="tf-guide tf-guide-v" style={{ left: guides.x * k }} />}
-      {(anchor.ax || anchor.ay) && <div className="tf-anchor" style={{ left: px, top: py }} aria-hidden />}
+      {(anchor.ax !== 0 || anchor.ay !== 0) && <div className="tf-anchor" style={{ left: px, top: py }} aria-hidden />}
       <MotionPath project={project} clip={c} k={k} />
       {guides.y !== undefined && <div className="tf-guide tf-guide-h" style={{ top: guides.y * k }} />}
       <div

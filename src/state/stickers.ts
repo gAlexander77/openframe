@@ -82,7 +82,7 @@ export async function execAddSticker(args: unknown) {
   const s = typeof name === "string" ? findSticker(name) : undefined;
   const asset = s ? await stickerAssetFor(s) : null;
   signal.throwIfAborted();
-  store.edit("add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args));
+  store.edit("Add sticker", (p) => runCommand(asset ? withAsset(p, asset) : p, "add_sticker", args));
   if (asset) prepare(asset);
 }
 

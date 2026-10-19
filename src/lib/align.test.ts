@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { alignClips, distributeClips, frameClips, frameRegion, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
+import { hitClipAt, alignClips, distributeClips, frameClips, frameRegion, groupBoxes, otherBoxes, scaleClips, snapBox, snapLines, type Box } from "./align";
 import { clipForAsset, createColorClip, createProject, createTrack } from "./project/defaults";
 import type { Clip, Project } from "./project/types";
 import { layerAt } from "./render/plan";
@@ -214,4 +214,35 @@ it("snaps to the vertical apps' safe area while that guide shows", () => {
   expect(lines.x).toEqual(expect.arrayContaining([1080 * 0.11, 1080 * 0.81]));
   expect(lines.y).toEqual(expect.arrayContaining([1920 * 0.14, 1920 * 0.65]));
   expect(snapLines(p, [], "off").x).toEqual([0, 540, 1080]);
+});
+
+
+it("picks only the top visible unlocked box under the pointer", () => {
+  const p = createProject(), base = color(0, 1), title = color(0, .1);
+  title.transform.x = .38; title.transform.y = -.4;
+  const top = { ...createTrack("video", "Title"), clips: [title] };
+  p.tracks = [top, { ...p.tracks[0], clips: [base] }];
+  expect(hitClipAt(p, 30, 960, 540)?.id).toBe(base.id);
+  expect(hitClipAt(p, 30, 1690, 108)?.id).toBe(title.id);
+  for (const key of ["locked", "hidden"] as const) {
+    top[key] = true;
+    expect(hitClipAt(p, 30, 1690, 108)?.id).toBe(base.id);
+    top[key] = false;
+  }
+  title.disabled = true;
+  expect(hitClipAt(p, 30, 1690, 108)?.id).toBe(base.id);
+  expect(hitClipAt(p, 60, 960, 540)).toBeUndefined();
+  expect(hitClipAt(p, 30, -1, 540)).toBeUndefined();
+  base.transform.scale = .2;
+  expect(hitClipAt(p, 30, 100, 100)).toBeUndefined();
+});
+it("hit-tests a rotated cropped box, not its enclosing rectangle", () => {
+  const p = createProject(), c = color(0, .5);
+  c.transform.rotation = 45;
+  p.tracks[0].clips = [c];
+  expect(hitClipAt(p, 0, 960, 540)?.id).toBe(c.id);
+  expect(hitClipAt(p, 0, 1450, 40)).toBeUndefined();
+  c.transform.rotation = 0; c.crop.left = .5;
+  expect(hitClipAt(p, 0, 800, 540)).toBeUndefined();
+  expect(hitClipAt(p, 0, 1100, 540)?.id).toBe(c.id);
 });
