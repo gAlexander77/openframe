@@ -267,6 +267,14 @@ describe("MCP ad tools", () => {
     const none = await call(h, "tools/call", { name: "export_versions", arguments: {} });
     expect(none!.result).toMatchObject({ isError: true });
   });
+
+  it("passes captions to every version that does not say", async () => {
+    const h = host();
+    await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "9:16" }, { ratio: "1:1", captions: "burn" }], captions: "none", check: true } });
+    expect(h.versionCalls).toEqual([{ versions: [{ ratio: "9:16", captions: "none" }, { ratio: "1:1", captions: "burn" }] }]);
+    const bad = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], captions: "srt" } });
+    expect(bad!.result).toMatchObject({ isError: true });
+  });
 });
 
 describe("what a blind test of the tools found", () => {

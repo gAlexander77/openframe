@@ -567,7 +567,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
   (capitals with the spoken word highlighted), Neon and Minimal, each
   previewed on its card; one click restyles and places every caption,
-  words and timings kept (`set_caption_look`).
+  words and timings kept (`set_caption_look`). On a tall canvas a look,
+  and `add_captions`' default style, is sized by the short side: a caption
+  has the same pixels on 1080x1920 as on 1920x1080, instead of growing
+  with the height to a dozen letters a line (a size asked for is kept).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
@@ -916,6 +919,14 @@ makes a 13 s one). Times are timeline seconds.
   again around it, a window compound sliding in from off the edge still
   does on 9:16, and a one-word wordmark too wide to wrap shrinks to the
   safe width ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+  A tall version of a wide film stacks what stood side by side: a window
+  above the headline beside it, a split screen's halves one above the
+  other (cut again wider), each as wide as the safe column, a label or a
+  glow on a window moving with it; a square version moves each such pair
+  as one group. Captions are burned in on tall versions by default (even
+  from a hidden caption track), sized by the short side and kept clear of
+  the stacks; `captions` says `burn`, `none` or `as_project`
+  ([[ADR-091 Tall versions stack what stood side by side]]).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
@@ -1114,7 +1125,7 @@ In the text inspector, expand **Style range**, choose a word, and set its color 
 
 ## Layout presets
 
-Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
+Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. **Fill** (the default) crops each picture to its cell; **Fit** shows the whole picture centered in it, for screen recordings (`fit: "contain"`, with `background` filling the cell behind it as an editable shape). The Layout tracks go directly above the highest of the chosen clips' tracks, so labels already above them stay on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
 
 ## Group transforms
 

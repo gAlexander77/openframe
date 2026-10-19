@@ -13,7 +13,7 @@ import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
-import { expandVersions, VERSION_FITS, VERSION_RATIOS, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
+import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -727,7 +727,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -738,6 +738,7 @@ APP_TOOLS.push(
             duration: { type: "number", minimum: 1, description: "Seconds; shorter than the project makes a cut-down" },
             textless: { type: "boolean", description: "Titles and captions off" },
             fit: { type: "string", enum: VERSION_FITS, description: "How full-frame footage meets a new shape: fill (default), blur, fit" },
+            captions: { type: "string", enum: VERSION_CAPTIONS, description: "burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest)" },
             name: { type: "string", description: "File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s'" },
           },
           ["ratio"],
@@ -747,6 +748,7 @@ APP_TOOLS.push(
       durations: { type: "array", items: { type: "number", minimum: 1 }, description: "...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6]" },
       textless: { type: "boolean", description: "Also a textless version, in the first ratio" },
       fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
+      captions: { type: "string", enum: VERSION_CAPTIONS, description: "For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
       check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
@@ -757,7 +759,7 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
-      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined }, master);
+      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined }, master);
       const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);

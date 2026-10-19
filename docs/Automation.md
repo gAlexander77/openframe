@@ -175,6 +175,12 @@ window sliding in is `{"path": "transform.x", "at": 3, "value": 0.75,
 ...]}` in order as one edit and one undo step, all or nothing: a failing
 step names its number (`step 2 (set_animation): no clip with id nope`).
 
+`apply_layout` takes `fit`: `cover` (default) crops each picture to its
+cell, `contain` shows the whole picture centered in it (screen
+recordings), with `background` (a CSS color) filling the cell behind it as
+an editable shape. The Layout tracks go directly above the highest of the
+chosen clips' tracks, so titles already above them stay on top.
+
 `set_compressor` evens out a video's or audio clip's sound: `{"clip_ids":
 [...], "preset": "voice"}` (voice, gentle, strong or off), with threshold,
 ratio, knee, attack, release and makeup to adjust it; `describe_project`
@@ -350,7 +356,10 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `textless`, `fit`, `name`), one file each, the project untouched; with
 `"check": true` it answers a contact sheet of every version instead.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
-length). In another shape an ad element, or any group, moves and scales
+length). `captions` (on the call or a version) is `burn`, `none` or
+`as_project`: a tall version (9:16, 4:5) burns them by default, even from
+a hidden caption track, at the tall frame's caption place with their type
+kept against the short side; the rest keep the project's. In another shape an ad element, or any group, moves and scales
 as one unit: its parts keep their layout, it stays against the edges it
 was against (or centered), and it shrinks to fit the safe area when it
 must ([[ADR-063 Versions fit a group as one unit]]). Hand-animated
@@ -360,7 +369,13 @@ motion laid out again around that (a slide from off the edge still starts
 off the edge); a compound clip moved or scaled as a picture (a floating
 window) is refit as one picture and placed like a logo, shrunk into the
 safe area when the frame would cut it; a word too wide to wrap shrinks to
-the safe width. `check_at` (fractions of each version's length) picks the
+the safe width. A tall version of a wide film stacks what stood side by
+side ([[ADR-091 Tall versions stack what stood side by side]]): a picture
+in one half with a title or picture in the other becomes the picture above
+the title, each as wide as the safe column (a split screen's cells cut
+again wider), what sat on a picture (a label, a glow) moving with it, all
+above the burned captions; a square version moves such a pair as one
+group. `check_at` (fractions of each version's length) picks the
 moments the check sheet shows. Long runs answer
 `running`; `export_status` follows them and lists the `versions` when
 done.

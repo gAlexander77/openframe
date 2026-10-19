@@ -11,7 +11,7 @@ import { shiftRuns, styleRange } from "./textRuns";
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
-import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionY } from "./captionLooks";
+import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionSized, captionY } from "./captionLooks";
 import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
@@ -820,13 +820,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "apply_layout",
-    description: "Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.",
+    description: "Arrange 2 to 4 overlapping visual clips in input order. fit cover (default) fills each cell, cropping the picture; contain shows the whole picture centered in its cell (screen recordings, slides), with background filling the cell behind it. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. The clips move to Layout tracks directly above the highest of their tracks, so titles already above them stay on top. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders and backgrounds are editable shape layers grouped with their pictures. One undo step.",
     input: S.obj({ clip_ids: S.ids("2 to 4 distinct visual clip ids in cell order; PIP main first"), layout: S.str("Cell arrangement", { enum: [...LAYOUTS] }),
       gap: S.num("Gutter as fraction of the shorter canvas side; default 0.02", { minimum: 0, maximum: 0.3 }),
       margin: S.num("Outer margin as fraction of the shorter canvas side; default 0.04", { minimum: 0, maximum: 0.4 }),
       radius: S.num("Rounded mask radius, 0 square to 1 half the shorter cell side; default 0", { minimum: 0, maximum: 1 }),
       border: S.obj({ width: S.num("Stroke width in pixels at 1080p", { minimum: 0, maximum: 100 }), color: S.str("CSS border color") }, ["width", "color"], "Optional editable border shapes"),
       animate: S.str("Entrance over 0.4 seconds, clipped to clip duration; default none", { enum: ["none", "slide", "scale"] }),
+      fit: S.str("cover (default): fill each cell, cropping the picture; contain: the whole picture, centered in its cell (the PIP's full-frame picture always covers)", { enum: ["cover", "contain"] }),
+      background: S.str("With fit contain: a CSS color filling each cell behind its picture, as an editable shape"),
     }, ["clip_ids", "layout"]),
     run: (p, a) => commandError(() => applyLayout(p, a.clip_ids as string[], a.layout as Layout, a as LayoutOptions)),
   },
@@ -2660,7 +2662,7 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
     const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
     lastEnd = end;
-    const fit = captionFit(p, { ...CAPTION_STYLE, ...style } as TextStyle, 0);
+    const fit = captionFit(p, { ...captionSized(p, CAPTION_STYLE), ...style } as TextStyle, 0);
     const text = createTextClip(cap.text, start, end - start, fit.style);
     const clip: Clip = {
       ...text,

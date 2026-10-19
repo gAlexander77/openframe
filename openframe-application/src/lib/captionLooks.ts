@@ -45,6 +45,23 @@ export const captionY = (p: { width: number; height: number }, y: number) => (p.
 export const captionFit = (p: { width: number; height: number }, style: TextStyle, x: number): { style: TextStyle; x: number } =>
   p.height > p.width ? { style: { ...style, maxWidth: Math.min(style.maxWidth, 0.62) }, x: -0.04 } : { style, x };
 
+/** A caption style's pixel sizes (pixels at a 1080-tall frame) for this
+ * canvas's short side: on 1080x1920 a caption gets 1080/1920 of them, the
+ * pixels it has on 1920x1080, instead of growing with the height to a
+ * dozen letters a line. Wide canvases keep them. */
+export function captionSized<T extends Partial<TextStyle>>(p: { width: number; height: number }, s: T): T {
+  const k = Math.min(p.width, p.height) / p.height;
+  if (k >= 1) return s;
+  const r = (v: number) => +(v * k).toFixed(2);
+  return {
+    ...s,
+    ...(s.size !== undefined ? { size: r(s.size) } : {}),
+    ...(s.stroke ? { stroke: { ...s.stroke, width: r(s.stroke.width) } } : {}),
+    ...(s.shadow ? { shadow: { ...s.shadow, blur: r(s.shadow.blur), x: r(s.shadow.x), y: r(s.shadow.y) } } : {}),
+    ...(s.background ? { background: { ...s.background, padding: r(s.background.padding), radius: r(s.background.radius) } } : {}),
+  };
+}
+
 /** Every caption takes the look: its style and height. */
 export function applyCaptionLook(p: Project, id: string): Project {
   const y = captionY(p, CAPTION_LOOKS[id].y);
@@ -54,7 +71,7 @@ export function applyCaptionLook(p: Project, id: string): Project {
       ...t,
       clips: t.clips.map((c): Clip => {
         if (c.type !== "text" || !c.caption) return c;
-        const fit = captionFit(p, lookStyle(id), c.transform.x);
+        const fit = captionFit(p, captionSized(p, lookStyle(id)), c.transform.x);
         return { ...c, style: fit.style, transform: { ...c.transform, x: fit.x, y } };
       }),
     })),

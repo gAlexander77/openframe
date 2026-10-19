@@ -948,7 +948,7 @@ Frame pictures on the canvas, centered: fit shows the whole picture, fill covers
 
 ### apply_layout
 
-Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders are editable shape layers grouped with their pictures. One undo step.
+Arrange 2 to 4 overlapping visual clips in input order. fit cover (default) fills each cell, cropping the picture; contain shows the whole picture centered in its cell (screen recordings, slides), with background filling the cell behind it. Triptych needs 3. PIP keeps the first clip full frame and stacks the remaining cards above it. The clips move to Layout tracks directly above the highest of their tracks, so titles already above them stay on top. Resets transform, crop and mask keys and clip animations to fit the cells. Optional borders and backgrounds are editable shape layers grouped with their pictures. One undo step.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -961,6 +961,8 @@ Arrange 2 to 4 overlapping visual clips in input order with cover cropping. Trip
 | `border.width` | number | yes | Stroke width in pixels at 1080p (0..100) |
 | `border.color` | string | yes | CSS border color |
 | `animate` | "none" \| "slide" \| "scale" |  | Entrance over 0.4 seconds, clipped to clip duration; default none |
+| `fit` | "cover" \| "contain" |  | cover (default): fill each cell, cropping the picture; contain: the whole picture, centered in its cell (the PIP's full-frame picture always covers) |
+| `background` | string |  | With fit contain: a CSS color filling each cell behind its picture, as an editable shape |
 
 ### align_clips
 
@@ -2390,20 +2392,22 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `versions` | { ratio, duration, textless, fit, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions` | { ratio, duration, textless, fit, captions, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
 | `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
 | `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
 | `versions[].textless` | boolean |  | Titles and captions off |
 | `versions[].fit` | "fill" \| "blur" \| "fit" |  | How full-frame footage meets a new shape: fill (default), blur, fit |
+| `versions[].captions` | "burn" \| "none" \| "as_project" |  | burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest) |
 | `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
 | `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
 | `textless` | boolean |  | Also a textless version, in the first ratio |
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
+| `captions` | "burn" \| "none" \| "as_project" |  | For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
 | `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92] |
