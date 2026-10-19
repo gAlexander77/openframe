@@ -39,8 +39,8 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   },
   {
     name: "Music, beats and markers",
-    blurb: "Read the music's structure, cut and hit on it, fit it to the picture; mark moments.",
-    tools: ["analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
+    blurb: "Compose an original score that fits the edit, or read an imported track's structure; cut and hit on it, fit it to the picture; mark moments.",
+    tools: ["generate_music", "plan_music", "analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
   },
   {
     name: "Picture and motion",
@@ -72,7 +72,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
+const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
@@ -116,6 +116,8 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_canvas_fill: { clip_ids: ["c_123"], fill: "blur", amount: 60 },
   set_fades: { clip_ids: ["c_123"], fade_in: 1, fade_out: 2 },
   mark_beats: { clip_id: "c_123", every: 1 },
+  generate_music: { style: "launch", key: "Am", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", at: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }], seed: 7, stems: true, markers: ["bars", "drop"] },
+  plan_music: { style: "cinematic", length: 45, ending: "stop" },
   analyze_music: { clip_id: "c_3", markers: ["beats", "bars", "drop"] },
   cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
@@ -258,7 +260,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
 7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
-8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
+8. Sound: music with add_media_clip on an audio track (or an original score with generate_music, its sections fitted to the cut and its final hit on the end card), duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a version needs work by hand (a subject to keep in frame, an end card to lay out), save_project_copy, set_project to the new shape, fix it there (auto_reframe for the shots) and export it on its own.
 
@@ -267,8 +269,8 @@ ${DESIGN}`,
   epic_edit: {
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
-1. new_project; import_media the clips and one strong track (a clear beat and a drop).
-2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop: it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
+1. new_project; import_media the clips and one strong track (a clear beat and a drop), or compose one: generate_music (style launch or cinematic) with sections that fit the edit (a drop at the climax, the outro ending with the video; plan_music tries them without rendering) places the music and answers its cue sheet: tempo, bars, beats, sections, drops and the final hit.
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
 3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.

@@ -55,6 +55,7 @@ export {
   Crosshair,
   Crop,
   Diamond,
+  Dices,
   Download,
   Drum,
   Eraser,

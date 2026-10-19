@@ -48,6 +48,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
+import { MusicCard } from "./MusicCard";
 import { MenuList, useDismiss, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
 import { RenameField } from "./RenameField";
@@ -206,6 +207,12 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
           <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
         </div>
+      )}
+      {kind === "audio" && (
+        <section className="lib-section">
+          <h4 className="lib-group">Music</h4>
+          <MusicCard />
+        </section>
       )}
       {kind === "audio" && <SoundEffects />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}

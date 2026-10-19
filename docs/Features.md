@@ -675,6 +675,44 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `get_transcript` then `cut_ranges`. The words are kept for the session,
   not in the project; clips with a speed curve or reversed are left out.
 
+## Generated music
+
+An original, royalty-free score made on this computer, for agents first
+and in the Audio tab's **Generate music** card
+([[ADR-085 Music is composed and synthesized in the app, seeded and offline]],
+[[ADR-086 A score fits an edit by whole bars and a nudged tempo]],
+[[Music generation 2026-10-19]]). Nothing is downloaded or sampled; the
+same arguments and seed give the same music.
+
+- **Five styles**: product launch (four on the floor, a pumping supersaw
+  pad, sub and offbeat bass, a 16th arp, a bright hook), cinematic (string
+  ostinato, legato strings, horns and choir, taiko and toms, braams and
+  hits, a long hall), upbeat corporate (piano eighths, a plucked guitar
+  strum, glockenspiel, claps and shaker, an eighth-note bass), lo-fi chill
+  (a swung boom-bap, Rhodes sevenths and ninths, a round bass on the
+  kick, vinyl and tape wow) and ambient (evolving pads, glass bells, a
+  tonic drone, a soft pulse).
+- **Composed, not looped**: each style's chord progressions in any key
+  and mode, voice-led bar to bar; a four-bar hook in key that repeats in
+  every drop and is teased in the intro and breakdown; drums with
+  velocity, swing and fills into each change; risers, reverse cymbals,
+  impacts and a beat of silence into drops; sidechain pumping; breakdowns
+  that thin out; a final hit that rings out (or a hard stop).
+- **Mixed and mastered**: stereo width with a mono low end, convolution
+  reverb sends, a ping-pong delay on the lead, each stem's loudness set
+  to the style's balance, then a glue compressor and a true-peak limiter
+  to -14 LUFS (or any target) under -1 dBTP.
+- **Fits the edit**: a length, or sections with bars, seconds or fixed
+  times (a drop at 8.0 s, an outro ending at 56 s); the tempo moves a
+  little so they land on bar lines, and the answer says how each fit.
+- **A cue sheet**: tempo, key, chords, every bar and beat, the sections,
+  drops, the final hit, cut points, and Bar, section and Drop markers on
+  request, so `cut_to_beats` and `add_beat_hits` work on it at once.
+- **Stems**: drums, bass, harmony and lead as files of their own (they add
+  up to the mix), on four grouped tracks if asked.
+- **One section again**: a section's own seed regenerates its drums,
+  fills and touches and leaves the rest note for note.
+
 ## Epic edits
 
 Music-synced montages (hype, velocity and AMV edits, CapCut's beat-synced

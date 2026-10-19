@@ -1,0 +1,42 @@
+/* The Audio tab's Generate music card (MusicCard.tsx), in the AI tools'
+   card language: a tinted icon, a title and blurb, fields, a foot. */
+.music-card {
+  --tool: #b48cff;
+  display: grid; gap: 10px; margin-top: 4px;
+  padding: 10px 12px; border-radius: var(--radius-panel);
+  background: var(--bg-2);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 4%);
+  transition: box-shadow var(--t-fast);
+}
+.music-card:hover { box-shadow: inset 0 0 0 1px rgb(255 255 255 / 9%); }
+.music-card.running { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tool) 55%, transparent); }
+.music-head { display: grid; grid-template-columns: auto 1fr; align-items: start; gap: 10px; }
+.music-icon {
+  display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
+  color: var(--tool);
+  background: color-mix(in srgb, var(--tool) 14%, var(--bg-1));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tool) 25%, transparent);
+}
+.music-card.running .music-icon { animation: ai-breathe 1.6s ease-in-out infinite; }
+.music-title { min-width: 0; }
+.music-title h3 { margin: 1px 0 2px; font-size: var(--fs-md); font-weight: 600; }
+.music-title p { margin: 0; color: var(--text-3); font-size: var(--fs-xs); line-height: 1.35; }
+
+.music-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px 10px; }
+.music-field { display: grid; gap: 4px; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); }
+.music-field .field { width: 100%; min-width: 0; height: 26px; }
+.music-field small {
+  color: var(--text-3); font-size: var(--fs-xs); line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.music-seed { display: flex; gap: 4px; min-width: 0; }
+.music-seed .field { flex: 1; }
+.music-seed .icon-btn { flex: none; width: 26px; height: 26px; }
+.music-checks { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--text-2); font-size: var(--fs-xs); }
+.music-checks label { display: inline-flex; align-items: center; gap: 6px; }
+
+.music-foot { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.music-foot .btn { height: 26px; gap: 5px; font-size: var(--fs-xs); }
+.music-foot .icon-btn { width: 26px; height: 26px; }
+.music-status { flex: 1; min-width: 0; color: var(--text-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.music-card .ai-progress span { background: linear-gradient(90deg, color-mix(in srgb, var(--tool) 70%, #fff), var(--tool)); }
