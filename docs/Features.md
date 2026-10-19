@@ -209,7 +209,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  26 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  26 effects (**Blur** up to a 300-pixel radius at 1080p, amount 500, for
+  big soft glows: past the old maximum of 100 it runs on a downsampled
+  pyramid, and up to 100 it draws exactly as before,
+  [[ADR-069 Large blurs run on a downsampled pyramid]]; CapCut's Reduce image noise, Motion blur, Sketch
   and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
   screen recording, and **Zoom** and **Letterbox** for epic edits),
@@ -309,6 +312,25 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   edits them; the timeline names the clip after its shape. The pieces of
   lower thirds, callouts, CTA buttons and end cards (`add_shape`,
   `set_shape`).
+- **Soft light** (ADR-069): a shape's **radial gradient** (from the
+  center to its rim, an ellipse fitting the box, with a center and
+  radius that keyframe) and **feather** (the edge fades over that many
+  pixels with a Gaussian's falloff) make soft background glows without
+  image files; with the Blur effect at 300 to 500 they are as soft as
+  any launch film's. Kind (Linear, Radial), Fade out, Radius, Center and
+  Feather in the Shape section.
+- **Drop shadow on pictures** (After Effects' Drop Shadow, ADR-070): any
+  video, image, title, shape or compound clip casts a soft shadow (color,
+  blur up to 600 px, offset, opacity, all but the color keyframable). It
+  is cast by the finished picture, after its mask, crop, effects and
+  track matte, so a rounded window casts a rounded shadow and a compound
+  clip (footage, a border and a bar) casts one shadow for the whole
+  floating window. Shadow section of the Video tab (`set_shadow`).
+- **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
+  Tilt Y in the Transform section turn a picture in depth, seen from a
+  camera 2000 pixels (at 1080p) in front of the canvas center, the
+  picture drawn perspective-correct; both keyframe, so a window swings
+  into place, and its shadow follows it (`set_tilt`).
 - **Track mattes** (After Effects', ADR-056): a clip shows only where
   another clip's picture is opaque (Alpha) or bright (Luma), or the
   reverse: video inside text, logo and wipe reveals. The matte is the clip
@@ -456,6 +478,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Font weight** (100 thin to 900 black): the Text tab's Weight list
+  shows the weights the chosen font really has (each face it draws), so
+  a heavy display line pairs with a light one; Bold is weight 700, and a
+  weight wins over it (`style.weight`, ADR-071).
+- **Animated size, spacing and color** (ADR-071): a title's size, letter
+  spacing and color keyframe (the diamonds beside Size, Spacing and
+  Color), so a tracking expand, a grow or a color change plays; a
+  left-aligned title keeps its left edge as it grows, a right-aligned one
+  its right (`animate_text_style`, or `add_keyframe` on `style.size` and
+  `style.letterSpacing`).
 - **Enter splits a caption** at the caret while editing it on the canvas
   (CapCut's): the second half starts where its first word is spoken (or
   as far in as the characters go, untimed), each half keeps its words'

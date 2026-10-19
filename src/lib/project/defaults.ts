@@ -9,6 +9,9 @@ import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { cleanShape } from "../shapes";
+import { cleanShadow } from "../shadow";
+import { cleanWeight } from "../textLook";
+import { keyColor } from "../textAnim";
 import { cleanTrackMatte, dropDanglingMattes } from "../trackMatte";
 import { cleanWiggle } from "../wiggle";
 import { secondsToFrames, type Rational } from "../time";
@@ -287,6 +290,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     optional(c, "motionBlur", mb > 0 ? { shutter: Math.min(720, mb) } : undefined);
     optional(c, "edge", c.edge === "mirror" || c.edge === "repeat" ? c.edge : undefined);
     optional(c, "wiggle", cleanWiggle(c.wiggle));
+    optional(c, "shadow", cleanShadow(c.shadow));
   }
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
@@ -329,7 +333,13 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
   }
   if (type === "text") {
     c.text = typeof c.text === "string" ? c.text : "";
-    c.style = { ...DEFAULT_TEXT_STYLE, ...(isObj(c.style) ? c.style : {}) };
+    const style = { ...DEFAULT_TEXT_STYLE, ...(isObj(c.style) ? c.style : {}) } as Record<string, unknown>;
+    // A weight out of range or not a number is dropped: bold decides then.
+    optional(style, "weight", cleanWeight(style.weight));
+    // A color set as a key's number (0xRRGGBB, ADR-071) is stored as CSS.
+    if (typeof style.color === "number") style.color = keyColor(style.color);
+    else if (typeof style.color !== "string") style.color = DEFAULT_TEXT_STYLE.color;
+    c.style = style;
   }
   if (type === "color") {
     c.color = typeof c.color === "string" ? c.color : "#000000";

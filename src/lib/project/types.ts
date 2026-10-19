@@ -231,6 +231,13 @@ export interface Transform {
   rotation: number;
   flipX: boolean;
   flipY: boolean;
+  /** Perspective tilt (ADR-070), degrees: rotateX tips the top away,
+   * rotateY turns the right side away (CSS's), seen from `perspective`
+   * pixels at 1080p in front of the canvas center (absent 2000). Absent
+   * = flat; readers that predate them draw the picture flat. */
+  rotateX?: number;
+  rotateY?: number;
+  perspective?: number;
 }
 
 export interface Crop {
@@ -413,6 +420,24 @@ export interface Visual {
   /** After Effects' wiggle() on transform values (ADR-062): seeded smooth
    * noise added to x, y, rotation or scale. Absent = none. */
   wiggle?: Partial<Record<WiggleTarget, Wiggle>>;
+  /** A drop shadow cast by the finished picture (ADR-070): after its
+   * mask, matte and effects, so a rounded or compound window casts its own
+   * shape. Absent = none. */
+  shadow?: DropShadow;
+}
+
+/** A drop shadow. Keyframe shadow.blur, shadow.x, shadow.y, shadow.opacity. */
+export interface DropShadow {
+  /** CSS color; its alpha multiplies `opacity`. */
+  color: string;
+  /** Softness: twice the Gaussian's sigma, pixels at 1080p, 0..600 (as
+   * CSS box-shadow's blur radius). */
+  blur: number;
+  /** How far the shadow falls, pixels at 1080p, x right and y down. */
+  x: number;
+  y: number;
+  /** 0..1 */
+  opacity: number;
 }
 
 export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
@@ -468,10 +493,14 @@ export interface Shape {
   /** false: outline only. Absent = filled (the clip's color or gradient).
    * Lines have no fill. */
   fill?: boolean;
-  /** A two-color linear fill in place of the clip's color (a line's
-   * color, on a line). Angle in degrees: 0 runs left to right, 90 top to
-   * bottom. */
-  gradient?: { from: string; to: string; angle: number };
+  /** A two-color fill in place of the clip's color (a line's color, on a
+   * line). Linear (kind absent or "linear"): `angle` in degrees, 0 runs
+   * left to right, 90 top to bottom. Radial (ADR-069): `from` at the
+   * center and `to` at `radius`, both elliptical with the box; x and y
+   * move the center by fractions of the box's width and height from its
+   * middle (absent 0), radius is a fraction of the box's half size (absent
+   * 1: the box's sides). Readers that predate radial draw it linear. */
+  gradient?: { from: string; to: string; angle: number; kind?: "linear" | "radial"; x?: number; y?: number; radius?: number };
   /** The outline (a line's thickness and color), centered on the path.
    * Width in pixels at a 1080-pixel-tall canvas. */
   stroke?: { color: string; width: number };
@@ -479,6 +508,10 @@ export interface Shape {
    * start (a rectangle's and ellipse's top center, clockwise; a line's
    * left end). Absent = 1. Fills are not trimmed. */
   draw?: number;
+  /** A soft edge (ADR-069): the edge fades out over this many pixels at
+   * 1080p, centered on it, with a Gaussian's falloff, so a feathered
+   * ellipse is a soft glow. Absent = 0, a crisp edge. */
+  feather?: number;
 }
 
 /** CapCut's Remove background (ADR-032, ADR-033): a matte a segmentation
@@ -620,10 +653,16 @@ export interface Timed {
 
 export interface TextStyle {
   font: string;
-  /** Pixels at a 1080-pixel-tall canvas; scales with the canvas. */
+  /** Pixels at a 1080-pixel-tall canvas; scales with the canvas.
+   * style.size, style.letterSpacing and style.color animate (ADR-071). */
   size: number;
+  /** CSS color. Keyed (style.color), its keyframes hold 0xRRGGBB numbers
+   * (lib/textAnim.ts). */
   color: string;
   bold: boolean;
+  /** Font weight, 100 (thin) to 900 (black). Absent: 700 when bold, else
+   * 400; present, it wins over bold. */
+  weight?: number;
   italic: boolean;
   underline: boolean;
   align: "left" | "center" | "right";

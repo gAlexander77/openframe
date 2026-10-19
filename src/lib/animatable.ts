@@ -8,7 +8,9 @@
 
 import { DEFAULT_ADJUST } from "./project/defaults";
 import { HSL_BANDS, WHEELS } from "./grade";
+import { SHADOW_PARAMS } from "./shadow";
 import { SHAPE_PARAMS } from "./shapes";
+import { TILT_PARAMS } from "./tilt";
 import { WIGGLE_TARGETS } from "./wiggle";
 import type { Clip } from "./project/types";
 
@@ -35,6 +37,9 @@ const ROWS: Row[] = [
   { path: "transform.rotation", on: visual },
   { path: "transform.anchorX", on: visual },
   { path: "transform.anchorY", on: visual },
+  // Perspective tilt (ADR-069 to ADR-071's render work).
+  { path: `transform.${any(TILT_PARAMS)}`, on: visual },
+  { path: `shadow.${any(SHADOW_PARAMS)}`, on: visual, needs: (c) => ("shadow" in c && c.shadow ? null : "it has no drop shadow: set_shadow first") },
   { path: "opacity", on: (c) => "opacity" in c },
   { path: "volume", on: sound },
   { path: "pan", on: sound },

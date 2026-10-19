@@ -1,12 +1,15 @@
-// The inspector's graphics rows: a shape layer's shape (ADR-057), and any
-// picture's track matte, motion blur and edges (ADR-056, ADR-058,
-// ADR-059). Every edit runs the command an agent would, so the two agree.
+// The inspector's graphics rows: a shape layer's shape (ADR-057, its
+// feather and radial fill ADR-069), any picture's track matte, motion blur
+// and edges (ADR-056, ADR-058, ADR-059), and its drop shadow (ADR-070).
+// Every edit runs the command an agent would, so the two agree.
 
 import { runCommand } from "../../lib/commands";
+import { parseColor } from "../../lib/shapes";
 import { findClip } from "../../lib/project/ops";
 import type { ColorClip, EdgeMode, MatteMode, VisualClip } from "../../lib/project/types";
 import { store, useEditor } from "../../state/store";
 import { toast } from "../../state/toast";
+import { SHADOW_DEFAULT } from "../../lib/shadow";
 import { ColorInput, Row, Section, Segmented, SliderRow, Toggle } from "./controls";
 
 const pct = { show: (v: number) => v * 100, store: (v: number) => v / 100 };
@@ -53,15 +56,42 @@ export function ShapeSection({ clip }: { clip: ColorClip }) {
       </Row>
       {s.gradient && (
         <>
+          <Row label="Kind">
+            <Segmented
+              value={s.gradient.kind ?? "linear"}
+              onChange={(kind) => run(kind === "radial" ? "Radial gradient" : "Linear gradient", "set_shape", { clip_ids: ids, gradient: { from: s.gradient!.from, kind } })}
+              options={[
+                { value: "linear", label: "Linear" },
+                { value: "radial", label: "Radial" },
+              ]}
+            />
+          </Row>
           <Row label="From">
             <ColorInput label="Gradient start color" value={s.gradient.from} onChange={(from) => run("Gradient color", "set_shape", { clip_ids: ids, gradient: { from } })} />
           </Row>
           <Row label="To">
             <ColorInput label="Gradient end color" value={s.gradient.to} onChange={(to) => run("Gradient color", "set_shape", { clip_ids: ids, gradient: { from: s.gradient!.from, to } })} />
           </Row>
-          <SliderRow clip={clip} path="shape.gradient.angle" label="Angle" min={-180} max={180} unit="°" reset={0} />
+          <Row label="Fade out">
+            {/* The end color made transparent: a glow that fades into what is under it. */}
+            <Toggle
+              on={(parseColor(s.gradient.to)?.[3] ?? 1) === 0}
+              label="Fade the gradient out to transparent"
+              onChange={(on) => run(on ? "Fade gradient out" : "Opaque gradient", "set_shape", { clip_ids: ids, gradient: { from: s.gradient!.from, to: `${(s.gradient!.to.startsWith("#") ? s.gradient!.to : "#000000").slice(0, 7)}${on ? "00" : ""}` } })}
+            />
+          </Row>
+          {s.gradient.kind === "radial" ? (
+            <>
+              <SliderRow clip={clip} path="shape.gradient.radius" label="Radius" min={1} max={300} unit="%" reset={1} {...pct} />
+              <SliderRow clip={clip} path="shape.gradient.x" label="Center X" min={-100} max={100} unit="%" reset={0} {...pct} />
+              <SliderRow clip={clip} path="shape.gradient.y" label="Center Y" min={-100} max={100} unit="%" reset={0} {...pct} />
+            </>
+          ) : (
+            <SliderRow clip={clip} path="shape.gradient.angle" label="Angle" min={-180} max={180} unit="°" reset={0} />
+          )}
         </>
       )}
+      <SliderRow clip={clip} path="shape.feather" label="Feather" min={0} max={600} unit="px" reset={0} show={(v) => v * px} store={(v) => v / px} />
       <Row label={line ? "Line color" : "Outline"}>
         <ColorInput label={line ? "Line color" : "Outline color"} value={s.stroke?.color ?? "#ffffff"} onChange={(c) => run("Outline color", "set_shape", { clip_ids: ids, stroke_color: c })} />
       </Row>
@@ -121,6 +151,31 @@ export function CompositingSection({ clip }: { clip: VisualClip }) {
           <option value="repeat">Repeat</option>
         </select>
       </Row>
+    </Section>
+  );
+}
+
+/** A picture's drop shadow (ADR-070): cast by the finished picture, so a
+ * masked or compound window casts its own shape. */
+export function ShadowSection({ clip }: { clip: VisualClip }) {
+  // Pixels of this canvas per 1080p pixel, the stored unit.
+  const px = useEditor((st) => st.project.height) / 1080;
+  const sh = clip.shadow;
+  const ids = [clip.id];
+  const pxRow = { show: (v: number) => v * px, store: (v: number) => v / px };
+  return (
+    <Section title="Shadow" defaultOpen={!!sh} extra={<Toggle label="Drop shadow" on={!!sh} onChange={(on) => run(on ? "Drop shadow" : "No drop shadow", "set_shadow", on ? { clip_ids: ids, ...SHADOW_DEFAULT } : { clip_ids: ids, off: true })} />}>
+      {sh && (
+        <>
+          <Row label="Color">
+            <ColorInput label="Shadow color" value={sh.color} onChange={(color) => run("Shadow color", "set_shadow", { clip_ids: ids, color })} />
+          </Row>
+          <SliderRow clip={clip} path="shadow.blur" label="Blur" min={0} max={600} unit="px" reset={SHADOW_DEFAULT.blur} {...pxRow} />
+          <SliderRow clip={clip} path="shadow.x" label="Offset X" min={-300} max={300} unit="px" reset={SHADOW_DEFAULT.x} {...pxRow} />
+          <SliderRow clip={clip} path="shadow.y" label="Offset Y" min={-300} max={300} unit="px" reset={SHADOW_DEFAULT.y} {...pxRow} />
+          <SliderRow clip={clip} path="shadow.opacity" label="Opacity" min={0} max={100} unit="%" reset={SHADOW_DEFAULT.opacity} {...pct} />
+        </>
+      )}
     </Section>
   );
 }

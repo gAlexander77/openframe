@@ -197,6 +197,14 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-068 check_project measures the picture and the sound it judges]] —
   WCAG contrast on the rendered frame behind each title, the music's last
   second, shots on the busiest track.
+- [[ADR-069 Large blurs run on a downsampled pyramid]] — blur to a
+  300-pixel radius past the old maximum (which draws as before); radial
+  gradients and feathered edges on shapes.
+- [[ADR-070 Drop shadows are cast by the finished picture]] — after
+  mask, effects and matte, so rounded and compound windows cast their
+  shape; perspective tilt for the same windows.
+- [[ADR-071 Keyed title styles redraw the title]] — font weights, and
+  size, letter spacing and color keyframes (colors as 0xRRGGBB).
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

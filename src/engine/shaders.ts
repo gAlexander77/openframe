@@ -164,7 +164,9 @@ void main() {
   vec2 q = mix(u_extent.xy, u_extent.zw, a_pos);
   v_local = q;
   vec3 p = u_matrix * vec3(q, 1.0);
-  gl_Position = vec4(p.xy, 0.0, 1.0);
+  // Homogeneous: w is 1 for a flat picture, the perspective divide for a
+  // tilted one (ADR-070), which also makes v_local perspective-correct.
+  gl_Position = vec4(p.xy, 0.0, p.z);
 }`;
 
 /** The layer pass. Shape layers (ADR-057) use the SHAPE build, which adds
@@ -185,6 +187,9 @@ uniform float u_shapeRadius, u_shapeStroke, u_shapeDraw;
 uniform bool u_shapeFill, u_gradient;
 uniform vec4 u_fill, u_fill2, u_strokeColor;   // straight RGBA
 uniform vec2 u_gradDir;    // unit vector, y down
+uniform int u_gradKind;    // 0 linear, 1 radial (ADR-069)
+uniform vec2 u_gradCenter, u_gradRadius;   // radial: center from the box's middle, radii (pixels)
+uniform float u_shapeFeather;              // soft edge width, pixels; 0 crisp
 uniform sampler2D u_tex;
 // remove background: a grayscale matte video, luma = alpha (ADR-033)
 uniform bool u_matteOn;
@@ -304,6 +309,21 @@ float sdRoundBox(vec2 q, vec2 b, float r) {
   return length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r;
 }
 
+// erf to about 1e-4 (Winitzki's approximation): GLSL ES has none.
+float erfApprox(float x) {
+  float x2 = x * x;
+  return sign(x) * sqrt(1.0 - exp(-x2 * (1.2732395 + 0.147 * x2) / (1.0 + 0.147 * x2)));
+}
+
+// How much of a point d pixels outside an edge (negative: inside) is
+// covered: one screen pixel's ramp, or with a feather (ADR-069) a
+// Gaussian's falloff, the edge centered in it and sigma a quarter of it.
+float edgeCover(float d, float aa) {
+  if (u_shapeFeather <= 0.0) return clamp(0.5 - d / aa, 0.0, 1.0);
+  float s = max(u_shapeFeather * 0.25, aa * 0.4);
+  return 0.5 - 0.5 * erfApprox(d / (s * 1.4142136));
+}
+
 // The shape's straight color at display uv d. aa: pixels of the shape per
 // pixel of the screen, from the unwrapped coordinates.
 vec4 shapeColor(vec2 d, float aa) {
@@ -313,13 +333,15 @@ vec4 shapeColor(vec2 d, float aa) {
   // the fill's paint: a gradient across the box, or one color (premultiplied)
   float span = abs(u_gradDir.x) * b.x + abs(u_gradDir.y) * b.y;
   float t = u_gradient ? clamp(dot(q, u_gradDir) / max(2.0 * span, 1e-3) + 0.5, 0.0, 1.0) : 0.0;
+  // Radial: elliptical with the box, from the center out to the radii.
+  if (u_gradient && u_gradKind == 1) t = clamp(length((q - u_gradCenter) / max(u_gradRadius, vec2(1e-3))), 0.0, 1.0);
   vec4 p1 = vec4(u_fill.rgb * u_fill.a, u_fill.a), p2 = vec4(u_fill2.rgb * u_fill2.a, u_fill2.a);
   vec4 paint = mix(p1, p2, t);
   if (u_shape == 3) {
     // A line: a butt-capped bar from the left end, draw of the way along.
     float len = 2.0 * b.x * u_shapeDraw;
     float dist = sdRoundBox(q - vec2(-b.x + len * 0.5, 0.0), vec2(len * 0.5, b.y), 0.0);
-    float cov = u_shapeDraw > 0.0 ? clamp(0.5 - dist / aa, 0.0, 1.0) : 0.0;
+    float cov = u_shapeDraw > 0.0 ? edgeCover(dist, aa) : 0.0;
     vec4 o = paint * cov;
     return o.a > 0.0 ? vec4(o.rgb / o.a, o.a) : vec4(0.0);
   }
@@ -338,9 +360,9 @@ vec4 shapeColor(vec2 d, float aa) {
     per = 3.1415927 * (3.0 * (bb.x + bb.y) - sqrt((3.0 * bb.x + bb.y) * (bb.x + 3.0 * bb.y)));
     s = u_shapeDraw < 1.0 ? fract(atan(q.x / bb.x, -q.y / bb.y) / 6.2831853 + 1.0) : 0.0;
   }
-  vec4 o = u_shapeFill ? paint * clamp(0.5 - dist / aa, 0.0, 1.0) : vec4(0.0);
+  vec4 o = u_shapeFill ? paint * edgeCover(dist, aa) : vec4(0.0);
   if (sw > 0.0) {
-    float cov = clamp(0.5 - (abs(dist) - sw * 0.5) / aa, 0.0, 1.0);
+    float cov = edgeCover(abs(dist) - sw * 0.5, aa);
     // Trim paths: the outline drawn up to draw of the way round.
     if (u_shapeDraw < 1.0) cov *= u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
     vec4 st = vec4(u_strokeColor.rgb * u_strokeColor.a, u_strokeColor.a) * cov;
@@ -424,6 +446,108 @@ in vec2 v_uv;
 uniform sampler2D u_tex;
 out vec4 outColor;
 void main() { outColor = texture(u_tex, v_uv); }`;
+
+// ---- large blurs and drop shadows (ADR-069, ADR-070) ------------------------
+// The pyramid: halve (DOWN_FS), blur at the small level (GAUSS_FS), read
+// back with a cubic B-spline (UP_FS, or SHADOW_FS for a drop shadow).
+// src/lib/blur.ts plans the passes and simulates them for the tests.
+
+/** One halving: a [1, 3, 3, 1] / 8 filter per axis, as four bilinear reads
+ * 0.75 of a source texel either side of the new texel's center. */
+export const DOWN_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_texel;      // the source's texel, in uv
+out vec4 outColor;
+void main() {
+  vec2 o = 0.75 * u_texel;
+  outColor = 0.25 * (texture(u_tex, v_uv - o) + texture(u_tex, v_uv + o)
+    + texture(u_tex, v_uv + vec2(o.x, -o.y)) + texture(u_tex, v_uv + vec2(-o.x, o.y)));
+}`;
+
+/** One direction of the Gaussian: 33 taps over three sigma (lib/blur.ts
+ * TAPS and tapWeight). */
+export const GAUSS_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_step;       // uv between taps, along the pass's direction
+out vec4 outColor;
+void main() {
+  vec4 acc = vec4(0.0);
+  float ws = 0.0;
+  for (int i = -16; i <= 16; i++) {
+    float k = 3.0 * float(i) / 16.0;
+    float w = exp(-0.5 * k * k);
+    acc += texture(u_tex, v_uv + u_step * float(i)) * w;
+    ws += w;
+  }
+  outColor = acc / ws;
+}`;
+
+/** The read-back shared by UP_FS and SHADOW_FS: a cubic B-spline through
+ * a small level's texels, as four bilinear reads (GPU Gems 2, ch. 20), and
+ * a dither of about one 8-bit step, so a wide, dim glow does not band. */
+const READ_BACK = `
+float dhash(vec2 p) { p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+// Triangular noise in -1..1 8-bit steps; seed picks an independent stream.
+float dither(float seed) { return (dhash(gl_FragCoord.xy + seed) - dhash(gl_FragCoord.xy + seed + 37.1)) / 255.0; }
+vec4 bspline(sampler2D tex, vec2 uv, vec2 size) {
+  vec2 p = uv * size - 0.5;
+  vec2 i = floor(p), t = p - i, t2 = t * t, t3 = t2 * t;
+  vec2 w0 = (1.0 - t) * (1.0 - t) * (1.0 - t) / 6.0;
+  vec2 w1 = (3.0 * t3 - 6.0 * t2 + 4.0) / 6.0;
+  vec2 w2 = (-3.0 * t3 + 3.0 * t2 + 3.0 * t + 1.0) / 6.0;
+  vec2 w3 = t3 / 6.0;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - 0.5 + w1 / g0) / size, h1 = (i + 1.5 + w3 / g1) / size;
+  return g0.y * (g0.x * texture(tex, h0) + g1.x * texture(tex, vec2(h1.x, h0.y)))
+    + g1.y * (g0.x * texture(tex, vec2(h0.x, h1.y)) + g1.x * texture(tex, h1));
+}`;
+
+/** The blur effect's result: the blurred level read back at full size. */
+export const UP_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+uniform vec2 u_size;       // the level's size in texels
+uniform bool u_spline;     // false: the blur ran at full size, read it as is
+out vec4 outColor;
+${READ_BACK}
+void main() {
+  vec4 c = u_spline ? bspline(u_tex, v_uv, u_size) : texture(u_tex, v_uv);
+  if (c.a > 0.002) {
+    c.rgb += dither(0.0);
+    c.a += dither(71.3);
+    c = clamp(c, 0.0, 1.0);
+    c.rgb = min(c.rgb, vec3(c.a));
+  }
+  outColor = c;
+}`;
+
+/** A drop shadow (ADR-070): the layer's blurred alpha, moved and tinted,
+ * under the layer itself. Both premultiplied. Past the canvas the blurred
+ * picture's edge repeats (CLAMP_TO_EDGE), as the blur's own edges do, so a
+ * full-frame picture's shadow runs on past the frame. */
+export const SHADOW_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_layer;
+uniform sampler2D u_blur;  // the layer blurred (or the layer, unblurred)
+uniform vec2 u_size;       // u_blur's size in texels
+uniform bool u_spline;     // u_blur is a small level: read it back smoothly
+uniform vec2 u_offset;     // the shadow's move, in uv (v up)
+uniform vec4 u_color;      // premultiplied, the shadow's opacity included
+out vec4 outColor;
+${READ_BACK}
+void main() {
+  vec4 l = texture(u_layer, v_uv);
+  vec2 uv = v_uv - u_offset;
+  float a = u_spline ? bspline(u_blur, uv, u_size).a : texture(u_blur, uv).a;
+  if (a > 0.002) a = clamp(a + dither(5.7), 0.0, 1.0);
+  outColor = l + u_color * a * (1.0 - l.a);
+}`;
 
 /** Blend a premultiplied layer over the premultiplied accumulator using the
  * W3C compositing formulas for separable blend modes. */

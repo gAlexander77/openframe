@@ -12,7 +12,8 @@ import { casedText } from "../lib/captions";
 import { caretAfter, finestUnit, hasSweep, isMoving, KINETIC_PAD, kineticKey, layoutAtoms, lineSweeps, SWEEP_PAD, sweepAt, unitStates, type KineticFrame, type UnitState } from "../lib/kinetic";
 import type { TextClip, TextStyle } from "../lib/project/types";
 import type { TextLayout } from "../lib/textBox";
-import { gradientLine, lookReach, stroke2Width } from "../lib/textLook";
+import { styleKeyed } from "../lib/textAnim";
+import { fontWeight, gradientLine, lookReach, stroke2Width } from "../lib/textLook";
 import type { SourceImage } from "./compositor";
 
 const FALLBACK_FONTS = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
@@ -20,7 +21,7 @@ const FALLBACK_FONTS = `"Segoe UI", "Helvetica Neue", Arial, sans-serif`;
 /** The font family list a style draws with; the canvas editor types in the
  * same one, so its caret lands on these glyphs. */
 export const textFamily = (s: TextStyle) => `"${s.font}", ${FALLBACK_FONTS}`;
-const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${s.bold ? 700 : 400} ${size}px ${textFamily(s)}`;
+const textFont = (s: TextStyle, size: number) => `${s.italic ? "italic " : ""}${fontWeight(s)} ${size}px ${textFamily(s)}`;
 
 /** Break text into lines that fit `maxWidth`, keeping explicit newlines. */
 function wrap(ctx: OffscreenCanvasRenderingContext2D, text: string, maxWidth: number): string[] {
@@ -299,9 +300,10 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   }
 
   const layout = { width: w, height: h, pad, textWidth: textW, wrapWidth, size, lineHeight: lineH, letterSpacing: s.letterSpacing * k, baselineShift };
-  // A kinetic frame is drawn once: unkeyed, the compositor uploads it into
-  // a scratch texture instead of keeping one per frame of the animation.
-  const out: TextRaster = { image: canvas, width: w, height: h, rotation: 0, native: true, ...(moving ? {} : { key }), layout };
+  // A kinetic frame, or a title whose size, spacing or color is keyed
+  // (ADR-071), is drawn once: unkeyed, the compositor uploads it into a
+  // scratch texture instead of keeping one per frame of the animation.
+  const out: TextRaster = { image: canvas, width: w, height: h, rotation: 0, native: true, ...(moving || styleKeyed(clip) ? {} : { key }), layout };
   cache.set(key, out);
   // ponytail: FIFO cap; an LRU only matters with hundreds of live titles.
   if (cache.size > 200) cache.delete(cache.keys().next().value!);

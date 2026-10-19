@@ -18,24 +18,31 @@
 // A layer with motion blur (ADR-058) is drawn once per shutter placement
 // into a half-float target and averaged; one with a track matte (ADR-056)
 // is multiplied by its matte layer, drawn into a level's matte targets.
+// Blurs past the old maximum, and drop shadows' softness, run on a pyramid
+// of halved targets (ADR-069, ADR-070); a drop shadow is cast last, by the
+// finished layer, so masks, mattes and compound pictures cast their shape.
 //
 // Preview and export share this class; only the canvas and size differ.
 
+import { blurPlan, blurSigma, usesPyramid } from "../lib/blur";
 import { bakeCurves } from "../lib/curves";
 import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
 import type { Placement } from "../lib/motionBlur";
-import type { BlendMode, MatteMode } from "../lib/project/types";
+import type { BlendMode, DropShadow, MatteMode } from "../lib/project/types";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
-import { parseColor, shapeExtent, strokePx } from "../lib/shapes";
+import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
+import { tiltMatrix } from "../lib/tilt";
 import {
   ADJUST_FS,
   BLEND_FS,
   BLEND_IDS,
   COPY_FS,
+  DOWN_FS,
   EFFECT_SHADERS,
   FULLSCREEN_VS,
+  GAUSS_FS,
   LAYER_FS,
   LAYER_SHAPE_FS,
   LAYER_VS,
@@ -43,9 +50,11 @@ import {
   MATTE_IDS,
   MIX_FS,
   PRESENT_FS,
+  SHADOW_FS,
   TRANSITION_BLUR_FS,
   TRANSITION_FS,
   TRANSITION_IDS,
+  UP_FS,
 } from "./shaders";
 
 /** What the compositor needs to draw a layer's pixels. Width and height are
@@ -171,6 +180,10 @@ export class Compositor {
   /** Motion blur's half-float sum (ADR-058); null where the platform
    * cannot render to one, which draws moving layers unblurred. */
   private accum: Target | null | undefined;
+  /** The blur pyramid (ADR-069): per level, two targets of that level's
+   * size; level 0 is full size, each next one half the last. One set for
+   * every nesting level: a blur finishes before anything else draws. */
+  private pyramid: { w: number; h: number; a: Target; b: Target }[] = [];
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
@@ -269,6 +282,10 @@ export class Compositor {
       ["mix", FULLSCREEN_VS, MIX_FS],
       ["matte", FULLSCREEN_VS, MATTE_FS],
       ["copy", FULLSCREEN_VS, COPY_FS],
+      ["blur:down", FULLSCREEN_VS, DOWN_FS],
+      ["blur:gauss", FULLSCREEN_VS, GAUSS_FS],
+      ["blur:up", FULLSCREEN_VS, UP_FS],
+      ["shadow", FULLSCREEN_VS, SHADOW_FS],
       ...Object.entries(EFFECT_SHADERS).map(([k, fs]): [string, string, string] => [`fx:${k}`, FULLSCREEN_VS, fs]),
     ];
     const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
@@ -326,10 +343,11 @@ export class Compositor {
     this.level(0);
   }
 
-  private makeTarget(): Target {
+  private makeTarget(w = this.width, h = this.height, half = false): Target {
     const gl = this.gl;
     const tex = this.makeTexture();
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, this.width, this.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    if (half) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, w, h, 0, gl.RGBA, gl.HALF_FLOAT, null);
+    else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     const fb = gl.createFramebuffer()!;
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
@@ -338,14 +356,107 @@ export class Compositor {
 
   private freeTargets() {
     const gl = this.gl;
-    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...(this.accum ? [this.accum] : [])]) {
+    const pyramid = this.pyramid.flatMap((l) => [l.a, l.b]);
+    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...pyramid, ...(this.accum ? [this.accum] : [])]) {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
     this.levels = [];
     this.baked = [];
     this.matteTargets = [];
+    this.pyramid = [];
     this.accum = undefined;
+  }
+
+  /** The blur pyramid's level `l` (ADR-069), made on first use. Halved
+   * levels are half floats where the platform renders to them, so a wide,
+   * dim glow keeps more than 8 bits until its last pass. */
+  private pyramidLevel(l: number) {
+    const hit = this.pyramid[l];
+    if (hit) return hit;
+    const w = Math.max(1, Math.ceil(this.width / 2 ** l)), h = Math.max(1, Math.ceil(this.height / 2 ** l));
+    // EXT_color_buffer_float makes RGBA16F renderable; checked anyway, as
+    // the motion blur target is.
+    const target = () => {
+      if (l > 0 && this.gl.getExtension("EXT_color_buffer_float")) {
+        const t = this.makeTarget(w, h, true);
+        if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) === this.gl.FRAMEBUFFER_COMPLETE) return t;
+        this.gl.deleteFramebuffer(t.fb);
+        this.gl.deleteTexture(t.tex);
+      }
+      return this.makeTarget(w, h);
+    };
+    return (this.pyramid[l] = { w, h, a: target(), b: target() });
+  }
+
+  /** Draw into `t` at its own size (the pyramid's levels are smaller than
+   * the canvas). */
+  private bindSized(t: Target, w: number, h: number) {
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, t.fb);
+    this.gl.viewport(0, 0, w, h);
+  }
+
+  /** Blur `src`, a canvas-sized premultiplied texture, by a Gaussian of
+   * `sigma` render pixels on the pyramid (lib/blur.ts plans it). The result
+   * stays in the level it was blurred at: read it with the B-spline when
+   * `spline` (UP_FS, SHADOW_FS). */
+  private gaussian(src: WebGLTexture, sigma: number): { tex: WebGLTexture; w: number; h: number; spline: boolean } {
+    const gl = this.gl;
+    const plan = blurPlan(sigma);
+    let tex = src, w = this.width, h = this.height;
+    for (let l = 1; l <= plan.levels; l++) {
+      const lv = this.pyramidLevel(l);
+      this.bindSized(lv.a, lv.w, lv.h);
+      const u = this.use(this.program("blur:down", FULLSCREEN_VS, DOWN_FS));
+      this.bindTex(0, tex, u("u_tex"));
+      gl.uniform2f(u("u_texel"), 1 / w, 1 / h);
+      this.draw();
+      [tex, w, h] = [lv.a.tex, lv.w, lv.h];
+    }
+    const lv = this.pyramidLevel(plan.levels);
+    const u = this.use(this.program("blur:gauss", FULLSCREEN_VS, GAUSS_FS));
+    this.bindSized(lv.b, lv.w, lv.h);
+    this.bindTex(0, tex, u("u_tex"));
+    gl.uniform2f(u("u_step"), plan.step / lv.w, 0);
+    this.draw();
+    this.bindSized(lv.a, lv.w, lv.h);
+    this.bindTex(0, lv.b.tex, u("u_tex"));
+    gl.uniform2f(u("u_step"), 0, plan.step / lv.h);
+    this.draw();
+    return { tex: lv.a.tex, w: lv.w, h: lv.h, spline: plan.levels > 0 };
+  }
+
+  /** The blur effect past its old maximum (ADR-069): `src` blurred by
+   * `sigma` render pixels into `out`. */
+  private bigBlur(src: Target, sigma: number, out: Target) {
+    const gl = this.gl;
+    const r = this.gaussian(src.tex, sigma);
+    this.bindTarget(out);
+    const u = this.use(this.program("blur:up", FULLSCREEN_VS, UP_FS));
+    this.bindTex(0, r.tex, u("u_tex"));
+    gl.uniform2f(u("u_size"), r.w, r.h);
+    gl.uniform1i(u("u_spline"), r.spline ? 1 : 0);
+    this.draw();
+  }
+
+  /** A drop shadow (ADR-070) under the finished layer `src`, into `out`. */
+  private castShadow(src: Target, sh: DropShadow, out: Target) {
+    const gl = this.gl;
+    const k = this.height / 1080;
+    const sigma = (sh.blur / 2) * k;
+    const r = sigma >= 0.25 ? this.gaussian(src.tex, sigma) : { tex: src.tex, w: this.width, h: this.height, spline: false };
+    this.bindTarget(out);
+    const u = this.use(this.program("shadow", FULLSCREEN_VS, SHADOW_FS));
+    this.bindTex(0, src.tex, u("u_layer"));
+    this.bindTex(1, r.tex, u("u_blur"));
+    gl.uniform2f(u("u_size"), r.w, r.h);
+    gl.uniform1i(u("u_spline"), r.spline ? 1 : 0);
+    // Pixels (y down) to uv (v up).
+    gl.uniform2f(u("u_offset"), (sh.x * k) / this.width, (-sh.y * k) / this.height);
+    const [cr, cg, cb, ca] = rgba(sh.color);
+    const a = ca * sh.opacity;
+    gl.uniform4f(u("u_color"), cr * a, cg * a, cb * a, a);
+    this.draw();
   }
 
   /** Level `depth`'s three track-matte targets (draw, two effect temps). */
@@ -589,8 +700,9 @@ export class Compositor {
     if (shape) {
       // A shape's pixels at scale 1 are the canvas's (ADR-057): the quad
       // holds its box, its stroke and two screen pixels of soft edge.
+      // A feather's soft edge reaches past the outline too (ADR-069).
       const e = shapeExtent(shape, W, H);
-      const m = 2 / Math.max(0.05, Math.min(Math.abs(layer.scale), Math.abs(layer.scaleY ?? layer.scale)));
+      const m = 2 / Math.max(0.05, Math.min(Math.abs(layer.scale), Math.abs(layer.scaleY ?? layer.scale))) + featherReach(shape.feather, H);
       sw = e.w + 2 * m;
       sh = e.h + 2 * m;
       fit = 1;
@@ -635,6 +747,12 @@ export class Compositor {
       const oy = cy + sin * (-0.5 * sx + shiftX) + cos * (-0.5 * sy + shiftY);
       // pixels -> clip: x' = x / W * 2 - 1, y' = 1 - y / H * 2
       const ax = 2 / W, ay = -2 / H;
+      // A tilted picture (ADR-070) maps by a homography; its edge mode's
+      // copies are not drawn (ponytail: the extent is solved for flat maps).
+      if (layer.tilt) {
+        const mat = new Float32Array(tiltMatrix({ cx, cy, sx, sy, shiftX, shiftY, rotation: t.rotation }, { ...layer.tilt, distance: (layer.tilt.distance * H) / 1080 }, W, H));
+        return { mat, visW, visH, extent: [0, 0, 1, 1] };
+      }
       // column-major mat3
       const mat = new Float32Array([
         m00 * ax, m10 * ay, 0,
@@ -776,6 +894,13 @@ export class Compositor {
     gl.uniform1i(u("u_gradient"), g ? 1 : 0);
     const a = ((g?.angle ?? 0) * Math.PI) / 180;
     gl.uniform2f(u("u_gradDir"), Math.cos(a), Math.sin(a));
+    // Radial (ADR-069): the center moved by fractions of the box, radii a
+    // fraction of its half size.
+    const radial = g?.kind === "radial";
+    gl.uniform1i(u("u_gradKind"), radial ? 1 : 0);
+    gl.uniform2f(u("u_gradCenter"), radial ? (g.x ?? 0) * 2 * bx : 0, radial ? (g.y ?? 0) * 2 * by : 0);
+    gl.uniform2f(u("u_gradRadius"), bx * (g?.radius ?? 1), by * (g?.radius ?? 1));
+    gl.uniform1f(u("u_shapeFeather"), (sh.feather * H) / 1080);
     gl.uniform4fv(u("u_strokeColor"), rgba(sh.stroke?.color ?? s.color));
   }
 
@@ -814,7 +939,13 @@ export class Compositor {
       cur = dest;
     };
     for (const e of effects) {
-      if (e.type === "blur") {
+      if (e.type === "blur" && usesPyramid(e.params.amount)) {
+        // Past the old maximum: the pyramid (ADR-069). Up to it, the two
+        // passes below draw exactly what they always have.
+        const dest = temps[i++ % 2];
+        this.bigBlur(cur, blurSigma(e.params.amount) * (this.height / 1080), dest);
+        cur = dest;
+      } else if (e.type === "blur") {
         pass("blur", { ...e.params, dirX: 1, dirY: 0 });
         pass("blur", { ...e.params, dirX: 0, dirY: 1 });
       } else pass(e.type, e.params);
@@ -888,15 +1019,21 @@ export class Compositor {
       const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
       const done = fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
       const tm = layer.trackMatte;
-      if (!tm) return done;
-      const [M1, M2, M3] = this.matteLevel(depth);
-      const ml = tm.layer;
-      const msrc = ml && sourceOf(ml);
-      // The matte layer is planned without a matte of its own, so this
-      // never recurses further.
-      const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
-      const out = [target, ...temps].find((t) => t !== done)!;
-      this.applyMatte(done, matte, tm.mode, out);
+      let cut = done;
+      if (tm) {
+        const [M1, M2, M3] = this.matteLevel(depth);
+        const ml = tm.layer;
+        const msrc = ml && sourceOf(ml);
+        // The matte layer is planned without a matte of its own, so this
+        // never recurses further.
+        const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
+        cut = [target, ...temps].find((t) => t !== done)!;
+        this.applyMatte(done, matte, tm.mode, cut);
+      }
+      // The drop shadow last (ADR-070): cast by the picture as it is now.
+      if (!layer.shadow) return cut;
+      const out = [target, ...temps].find((t) => t !== cut)!;
+      this.castShadow(cut, layer.shadow, out);
       return out;
     };
 

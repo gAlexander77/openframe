@@ -9,6 +9,7 @@
 
 import { fromDb, toDb } from "./audio";
 import { EFFECTS } from "./catalog";
+import { COLOR_PATHS, keyColor } from "./textAnim";
 import type { Clip } from "./project/types";
 
 export interface ParamInfo {
@@ -19,6 +20,8 @@ export interface ParamInfo {
   show: (v: number) => number;
   /** Shown value -> stored value. */
   store: (v: number) => number;
+  /** The value is a color key, 0xRRGGBB (ADR-071): shown as #rrggbb. */
+  color?: boolean;
 }
 
 const same = (v: number) => v;
@@ -52,6 +55,20 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   "shape.draw": { label: "Draw", unit: "%", digits: 0, scale: 100 },
   "shape.stroke.width": { label: "Thickness", unit: "px", digits: 1 },
   "shape.gradient.angle": { label: "Gradient angle", unit: "°", digits: 0 },
+  // Soft light, shadows and animated type (ADR-069 to ADR-071).
+  "shape.feather": { label: "Feather", unit: "px", digits: 0 },
+  "shape.gradient.x": { label: "Gradient X", unit: "%", digits: 0, scale: 100 },
+  "shape.gradient.y": { label: "Gradient Y", unit: "%", digits: 0, scale: 100 },
+  "shape.gradient.radius": { label: "Gradient radius", unit: "%", digits: 0, scale: 100 },
+  "shadow.blur": { label: "Shadow blur", unit: "px", digits: 0 },
+  "shadow.x": { label: "Shadow X", unit: "px", digits: 0 },
+  "shadow.y": { label: "Shadow Y", unit: "px", digits: 0 },
+  "shadow.opacity": { label: "Shadow opacity", unit: "%", digits: 0, scale: 100 },
+  "style.size": { label: "Text size", unit: "px", digits: 1 },
+  "transform.rotateX": { label: "Tilt X", unit: "°", digits: 1 },
+  "transform.rotateY": { label: "Tilt Y", unit: "°", digits: 1 },
+  "transform.perspective": { label: "Perspective", unit: "px", digits: 0 },
+  "style.letterSpacing": { label: "Letter spacing", unit: "px", digits: 1 },
   "wiggle.x.strength": { label: "Shake X", unit: "%", digits: 0, scale: 100 },
   "wiggle.y.strength": { label: "Shake Y", unit: "%", digits: 0, scale: 100 },
   "wiggle.rotation.strength": { label: "Shake rotate", unit: "%", digits: 0, scale: 100 },
@@ -64,6 +81,7 @@ const ADJUST: Record<string, string> = { temperature: "Temp" };
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
 export function paramInfo(path: string, clip: Clip, canvas: { width: number; height: number }): ParamInfo {
+  if (COLOR_PATHS.has(path)) return { label: "Text color", unit: "", digits: 0, show: same, store: same, color: true };
   const fixed = FIXED[path];
   if (fixed) {
     const k = fixed.scale ?? 1;
@@ -89,6 +107,7 @@ export function paramInfo(path: string, clip: Clip, canvas: { width: number; hei
 
 /** "120%", "-48 px", "-6.0 dB": a value in its display units. */
 export function formatParam(info: ParamInfo, stored: number): string {
+  if (info.color) return keyColor(stored);
   const v = info.show(stored);
   const text = Number.isFinite(v) ? v.toFixed(info.digits) : "-∞";
   return info.unit === "%" || info.unit === "°" || !info.unit ? `${text}${info.unit}` : `${text} ${info.unit}`;

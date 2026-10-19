@@ -4,6 +4,7 @@
 // list_catalog. Adding an entry here (plus its shader, for effects and
 // transitions) is the whole job of adding one.
 
+import { BLUR_MAX } from "./blur";
 import { KINETIC_ANIMATIONS, type TextAnimation } from "./kinetic";
 import type { Adjust, BlendMode, ClipLabel } from "./project/types";
 
@@ -106,7 +107,10 @@ export interface EffectDef {
 const amount = (d = 50): ParamDef => ({ label: "Amount", min: 0, max: 100, default: d });
 
 export const EFFECTS: Record<string, EffectDef> = {
-  blur: { label: "Blur", category: "Blur", params: { amount: amount(30) } },
+  // Radius 0.6 px at 1080p per unit: 100 (60 px) was the old maximum and
+  // draws as it always has; past it, up to 300 px, the blur runs on a
+  // downsampled pyramid for big, soft glows (ADR-069).
+  blur: { label: "Blur", category: "Blur", params: { amount: { ...amount(30), max: BLUR_MAX } } },
   zoomBlur: { label: "Zoom blur", category: "Blur", params: { amount: amount(40) } },
   pixelate: { label: "Pixelate", category: "Stylize", params: { size: { label: "Block size", min: 2, max: 120, default: 24 } } },
   rgbSplit: { label: "RGB split", category: "Distort", params: { amount: amount(30), angle: { label: "Angle", min: 0, max: 360, default: 0 } } },

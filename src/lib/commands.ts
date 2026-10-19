@@ -52,7 +52,10 @@ import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, type AdBackground, type AdElement, type Spot } from "./ads";
 import { placeOnTop } from "./overlays";
-import { LINE_WIDTH, parseColor } from "./shapes";
+import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
+import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
+import { COLOR_PATHS, colorKey } from "./textAnim";
+import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
 
 export type JsonSchema = {
@@ -177,7 +180,8 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   font: S.str("Font family"),
   size: S.num("Pixels at 1080p canvas height", { minimum: 4 }),
   color: S.str("CSS color"),
-  bold: S.bool("Bold"),
+  bold: S.bool("Bold (weight 700); setting it clears weight"),
+  weight: S.num("Font weight: 100 thin, 300 light, 400 regular, 500 medium, 600 semibold, 700 bold, 800 extra bold, 900 black. Wins over bold; a weight the font lacks draws its nearest face. Pair a heavy display line with a light one", { minimum: 100, maximum: 900 }),
   italic: S.bool("Italic"),
   align: S.str("Alignment", { enum: ["left", "center", "right"] }),
   highlight: S.str("Captions: color of the word being spoken; an empty string turns it off"),
@@ -196,6 +200,14 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   lineHeight: S.num("Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines)", { minimum: 0.5, maximum: 3 }),
   maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
 }, [], "The text's look; fields left out keep their value (or the default look for new text)");
+
+/** A gradient's radial fields, shared by add_shape and set_shape. */
+const RADIAL_FIELDS: Record<string, JsonSchema> = {
+  kind: S.str("linear (default) or radial: from at the center to `to` at the rim, an ellipse fitting the box", { enum: ["linear", "radial"] }),
+  x: S.num("Radial: the center's move from the box's middle, a fraction of its width (default 0)", { minimum: -2, maximum: 2 }),
+  y: S.num("Radial: the center's move, a fraction of the box's height, down positive (default 0)", { minimum: -2, maximum: 2 }),
+  radius: S.num("Radial: where `to` is reached, a fraction of the box's half size (default 1, its sides)", { minimum: 0.001, maximum: 10 }),
+};
 
 const REGION_SCHEMA = S.obj(
   {
@@ -231,6 +243,12 @@ function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial
   if (s.highlight === "") delete s.highlight;
   if (s.accent === "") delete s.accent;
   if ((s.case as string) === "none") delete s.case;
+  // Bold is weight 700: setting bold alone clears a weight; a weight sets
+  // bold to match, for readers that only know bold.
+  if (given.weight !== undefined) {
+    s.weight = Math.round(Math.min(900, Math.max(100, Number(given.weight))));
+    s.bold = s.weight >= 600;
+  } else if (given.bold !== undefined) delete s.weight;
   return s;
 }
 
@@ -1075,7 +1093,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_shape",
     description:
-      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}.",
+      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Soft light without image files: an ellipse with feather (a soft edge, pixels) or a radial gradient to transparent is a glow; add a blur effect (amount up to 500) for more. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}; a background glow: {kind: 'ellipse', start: 0, duration: 8, width: 0.6, height: 0.8, gradient: {kind: 'radial', from: '#6a5cffcc', to: 'transparent'}, feather: 120}.",
     input: S.obj(
       {
         kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
@@ -1088,18 +1106,20 @@ export const COMMANDS: Command[] = [
         color: S.str("Fill color, CSS: '#ff3366', '#00000099' (with alpha), 'rgba(0,0,0,0.6)', 'white'; a line's color. Default #ffffff"),
         gradient: S.obj(
           {
-            from: S.str("Color at the start"),
-            to: S.str("Color at the end"),
-            angle: S.num("Degrees: 0 runs left to right (default), 90 top to bottom, 45 diagonal"),
+            from: S.str("Color at the start (radial: the center)"),
+            to: S.str("Color at the end (radial: the rim); 'transparent' fades out"),
+            angle: S.num("Linear: degrees, 0 runs left to right (default), 90 top to bottom, 45 diagonal"),
+            ...RADIAL_FIELDS,
           },
           ["from", "to"],
-          "A two-color fill instead of color",
+          "A two-color fill instead of color: linear (default) or radial",
         ),
         fill: S.bool("false draws only the outline (give stroke_width); default true"),
         stroke_color: S.str("Outline color, CSS; default white"),
         stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
         radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
         draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
+        feather: S.num(`Soft edge: the edge fades over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default). An ellipse feathered by half its size or more is a soft glow`, { minimum: 0, maximum: FEATHER_MAX }),
         rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
         opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
         track_id: S.str("Track id; default above everything at that time"),
@@ -1122,6 +1142,7 @@ export const COMMANDS: Command[] = [
         ...(a.gradient ? { gradient: gradientArg(a.gradient as Record<string, unknown>) } : {}),
         ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" ? color : "#ffffff"), width: strokeWidth } } : {}),
         ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
+        ...(Number(a.feather ?? 0) > 0 ? { feather: Number(a.feather) } : {}),
       };
       if (shape.fill === false && !shape.stroke) throw new CommandError("an outline-only shape needs stroke_width");
       const base = createColorClip(color, f(p, a.start), span(p, a.start, a.duration));
@@ -1139,7 +1160,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_shape",
     description:
-      "Change shape layers made with add_shape (same meanings and units). Values left out keep theirs. Numbers that are animated (have keyframes) get a keyframe at `at` instead; to start animating one, use add_keyframe on its path (shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle). gradient with an empty from removes it; stroke_width 0 removes the outline.",
+      "Change shape layers made with add_shape (same meanings and units). Values left out keep theirs. Numbers that are animated (have keyframes) get a keyframe at `at` instead; to start animating one, use add_keyframe on its path (shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.feather, shape.gradient.angle, shape.gradient.x, shape.gradient.y, shape.gradient.radius). gradient with an empty from removes it; stroke_width 0 removes the outline; feather 0 makes the edge crisp.",
     input: S.obj(
       {
         clip_ids: S.ids("Shape clips"),
@@ -1147,12 +1168,13 @@ export const COMMANDS: Command[] = [
         width: S.num("Fraction of the canvas width", { minimum: 0.001, maximum: 4 }),
         height: S.num("Fraction of the canvas height", { minimum: 0.001, maximum: 4 }),
         color: S.str("Fill color, CSS"),
-        gradient: S.obj({ from: S.str("Start color; empty removes the gradient"), to: S.str("End color"), angle: S.num("Degrees, 0 left to right") }, ["from"], "A two-color fill instead of color"),
+        gradient: S.obj({ from: S.str("Start color (radial: the center); empty removes the gradient"), to: S.str("End color (radial: the rim)"), angle: S.num("Linear: degrees, 0 left to right"), ...RADIAL_FIELDS }, ["from"], "A two-color fill instead of color: linear or radial"),
         fill: S.bool("false: outline only"),
         stroke_color: S.str("Outline color, CSS"),
         stroke_width: S.num("Pixels at 1080p; 0 removes the outline", { minimum: 0, maximum: 400 }),
         radius: S.num("Rectangle corners 0..1", { minimum: 0, maximum: 1 }),
         draw: S.num("Share drawn 0..1", { minimum: 0, maximum: 1 }),
+        feather: S.num("Soft edge, pixels at 1080p; 0 crisp", { minimum: 0, maximum: FEATHER_MAX }),
         at: S.num("Timeline seconds, for animated values"),
       },
       ["clip_ids"],
@@ -1175,11 +1197,13 @@ export const COMMANDS: Command[] = [
           const w = a.stroke_width !== undefined ? Number(a.stroke_width) : (s.stroke?.width ?? (s.kind === "line" ? LINE_WIDTH : 4));
           s = w > 0 ? { ...s, stroke: { color: strokeColor ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
         }
+        // A feather is set as given (0 makes the edge crisp), or keyed when animated.
+        if (a.feather !== undefined && !clip.keyframes?.["shape.feather"]?.length) s = Number(a.feather) > 0 ? { ...s, feather: Number(a.feather) } : omit(s, "feather");
         // A name that is still the shape's own label follows the shape.
         const name = clip.name === undefined || clip.name === shapeLabel(clip.shape) ? shapeLabel(s) : clip.name;
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, shape: s, name, ...(color ? { color } : {}) }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
-        const nums: [string, unknown][] = [["width", a.width], ["height", a.height], ["radius", a.radius], ["draw", a.draw], ...(s.stroke && a.stroke_width !== undefined ? [["stroke.width", a.stroke_width] as [string, unknown]] : [])];
+        const nums: [string, unknown][] = [["width", a.width], ["height", a.height], ["radius", a.radius], ["draw", a.draw], ...(s.stroke && a.stroke_width !== undefined ? [["stroke.width", a.stroke_width] as [string, unknown]] : []), ...(clip.keyframes?.["shape.feather"]?.length ? [["feather", a.feather] as [string, unknown]] : [])];
         for (const [k, v] of nums) if (v !== undefined) p = ops.setParam(p, [clip.id], `shape.${k}`, Number(v), rel);
       }
       return p;
@@ -1221,6 +1245,130 @@ export const COMMANDS: Command[] = [
           return (a.edge === "none" ? rest : { ...rest, edge: a.edge as EdgeMode }) as Clip;
         });
       }, p),
+  },
+  // ---- soft light, shadows and animated type (ADR-069 to ADR-071) ----
+  {
+    name: "set_shadow",
+    description:
+      "A drop shadow under a picture: a video, image, title, shape or compound clip. It is cast by the finished picture, after its mask, crop, effects and track matte, so a rounded mask casts a rounded shadow and a compound clip (a floating UI window built from footage, a border and a bar) casts one shadow for the whole window. color (CSS, default black), blur: softness in pixels at 1080p, 0..600 (twice the Gaussian's sigma, as CSS box-shadow; default 60), x and y: how far it falls, pixels at 1080p, y down (default 0, 24), opacity 0..1 (default 0.5). A floating window: {blur: 80, y: 30, opacity: 0.55}; a contact shadow: {blur: 12, y: 4, opacity: 0.6}. Values left out keep theirs (or the defaults for a new shadow). Animate with add_keyframe on shadow.blur, shadow.x, shadow.y, shadow.opacity; values that are keyframed get a key at `at` instead. off: true removes it and its keyframes. Titles also have style.shadow, drawn with the letters; this one is cast by the whole title, box included.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        color: S.str("CSS color; its alpha multiplies opacity"),
+        blur: S.num("Softness, pixels at 1080p (0 hard-edged)", { minimum: 0, maximum: SHADOW_BLUR_MAX }),
+        x: S.num("Horizontal fall, pixels at 1080p, right positive", { minimum: -SHADOW_OFFSET_MAX, maximum: SHADOW_OFFSET_MAX }),
+        y: S.num("Vertical fall, pixels at 1080p, down positive", { minimum: -SHADOW_OFFSET_MAX, maximum: SHADOW_OFFSET_MAX }),
+        opacity: S.num("0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the shadow and its keyframes"),
+        at: S.num("Timeline seconds, for keyframed values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const color = colorArg(a.color, "color");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to cast a shadow`);
+        if (a.off === true) {
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { shadow?: unknown }, "shadow") as Clip, SHADOW_PARAMS.map((k) => `shadow.${k}`)));
+          continue;
+        }
+        const keyed = (k: string) => !!clip.keyframes?.[`shadow.${k}`]?.length;
+        const now = clip.shadow ?? SHADOW_DEFAULT;
+        const next = cleanShadow({
+          ...now,
+          ...(color ? { color } : {}),
+          ...Object.fromEntries(SHADOW_PARAMS.filter((k) => a[k] !== undefined && !keyed(k)).map((k) => [k, Number(a[k])])),
+        })!;
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, shadow: next }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of SHADOW_PARAMS) if (a[k] !== undefined && keyed(k)) p = ops.setParam(p, [clip.id], `shadow.${k}`, Number(a[k]), rel);
+      }
+      return p;
+    },
+  },
+  {
+    name: "set_tilt",
+    description:
+      "Tilt a picture in perspective, as product films turn floating UI windows in depth (CSS rotateX and rotateY): x tips the top away (negative: the bottom), y turns the right side away (negative: the left), in degrees, seen from perspective pixels at 1080p in front of the canvas center (default 2000; 800 is dramatic, 4000 gentle). A window at rest, three-quarter view: {y: -18, x: 6}. Values left out keep theirs; x and y 0 lay it flat. Animate with add_keyframe on transform.rotateX, transform.rotateY, transform.perspective (a window swinging into place: y from -35 to 0); keyframed values get a key at `at`. A compound clip tilts as one picture, its shadow (set_shadow) cast by the tilted window.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        x: S.num("Degrees about the horizontal axis: positive tips the top away", { minimum: -TILT_MAX, maximum: TILT_MAX }),
+        y: S.num("Degrees about the vertical axis: positive turns the right side away", { minimum: -TILT_MAX, maximum: TILT_MAX }),
+        perspective: S.num("The camera's distance, pixels at 1080p (default 2000): nearer is stronger", { minimum: 100, maximum: 100000 }),
+        at: S.num("Timeline seconds, for keyframed values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const given: Record<string, unknown> = { rotateX: a.x, rotateY: a.y, perspective: a.perspective };
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to tilt`);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of TILT_PARAMS) {
+          if (given[k] === undefined) continue;
+          if (clip.keyframes?.[`transform.${k}`]?.length) p = ops.setParam(p, [clip.id], `transform.${k}`, Number(given[k]), rel);
+          else p = ops.updateClip(p, clip.id, (c) => ({ ...c, transform: { ...(c as typeof clip).transform, [k]: Number(given[k]) } }) as Clip);
+        }
+        // Laid flat, with nothing keyed: the fields go, so the file stays as before.
+        p = ops.updateClip(p, clip.id, (c) => {
+          const t = { ...(c as typeof clip).transform };
+          if (t.rotateX || t.rotateY || TILT_PARAMS.some((k) => c.keyframes?.[`transform.${k}`]?.length)) return c;
+          if (t.rotateX === undefined && t.rotateY === undefined && t.perspective === undefined) return c;
+          delete t.rotateX;
+          delete t.rotateY;
+          delete t.perspective;
+          return { ...c, transform: t } as Clip;
+        });
+      }
+      return p;
+    },
+  },
+  {
+    name: "animate_text_style",
+    description:
+      "Animate a title's size, letter spacing and color with keyframes: each key sets any of them at a timeline time, and the title moves between keys in the key's ease (the curve toward the next one). A tracking expand: [{at: 1, letter_spacing: 0, ease: 'easeOut'}, {at: 2.5, letter_spacing: 24}]; a title that grows and turns accent-colored: [{at: 0, size: 90, color: '#ffffff'}, {at: 0.6, size: 120, color: '#ffd23f'}]. Keys at a time that already has one replace it. size: pixels at 1080p; letter_spacing: pixels at 1080p; color: CSS (keyed colors are opaque: fade the title with opacity). add_keyframe also keys style.size and style.letterSpacing; style.color keys hold 0xRRGGBB numbers. remove_keyframes on style.size, style.letterSpacing or style.color stops one animating.",
+    input: S.obj(
+      {
+        clip_id: S.str("Text clip id"),
+        keys: {
+          type: "array",
+          description: "Keys, each at a timeline time",
+          items: S.obj(
+            {
+              at: S.num("Timeline seconds"),
+              size: S.num("Font size, pixels at 1080p", { minimum: 4 }),
+              letter_spacing: S.num("Pixels between letters at 1080p", { minimum: -20, maximum: 400 }),
+              color: S.str("CSS color"),
+              ease: EASE_SCHEMA,
+            },
+            ["at"],
+          ),
+        },
+      },
+      ["clip_id", "keys"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (clip.type !== "text") throw new CommandError(`clip ${clip.id} is a ${clip.type} clip: animate_text_style animates titles`);
+      const keys = a.keys as { at: number; size?: number; letter_spacing?: number; color?: string; ease?: string }[];
+      if (!keys.length) throw new CommandError("give at least one key");
+      let c: Clip = clip;
+      for (const k of keys) {
+        if (k.size === undefined && k.letter_spacing === undefined && k.color === undefined) throw new CommandError(`the key at ${k.at} s sets nothing: give size, letter_spacing or color`);
+        const fr = f(p, k.at) - clip.start;
+        const color = k.color === undefined ? undefined : colorKey(colorArg(k.color, "color")!);
+        for (const [path, v] of [["style.size", k.size], ["style.letterSpacing", k.letter_spacing], ["style.color", color]] as [string, number | undefined][]) {
+          if (v === undefined) continue;
+          const e = easeArg(k.ease, undefined);
+          const key = { f: fr, v: Number(v), ...(e && e !== "linear" ? { ease: e } : {}) };
+          c = { ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } };
+        }
+      }
+      return ops.updateClip(p, clip.id, () => c);
+    },
   },
   {
     name: "set_wiggle",
@@ -1336,10 +1484,11 @@ export const COMMANDS: Command[] = [
         path: S.str("Parameter path that animates on this clip, e.g. transform.x, opacity, effects.0.amount (help topic params)"),
         at: S.num("Timeline seconds"),
         value: S.num("Value at that time"),
+        color: S.str("For a color path (style.color): the CSS color at that time, instead of value"),
         ease: EASE_SCHEMA,
         bezier: BEZIER_SCHEMA,
       },
-      ["clip_id", "path", "at", "value"],
+      ["clip_id", "path", "at"],
     ),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
@@ -1347,7 +1496,10 @@ export const COMMANDS: Command[] = [
       const problem = keyframeProblem(clip, path);
       if (problem) throw new CommandError(problem);
       const e = easeArg(a.ease, a.bezier);
-      const key = { f: f(p, a.at) - clip.start, v: Number(a.value), ...(e && e !== "linear" ? { ease: e } : {}) };
+      // Colors key as 0xRRGGBB numbers (lib/textAnim.ts); a model gives CSS.
+      const v = a.color !== undefined ? colorKey(String(a.color)) : a.value !== undefined ? Number(a.value) : undefined;
+      if (v === undefined) throw new CommandError(COLOR_PATHS.has(path) ? `give color (a CSS color) for ${path}` : a.color !== undefined ? `${a.color} is not a color` : "give value");
+      const key = { f: f(p, a.at) - clip.start, v, ...(e && e !== "linear" ? { ease: e } : {}) };
       return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
     },
   },
@@ -2191,8 +2343,13 @@ function colorArg(v: unknown, name: string): string | undefined {
 
 function gradientArg(g: Record<string, unknown>): NonNullable<Shape["gradient"]> {
   const from = colorArg(g.from, "gradient.from")!, to = colorArg(g.to ?? g.from, "gradient.to")!;
-  return { from, to, angle: Number(g.angle ?? 0) };
+  const out: NonNullable<Shape["gradient"]> = { from, to, angle: Number(g.angle ?? 0) };
+  if (g.kind !== "radial") return out;
+  // Radial (ADR-069): center and radius only where they differ from the
+  // box's middle and its sides.
+  return { ...out, kind: "radial", ...(Number(g.x ?? 0) ? { x: Number(g.x) } : {}), ...(Number(g.y ?? 0) ? { y: Number(g.y) } : {}), ...(g.radius !== undefined && Number(g.radius) !== 1 ? { radius: Number(g.radius) } : {}) };
 }
+
 
 /** A copy of `o` without the optional field `key`. */
 function omit<T extends object>(o: T, key: keyof T): T {
@@ -2285,6 +2442,7 @@ export function describeProject(p: Project) {
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...graphicsSummary(c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
+        ...(c.type === "text" && c.style.weight !== undefined ? { weight: c.style.weight } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
@@ -2333,6 +2491,9 @@ function placement(t: Transform) {
     ...(t.scale !== 1 ? { scale: r(t.scale) } : {}),
     ...(t.scaleY !== undefined ? { scale_y: r(t.scaleY) } : {}),
     ...(t.rotation ? { rotation: r(t.rotation) } : {}),
+    ...(t.rotateX ? { rotate_x: r(t.rotateX) } : {}),
+    ...(t.rotateY ? { rotate_y: r(t.rotateY) } : {}),
+    ...(t.perspective ? { perspective: r(t.perspective) } : {}),
   };
   return Object.keys(out).length ? { transform: out } : {};
 }
@@ -2356,12 +2517,14 @@ function graphicsSummary(c: Clip) {
             ...(s.gradient ? { gradient: s.gradient } : {}),
             ...(s.stroke ? { stroke: s.stroke } : {}),
             ...(s.draw !== undefined ? { draw: s.draw } : {}),
+            ...(s.feather ? { feather: s.feather } : {}),
           },
         }
       : {}),
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),
+    ...(c.shadow ? { shadow: c.shadow } : {}),
     ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
   };
 }

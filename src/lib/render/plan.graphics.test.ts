@@ -124,3 +124,20 @@ describe("edges and wiggle", () => {
     expect(blurred.motion?.length).toBeGreaterThan(1);
   });
 });
+
+describe("drop shadows and animated titles (ADR-070, ADR-071)", () => {
+  it("carry the shadow, keyed, on the layer, but not on its canvas fill", () => {
+    const p = stack(solid("w", 0, 30, { shadow: { color: "#000", blur: 60, x: 0, y: 24, opacity: 0.5 }, keyframes: { "shadow.blur": [{ f: 0, v: 0 }, { f: 10, v: 100 }] } }));
+    expect(layers(p, 5)[0].shadow).toEqual({ color: "#000", blur: 50, x: 0, y: 24, opacity: 0.5 });
+    expect(layers(stack(solid("plain", 0, 30)), 5)[0].shadow).toBeUndefined();
+  });
+
+  it("give a keyed title its style at the frame, and an unkeyed one itself", () => {
+    const keyed = { ...createTextClip("Grow", 0, 30, { size: 80 }), id: "t", keyframes: { "style.size": [{ f: 0, v: 80 }, { f: 10, v: 160 }], "style.color": [{ f: 0, v: 0x000000 }, { f: 10, v: 0xffffff }] } } as Clip;
+    const l = layers(stack(keyed), 5)[0];
+    expect(l.source.kind === "text" && [l.source.clip.style.size, l.source.clip.style.color]).toEqual([120, "#808080"]);
+    const plain = { ...createTextClip("Still", 0, 30), id: "s" } as Clip;
+    const s = layers(stack(plain), 5)[0];
+    expect(s.source.kind === "text" && s.source.clip).toBe(plain);
+  });
+});
