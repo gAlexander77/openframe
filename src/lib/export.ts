@@ -10,10 +10,10 @@ import type { Project } from "./project/types";
 import { FPS_PRESETS, fpsValue, type Rational } from "./time";
 
 export type VideoFormat = "mp4" | "mov" | "webm" | "mkv" | "gif";
-export type AudioFormat = "wav" | "m4a";
+export type AudioFormat = "wav" | "m4a" | "mp3";
 export type Container = VideoFormat | AudioFormat;
 export type VideoCodec = "avc" | "hevc" | "vp9" | "av1" | "gif";
-export type AudioCodec = "aac" | "opus" | "pcm-s16";
+export type AudioCodec = "aac" | "opus" | "mp3" | "pcm-s16";
 export type QualityLevel = "lower" | "recommended" | "higher" | "custom";
 export type ResolutionId = "480p" | "720p" | "1080p" | "2k" | "4k";
 
@@ -30,6 +30,9 @@ export const VIDEO_FORMATS: Record<VideoFormat, { label: string; codecs: VideoCo
 
 export const AUDIO_FORMATS: Record<AudioFormat, { label: string; codec: AudioCodec; mime: string }> = {
   m4a: { label: "AAC (M4A)", codec: "aac", mime: "audio/mp4" },
+  // Encoded by LAME in WebAssembly where the platform has no MP3 encoder
+  // (every webview today): engine/export.ts loads it when needed.
+  mp3: { label: "MP3", codec: "mp3", mime: "audio/mpeg" },
   wav: { label: "WAV", codec: "pcm-s16", mime: "audio/wav" },
 };
 
@@ -137,10 +140,11 @@ export function videoBitrate(codec: VideoCodec, width: number, height: number, f
 }
 
 /** Audio bits per second: AAC at 192k and Opus at 160k are transparent for
- * most program audio; PCM is what it is. */
+ * most program audio, MP3 needs 256k to be (LAME's own guidance puts
+ * transparency around V0, about 245k); PCM is what it is. */
 export function audioBitrate(codec: AudioCodec): number {
   if (codec === "pcm-s16") return EXPORT_SAMPLE_RATE * EXPORT_CHANNELS * 16;
-  return codec === "aac" ? 192_000 : 160_000;
+  return codec === "aac" ? 192_000 : codec === "mp3" ? 256_000 : 160_000;
 }
 
 /** Expected file size in bytes: the bitrates over the duration, plus ~1%
@@ -226,6 +230,26 @@ export interface ExportSettings {
    * mix is brought to, its true peak held under -1 dBTP (-2 for -24, ATSC
    * A/85's; lib/analysis/delivery.ts ceilingFor). null = as mixed. */
   loudness: number | null;
+  /** What becomes of the captions (add_captions' clips): drawn into the
+   * picture, an SRT file beside the export, both, or neither. */
+  captions: CaptionExport;
+}
+
+export type CaptionExport = "burn" | "srt" | "both" | "none";
+
+/** The Export dialog's Captions choices, as export_video names them. */
+export const CAPTION_EXPORTS: { id: CaptionExport; label: string }[] = [
+  { id: "burn", label: "Burn into the picture" },
+  { id: "srt", label: "SRT file beside it" },
+  { id: "both", label: "Burn in and SRT file" },
+  { id: "none", label: "Leave out" },
+];
+
+/** Whether the captions are drawn and whether an SRT goes beside the
+ * file. An audio-only export has no picture to draw them in. */
+export function captionPlan(s: Pick<ExportSettings, "video" | "captions">): { burn: boolean; sidecar: boolean } {
+  const c = s.captions;
+  return { burn: s.video && (c === "burn" || c === "both"), sidecar: c === "srt" || c === "both" };
 }
 
 /** Targets platforms and broadcasters normalize to, as the export dialog
@@ -271,7 +295,21 @@ export function defaultExportSettings(p: Project): ExportSettings {
     audioFormat: "m4a",
     range: "all",
     loudness: null,
+    captions: "burn",
   };
+}
+
+/** A format by name, as export_video and the renderer take it: a video
+ * container, or an audio one for an audio-only export. */
+export function withFormat(s: ExportSettings, format: string | undefined): ExportSettings {
+  if (format === undefined) return s;
+  if (format in AUDIO_FORMATS) return { ...s, video: false, audio: true, audioFormat: format as AudioFormat };
+  if (format in VIDEO_FORMATS) {
+    const f = format as VideoFormat;
+    // A container takes only some codecs (WebM: VP9 or AV1).
+    return { ...s, video: true, format: f, codec: VIDEO_FORMATS[f].codecs.includes(s.codec) ? s.codec : VIDEO_FORMATS[f].codecs[0] };
+  }
+  throw new Error(`Unknown format ${format}: ${[...Object.keys(VIDEO_FORMATS), ...Object.keys(AUDIO_FORMATS)].join(", ")}`);
 }
 
 /** Characters Windows, macOS and Linux all accept in a file name. */
@@ -347,6 +385,7 @@ export const EXPORT_PRESETS: ExportPreset[] = [
   { id: "master", label: "High quality master (HEVC)", settings: { video: true, format: "mov", codec: "hevc", resolution: "4k", quality: "higher", audio: true } },
   { id: "gif", label: "Animated GIF", settings: { video: true, format: "gif", codec: "gif", resolution: "480p", fps: { num: 15, den: 1 }, audio: false } },
   { id: "wav", label: "Audio only (WAV)", settings: { video: false, audio: true, audioFormat: "wav" } },
+  { id: "mp3", label: "Audio only (MP3)", settings: { video: false, audio: true, audioFormat: "mp3" } },
 ];
 
 /** Whether the settings are the preset's. */

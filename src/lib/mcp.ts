@@ -358,18 +358,19 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "export_video",
     description:
-      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status.",
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
     inputSchema: obj({
       name: { type: "string", description: "File name without extension; default the project's name" },
-      format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif"], description: "Default mp4 (H.264 + AAC)" },
+      format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif", "mp3", "m4a", "wav"], description: "Default mp4 (H.264 + AAC); mp3, m4a and wav are sound only" },
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for the mix; default as mixed" },
       start: { type: "number", minimum: 0, description: "Export from this second" },
       end: { type: "number", minimum: 0, description: "Export to this second" },
+      captions: { type: "string", enum: ["burn", "srt", "both", "none"], description: "The captions: burn into the picture (default), srt file beside it, both, or none" },
     }),
     call: async (h, a) => {
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end }));
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions }));
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);

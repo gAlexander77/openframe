@@ -860,7 +860,19 @@ makes a 13 s one). Times are timeline seconds.
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
-  rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+  rate, in/out range, audio-only (AAC in M4A, MP3, WAV) and still frames.
+- **MP3** (audio only, and the Audio only (MP3) preset): 256 kbps, 48 kHz
+  stereo, encoded by LAME in WebAssembly (`@mediabunny/mp3-encoder`), loaded
+  by the first MP3 export, on the desktop and the web alike;
+  `export_video` format `mp3` (or `m4a`, `wav`) for agents.
+- **Captions on export** (the dialog's Captions row, shown when the
+  project has captions; `export_video` `captions`; Premiere's burn-in or
+  sidecar): **Burn into the picture** (the default), **SRT file beside
+  it** with the picture left clean, both, or leave them out. The SRT is
+  timed to the exported range (an In-to-Out export starts at 0). The
+  desktop app saves `<name>.srt` beside the export; the web build
+  downloads it. Agents get its path as `captions_file`
+  ([[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]]).
 - **Save frame as PNG** from the player (the camera button, File menu,
   Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
   at the project's size, without the export dialog.

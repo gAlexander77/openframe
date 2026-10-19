@@ -13,6 +13,8 @@ export const ABOUT_LINKS = {
   guide: `${REPOSITORY_URL}/blob/main/docs/User%20guide.md`,
   license: "https://www.gnu.org/licenses/gpl-3.0.html",
   credits: `${REPOSITORY_URL}/blob/main/docs/Third-party%20licenses.md`,
+  // LAME's license page asks for a mention with a link (ADR-080).
+  lame: "https://lame.sourceforge.io/",
 } as const;
 export type AboutLink = keyof typeof ABOUT_LINKS;
 

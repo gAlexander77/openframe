@@ -66,6 +66,9 @@ export function AboutDialog({ onClose }: { onClose: () => void }) {
           </tbody>
         </table>
         <p className="about-note">These are the packages {APP_NAME} uses directly. Third-party licenses lists every package they bring with them, with its license.</p>
+        <p className="about-note">
+          MP3 files are encoded by the <LinkButton page="lame">LAME MP3 Encoder</LinkButton> (LGPL).
+        </p>
       </section>
       <footer>
         <button className="btn primary" onClick={onClose}>

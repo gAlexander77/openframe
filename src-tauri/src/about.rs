@@ -11,11 +11,12 @@ pub fn url(page: &str) -> Option<String> {
         "guide" => format!("{REPOSITORY}/blob/main/docs/User%20guide.md"),
         "license" => "https://www.gnu.org/licenses/gpl-3.0.html".to_string(),
         "credits" => format!("{REPOSITORY}/blob/main/docs/Third-party%20licenses.md"),
+        "lame" => "https://lame.sourceforge.io/".to_string(),
         _ => return None,
     })
 }
 
-/// Open an About page (repository, guide, license, credits).
+/// Open an About page (repository, guide, license, credits, lame).
 #[tauri::command]
 pub fn about_open(page: String) -> Result<(), String> {
     let url = url(&page).ok_or_else(|| format!("no About page named {page:?}"))?;

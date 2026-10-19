@@ -234,3 +234,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-079 Audio scrubbing plays snippets through the playback scheduler]] —
   90 ms snippets of the real mix while the ruler is dragged, one after
   another, never while playing; a preference turns it off.
+- [[ADR-080 MP3 by LAME in WebAssembly, captions leave an export four ways]] —
+  mediabunny's LAME extension for MP3; captions burned in, an SRT beside
+  the export, both or neither, timed to the exported range.

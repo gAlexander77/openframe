@@ -41,6 +41,10 @@ export interface ExportTarget {
    * when the file is already where the user chose and there is nothing to
    * reveal. */
   revealLabel?: string;
+  /** After the export finished: a text file beside it with its name and
+   * `extension` (captions as .srt). Desktop writes it in the same folder;
+   * the web downloads it. Answers where it went, as displayName does. */
+  sidecar?(extension: string, text: string): Promise<string>;
 }
 
 export interface Platform {

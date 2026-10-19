@@ -6,7 +6,9 @@
 import { useSyncExternalStore } from "react";
 import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { exportGif } from "../engine/gif";
-import { defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, VIDEO_FORMATS, type ExportPlan, type ExportSettings } from "../lib/export";
+import { captionPlan, defaultExportSettings, outputSize, planExport, RESOLUTIONS, safeFileName, VIDEO_FORMATS, withFormat, type AudioFormat, type ExportPlan, type ExportSettings, type VideoFormat } from "../lib/export";
+import { captionsInRange, currentCaptions, toSrt, withoutCaptions } from "../lib/captions";
+import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
@@ -23,6 +25,27 @@ function exportSubject() {
   return { project: store.document(), inPoint: rootInPoint(s), outPoint: rootOutPoint(s) };
 }
 
+/** The project as the export draws it (captions burned in or not), and
+ * the SRT to write beside the file when asked (null: none, or no
+ * captions in the range); ADR-080. */
+function captionsFor(project: Project, settings: Pick<ExportSettings, "video" | "captions">, plan: ExportPlan) {
+  const c = captionPlan(settings);
+  const caps = c.sidecar ? captionsInRange(currentCaptions(project), framesToSeconds(plan.range.from, project.fps), framesToSeconds(plan.range.to, project.fps)) : [];
+  return { project: c.burn ? project : withoutCaptions(project), srt: caps.length ? toSrt(caps) : null };
+}
+
+/** Write the SRT beside a finished export; a failure is a note, since the
+ * file itself is done. */
+async function writeSidecar(target: { sidecar?(ext: string, text: string): Promise<string> }, srt: string | null): Promise<{ file?: string; note?: string }> {
+  if (!srt) return {};
+  if (!target.sidecar) return { note: "This build cannot write the captions file." };
+  try {
+    return { file: await target.sidecar("srt", srt) };
+  } catch (e) {
+    return { note: `The captions file was not saved: ${e instanceof Error ? e.message : e}` };
+  }
+}
+
 /** A GIF has its own encoder; everything else goes through mediabunny. */
 const exportProject = (...a: Parameters<typeof exportVideo>) => (a[1].container === "gif" ? exportGif(...a) : exportVideo(...a));
 
@@ -30,7 +53,7 @@ export type ExportView =
   | { phase: "closed" }
   | { phase: "settings" }
   | { phase: "running"; plan: ExportPlan; fileName: string; progress: ExportProgress; startedAt: number }
-  | { phase: "done"; plan: ExportPlan; fileName: string; result: ExportResult; reveal: (() => Promise<void>) | null; revealLabel?: string }
+  | { phase: "done"; plan: ExportPlan; fileName: string; result: ExportResult; reveal: (() => Promise<void>) | null; revealLabel?: string; captionsFile?: string }
   | { phase: "failed"; message: string };
 
 let view: ExportView = { phase: "closed" };
@@ -81,7 +104,7 @@ export async function startExport(settings: ExportSettings) {
   if (job) return;
   const s = exportSubject();
   const plan = planExport(s.project, settings, s);
-  const project = s.project;
+  const { project, srt } = captionsFor(s.project, settings, plan);
   const controller = new AbortController();
   job = controller;
   try {
@@ -94,7 +117,9 @@ export async function startExport(settings: ExportSettings) {
     const running = (progress: ExportProgress) => set({ phase: "running", plan, fileName: target.displayName, progress, startedAt });
     running({ phase: "preparing", done: 0, total: plan.frames, fraction: 0, fps: 0, eta: null });
     const result = await exportProject(project, plan, target, running, controller.signal);
-    set({ phase: "done", plan, fileName: target.displayName, result, reveal: () => target.reveal(), revealLabel: target.revealLabel });
+    const side = await writeSidecar(target, srt);
+    if (side.note) result.note = [result.note, side.note].filter(Boolean).join(" ");
+    set({ phase: "done", plan, fileName: target.displayName, result, reveal: () => target.reveal(), revealLabel: target.revealLabel, ...(side.file ? { captionsFile: side.file } : {}) });
   } catch (e) {
     if (isAbort(e)) set({ phase: "settings" });
     else set({ phase: "failed", message: e instanceof Error ? e.message : String(e) });
@@ -103,8 +128,9 @@ export async function startExport(settings: ExportSettings) {
   }
 }
 
-/** Options for automation: any dialog setting, plus a range in seconds. */
-export type RenderOptions = Partial<ExportSettings> & { start?: number; end?: number };
+/** Options for automation: any dialog setting, plus a range in seconds;
+ * an audio format (mp3, wav, m4a) makes an audio-only export. */
+export type RenderOptions = Partial<Omit<ExportSettings, "format">> & { format?: VideoFormat | AudioFormat; start?: number; end?: number };
 
 /**
  * Export to memory and return a Blob URL with what was made. The headless
@@ -114,20 +140,22 @@ export async function renderToUrl(options: RenderOptions = {}) {
   if (job) throw new Error("An export is already running.");
   const s = exportSubject();
   const p = s.project;
-  const { start, end, ...rest } = options;
-  const settings: ExportSettings = { ...defaultExportSettings(p), ...rest };
+  const { start, end, format, ...rest } = options;
+  const settings: ExportSettings = withFormat({ ...defaultExportSettings(p), ...rest }, format);
   const ranged = start !== undefined || end !== undefined;
   const inOut = ranged
     ? { inPoint: start !== undefined ? secondsToFrames(start, p.fps) : null, outPoint: end !== undefined ? secondsToFrames(end, p.fps) : null }
     : s;
   if (ranged) settings.range = "inout";
   const plan = planExport(p, settings, inOut);
+  const drawn = captionsFor(p, settings, plan);
   const mem = memoryTarget();
   job = new AbortController();
   try {
-    const result = await exportProject(p, plan, mem, undefined, job.signal);
+    const result = await exportProject(drawn.project, plan, mem, undefined, job.signal);
     const blob = new Blob([mem.bytes()], { type: plan.mime });
-    return { url: URL.createObjectURL(blob), size: blob.size, type: plan.mime, fileName: plan.fileName, plan, ...result };
+    // The SRT a file export writes beside it, for the drives.
+    return { url: URL.createObjectURL(blob), size: blob.size, type: plan.mime, fileName: plan.fileName, plan, ...result, ...(drawn.srt ? { srt: drawn.srt } : {}) };
   } finally {
     job = null;
   }
@@ -136,7 +164,7 @@ export async function renderToUrl(options: RenderOptions = {}) {
 /** An export an agent started (MCP export_video), for export_status. */
 export type AgentExport =
   | { state: "running"; path: string; fraction: number; eta: number | null; version?: string }
-  | ({ state: "done"; path: string } & ExportResult)
+  | ({ state: "done"; path: string; captions_file?: string } & ExportResult)
   | { state: "done"; path: string; versions: VersionFile[] }
   | { state: "failed"; message: string; versions?: VersionFile[] };
 
@@ -154,28 +182,28 @@ export async function exportForAgent(options: RenderOptions = {}): Promise<Agent
   if (job) throw new Error("An export is already running.");
   const s = exportSubject();
   const p = s.project;
-  const { start, end, ...rest } = options;
-  const settings: ExportSettings = { ...defaultExportSettings(p), ...rest };
-  // A container takes only some codecs (WebM: VP9 or AV1).
-  const codecs = VIDEO_FORMATS[settings.format].codecs;
-  if (!codecs.includes(settings.codec)) settings.codec = codecs[0];
+  const { start, end, format, ...rest } = options;
+  const settings: ExportSettings = withFormat({ ...defaultExportSettings(p), ...rest }, format);
   const ranged = start !== undefined || end !== undefined;
   const inOut = ranged
     ? { inPoint: start !== undefined ? secondsToFrames(start, p.fps) : null, outPoint: end !== undefined ? secondsToFrames(end, p.fps) : null }
     : { inPoint: null, outPoint: null };
   if (ranged) settings.range = "inout";
   const plan = planExport(p, settings, inOut);
+  const drawn = captionsFor(p, settings, plan);
   job = new AbortController();
   const tid = toast("Exporting for an AI agent", "progress");
   try {
     const target = await make.call(platform, safeFileName(settings.name), plan.extension);
     const path = target.displayName;
     agentExport = { state: "running", path, fraction: 0, eta: null };
-    const result = await exportProject(p, plan, target, (pr) => {
+    const result = await exportProject(drawn.project, plan, target, (pr) => {
       agentExport = { state: "running", path, fraction: +pr.fraction.toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1) };
       updateToast(tid, { progress: pr.fraction });
     }, job.signal);
-    agentExport = { state: "done", path, ...result };
+    const side = await writeSidecar(target, drawn.srt);
+    if (side.note) result.note = [result.note, side.note].filter(Boolean).join(" ");
+    agentExport = { state: "done", path, ...result, ...(side.file ? { captions_file: side.file } : {}) };
     toast(`Exported ${path.split(/[\\/]/).pop()}`);
     return agentExport;
   } catch (e) {

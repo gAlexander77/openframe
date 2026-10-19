@@ -81,6 +81,7 @@ pub fn run() {
             export::export_write,
             export::export_finish,
             export::export_reveal,
+            export::export_sidecar,
             ffmpeg::ffmpeg_probe,
             ffmpeg::ffmpeg_proxy,
             ffmpeg::ffmpeg_cancel,

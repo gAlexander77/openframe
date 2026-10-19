@@ -67,6 +67,14 @@ exported (a 16:9 project stays 1920×1080) and offers **Make the canvas
 When a mix is normalized to its loudness target, the finished export says
 so in green; an amber note means something did not go as asked.
 
+For the sound alone, turn **Video** off and choose MP3, AAC (M4A) or WAV,
+or pick the **Audio only (MP3)** preset. When the project has captions,
+the **Captions** row decides what becomes of them: burned into the
+picture (as you see them), an **SRT file beside it** for YouTube and other
+sites that take one (the picture stays clean), both, or none. The SRT
+matches the exported range. The desktop app saves it next to the video
+with the same name; the browser version downloads it.
+
 Under the player, the outer buttons jump to the start and the end of the
 timeline, and the inner ones step a frame. Drag the playhead along the
 ruler to hear short snippets of the sound under it, to find a word or a

@@ -20,6 +20,7 @@ import {
   Input,
   MkvOutputFormat,
   MovOutputFormat,
+  Mp3OutputFormat,
   Mp4OutputFormat,
   Output,
   Quality,
@@ -204,6 +205,8 @@ function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
       return new MkvOutputFormat();
     case "wav":
       return new WavOutputFormat();
+    case "mp3":
+      return new Mp3OutputFormat();
     case "gif": // src/engine/gif.ts writes these
     default:
       throw new ExportError(`Unknown format ${c} for ${plan.fileName}`);
@@ -219,6 +222,16 @@ async function ensureAac(bitrate: number): Promise<string | undefined> {
   registerAacEncoder();
   if (!(await canEncodeAudio("aac", opts))) throw new ExportError("This device can't encode AAC audio. Choose WebM, or turn audio off.");
   return "AAC is encoded in software on this device.";
+}
+
+/** MP3 encoding: no webview has an MP3 encoder (WebCodecs never added
+ * one), so LAME in WebAssembly is loaded on first use. */
+async function ensureMp3(bitrate: number): Promise<void> {
+  const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
+  if (await canEncodeAudio("mp3", opts)) return;
+  const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");
+  registerMp3Encoder();
+  if (!(await canEncodeAudio("mp3", opts))) throw new ExportError("This device can't encode MP3 audio. Choose WAV or AAC (M4A).");
 }
 
 /**
@@ -341,6 +354,9 @@ export async function exportProject(
         const note = await guard(ensureAac(a.bitrate));
         if (note) infos.push(note);
       }
+      // ponytail: LAME's encoder delay (about 1100 samples, 23 ms) is not
+      // trimmed: no gapless header is written. Fine for audio-only files.
+      if (a.codec === "mp3") await guard(ensureMp3(a.bitrate));
       const isobmff = plan.container === "mp4" || plan.container === "mov" || plan.container === "m4a";
       priming = a.codec === "aac" && isobmff ? await guard(encoderDelay("aac", a.bitrate)) : 0;
       audio = new AudioBufferSource(

@@ -2174,17 +2174,18 @@ Example:
 
 ### export_video
 
-Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status.
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `name` | string |  | File name without extension; default the project's name |
-| `format` | "mp4" \| "mov" \| "webm" \| "mkv" \| "gif" |  | Default mp4 (H.264 + AAC) |
+| `format` | "mp4" \| "mov" \| "webm" \| "mkv" \| "gif" \| "mp3" \| "m4a" \| "wav" |  | Default mp4 (H.264 + AAC); mp3, m4a and wav are sound only |
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
 | `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
 | `loudness` | number |  | Integrated LUFS for the mix; default as mixed (-40..-5) |
 | `start` | number |  | Export from this second (0..) |
 | `end` | number |  | Export to this second (0..) |
+| `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
 
 Example:
 

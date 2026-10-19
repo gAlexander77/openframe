@@ -2,6 +2,9 @@
 // SRT/VTT formats people bring in and take out. Pure, so line breaking is
 // tested rather than eyeballed.
 
+import type { Project, TextClip } from "./project/types";
+import { framesToSeconds } from "./time";
+
 export interface Word {
   text: string;
   /** Seconds. */
@@ -93,6 +96,30 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
     }
   }
   return out;
+}
+
+// ---- the project's captions ------------------------------------------------------
+
+/** The caption clips (add_captions' text clips), in time order. */
+export function captionClips(p: Project): TextClip[] {
+  return p.tracks.flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption)).sort((a, b) => a.start - b.start);
+}
+
+/** The project's captions in seconds, as SRT and VTT take them. */
+export function currentCaptions(p: Project): Caption[] {
+  return captionClips(p).map((c) => ({ start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps), text: c.text }));
+}
+
+/** Captions as an export of [from, to) seconds shows them: timed from its
+ * start, cut at its ends, those outside it left out. */
+export function captionsInRange(caps: Caption[], from: number, to: number): Caption[] {
+  return caps.filter((c) => c.end > from && c.start < to).map((c) => ({ start: Math.max(c.start, from) - from, end: Math.min(c.end, to) - from, text: c.text }));
+}
+
+/** The project with its captions switched off (disabled clips draw
+ * nothing), for an export that leaves them out of the picture. */
+export function withoutCaptions(p: Project): Project {
+  return { ...p, tracks: p.tracks.map((t) => (t.clips.some((c) => c.type === "text" && c.caption) ? { ...t, clips: t.clips.map((c) => (c.type === "text" && c.caption ? { ...c, disabled: true } : c)) } : t)) };
 }
 
 // ---- SRT / VTT ------------------------------------------------------------------

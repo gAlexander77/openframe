@@ -202,6 +202,15 @@ export const web: Platform = {
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 60_000);
       },
+      // A page cannot write beside a file the person saved, so the
+      // sidecar is downloaded under the video's name.
+      async sidecar(ext, text) {
+        const name = `${target.displayName.replace(/\.[^.]+$/, "")}.${ext}`;
+        const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+        Object.assign(document.createElement("a"), { href: url, download: name }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        return name;
+      },
     };
     return target;
   },
