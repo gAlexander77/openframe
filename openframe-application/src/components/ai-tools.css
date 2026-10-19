@@ -28,10 +28,15 @@
 .chip-inline { padding: 1px 6px; border-radius: 3px; background: var(--bg-2); color: var(--text-2); font-size: 10px; }
 
 /* ---- cards ---------------------------------------------------------------------- */
-.ai-cards { display: grid; gap: 8px; }
+/* minmax, not the implicit auto column: that grew to the longest status's
+   width and pushed every card, and its Run button, past a narrow panel.
+   A wide panel (2560 px windows) tiles the cards two across. */
+.ai-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 8px; }
 .ai-card {
   --tool: var(--accent);
   position: relative; display: grid; gap: 8px;
+  /* Tiled, a row's cards are equally tall: their feet line up at the bottom. */
+  align-content: space-between;
   padding: 10px 12px; border-radius: var(--radius-panel);
   background: var(--bg-2);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 4%);
@@ -51,7 +56,7 @@
 .ai-scenes { --tool: #8d90f0; }
 .ai-beats { --tool: #f5c543; }
 .ai-cutout { --tool: #62d39b; }
-.ai-link { --tool: #e08a6e; padding: 8px 12px; }
+.ai-link { --tool: #e08a6e; }
 .ai-link.soon { --tool: #7a7a7a; background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
 
 .ai-card-head { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 10px; }
@@ -71,15 +76,15 @@
   color: var(--text-2); background: var(--bg-3);
 }
 .ai-link.soon .ai-card-text h3 { color: var(--text-2); }
-.ai-open { align-self: center; height: 26px; padding: 0 10px; font-size: var(--fs-xs); }
+.ai-open { margin-left: auto; }
 .ai-gear { width: 26px; height: 26px; margin: -2px -4px 0 0; }
 
 .ai-card-foot { display: flex; align-items: center; gap: 8px; min-height: 28px; }
 .ai-status {
   flex: 1; min-width: 0; display: flex; align-items: center; gap: 5px;
-  color: var(--text-3); font-size: var(--fs-xs);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-3); font-size: var(--fs-xs); line-height: 1.35;
 }
+.ai-status-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .ai-status.done { color: var(--text-2); animation: fade-in var(--t-slow) ease-out; }
 .ai-status.done svg { color: var(--ok); flex: none; }
 .ai-run { min-width: 76px; }

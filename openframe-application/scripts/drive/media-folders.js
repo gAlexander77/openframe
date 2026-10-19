@@ -22,7 +22,7 @@ async page => {
   await page.screenshot({ path: "scratch/media-folders-desktop.png", animations: "disabled" });
   await page.getByRole("button", { name: "Done", exact: true }).click();
   await page.getByRole("combobox", { name: "Filter by folder" }).selectOption({ label: "Scenes" });
-  await page.getByRole("checkbox", { name: "Favorites only", exact: true }).check();
+  await page.getByRole("button", { name: "Favorites only", exact: true }).click();
   details.combinedFilters = { ok: await page.locator(".media-card").count() === 1 && await page.locator(".media-card").innerText().then((t) => t.includes("framecode")) };
   await page.getByRole("combobox", { name: "Filter by folder" }).selectOption({ label: "Unfiled" });
   details.emptyIntersection = { ok: await page.locator(".media-card").count() === 0 };
