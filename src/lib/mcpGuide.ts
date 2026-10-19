@@ -10,6 +10,7 @@ import { KINETIC_ANIMATIONS } from "./kinetic";
 import { CAPTION_LOOKS } from "./captionLooks";
 import { RATIOS } from "./canvas";
 import type { JsonSchema } from "./commands";
+import { ANIMATABLE_PATHS } from "./animatable";
 import { EXPORT_PRESETS } from "./export";
 import { MASK_SHAPES } from "./mask";
 import { SFX } from "./sfx";
@@ -103,7 +104,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_animation: { clip_id: "c_123", slot: "in", type: "pop", duration: 0.4 },
   add_text_template: { name: "lowerThird", start: 2, texts: ["Jordan Lee", "Head of Design"] },
   set_param: { clip_ids: ["c_123"], path: "transform.scale", value: 1.2 },
-  add_keyframe: { clip_id: "c_123", path: "transform.scale", at: 0, value: 1, ease: "easeInOut" },
+  add_keyframe: { clip_id: "c_123", path: "transform.x", at: 1, value: 0.75, ease: "fastIn" },
   frame_region: { clip_id: "c_123", region: { x: 0.25, y: 0.2, w: 0.5, h: 0.5 }, to_region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, from: 0, to: 3 },
   set_transition: { clip_id: "c_123", type: "dissolve", duration: 0.5 },
   add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 55 } },
@@ -134,7 +135,8 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   add_ad_element: { element: "end_card", start: 12, headline: "Run further", cta: "Shop now" },
   text_behind_subject: { clip_id: "c_2", text_clip_ids: ["c_5"] },
   export_versions: { ratios: ["16:9", "9:16", "1:1"], durations: [15, 6], textless: true, loudness: -14, check: true },
-  add_sound_effect: { name: "whoosh", start: 3.9 },
+  add_sound_effect: { sounds: [{ name: "whoosh", start: 3.9 }, { name: "whoosh", start: 7.9, volume: 0.6 }, { name: "rise", end_at: 12 }, { name: "impact", start: 12 }] },
+  duplicate_clips: { clip_ids: ["c_window"], at: 6, unique: true },
   add_voiceover: { lines: [{ text: "Meet the lightest bottle we have ever made." }, { text: "Cold for 24 hours." }], voice: "af_heart" },
   duck_under_speech: { clip_id: "c_music", depth: 12 },
   set_caption_look: { look: "pop" },
@@ -238,7 +240,7 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 4. add_voiceover with the script (a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, trimmed to the speech, and it answers where each line landed; cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
-7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves.
+7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
 8. Sound: music with add_media_clip on an audio track, duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Where a version needs work by hand (a subject to keep in frame, an end card to lay out), save_project_copy, set_project to the new shape, fix it there (auto_reframe for the shots) and export it on its own.
@@ -318,7 +320,7 @@ export function helpText(topic: string | undefined, tools: ToolInfo[], instructi
   }
   if (t === "design") return DESIGN;
   if (t === "catalog") return `list_catalog returns every name the tools accept. Sections: ${Object.keys(fullCatalog() as object).filter((k) => k !== "sections" && k !== "note").join(", ")}. Call it with a section for details (effect parameter ranges, template text counts) and with section "stickers" and a query to search stickers.`;
-  if (t === "params") return ["set_param and add_keyframe paths:", ...PARAM_PATHS.map((x) => `- ${x.path} (${x.range}): ${x.meaning}`)].join("\n");
+  if (t === "params") return ["set_param and add_keyframe paths:", ...PARAM_PATHS.map((x) => `- ${x.path} (${x.range}): ${x.meaning}`), "", `Paths that animate (add_keyframe refuses any other, naming the ones the clip has): ${ANIMATABLE_PATHS.join(", ")}.`].join("\n");
   const book = PLAYBOOKS[t];
   if (book) return book.text;
   const near = tools.filter((x) => x.name.includes(t) || t.includes(x.name)).map((x) => x.name);

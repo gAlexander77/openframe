@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { runCommand } from "./commands";
-import { checkProject } from "./designCheck";
+import { checkProject, contrastTargets, tailTargets } from "./designCheck";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
 
@@ -88,4 +88,74 @@ it("puts captions above the apps' zone on a tall canvas, and scales the size flo
   expect("transform" in cap && cap.transform.y).toBe(0.05);
   v = runCommand(v, "add_text", { text: "Small but fine", start: 0, duration: 3, style: { size: 26 } });
   expect(rules(v)).not.toContain("text_too_small");
+});
+
+// ---- measured, not guessed (ADR-068) ------------------------------------------
+
+/** The launch film's case: white titles over image clips (glow sprites) on
+ * a near-black ground, music that fades out in its own audio, and the cuts
+ * on an overlay track above a one-clip background. */
+function designed(): Project {
+  let p = createProject();
+  p = {
+    ...p,
+    assets: [
+      { id: "glow", kind: "image", name: "glow.png", src: "glow.png", duration: 0, hasVideo: true, hasAudio: false, width: 1400, height: 1400 },
+      { id: "ui", kind: "video", name: "ui.mp4", src: "ui.mp4", duration: 30, hasVideo: true, hasAudio: false, width: 1920, height: 1080 },
+      { id: "song", kind: "audio", name: "song.wav", src: "song.wav", duration: 12, hasVideo: false, hasAudio: true },
+    ],
+  };
+  p = runCommand(p, "add_color_clip", { color: "#05060a", start: 0, duration: 10, track_id: p.tracks[0].id });
+  p = runCommand(p, "add_media_clip", { asset_id: "glow", start: 0, duration: 10 });
+  p = runCommand(p, "add_track", { kind: "video", name: "Windows" });
+  const windows = p.tracks.find((t) => t.name === "Windows")!.id;
+  for (const s of [1, 3, 5, 7]) p = runCommand(p, "add_media_clip", { asset_id: "ui", start: s, duration: 1.5, in: s, track_id: windows });
+  p = runCommand(p, "add_text", { text: "Pro editing.", start: 0, duration: 3, style: { size: 150 } });
+  p = runCommand(p, "add_media_clip", { asset_id: "song", start: 0, duration: 10 });
+  return p;
+}
+const textId = (p: Project) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!.id;
+const songId = (p: Project) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === "audio")!.id;
+
+it("asks to measure the unguarded titles and the music that ends with the video", () => {
+  const p = designed();
+  const [t] = contrastTargets(p);
+  expect(t.clipId).toBe(textId(p));
+  expect(t.colors).toEqual([[1, 1, 1, 1]]);
+  expect(t.box.right - t.box.left).toBeGreaterThan(100);
+  expect(tailTargets(p)).toEqual([{ clipId: songId(p), assetId: "song", from: 6, to: 10 }]);
+  const faded = runCommand(p, "set_fades", { clip_ids: [songId(p)], fade_out: 1.5 });
+  expect(tailTargets(faded)).toEqual([]);
+});
+
+it("trusts the measured contrast over the guess: white on the dark film passes, white on a bright shot is named with its ratio", () => {
+  const p = designed();
+  expect(rules(p)).toContain("text_contrast_risk");
+  const dark = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 17.8, backdrop: [0.03, 0.04, 0.08] } } });
+  expect(dark.findings.map((f) => f.rule)).not.toContain("text_contrast_risk");
+  expect(dark.findings.map((f) => f.rule)).not.toContain("text_low_contrast");
+  const bright = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 1.3, backdrop: [0.86, 0.9, 0.94] } } });
+  const f = bright.findings.find((x) => x.rule === "text_low_contrast")!;
+  expect(f.level).toBe("warning");
+  expect(f.message).toMatch(/measures 1.3:1 against the picture behind it \(#dbe6f0/);
+  const middling = checkProject(p, "any", { contrast: { [textId(p)]: { ratio: 3.6, backdrop: [0.5, 0.5, 0.5] } } });
+  expect(middling.findings.find((x) => x.rule === "text_low_contrast")!.level).toBe("tip");
+});
+
+it("lets music that fades out in its own audio end, and names the level of one that stops dead", () => {
+  const p = designed();
+  expect(rules(p)).toContain("music_ends_abruptly");
+  const fades = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -48, bodyDb: -14 } } });
+  expect(fades.findings.map((f) => f.rule)).not.toContain("music_ends_abruptly");
+  const dead = checkProject(p, "any", { tails: { [songId(p)]: { endDb: -15, bodyDb: -14 } } });
+  expect(dead.findings.find((f) => f.rule === "music_ends_abruptly")!.message).toMatch(/-15 dBFS against -14 dBFS/);
+  // Volume keys that fade it count as a fade.
+  let k = runCommand(p, "add_keyframe", { clip_id: songId(p), path: "volume", at: 8, value: 1 });
+  k = runCommand(k, "add_keyframe", { clip_id: songId(k), path: "volume", at: 9.96, value: 0 });
+  expect(rules(k)).not.toContain("music_ends_abruptly");
+});
+
+it("counts the shots on the busiest picture track, not the one-clip background", () => {
+  const r = checkProject(designed());
+  expect(r.summary).toMatchObject({ shots: 4, shots_on: "Windows", average_shot: 1.5 });
 });

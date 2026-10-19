@@ -46,3 +46,19 @@ it("ends a riser and a reverse cymbal at their peak and starts the hits on their
     expect(rms(x, 0, 2 * tenth), id).toBeGreaterThan(3 * rms(x, x.length - 2 * tenth, x.length));
   }
 });
+
+it("places a list of sounds as one edit: at a start, ending at a time, at a volume, overlapping on new tracks", async () => {
+  const { placeSounds } = await import("./sfx");
+  const { createProject } = await import("./project/defaults");
+  const p = createProject();
+  const asset = (id: string, seconds: number) => ({ id, kind: "audio" as const, name: `${id}.wav`, src: `${id}.wav`, duration: seconds, hasVideo: false, hasAudio: true });
+  const assets = new Map([["whoosh", asset("w", SFX.whoosh.seconds)], ["rise", asset("r", SFX.rise.seconds)]]);
+  const { project, clipIds } = placeSounds(p, [{ name: "whoosh", at: 1 }, { name: "whoosh", at: 1.2, volume: 0.5 }, { name: "rise", endAt: 1 }], assets, 0);
+  const placed = clipIds.map((id) => project.tracks.flatMap((t) => t.clips.map((c) => ({ c, t }))).find((x) => x.c.id === id)!);
+  expect(placed.map(({ c }) => c.start)).toEqual([30, 36, 0]);
+  expect(placed.map(({ c }) => ("volume" in c ? c.volume : 0))).toEqual([1, 0.5, 1]);
+  // The overlapping whoosh got a track of its own; the riser lost its head to end at 1 s.
+  expect(placed[0].t.id).not.toBe(placed[1].t.id);
+  expect(placed[2].c.start + placed[2].c.duration).toBe(30);
+  expect(() => placeSounds(p, [{ name: "kazoo", at: 0 }], assets, 0)).toThrow(/No sound effect kazoo/);
+});

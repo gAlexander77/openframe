@@ -4,6 +4,11 @@
 // every machine and free of anyone's license. Each makes stereo samples at
 // a rate; the library turns them into a WAV asset on first use.
 
+import { placeAsset } from "./drop";
+import { updateClip } from "./project/ops";
+import type { Asset, Clip, Id, Project } from "./project/types";
+import { secondsToFrames } from "./time";
+
 export interface Sfx {
   label: string;
   seconds: number;
@@ -230,3 +235,36 @@ export const SFX: Record<string, Sfx> = {
     },
   },
 };
+
+// ---- placing them ------------------------------------------------------------------
+
+/** One sound effect to place: by name, starting at `at` seconds or ending
+ * at `endAt` (a riser then peaks exactly there), at `volume`. */
+export interface SoundCue {
+  name: string;
+  at?: number;
+  endAt?: number;
+  volume?: number;
+}
+
+/**
+ * Sound effects placed as one edit (add_sound_effect's list: a montage's
+ * whooshes in one call and one undo step). Each lands at its frame on the
+ * first audio track with room, a new one when none has; one that would
+ * start before 0 loses its head instead. `assets` holds each effect's file
+ * by name (made once per project); `playhead` is the default start.
+ */
+export function placeSounds(p: Project, cues: SoundCue[], assets: Map<string, Asset>, playhead: number): { project: Project; clipIds: Id[] } {
+  const clipIds: Id[] = [];
+  for (const cue of cues) {
+    const s = SFX[cue.name], asset = assets.get(cue.name);
+    if (!s || !asset) throw new Error(`No sound effect ${cue.name}; there are ${Object.keys(SFX).join(", ")}`);
+    const head = cue.endAt !== undefined ? Math.max(0, s.seconds - cue.endAt) : 0;
+    const frame = cue.endAt !== undefined ? secondsToFrames(Math.max(0, cue.endAt - s.seconds), p.fps) : cue.at !== undefined ? secondsToFrames(cue.at, p.fps) : playhead;
+    const range = head > 0 ? { in: Math.min(head, asset.duration - 0.05), out: asset.duration } : undefined;
+    const r = placeAsset(p, asset, frame, undefined, false, range);
+    p = cue.volume !== undefined && cue.volume !== 1 ? updateClip(r.project, r.clipId, (c) => ({ ...c, volume: cue.volume! }) as Clip) : r.project;
+    clipIds.push(r.clipId);
+  }
+  return { project: p, clipIds };
+}

@@ -360,3 +360,75 @@ describe("what a second blind test found", () => {
     expect((await call(host(), "initialize"))!.result).not.toMatchObject({ instructions: expect.stringContaining("cannot write files") });
   });
 });
+
+describe("what the launch film found (2026-10-18)", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+
+  /** Two window compounds, each a title and a picture. */
+  function windows() {
+    const h = host();
+    for (const at of [0, 3]) {
+      h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: at, duration: 2 });
+      h.project = runCommand(h.project, "add_text", { text: `Window ${at}`, start: at, duration: 2 });
+      const ids = h.project.tracks.flatMap((t) => t.clips).filter((c) => c.start === at * 30 && c.type !== "compound").map((c) => c.id);
+      h.project = runCommand(h.project, "create_compound_clip", { clip_ids: ids, name: `Window ${at}` });
+    }
+    return h;
+  }
+
+  it("answers an edit inside a compound with that compound alone, summed up, and what changed inside it", async () => {
+    const h = windows();
+    const [k0] = h.project.compounds!;
+    const inner = k0.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!;
+    const r = await run(h, "edit_compound", { compound_id: k0.id, command: "set_text", args: { clip_id: inner.id, text: "Cut." } });
+    expect(r.compounds).toBeUndefined();
+    expect(r.changed_compounds).toEqual([{ id: k0.id, name: "Window 0", duration: 2, clips: 2, changed_clips: [expect.objectContaining({ id: inner.id, text: "Cut." })] }]);
+    const renamed = await run(h, "rename_compound", { compound_id: k0.id, name: "Window: cut" });
+    expect(renamed.changed_compounds).toEqual([{ id: k0.id, name: "Window: cut", duration: 2, clips: 2 }]);
+    // An edit outside every compound says nothing about them.
+    const outside = await run(h, "add_text", { text: "Hi", start: 6, duration: 1 });
+    expect(outside.changed_compounds).toBeUndefined();
+  });
+
+  it("answers a unique copy of a compound clip with the new compound, summed up", async () => {
+    const h = windows();
+    const clip = h.project.tracks.flatMap((t) => t.clips).find((c) => c.type === "compound")!;
+    const r = await run(h, "duplicate_clips", { clip_ids: [clip.id], at: 8, unique: true });
+    expect(r.added_compounds).toEqual([expect.objectContaining({ name: "Window 0 copy", duration: 2, clips: 2 })]);
+    expect(r.added_clips[0].compound).toBe(r.added_compounds[0].id);
+  });
+
+  it("answers open_project and new_project with a summary, not the timeline", async () => {
+    const h = windows();
+    h.openProject = async () => describeProject(h.project);
+    const r = await run(h, "open_project", { project: "p1" });
+    expect(r).toEqual({ name: h.project.name, canvas: { width: 1920, height: 1080 }, fps: 30, duration: 5, counts: { tracks: 1, clips: 2, assets: 1, markers: 0, compounds: 2 }, note: expect.stringContaining("describe_project") });
+  });
+
+  it("places a list of sound effects in one call, with their volumes, as one host call", async () => {
+    const h = host();
+    h.ai = (async (tool: string, target: unknown, options: unknown) => {
+      h.aiCalls.push([tool, target, options]);
+      return { clipIds: ["c_1", "c_2"] };
+    }) as unknown as typeof h.ai;
+    const r = await run(h, "add_sound_effect", { sounds: [{ name: "whoosh", start: 1 }, { name: "rise", end_at: 4, volume: 0.5 }] });
+    expect(r.clip_ids).toEqual(["c_1", "c_2"]);
+    expect(h.aiCalls).toEqual([["addSoundEffects", "", { sounds: [{ name: "whoosh", at: 1 }, { name: "rise", endAt: 4, volume: 0.5 }] }]]);
+    const one = await run(h, "add_sound_effect", { name: "pop", start: 2, volume: 0.25 });
+    expect(one.clip_id).toBe("c_1");
+    expect(h.aiCalls[1]).toEqual(["addSoundEffects", "", { sounds: [{ name: "pop", at: 2, volume: 0.25 }] }]);
+    const both = await call(h, "tools/call", { name: "add_sound_effect", arguments: { name: "pop", sounds: [{ name: "pop" }] } });
+    expect(text(both)).toMatch(/not both/);
+  });
+
+  it("waits for a measured check, takes preview_motion tiles as wide as preview_frames', and checks versions at chosen moments", async () => {
+    const h = host();
+    h.checkProject = (async (kind: string) => ({ ok: true, kind, measured: true })) as unknown as typeof h.checkProject;
+    expect(await run(h, "check_project", { kind: "ad" })).toEqual({ ok: true, kind: "ad", measured: true });
+    await call(h, "tools/call", { name: "preview_motion", arguments: { start: 0, end: 1, tile_width: 640 } });
+    expect(h.sheets.at(-1)![1]).toBe(640);
+    const r = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], check: true, check_at: [0.3, 0.6] } });
+    expect(h.versionCalls.at(-1)).toEqual({ versions: [{ ratio: "9:16" }], at: [0.3, 0.6] });
+    expect(text({ ...r!, result: { content: [(r!.result as { content: unknown[] }).content[1]] } } as typeof r)).toContain("30%, 60%");
+  });
+});

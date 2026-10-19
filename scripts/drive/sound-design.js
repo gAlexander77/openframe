@@ -60,7 +60,7 @@ async (page) => {
   const described = await rpc("describe_project");
   const clipsById = Object.fromEntries(described.tracks.flatMap((t) => t.clips).map((c) => [c.id, c]));
   details.described = {
-    ok: clipsById[drums].lowpass?.cutoff === 300 && clipsById[drums].keyframed?.includes("lowpass.cutoff") && clipsById[voice].reverb?.decay === 6 && clipsById[pop].echo?.time === 0.3 && clipsById[synth].tape_stop?.duration === 1.5 && described.duration === 10,
+    ok: clipsById[drums].lowpass?.cutoff === 300 && JSON.stringify(clipsById[drums].keyframes?.["lowpass.cutoff"]) === "[[4.5,300],[5,20000]]" && clipsById[voice].reverb?.decay === 6 && clipsById[pop].echo?.time === 0.3 && clipsById[synth].tape_stop?.duration === 1.5 && described.duration === 10,
     drums: clipsById[drums],
   };
   const listed = await page.evaluate(async () => (await window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/list" })).result.tools.map((t) => t.name));

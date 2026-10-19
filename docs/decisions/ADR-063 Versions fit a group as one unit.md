@@ -69,4 +69,6 @@ keeping one part's size would break the layout the group is kept for; a
 9:16 element at the floor stays at it in 16:9, 1:1 and 4:5 since the
 floor scales with the short side too. Positions are read at the first
 frame; a part's keyframed motion moves with its group but keeps its size
-in frame fractions.
+in frame fractions. (Since [[ADR-067 Versions lay keyframed motion out again around its rest]],
+positions are read where the set rests and keyed motion is laid out
+again around it.)

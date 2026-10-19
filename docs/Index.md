@@ -188,6 +188,15 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-065 One-click agent setup runs the agent's own CLI]] — Codex and
   Claude Code add the stdio bridge with their own `mcp add`, never over an
   existing entry; the Codex syntax and its sources.
+- [[ADR-066 Keyframes are refused where nothing moves and shown in answers]] —
+  one table of animatable paths, keys as [at, value, ease] in
+  describe_project, one ease vocabulary.
+- [[ADR-067 Versions lay keyframed motion out again around its rest]] —
+  sets placed where they rest, keyed offsets scaled to the new frame,
+  compound clips placed as pictures, wide words shrunk to fit.
+- [[ADR-068 check_project measures the picture and the sound it judges]] —
+  WCAG contrast on the rendered frame behind each title, the music's last
+  second, shots on the busiest track.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

@@ -129,6 +129,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   where they were. One undo history covers every level, saving and export
   take the whole project wherever you are, and OTIO carries it as a nested
   stack ([[ADR-037 Compound clips are nested timelines composited to a texture]]).
+  `duplicate_clips` with `unique: true` copies a compound clip with a
+  timeline of its own, so a styled precomp (a floating window) is a
+  template whose copies take other footage (`edit_compound` `replace_clip`).
 - **Replace clip** (right-click, as in CapCut; `replace_clip`): pick a
   file and it takes the clip's place, keeping its start, length (shorter
   only if the new source runs out), transform, effects, animations and
@@ -726,10 +729,15 @@ makes a 13 s one). Times are timeline seconds.
   new end) and a textless master (titles and captions off). Footage that
   fills the frame keeps filling it, or fits over a blurred copy of itself;
   titles, logos and badges keep their size against the short side and
-  move inside the new frame's safe area. The versions are built from the
-  master as separate documents, so the project in the editor never
-  changes; `check` answers one contact sheet of them all first. Seven 480p
-  versions of a 5 s ad took 4.4 s headless.
+  move inside the new frame's safe area. Hand-animated films adapt too:
+  layers are placed where they rest and their keyed motion is laid out
+  again around it, a window compound sliding in from off the edge still
+  does on 9:16, and a one-word wordmark too wide to wrap shrinks to the
+  safe width ([[ADR-067 Versions lay keyframed motion out again around its rest]]).
+  The versions are built from the master as separate documents, so the
+  project in the editor never changes; `check` answers one contact sheet
+  of them all first (`check_at` picks the moments). Seven 480p versions of
+  a 5 s ad took 4.4 s headless.
 - **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
   15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
   behind the roaster, lower third, offer, end card, faded music), checks
@@ -838,7 +846,19 @@ Three doors, one engine ([[Automation]]):
   pixels, animated values (`paramAt`) and the AI tools — what the drives
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
-  (preset or bezier), `remove_keyframes`.
+  and `remove_keyframes`, with one ease vocabulary (twelve presets or a
+  bezier). `add_keyframe` refuses a path that does not animate on the
+  clip, naming the ones that do, and `describe_project` shows every key as
+  `[at, value, ease]`, so edits to keys show in answers
+  ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]).
+- Answers stay small as a project grows: compounds are answered only when
+  they change, summed up; `open_project` and `new_project` answer a
+  summary; `add_sound_effect` places a list of sounds in one call and one
+  undo step.
+- `check_project` measures what it judges: each title's WCAG contrast
+  with the rendered picture behind it, a music clip's last second, and the
+  shots on the busiest picture track
+  ([[ADR-068 check_project measures the picture and the sound it judges]]).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
