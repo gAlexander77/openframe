@@ -1,0 +1,231 @@
+---
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import { getFacts, longDate } from "../lib/docs";
+import { repoFile } from "../lib/site";
+
+const facts = getFacts();
+
+// The rounds of work, from docs/History.md (dated entries; newest last).
+const LOG = [
+  {
+    day: "2026-10-13",
+    title: "The project starts",
+    text: "The owner asks for a modern CapCut with VEGAS and Premiere depth. Five research passes study CapCut, professional editors, the browser media stack, Tauri and AI before any engine code. The core is written test-first, and every edit becomes a named command with a schema before most of the interface exists, so agents could use it from day one. The owner sets the course: desktop first, all compute on the user's hardware.",
+  },
+  {
+    day: "2026-10-14",
+    title: "Agents in parallel",
+    text: "Agents build in their own git worktrees and merge one by one: the desktop platform, a frame-exact export, and more. The owner chooses the license: GPL-3.0-only.",
+  },
+  {
+    day: "2026-10-16",
+    title: "Depth, reviewed",
+    text: "Codex takes a pass and Claude Code reviews it. The timeline's interactions, crop and masks on the canvas, compound clips, a CapCut feature-parity pass and background removal land.",
+  },
+  {
+    day: "2026-10-17",
+    title: "OpenFrame, in public",
+    text: "The app is renamed OpenFrame and the repository opens. Claude makes a whole promo through the MCP tools, and what it struggled with reshapes them: smaller answers, batches, contact sheets.",
+  },
+  {
+    day: "2026-10-18",
+    title: "Tools for professional video",
+    text: "Brand kits, ad elements, kinetic type, deliverables and sound design for agents. The launch film is edited through MCP, its limits are written down, and the next round fixes them.",
+  },
+];
+---
+<Base
+  title="How it was built"
+  description="OpenFrame is an experiment: AI coding agents, mostly Claude Opus 5.5 in Claude Code, build a professional, open video editor while a human owner steers. Here is how, and what that does not mean."
+>
+  <section class="page-hero" style="--glow-a: rgb(124 92 255 / 22%); --glow-b: rgb(47 123 255 / 16%);">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <h1>Built by AI agents. Steered by a person.</h1>
+      <p class="lede">
+        OpenFrame is an experiment in autonomous software development: can AI coding agents build a professional, fully open
+        video editor? Agents wrote almost all of it, most of it Claude Opus 5.5 working in Claude Code, with Codex alongside.
+        A human owner set the direction, tried the builds and decided what shipped.
+      </p>
+    </div>
+  </section>
+
+  <section class="section-tight" aria-labelledby="who-title">
+    <div class="wrap">
+      <h2 id="who-title" class="visually-hidden">Who did what</h2>
+      <div class="who">
+        <div style="--hue: var(--violet)">
+          <span class="mark"><Icon name="bot" size={20} /></span>
+          <h3>The agents</h3>
+          <ul>
+            <li>Researched CapCut, Premiere, Resolve and VEGAS before building each part.</li>
+            <li>Wrote the code, the tests and the documentation.</li>
+            <li>Ran the checks and drove the running app in a headless browser to try their changes.</li>
+            <li>Recorded every non-obvious decision with its reasons: {facts.decisions} so far.</li>
+            <li>Reviewed each other's work: Claude Code reviewed the Codex pass.</li>
+          </ul>
+        </div>
+        <div style="--hue: var(--green)">
+          <span class="mark"><Icon name="eye" size={20} /></span>
+          <h3>The owner</h3>
+          <ul>
+            <li>Chose what to build: desktop first, everything on the user's hardware, GPL-3.0-only, the name.</li>
+            <li>Tried the builds and gave feedback on what felt wrong.</li>
+            <li>Decided what to keep, when to open the repository, and when to publish.</li>
+            <li>Holds the rule that generated work is not correct until it is checked, and that the record says how.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="how-title">
+    <div class="wrap two">
+      <div class="section-head">
+        <h2 id="how-title">How agents work on it.</h2>
+        <p class="lede">An agent forgets everything between sessions. The project is set up so the next one does not have to.</p>
+      </div>
+      <ul class="rule-list one">
+        <li style="--hue: var(--violet)">
+          <span class="mark"><Icon name="scroll-text" size={18} /></span>
+          <div><h3>Documentation is the memory</h3><p>Architecture decision records, research notes, a history of every round and a handoff for whoever comes next. Agents read them before they change anything.</p></div>
+        </li>
+        <li style="--hue: var(--cyan)">
+          <span class="mark"><Icon name="layers" size={18} /></span>
+          <div><h3>Parallel worktrees</h3><p>Several agents work at once, each in its own git worktree, and their work is merged when it is finished and checked.</p></div>
+        </li>
+        <li style="--hue: var(--green)">
+          <span class="mark"><Icon name="check" size={18} /></span>
+          <div><h3>Gates before every commit</h3><p>Type checks, unit tests, and Rust formatting, lints and tests. CI runs the same gates on every pull request.</p></div>
+        </li>
+        <li style="--hue: var(--blue)">
+          <span class="mark"><Icon name="play" size={18} /></span>
+          <div><h3>Checked in the running product</h3><p>Tests are not enough: agents drive the real app, headless, through the same automation surface the MCP tools use, and look at the frames.</p></div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section log" aria-labelledby="log-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="log-title">The build so far.</h2>
+        <p class="lede">
+          {facts.firstDay ? `The first entry in the project's history is ${longDate(facts.firstDay)}. ` : ""}These are the
+          rounds, as the <a href={repoFile("docs/History.md")}>history</a> records them.
+        </p>
+      </div>
+      <ol class="build-log">
+        {LOG.map((l) => (
+          <li>
+            <time datetime={l.day}>{longDate(l.day).replace(/, \d{4}$/, "")}</time>
+            <div>
+              <h3>{l.title}</h3>
+              <p>{l.text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="film-title">
+    <div class="wrap two">
+      <div class="section-head">
+        <h2 id="film-title">The films were made by agents too.</h2>
+        <p class="lede">The launch film and every clip on this site came from agents working with OpenFrame itself.</p>
+      </div>
+      <div class="copy-block">
+        <h3>The footage</h3>
+        <p>
+          An agent built a demo project through the MCP tools from public-domain NASA footage and CC0 clips from Wikimedia
+          Commons, then recorded over a dozen takes of the web build at 2560 by 1440 in a headless browser, with a drawn cursor, undoing
+          each take's edits so every take started from the same project.
+        </p>
+        <h3>The music</h3>
+        <p>
+          Another agent synthesized the 56-second, 120 BPM track in Python from oscillators, noise and filters: no samples, no
+          loops, no outside audio. It mastered it to -14 LUFS and measured every section, which is why each cut of the film lands
+          on a bar.
+        </p>
+        <h3>The edit</h3>
+        <p>
+          The film itself is about 90 MCP calls, most of them batches: floating windows with motion blur, push-ins on the
+          feature in use, kinetic type, transitions, sound effects, a grade and the export, checked on contact sheets and
+          against the design rules. A few things the editor could not draw yet, the soft glow sprites, a window shadow and the
+          logo image, were made outside it and imported.
+        </p>
+        <h3>What it taught the editor</h3>
+        <p>The agent listed every limit it met. The next round of work fixed the ones that misled it:</p>
+        <ul>
+          <li>Keyframes on properties that do not animate were accepted silently; now they are refused, and answers show the keys (<a href={repoFile("docs/decisions/ADR-066 Keyframes are refused where nothing moves and shown in answers.md")}>ADR-066</a>).</li>
+          <li>Other shapes of a hand-animated film pushed its windows off frame; versions now lay keyframed motion out again (<a href={repoFile("docs/decisions/ADR-067 Versions lay keyframed motion out again around its rest.md")}>ADR-067</a>).</li>
+          <li>The project check guessed at contrast it never saw; it now measures the picture and the sound it judges (<a href={repoFile("docs/decisions/ADR-068 check_project measures the picture and the sound it judges.md")}>ADR-068</a>).</li>
+          <li>Music analysis found one drop and missed a breakdown; it now finds every drop and measures voice balance (<a href={repoFile("docs/decisions/ADR-075 Measure music structure and voice balance on the timeline.md")}>ADR-075</a>).</li>
+        </ul>
+        <h3>This website</h3>
+        <p>
+          An agent built this site too: the clips are cut from the same recordings, the screenshots come from a script that
+          drives the running app and builds its demo projects through MCP, and the tool reference is generated from the app's
+          own documentation every time the site is built.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="not-title">
+    <div class="wrap two">
+      <div class="section-head">
+        <h2 id="not-title">What it is not, yet.</h2>
+        <p class="lede">An honest list, from the project's own roadmap and release notes.</p>
+      </div>
+      <div class="copy-block">
+        <ul>
+          <li><strong>Not packaged.</strong> There are no installers or signed builds: you build it from source.</li>
+          <li><strong>Not tested everywhere.</strong> The desktop app is developed on Windows; macOS and Linux builds are untested. The web build has been checked in Edge.</li>
+          <li><strong>Not every desktop permission is checked.</strong> Some features verified in the web build, such as camera and screen recording, still wait for a desktop check.</li>
+          <li><strong>Not finished.</strong> The roadmap lists what is next, from proxies on the web to multicam.</li>
+        </ul>
+        <p class="links">
+          <a href={repoFile("docs/Roadmap.md")}>The roadmap</a>
+          <a href={repoFile("docs/AI development.md")}>AI development and documentation</a>
+          <a href={repoFile("docs/Index.md")}>Every document</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .section-tight { padding-bottom: clamp(24px, 4vw, 48px); }
+  .who { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+  .who > div { padding: 28px 40px 8px 0; }
+  .who > div + div { padding-left: 40px; border-left: 1px solid var(--line); }
+  .who h3 { margin-top: 18px; }
+  .who ul { margin: 14px 0 0; padding-left: 1.1em; color: var(--text-2); display: grid; gap: 8px; }
+  @media (max-width: 860px) {
+    .who { grid-template-columns: minmax(0, 1fr); }
+    .who > div + div { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  }
+  .two { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 6vw, 96px); align-items: start; }
+  .two .section-head { position: sticky; top: 96px; }
+  .two .section-head h2 { font-size: var(--step-3); }
+  .two .lede { margin-top: 16px; }
+  .rule-list.one { grid-template-columns: minmax(0, 1fr); }
+  @media (max-width: 900px) { .two { grid-template-columns: minmax(0, 1fr); } .two .section-head { position: static; } }
+
+  .build-log { list-style: none; margin: 48px 0 0; padding: 0; position: relative; display: grid; gap: 0; }
+  .build-log::before { content: ""; position: absolute; left: 120px; top: 8px; bottom: 8px; width: 2px; background: linear-gradient(var(--cyan), var(--violet), var(--green)); opacity: 0.5; border-radius: 1px; }
+  .build-log li { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 0 36px; padding: 18px 0; position: relative; }
+  .build-log li::after { content: ""; position: absolute; left: 115px; top: 26px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg-0); border: 2px solid var(--cyan); }
+  .build-log time { color: var(--text-1); font-weight: 600; padding-top: 4px; font-variant-numeric: tabular-nums; }
+  .build-log h3 { font-size: var(--step-1); }
+  .build-log p { margin-top: 6px; color: var(--text-2); max-width: 70ch; }
+  @media (max-width: 640px) {
+    .build-log::before, .build-log li::after { display: none; }
+    .build-log li { grid-template-columns: minmax(0, 1fr); gap: 4px; border-top: 1px solid var(--line); }
+  }
+  .links { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 24px; }
+  .links a { font-weight: 600; }
+</style>

@@ -1,0 +1,193 @@
+---
+// The documentation: a sidebar of pages, the article, and the page's own
+// contents. Pages rendered from docs/ name their source file, so a reader
+// (or an agent) can find and fix it.
+import Base from "./Base.astro";
+import Icon from "../components/Icon.astro";
+import { DOC_PAGES, docHref, type Heading } from "../lib/docs";
+import { SITE, href, repoFile } from "../lib/site";
+
+interface Props {
+  title: string;
+  description: string;
+  slug: string;
+  headings?: Heading[];
+  source?: string | null;
+  /** Show h3 entries in the page contents too. */
+  deep?: boolean;
+  /** An extra class on the article body (the shortcuts page styles keys). */
+  proseClass?: string;
+}
+const { title, description, slug, headings = [], source, deep = false, proseClass } = Astro.props;
+const i = DOC_PAGES.findIndex((p) => p.slug === slug);
+const prev = i > 0 ? DOC_PAGES[i - 1] : null;
+const next = i < DOC_PAGES.length - 1 ? DOC_PAGES[i + 1] : null;
+const toc = headings.filter((h) => h.depth === 2 || (deep && h.depth === 3));
+const crumbs = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    { "@type": "ListItem", position: 1, name: "OpenFrame", item: new URL(href(), SITE.origin).href },
+    { "@type": "ListItem", position: 2, name: "Documentation", item: new URL(href("docs/"), SITE.origin).href },
+    ...(slug ? [{ "@type": "ListItem", position: 3, name: title, item: new URL(docHref(slug), SITE.origin).href }] : []),
+  ],
+};
+---
+<Base title={slug ? `${title} - Docs` : "Build from source - Docs"} description={description} jsonld={[crumbs]}>
+  <div class="wrap docs">
+    <aside class="docs-side">
+      <nav class="docs-nav" aria-label="Documentation">
+        <p class="docs-nav-title">Documentation</p>
+        <ul>
+          {DOC_PAGES.map((p) => (
+            <li>
+              <a href={docHref(p.slug)} aria-current={p.slug === slug ? "page" : undefined}>
+                <Icon name={p.icon} size={16} />
+                {p.title}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <details class="docs-menu">
+        <summary><Icon name="list" size={18} /> Documentation: {title}</summary>
+        <ul>
+          {DOC_PAGES.map((p) => (
+            <li><a href={docHref(p.slug)} aria-current={p.slug === slug ? "page" : undefined}>{p.title}</a></li>
+          ))}
+        </ul>
+      </details>
+    </aside>
+
+    <article class="docs-main">
+      <header class="docs-head">
+        <h1>{title}</h1>
+        <p class="lede">{description}</p>
+        {source && (
+          <p class="source">
+            <Icon name="scroll-text" size={15} />
+            <span>From <a href={repoFile("docs/" + source)}>docs/{source}</a> in the repository, rendered when the site is built.</span>
+          </p>
+        )}
+      </header>
+      <div class:list={["prose", proseClass]}>
+        <slot />
+      </div>
+      <nav class="docs-pager" aria-label="Previous and next pages">
+        {prev ? <a href={docHref(prev.slug)} rel="prev"><span>Previous</span>{prev.title}</a> : <span />}
+        {next ? <a href={docHref(next.slug)} rel="next" class="next"><span>Next</span>{next.title}</a> : <span />}
+      </nav>
+    </article>
+
+    {toc.length > 1 && (
+      <nav class="docs-toc" aria-label="On this page">
+        <p class="docs-nav-title">On this page</p>
+        <ul>
+          {toc.map((h) => <li class={`d${h.depth}`}><a href={`#${h.id}`}>{h.text}</a></li>)}
+        </ul>
+      </nav>
+    )}
+  </div>
+
+  <template id="copy-button">
+    <button type="button" class="copy" aria-label="Copy the code">
+      <Icon name="copy" size={15} class="when-idle" />
+      <Icon name="check" size={15} class="when-done" />
+    </button>
+  </template>
+</Base>
+
+<script>
+  // A copy button on every code block in the article.
+  const template = document.getElementById("copy-button") as HTMLTemplateElement | null;
+  if (template) {
+    for (const pre of document.querySelectorAll<HTMLElement>(".prose pre")) {
+      if (pre.parentElement?.classList.contains("command")) continue; // a Command block has its own button
+      const wrap = document.createElement("div");
+      wrap.className = "command";
+      pre.replaceWith(wrap);
+      wrap.append(pre, template.content.cloneNode(true));
+      const button = wrap.querySelector<HTMLButtonElement>(".copy")!;
+      button.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(pre.innerText.trimEnd());
+          button.dataset.done = "true";
+          setTimeout(() => delete button.dataset.done, 1400);
+        } catch {
+          /* the text stays selectable */
+        }
+      });
+    }
+  }
+</script>
+
+<style is:global>
+  .docs { display: grid; grid-template-columns: 220px minmax(0, 1fr) 220px; gap: 48px; padding-top: 48px; align-items: start; }
+  .docs-side, .docs-toc { position: sticky; top: 96px; max-height: calc(100vh - 120px); overflow: auto; }
+  .docs-nav-title { font-size: 0.8125rem; color: var(--text-3); font-weight: 600; margin-bottom: 10px; }
+  .docs-nav ul, .docs-toc ul, .docs-menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .docs-nav a {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px;
+    color: var(--text-2); text-decoration: none; font-size: 0.9375rem;
+  }
+  .docs-nav a:hover { color: var(--text-1); background: rgb(255 255 255 / 4%); }
+  .docs-nav a[aria-current="page"] { color: var(--text-1); background: rgb(59 224 240 / 9%); box-shadow: inset 2px 0 0 var(--cyan); }
+  .docs-nav a .icon { color: var(--text-3); flex: none; }
+  .docs-nav a[aria-current="page"] .icon { color: var(--cyan); }
+  .docs-menu { display: none; }
+  .docs-toc a { display: block; padding: 5px 0 5px 12px; border-left: 1px solid var(--line); color: var(--text-3); text-decoration: none; font-size: 0.875rem; line-height: 1.4; }
+  .docs-toc a:hover { color: var(--text-1); border-left-color: var(--cyan); }
+  .docs-toc .d3 a { padding-left: 24px; font-size: 0.8125rem; }
+
+  .docs-head h1 { font-size: var(--step-4); }
+  .docs-head .lede { margin-top: 16px; }
+  .docs-head .source { display: flex; gap: 8px; align-items: center; margin-top: 18px; font-size: 0.875rem; color: var(--text-3); }
+  .docs-head .source .icon { flex: none; }
+  .docs-main { min-width: 0; max-width: 760px; }
+
+  .prose { margin-top: 40px; color: var(--text-2); }
+  .prose > * + * { margin-top: 1.1em; }
+  .prose h2 { font-size: var(--step-2); letter-spacing: -0.02em; margin-top: 2.4em; color: var(--text-1); padding-top: 0.6em; border-top: 1px solid var(--line); }
+  .prose h3 { font-size: var(--step-1); margin-top: 2em; }
+  .prose h4 { font-size: 1rem; margin-top: 1.6em; }
+  .prose h2 + *, .prose h3 + *, .prose h4 + * { margin-top: 0.7em; }
+  .prose strong { color: var(--text-1); font-weight: 600; }
+  .prose ul, .prose ol { padding-left: 1.3em; }
+  .prose li + li { margin-top: 0.35em; }
+  .prose li > ul, .prose li > ol { margin-top: 0.35em; }
+  .prose li::marker { color: var(--text-3); }
+  .prose blockquote { margin-left: 0; padding: 4px 0 4px 18px; border-left: 2px solid var(--violet); color: var(--text-1); }
+  .prose hr { border: 0; border-top: 1px solid var(--line); margin-block: 2em; }
+  .prose .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-card); }
+  .prose table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .prose th, .prose td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .prose th { color: var(--text-1); font-weight: 600; background: rgb(255 255 255 / 3%); }
+  .prose tr:last-child td { border-bottom: 0; }
+  .prose pre code { white-space: pre; }
+  .prose .command pre { padding-right: 52px; }
+  .prose .command .copy { top: 8px; bottom: auto; }
+
+  .docs-pager { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 72px; }
+  .docs-pager a {
+    display: grid; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--r-card);
+    color: var(--text-1); text-decoration: none; font-weight: 600;
+  }
+  .docs-pager a:hover { border-color: var(--line-strong); background: rgb(255 255 255 / 2%); }
+  .docs-pager a span { font-size: 0.8125rem; color: var(--text-3); font-weight: 500; }
+  .docs-pager .next { text-align: right; }
+
+  @media (max-width: 1180px) {
+    .docs { grid-template-columns: 200px minmax(0, 1fr); }
+    .docs-toc { display: none; }
+  }
+  @media (max-width: 860px) {
+    .docs { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-top: 24px; }
+    .docs-side { position: static; max-height: none; }
+    .docs-nav { display: none; }
+    .docs-menu { display: block; border: 1px solid var(--line-strong); border-radius: var(--r-card); }
+    .docs-menu summary { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; font-weight: 600; }
+    .docs-menu ul { padding: 0 8px 8px; }
+    .docs-menu a { display: block; padding: 9px 10px; border-radius: 8px; color: var(--text-2); text-decoration: none; }
+    .docs-menu a[aria-current="page"] { color: var(--text-1); background: rgb(59 224 240 / 9%); }
+  }
+</style>

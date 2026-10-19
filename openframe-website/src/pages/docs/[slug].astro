@@ -1,0 +1,36 @@
+---
+// The docs rendered from the repository's docs/ folder at build time.
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import { DOC_PAGES, renderDoc } from "../../lib/docs";
+
+const DESCRIPTIONS: Record<string, string> = {
+  "user-guide": "Your first edit in OpenFrame, where your work is saved, markers, effects, media and the AI features: the project's user guide.",
+  "keyboard-shortcuts": "Every default keyboard shortcut in OpenFrame, grouped as the app's shortcuts panel groups them: playback, editing, tools, timeline and project.",
+  "agent-playbook": "How an AI model should make an ad, an epic edit or a vertical short with OpenFrame's MCP tools, and the design rules it checks its work against.",
+  architecture: "How OpenFrame fits together: one project document, pure edits with snapshot undo, a command registry agents share, and a WebGL2 engine in the webview.",
+};
+
+export function getStaticPaths() {
+  return DOC_PAGES.filter((p) => p.source && p.slug !== "mcp-tools").map((p) => ({ params: { slug: p.slug }, props: { page: p } }));
+}
+const { page } = Astro.props;
+const doc = renderDoc(page.source!);
+---
+<DocsLayout
+  title={page.title}
+  description={DESCRIPTIONS[page.slug] ?? doc.title}
+  slug={page.slug}
+  headings={doc.headings}
+  source={page.source}
+  proseClass={page.slug === "keyboard-shortcuts" ? "keys" : undefined}
+>
+  <Fragment set:html={doc.html} />
+</DocsLayout>
+
+<style is:global>
+  .keys td code {
+    display: inline-block; min-width: 1.8em; padding: 0.1em 0.5em; border-radius: 6px;
+    border: 1px solid var(--line-strong); border-bottom-width: 2px; background: var(--bg-2);
+    color: var(--text-1); font: 500 0.82rem/1.5 var(--font); white-space: nowrap;
+  }
+</style>

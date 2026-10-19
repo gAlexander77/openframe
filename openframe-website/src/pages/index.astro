@@ -1,0 +1,285 @@
+---
+import { getImage } from "astro:assets";
+import Base from "../layouts/Base.astro";
+import Icon from "../components/Icon.astro";
+import Loop from "../components/Loop.astro";
+import Shot from "../components/Shot.astro";
+import Command from "../components/Command.astro";
+import FilmPlayer from "../components/FilmPlayer.tsx";
+import FilmTranscript from "../components/FilmTranscript.astro";
+import posterSrc from "../assets/media/launch-film-poster.jpg";
+import { SITE, href } from "../lib/site";
+import { feature } from "../lib/features";
+import { getFacts, longDate } from "../lib/docs";
+import { FILM, CHAPTERS, MUSIC } from "../data/film";
+import { CLONE, DESKTOP, WEB, WEB_URL } from "../data/build";
+
+const facts = getFacts();
+const poster = await getImage({ src: posterSrc, width: 1920, format: "webp", quality: 80 });
+const home = ["editing", "color", "titles", "captions", "effects", "audio"].map(feature);
+const agents = feature("mcp");
+---
+<Base title={SITE.name} description={SITE.description}>
+  <section class="hero">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <div class="hero-copy">
+        <h1>The open video editor AI&nbsp;can&nbsp;drive.</h1>
+        <p class="lede">
+          OpenFrame is a free, open-source video editor built to feel like CapCut, with the depth of Premiere and VEGAS.
+          It runs entirely on your computer, and any AI agent can edit alongside you through its MCP tools.
+        </p>
+        <div class="actions">
+          <a class="btn primary" href={href("docs/")}>Build it from source</a>
+          <a class="btn" href="#film"><Icon name="play" size={18} /> Watch the launch film</a>
+        </div>
+        <dl class="facts">
+          <div><dt>License</dt><dd>GPL-3.0-only</dd></div>
+          <div><dt>Runs on</dt><dd>Windows desktop, tested; a web build in Edge</dd></div>
+          <div><dt>Installers</dt><dd>None yet: you build it from source</dd></div>
+        </dl>
+      </div>
+
+      <div class="hero-film" id="film">
+        <FilmPlayer
+          client:visible
+          src={href(FILM.src)}
+          poster={poster.src}
+          captions={href(FILM.captions)}
+          duration={FILM.duration}
+          chapters={CHAPTERS}
+          music={MUSIC}
+          title={FILM.title}
+        />
+        <div class="film-notes">
+          <p>
+            An AI agent edited this film through OpenFrame's own MCP tools, in about 90 calls. Another agent recorded the
+            footage by driving the app, and a third composed the music in code. <a href={href("experiment/")}>How the film was made</a>
+          </p>
+          <FilmTranscript />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section panels" aria-labelledby="panels-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="panels-title">CapCut's four panels. A professional editor underneath.</h2>
+        <p class="lede">
+          If you have used CapCut, you already know where everything is. Under the familiar layout sit the tools of
+          Premiere, Resolve and VEGAS: pro trims, real color grading, keyframe graphs and loudness to broadcast spec.
+        </p>
+      </div>
+      <Shot
+        name="editor"
+        hue="blue"
+        alt="The OpenFrame editor with the Beyond Blue project open: the media library on the left, THE WORLD BELOW over an aerial shot of a speedboat in the player, project details on the right, and a timeline of clips, titles, an adjustment layer and music below."
+      />
+      <ul class="panel-legend">
+        <li><Icon name="film" size={20} /><div><strong>Library</strong> Media, audio, text, stickers, effects, transitions, captions, filters and AI tools, previewed on your own footage.</div></li>
+        <li><Icon name="play" size={20} /><div><strong>Player</strong> Frame-exact preview on the audio clock, with scopes, guides and a loudness meter.</div></li>
+        <li><Icon name="sliders-horizontal" size={20} /><div><strong>Inspector</strong> Every setting of the selected clip, and every number can be keyframed.</div></li>
+        <li><Icon name="layers" size={20} /><div><strong>Timeline</strong> A magnetic main track, snapping and linkage, as many tracks as the edit needs.</div></li>
+      </ul>
+    </div>
+  </section>
+
+  {home.map((f, i) => (
+    <section class="section feature" aria-labelledby={`f-${f.id}`} style={`--hue: var(--${f.hue})`}>
+      <div class:list={["wrap", "feature-row", { flip: i % 2 === 1 }]}>
+        <div class="feature-text">
+          <span class="feature-name"><span class="mark"><Icon name={f.icon} size={20} /></span>{f.name}</span>
+          <h2 id={`f-${f.id}`}>{f.title}</h2>
+          <p>{f.summary}</p>
+          <ul class="clip-list">{f.points.slice(0, 3).map((p) => <li>{p}</li>)}</ul>
+        </div>
+        <Loop name={f.loop!} alt={f.alt} where={f.where} hue={f.hue} />
+      </div>
+    </section>
+  ))}
+
+  <div class="wrap more-link">
+    <a href={href("features/")}>See every feature, from AI tools to deliverables</a>
+  </div>
+
+  <section class="section agents" aria-labelledby="agents-title" style="--hue: var(--blue); --glow-a: rgb(47 123 255 / 26%); --glow-b: rgb(59 224 240 / 14%);">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap feature-row flip">
+      <div class="feature-text">
+        <span class="feature-name"><span class="mark"><Icon name={agents.icon} size={20} /></span>{agents.name}</span>
+        <h2 id="agents-title">An AI agent can edit with you, live.</h2>
+        <p>
+          Turn on Allow AI agents in the desktop app, click Add to Claude Code or Add to Codex, and ask for the video you
+          want. The agent imports your footage, cuts it to the music, adds titles and transitions, looks at its own frames
+          and exports, while every edit lands on your timeline as it happens.
+        </p>
+        <ul class="clip-list">
+          <li><strong>{facts.tools} MCP tools</strong> cover the whole job, each with a schema, an example and a place in the order a video gets made.</li>
+          <li><strong>Playbooks</strong> for an ad, a music-synced epic edit and a vertical short teach a model the design rules editors use.</li>
+          <li><strong>Local and opt-in:</strong> the server is off until you turn it on, listens on 127.0.0.1 only and needs this install's token.</li>
+        </ul>
+        <p>
+          Prefer to type? The built-in AI assistant runs a model on your own computer through Ollama or LM Studio, with the
+          same editing tools, and every answer undoes in one step.
+        </p>
+        <p class="links">
+          <a href={href("ai/")}>Connect an agent</a>
+          <a href={href("docs/mcp-tools/")}>Browse the {facts.tools} tools</a>
+        </p>
+      </div>
+      <Loop name="agent" alt={agents.alt} where={["MCP", "batch, add_media_clip, set_transition"]} hue="blue" />
+    </div>
+  </section>
+
+  <section class="section experiment" aria-labelledby="exp-title">
+    <div class="wrap exp">
+      <div>
+        <h2 id="exp-title">Built by AI agents, in the open.</h2>
+        <p class="lede">
+          OpenFrame is an experiment: can AI coding agents build a fully open, professional video editor?
+          {facts.firstDay ? ` Since ${longDate(facts.firstDay)}, ` : " "}agents have written almost all of it, most of it
+          Claude Opus 5.5 working in Claude Code, with Codex alongside. A human owner sets the direction, tries every build
+          and decides what ships.
+        </p>
+        <p class="links"><a href={href("experiment/")}>Read how it was built</a></p>
+      </div>
+      <ul class="exp-points">
+        <li><Icon name="history" size={20} /><span><strong>{facts.decisions} architecture decisions</strong> are written down with the reasons and the evidence, so each agent picks up where the last one stopped.</span></li>
+        <li><Icon name="clapperboard" size={20} /><span><strong>The film and every clip on this site</strong> were made by agents too: the clips recorded from the running app, the music composed in code, the film edited in OpenFrame.</span></li>
+        <li><Icon name="check" size={20} /><span><strong>Checked in the running product</strong>, not only in tests: agents drive the real app in a headless browser to try their changes.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="section local" aria-labelledby="local-title" style="--glow-a: rgb(47 210 122 / 12%); --glow-b: rgb(47 123 255 / 14%);">
+    <div class="light" aria-hidden="true"></div>
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="local-title">Your footage stays on your computer.</h2>
+        <p class="lede">There is no OpenFrame server and no account. Editing, export, captions, background removal and speech all run on your hardware.</p>
+      </div>
+      <ul class="local-points">
+        <li>
+          <span class="mark" style="--hue: var(--green)"><Icon name="lock" size={20} /></span>
+          <h3>Nothing is uploaded</h3>
+          <p>Projects and media stay in the app's folder on your disk, or in your browser's private storage for the web build. The app has no analytics or telemetry.</p>
+        </li>
+        <li>
+          <span class="mark" style="--hue: var(--blue)"><Icon name="wand-sparkles" size={20} /></span>
+          <h3>Models run locally</h3>
+          <p>Whisper for captions, Kokoro for speech and the background-removal models download once from Hugging Face the first time you use them, then work offline.</p>
+        </li>
+        <li>
+          <span class="mark" style="--hue: var(--blue)"><Icon name="bot" size={20} /></span>
+          <h3>Agents stay local</h3>
+          <p>The MCP server is off until you turn it on. It listens only on 127.0.0.1 and needs this install's token, so no website or other computer can reach it.</p>
+        </li>
+      </ul>
+      <p class="links"><a href={href("privacy/")}>How we checked, and what the app connects to</a></p>
+    </div>
+  </section>
+
+  <section class="section start" aria-labelledby="start-title">
+    <div class="wrap start-grid">
+      <div>
+        <h2 id="start-title">Build it from source.</h2>
+        <p class="lede">There are no installers yet. With Node.js, Rust and Tauri's prerequisites installed, four commands run the desktop app.</p>
+        <p class="muted">
+          Or try the web build in your browser: <code>{WEB}</code>, then open <code>{WEB_URL}</code>. It runs on your device
+          with what your browser supports; the desktop app is the main product.
+        </p>
+        <p class="links">
+          <a href={href("docs/")}>The full setup guide</a>
+          <a href={SITE.repo}>The source on GitHub</a>
+        </p>
+      </div>
+      <div class="start-commands">
+        <Command label="Get the source" code={CLONE} />
+        <Command label="Install and run the desktop app" code={DESKTOP} />
+      </div>
+    </div>
+  </section>
+
+  <section class="section open" aria-labelledby="open-title">
+    <div class="wrap open-grid">
+      <h2 id="open-title">Every line is yours to read, change and share.</h2>
+      <div>
+        <p class="lede">
+          OpenFrame is free software under the GNU General Public License, version 3. Use it for anything, commercial work
+          included; your videos stay yours. The code, the decisions behind it, the research and the history live in one
+          public repository, written for the people and agents who work on it next.
+        </p>
+        <p class="links">
+          <a href={SITE.repo}>{SITE.repoName} on GitHub</a>
+          <a href={href("docs/contributing/")}>How to contribute</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero { position: relative; padding-top: clamp(48px, 8vw, 104px); padding-bottom: clamp(56px, 8vw, 96px); }
+  .hero > .wrap { position: relative; z-index: 1; }
+  .hero-copy { max-width: 900px; }
+  .hero h1 { max-width: 13ch; }
+  .hero .lede { margin-top: 26px; font-size: clamp(1.125rem, 1rem + 0.6vw, 1.375rem); max-width: 58ch; }
+  .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 12px 40px; margin: 40px 0 0; }
+  .facts div { display: grid; gap: 2px; }
+  .facts dt { font-size: 0.8125rem; color: var(--text-3); }
+  .facts dd { margin: 0; font-size: 0.9375rem; color: var(--text-1); font-weight: 520; }
+  .hero-film { margin-top: clamp(48px, 7vw, 88px); scroll-margin-top: 88px; }
+  .film-notes { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 32px; align-items: start; margin-top: 18px; }
+  .film-notes > p { color: var(--text-2); font-size: 0.9375rem; max-width: 70ch; }
+  @media (max-width: 760px) { .film-notes { grid-template-columns: minmax(0, 1fr); } }
+
+  .panels .section-head { margin-bottom: clamp(36px, 5vw, 56px); }
+  .panel-legend { list-style: none; padding: 0; margin: 40px 0 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 28px; }
+  .panel-legend li { display: grid; grid-template-columns: auto 1fr; gap: 12px; color: var(--text-2); font-size: 0.9375rem; padding-top: 18px; border-top: 1px solid var(--line); }
+  .panel-legend .icon { color: var(--cyan); margin-top: 2px; }
+  .panel-legend strong { display: block; color: var(--text-1); font-weight: 620; margin-bottom: 4px; }
+  @media (max-width: 900px) { .panel-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 520px) { .panel-legend { grid-template-columns: minmax(0, 1fr); } }
+
+  .feature { padding-block: clamp(56px, 8vw, 112px); }
+  .feature h2 { font-size: var(--step-3); }
+  .more-link { padding-bottom: 24px; }
+  .more-link a { font-weight: 600; font-size: var(--step-1); }
+
+  .agents { border-block: 1px solid var(--line); background: linear-gradient(180deg, rgb(47 123 255 / 4%), transparent 60%); overflow: hidden; }
+  .agents .feature-text > p + p { margin-top: 14px; }
+  .links { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 24px; }
+  .links a { font-weight: 600; }
+
+  .exp { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 6vw, 96px); align-items: start; }
+  .exp .lede { margin-top: 22px; }
+  .exp-points { list-style: none; margin: 0; padding: 0; display: grid; gap: 24px; }
+  .exp-points li { display: grid; grid-template-columns: auto 1fr; gap: 14px; color: var(--text-2); }
+  .exp-points .icon { color: var(--violet-text); margin-top: 3px; }
+  .exp-points strong { color: var(--text-1); font-weight: 620; }
+  @media (max-width: 900px) { .exp { grid-template-columns: minmax(0, 1fr); } }
+
+  .local { overflow: hidden; }
+  .local-points { list-style: none; margin: 48px 0 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--line); }
+  .local-points li { padding: 28px 28px 8px 0; }
+  .local-points li + li { padding-left: 28px; border-left: 1px solid var(--line); }
+  .local-points h3 { margin-top: 18px; }
+  .local-points p { margin-top: 10px; color: var(--text-2); font-size: 0.9375rem; }
+  @media (max-width: 860px) {
+    .local-points { grid-template-columns: minmax(0, 1fr); }
+    .local-points li + li { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); }
+  }
+
+  .start-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 6vw, 80px); align-items: start; }
+  .start-grid .lede { margin-top: 20px; }
+  .start-grid .muted { margin-top: 16px; font-size: 0.9375rem; }
+  .start-commands { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  @media (max-width: 900px) { .start-grid { grid-template-columns: minmax(0, 1fr); } }
+
+  .open { padding-top: 0; }
+  .open-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(24px, 6vw, 80px); padding-top: clamp(56px, 8vw, 96px); border-top: 1px solid var(--line); }
+  .open h2 { font-size: var(--step-3); }
+  @media (max-width: 900px) { .open-grid { grid-template-columns: minmax(0, 1fr); } }
+</style>

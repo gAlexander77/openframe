@@ -48,6 +48,10 @@ of the documentation and how agents use it as shared working memory.
 - [[History]] — the build story, round by round, including rejected attempts
 - [[Renaming]] — every site the placeholder name touches, and the one that
   moves user data
+- [[Website]] — the product site in `openframe-website/`: its pages, how it
+  stays true to the app, its media and the privacy checklist for them
+- [[Keyboard shortcuts]] — every default key, grouped as the app's panel
+  groups them
 
 ## Research
 
@@ -228,3 +232,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
 
 - [[ADR-075 Measure music structure and voice balance on the timeline]] -
   two-bar sections, multiple drops and measured ducking before one edit.
+
+- [[ADR-076 The website is a static Astro site that reads docs at build time]] —
+  its own package beside the app, two React islands, the MCP reference and
+  quoted numbers rendered from docs/
+- [[ADR-077 The website deploys to GitHub Pages from main]] — the only
+  deployment, on site or docs changes; inactive until Pages is enabled

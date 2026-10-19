@@ -1,0 +1,80 @@
+---
+// A short, muted, looping product clip in a floating window. It loads and
+// plays only while it is on screen, pauses when it leaves, and has its own
+// pause button (WCAG 2.2.2). With reduced motion it waits to be played.
+// The description is the clip's text alternative.
+import { getImage } from "astro:assets";
+import Icon from "./Icon.astro";
+import Where from "./Where.astro";
+import { href } from "../lib/site";
+
+interface Props {
+  name: string;
+  alt: string;
+  where?: string[];
+  hue?: string;
+}
+const { name, alt, where, hue = "cyan" } = Astro.props;
+const posters = import.meta.glob<{ default: ImageMetadata }>("../assets/media/*.jpg", { eager: true });
+const source = posters[`../assets/media/${name}.jpg`];
+if (!source) throw new Error(`No poster for loop ${name}`);
+const poster = await getImage({ src: source.default, width: 1280, format: "webp", quality: 78 });
+const id = `loop-${name}`;
+---
+<figure class="window loop reveal" style={`--hue: var(--${hue})`}>
+  <div class="screen">
+    <video
+      data-loop
+      muted
+      loop
+      playsinline
+      preload="none"
+      poster={poster.src}
+      width="1280"
+      height="720"
+      aria-describedby={`${id}-desc`}
+    >
+      <source src={href(`media/loops/${name}.webm`)} type="video/webm" />
+      <source src={href(`media/loops/${name}.mp4`)} type="video/mp4" />
+    </video>
+    <button type="button" class="loop-toggle" data-state="paused" aria-label="Play the clip" hidden>
+      <Icon name="pause" size={16} class="when-playing" />
+      <Icon name="play" size={16} class="when-paused" />
+    </button>
+  </div>
+  {where && <figcaption><Where path={where} /></figcaption>}
+  <p class="visually-hidden" id={`${id}-desc`}>{alt}</p>
+</figure>
+
+<script>
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+  for (const video of document.querySelectorAll<HTMLVideoElement>("video[data-loop]")) {
+    const button = video.parentElement!.querySelector<HTMLButtonElement>(".loop-toggle")!;
+    let held = reduce.matches; // the viewer paused it, or prefers no motion
+    let visible = false;
+    const show = () => {
+      const playing = !video.paused;
+      button.dataset.state = playing ? "playing" : "paused";
+      button.setAttribute("aria-label", playing ? "Pause the clip" : "Play the clip");
+    };
+    const sync = () => {
+      if (visible && !held) void video.play().catch(() => undefined);
+      else if (!video.paused) video.pause();
+    };
+    button.hidden = false;
+    button.addEventListener("click", () => {
+      held = !video.paused;
+      if (held) video.pause();
+      else void video.play().catch(() => undefined);
+    });
+    video.addEventListener("play", show);
+    video.addEventListener("pause", show);
+    new IntersectionObserver(
+      ([entry]) => {
+        visible = entry.isIntersecting;
+        sync();
+      },
+      { threshold: 0.35 },
+    ).observe(video);
+  }
+</script>

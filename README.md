@@ -34,6 +34,9 @@ timeline by hand. What it took, and what it taught the editor, is in
 
 Repository: [gAlexander77/openframe](https://github.com/gAlexander77/openframe)
 (formerly `video-editor`; GitHub redirects the old URL).
+Website: [galexander77.github.io/openframe](https://galexander77.github.io/openframe/)
+(built from [openframe-website/](openframe-website/); it goes live once
+GitHub Pages is enabled for the repository).
 
 The project was renamed **OpenFrame** on 2026-10-17: the app, its window,
 binary (`openframe`), packages and repository. The app's data folder keeps
