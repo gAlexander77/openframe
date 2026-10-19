@@ -47,7 +47,7 @@ import { stretchClip } from "../../lib/project/stretch";
 import { autoAdjustClip } from "../../state/autoColor";
 import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
-import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
+import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
 import { applyTextStyle, deleteTextStyle, saveTextStyle, useTextStyles } from "../../state/textStyles";
 import { beginTrackBox, cancelTrackBox, cancelTracking, cannotTrack, trackMotion, useTrackBox, useTracking } from "../../state/tracking";
@@ -1491,7 +1491,8 @@ function TextTab({ clip }: { clip: TextClip }) {
 function SpeechSection({ clip }: { clip: TextClip }) {
   const speaking = useSpeaking();
   const [voice, setVoice] = useState(DEFAULT_VOICE);
-  const [speed, setSpeed] = useState(1);
+  const [speed, setSpeed] = useState(DEFAULT_SPEED);
+  const [quality, setQuality] = useState<"best" | "draft">("best");
   const busy = speaking?.clipId === clip.id;
   return (
     <Section title="Text to speech" defaultOpen={false}>
@@ -1503,7 +1504,10 @@ function SpeechSection({ clip }: { clip: TextClip }) {
         </select>
       </Row>
       <Row label="Speed">
-        <Segmented value={String(speed)} onChange={(v) => setSpeed(Number(v))} options={[{ value: "0.85", label: "Slow" }, { value: "1", label: "Normal" }, { value: "1.2", label: "Fast" }]} />
+        <Segmented value={String(speed)} onChange={(v) => setSpeed(Number(v))} options={[{ value: "0.85", label: "Slow" }, { value: String(DEFAULT_SPEED), label: "Normal" }, { value: "1.1", label: "Fast" }]} />
+      </Row>
+      <Row label="Quality">
+        <Segmented value={quality} onChange={(v) => setQuality(v as "best" | "draft")} options={[{ value: "best", label: "Best" }, { value: "draft", label: "Draft" }]} />
       </Row>
       <div className="insp-actions">
         {busy ? (
@@ -1512,12 +1516,12 @@ function SpeechSection({ clip }: { clip: TextClip }) {
             <button className="btn ghost" onClick={cancelSpeech}>Cancel</button>
           </>
         ) : (
-          <button className="btn" disabled={!!speaking || !clip.text.trim()} onClick={() => void textToSpeech(clip.id, { voice, speed }).catch(() => undefined)}>
+          <button className="btn" disabled={!!speaking || !clip.text.trim()} onClick={() => void textToSpeech(clip.id, { voice, speed, quality }).catch(() => undefined)}>
             Add voice
           </button>
         )}
       </div>
-      <p className="insp-hint">Made on this computer. The first voice downloads the speech model (about 90 MB) once.</p>
+      <p className="insp-hint">Made on this computer. The first voice downloads the speech model once: about 325 MB for Best (full precision), 90 MB for Draft (8-bit weights).</p>
     </Section>
   );
 }

@@ -210,14 +210,46 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.
 
-`add_voiceover` narrates a script: `{"lines": [{"text": "Meet
-RacePulse."}, {"text": "Pick your widgets.", "at": 6}], "voice":
-"af_heart", "gap": 0.4, "caption_style": {...}}`. Each line is spoken on
-this machine and placed after the one before at its real length (or at
-its `at`, never overlapping) on a new Voiceover track, with a caption per
-line, as one undo step. It answers `{"lines": [{"text", "start", "end",
-"voice_clip", "caption_clip"}], "end"}`: cut the footage to those times.
-The voices get the Enhance voice compressor unless `enhance` is false.
+`add_voiceover` narrates a script, directed
+([[ADR-083 Voiceover lines are directed in the script and keep it]]):
+
+```json
+{"lines": [
+  {"text": "Meet OpenFrame. [pause 0.4] The editor on your own computer."},
+  {"text": "Every edit is a tool an agent can call,", "voice": "am_michael"},
+  {"text": "so a whole film can be made by asking.", "voice": "am_michael", "pause_after": 0.8},
+  {"text": "Free. [beat] Yours.", "at": 12, "caption": "Free and yours."}],
+ "voice": "af_heart", "pronounce": {"OpenFrame": "Open Frame", "MCP": "M C P"}}
+```
+
+- Each line is read on this machine, whole, and placed after the one
+  before at its real length (or at its `at`, never overlapping) on a new
+  Voiceover track, with a caption per line, as one undo step with its
+  speech files.
+- Per line: `voice` (another speaker, or a blend `"af_heart:70,af_bella:30"`),
+  `speed`, `at`, `pause_after`, `paragraph`, `caption`. The gap after a
+  line follows its ending unless `pause_after` or the call's `gap` says
+  otherwise: 0.4 s after a sentence, 0.1 s after a comma, 0.6 s after an
+  ellipsis, 0.8 s after a paragraph.
+- Pause marks inside a line: `[pause]` (0.5 s), `[pause 0.4]`,
+  `[pause 300ms]`, `[beat]` (1 s), `<break time="0.4s"/>`. The voice's own
+  pause there is lengthened; where it ran through, the line is read in two
+  parts at that phrase boundary (the answer's `pauses` says `stretched` or
+  `split`). Captions never show a mark.
+- `pronounce` respells words for the voice only; captions keep them.
+- `quality`: `best` (fp32, the default) or `draft` (8-bit); `finish`:
+  `natural` (the default: a reader's pauses, rushed lines read slower, EQ,
+  one loudness, room tone, fades, the voice compressor and a touch of
+  room), `clean` or `raw`
+  ([[ADR-084 Voiceover is read at full precision and finished like a recording]]).
+  `enhance: false` drops the compressor.
+- It answers `{"lines": [{"text", "start", "end", "seconds", "voice",
+  "speed", "voice_clip", "caption_clip", "pauses"?}], "end", "finish",
+  "engine": {"quality", "device", "dtype"}}`: cut the footage to those
+  times.
+
+`list_catalog` section `voices` describes every voice for casting; `help` topic `voiceover` is
+the playbook.
 
 `frame_region` shows part of a picture full screen: `region` is a
 rectangle in fractions of the source (`{"x": 0.5, "y": 0, "w": 0.5,

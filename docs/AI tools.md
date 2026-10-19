@@ -475,6 +475,47 @@ and the AI tools tab has a card for it.
   `src/engine/cutout.ts`), drawn above the title like any picture. With the title hidden, the copy over the original
   changes no pixel by more than 3 of 765: the matte's edges add no fringe.
 
+## Voiceover: pauses and finish
+
+The voice model (Kokoro-82M) reads a line whole; what follows is sample
+math on its output (`src/lib/voiceScript.ts`, `voiceTake.ts`,
+`analysis/speech.ts`; [[ADR-083 Voiceover lines are directed in the script and keep it]],
+[[ADR-084 Voiceover is read at full precision and finished like a recording]],
+measurements in [[Natural voiceover 2026-10-19]]).
+
+**Finding the voice's pauses.** A 10 ms RMS envelope in dBFS. Speech is
+any window louder than 35 dB under the line's loud part (its 90th
+percentile window). A pause is a *dip*: windows 28 dB under the loud part
+lasting 0.12 s, or 0.06 s when 38 dB down. Kokoro's pause at a short
+sentence's end is often an 80 ms dip to -67 dBFS rather than silence;
+stop consonants' closures (30-90 ms) are shallower or shorter.
+
+**Matching pauses to the script.** Each comma, colon, semicolon, dash and
+sentence end inside the line is placed by its share of the letters before
+it; each dip by its share of the voiced time before it (pauses of 0.1 s
+or more taken out). An in-order alignment (dynamic programming) pairs
+them, each pair scoring the dip's length (up to 0.4 s) less the distance
+between the shares, within 0.2; the best total wins, so a long pause a
+little off (words before a pause are drawn out) beats a short closure
+right on the place.
+
+**Setting a pause's length.** The matched dip keeps its first and last
+40 ms (the decay of the word before, the lead-in of the word after), each
+faded over half that, and its middle is replaced by silence of the right
+length, or cut out. The words are the same samples. A mark that matched
+no dip reads the line as two parts at that boundary (the first ending on
+a comma) and joins them with exactly the mark's silence between the
+speech, cutting quiet ends shorter when they already exceed it.
+
+**The natural finish.** Low cut (RBJ high-pass, 80 Hz, Q 0.707) and
+presence (RBJ peaking, 3.5 kHz, +2 dB, Q 0.9); trim to the speech with a
+60 ms lead-in and a 200 ms tail; gain to -23 LUFS (BS.1770, mono)
+holding the sample peak under -1 dBFS; pink room tone (Paul Kellet's
+filter, seeded by the line's text) at -72 dBFS RMS added under the whole
+take; raised-cosine fades of 12 ms in and 30 ms out. A line read over 5.5
+syllables a second with no speed given is read once more at speed x
+5 / its rate, never below four fifths of the speed asked.
+
 ## In the app and for agents
 
 - **Panel:** the library's *AI tools* tab (`src/components/AiToolsTab.tsx`).

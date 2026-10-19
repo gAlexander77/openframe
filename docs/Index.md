@@ -77,6 +77,9 @@ of the documentation and how agents use it as shared working memory.
 - [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
   entirely through MCP: how it was made, what worked, fourteen limits
   ranked by what they cost, and eleven product issues met while recording
+- [[Natural voiceover 2026-10-19]] — what a natural read measures (pace,
+  pauses, melody, silence, level), what Kokoro does against it at each
+  precision, speed and voice, and what the natural finish changed
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,
@@ -257,3 +260,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   `docs/` at the root for both.
 - [[ADR-082 CI runs only when the owner starts it]] — CI is manual (cost);
   agents run the gates locally and never start it; Pages deploys on its own.
+- [[ADR-083 Voiceover lines are directed in the script and keep it]] —
+  per-line voice, speed, time and pause; pause marks lengthen the voice's
+  own pause; pronunciations for the voice only; the script kept with the
+  take.
+- [[ADR-084 Voiceover is read at full precision and finished like a recording]] —
+  fp32 everywhere by default, the natural finish (a reader's pauses,
+  rushed lines read slower, EQ, one loudness, room tone, fades, a touch of
+  room), a narrator's speed, voices cast from a described catalog.

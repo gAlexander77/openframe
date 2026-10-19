@@ -6,6 +6,7 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
+import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "./tts";
 import { COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { SPEC_IDS } from "./analysis/delivery";
@@ -63,7 +64,7 @@ export interface McpHost {
   /** One JPEG (base64) of every version at a few moments, nothing exported. */
   versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<string>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
-  voiceover(lines: { text: string; at?: number }[], options: Record<string, unknown>): Promise<unknown>;
+  voiceover(lines: Record<string, unknown>[], options: Record<string, unknown>): Promise<unknown>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
   ai(tool: AiTool, target: string | string[], options: Record<string, unknown>): Promise<unknown>;
   /** The saved projects, as the home screen lists them; `open` marks the
@@ -211,7 +212,7 @@ const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = [
 export const APP_TOOLS: AppTool[] = [
   {
     name: "help",
-    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
+    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
     call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), instructionsFor(h)) }] }),
   },
@@ -224,7 +225,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "list_catalog",
     description:
-      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults. section stickers with a query searches the sticker library.",
+      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.",
     inputSchema: obj({ section: { type: "string", description: "A section name from the index" }, query: { type: "string", description: "Search words, for section stickers" } }),
     call: (_h, a) => json(fullCatalog(a.section === undefined ? undefined : String(a.section), a.query === undefined ? undefined : String(a.query))),
   },
@@ -384,6 +385,14 @@ export const APP_TOOLS: AppTool[] = [
     call: (h) => json(h.exportStatus() ?? { state: "none" }),
   },
 ];
+
+// Speech: the voice, its pace, precision and finish (state/tts.ts).
+const VOICE_IDS = VOICES.map((v) => v.id).join(", ");
+const VOICE: JsonSchema = { type: "string", description: `Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default ${DEFAULT_VOICE}` };
+const SPEED: JsonSchema = { type: "number", minimum: 0.5, maximum: 2, description: `1 is the model's own pace; default ${DEFAULT_SPEED}` };
+const PRONOUNCE: JsonSchema = { type: "object", description: 'Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"}' };
+const QUALITY: JsonSchema = { type: "string", enum: ["best", "draft"], description: "best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download" };
+const FINISH: JsonSchema = { type: "string", enum: ["natural", "clean", "raw"], description: "natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed" };
 
 // The local AI tools: analysis on this machine, then one undoable edit each
 // ([[AI tools]], ADR-019). They take a while on long clips.
@@ -565,30 +574,49 @@ APP_TOOLS.push(
   },
   {
     name: "text_to_speech",
-    description: "Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB).",
-    inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: { type: "string", description: "Voice id, default af_heart" }, speed: { type: "number", minimum: 0.5, maximum: 2, description: "1 is natural" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, speed: a.speed }))),
+    description: `Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. Voices (list_catalog section voices describes each): ${VOICE_IDS}. The first use downloads the speech model.`,
+    inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: VOICE, speed: SPEED, pronounce: PRONOUNCE, quality: QUALITY, finish: FINISH }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish }))),
   },
   {
     name: "add_voiceover",
-    description:
-      "Narrate a script: every line is spoken on this computer (Kokoro) and placed one after another at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step. A line's at pins it to a time. Answers each line's start, end and clip ids, so the footage can be cut to the voice. Voices: af_heart, af_bella, af_nicole, am_michael, am_fenrir, bf_emma, bm_george, bm_fable. The first use downloads the speech model (about 90 MB); a line takes a second or two.",
+    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.`,
     inputSchema: obj(
       {
-        lines: { type: "array", description: "The script, one sentence or two per line", items: obj({ text: { type: "string", description: "Words to say (and show)" }, caption: { type: "string", description: "What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL)" }, at: { type: "number", minimum: 0, description: "Timeline seconds; default right after the line before" } }, ["text"]) },
-        voice: { type: "string", description: "Voice id, default af_heart" },
-        speed: { type: "number", minimum: 0.5, maximum: 2, description: "1 is natural" },
+        lines: {
+          type: "array",
+          description: "The script, one sentence or two per line (a breath each)",
+          items: obj(
+            {
+              text: { type: "string", description: 'Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/>' },
+              caption: { type: "string", description: "What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL)" },
+              at: { type: "number", minimum: 0, description: "Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before" },
+              voice: { ...VOICE, description: "This line's voice (another speaker); default the call's" },
+              speed: { ...SPEED, description: "This line's speed; default the call's" },
+              pause_after: { type: "number", minimum: 0, maximum: 10, description: "Seconds of silence before the next line (overrides gap and the line's ending)" },
+              paragraph: { type: "boolean", description: "This line ends a paragraph: 0.8 s before the next" },
+            },
+            ["text"],
+          ),
+        },
+        voice: { ...VOICE, description: `Voice id, or a blend of voices' styles ("af_heart:60,af_bella:40"); default ${DEFAULT_VOICE}, the most natural` },
+        speed: { ...SPEED, description: `1 is the model's own pace (about 3.3 words a second inside a line); default ${DEFAULT_SPEED}, a narrator's` },
+        pronounce: PRONOUNCE,
         start: { type: "number", minimum: 0, description: "Seconds the first line starts, default 0" },
-        gap: { type: "number", minimum: 0, description: "Seconds between lines, default 0.4" },
+        gap: { type: "number", minimum: 0, description: "Seconds between every pair of lines, instead of each line's ending choosing" },
+        quality: QUALITY,
+        finish: FINISH,
         captions: { type: "boolean", description: "A caption per line (default true)" },
-        enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true)" },
+        enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true; finish raw has none)" },
         caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look: the same fields as add_text's style" },
         caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons)" },
       },
       ["lines"],
     ),
-    call: async (h, a) =>
-      json(await h.voiceover(a.lines as { text: string; caption?: string; at?: number }[], given({ voice: a.voice, speed: a.speed, start: a.start, gap: a.gap, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance }))),
+    call: async (h, a) => {
+      const lines = (a.lines as Record<string, unknown>[]).map((l) => given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, pauseAfter: l.pause_after, paragraph: l.paragraph }));
+      return json(await h.voiceover(lines, given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
+    },
   },
   {
     name: "auto_adjust",
@@ -663,11 +691,11 @@ const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 /** What an agent reads first: the moves, in the order a video gets made. */
 const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
-Before you start: help (the tools by step), help with topic ad, epic_edit or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect and font by name), help with a tool's name (its parameters and an example).
+Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
-3. Write the script and add_voiceover: the voice and matching captions, timed to the real speech; it answers where each line landed.
+3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.

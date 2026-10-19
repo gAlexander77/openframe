@@ -1,16 +1,21 @@
-// Text to speech for a title (CapCut's Text to speech): speak its words in
-// a chosen voice on this machine, save the voice as WAV and place it under
-// the title, starting with it, as one undo step. The speech files are
-// added inside that edit, so undoing it leaves none in the library.
+// Speech made on this machine: text to speech for a title (CapCut's Text to
+// speech) and a whole narrated script (MCP add_voiceover). Every line is read whole, a sentence at a time,
+// so its intonation is the voice's own; pauses the script asks for lengthen
+// the voice's own pauses (ADR-083); the take is finished to sit like a
+// recorded read (ADR-084). Each edit adds its speech files with its clips,
+// so one undo leaves nothing behind in the library.
 
 import { useSyncExternalStore } from "react";
-import { speak } from "../engine/tts";
+import { speak, type Quality } from "../engine/tts";
+import { dips, speechActivity } from "../lib/analysis/speech";
 import { runCommand } from "../lib/commands";
 import { createTrack } from "../lib/project/defaults";
 import { addTrack, findClip } from "../lib/project/ops";
-import type { Id, Project, TextStyle } from "../lib/project/types";
+import type { Asset, Id, Project, SpeechInfo, TextStyle } from "../lib/project/types";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
-import { DEFAULT_VOICE, layoutLines, speechFileName, speechText, trimSpeech } from "../lib/tts";
+import { checkVoice, DEFAULT_SPEED, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
+import { breaksOf, checkPronounce, chunkSentences, layoutLines, matchPauses, parseLine, pauseAfter, syllables } from "../lib/voiceScript";
+import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
 import { edit } from "./actions";
 import { adoptAndProbe, prepare } from "./media";
@@ -27,40 +32,195 @@ const set = (r: typeof running) => {
 export const useSpeaking = () => useSyncExternalStore((l) => (listeners.add(l), () => void listeners.delete(l)), () => running);
 export const cancelSpeech = () => running?.abort.abort();
 
-export async function textToSpeech(clipId?: Id, opts: { voice?: string; speed?: number } = {}): Promise<{ clipId: Id; seconds: number }> {
+/** How a line is read; each defaults to the voiceover's own. */
+export interface ReadOptions {
+  voice?: string;
+  speed?: number;
+  pronounce?: Record<string, string>;
+  /** best (full precision, the default) or draft (8-bit, quicker on a CPU). */
+  quality?: Quality;
+  /** natural (the default), clean or raw (lib/voiceTake.ts). */
+  finish?: FinishId;
+}
+
+/** A line read and finished, ready to save. */
+export interface Take {
+  audio: Float32Array;
+  rate: number;
+  seconds: number;
+  /** The words as written (the caption's), and what the voice was given. */
+  written: string;
+  spoken: string;
+  /** Silence the script asks for before and after the line. */
+  before: number;
+  after: number;
+  /** Each pause mark: how long, and whether the voice's own pause was
+   * lengthened (stretched) or the line read in two parts (split). */
+  pauses: { seconds: number; how: "stretched" | "split" }[];
+  info: SpeechInfo;
+  engine: { device?: string; dtype?: string };
+}
+
+const hash = (s: string) => [...s].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7);
+
+type Part = { audio: Float32Array; rate: number; first: number; last: number };
+
+/** Two parts joined with `seconds` between their speech. */
+function append(a: Part | null, b: Part, seconds: number): Part {
+  if (!a) return b;
+  const audio = joinTakes(a.audio, a.last, b.audio, b.first, b.rate, seconds);
+  return { audio, rate: b.rate, first: a.first, last: audio.length / b.rate - (b.audio.length / b.rate - b.last) };
+}
+
+/**
+ * Read one stretch of text (whole sentences) and set its pauses: the voice
+ * pauses on its own at commas and sentence ends; a mark's pause lengthens
+ * (or shortens) the one the voice made there, and the natural finish
+ * lengthens pauses shorter than a reader's. When the voice ran through a
+ * mark, that stretch is read again in two parts, the first ending on a
+ * comma so its pitch stays up, and joined with the mark's silence.
+ */
+async function readPart(text: string, marks: { at: number; seconds: number }[], o: Required<Omit<ReadOptions, "pronounce">>, f: Finish, signal: AbortSignal, engine: Take["engine"], how: Take["pauses"]): Promise<Part> {
+  const spoken = await speak(text, o.voice, o.speed, undefined, signal, o.quality);
+  signal.throwIfAborted();
+  engine.device = spoken.device;
+  engine.dtype = spoken.dtype;
+  const { rate } = spoken;
+  let audio = spoken.audio;
+  const act = speechActivity(audio, rate);
+  if (!act) throw new Error(`The voice made no sound for "${text.slice(0, 40)}"`);
+  const breaks = breaksOf(text).map((b) => ({ ...b, mark: marks.find((m) => Math.abs(b.at - m.at) <= 2)?.seconds }));
+  const found = dips(audio, rate);
+  const match = matchPauses(found, act.first, act.last, breaks.map((b) => b.share));
+  const missed = breaks.filter((b, i) => b.mark !== undefined && match[i] < 0);
+  if (missed.length) {
+    // Read the parts on either side of each missed mark on their own.
+    let out: Part | null = null;
+    let from = 0, pause = 0;
+    for (const cut of [...missed.map((b) => ({ at: b.at, seconds: b.mark! })), { at: text.length, seconds: 0 }]) {
+      const raw = text.slice(from, cut.at);
+      const lead = raw.length - raw.trimStart().length;
+      const inner = marks.filter((m) => m.at > from && m.at < cut.at).map((m) => ({ at: m.at - from - lead, seconds: m.seconds }));
+      out = append(out, await readPart(raw.trim(), inner, o, f, signal, engine, how), pause);
+      from = cut.at;
+      pause = cut.seconds;
+    }
+    missed.forEach((b) => how.push({ seconds: b.mark!, how: "split" }));
+    return out!;
+  }
+  const runs: { start: number; end: number; seconds: number }[] = [];
+  breaks.forEach((b, i) => {
+    if (match[i] < 0) return;
+    const p = found[match[i]];
+    const want = b.mark ?? Math.max(p.end - p.start, b.sentence ? f.sentencePause : f.commaPause);
+    if (b.mark !== undefined) how.push({ seconds: b.mark, how: "stretched" });
+    if (Math.abs(want - (p.end - p.start)) > 0.005) runs.push({ ...p, seconds: want });
+  });
+  if (!runs.length) return { audio, rate, first: act.first, last: act.last };
+  audio = resizePauses(audio, rate, runs);
+  const now = speechActivity(audio, rate)!;
+  return { audio, rate, first: now.first, last: now.last };
+}
+
+/** Syllables a second a voice may read a line at before the natural
+ * finish reads it again slower: read speech runs about 4-5.5, and the
+ * voice model rushes short lines (a six-word line came out at 6). */
+export const RUSHED_SPS = 5.5;
+
+/** Read a script line whole and finish it (ADR-083, ADR-084). With no
+ * speed given, the natural finish reads a rushed line once more, slower
+ * (at most a fifth), so it lands near 5 syllables a second. */
+export async function readLine(text: string, o: ReadOptions, signal: AbortSignal): Promise<Take> {
+  const opts = { voice: checkVoice(o.voice ?? DEFAULT_VOICE), speed: o.speed ?? DEFAULT_SPEED, quality: o.quality ?? "best", finish: o.finish ?? "natural" } as const;
+  const f = FINISHES[opts.finish];
+  const written = parseLine(text).written;
+  // A title's lines are sentences of their own.
+  const pronounce = checkPronounce(o.pronounce);
+  const line = parseLine(speechText(text), pronounce);
+  let spoken = line.spoken;
+  if (!spoken || !/[\p{L}\p{N}]/u.test(spoken)) throw new Error("Every line needs words to speak");
+  if (!/[.!?…,;:]$/.test(spoken)) spoken += ".";
+  const engine: Take["engine"] = {};
+  let how: Take["pauses"] = [];
+  const read = async (speed: number): Promise<Part> => {
+    how = [];
+    // Sentences past the model's reach are read in groups, joined at a
+    // sentence's end (or at the mark there).
+    let out: Part | null = null;
+    let from = 0;
+    for (const chunk of chunkSentences(spoken)) {
+      const at = spoken.indexOf(chunk, from);
+      const end = at + chunk.length;
+      const marks = line.pauses.filter((m) => m.at > at && m.at < end).map((m) => ({ at: m.at - at, seconds: m.seconds }));
+      const boundary = out ? line.pauses.find((m) => m.at >= from && m.at <= at) : undefined;
+      if (boundary) how.push({ seconds: boundary.seconds, how: "split" });
+      out = append(out, await readPart(chunk, marks, { ...opts, speed }, f, signal, engine, how), boundary?.seconds ?? Math.max(f.sentencePause, 0.45));
+      from = end;
+    }
+    return out!;
+  };
+  let speed: number = opts.speed;
+  let out = await read(speed);
+  if (opts.finish === "natural" && o.speed === undefined) {
+    const sps = written.split(/\s+/).reduce((n, w) => n + syllables(w), 0) / Math.max(0.3, out.last - out.first);
+    if (sps > RUSHED_SPS) {
+      speed = +Math.max(opts.speed * 0.8, (opts.speed * 5) / sps).toFixed(2);
+      out = await read(speed);
+    }
+  }
+  const { audio } = finishTake(out.audio, out.rate, f, hash(text));
+  const info: SpeechInfo = { text, voice: opts.voice, speed, quality: opts.quality, finish: opts.finish, ...(pronounce && Object.keys(pronounce).length ? { pronounce } : {}) };
+  return { audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine };
+}
+
+/** The takes as probed assets carrying their scripts, not yet in the
+ * project: the caller's edit adds them, so one undo removes them. */
+async function takeAssets(takes: Take[], signal: AbortSignal): Promise<Asset[]> {
+  const files = takes.map((t) => new File([encodeWav([t.audio], t.rate)], speechFileName(t.written), { type: "audio/wav" }));
+  const assets = await adoptAndProbe(files);
+  signal.throwIfAborted();
+  if (assets.length !== takes.length) throw new Error("A speech file could not be read back");
+  return assets.map((a, i) => ({ ...a, speech: takes[i].info }));
+}
+
+/** Clip settings the finish asks for (the compressor unless `enhance` is
+ * false, and natural's touch of room). */
+function finishClips(q: Project, ids: Id[], finish: FinishId, enhance: boolean | undefined): Project {
+  if (enhance !== false && finish !== "raw") q = runCommand(q, "set_compressor", { clip_ids: ids, preset: "voice" });
+  if (FINISHES[finish].reverb) q = runCommand(q, "set_reverb", { clip_ids: ids, preset: "room", ...NATURAL_REVERB });
+  return q;
+}
+
+const ids = (x: Project) => new Set(x.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+const added = (before: Set<string>, x: Project) => x.tracks.flatMap((t) => t.clips).filter((c) => !before.has(c.id));
+
+export async function textToSpeech(clipId?: Id, opts: ReadOptions = {}): Promise<{ clipId: Id; seconds: number }> {
   if (running) throw new Error("A voice is already being made");
   const p = store.get().project;
   const id = clipId ?? store.get().selection[0];
   const loc = id ? findClip(p, id) : null;
   if (!loc || loc.clip.type !== "text") throw new Error("Select a title to speak");
-  const text = speechText(loc.clip.text);
-  if (!text) throw new Error("The title has no words to speak");
+  if (!speechText(loc.clip.text)) throw new Error("The title has no words to speak");
   const abort = new AbortController();
   const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
   const tid = toast("Making the voice", "progress");
   set({ clipId: loc.clip.id, progress: 0, abort });
   try {
-    const progress = (x: number) => {
-      updateToast(tid, { progress: x });
-      if (running) set({ ...running, progress: x });
-    };
-    // The first run downloads the model (about 90 MB); then it is cached.
-    const { audio, rate } = await speak(text, opts.voice ?? DEFAULT_VOICE, opts.speed ?? 1, (x) => progress(x * 0.9), signal);
-    signal.throwIfAborted();
-    const [asset] = await adoptAndProbe([new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" })]);
-    signal.throwIfAborted();
-    if (!asset) throw new Error("The speech file could not be read back");
+    // The first run downloads the model; then it is cached.
+    const take = await readLine(loc.clip.text, opts, signal);
+    const [asset] = await takeAssets([take], signal);
     const at = findClip(store.get().project, loc.clip.id)?.clip.start ?? loc.clip.start;
+    const finish = opts.finish ?? "natural";
     let placed = "";
     edit("Text to speech", (q) => {
-      const before = new Set(q.tracks.flatMap((t) => t.clips.map((c) => c.id)));
-      const next = runCommand({ ...q, assets: [...q.assets, asset] }, "add_media_clip", { asset_id: asset.id, start: framesToSeconds(at, q.fps) });
-      placed = next.tracks.flatMap((t) => t.clips).find((c) => !before.has(c.id))?.id ?? "";
-      return next;
+      const before = ids(q);
+      q = runCommand({ ...q, assets: [...q.assets, asset] }, "add_media_clip", { asset_id: asset.id, start: framesToSeconds(at, q.fps) });
+      placed = added(before, q)[0]?.id ?? "";
+      return placed ? finishClips(q, [placed], finish, undefined) : q;
     });
     prepare(asset);
-    toast(`Added the voice, ${(audio.length / rate).toFixed(1)} s`);
-    return { clipId: placed, seconds: audio.length / rate };
+    toast(`Added the voice, ${take.seconds.toFixed(1)} s`);
+    return { clipId: placed, seconds: take.seconds };
   } catch (e) {
     if (signal.aborted) toast("Canceled");
     else toast(`The voice was not made: ${(e as Error).message || e}`, "error");
@@ -72,19 +232,24 @@ export async function textToSpeech(clipId?: Id, opts: { voice?: string; speed?: 
 }
 
 export interface VoiceLine {
+  /** Words to say, with pause marks ([pause], [pause 0.4], [beat]). */
   text: string;
-  /** Timeline seconds; default right after the line before. */
+  /** Timeline seconds; default after the line before and its pause. */
   at?: number;
   /** What the caption shows, when it differs from the words spoken. */
   caption?: string;
-}
-
-export interface VoiceoverOptions {
   voice?: string;
   speed?: number;
+  /** Seconds of silence before the next line (overrides `gap`). */
+  pauseAfter?: number;
+  /** The line ends a paragraph: a longer pause after it. */
+  paragraph?: boolean;
+}
+
+export interface VoiceoverOptions extends ReadOptions {
   /** Where the first line starts (seconds), default 0. */
   start?: number;
-  /** Seconds between lines, default 0.4. */
+  /** Seconds between every pair of lines; default by each line's ending. */
   gap?: number;
   /** A caption for each line, timed to its voice (default true). */
   captions?: boolean;
@@ -96,57 +261,53 @@ export interface VoiceoverOptions {
 }
 
 /**
- * Narrate a script (MCP add_voiceover): every line spoken on this machine,
+ * Narrate a script (MCP add_voiceover): every line read on this machine,
  * placed one after another at its real length on a new Voiceover track,
- * with a caption for each timed to its voice, as one undo step. Building
- * the RacePulse promo, voices ran longer than the slots planned for them
- * and every line and caption had to be moved by hand; here the voice sets
- * the timing and the answer says where each line landed, so the footage
- * can be cut to it.
+ * with a caption for each timed to its voice, as one undo step with the
+ * speech files. Building the RacePulse promo, voices ran longer than the
+ * slots planned for them and every line and caption had to be moved by
+ * hand; here the voice sets the timing and the answer says where each
+ * line landed, so the footage can be cut to it.
  */
 export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {}) {
   if (running) throw new Error("A voice is already being made");
-  const texts = lines.map((l) => speechText(l.text));
-  if (!texts.length || texts.some((t) => !t)) throw new Error("Every line needs words to speak");
+  if (!lines.length) throw new Error("Every line needs words to speak");
+  for (const l of [opts, ...lines]) if (l.voice !== undefined) checkVoice(l.voice);
   const abort = new AbortController();
   const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast(`Making the voiceover: ${texts.length} lines`, "progress");
+  const tid = toast(`Making the voiceover: ${lines.length} lines`, "progress");
   set({ clipId: "", progress: 0, abort });
   try {
-    const files: File[] = [], seconds: number[] = [];
-    for (const [i, text] of texts.entries()) {
-      // ponytail: lines are spoken one by one in the one speech worker; a long
-      // script on a CPU can pass the desktop bridge's 300 s for one call.
-      const spoken = await speak(text, opts.voice ?? DEFAULT_VOICE, opts.speed ?? 1, undefined, signal);
-      const rate = spoken.rate, audio = trimSpeech(spoken.audio, rate);
-      signal.throwIfAborted();
-      seconds.push(audio.length / rate);
-      files.push(new File([encodeWav([audio], rate)], speechFileName(text), { type: "audio/wav" }));
-      updateToast(tid, { progress: (i + 1) / (texts.length + 1) });
+    const takes: Take[] = [];
+    for (const [i, l] of lines.entries()) {
+      // ponytail: lines are read one by one in the one speech worker; on a
+      // CPU without WebGPU a long script can pass the desktop bridge's 300 s.
+      takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed }, signal));
+      updateToast(tid, { progress: (i + 1) / (lines.length + 1) });
     }
-    // Probed, not imported: the edit below adds them with their clips.
-    const assets = await adoptAndProbe(files);
-    signal.throwIfAborted();
-    if (assets.length !== files.length) throw new Error("A speech file could not be read back");
-    const times = layoutLines(lines.map((l, i) => ({ at: l.at, seconds: seconds[i] })), opts.start ?? 0, opts.gap ?? 0.4);
-    const placed: { text: string; start: number; end: number; voice_clip: string; caption_clip?: string }[] = [];
+    const assets = await takeAssets(takes, signal);
+    const times = layoutLines(
+      lines.map((l, i) => ({ at: l.at, seconds: takes[i].seconds, before: takes[i].before, gap: (l.pauseAfter ?? opts.gap ?? pauseAfter(l.text, l.paragraph)) + takes[i].after })),
+      opts.start ?? 0,
+    );
+    const finish = opts.finish ?? "natural";
+    const placed: { text: string; start: number; end: number; seconds: number; voice: string; speed: number; voice_clip: string; caption_clip?: string; pauses?: Take["pauses"] }[] = [];
     edit("Voiceover", (q) => {
       placed.length = 0;
-      const ids = (x: Project) => new Set(x.tracks.flatMap((t) => t.clips.map((c) => c.id)));
-      const added = (before: Set<string>, x: Project) => x.tracks.flatMap((t) => t.clips).filter((c) => !before.has(c.id));
       q = { ...q, assets: [...q.assets, ...assets] };
       const track = createTrack("audio", "Voiceover");
       q = addTrack(q, track);
       assets.forEach((asset, i) => {
         const before = ids(q);
         q = runCommand(q, "add_media_clip", { asset_id: asset.id, start: times[i].start, track_id: track.id });
-        placed.push({ text: lines[i].text, ...times[i], voice_clip: added(before, q)[0]?.id ?? "" });
+        const t = takes[i];
+        placed.push({ text: t.written, ...times[i], seconds: +t.seconds.toFixed(3), voice: t.info.voice, speed: t.info.speed, voice_clip: added(before, q)[0]?.id ?? "", ...(t.pauses.length ? { pauses: t.pauses } : {}) });
       });
-      if (opts.enhance !== false) q = runCommand(q, "set_compressor", { clip_ids: placed.map((l) => l.voice_clip), preset: "voice" });
+      q = finishClips(q, placed.map((l) => l.voice_clip), finish, opts.enhance);
       if (opts.captions !== false) {
         const before = ids(q);
         q = runCommand(q, "add_captions", {
-          captions: lines.map((l, i) => ({ text: l.caption ?? l.text, start: times[i].start, end: times[i].end })),
+          captions: lines.map((l, i) => ({ text: l.caption ?? takes[i].written, start: times[i].start, end: times[i].end })),
           ...(opts.captionStyle ? { style: opts.captionStyle } : {}),
           ...(opts.captionY !== undefined ? { y: opts.captionY } : {}),
         });
@@ -156,8 +317,9 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       return q;
     });
     assets.forEach(prepare);
-    toast(`Added the voiceover, ${times.at(-1)!.end.toFixed(1)} s`);
-    return { lines: placed, end: times.at(-1)!.end };
+    const end = Math.max(...times.map((t) => t.end));
+    toast(`Added the voiceover, ${end.toFixed(1)} s`);
+    return { lines: placed, end, finish, engine: { quality: opts.quality ?? "best", ...takes[0].engine } };
   } catch (e) {
     if (signal.aborted) toast("Canceled");
     else toast(`The voiceover was not made: ${(e as Error).message || e}`, "error");

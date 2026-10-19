@@ -13,7 +13,7 @@ import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
-import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
+import { textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
@@ -309,7 +309,7 @@ const mcpHost: McpHost = {
     bmp.close();
     return jpeg(c);
   },
-  voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
+  voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) => (tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[]) : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options)),
   listProjects: async () => {
     const open = currentScreen() === "editor" ? store.document().id : null;
