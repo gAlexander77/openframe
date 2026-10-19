@@ -20,7 +20,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-dialog = "2"
 
-# Job Objects: a crashed app must not leave ffmpeg.exe running (ffmpeg.rs).
-# Already in the tree through tauri; this only turns on three API modules.
+# Job Objects: a crashed app must not leave ffmpeg.exe running (ffmpeg.rs),
+# and ShellExecute opens an agent CLI's install guide (agent_cli.rs).
+# Already in the tree through tauri; this only turns on API modules.
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_System_JobObjects", "Win32_System_Threading", "Win32_System_Console", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

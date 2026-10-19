@@ -7,6 +7,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CustomSource, type StreamTargetChunk } from "mediabunny";
+import type { AgentCliResult } from "../lib/agentSetup";
 import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
 
 const MEDIA_EXTENSIONS = {
@@ -110,6 +111,8 @@ export const desktop: Platform = {
       if (on) await listenForAgents();
       return invoke<AgentEndpoint | null>("mcp_enable", { on });
     },
+    addTo: (cli) => invoke<AgentCliResult>("agent_cli_add", { cli }),
+    openInstallPage: (cli) => invoke<void>("agent_cli_install_page", { cli }),
   },
 
   kind: "desktop",

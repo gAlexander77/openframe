@@ -37,6 +37,13 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 .tool-picker .menu { position: fixed; top: auto; left: auto; margin-top: 4px; min-width: 220px; }
 .fit-btn { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
 .zoom-slider { width: 110px; accent-color: var(--text-1); }
+/* The toolbar queries its own width. Its two tool groups take 844 px
+   (416 each and the gap, measured 2026-10-18); beside the docked AI
+   assistant (ADR-064) the timeline can be narrower, so the zoom slider
+   goes first and Fit and the zoom buttons stay. Remeasure when a tool
+   joins the bar (the dock drive checks the toolbar fits). */
+.tl-toolbar { container-type: inline-size; }
+@container (max-width: 844px) { .zoom-slider { display: none; } }
 
 /* ---- scroller and layers ----------------------------------------------------------- */
 .tl-scroll { position: relative; overflow: auto; min-height: 0; }

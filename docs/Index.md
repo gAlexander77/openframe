@@ -182,6 +182,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
   keep their layout in every shape, anchored where they sat, fitted to
   the safe area.
+- [[ADR-064 The AI assistant docks as a column the editor makes room for]] —
+  a full-height column; the editor scales to what is left and the library
+  steps aside below four columns' worth of window.
+- [[ADR-065 One-click agent setup runs the agent's own CLI]] — Codex and
+  Claude Code add the stdio bridge with their own `mcp add`, never over an
+  existing entry; the Codex syntax and its sources.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

@@ -3,6 +3,7 @@
 // app branches on platform.
 
 import type { Source, StreamTargetChunk } from "mediabunny";
+import type { AgentCli, AgentCliResult } from "../lib/agentSetup";
 import type { Project } from "../lib/project/types";
 
 export interface ImportedFile {
@@ -57,6 +58,12 @@ export interface Platform {
    * stdio bridge, ADR-009). Returns how to connect, or null when off. */
   agents?: {
     enable(on: boolean): Promise<AgentEndpoint | null>;
+    /** Desktop: run Codex's or Claude Code's own `mcp add` for the stdio
+     * bridge, when that CLI is on PATH; never over an existing entry
+     * (ADR-065). */
+    addTo?(cli: AgentCli): Promise<AgentCliResult>;
+    /** Desktop: open the CLI's install guide in the default browser. */
+    openInstallPage?(cli: AgentCli): Promise<void>;
   };
 
   /** fetch for the local model servers (Ollama, LM Studio). The desktop
@@ -94,6 +101,9 @@ export interface AgentEndpoint {
   token: string;
   /** Command line for clients that launch MCP servers as processes. */
   stdio: string;
+  /** The app's exe alone, for clients that take the command and its
+   * arguments apart (Codex's config.toml). */
+  exe: string;
 }
 
 export interface RenderJob {

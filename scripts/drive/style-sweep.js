@@ -1,9 +1,10 @@
-// Styling sweep: opens every library tab, inspector tab, menu and dialog at
-// three window sizes and checks each state for layout faults a screenshot
-// review misses: page scroll, clipped text, text spilling out of controls,
-// controls overlapping, controls cut off by a non-scrolling parent,
-// unlabeled controls and low text contrast. Passes when no state has a
-// fault; screenshots go to scratch/style/ for a look by eye.
+// Styling sweep: opens every library tab, inspector tab, menu, dialog and
+// the AI assistant's column at three window sizes and checks each state
+// for layout faults a screenshot review misses: page scroll, clipped
+// text, text spilling out of controls, controls overlapping, controls cut
+// off by a non-scrolling parent, unlabeled controls and low text
+// contrast. Passes when no state has a fault; screenshots go to
+// scratch/style/ for a look by eye.
 async (page) => {
   const sizes = [
     [1600, 950],
@@ -143,6 +144,11 @@ async (page) => {
     if (close) await page.keyboard.press("Escape").catch(() => {});
   };
   page.setDefaultTimeout(5000);
+  // The AI assistant lists the models installed on this computer: answer
+  // for Ollama before its panel opens, so no real model's name is captured.
+  await page.context().route("http://127.0.0.1:11434/api/tags", (r) =>
+    r.fulfill({ headers: { "Access-Control-Allow-Origin": "*" }, contentType: "application/json", body: JSON.stringify({ models: [{ name: "llama3.1:8b" }] }) }),
+  );
   for (const [width, height] of sizes) {
     await page.setViewportSize({ width, height });
     await page.reload();
@@ -203,6 +209,13 @@ async (page) => {
       await page.locator(".media-clear", { hasText: "Manage media" }).click();
     }, true);
     await step(`${v}-source`, () => page.locator(".media-card").first().dblclick(), true);
+    // The AI assistant docked beside the editor (ADR-064), both its views.
+    await step(`${v}-assistant`, async () => {
+      await page.locator(".assistant-btn").click();
+      await page.locator(".assistant-status", { hasText: "Ready" }).waitFor();
+    });
+    await step(`${v}-assistant-agents`, () => page.getByRole("tab", { name: "Connect agents" }).click());
+    await page.locator(".assistant-btn").click().catch(() => {});
   }
   const by = {};
   for (const f of faults) (by[f.kind] ??= []).push(f);

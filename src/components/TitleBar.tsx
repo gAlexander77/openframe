@@ -5,7 +5,7 @@ import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run, tipFor } from "../state/actions";
-import { toggleAssistant } from "../state/assistant";
+import { toggleAssistant, useAssistantValue } from "../state/assistant";
 import { saveOtio } from "../state/export";
 import { closeProject } from "../state/project";
 import { store, useEditor } from "../state/store";
@@ -26,6 +26,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const [editing, setEditing] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [copyDialog, setCopyDialog] = useState(false);
+  const assistantOpen = useAssistantValue((s) => s.open);
 
   // Read the window, not just our button: caption double-click and the OS
   // can change maximization too. Clean up even if registration finishes late.
@@ -189,7 +190,12 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
       </div>
       <div className="titlebar-right">
         {!props.home && (
-          <button className="btn ghost assistant-btn" data-tip="Ask a model on this computer to make edits" onClick={() => toggleAssistant()}>
+          <button
+            className="btn ghost assistant-btn"
+            aria-pressed={assistantOpen}
+            data-tip={assistantOpen ? "Close the AI assistant" : "Ask a model on this computer to make edits"}
+            onClick={() => toggleAssistant()}
+          >
             <WandSparkles size={14} /> AI assistant
           </button>
         )}

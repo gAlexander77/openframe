@@ -37,6 +37,9 @@ pub struct McpInfo {
     pub url: String,
     pub token: String,
     pub stdio: String,
+    /// This exe's path, for clients configured with a command and its
+    /// arguments apart (Codex's config.toml).
+    pub exe: String,
 }
 
 #[derive(Serialize, Clone)]
@@ -248,6 +251,7 @@ pub fn mcp_enable(
         url: format!("http://127.0.0.1:{PORT}/mcp"),
         token: token.clone(),
         stdio: format!("\"{exe}\" --mcp-stdio"),
+        exe,
     };
     if state.running.swap(true, Ordering::SeqCst) {
         return Ok(Some(info));
