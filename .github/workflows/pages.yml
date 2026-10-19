@@ -1,0 +1,61 @@
+# Builds the website (openframe-website/) and deploys it to GitHub Pages at
+# https://galexander77.github.io/openframe/. It is the only workflow that
+# deploys anything, and it runs only when main changes the site, the docs
+# the site reads (docs/), or this file, or when started by hand.
+# It does nothing until the repository's Settings > Pages > Source is set
+# to "GitHub Actions" (docs/Website.md, docs/decisions/ADR-077).
+name: Website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "openframe-website/**"
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits for the one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: openframe-website
+    env:
+      ASTRO_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: openframe-website/package-lock.json
+      - run: npm ci
+      # astro check, then astro build; the MCP reference and the docs pages
+      # are rendered from ../docs here.
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: openframe-website/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
