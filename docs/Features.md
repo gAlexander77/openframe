@@ -229,8 +229,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `Cargo.lock` when the app is built (`src/lib/about.ts`), so the list
   cannot drift. The desktop app opens these pages by name through Rust
   (`about_open`), never a URL from the webview; the web build opens a tab.
-- **Preferences** (Edit > Preferences, Ctrl+,; Premiere's Timeline
-  preferences): the lengths new pictures (5 s), titles and effect layers
+- **Preferences** (the gear in the title bar, Edit > Preferences, Ctrl+,;
+  Home too; Premiere's Timeline preferences): the lengths new pictures (5 s), titles and effect layers
   (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap
   and layout, never in a project.
 
@@ -299,7 +299,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
 - Playback on the audio clock with output-latency compensation; J/K/L
-  shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
+  shuttle; **Go to start** and **Go to end** buttons around the frame
+  steps in the transport (CapCut's and Premiere's, the keymap's Home and
+  End actions, so their tooltips name the keys as rebound); **Loop** (the transport's repeat button, Mod+L) goes round the
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
   click the current timecode to **type where to go** (Premiere's Playhead

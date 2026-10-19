@@ -67,6 +67,9 @@ exported (a 16:9 project stays 1920×1080) and offers **Make the canvas
 When a mix is normalized to its loudness target, the finished export says
 so in green; an amber note means something did not go as asked.
 
+Under the player, the outer buttons jump to the start and the end of the
+timeline, and the inner ones step a frame. The gear at the top right opens
+**Preferences** (also on Home); the keyboard beside it lists the shortcuts.
 The app's shortcut panel is the source for the current keyboard bindings.
 [[Features]] explains the deeper trim, color, keyframe, and audio tools.
 

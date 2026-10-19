@@ -60,8 +60,10 @@
    the timeline. Remeasure when a control joins the bar (the style sweep's
    clipped-text check catches a cut timecode). */
 .transport { container-type: inline-size; }
-@container (max-width: 532px) { .tc-sep, .tc-total { display: none; } }
-@container (max-width: 470px) { .timecodes { display: none; } }
+/* Widths that keep the timecodes whole beside the transport's seven
+   buttons (Go to start and Go to end took 70 px more). */
+@container (max-width: 602px) { .tc-sep, .tc-total { display: none; } }
+@container (max-width: 540px) { .timecodes { display: none; } }
 .tc-now { color: var(--accent); font-weight: 600; }
 button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: text; }
 button.tc-now:hover { background: var(--bg-3); }

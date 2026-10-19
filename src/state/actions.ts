@@ -367,10 +367,11 @@ export function onKeyDown(e: KeyboardEvent) {
  * the app's shortcuts itself (dialogs keep the rest from the editor). */
 export const actionFor = (e: KeyboardEvent) => index.get(chordOf(e, isMac));
 
-/** Home keeps project entry points and Help, without editing the closed project. */
+/** Home keeps project entry points, Help and Preferences (per viewer, not
+ * per project), without editing the closed project. */
 export function onHomeKeyDown(e: KeyboardEvent) {
   const id = index.get(chordOf(e, isMac));
-  if (id !== "newProject" && id !== "openProject" && id !== "showShortcuts") return;
+  if (id !== "newProject" && id !== "openProject" && id !== "showShortcuts" && id !== "showPreferences") return;
   e.preventDefault();
   run(id);
 }

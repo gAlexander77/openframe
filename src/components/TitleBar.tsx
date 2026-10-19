@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
-import { Copy, Download, Keyboard, Minus, Square, WandSparkles, X } from "../icons";
+import { Copy, Download, Keyboard, Minus, Settings, Square, WandSparkles, X } from "../icons";
 import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
@@ -203,6 +203,9 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         )}
         <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip={tipFor("showShortcuts")} onClick={props.onShortcuts}>
           <Keyboard />
+        </button>
+        <button className="icon-btn" aria-label="Preferences" data-tip={tipFor("showPreferences")} onClick={() => run("showPreferences")}>
+          <Settings />
         </button>
         {!props.home && (
           <button
