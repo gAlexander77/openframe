@@ -66,7 +66,7 @@ export function LutPanel({ clip }: { clip: Clip }) {
           }}
         />
         <Row label="LUT">
-          <select className="field" value={current?.id ?? ""} onChange={(e) => choose(e.target.value)} aria-label="LUT">
+          <select className="field" value={current?.id ?? ""} onChange={(e) => choose(e.target.value)} aria-label="LUT" data-tip={file ? display(file.name) : undefined}>
             <option value="">None</option>
             {luts?.map((l) => (
               <option key={l.id} value={l.id}>

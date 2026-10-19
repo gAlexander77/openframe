@@ -1157,16 +1157,18 @@ function EffectsSection({ clip }: { clip: Clip }) {
           <div key={fx.id} className={`fx-card${fx.enabled ? "" : " off"}`}>
             <div className="fx-head">
               <Sparkles size={12} />
-              <span>{def.label}</span>
-              <button className="icon-btn small" aria-label="Move effect up" data-tip="Move effect up" disabled={index === 0} onClick={() => change("Move effect up", "move_up", fx.id)}><ArrowUp /></button>
-              <button className="icon-btn small" aria-label="Move effect down" data-tip="Move effect down" disabled={index === clip.effects.length - 1} onClick={() => change("Move effect down", "move_down", fx.id)}><ArrowDown /></button>
-              <button className="icon-btn small" aria-label="Reset effect" data-tip="Reset effect and its keyframes" onClick={() => change("Reset effect", "reset", fx.id)}><RotateCcw /></button>
-              <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => change(fx.enabled ? "Disable effect" : "Enable effect", fx.enabled ? "disable" : "enable", fx.id)}>
-                {fx.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
-              </button>
-              <button className="icon-btn small" aria-label="Remove effect" data-tip="Remove effect" onClick={() => change("Remove effect", "remove", fx.id)}>
-                <Trash2 size={12} />
-              </button>
+              <span className="fx-name">{def.label}</span>
+              <span className="fx-tools">
+                <button className="icon-btn small" aria-label="Move effect up" data-tip="Move effect up" disabled={index === 0} onClick={() => change("Move effect up", "move_up", fx.id)}><ArrowUp /></button>
+                <button className="icon-btn small" aria-label="Move effect down" data-tip="Move effect down" disabled={index === clip.effects.length - 1} onClick={() => change("Move effect down", "move_down", fx.id)}><ArrowDown /></button>
+                <button className="icon-btn small" aria-label="Reset effect" data-tip="Reset effect and its keyframes" onClick={() => change("Reset effect", "reset", fx.id)}><RotateCcw /></button>
+                <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => change(fx.enabled ? "Disable effect" : "Enable effect", fx.enabled ? "disable" : "enable", fx.id)}>
+                  {fx.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
+                </button>
+                <button className="icon-btn small" aria-label="Remove effect" data-tip="Remove effect" onClick={() => change("Remove effect", "remove", fx.id)}>
+                  <Trash2 size={12} />
+                </button>
+              </span>
             </div>
             {Object.entries(def.params).map(([k, pd]) =>
               pd.options ? (
@@ -1203,7 +1205,7 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
   );
   return (
     <div className="font-picker">
-      <select className="field" value={value} aria-label="Font" onChange={(e) => onChange(e.target.value)}>
+      <select className="field" value={value} aria-label="Font" data-tip={value} onChange={(e) => onChange(e.target.value)}>
         {!known.has(value) && <option value={value}>{value} (not on this computer)</option>}
         <optgroup label="Built in">{FONTS.map(option)}</optgroup>
         {imported.length > 0 && <optgroup label="Imported">{imported.map(option)}</optgroup>}
@@ -1264,7 +1266,7 @@ function SavedStylesSection({ clip }: { clip: TextClip }) {
                 <span className="style-sample" aria-hidden="true" style={{ fontFamily: t.style.font, color: t.style.color, background: swatchFor(t.style.color), fontWeight: fontWeight(t.style), fontStyle: t.style.italic ? "italic" : undefined }}>
                   Aa
                 </span>
-                {t.name}
+                <span className="style-chip-name">{t.name}</span>
               </button>
               <button className="icon-btn small" aria-label={`Delete style ${t.name}`} data-tip="Delete style" onClick={() => deleteTextStyle(t.id)}>
                 <X size={12} />
@@ -1353,7 +1355,7 @@ function WordStyle({ clip }: { clip: TextClip }) {
   const current = runStyle(clip.style, word.index);
   const apply = (patch: Record<string, unknown>) => edit("Style text range", p => runCommand(p, "style_text_range", { clip_id: clip.id, start: word.index, end: word.index + word[0].length, ...patch }));
   return <Section title="Style range">
-    <Row label="Word"><select className="field" aria-label="Style word" value={Math.min(index, words.length - 1)} onChange={e => setIndex(Number(e.target.value))}>
+    <Row label="Word"><select className="field" aria-label="Style word" data-tip={word[0]} value={Math.min(index, words.length - 1)} onChange={e => setIndex(Number(e.target.value))}>
       {words.map((w, i) => <option key={i} value={i}>{i + 1}. {w[0]}</option>)}
     </select></Row>
     <Row label="Color"><ColorInput label="Word color" value={current.color} onChange={color => apply({ color })} /></Row>
@@ -1748,7 +1750,7 @@ function BrandSection() {
         <FontPicker value={b.fonts.body} onChange={(font) => set("Brand font", { body_font: font })} />
       </Row>
       <Row label="Logo">
-        <select className="field" aria-label="Brand logo" value={b.logos?.main ?? ""} onChange={(e) => set("Brand logo", { logo: e.target.value })}>
+        <select className="field" aria-label="Brand logo" data-tip={pictures.find((a) => a.id === b.logos?.main)?.name} value={b.logos?.main ?? ""} onChange={(e) => set("Brand logo", { logo: e.target.value })}>
           <option value="">None</option>
           {pictures.map((a) => (
             <option key={a.id} value={a.id}>

@@ -33,6 +33,9 @@
 }
 .segmented button:hover { color: var(--text-1); }
 .segmented button.on { background: var(--bg-3); color: var(--text-1); }
+/* When it does wrap, the buttons share each line evenly. Scoped: the
+   export dialog has a .segmented of its own. */
+:where(.inspector-panel, .scopes-head) .segmented button { flex: 1 0 auto; }
 
 /* sections */
 .insp-section { border-bottom: 1px solid var(--line); }
@@ -52,28 +55,50 @@
 .insp-hint { margin: 6px 0 0; font-size: var(--fs-xs); color: var(--text-3); line-height: 1.5; }
 .insp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 
-/* a row: label | slider | number | keyframes */
+/* a row: label | slider | number | keyframes. 64 px of number holds
+   "-1920 px", "20000 Hz" and "100.00 x". */
 .insp-row {
-  display: grid; grid-template-columns: 82px 1fr 74px 74px; align-items: center; gap: 8px;
+  display: grid; grid-template-columns: 82px minmax(0, 1fr) 64px 74px; align-items: center; gap: 8px;
   min-height: 32px;
 }
-.insp-row.plain { grid-template-columns: 70px minmax(0, 1fr); }
+/* A control beside its label, starting where the sliders do. One that
+   cannot fit there (a segmented row or a color field in a narrow
+   inspector, a select under 120 px) wraps under its label and takes the
+   row's width, instead of wrapping inside itself or running out of the
+   panel (Channels, Case and the brand colors did at 248 px). */
+.insp-row.plain { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.insp-row.plain > .insp-label { flex: 0 0 82px; }
+.insp-row.plain > .insp-control { flex: 1 1 120px; }
+.insp-row.plain > .insp-control:has(> .segmented, > .style-toggles, > .spoken-word, > .flip-pair) { flex: 1 1 auto; }
+/* A color field stays beside its label down to its narrowest hex box. */
+.insp-row.plain > .insp-control:has(> .color-input) { flex: 1 1 124px; }
+.insp-row.plain > .insp-control:has(> .toggle:only-child) { flex: 0 0 auto; }
 /* A control as wide as a slider and its number, beside a key cluster. */
 .insp-row > .insp-wide { grid-column: 2 / span 2; min-width: 0; }
 /* At the splitter's narrowest (260 px) the four columns left the slider no
-   width, just its thumb; a narrow inspector gives the slider its own line.
+   width, just its thumb; a narrow inspector gives the slider (or the wide
+   control) a line of its own with the key cluster, and the label its
+   number's line: a third column there left "Position X" 32 px at 230.
    The panel's layout containment traps no popover: EaseMenu is portaled
    and dialogs sit in the top layer. */
 .inspector-panel { container-type: inline-size; }
 @container (max-width: 339px) {
-  .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px 74px; row-gap: 0; }
-  .insp-row:not(.plain) > .insp-slider { grid-column: 1 / -1; grid-row: 2; }
-  .insp-row:not(.plain) > .insp-wide { grid-column: 1 / span 2; grid-row: 2; }
+  .insp-row:not(.plain) { grid-template-columns: minmax(0, 1fr) 74px; row-gap: 0; }
+  .insp-row:not(.plain) > .insp-label { grid-area: 1 / 1; }
+  .insp-row:not(.plain) > .insp-num { grid-area: 1 / 2; }
+  .insp-row:not(.plain) > .insp-slider { grid-area: 2 / 1; }
+  .insp-row:not(.plain) > .insp-keys { grid-area: 2 / 2; }
+  /* A wide control has no number: its keys take the label's line. */
+  .insp-row:not(.plain) > .insp-wide { grid-area: 2 / 1 / 3 / -1; }
+  .insp-row:not(.plain):has(> .insp-wide) > .insp-keys { grid-area: 1 / 2; }
 }
 .insp-label { font-size: var(--fs-xs); color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .insp-control { min-width: 0; }
 .insp-control .field, .insp-row select.field { width: 100%; }
-.insp-num { display: flex; align-items: center; gap: 2px; font-size: var(--fs-xs); color: var(--text-2); }
+/* A long name (a LUT, a font, a logo) ends in an ellipsis, and its select
+   carries the whole name as its tip. */
+.inspector-panel select.field { text-overflow: ellipsis; }
+.insp-num { display: flex; align-items: center; justify-content: flex-end; gap: 2px; font-size: var(--fs-xs); color: var(--text-2); }
 .insp-num .field { width: 100%; height: 24px; padding: 0 6px; text-align: right; background: var(--bg-inset); }
 .insp-unit { color: var(--text-3); font-size: 10px; min-width: 12px; }
 
@@ -107,7 +132,10 @@
 .key-nav:not(:disabled):hover, .key-toggle:hover { color: var(--text-1); }
 .key-toggle.has { color: var(--text-2); }
 .key-toggle { width: 24px; }
-.key-toggle.on { color: var(--accent); transform: scale(1.15); }
+/* The glyph grows, not the button: a scaled button covered its arrows. */
+.key-toggle svg { transition: transform var(--t-fast) var(--ease-spring); }
+.key-toggle.on { color: var(--accent); }
+.key-toggle.on svg { transform: scale(1.15); }
 .key-toggle.section-key { width: 24px; }
 .key-toggle.section-key.some { color: var(--accent); opacity: 0.6; }
 .key-ease {
@@ -120,7 +148,7 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 
 /* toggles, chips, colors */
 .toggle {
-  position: relative; width: 30px; height: 17px; padding: 0;
+  position: relative; flex: none; width: 30px; height: 17px; padding: 0;
   border: 0; border-radius: 17px; background: var(--bg-3);
   transition: background var(--t-fast);
 }
@@ -140,21 +168,27 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .chip-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .style-toggles { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .speed-presets, .fx-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.color-input { display: inline-flex; align-items: center; gap: 6px; }
-.color-input input[type="color"] { width: 26px; height: 24px; padding: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: none; cursor: pointer; }
-.color-input .field { width: 84px; height: 24px; }
+.color-input { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.color-input input[type="color"] { flex: none; width: 26px; height: 24px; padding: 0; border: 1px solid var(--line-strong); border-radius: 4px; background: none; cursor: pointer; }
+/* The hex field gives up its spare width before the row overflows. */
+.color-input .field { flex: 0 1 84px; min-width: 64px; height: 24px; }
+.color-input .icon-btn { flex: none; }
 .text-area { width: 100%; min-height: 64px; padding: 8px; resize: vertical; line-height: 1.4; margin-bottom: 6px; }
 
 /* effects list */
 .fx-card { margin-top: 8px; padding: 6px 8px 8px; border-radius: var(--radius); background: var(--bg-inset); animation: rise-in var(--t-med) var(--ease-out); }
 .fx-card.off { opacity: 0.55; }
-.fx-head { display: flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text-1); }
+/* The name keeps its line; the five buttons wrap under it, to the right,
+   when both do not fit (a narrow inspector cut "RGB split" to "RGB s"). */
+.fx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; min-height: 26px; font-size: var(--fs-sm); color: var(--text-1); }
 .fx-stack { border: 0; padding: 0; margin: 0; min-width: 0; }
-.fx-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-name { flex: 1 0 auto; max-width: calc(100% - 18px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fx-tools { display: flex; gap: 4px; margin-left: auto; }
 .fx-head > svg, .fx-head button { flex-shrink: 0; }
 
 /* animation tiles: each previews its motion on hover */
-.anim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; padding: 10px 12px; }
+/* Three across even at the desktop window's narrowest inspector. */
+.anim-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 8px; padding: 10px 12px; }
 .anim-tile {
   display: grid; gap: 4px; justify-items: center; padding: 6px 4px;
   border: 1px solid transparent; border-radius: var(--radius); background: var(--bg-2);
@@ -270,9 +304,17 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
   font-size: var(--fs-sm); line-height: 1.4; user-select: text;
 }
 .cap-text:focus { outline: none; border-color: var(--accent); background: var(--bg-inset); }
+/* A narrow inspector puts the time over the text, which keeps the width. */
+@container (max-width: 339px) {
+  .cap-row { grid-template-columns: 22px minmax(0, 1fr); row-gap: 0; }
+  .cap-text { grid-column: 2; }
+}
 
 .canvas-blurs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.attribute-actions { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+/* Copy and Paste share one line at the desktop window's 248 px inspector
+   (they wrapped by 4 px); the text still lines up with the rows below. */
+.attribute-actions { gap: 0; margin-bottom: 12px; padding: 0 4px 8px; border-bottom: 1px solid var(--line); }
+.attribute-actions .btn { padding: 0 8px; }
 
 /* CapCut's align row under Transform */
 .align-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; width: fit-content; max-width: 100%; margin-top: 8px; padding: 2px; border-radius: var(--radius); background: var(--bg-inset); }
@@ -302,8 +344,12 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 
 /* Saved text styles: a sample of each look, then its name. */
 .style-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.style-chip { display: inline-flex; align-items: center; gap: 2px; }
-.style-chip .chip-btn { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.style-chip { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; }
+/* A long name ends in an ellipsis (its tip names it); the delete button
+   keeps its size. */
+.style-chip .chip-btn { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding-left: 3px; }
+.style-chip .style-sample, .style-chip .icon-btn { flex: none; }
+.style-chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .style-sample { display: inline-grid; place-items: center; width: 22px; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
 .style-name { flex: 1; min-width: 0; }
 

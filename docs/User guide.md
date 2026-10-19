@@ -51,6 +51,16 @@ clip; Escape puts the old value back. An empty or non-numeric entry
 changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
 open or closed as you left them, across clips and reloads.
 
+The inspector fits any width its splitter gives it. Narrower than about
+340 px, each slider takes a line of its own, with its keyframe buttons,
+under its label and number; a choice that no longer fits beside its label
+(the audio channels, the reverb presets, a color) moves under the label
+instead of wrapping in place. A long name in a list (a LUT, a font, a
+logo) ends in "…" and shows in full when you point at it. A number
+shows as many decimals as its slider moves by (a letterbox ratio of
+2.39:1 reads 2.39). The easing menu opens above its button when there is
+no room below.
+
 In a clip's **Animation** tab, each preset tile pictures its motion: the
 layer where it settles and a dashed outline where it starts (In), ends
 (Out) or swings to (loops); hover a tile to see it move. Picking one plays

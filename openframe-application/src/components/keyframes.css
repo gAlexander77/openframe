@@ -71,7 +71,9 @@
 .kf-lane-label:hover { color: var(--text-1); background: var(--bg-2); }
 .kf-lane-label.focus { color: var(--accent); background: var(--accent-soft); }
 .kf-lane-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.kf-lane-label .key-toggle { width: 18px; height: 18px; flex: none; }
+/* As tall as the lane allows: lanes shrink to 14 px in a short dock, where
+   18 px buttons overlapped their neighbors and the last ran out of it. */
+.kf-lane-label .key-toggle { width: 18px; height: 100%; max-height: 18px; flex: none; }
 .kf-tick {
   position: absolute; right: 8px;
   transform: translateY(-50%);
@@ -117,7 +119,7 @@
 }
 
 /* ---- easing menu ----------------------------------------------------------------- */
-.ease-menu { position: fixed; z-index: 300; min-width: 300px; }
+.ease-menu { position: fixed; z-index: 300; min-width: 300px; max-height: calc(100vh - 12px); overflow-y: auto; }
 .ease-menu-title { padding: 4px 8px 6px; font-size: var(--fs-xs); font-weight: 600; color: var(--text-3); }
 /* Scoped under .ease-menu: shell.css's .menu-item loads later and would win. */
 .ease-menu .ease-item { grid-template-columns: 18px 30px 1fr auto; gap: 8px; }
