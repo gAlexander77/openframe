@@ -77,6 +77,9 @@ of the documentation and how agents use it as shared working memory.
 - [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
   entirely through MCP: how it was made, what worked, fourteen limits
   ranked by what they cost, and eleven product issues met while recording
+- [[Launch film 3 through MCP 2026-10-19]] — the 68 s voiced launch film and
+  its vertical cut, scored and narrated in the app through MCP; the limits
+  met, ranked (re-laying out for 9:16, layouts that crop, runs lost on edit).
 - [[Natural voiceover 2026-10-19]] — what a natural read measures (pace,
   pauses, melody, silence, level), what Kokoro does against it at each
   precision, speed and voice, and what the natural finish changed
