@@ -269,7 +269,10 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .ms-circle .ms-icon { border-radius: 50%; }
 
 /* project details */
-.ratio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(36px, 1fr)); gap: 4px; }
+/* Seven ratios: four over three, or one row in a wide inspector; auto-fit
+   left 21:9 alone on a last row at most widths. */
+.ratio-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+@container (min-width: 480px) { .ratio-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
 .ratio {
   display: grid; gap: 3px; justify-items: center; padding: 4px 0;
   border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text-2); font-size: 10px;

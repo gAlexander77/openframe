@@ -85,6 +85,13 @@
 .wheel-head { display: flex; align-items: center; gap: 2px; min-height: 22px; }
 .wheel-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text-1); }
 .wheel-tone { flex: 1; margin-left: 6px; font-size: 10.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Two wheels a row in a 320-480 px inspector cut the tone to "Mi…": there
+   it takes the line under the title. */
+@container (max-width: 239px) {
+  .wheel-head { flex-wrap: wrap; }
+  .wheel-title { margin-right: auto; }
+  .wheel-tone { order: 1; flex-basis: 100%; margin-left: 0; }
+}
 .wheel-face {
   position: relative; justify-self: center; width: 100%; max-width: 168px; aspect-ratio: 1;
   border-radius: 50%; cursor: crosshair; touch-action: none;
