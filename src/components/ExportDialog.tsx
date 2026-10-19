@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { encodableVideoCodecs } from "../engine/export";
-import { Check, ChevronDown, CircleAlert, Download, Film, FolderOpen, ImageDown, Loader2, X } from "../icons";
+import { Check, ChevronDown, CircleAlert, Download, Clock, Film, FolderOpen, ImageDown, Loader2, X } from "../icons";
 import {
   AUDIO_FORMATS,
   CODEC_LABELS,
@@ -496,7 +496,7 @@ function SettingsView() {
 
       <footer className="export-foot">
         <div className="export-summary num">
-          <Film size={14} />
+          <Clock size={14} />
           <span>Duration: {formatDuration(plan.seconds)}</span>
           <span className="export-dot" />
           <span>Size: {formatSize(plan.estimatedBytes)}</span>

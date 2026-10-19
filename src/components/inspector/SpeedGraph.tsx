@@ -5,7 +5,7 @@
 // and reset; the clip's length follows live and the playhead line tracks.
 
 import { useRef, useState } from "react";
-import { Plus, RotateCw, Trash2 } from "../../icons";
+import { Plus, RotateCcw, Trash2 } from "../../icons";
 import * as ops from "../../lib/project/ops";
 import type { AudioClip, Project, VideoClip } from "../../lib/project/types";
 import { CURVE_MAX, CURVE_MIN, PRESETS, clampSpeed, normalizeWindow, speedAt, toFrames, type NormPoint } from "../../lib/speed";
@@ -171,7 +171,7 @@ export function SpeedGraph({ clip }: { clip: Timed }) {
           <Trash2 size={13} />
         </button>
         <button className="icon-btn small" aria-label="Reset curve" data-tip="Reset" onClick={reset}>
-          <RotateCw size={13} />
+          <RotateCcw size={13} />
         </button>
       </div>
     </div>

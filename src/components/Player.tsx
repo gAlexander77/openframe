@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player } from "../engine/player";
-import { Activity, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
+import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat } from "../icons";
 import { toast } from "../state/toast";
 import { boxesAt, hitClipAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
@@ -205,7 +205,7 @@ function ScopesToggle() {
       data-tip={on ? "Hide scopes" : "Scopes: waveform, parade, vectorscope, histogram"}
       onClick={() => store.set({ scopes: !on })}
     >
-      <Activity size={14} />
+      <ChartColumnBig size={14} />
     </button>
   );
 }

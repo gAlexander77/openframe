@@ -1,5 +1,6 @@
+import { EmptyState } from "../EmptyState";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCw, Sparkles, Star, Trash2, Underline, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
@@ -161,7 +162,7 @@ function TransformSection({ clip }: { clip: Clip }) {
       <SliderRow clip={clip} path="transform.anchorX" label="Anchor X" min={-100} max={100} unit="%" reset={0} {...pct} />
       <SliderRow clip={clip} path="transform.anchorY" label="Anchor Y" min={-100} max={100} unit="%" reset={0} show={(v) => -v * 100} store={(v) => -v / 100} />
       <Row label="Frame">
-        <div className="frame-btns">
+        <div className="frame-btns segmented">
           {(
             [
               ["fit", "Fit", "Show the whole picture"],
@@ -169,7 +170,7 @@ function TransformSection({ clip }: { clip: Clip }) {
               ["stretch", "Stretch", "Cover the canvas, ignoring proportions"],
             ] as const
           ).map(([mode, label, tip]) => (
-            <button key={mode} className="btn ghost" aria-label={`${label} to canvas`} data-tip={tip} onClick={() => store.edit(label, (p) => frameClips(p, [clip.id], mode, store.get().playhead))}>
+            <button key={mode} aria-label={`${label} to canvas`} data-tip={tip} onClick={() => store.edit(label, (p) => frameClips(p, [clip.id], mode, store.get().playhead))}>
               {label}
             </button>
           ))}
@@ -1012,7 +1013,7 @@ function AdjustTab({ clip }: { clip: Clip }) {
         {sub === "basic" && (clip.type === "video" || clip.type === "image") && (
           <div className="insp-actions auto-adjust">
             <button className="btn" data-tip="Correct exposure, white balance and levels from the frame at the playhead" onClick={() => void autoAdjustClip(clip.id).catch((e) => toast((e as Error).message, "error"))}>
-              <Sparkles size={13} /> Auto adjust
+              <WandSparkles size={13} /> Auto adjust
             </button>
           </div>
         )}
@@ -1124,7 +1125,7 @@ function EffectsSection({ clip }: { clip: Clip }) {
           ))}
         </div>
       )}
-      {clip.effects.length === 0 && !adding && <p className="insp-hint">No effects. Add one here or drag one from the Effects tab onto the clip.</p>}
+      {clip.effects.length === 0 && !adding && <EmptyState icon={<Sparkles size={24} />} title="No effects" hint="Add one here or drag one from the Effects tab onto the clip." />}
       {clip.effects.map((fx, index) => {
         const def = EFFECTS[fx.type];
         if (!def) return null;
@@ -1135,7 +1136,7 @@ function EffectsSection({ clip }: { clip: Clip }) {
               <span>{def.label}</span>
               <button className="icon-btn small" aria-label="Move effect up" data-tip="Move effect up" disabled={index === 0} onClick={() => change("Move effect up", "move_up", fx.id)}><ArrowUp /></button>
               <button className="icon-btn small" aria-label="Move effect down" data-tip="Move effect down" disabled={index === clip.effects.length - 1} onClick={() => change("Move effect down", "move_down", fx.id)}><ArrowDown /></button>
-              <button className="icon-btn small" aria-label="Reset effect" data-tip="Reset effect and its keyframes" onClick={() => change("Reset effect", "reset", fx.id)}><RotateCw /></button>
+              <button className="icon-btn small" aria-label="Reset effect" data-tip="Reset effect and its keyframes" onClick={() => change("Reset effect", "reset", fx.id)}><RotateCcw /></button>
               <button className="icon-btn small" aria-label={fx.enabled ? "Disable effect" : "Enable effect"} data-tip={fx.enabled ? "Disable effect" : "Enable effect"} onClick={() => change(fx.enabled ? "Disable effect" : "Enable effect", fx.enabled ? "disable" : "enable", fx.id)}>
                 {fx.enabled ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>

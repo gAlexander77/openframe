@@ -2,7 +2,7 @@ import { addSoundEffect } from "../state/sfx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
-import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
+import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Image, Sticker, SlidersHorizontal, Square, Captions, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { fromDb, toDb } from "../lib/audio";
 import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
 import { placeOnTop } from "../lib/overlays";
@@ -1013,8 +1013,14 @@ function TrackVolume({ track, at, onClose }: { track: Track; at: { x: number; y:
 }
 
 function TrackHeader({ track, openMenu }: { track: Track; openMenu: OpenMenu }) {
+  const assets = useEditor((s) => s.project.assets);
   const kindIcon =
-    track.kind === "audio" ? <Music size={13} /> : track.clips.length && track.clips.every((c) => c.type === "text") ? <Type size={13} /> : <Film size={13} />;
+    (() => {
+      const first = track.clips[0];
+      const type = first && track.clips.every((c) => c.type === first.type) ? first.type : "video";
+      const Icon = track.kind === "audio" ? Music : type === "text" ? (track.clips.every((c) => c.type === "text" && c.caption) ? Captions : Type) : type === "image" ? (track.clips.every((c) => c.type === "image" && assets.find((a) => a.id === c.assetId)?.sticker) ? Sticker : Image) : type === "adjustment" ? SlidersHorizontal : type === "color" ? Square : type === "compound" ? Layers : Film;
+      return <Icon size={13} />;
+    })();
   const set = (patch: Partial<Track>, label: string) => store.edit(label, (p) => ops.updateTrack(p, track.id, patch));
   const [renaming, setRenaming] = useState(false);
   const [volumeAt, setVolumeAt] = useState<{ x: number; y: number } | null>(null);

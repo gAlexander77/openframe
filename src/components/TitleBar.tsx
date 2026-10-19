@@ -1,6 +1,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
-import { Copy, Download, Keyboard, Minus, Square, WandSparkles, X } from "../icons";
+import { PanelsTopLeft, Download, Keyboard, Minus, Square, Bot, X } from "../icons";
 import { APP_NAME } from "../lib/brand";
 import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
@@ -196,7 +196,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
             data-tip={assistantOpen ? "Close the AI assistant" : "Ask a model on this computer to make edits"}
             onClick={() => toggleAssistant()}
           >
-            <WandSparkles size={14} /> AI assistant
+            <Bot size={14} /> AI assistant
           </button>
         )}
         <button className="icon-btn" aria-label="Keyboard shortcuts" data-tip={tipFor("showShortcuts")} onClick={props.onShortcuts}>
@@ -219,7 +219,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
               <Minus size={16} />
             </button>
             <button aria-label={maximized ? "Restore" : "Maximize"} onClick={() => win.toggleMaximize()}>
-              {maximized ? <Copy size={13} /> : <Square size={13} />}
+              {maximized ? <PanelsTopLeft size={13} /> : <Square size={13} />}
             </button>
             <button aria-label="Close" className="close" onClick={() => win.close()}>
               <X size={16} />

@@ -71,7 +71,7 @@ inspector, timeline. Full map: `docs/Architecture.md`.
 
 - **American English** everywhere (color, behavior, canceled).
 - **Icons come from `src/icons/`** — never an inline `<svg>` or a unicode
-  glyph as a button face.
+  glyph as a button face. Follow the meaning-to-icon mapping in [docs/Icons.md](docs/Icons.md).
 - **No chord typed in UI prose** — read it from the keymap (`chordFor`,
   `tipFor`).
 - **Logic worth testing lives in `src/lib/`** with a vitest beside it.

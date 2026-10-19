@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { thumbs } from "../engine/thumbs";
-import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Link2, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, Speech, X } from "../icons";
+import { AudioLines, AudioWaveform, Captions, Check, Clapperboard, Drum, Eraser, Film, Gauge, Merge, Funnel, Focus, Volume1, Loader2, MousePointerClick, Ratio, SlidersHorizontal, Speech, X } from "../icons";
 import { formatDuration, framesToSeconds } from "../lib/time";
 import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNoise, reframeClip, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, targetFor, useAi, type AiSettings, type ToolId } from "../state/ai";
 import { LEVELS, type StabilizeLevel } from "../lib/analysis/stabilize";
@@ -43,9 +43,9 @@ export function AiToolsTab() {
         <ToolCard tool="beats" icon={Drum} title="Beat markers" blurb="Drop a marker on the beat of a music track." action="Mark" settings={<BeatSettings />} />
         <ToolCard tool="loudness" icon={Gauge} title="Normalize loudness" blurb="Even out the volume of the selected clips." action="Normalize" settings={<LoudnessSettings />} />
         <ToolCard tool="ducking" icon={Volume1} title="Auto ducking" blurb="Lower the selected music while people talk." action="Duck" settings={<DuckSettings />} />
-        <ToolCard tool="stabilize" icon={Film} title="Stabilize" blurb="Smooth out a shaky handheld shot." action="Stabilize" settings={<StabilizeSettings />} />
-        <ToolCard tool="denoise" icon={AudioLines} title="Reduce noise" blurb="Take steady hiss, hum and room noise out of speech." action="Reduce" settings={<DenoiseSettings />} />
-        <ToolCard tool="sync" icon={Link2} title="Sync audio" blurb="Line up a separately recorded sound with the camera's, by waveform." action="Sync" settings={<SyncSettings />} />
+        <ToolCard tool="stabilize" icon={Focus} title="Stabilize" blurb="Smooth out a shaky handheld shot." action="Stabilize" settings={<StabilizeSettings />} />
+        <ToolCard tool="denoise" icon={Funnel} title="Reduce noise" blurb="Take steady hiss, hum and room noise out of speech." action="Reduce" settings={<DenoiseSettings />} />
+        <ToolCard tool="sync" icon={Merge} title="Sync audio" blurb="Line up a separately recorded sound with the camera's, by waveform." action="Sync" settings={<SyncSettings />} />
         <ToolCard tool="cutout" icon={Eraser} title="Remove background" blurb="Keep the person or main subject, drop the background." action="Remove" />
         <LinkCard icon={Captions} title="Auto captions" blurb="Turn speech into captions, on your computer." action="Open Captions" onClick={() => store.set({ leftTab: "captions" })} />
         <ToolCard tool="reframe" icon={Ratio} title="Auto reframe" blurb="Follow the subject into 9:16, 1:1 or 4:5." action="Reframe" settings={<ReframeSettings />} />

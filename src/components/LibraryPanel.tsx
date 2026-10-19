@@ -1,3 +1,4 @@
+import { EmptyState } from "./EmptyState";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { thumbs } from "../engine/thumbs";
 import {
@@ -224,7 +225,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
           <span>{kind === "audio" ? "No audio imported yet. Click to browse." : "Drag videos, audio or photos here, or click to browse"}</span>
         </button>
       ) : list.length === 0 ? (
-        <div className="empty">No media matches these filters.</div>
+        <EmptyState icon={<Search size={24} />} title="No media matches" hint="Clear the search or filters to see more media." />
       ) : (
         <div className={options.view === "list" ? "media-list" : "card-grid"}>
           {list.map((a) => (

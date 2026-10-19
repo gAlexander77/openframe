@@ -272,7 +272,6 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
   pointer-events: none; white-space: nowrap;
   box-shadow: 0 4px 14px rgb(0 0 0 / 40%);
 }
-.tool-letter { font-size: 12px; font-weight: 700; width: 16px; text-align: center; }
 
 /* Keyboard focus on a clip (UX-33). */
 .clip:focus { outline: none; }

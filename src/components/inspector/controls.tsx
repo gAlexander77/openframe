@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCw } from "../../icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCcw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
 import { parseTyped } from "../../lib/numberInput";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
@@ -40,7 +40,7 @@ export function Section(props: { title: string; id?: string; children: ReactNode
           {props.extra}
           {props.onReset && (
             <button className="icon-btn small" aria-label={`Reset ${props.title}`} data-tip="Reset" onClick={props.onReset}>
-              <RotateCw size={12} />
+              <RotateCcw size={12} />
             </button>
           )}
         </div>
@@ -214,7 +214,7 @@ export function KeyCluster({ clip, path, value }: { clip: Clip; path: string; va
         data-tip={on ? "Remove keyframe" : "Add keyframe"}
         onClick={() => store.edit(on ? "Remove keyframe" : "Add keyframe", (p) => toggleKeyframe(p, clip.id, path, rel, value))}
       >
-        <Diamond size={11} fill={on ? "currentColor" : "none"} />
+        <Diamond size={12} fill={on ? "currentColor" : "none"} />
       </button>
       <button className="key-nav" disabled={!next} aria-label="Next keyframe" data-tip="Next keyframe" onClick={() => next && store.seek(clip.start + next.f)}>
         <ChevronRight size={11} />

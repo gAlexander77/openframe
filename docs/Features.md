@@ -955,3 +955,11 @@ Three doors, one engine ([[Automation]]):
 - Loudness reports can include isolated audio tracks and Voiceover-to-music
   balance. Ducking can target a measured LU difference, returning the
   achieved result and editable keys rather than only taking a fixed depth.
+
+### Icon consistency
+
+The toolbar uses drawn icons for every trim tool and timeline Fit. Reset is
+counterclockwise; Rotate is clockwise. The assistant uses Bot, automatic tools
+use WandSparkles, and effects use Sparkles. Track icons reflect their contents,
+including pictures, captions, stickers, shapes and adjustment layers. Empty
+results include an icon, title and next-step hint. See [[Icons]] for the mapping.

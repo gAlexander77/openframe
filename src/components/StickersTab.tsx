@@ -1,3 +1,4 @@
+import { EmptyState } from "./EmptyState";
 // The Stickers tab: CapCut's sticker library, made locally — emoji from the
 // system font and drawn graphics — grouped by category with search. Click +
 // (or double-click) to add at the playhead, or drag onto the timeline.
@@ -53,7 +54,7 @@ export function StickersTab() {
           </select>
         </div>
         {groups.length === 0 ? (
-          <div className="empty">Nothing matches “{q}”</div>
+          <EmptyState icon={<Search size={24} />} title="No stickers match" hint="Try another search or category." />
         ) : (
           groups.map(([c, items]) => (
             <section key={c} className="lib-section">

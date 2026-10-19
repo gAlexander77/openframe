@@ -7,7 +7,7 @@ async (page) => {
   await page.getByRole("button", { name: "View", exact: true }).click();
   await page.getByRole("menuitem", { name: "Markers", exact: true }).click();
   const panel = page.locator(".markers-tab"), details = {};
-  details.empty = { ok: await panel.getByText(/Mark chapters, beats/).isVisible() };
+  details.empty = { ok: await panel.getByText("No markers yet", { exact: true }).isVisible() };
   await panel.getByRole("button", { name: "Add marker", exact: true }).click();
   details.add = { ok: await page.evaluate(() => window.videoEditor.project().markers.length === 1 && window.videoEditor.project().markers[0].frame === 0) && await panel.getByRole("button", { name: "Save marker" }).isDisabled() };
   const ids = await page.evaluate(() => {

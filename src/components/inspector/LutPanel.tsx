@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { FileUp, Loader2, Palette, Trash2 } from "../../icons";
+import { Upload, Loader2, Palette, Trash2 } from "../../icons";
 import type { Clip } from "../../lib/project/types";
 import { platform } from "../../platform";
 import { importLuts } from "../../state/luts";
@@ -49,7 +49,7 @@ export function LutPanel({ clip }: { clip: Clip }) {
         }
       >
         <button className="lut-import" onClick={() => input.current?.click()} disabled={busy}>
-          {busy ? <Loader2 size={16} className="spin" /> : <FileUp size={16} />}
+          {busy ? <Loader2 size={16} className="spin" /> : <Upload size={16} />}
           <span>
             <strong>Import .cube</strong>
             <small>1D or 3D LUT from Resolve, Premiere or a camera maker</small>

@@ -1,5 +1,6 @@
+import { EmptyState } from "./EmptyState";
 import { useEffect, useId, useRef, useState } from "react";
-import { Pencil, RotateCw, X } from "../icons";
+import { Keyboard, Pencil, RotateCcw, X } from "../icons";
 import { ACTION_LABELS, bindChord, chordOf, chordText, DEFAULT_KEYMAP, usersOf, type ActionId } from "../lib/keymap";
 import { isMac } from "../platform/env";
 import { currentKeymapChanges, keymap, setKeymapChanges } from "../state/actions";
@@ -180,7 +181,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
         </div>
         <div className="shortcuts-body">
           {visibleSections.length === 0 ? (
-            <p className="shortcuts-empty" role="status">No shortcut matches</p>
+            <EmptyState icon={<Keyboard size={24} />} title="No shortcut matches" hint="Try another action name or clear the search." />
           ) : visibleSections.map(({ title, rows }) => (
             <section className="shortcuts-section" key={title} aria-label={title}>
               <h3>{title}</h3>
@@ -215,7 +216,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
                               setKeymapChanges(rest);
                               setVersion((v) => v + 1);
                             }}>
-                              <RotateCw size={12} />
+                              <RotateCcw size={12} />
                             </button>
                           )}
                         </span>
