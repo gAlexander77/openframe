@@ -2,11 +2,12 @@
 // render plan (anchor points) and the on-canvas geometry (lib/align.ts).
 
 import { getAsset } from "../project/ops";
+import { shapeExtent } from "../shapes";
 import type { Project, TextClip, VisualClip } from "../project/types";
 
 /** A text clip's raster size. The engine registers its rasterizer at load;
  * without one (unit tests) a box from the style stands in. */
-let measureText = (c: TextClip, w: number, h: number) => ({
+let measureText = (c: TextClip, w: number, h: number): { width: number; height: number; layout?: { pad: number } } => ({
   width: c.style.maxWidth * w,
   height: ((c.style.size * h) / 1080) * c.style.lineHeight * Math.max(1, c.text.split("\n").length),
 });
@@ -17,7 +18,9 @@ export function setTextMeasure(fn: typeof measureText) {
 /** Size of a clip's source in project pixels before transform, and whether
  * it keeps its native size (text, color) or fits the canvas (media). */
 export function sourceSize(p: Project, c: VisualClip): { w: number; h: number; native: boolean } {
-  // A compound clip's picture is its inner timeline, drawn at canvas size.
+  // A shape is its box and stroke (ADR-057); a solid and a compound
+  // clip's inner timeline are drawn at canvas size.
+  if (c.type === "color" && c.shape) return { ...shapeExtent(c.shape, p.width, p.height), native: true };
   if (c.type === "color" || c.type === "compound") return { w: p.width, h: p.height, native: true };
   if (c.type === "text") {
     const r = measureText(c, p.width, p.height);
@@ -33,3 +36,8 @@ export function fittedSize(p: Project, c: VisualClip): { w: number; h: number } 
   const fit = s.native ? 1 : Math.min(p.width / s.w, p.height / s.h);
   return { w: s.w * fit, h: s.h * fit };
 }
+
+/** The empty margin a text raster has around its letters (room for an
+ * outline, shadow or glow to spread), in canvas pixels; 0 without the
+ * engine's rasterizer. */
+export const textPad = (p: Project, c: TextClip) => measureText(c, p.width, p.height).layout?.pad ?? 0;

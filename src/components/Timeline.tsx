@@ -1,3 +1,4 @@
+import { addSoundEffect } from "../state/sfx";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
@@ -8,7 +9,7 @@ import { placeOnTop } from "../lib/overlays";
 import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
 import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
 import { stretchClip } from "../lib/project/stretch";
-import { expandGroups } from "../lib/project/groups";
+import { expandGroups, syncOffsets } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
 import { CLIP_LABELS } from "../lib/catalog";
@@ -19,19 +20,10 @@ import { clampZoom, fitZoom, rulerTicks, snapSpan, trackHeight } from "../lib/ti
 import { formatTimecode, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import {
-  addAdjustmentLayer,
-  addTextPreset,
-  applyEffect,
-  applyFilter,
-  applyTemplate,
-  applyTransition,
-  layerSeconds,
-  placeTextPreset,
-  transitionSeconds,
-} from "../state/apply";
+import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
+import { syncAudio } from "../state/ai";
 import { replaceClip } from "../lib/project/replace";
 import { toast } from "../state/toast";
 import { addSticker } from "../state/stickers";
@@ -167,6 +159,11 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
     }
     case "adjustment":
       return { view: layer, run: () => addAdjustmentLayer(frame) };
+    case "color":
+      return { view: layer, run: () => addColorLayer(frame) };
+    case "sfx":
+      // Its file is made on first use; it lands by an audio drop's rules.
+      return { view: null, run: () => void addSoundEffect(payload.id, { frame }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };
     case "transition": {
       const cut = transitionCut(tracks, row, frame);
       const d = secondsToFrames(transitionSeconds(), p.fps);
@@ -213,6 +210,7 @@ export function Timeline() {
     if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 40);
   }, [focusedFrame]);
   const selected = useMemo(() => new Set(selection), [selection]);
+  const outOfSync = useMemo(() => syncOffsets(project), [project]);
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
   const compounds = useMemo(() => new Map((project.compounds ?? []).map((k) => [k.id, k])), [project.compounds]);
   // Into or out of a compound clip: bring the playhead into view, since
@@ -337,7 +335,9 @@ export function Timeline() {
       const picked = e.altKey ? [clip.id] : expandGroups(s.project, [clip.id]);
       if (e.shiftKey || e.ctrlKey || e.metaKey) {
         sel = sel.includes(clip.id) ? sel.filter((x) => !picked.includes(x)) : [...new Set([...sel, ...picked])];
-      } else if (!sel.includes(clip.id)) sel = picked;
+        // Alt narrows even a selection that holds the clip: it is how one
+        // side of a linked pair is taken alone.
+      } else if (!sel.includes(clip.id) || e.altKey) sel = picked;
       store.select(sel);
       if (zone === "body" && (s.tool === "slip" || s.tool === "slide")) {
         gesture.current = { kind: s.tool, id: clip.id, started: false, x0: e.clientX, y0: e.clientY };
@@ -689,6 +689,11 @@ export function Timeline() {
     e.preventDefault();
     e.stopPropagation();
     if (!store.get().selection.includes(clip.id)) store.select([clip.id]);
+    // CapCut's Sync video and audio: exactly a video and an audio clip.
+    const picked = store.get().selection.map((id) => ops.findClip(store.get().project, id)?.clip);
+    const syncVideo = picked.length === 2 ? picked.find((c) => c?.type === "video") : undefined;
+    const syncSound = picked.length === 2 ? picked.find((c) => c?.type === "audio") : undefined;
+    const sync = (muteCamera: boolean) => void syncAudio(syncSound!.id, { videoId: syncVideo!.id, muteCamera }).catch(() => {});
     const items: MenuItem[] = [
       { action: "cut" },
       { action: "copy" },
@@ -704,6 +709,12 @@ export function Timeline() {
       },
       { action: "freeze", disabled: clip.type !== "video" },
       { action: "detachAudio", disabled: clip.type !== "video" },
+      ...(syncVideo && syncSound
+        ? ([
+            { label: "Sync audio by waveform", onSelect: () => sync(false) },
+            { label: "Sync audio and mute camera sound", onSelect: () => sync(true) },
+          ] as MenuItem[])
+        : []),
       { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
       { action: "groupClips", disabled: store.get().selection.length < 2 },
       ...(clip.group ? ([{ action: "ungroupClips" }] as MenuItem[]) : []),
@@ -792,6 +803,7 @@ export function Timeline() {
                         height={row.height}
                         selected={selected.has(c.id)}
                         tabStop={c.id === tabStop}
+                        outOfSync={outOfSync.get(c.id)}
                         visFrom={view.left - left}
                         visTo={view.left + view.width - left}
                         shift={(drop?.shifts.get(c.id) ?? 0) * zoom}

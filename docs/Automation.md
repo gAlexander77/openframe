@@ -36,18 +36,53 @@ Turn on **AI assistant → Connect other AI agents → Allow AI agents**. Then:
 - **stdio**: run `openframe --mcp-stdio` as the server command (the exe was
   `video-editor` before 2026-10-17; the panel always shows the current path).
 
+**Start with [[MCP tools]]**: every tool, generated from the code, grouped
+in the order a video gets made, with each parameter (nested fields
+included) and an example call. [[Agent playbook]] is how a model should
+make an ad, an epic edit or a short. A connected model gets the same
+guidance from the `help` tool (topics `overview`, `ad`, `epic_edit`,
+`social_short`, `design`, `params`, or a tool's name), from the MCP prompts
+`make_ad`, `epic_edit` and `social_short`, and from the resources
+`guide://...` and `catalog://all`. Tools carry MCP titles and behavior
+hints (read-only, destructive, open-world), so clients can run reads
+without asking ([[ADR-055 The MCP guide is generated from the tools]]).
+
 Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
 Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 `redo`, `seek` and `preview_frame` (returns the composited frame as a
-PNG, so an agent can look at its work), the project tools
+PNG, drawn as the export draws it and `max_width` pixels wide, at most
+the canvas's width, so an agent can look at its work; it once read the
+viewer's canvas, which is only as big as it is on screen, and a 9:16
+project came back 222 pixels wide whatever was asked), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), `preview_frames` (one contact sheet of
-up to 24 moments, each stamped with its time), `export_video` and
+up to 24 moments, each stamped with its time), `export_video`,
+`export_versions` (every shape and cut-down of an ad, one file each) and
 `export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
-`duck_under_speech`, `reduce_noise`, `stabilize_clip` and
+`duck_under_speech`, `reduce_noise`, `stabilize_clip`, `sync_audio`
+(line a separately recorded sound up with its video by waveform; the
+`sync_to_clip` command places one by a known offset),
+`track_motion` (pin a layer to a subject in the video under it),
+`auto_reframe` (into another canvas shape, following the subject),
+`add_sound_effect` (a built-in whoosh, pop, ding... at a time),
+`set_caption_look` (one of six caption looks for every caption),
+`slip_clip` (a later or earlier part of a shot's source, same place and
+length), `move_track` (up or down the stack, so a grade sits under the
+titles), `save_project_copy` (a variant to work by hand, the original
+kept), effect parameters by place, id or type in `set_param` and the
+keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
+`"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
+vertical apps' buttons, text size and reading time, caption speed, fonts,
+flashes over 3 a second, black gaps, music endings, an ad's end card, an
+epic edit's cuts on the beat; each finding names the fixing tool),
+`preview_motion` (consecutive frames of a stretch, with the cuts and beats
+in it), `preview_media` (an imported video's own frames, to choose
+moments), `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
+in seconds) and `duplicate_clips` (what the inspector could do and agents
+could not), `text_behind_subject` (titles behind a video's subject) and
 `remove_background` ([[AI tools]]); the `set_background_removal` command
 turns an existing matte off and on. Every agent edit is undoable and
 visible as it happens. ([[ADR-008 MCP is a handler over the command registry]],
@@ -69,6 +104,36 @@ step names its number (`step 2 (set_animation): no clip with id nope`).
 ratio, knee, attack, release and makeup to adjust it; `describe_project`
 names the preset or `custom`. `normalize_loudness` measures through it.
 
+Sound design ([[ADR-060 Sound design rings past the clip and is measured as exported]]),
+on video and audio clips:
+
+- `set_audio_filter` `{"clip_ids", "type": "lowpass"|"highpass", "cutoff"
+  (Hz), "resonance" (dB), "sweep": {"to" (Hz), "start", "end" (timeline
+  s), "ease"}, "off"}`: 24 dB per octave; `sweep` keys the cutoff, on a
+  log scale ("muffled build, open on the drop": `cutoff` 400, `sweep`
+  `{"to": 20000, "start": 4.5, "end": 5}`).
+- `set_reverb` `{"clip_ids", "preset": "room"|"hall"|"cathedral", "size"
+  (0..1), "decay" (s, RT60), "mix" (0..1), "off"}`.
+- `set_echo` `{"clip_ids", "time" (s), "feedback" (0..0.9), "mix", "off"}`.
+- `set_tape_stop` `{"clip_ids", "duration" (s), "off"}`: the sound slows
+  to a stop, pitch diving, over the clip's last seconds.
+- `add_keyframe` animates `lowpass.cutoff`, `highpass.cutoff`,
+  `reverb.mix` and `echo.mix`; `describe_project` lists the effects on
+  (`lowpass`, `highpass`, `reverb`, `echo`, `tape_stop`).
+
+Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
+
+- `measure_loudness` `{"spec": "online"|"ebu_r128"|"atsc_a85", "loudness",
+  "start", "end"}` renders the mix as export does and answers
+  `integrated_lufs`, `loudness_range_lu`, `short_term_max_lufs`,
+  `momentary_max_lufs`, `true_peak_dbtp`, `sample_peak_dbfs`, `pass` and
+  `problems` (every spec when none is named; `clips` when the mix passes
+  full scale; a `fix` when it fails). With `loudness` it measures what
+  `export_video` at that target delivers.
+- `normalize_loudness` takes `spec` for a spec's target and true-peak
+  ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
+  (-2 at ATSC's -24) and answers the `loudness` it reached.
+
 `add_voiceover` narrates a script: `{"lines": [{"text": "Meet
 RacePulse."}, {"text": "Pick your widgets.", "at": 6}], "voice":
 "af_heart", "gap": 0.4, "caption_style": {...}}`. Each line is spoken on
@@ -85,15 +150,92 @@ shows the whole region; the picture slides back where it would uncover
 empty canvas. `to_region` (with optional `from`/`to` seconds) eases from
 one to the other: the push-in on a screen recording.
 
+Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
+
+- `analyze_music` `{clip_id, markers?}`: tempo, beats, downbeats, phrases,
+  sections (intro, verse, build, drop, breakdown, outro, with energy),
+  per-beat energy, hits and the drop, in timeline seconds; `markers`
+  (`beats`, `bars`, `phrases`, `sections`, `drop`) also drops markers.
+- `cut_to_beats` `{media: [{asset_id, in?, beats?}], grid?, beats?,
+  every?, pattern?, start?, end?}`: shots end to end on the main track,
+  every cut on a beat, bar or phrase.
+- `add_beat_hits` `{effect | effects, times? | at_cuts? | marker_label?,
+  every?, from?, to?, duration?, intensity?}`: flash, zoom, shake,
+  rgbSplit, glow or zoomBlur hits on a Hits track; at most three flashes
+  a second.
+- `add_cinematic_bars` `{ratio?, start?, end?, animate_in?, animate_out?}`:
+  letterbox bars (2.39 by default) under the titles.
+- `set_speed_ramp` `{clip_id, at?, moment?, speed?, base?, hold?, ease?,
+  preset?}`: the slow (or fast) moment of a ramp on a beat; the clip keeps
+  its place and length.
+- `fit_music` `{clip_id, drop_at?, drop?, end?, end_at?, fade_out?,
+  fade_in?, trim_picture?}`: the drop where it belongs, the end with the
+  picture or on a bar, faded.
+- `add_sound_effect` takes `end_at` (the sound ends there: a riser peaks
+  on the drop) and offers impact, subDrop, braam, reverseCymbal, glitch,
+  shutter and swooshUp; `set_transition` takes whipLeft, whipRight,
+  zoomPunch and spinBlur.
+
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
-footage; an empty color removes one.
+footage; an empty color removes one. Ad looks: `glow` (`{"color":
+"#00e5ff", "blur": 24, "strength": 2}`), `gradient` (`{"from": "#ffffff",
+"to": "#ff3d7f", "angle": 0}`), `stroke2` (a second outline) and `accent`
+(the kinetic sweeps' color).
+
+Ads ([[Features]] > Ads and deliverables): `set_brand` keeps the brand kit
+in the project (`describe_project` shows it as `brand`), `add_text`
+takes a `role` from it, `apply_brand` restyles titles and solids,
+`add_ad_element` adds an `end_card`, `lower_third`, `offer_badge`,
+`cta_button` or `logo_reveal` in one call (`{"element": "end_card",
+"start": 12, "headline": "Fresh roast, every morning", "cta": "Order
+now"}`), and the app tool `text_behind_subject` (`clip_id`,
+`text_clip_ids`) puts titles behind a video's person or product.
+`set_fades` fades music in seconds (`{"clip_ids": ["c_..."],
+"fade_in": 0.5, "fade_out": 1.5}`); the clip stores frames.
+`export_versions` renders the deliverables in one call: `{"ratios":
+["16:9", "9:16", "1:1"], "durations": [15, 6], "textless": true,
+"loudness": -14}` (or `versions` spelled out, each `ratio`, `duration`,
+`textless`, `fit`, `name`), one file each, the project untouched; with
+`"check": true` it answers a contact sheet of every version instead.
+Cut-downs keep the end card (`keep_end` seconds, default the end card's
+length). In another shape an ad element, or any group, moves and scales
+as one unit: its parts keep their layout, it stays against the edges it
+was against (or centered), and it shrinks to fit the safe area when it
+must ([[ADR-063 Versions fit a group as one unit]]). Long runs answer
+`running`; `export_status` follows them and lists the `versions` when
+done.
+`describe_project` now names a clip's `name` and `group`, so an
+element's parts are easy to find.
+
+`set_animation` plays kinetic typography on titles: the presets
+`typewriter`, `letterRise`, `letterFade`, `wordPop`, `wordRise`,
+`wordSlide`, `lineRise`, `highlightSweep` and `underlineWipe`, or any
+animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
+`order` (`forward`, `backward`, `center`, `random`): `{"clip_id": "c_...",
+"slot": "in", "type": "rise", "unit": "word", "stagger": 0.6, "duration":
+0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
 `start`, `end`) writes to `<Videos>\OpenFrame\` with no dialog and never
 replaces a file, answering with the path, size and a note (what the
 loudness pass did). Past about four minutes it answers `running`; follow
 it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
+
+Graphics and compositing, for ads and title sequences
+([[ADR-056 Track mattes cut a layer with another clip]] to
+[[ADR-062 Overshoot eases are named and wiggle is seeded noise]]):
+
+- `add_shape` `{kind: rectangle | rounded_rectangle | ellipse | line, start, duration, x, y, width, height, color, gradient: {from, to, angle}, fill, stroke_color, stroke_width, radius, draw, rotation, opacity, track_id}`: a shape layer, above everything at that time; sizes are canvas fractions, stroke pixels at 1080p.
+- `set_shape` `{clip_ids, kind, width, height, color, gradient, fill, stroke_color, stroke_width, radius, draw, at}`: change shapes; animated numbers get a key at `at` (paths `shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`, `shape.draw`, `shape.gradient.angle`).
+- `set_track_matte` `{clip_id, matte_clip_id: <clip id> | "above" | "none", mode: alpha | alphaInverted | luma | lumaInverted}`: the clip shows only where the matte clip's picture is (video inside text, wipe reveals); the matte is not drawn.
+- `set_motion_blur` `{clip_ids, on, shutter_angle}`: moving clips (and slides, pushes, zooms, spins) blur over the shutter, 180 degrees by default.
+- `set_edge_mode` `{clip_ids, edge: none | mirror | repeat}`: copies of the picture fill the canvas around it when it moves, shrinks or shakes.
+- `set_wiggle` `{clip_ids, target: position | x | y | rotation | scale, frequency, amplitude, strength, seed, at}`: seeded shake or drift (pixels, degrees, percent); `strength` with `at` keys a ramp; amplitude 0 removes it.
+- `add_keyframe` and `set_keyframe_ease` take `spring`, `elastic` and `bounce`, which overshoot and settle.
+
+`describe_project` shows a color clip's `color`, a shape's `shape`, and
+`track_matte`, `motion_blur`, `edge` and `wiggle` where set.
 
 ## 3. Ask in plain words (AI assistant)
 

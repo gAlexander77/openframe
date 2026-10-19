@@ -222,15 +222,18 @@ export interface ExportSettings {
   audioFormat: AudioFormat;
   range: "all" | "inout";
   /** Premiere's export Loudness Normalization: the integrated LUFS the
-   * mix is brought to (never over a -1 dBFS peak). null = as mixed. */
+   * mix is brought to, its true peak held under -1 dBTP (-2 for -24, ATSC
+   * A/85's; lib/analysis/delivery.ts ceilingFor). null = as mixed. */
   loudness: number | null;
 }
 
-/** Targets platforms normalize to, as the export dialog offers them. */
+/** Targets platforms and broadcasters normalize to, as the export dialog
+ * offers them. */
 export const LOUDNESS_TARGETS: [number, string][] = [
   [-14, "-14 LUFS · YouTube, Spotify, TikTok"],
   [-16, "-16 LUFS · Apple Music, podcasts"],
   [-23, "-23 LUFS · EBU R128 broadcast"],
+  [-24, "-24 LKFS · ATSC A/85, US TV (-2 dBTP)"],
 ];
 
 export interface ExportPlan {

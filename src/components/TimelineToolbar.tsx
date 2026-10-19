@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   ArrowLeftToLine,
   ArrowRightToLine,
@@ -26,18 +26,14 @@ import { chordText, type ActionId, ACTION_LABELS } from "../lib/keymap";
 import * as ops from "../lib/project/ops";
 import { clampZoom, ZOOM_MAX, ZOOM_MIN } from "../lib/timeline";
 import { isMac } from "../platform/env";
-import { chordFor, run } from "../state/actions";
+import { chordFor, run, tipFor } from "../state/actions";
 import { canCrop } from "../lib/crop";
 import { beginCrop } from "../state/cropEdit";
 import { store, useEditor } from "../state/store";
-import { MenuList } from "./Menu";
+import { MenuList, useDismiss } from "./Menu";
 import { VoiceoverButton } from "./VoiceoverButton";
 
 /** "Split (Ctrl+B)" — CapCut's tooltip format, chord read from the keymap. */
-export function tipFor(id: ActionId, label = ACTION_LABELS[id]) {
-  const c = chordFor(id);
-  return c ? `${label} (${chordText(c, isMac)})` : label;
-}
 
 function Tool(props: { id: ActionId; icon: React.ReactNode; on?: boolean; disabled?: boolean; label?: string }) {
   return (
@@ -54,9 +50,14 @@ function Tool(props: { id: ActionId; icon: React.ReactNode; on?: boolean; disabl
   );
 }
 
-/** The trim tools show their key letter on the picker, as Premiere's
- * toolbar does, until they get drawn icons. */
-const TOOL_LETTER: Record<string, string> = { ripple: "T", roll: "R", slip: "Y", slide: "U" };
+/** The trim tools show their key on the picker, as Premiere's toolbar
+ * does, until they get drawn icons: the key as bound now, so a rebound
+ * tool shows its new key. */
+const TOOL_ACTION: Record<string, ActionId> = { ripple: "toolRipple", roll: "toolRoll", slip: "toolSlip", slide: "toolSlide" };
+const toolLetter = (tool: string) => {
+  const c = chordFor(TOOL_ACTION[tool]);
+  return c ? chordText(c, isMac) : tool[0].toUpperCase();
+};
 
 // Zoom slider is logarithmic: equal travel = equal zoom ratio.
 const toSlider = (z: number) => Math.log(z / ZOOM_MIN) / Math.log(ZOOM_MAX / ZOOM_MIN);
@@ -110,7 +111,7 @@ export function TimelineToolbar() {
       <div className="tl-tools">
         <div className="tool-picker" ref={picker}>
           <button className="icon-btn on tool-btn" aria-label="Tool" data-tip={tool === "blade" ? tipFor("toolBlade") : tipFor("toolSelect")} onClick={() => setToolMenu((v) => !v)}>
-            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : tool === "stretch" ? <StretchHorizontal /> : <span className="tool-letter">{TOOL_LETTER[tool]}</span>}
+            {tool === "blade" ? <Scissors /> : tool === "select" ? <MousePointer2 /> : tool === "stretch" ? <StretchHorizontal /> : <span className="tool-letter">{toolLetter(tool)}</span>}
             <ChevronDown size={11} />
           </button>
           {toolMenu && (
@@ -209,26 +210,4 @@ export function TimelineToolbar() {
       </div>
     </div>
   );
-}
-
-/** Close a dropdown on a click outside `ref` or on Escape, like every menu. */
-function useDismiss(open: boolean, ref: React.RefObject<HTMLElement | null>, close: () => void) {
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) close();
-    };
-    const esc = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopImmediatePropagation();
-      close();
-    };
-    window.addEventListener("pointerdown", away);
-    window.addEventListener("keydown", esc, true);
-    return () => {
-      window.removeEventListener("pointerdown", away);
-      window.removeEventListener("keydown", esc, true);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 }

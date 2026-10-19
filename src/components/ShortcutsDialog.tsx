@@ -64,7 +64,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
       "markIn", "markOut", "rangeToClip", "clearInOut", "liftRange", "extractRange", "insertSource", "overwriteSource",
     ],
     Project: [
-      "newProject", "openProject", "saveProject", "importMedia", "export", "showShortcuts", "showPreferences",
+      "newProject", "openProject", "saveProject", "importMedia", "export", "saveFrame", "showShortcuts", "showPreferences",
     ],
   } as const satisfies Record<string, readonly ActionId[]>;
 

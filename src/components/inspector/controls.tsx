@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Diamond, RotateCw } from "../../icons";
+import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCw } from "../../icons";
 import { getPath, paramAt } from "../../lib/keyframes";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
 import type { Clip, Id } from "../../lib/project/types";
@@ -58,6 +58,9 @@ export interface SliderProps {
   keyframes?: boolean;
   /** CSS gradient for the track (CapCut colors temperature/tint tracks). */
   track?: string;
+  /** More clips the row sets too (a multi-selection, as Premiere's
+   * Properties panel edits several): each keys at its own frame. */
+  also?: Clip[];
 }
 
 /** A labeled slider + numeric field + keyframe cluster. Dragging is one
@@ -71,7 +74,12 @@ export function SliderRow(p: SliderProps) {
   const shown = show(value);
   const [text, setText] = useState<string | null>(null);
   const digits = p.digits ?? (p.step && p.step < 1 ? 1 : 0);
-  const set = (v: number) => (p2: Parameters<typeof setParam>[0]) => setParam(p2, [p.clip.id], p.path, v, rel);
+  const playhead = useEditor((s) => s.playhead);
+  const relOf = (c: Clip) => Math.min(Math.max(playhead - c.start, 0), c.duration - 1);
+  // A dash, as Premiere shows, when the clips disagree.
+  const mixed = !!p.also?.some((c) => Math.abs(paramAt(c, p.path, relOf(c)) - value) > 1e-6);
+  const set = (v: number) => (p2: Parameters<typeof setParam>[0]) =>
+    (p.also ?? []).reduce((q, c) => setParam(q, [c.id], p.path, v, relOf(c)), setParam(p2, [p.clip.id], p.path, v, rel));
   const commit = (raw: string) => {
     const n = Number(raw.replace(/[^\d.+-]/g, ""));
     setText(null);
@@ -101,7 +109,8 @@ export function SliderRow(p: SliderProps) {
       <span className="insp-num">
         <input
           className="field num"
-          value={text ?? shown.toFixed(digits)}
+          value={text ?? (mixed ? "" : shown.toFixed(digits))}
+          placeholder={mixed ? "Mixed" : undefined}
           onChange={(e) => setText(e.target.value)}
           // Only what the user typed is an edit: committing on every blur
           // recorded undo steps for tabbing past, and keyed the playhead.
@@ -173,6 +182,7 @@ export function Segmented<T extends string>(props: { value: T; options: { value:
           aria-checked={props.value === o.value}
           className={props.value === o.value ? "on" : ""}
           data-tip={o.tip}
+          aria-label={o.tip}
           onClick={() => props.onChange(o.value)}
         >
           {o.label}
@@ -190,8 +200,20 @@ export function Toggle(props: { on: boolean; onChange: (v: boolean) => void; lab
   );
 }
 
+/** The platform's screen color picker (Chromium and WebView2 have it). */
+type EyeDropperApi = new () => { open(): Promise<{ sRGBHex: string }> };
+
 export function ColorInput(props: { value: string; onChange: (v: string) => void; label: string }) {
   const hex = props.value.slice(0, 7);
+  // Read at render, not import: a page can gain it (tests stub it).
+  const Dropper = (globalThis as { EyeDropper?: EyeDropperApi }).EyeDropper;
+  const pick = async () => {
+    try {
+      props.onChange((await new Dropper!().open()).sRGBHex);
+    } catch {
+      // Escape cancels the pick; nothing to do.
+    }
+  };
   return (
     <span className="color-input">
       <input type="color" value={/^#[0-9a-f]{6}$/i.test(hex) ? hex : "#ffffff"} onChange={(e) => props.onChange(e.target.value)} aria-label={props.label} />
@@ -203,6 +225,11 @@ export function ColorInput(props: { value: string; onChange: (v: string) => void
         onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
         aria-label={`${props.label} hex`}
       />
+      {Dropper && (
+        <button className="icon-btn small" aria-label={`Pick ${props.label.toLowerCase()} from the screen`} data-tip="Pick a color from anywhere on the screen, the viewer included" onClick={() => void pick()}>
+          <Pipette size={13} />
+        </button>
+      )}
     </span>
   );
 }

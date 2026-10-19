@@ -157,31 +157,34 @@ vec3 adjustColor(vec3 c, vec2 local) {
  * transform, crop, color, chroma key and mask into a layer framebuffer. */
 export const LAYER_VS = `#version 300 es
 in vec2 a_pos;
-uniform mat3 u_matrix;     // unit quad -> clip space
-uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
-uniform int u_rotation;    // container rotation: 0, 1, 2, 3 quarter turns clockwise
-uniform bool u_fbo;        // the source is a rendered texture (a compound clip): rows bottom-up
-out vec2 v_uv;             // source texture uv
-out vec2 v_local;          // 0..1 across the visible layer, top-left origin
-out vec2 v_disp;           // display-space uv of the whole source (the matte's space)
+uniform mat3 u_matrix;     // layer units (0..1 across the visible layer) -> clip space
+uniform vec4 u_extent;     // the quad in layer units: 0,0,1,1, or out to the canvas for an edge mode
+out vec2 v_local;          // layer units, top-left origin; past 0..1 only with an edge mode
 void main() {
-  v_local = a_pos;
-  vec2 d = mix(u_crop.xy, u_crop.zw, a_pos);   // display-space uv
-  v_disp = d;
-  if (u_rotation == 1) v_uv = vec2(d.y, 1.0 - d.x);
-  else if (u_rotation == 2) v_uv = vec2(1.0 - d.x, 1.0 - d.y);
-  else if (u_rotation == 3) v_uv = vec2(1.0 - d.y, d.x);
-  else v_uv = d;
-  if (u_fbo) v_uv.y = 1.0 - v_uv.y;
-  vec3 p = u_matrix * vec3(a_pos, 1.0);
+  vec2 q = mix(u_extent.xy, u_extent.zw, a_pos);
+  v_local = q;
+  vec3 p = u_matrix * vec3(q, 1.0);
   gl_Position = vec4(p.xy, 0.0, 1.0);
 }`;
 
-export const LAYER_FS = `#version 300 es
+/** The layer pass. Shape layers (ADR-057) use the SHAPE build, which adds
+ * the signed-distance drawing: kept out of the plain build, it would add
+ * half again to the compile every layer waits on. */
+const layerShader = (shape: boolean) => `#version 300 es
+${shape ? "#define SHAPE 1" : ""}
 precision highp float;
-in vec2 v_uv;
 in vec2 v_local;
-in vec2 v_disp;
+uniform vec4 u_crop;       // display-space uv rect: x0, y0, x1, y1
+uniform mat3 u_uv;         // display uv -> texture uv: the container's quarter turns, a compound's flipped rows
+uniform int u_edge;        // past the picture's edges: 0 nothing, 1 mirrored, 2 repeated (ADR-059)
+// shape layers (ADR-057), in pixels of the render; see src/lib/shapes.ts
+uniform int u_shape;       // 0 none, 1 rectangle, 2 ellipse, 3 line
+uniform vec2 u_shapeQuad;  // the quad's size: box, stroke and an anti-aliasing margin
+uniform vec2 u_shapeBox;   // half the box (a line: half its length, half its thickness)
+uniform float u_shapeRadius, u_shapeStroke, u_shapeDraw;
+uniform bool u_shapeFill, u_gradient;
+uniform vec4 u_fill, u_fill2, u_strokeColor;   // straight RGBA
+uniform vec2 u_gradDir;    // unit vector, y down
 uniform sampler2D u_tex;
 // remove background: a grayscale matte video, luma = alpha (ADR-033)
 uniform bool u_matteOn;
@@ -278,8 +281,96 @@ float maskAlpha(vec2 p) {
   return u_maskInvert ? 1.0 - a : a;
 }
 
+#ifdef SHAPE
+// Where along a rectangle's (rounded) outline the point nearest q lies, 0..1
+// from the top center, clockwise. src/lib/shapes.ts rectOutlineAt is this.
+float rectOutlineAt(vec2 q, vec2 b, float r) {
+  r = min(r, min(b.x, b.y));
+  vec2 i = b - r;
+  float arc = 1.5707963 * r;
+  float total = 4.0 * (i.x + i.y + arc);
+  if (total <= 0.0) return 0.0;
+  vec2 a = abs(q);
+  bool nearTop = (a.x <= i.x && a.y <= i.y) ? b.x - a.x > b.y - a.y : a.x <= i.x;
+  float s = (a.x > i.x && a.y > i.y) ? i.x + r * atan(a.x - i.x, a.y - i.y) : nearTop ? a.x : i.x + arc + (i.y - a.y);
+  float quarter = i.x + arc + i.y;
+  float d = q.x >= 0.0 ? (q.y <= 0.0 ? s : 2.0 * quarter - s) : (q.y > 0.0 ? 2.0 * quarter + s : 4.0 * quarter - s);
+  return fract(d / total);
+}
+
+float sdRoundBox(vec2 q, vec2 b, float r) {
+  r = min(r, min(b.x, b.y));
+  vec2 e = abs(q) - b + r;
+  return length(max(e, 0.0)) + min(max(e.x, e.y), 0.0) - r;
+}
+
+// The shape's straight color at display uv d. aa: pixels of the shape per
+// pixel of the screen, from the unwrapped coordinates.
+vec4 shapeColor(vec2 d, float aa) {
+  vec2 q = (d - 0.5) * u_shapeQuad;
+  vec2 b = u_shapeBox;
+  float sw = u_shapeStroke;
+  // the fill's paint: a gradient across the box, or one color (premultiplied)
+  float span = abs(u_gradDir.x) * b.x + abs(u_gradDir.y) * b.y;
+  float t = u_gradient ? clamp(dot(q, u_gradDir) / max(2.0 * span, 1e-3) + 0.5, 0.0, 1.0) : 0.0;
+  vec4 p1 = vec4(u_fill.rgb * u_fill.a, u_fill.a), p2 = vec4(u_fill2.rgb * u_fill2.a, u_fill2.a);
+  vec4 paint = mix(p1, p2, t);
+  if (u_shape == 3) {
+    // A line: a butt-capped bar from the left end, draw of the way along.
+    float len = 2.0 * b.x * u_shapeDraw;
+    float dist = sdRoundBox(q - vec2(-b.x + len * 0.5, 0.0), vec2(len * 0.5, b.y), 0.0);
+    float cov = u_shapeDraw > 0.0 ? clamp(0.5 - dist / aa, 0.0, 1.0) : 0.0;
+    vec4 o = paint * cov;
+    return o.a > 0.0 ? vec4(o.rgb / o.a, o.a) : vec4(0.0);
+  }
+  float dist, s, per;
+  if (u_shape == 1) {
+    dist = sdRoundBox(q, b, u_shapeRadius);
+    float r = min(u_shapeRadius, min(b.x, b.y));
+    per = 4.0 * (b.x + b.y - 2.0 * r) + 6.2831853 * r;
+    s = u_shapeDraw < 1.0 ? rectOutlineAt(q, b, u_shapeRadius) : 0.0;
+  } else {
+    // An ellipse: distance to first order (exact on circles), and the
+    // outline by angle from the top (src/lib/shapes.ts ellipseOutlineAt).
+    vec2 bb = max(b, vec2(1e-3));
+    float k0 = length(q / bb), k1 = length(q / (bb * bb));
+    dist = k1 > 0.0 ? k0 * (k0 - 1.0) / k1 : -min(bb.x, bb.y);
+    per = 3.1415927 * (3.0 * (bb.x + bb.y) - sqrt((3.0 * bb.x + bb.y) * (bb.x + 3.0 * bb.y)));
+    s = u_shapeDraw < 1.0 ? fract(atan(q.x / bb.x, -q.y / bb.y) / 6.2831853 + 1.0) : 0.0;
+  }
+  vec4 o = u_shapeFill ? paint * clamp(0.5 - dist / aa, 0.0, 1.0) : vec4(0.0);
+  if (sw > 0.0) {
+    float cov = clamp(0.5 - (abs(dist) - sw * 0.5) / aa, 0.0, 1.0);
+    // Trim paths: the outline drawn up to draw of the way round.
+    if (u_shapeDraw < 1.0) cov *= u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
+    vec4 st = vec4(u_strokeColor.rgb * u_strokeColor.a, u_strokeColor.a) * cov;
+    o = st + o * (1.0 - st.a);
+  }
+  return o.a > 0.0 ? vec4(o.rgb / o.a, o.a) : vec4(0.0);
+}
+
+#endif
+
+vec2 edgeWrap(vec2 l) {
+  if (u_edge == 1) return 1.0 - abs(mod(l, 2.0) - 1.0);
+  if (u_edge == 2) return fract(l);
+  return l;
+}
+
 void main() {
+#ifdef SHAPE
+  // Derivatives first, in uniform control flow, from the unwrapped units.
+  vec2 qpx = v_local * u_shapeQuad;
+  float aa = max(max(length(dFdx(qpx)), length(dFdy(qpx))), 1e-4);
+#endif
+  vec2 local = edgeWrap(v_local);
+  vec2 v_disp = mix(u_crop.xy, u_crop.zw, local);   // display-space uv of the whole source (the matte's space)
+  vec2 v_uv = (u_uv * vec3(v_disp, 1.0)).xy;         // source texture uv
+#ifdef SHAPE
+  vec4 src = shapeColor(v_disp, aa);
+#else
   vec4 src = u_solid ? u_color : texture(u_tex, v_uv);
+#endif
   if (u_fbo) src.rgb = src.a > 0.0 ? src.rgb / src.a : vec3(0.0);
   vec3 c = src.rgb;
   float a = src.a;
@@ -298,10 +389,41 @@ void main() {
   // The matte went through a lossy codec and back (16..235 luma): the
   // outer 2% are codec noise, so flat areas land on exactly 0 and 1.
   if (u_matteOn) a *= clamp((texture(u_matte, v_disp).r - 0.02) / 0.96, 0.0, 1.0);
-  c = adjustColor(c, v_local);
-  a *= u_opacity * maskAlpha(v_local);
+  c = adjustColor(c, local);
+  a *= u_opacity * maskAlpha(local);
   outColor = vec4(c * a, a);
 }`;
+
+export const LAYER_FS = layerShader(false);
+export const LAYER_SHAPE_FS = layerShader(true);
+
+/** Track matte (ADR-056): the layer kept where the matte is opaque or
+ * bright, or the reverse. Both premultiplied; luma of a premultiplied
+ * matte reads its transparent parts as black, as After Effects does. */
+export const MATTE_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_src;
+uniform sampler2D u_matte;
+uniform bool u_hasMatte;   // false: the matte clip has no picture at this frame
+uniform int u_mode;        // 0 alpha, 1 alpha inverted, 2 luma, 3 luma inverted
+out vec4 outColor;
+void main() {
+  vec4 m = u_hasMatte ? texture(u_matte, v_uv) : vec4(0.0);
+  float k = u_mode < 2 ? m.a : clamp(dot(m.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+  if (u_mode == 1 || u_mode == 3) k = 1.0 - k;
+  outColor = texture(u_src, v_uv) * k;
+}`;
+
+export const MATTE_IDS: Record<string, number> = { alpha: 0, alphaInverted: 1, luma: 2, lumaInverted: 3 };
+
+/** A plain copy: motion blur's float accumulation into a layer target. */
+export const COPY_FS = `#version 300 es
+precision highp float;
+in vec2 v_uv;
+uniform sampler2D u_tex;
+out vec4 outColor;
+void main() { outColor = texture(u_tex, v_uv); }`;
 
 /** Blend a premultiplied layer over the premultiplied accumulator using the
  * W3C compositing formulas for separable blend modes. */
@@ -466,7 +588,9 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec3 s = c.a > 0.0 ? c.rgb / c.a : vec3(0.0);
     float l = luma(s);
     float h = radians(u_hue);
-    vec3 tint = 0.5 + 0.5 * cos(h + vec3(0.0, 2.094, 4.188));
+    // The standard wheel, as HSL and the color wheels run: 0 red, 60
+    // yellow, 120 green, 240 blue (each channel peaks at its own hue).
+    vec3 tint = 0.5 + 0.5 * cos(h - vec3(0.0, 2.094, 4.188));
     vec3 d = mix(vec3(0.05, 0.03, 0.12), tint, l);
     outColor = vec4(mix(s, d, u_amount * 0.01) * c.a, c.a);`),
   mirror: effect(["mode"], `
@@ -481,6 +605,18 @@ export const EFFECT_SHADERS: Record<string, string> = {
     a = mod(a, seg); a = abs(a - seg * 0.5);
     p = vec2(cos(a), sin(a)) * r / vec2(u_res.x / u_res.y, 1.0);
     outColor = texture(u_tex, p + 0.5);`),
+  // The lens: inside a circle (size = its diameter as a share of the
+  // frame's height), the picture around the center scaled up by zoom.
+  // v_uv runs bottom-up in the effect pass, so Center Y (from the top)
+  // flips.
+  magnify: effect(["x", "y", "size", "zoom", "feather"], `
+    vec2 c = vec2(u_x / 100.0, 1.0 - u_y / 100.0);
+    vec2 asp = vec2(u_res.x / u_res.y, 1.0);
+    float r = u_size / 200.0;
+    float edge = max(r * u_feather / 100.0, 1.0 / u_res.y);
+    float m = 1.0 - smoothstep(r - edge, r, length((v_uv - c) * asp));
+    vec2 z = c + (v_uv - c) / max(u_zoom / 100.0, 0.01);
+    outColor = mix(texture(u_tex, v_uv), texture(u_tex, z), m);`),
   fisheye: effect(["amount"], `
     vec2 p = v_uv - 0.5;
     float r = length(p);
@@ -496,6 +632,20 @@ export const EFFECT_SHADERS: Record<string, string> = {
     float p = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 6.0);
     vec2 uv = (v_uv - 0.5) / (1.0 + p * u_amount * 0.004) + 0.5;
     outColor = texture(u_tex, uv);`),
+  zoom: effect(["amount"], `
+    outColor = texture(u_tex, (v_uv - 0.5) / (1.0 + u_amount * 0.01) + 0.5);`),
+  // Bars across the short way to the ratio: top and bottom when the
+  // canvas is narrower than it, left and right when wider. One pixel of
+  // smoothing keeps the edge from crawling as the bars slide.
+  letterbox: effect(["ratio", "amount"], `
+    vec4 c = texture(u_tex, v_uv);
+    float canvas = u_res.x / u_res.y;
+    float k = clamp(u_amount * 0.01, 0.0, 1.0);
+    bool rows = canvas < u_ratio;
+    float bar = (rows ? 1.0 - canvas / u_ratio : 1.0 - u_ratio / canvas) * 0.5 * k;
+    float d = rows ? min(v_uv.y, 1.0 - v_uv.y) : min(v_uv.x, 1.0 - v_uv.x);
+    float px = 0.5 / (rows ? u_res.y : u_res.x);
+    outColor = mix(vec4(0.0, 0.0, 0.0, 1.0), c, smoothstep(bar - px, bar + px, d));`),
   flash: effect(["amount", "rate"], `
     vec4 c = texture(u_tex, v_uv);
     float f = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 16.0) * u_amount * 0.01;
@@ -565,8 +715,13 @@ export const EFFECT_SHADERS: Record<string, string> = {
 
 // ---- transitions -------------------------------------------------------------
 // u_a: outgoing layer, u_b: incoming layer (both premultiplied), u_p 0..1.
+// With BLUR (motion blur on a transition that moves, ADR-058) only the
+// moving types are compiled, averaged over u_samples progress values, and
+// sampled with textureLod: texture() inside a loop of uniform length made
+// ANGLE's D3D compiler unroll it, and the program took a second to build.
 
-export const TRANSITION_FS = `#version 300 es
+const transitionShader = (blur: boolean) => `#version 300 es
+${blur ? "#define BLUR 1" : ""}
 precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_a;
@@ -574,48 +729,58 @@ uniform sampler2D u_b;
 uniform float u_p;
 uniform int u_type;
 uniform vec2 u_res;
+uniform int u_samples;     // BLUR: progress values averaged
+uniform float u_spread;    // ...spread this wide around u_p
 out vec4 outColor;
+#ifdef BLUR
+#define TEX(s, uv) textureLod(s, uv, 0.0)
+#else
+#define TEX(s, uv) texture(s, uv)
+#endif
 float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-vec4 A(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_a, uv); }
-vec4 B(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : texture(u_b, uv); }
+vec4 A(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : TEX(u_a, uv); }
+vec4 B(vec2 uv) { return (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) ? vec4(0.0) : TEX(u_b, uv); }
 float ease(float t) { return t < 0.5 ? 4.0 * t * t * t : 1.0 - pow(-2.0 * t + 2.0, 3.0) / 2.0; }
-void main() {
-  float p = clamp(u_p, 0.0, 1.0);
+// Mirrored edges, for moves that would uncover the frame's outside.
+vec2 mirror(vec2 uv) { return 1.0 - abs(1.0 - mod(uv, 2.0)); }
+vec4 transitionAt(float p) {
   float e = ease(p);
   vec2 uv = v_uv;
   float soft = 0.02;
-  if (u_type == 0) { outColor = mix(A(uv), B(uv), p); return; }                         // dissolve
+#ifndef BLUR
+  if (u_type == 0) { return mix(A(uv), B(uv), p); }                         // dissolve
   if (u_type == 1 || u_type == 2) {                                                      // dip to black / white
     vec4 dip = u_type == 1 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(1.0);
-    outColor = p < 0.5 ? mix(A(uv), dip, p * 2.0) : mix(dip, B(uv), p * 2.0 - 1.0); return;
+    return p < 0.5 ? mix(A(uv), dip, p * 2.0) : mix(dip, B(uv), p * 2.0 - 1.0);
   }
   // Wipes: B covers the part of the frame the edge has passed (distance from
   // the entry side below e). uv.y is 0 at the bottom of the picture.
-  if (u_type == 3) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.x)); return; }  // wipe left
-  if (u_type == 4) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.x)); return; }        // wipe right
-  if (u_type == 5) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.y)); return; }        // wipe up
-  if (u_type == 6) { outColor = mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.y)); return; }  // wipe down
+  if (u_type == 3) { return mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.x)); }  // wipe left
+  if (u_type == 4) { return mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.x)); }        // wipe right
+  if (u_type == 5) { return mix(B(uv), A(uv), smoothstep(e - soft, e + soft, uv.y)); }        // wipe up
+  if (u_type == 6) { return mix(B(uv), A(uv), smoothstep(e - soft, e + soft, 1.0 - uv.y)); }  // wipe down
   if (u_type == 7) {                                                                     // circle open
     float r = length((uv - 0.5) * vec2(u_res.x / u_res.y, 1.0));
-    outColor = mix(B(uv), A(uv), smoothstep(e * 1.0 - soft, e * 1.0 + soft, r)); return;
+    return mix(B(uv), A(uv), smoothstep(e * 1.0 - soft, e * 1.0 + soft, r));
   }
   if (u_type == 8) {                                                                     // clock wipe
     float a = atan(uv.x - 0.5, uv.y - 0.5) / 6.28318 + 0.5;
-    outColor = mix(A(uv), B(uv), smoothstep(-soft, soft, e - a)); return;
+    return mix(A(uv), B(uv), smoothstep(-soft, soft, e - a));
   }
-  if (u_type == 9) { outColor = B(uv + vec2(1.0 - e, 0.0)) + A(uv) * (1.0 - B(uv + vec2(1.0 - e, 0.0)).a); return; } // slide left
-  if (u_type == 10) { outColor = B(uv - vec2(1.0 - e, 0.0)) + A(uv) * (1.0 - B(uv - vec2(1.0 - e, 0.0)).a); return; } // slide right
-  if (u_type == 11) { vec4 a = A(uv + vec2(e, 0.0)); vec4 b = B(uv + vec2(e - 1.0, 0.0)); outColor = b + a * (1.0 - b.a); return; } // push left
-  if (u_type == 12) { vec4 a = A(uv - vec2(0.0, e)); vec4 b = B(uv - vec2(0.0, e - 1.0)); outColor = b + a * (1.0 - b.a); return; } // push up
+#endif
+  if (u_type == 9) { return B(uv + vec2(1.0 - e, 0.0)) + A(uv) * (1.0 - B(uv + vec2(1.0 - e, 0.0)).a); } // slide left
+  if (u_type == 10) { return B(uv - vec2(1.0 - e, 0.0)) + A(uv) * (1.0 - B(uv - vec2(1.0 - e, 0.0)).a); } // slide right
+  if (u_type == 11) { vec4 a = A(uv + vec2(e, 0.0)); vec4 b = B(uv + vec2(e - 1.0, 0.0)); return b + a * (1.0 - b.a); } // push left
+  if (u_type == 12) { vec4 a = A(uv - vec2(0.0, e)); vec4 b = B(uv - vec2(0.0, e - 1.0)); return b + a * (1.0 - b.a); } // push up
   if (u_type == 13) {                                                                    // zoom in
     vec4 a = A((uv - 0.5) / (1.0 + e * 2.0) + 0.5);
     vec4 b = B((uv - 0.5) * (2.0 - e) + 0.5 - (uv - 0.5) * (1.0 - e));
-    outColor = mix(a, B(uv), smoothstep(0.3, 0.8, p)); return;
+    return mix(a, B(uv), smoothstep(0.3, 0.8, p));
   }
   if (u_type == 14) {                                                                    // zoom out
     vec4 a = A((uv - 0.5) * (1.0 + e) + 0.5);
     vec4 b = B((uv - 0.5) / (0.5 + e * 0.5) + 0.5);
-    outColor = mix(a, b, smoothstep(0.2, 0.7, p)); return;
+    return mix(a, b, smoothstep(0.2, 0.7, p));
   }
   if (u_type == 15) {                                                                    // spin
     float ang = e * 6.28318;
@@ -623,21 +788,22 @@ void main() {
     q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * q / vec2(u_res.x / u_res.y, 1.0);
     float z = 1.0 + sin(p * 3.14159) * 1.5;
     vec2 suv = q * z + 0.5;
-    outColor = p < 0.5 ? A(suv) : B(suv); return;
+    return p < 0.5 ? A(suv) : B(suv);
   }
+#ifndef BLUR
   if (u_type == 16) {                                                                    // blur
     vec4 acc = vec4(0.0); float k = sin(p * 3.14159) * 0.02;
     for (int i = -6; i <= 6; i++) for (int j = -2; j <= 2; j++) {
       vec2 o = vec2(float(i), float(j) * 2.0) * k / 6.0;
       acc += mix(A(uv + o), B(uv + o), smoothstep(0.35, 0.65, p));
     }
-    outColor = acc / 65.0; return;
+    return acc / 65.0;
   }
   if (u_type == 17) {                                                                    // pixelate
     float s = max(1.0, sin(p * 3.14159) * 60.0);
     vec2 b = vec2(s) / u_res;
     vec2 q = (floor(uv / b) + 0.5) * b;
-    outColor = mix(A(q), B(q), step(0.5, p)); return;
+    return mix(A(q), B(q), step(0.5, p));
   }
   if (u_type == 18) {                                                                    // glitch
     float k = sin(p * 3.14159);
@@ -646,19 +812,76 @@ void main() {
     vec2 q = uv + vec2((n - 0.5) * 0.2 * k * step(0.6, n), 0.0);
     vec4 c = mix(A(q), B(q), step(0.5, p));
     c.r = mix(A(q + vec2(0.02 * k, 0.0)), B(q + vec2(0.02 * k, 0.0)), step(0.5, p)).r;
-    outColor = c; return;
+    return c;
   }
   if (u_type == 19) {                                                                    // flash
     float f = 1.0 - abs(p * 2.0 - 1.0);
-    outColor = mix(A(uv), B(uv), step(0.5, p)) + vec4(vec3(pow(f, 3.0)), 0.0); return;
+    return mix(A(uv), B(uv), step(0.5, p)) + vec4(vec3(pow(f, 3.0)), 0.0);
   }
-  outColor = mix(A(uv), B(uv), p);
+  // Epic-edit moves: each smears along its motion, strongest mid-move,
+  // the way a fast camera blurs, so the cut hides inside the blur.
+  if (u_type == 20 || u_type == 21) {                                                    // whip left / right
+    float dir = u_type == 20 ? 1.0 : -1.0;
+    float span = 0.35 * pow(sin(p * 3.14159), 2.0);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 24; i++) {
+      float s = e + (float(i) / 23.0 - 0.5) * span;
+      vec4 b = B(uv + vec2(dir * (s - 1.0), 0.0));
+      acc += b + A(uv + vec2(dir * s, 0.0)) * (1.0 - b.a);
+    }
+    return acc / 24.0;
+  }
+  if (u_type == 22) {                                                                    // zoom punch
+    // Rush into the outgoing shot, cut at the middle, land on the next
+    // from slightly too close; a radial blur rides the move.
+    float z = p < 0.5 ? 1.0 + 2.0 * pow(p * 2.0, 2.0) : 1.0 + 0.7 * pow(2.0 - p * 2.0, 2.0);
+    float bl = 0.25 * sin(p * 3.14159);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 20; i++) {
+      vec2 q = (uv - 0.5) * (1.0 - bl * float(i) / 19.0) / z + 0.5;
+      acc += p < 0.5 ? A(q) : B(q);
+    }
+    return acc / 20.0;
+  }
+  if (u_type == 23) {                                                                    // spin blur
+    // A half turn out of the outgoing shot and a half turn into the next,
+    // blurred around the center; mirrored edges fill the corners.
+    float ang = (p < 0.5 ? e : e - 1.0) * 3.14159;
+    float span = 0.9 * sin(p * 3.14159);
+    vec2 asp = vec2(u_res.x / u_res.y, 1.0);
+    float z = 1.0 + 0.3 * sin(p * 3.14159);
+    vec4 acc = vec4(0.0);
+    for (int i = 0; i < 24; i++) {
+      float a = ang + (float(i) / 23.0 - 0.5) * span;
+      vec2 q = mat2(cos(a), -sin(a), sin(a), cos(a)) * ((uv - 0.5) * asp) / z / asp + 0.5;
+      acc += p < 0.5 ? texture(u_a, mirror(q)) : texture(u_b, mirror(q));
+    }
+    return acc / 24.0;
+  }
+#endif
+  return mix(A(uv), B(uv), p);
+}
+void main() {
+#ifdef BLUR
+  vec4 acc = vec4(0.0);
+  for (int k = 0; k < 64; k++) {
+    if (k >= u_samples) break;
+    acc += transitionAt(clamp(u_p + ((float(k) + 0.5) / float(u_samples) - 0.5) * u_spread, 0.0, 1.0));
+  }
+  outColor = acc / float(max(u_samples, 1));
+#else
+  outColor = transitionAt(clamp(u_p, 0.0, 1.0));
+#endif
 }`;
+
+export const TRANSITION_FS = transitionShader(false);
+export const TRANSITION_BLUR_FS = transitionShader(true);
 
 export const TRANSITION_IDS: Record<string, number> = {
   dissolve: 0, dipBlack: 1, dipWhite: 2, wipeLeft: 3, wipeRight: 4, wipeUp: 5, wipeDown: 6,
   circleOpen: 7, clockWipe: 8, slideLeft: 9, slideRight: 10, pushLeft: 11, pushUp: 12,
   zoomIn: 13, zoomOut: 14, spin: 15, blur: 16, pixelate: 17, glitch: 18, flash: 19,
+  whipLeft: 20, whipRight: 21, zoomPunch: 22, spinBlur: 23,
 };
 
 export const BLEND_IDS: Record<string, number> = {

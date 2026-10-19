@@ -7,7 +7,8 @@
 // they snap to the nearest project frame. The project JSON itself stores
 // frames (ADR-004) — describeProject reports both.
 
-import { frameAt, framesToSeconds, secondsToFrames } from "./time";
+import { applyCaptionLook, CAPTION_LOOKS, captionFit, captionY } from "./captionLooks";
+import { FPS_PRESETS, frameAt, framesToSeconds, secondsToFrames } from "./time";
 import {
   clipForAsset,
   createAdjustmentClip,
@@ -18,10 +19,10 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, Effect, Grade, HslBand, Id, Mask, Project, TextStyle, Track, Transform, WheelName } from "./project/types";
-import { ANIMATIONS, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { upsertKey } from "./keyframes";
+import { NAMED_EASES, upsertKey } from "./keyframes";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
@@ -35,14 +36,23 @@ import { deleteMarkers, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
-import { groupClips, ungroupClips } from "./project/groups";
-import { editFolder, organizeMedia } from "./project/mediaOrganization";
+import { syncClip, syncProblem } from "./project/sync";
+import { groupClips, regroupCopies, ungroupClips } from "./project/groups";
+import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/mediaOrganization";
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
+import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
+import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
+import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
+import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
+import { AD_ELEMENTS, addAdElement, SPOTS, type AdBackground, type AdElement, type Spot } from "./ads";
+import { placeOnTop } from "./overlays";
+import { LINE_WIDTH, parseColor } from "./shapes";
+import { MATTE_MODES, trackAbove } from "./trackMatte";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -65,6 +75,15 @@ export interface Command {
 
 export class CommandError extends Error {}
 
+/** Run an epic-edit op, reporting its problems as command errors. */
+function epic(fn: () => Project): Project {
+  try {
+    return fn();
+  } catch (e) {
+    throw e instanceof EpicError ? new CommandError(e.message) : e;
+  }
+}
+
 // ---- schema helpers ------------------------------------------------------------
 
 const S = {
@@ -72,8 +91,9 @@ const S = {
   num: (description: string, extra: Partial<JsonSchema> = {}): JsonSchema => ({ type: "number", description, ...extra }),
   bool: (description: string): JsonSchema => ({ type: "boolean", description }),
   ids: (description: string): JsonSchema => ({ type: "array", items: { type: "string" }, description }),
-  obj: (properties: Record<string, JsonSchema>, required: string[] = []): JsonSchema => ({
+  obj: (properties: Record<string, JsonSchema>, required: string[] = [], description?: string): JsonSchema => ({
     type: "object",
+    ...(description ? { description } : {}),
     properties,
     required,
     additionalProperties: false,
@@ -93,7 +113,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     for (const [k, v] of Object.entries(o)) {
       const sub = schema.properties?.[k];
       if (!sub) {
-        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument`);
+        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument (known: ${Object.keys(schema.properties ?? {}).join(", ")})`);
         continue;
       }
       if (v !== undefined) errs.push(...validate(v, sub, `${path}.${k}`));
@@ -121,6 +141,9 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
 // ---- helpers for runners ---------------------------------------------------------
 
 const f = (p: Project, seconds: unknown) => secondsToFrames(Number(seconds), p.fps);
+/** Frames from `start` to `start + duration` seconds, both rounded to frames, so
+ * clips given back to back in seconds meet exactly. At least one frame. */
+const span = (p: Project, start: unknown, duration: unknown) => Math.max(1, f(p, Number(start ?? 0) + Number(duration)) - f(p, start ?? 0));
 
 function clipOrThrow(p: Project, id: unknown) {
   const loc = ops.findClip(p, String(id));
@@ -142,7 +165,8 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   const media = clip.type === "video" || clip.type === "image";
   const main = ops.mainTrack(p);
   if (media && ops.rangeFree(main, clip.start, clip.duration)) return [p, main.id];
-  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && ops.rangeFree(t, clip.start, clip.duration));
+  // Tracks of adjustment layers (beat hits, bars, grades) take only more of them.
+  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
   if (free) return [p, free.id];
   const fresh = createTrack(kind, kind === "audio" ? "Audio" : "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
@@ -159,10 +183,17 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   case: S.str("Letter case as shown (the text is kept): none, upper, lower or title", { enum: ["none", "upper", "lower", "title"] }),
   // Readable over busy footage: a box behind, an outline, a drop shadow.
   // Sizes are pixels at 1080p; an empty color removes the part.
-  background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"]),
-  stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"]),
-  shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"]),
-});
+  background: S.obj({ color: S.str("CSS color, e.g. rgba(0,0,0,0.6)"), padding: S.num("Pixels", { minimum: 0 }), radius: S.num("Corner radius, pixels", { minimum: 0 }) }, ["color"], "A box behind the text, so it reads over busy footage; an empty color removes it"),
+  stroke: S.obj({ color: S.str("CSS color"), width: S.num("Pixels", { minimum: 0 }) }, ["color"], "An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it"),
+  stroke2: S.obj({ color: S.str("CSS color"), width: S.num("Pixels beyond the first outline; default 6", { minimum: 0 }) }, ["color"], "A second outline outside the first, for a sticker-like double edge"),
+  shadow: S.obj({ color: S.str("CSS color"), blur: S.num("Pixels", { minimum: 0 }), x: S.num("Pixels"), y: S.num("Pixels") }, ["color"], "A drop shadow; an empty color removes it"),
+  // Ad looks: a neon glow, a two-color fill, the kinetic sweeps' color.
+  glow: S.obj({ color: S.str("CSS color, e.g. #00e5ff"), blur: S.num("Pixels, default 24", { minimum: 0 }), strength: S.num("1..3, how bright; default 1", { minimum: 1, maximum: 3 }) }, ["color"], "A neon glow around the letters"),
+  gradient: S.obj({ from: S.str("CSS color at the start"), to: S.str("CSS color at the end"), angle: S.num("Degrees: 0 left to right (default), 90 top to bottom", { minimum: -360, maximum: 360 }) }, ["from", "to"], "A two-color fill instead of color"),
+  accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
+  letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
+  maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
+}, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
 const REGION_SCHEMA = S.obj(
   {
@@ -189,8 +220,14 @@ function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial
   if (g.background) s.background = { padding: 16, radius: 8, ...base.background, ...g.background } as TextStyle["background"];
   if (g.stroke) s.stroke = { width: 4, ...base.stroke, ...g.stroke } as TextStyle["stroke"];
   if (g.shadow) s.shadow = { blur: 8, x: 0, y: 3, ...base.shadow, ...g.shadow } as TextStyle["shadow"];
-  for (const k of ["background", "stroke", "shadow"] as const) if (s[k]?.color === "") delete s[k];
+  const g2 = given as { stroke2?: object; glow?: object; gradient?: object };
+  if (g2.stroke2) s.stroke2 = { width: 6, ...base.stroke2, ...g2.stroke2 } as TextStyle["stroke2"];
+  if (g2.glow) s.glow = { blur: 24, ...base.glow, ...g2.glow } as TextStyle["glow"];
+  if (g2.gradient) s.gradient = { angle: 0, ...base.gradient, ...g2.gradient } as TextStyle["gradient"];
+  for (const k of ["background", "stroke", "stroke2", "shadow", "glow"] as const) if (s[k]?.color === "") delete s[k];
+  if (s.gradient && (s.gradient.from === "" || s.gradient.to === "")) delete s.gradient;
   if (s.highlight === "") delete s.highlight;
+  if (s.accent === "") delete s.accent;
   if ((s.case as string) === "none") delete s.case;
   return s;
 }
@@ -201,7 +238,7 @@ export const COMMANDS: Command[] = [
   {
     name: "paste_attributes",
     description: "Copy selected groups from a source clip to targets. Replaces those settings/keyframes; effects append by default. Keeps timing/source offsets and respects locks.",
-    input: S.obj({ source_clip_id: S.str("Source clip"), clip_ids: S.ids("Target clips"), groups: { type: "array", items: S.str("Group", { enum: [...ATTRIBUTE_GROUPS] }) }, replace_effects: S.bool("Replace target effect stacks") }, ["source_clip_id", "clip_ids", "groups"]),
+    input: S.obj({ source_clip_id: S.str("Source clip"), clip_ids: S.ids("Target clips"), groups: { type: "array", items: S.str("Group", { enum: [...ATTRIBUTE_GROUPS] }), description: `Which attributes to paste: ${ATTRIBUTE_GROUPS.join(", ")}` }, replace_effects: S.bool("Replace target effect stacks") }, ["source_clip_id", "clip_ids", "groups"]),
     run: (p, a) => pasteAttributes(p, a.clip_ids as string[], copyAttributes(p, String(a.source_clip_id)), a.groups as AttributeGroup[], a.replace_effects === true),
   },
   {
@@ -223,6 +260,16 @@ export const COMMANDS: Command[] = [
     run: (p, a) => organizeMedia(p, a.asset_ids as string[], { ...(typeof a.folder === "string" ? { folder: a.folder } : {}), ...(typeof a.favorite === "boolean" ? { favorite: a.favorite } : {}) }),
   },
   {
+    name: "remove_media",
+    description: "Remove imported media from the project; the files on disk stay. Media a clip uses is refused unless remove_clips=true, which deletes those clips too. unused=true removes every file no clip uses.",
+    input: S.obj({ asset_ids: S.ids("Assets"), unused: S.bool("Remove all media no clip uses"), remove_clips: S.bool("Also delete the clips that use it") }),
+    run: (p, a) => {
+      const ids = a.unused === true ? unusedMedia(p) : ((a.asset_ids as string[] | undefined) ?? []);
+      if (!ids.length) throw new CommandError(a.unused === true ? "No media is unused." : "Name the media to remove.");
+      return removeMedia(p, ids, a.remove_clips === true);
+    },
+  },
+  {
     name: "relink_media",
     description: "Relink every use of an asset to another imported asset's source. Preserves edits and identity; requires compatible streams and duration. Undoable.",
     input: S.obj({ asset_id: S.str("Original asset"), replacement_asset_id: S.str("Imported replacement asset") }, ["asset_id", "replacement_asset_id"]),
@@ -240,14 +287,20 @@ export const COMMANDS: Command[] = [
       width: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas width in pixels" },
       height: { type: "integer", minimum: 16, maximum: 8192, description: "Canvas height in pixels" },
       background: S.str("CSS hex color behind all layers"),
+      fps: S.str("Frame rate; clips keep their times", { enum: FPS_PRESETS.map((f) => f.label) }),
     }),
-    run: (p, a) => ({
-      ...p,
-      ...(a.name !== undefined ? { name: String(a.name) } : {}),
-      ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
-      ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
-      ...(a.background !== undefined ? { background: String(a.background) } : {}),
-    }),
+    run: (p, a) => {
+      const rate = a.fps === undefined ? undefined : FPS_PRESETS.find((f) => f.label === String(a.fps));
+      if (a.fps !== undefined && !rate) throw new CommandError(`fps must be one of ${FPS_PRESETS.map((f) => f.label).join(", ")}`);
+      const q = {
+        ...p,
+        ...(a.name !== undefined ? { name: String(a.name) } : {}),
+        ...(a.width !== undefined ? { width: Number(a.width), canvasFixed: true } : {}),
+        ...(a.height !== undefined ? { height: Number(a.height), canvasFixed: true } : {}),
+        ...(a.background !== undefined ? { background: String(a.background) } : {}),
+      };
+      return rate ? ops.setFps(q, rate.fps) : q;
+    },
   },
   {
     name: "add_track",
@@ -295,7 +348,7 @@ export const COMMANDS: Command[] = [
     description: "Place an imported asset (video, audio or image) on the timeline. Omit track_id to let the editor choose (main track if free, otherwise an overlay/audio track).",
     input: S.obj(
       {
-        asset_id: S.str("Asset id from list_assets"),
+        asset_id: S.str("Asset id, from import_media or describe_project"),
         start: S.num("Timeline position in seconds", { minimum: 0 }),
         duration: S.num("Length in seconds; defaults to the whole source (5 s for images)", { minimum: 0.001 }),
         in: S.num("Seconds into the source where the clip begins", { minimum: 0 }),
@@ -310,7 +363,7 @@ export const COMMANDS: Command[] = [
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
       if (a.in !== undefined && "in" in clip) clip = { ...clip, in: Number(a.in) } as Clip;
       const room = ops.roomRight(p, { ...clip, duration: 0 } as Clip);
-      const wanted = a.duration !== undefined ? Math.max(1, f(p, a.duration)) : clip.duration;
+      const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite");
@@ -327,15 +380,119 @@ export const COMMANDS: Command[] = [
         x: S.num("Horizontal offset, -0.5..0.5"),
         y: S.num("Vertical offset, -0.5..0.5"),
         style: TEXT_STYLE_SCHEMA,
+        role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
         track_id: S.str("Track id"),
       },
       ["text", "start", "duration"],
     ),
     run: (p, a) => {
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), Math.max(1, f(p, a.duration)), styleFrom({}, (a.style ?? {}) as Partial<TextStyle>));
+      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
+    },
+  },
+  // ---- ads: the brand kit and ad elements (lib/brandKit.ts, lib/ads.ts) ----
+  {
+    name: "set_brand",
+    description:
+      "Set the project's brand kit, which add_text's role, apply_brand and add_ad_element draw with, so every part of an ad agrees: colors by role (CSS colors), a heading and a body font (at most two families), logo pictures by variant (asset ids from import_media; a PNG with transparency works best), the brand's name, website and tagline. Only what is given changes; an empty string removes a logo, name, url or tagline; reset clears the kit. describe_project shows it. Example: {primary: '#ff3366', accent: '#ffd23f', background: '#14101f', heading_font: 'Arial Black', body_font: 'Segoe UI', logo: 'a_123', url: 'shop.example.com'}.",
+    input: S.obj({
+      name: S.str("Brand name (a wordmark when there is no logo)"),
+      primary: S.str("Main color: buttons, bars"),
+      secondary: S.str("Second color: panels, a lower third's second line"),
+      accent: S.str("Highlight color: badges, labels, marker sweeps"),
+      background: S.str("Behind end cards and text boxes (usually dark)"),
+      text: S.str("Text over footage and the background (usually white)"),
+      heading_font: S.str("Font family for headlines, buttons, badges"),
+      body_font: S.str("Font family for everything else"),
+      logo: S.str("Main logo: an image asset id"),
+      logo_light: S.str("Logo for dark backgrounds: an image asset id"),
+      logo_dark: S.str("Logo for light backgrounds: an image asset id"),
+      logo_icon: S.str("The mark alone: an image asset id"),
+      url: S.str("Website shown on end cards, e.g. shop.example.com"),
+      tagline: S.str("A short line: end cards and lower thirds use it by default"),
+      reset: S.bool("Clear the brand kit (then apply the rest of this call)"),
+    }),
+    run: (p, a) => {
+      const q = a.reset === true ? (({ brand: _, ...rest }) => rest as Project)(p) : p;
+      const str = (v: unknown) => (v === undefined ? undefined : String(v));
+      try {
+        const brand = patchBrand(q, {
+          name: str(a.name),
+          url: str(a.url),
+          tagline: str(a.tagline),
+          colors: { primary: str(a.primary), secondary: str(a.secondary), accent: str(a.accent), background: str(a.background), text: str(a.text) },
+          fonts: { heading: str(a.heading_font), body: str(a.body_font) },
+          logos: { main: str(a.logo), light: str(a.logo_light), dark: str(a.logo_dark), icon: str(a.logo_icon) },
+        });
+        return { ...q, brand };
+      } catch (e) {
+        throw new CommandError(e instanceof Error ? e.message : String(e));
+      }
+    },
+  },
+  {
+    name: "apply_brand",
+    description:
+      "Restyle clips with the brand kit, keeping their words, timing and place. Titles: with role, that role's whole look and size (headline, subhead, body, label, cta, badge, as add_text's role); without, only fonts and colors change (the heading font for bold display type; a box takes the primary color with a readable label; plain type the brand's text color; glows, gradients, sweeps and spoken-word highlights the accent). Solid color clips: role primary, secondary, accent, background or text sets their color (default primary).",
+    input: S.obj({ clip_ids: S.ids("Text or color clips"), role: S.str("A text role, or a color role for solids", { enum: [...TEXT_ROLES, ...COLOR_ROLES] }) }, ["clip_ids"]),
+    run: (p, a) => {
+      const b = brandOf(p);
+      const k = typeScale(p.width, p.height);
+      for (const id of a.clip_ids as Id[]) {
+        const { clip, track } = clipOrThrow(p, id);
+        if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+        const role = a.role as string | undefined;
+        if (clip.type === "text") {
+          if (role && !TEXT_ROLES.includes(role as TextRole)) throw new CommandError(`${role} is a color role; titles take ${TEXT_ROLES.join(", ")}`);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k) }) as Clip);
+        } else if (clip.type === "color") {
+          if (role && !COLOR_ROLES.includes(role as ColorRole)) throw new CommandError(`${role} is a text role; solids take ${COLOR_ROLES.join(", ")}`);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, color: b.colors[(role as ColorRole | undefined) ?? "primary"] }) as Clip);
+        } else throw new CommandError(`${clip.type} clips have no brand colors; apply_brand restyles titles and solid colors`);
+      }
+      return p;
+    },
+  },
+  {
+    name: "add_ad_element",
+    description:
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under 40 px at a 1080 short side. Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+    input: S.obj(
+      {
+        element: S.str("Which element", { enum: AD_ELEMENTS }),
+        start: S.num("Timeline seconds", { minimum: 0 }),
+        duration: S.num("Seconds; default end_card 3, lower_third 4, offer_badge 3, cta_button 3, logo_reveal 2.5", { minimum: 0.2 }),
+        headline: S.str("end_card headline; lower_third name; offer_badge offer; logo_reveal wordmark (default the brand name when there is no logo)"),
+        subline: S.str("lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
+        cta: S.str("Button words for end_card and cta_button; default 'Shop now'"),
+        url: S.str("end_card and cta_button: website line; default the brand's url"),
+        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
+        position: S.str("Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered)", { enum: SPOTS }),
+        background: S.str("end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none", { enum: ["brand", "primary", "scrim", "none"] }),
+        glow: S.bool("logo_reveal: a glow that flares as the logo lands"),
+        flash: S.bool("logo_reveal: a white flash as the logo lands"),
+      },
+      ["element", "start"],
+    ),
+    run: (p, a) => {
+      const logo = a.logo as LogoVariant | "auto" | "none" | undefined;
+      if (logo && logo !== "auto" && logo !== "none" && !brandOf(p).logos?.[logo] && !brandOf(p).logos?.main) throw new CommandError("the brand kit has no logo: import one and set_brand logo first, or pass logo none");
+      return addAdElement(p, a.element as AdElement, {
+        start: f(p, a.start),
+        ...(a.duration !== undefined ? { duration: span(p, a.start, a.duration) } : {}),
+        headline: a.headline as string | undefined,
+        subline: a.subline as string | undefined,
+        cta: a.cta as string | undefined,
+        url: a.url as string | undefined,
+        logo,
+        position: a.position as Spot | undefined,
+        background: a.background as AdBackground | undefined,
+        glow: a.glow === true,
+        flash: a.flash === true,
+      }).project;
     },
   },
   {
@@ -343,7 +500,7 @@ export const COMMANDS: Command[] = [
     description: "Add a solid color layer (backgrounds, flashes, title cards).",
     input: S.obj({ color: S.str("CSS color"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
     run: (p, a) => {
-      const clip = createColorClip(String(a.color), f(p, a.start), Math.max(1, f(p, a.duration)));
+      const clip = createColorClip(String(a.color), f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -353,7 +510,7 @@ export const COMMANDS: Command[] = [
     description: "Add an adjustment layer: its color settings, filter and effects apply to every layer below it for its duration.",
     input: S.obj({ start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["start", "duration"]),
     run: (p, a) => {
-      const clip = createAdjustmentClip(f(p, a.start), Math.max(1, f(p, a.duration)));
+      const clip = createAdjustmentClip(f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -427,6 +584,101 @@ export const COMMANDS: Command[] = [
       );
     },
   },
+  // ---- sound design (ADR-060) -----------------------------------------------------
+  {
+    name: "set_audio_filter",
+    description:
+      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes.',
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        type: S.str("Which filter", { enum: ["lowpass", "highpass"] }),
+        cutoff: S.num("Hz (at sweep.start when sweeping)", { minimum: 20, maximum: 20000 }),
+        resonance: S.num("Peak at the cutoff, dB; 0 = smooth", { minimum: 0, maximum: 24 }),
+        sweep: S.obj(
+          {
+            to: S.num("Cutoff at the end of the sweep, Hz", { minimum: 20, maximum: 20000 }),
+            start: S.num("Timeline seconds the sweep begins", { minimum: 0 }),
+            end: S.num("Timeline seconds it arrives", { minimum: 0 }),
+            ease: S.str("Curve of the sweep (default linear: the same octaves each second)", { enum: ["linear", "easeIn", "easeOut", "easeInOut"] }),
+          },
+          ["to", "start", "end"],
+          "Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export",
+        ),
+        off: S.bool("Remove this filter"),
+      },
+      ["clip_ids", "type"],
+    ),
+    run: (p, a) => {
+      const kind = a.type as FilterKind;
+      const path = `${kind}.cutoff`;
+      const sweep = a.sweep as { to: number; start: number; end: number; ease?: Ease } | undefined;
+      return fxEdit(p, a, "filter", (c) => {
+        if (a.off === true) return withoutFx(c, kind, [path]);
+        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
+        const out = { ...c, [kind]: filter } as Clip;
+        if (!sweep) return a.cutoff === undefined ? out : withoutKeys(out, [path]);
+        const k0 = f(p, sweep.start) - c.start;
+        const k1 = f(p, sweep.end) - c.start;
+        if (k1 <= k0) throw new CommandError("sweep.end must come at least a frame after sweep.start");
+        const to = cleanFx(kind, { cutoff: sweep.to }, filter)!.cutoff;
+        return { ...out, keyframes: { ...c.keyframes, [path]: [{ f: k0, v: filter.cutoff, ...(sweep.ease && sweep.ease !== "linear" ? { ease: sweep.ease } : {}) }, { f: k1, v: to }] } };
+      });
+    },
+  },
+  {
+    name: "set_reverb",
+    description:
+      "Put a video or audio clip's sound in a room (a convolution reverb). preset room (small and close), hall (a concert hall; what a new reverb starts as) or cathedral (huge and long, for trailers and epic edits). size 0..1 (pre-delay 5 to 50 ms, slower build), decay: seconds for the tail to fall 60 dB (0.1..10), mix: wet share 0..1 at equal power, so the clip stays as loud (0.2 subtle, 0.5 drenched). It comes after the clip's volume and its tail rings on past the clip's end, so a voice's last word hangs in the room. Values left out keep theirs, or the preset's. A reverb throw on one word: add_keyframe on reverb.mix. off: true removes it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        preset: S.str("Starting point", { enum: Object.keys(REVERB_PRESETS) }),
+        size: S.num("Room size, 0..1", { minimum: 0, maximum: 1 }),
+        decay: S.num("Seconds to fall 60 dB (RT60)", { minimum: 0.1, maximum: 10 }),
+        mix: S.num("Wet share, 0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the reverb"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      fxEdit(p, a, "reverb", (c) => {
+        if (a.off === true) return withoutFx(c, "reverb", ["reverb.mix"]);
+        const base = a.preset ? REVERB_PRESETS[a.preset as ReverbPreset] : ((c as Partial<Sound>).reverb ?? REVERB_PRESETS.hall);
+        return { ...c, reverb: cleanFx("reverb", { size: a.size, decay: a.decay, mix: a.mix }, base)! } as Clip;
+      }),
+  },
+  {
+    name: "set_echo",
+    description:
+      "Repeat a video or audio clip's sound (a delay). time: seconds between repeats, 0.01..2 (0.08-0.15 a slapback, 0.3-0.5 an echo; on music 60/BPM lands on the beat). feedback: each repeat's level against the one before, 0..0.9 (0.4 gives a few repeats, 0.8 a long trail). mix: wet share 0..1 at equal power. A new echo is 0.35 s, 0.4, 0.3; values left out keep theirs. It comes after the clip's volume, so the repeats ring on past the clip's end: an echo on a short hit or sound effect trails off after it. Echo one word only: add_keyframe on echo.mix. off: true removes it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or audio clips"),
+        time: S.num("Seconds between repeats", { minimum: 0.01, maximum: 2 }),
+        feedback: S.num("Each repeat's level against the one before", { minimum: 0, maximum: 0.9 }),
+        mix: S.num("Wet share, 0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the echo"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      fxEdit(p, a, "echo", (c) => {
+        if (a.off === true) return withoutFx(c, "echo", ["echo.mix"]);
+        return { ...c, echo: cleanFx("echo", { time: a.time, feedback: a.feedback, mix: a.mix }, (c as Partial<Sound>).echo ?? ECHO_DEFAULT)! } as Clip;
+      }),
+  },
+  {
+    name: "set_tape_stop",
+    description:
+      "Make a video or audio clip's sound slow to a stop over its last `duration` seconds, its pitch diving with it, as a turntable or tape machine losing power: the classic ending, or a cut into silence before a drop. duration 0.05..10 seconds (default 1; 0.5 a quick stop, 2-3 a long wind-down; never more than the clip). Only the sound stops; a video's picture plays on. Splitting the clip keeps it on the part with the end. off: true removes it.",
+    input: S.obj({ clip_ids: S.ids("Video or audio clips"), duration: S.num("Seconds the stop takes", { minimum: 0.05, maximum: 10 }), off: S.bool("Remove the tape stop") }, ["clip_ids"]),
+    run: (p, a) =>
+      fxEdit(p, a, "tape stop", (c) => {
+        if (a.off === true) return withoutFx(c, "tapeStop");
+        return { ...c, tapeStop: cleanFx("tapeStop", { duration: a.duration }, (c as Partial<Sound>).tapeStop ?? TAPE_STOP_DEFAULT)! } as Clip;
+      }),
+  },
   {
     name: "set_channel_fill",
     description: "Play one channel of a video's or audio clip's sound on both sides (Premiere's Fill Left / Fill Right), e.g. a lav mic recorded on one channel. both = as recorded.",
@@ -467,14 +719,14 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
-      return ops.setParam(p, ids, String(a.path), Number(a.value), rel);
+      return ids.reduce((q, id) => ops.setParam(q, [id], paramPath(clipOrThrow(q, id).clip, String(a.path)), Number(a.value), rel), p);
     },
   },
   {
@@ -565,6 +817,120 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_blend",
+    description: "How a picture mixes with what is under it (the inspector's Blend). screen or add for light leaks, flares and glows shot on black; multiply for textures and paper on white; overlay or softLight for grain and grunge. normal undoes it.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), mode: S.str("Blend mode", { enum: BLEND_MODES.map(([m]) => m) }) }, ["clip_ids", "mode"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("blend" in clip)) throw new CommandError(`${clip.type} clips have no blend mode`);
+        return ops.updateClip(q, id, (c) => ({ ...c, blend: a.mode }) as Clip);
+      }, p),
+  },
+  {
+    name: "set_chroma_key",
+    description: "Key out a color (green or blue screen) so what is below shows through, as CapCut's Chroma key. color is the backdrop's color (#00b140 is studio green); similarity 0..1 (default 0.4) is how close a pixel must be to vanish, smoothness 0..1 (default 0.1) softens edges, spill 0..1 (default 0.5) takes the green cast off the subject. enabled=false turns it off and keeps the settings.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or image clips"),
+        color: S.str("Key color, CSS hex"),
+        similarity: S.num("0..1", { minimum: 0, maximum: 1 }),
+        smoothness: S.num("0..1", { minimum: 0, maximum: 1 }),
+        spill: S.num("0..1", { minimum: 0, maximum: 1 }),
+        enabled: S.bool("Keying on (default true)"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (clip.type !== "video" && clip.type !== "image") throw new CommandError("Only video and image clips can be keyed");
+        const was = clip.chromaKey ?? { enabled: true, color: "#00b140", similarity: 0.4, smoothness: 0.1, spill: 0.5 };
+        const num = (k: "similarity" | "smoothness" | "spill") => (a[k] === undefined ? was[k] : Math.max(0, Math.min(1, Number(a[k]))));
+        const key = { enabled: a.enabled !== false, color: String(a.color ?? was.color), similarity: num("similarity"), smoothness: num("smoothness"), spill: num("spill") };
+        return ops.updateClip(q, id, (c) => ({ ...c, chromaKey: key }) as Clip);
+      }, p),
+  },
+  {
+    name: "set_canvas_fill",
+    description: "What fills the canvas around a picture that does not cover it (CapCut's Canvas): blur (the clip itself, scaled to cover and blurred; amount 0..100, default 50), color (a solid color), or none. The usual fix for horizontal footage on a vertical canvas without cropping it.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Video or image clips"),
+        fill: S.str("Kind of fill", { enum: ["blur", "color", "none"] }),
+        amount: S.num("Blur strength 0..100", { minimum: 0, maximum: 100 }),
+        color: S.str("Fill color, CSS hex"),
+      },
+      ["clip_ids", "fill"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (clip.type !== "video" && clip.type !== "image") throw new CommandError("Only video and image clips have a canvas fill");
+        return ops.updateClip(q, id, (c) => {
+          const { canvas: _, ...rest } = c as Clip & { canvas?: unknown };
+          if (a.fill === "none") return rest as Clip;
+          const canvas = a.fill === "color" ? { type: "color", color: String(a.color ?? "#000000") } : { type: "blur", amount: Math.max(0, Math.min(100, Number(a.amount ?? 50))) };
+          return { ...rest, canvas } as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_fades",
+    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }) }, ["clip_ids"]),
+    run: (p, a) => {
+      if (a.fade_in === undefined && a.fade_out === undefined) throw new CommandError("give fade_in, fade_out or both, in seconds");
+      return (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip, track } = clipOrThrow(q, id);
+        if (!("fadeIn" in clip)) throw new CommandError(`${clip.type} clips have no sound to fade; use set_animation with type fade for pictures`);
+        if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+        const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
+        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
+      }, p);
+    },
+  },
+  {
+    name: "move_track",
+    description: "Move a track up or down the stack, next to another track of its kind: above_track_id or below_track_id. tracks[0] in describe_project is the top. Higher pictures cover lower ones, and an adjustment clip grades every track below it, so a grade's track goes under the titles' and captions'. The main track stays the bottom video track.",
+    input: S.obj({ track_id: S.str("The track to move"), above_track_id: S.str("Put it just above this track"), below_track_id: S.str("Put it just below this track") }, ["track_id"]),
+    run: (p, a) => {
+      const track = p.tracks.find((t) => t.id === a.track_id);
+      if (!track) throw new CommandError(`no track with id ${a.track_id}`);
+      if ((a.above_track_id === undefined) === (a.below_track_id === undefined)) throw new CommandError("give above_track_id or below_track_id");
+      const below = a.below_track_id !== undefined;
+      const target = p.tracks.find((t) => t.id === (below ? a.below_track_id : a.above_track_id));
+      if (!target || target === track) throw new CommandError(`no other track with id ${below ? a.below_track_id : a.above_track_id}`);
+      if (target.kind !== track.kind) throw new CommandError(`${track.name} holds ${track.kind} and ${target.name} ${target.kind}: tracks move among their own kind`);
+      if (track.main || (below && target.main)) throw new CommandError("the main track stays the bottom video track");
+      const rest = p.tracks.filter((t) => t !== track);
+      const at = rest.indexOf(target) + (below ? 1 : 0);
+      return { ...p, tracks: [...rest.slice(0, at), track, ...rest.slice(at)] };
+    },
+  },
+  {
+    name: "slip_clip",
+    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.",
+    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by: positive shows later material") }, ["clip_id", "by"]),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!("in" in clip)) throw new CommandError(`${clip.type} clips have no source to slip`);
+      return ops.slipClip(p, clip.id, f(p, a.by));
+    },
+  },
+  {
+    name: "duplicate_clips",
+    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third.",
+    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }) }, ["clip_ids"]),
+    run: (p, a) => {
+      const found = (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id));
+      const origin = Math.min(...found.map((x) => x.clip.start));
+      const at = a.at === undefined ? Math.max(...found.map((x) => x.clip.start + x.clip.duration)) : f(p, a.at);
+      const copies = regroupCopies(found.map((x) => x.clip));
+      return copies.reduce((q, c, i) => ops.placeClip(q, found[i].track.id, { ...c, id: uid("c"), start: at + c.start - origin } as Clip, { collision: "newTrack" }), p);
+    },
+  },
+  {
     name: "set_crop",
     description: `Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions of the source trimmed from each edge (0 keeps the edge; each pair must leave at least ${MIN_CROP * 100}% of the picture); edges left out keep their value. Or give ratio instead for the largest centered crop of that shape on each clip's source (original: uncropped). The crop is cut from the source before flips, scale and rotation, and the part kept stays where it was.`,
     input: S.obj(
@@ -637,6 +1003,248 @@ export const COMMANDS: Command[] = [
       return p;
     },
   },
+  // ---- graphics and compositing (ADR-056 to ADR-059, ADR-062) ----
+  {
+    name: "set_track_matte",
+    description:
+      "Cut a clip with a track matte (After Effects'): it shows only where another clip's picture is, the basis of video inside text, logo reveals and wipe reveals. mode alpha (default) keeps where the matte is opaque, alphaInverted where it is transparent, luma where it is bright, lumaInverted where it is dark. matte_clip_id: a visual clip of the same timeline (text, shape, picture, video), 'above' for whatever is on the video track directly above at each frame (keeps working after cuts), or 'none' to remove the matte; left out, the current matte stays (a new one uses 'above'). The matte clip is not drawn itself but keeps its transform, animations and keyframes, so animating the matte animates the reveal. Example, video inside big text: add_text {text: 'SUMMER', style: {size: 420}} then set_track_matte {clip_id: <video>, matte_clip_id: <text>}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The clip to cut (it is what shows)"),
+        matte_clip_id: S.str("The matte clip's id, 'above' (the video track directly above) or 'none'"),
+        mode: S.str("alpha: show where the matte is opaque (default); alphaInverted: where it is not; luma: where it is bright; lumaInverted: where it is dark", { enum: MATTE_MODES }),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => {
+      const { clip, trackIndex } = clipOrThrow(p, a.clip_id);
+      if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to cut with a matte`);
+      if (a.matte_clip_id === "none") {
+        return ops.updateClip(p, clip.id, (c) => {
+          const { trackMatte: _, ...rest } = c as Clip & { trackMatte?: unknown };
+          return rest as Clip;
+        });
+      }
+      const mode = (a.mode as MatteMode | undefined) ?? clip.trackMatte?.mode ?? "alpha";
+      const which = a.matte_clip_id === undefined ? (clip.trackMatte ? (clip.trackMatte.clipId ?? "above") : "above") : String(a.matte_clip_id);
+      let matte: TrackMatte = { mode };
+      if (which === "above") {
+        if (!trackAbove(p.tracks, trackIndex)) throw new CommandError("there is no video track directly above this clip's track: name the matte with matte_clip_id instead");
+      } else {
+        const m = clipOrThrow(p, which).clip;
+        if (m.id === clip.id) throw new CommandError("a clip cannot be its own matte");
+        if (!("transform" in m)) throw new CommandError(`${m.type} clips have no picture to be a matte`);
+        matte = { clipId: m.id, mode };
+      }
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, trackMatte: matte }) as Clip);
+    },
+  },
+  {
+    name: "add_shape",
+    description:
+      "Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid or two-color gradient fill, an outline and a draw-on amount. The pieces of lower thirds, callouts, CTA buttons (a rounded_rectangle with radius 1 is a pill), progress bars and end cards. It lands above everything at that time (or on track_id), so add a box before the text that sits on it. Sizes are fractions of the canvas; x and y move its center from the canvas center. Every number animates: set_param or add_keyframe on shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle, plus the usual transform.*, opacity. Draw a line or outline on by keying shape.draw from 0 to 1. Example lower-third bar: {kind: 'rectangle', start: 1, duration: 4, x: -0.25, y: 0.33, width: 0.4, height: 0.09, color: '#101418'}.",
+    input: S.obj(
+      {
+        kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
+        start: S.num("Seconds", { minimum: 0 }),
+        duration: S.num("Seconds", { minimum: 0.001 }),
+        x: S.num("Center's horizontal offset from the canvas center, fraction of its width (-0.5 left edge .. 0.5 right edge; default 0)"),
+        y: S.num("Center's vertical offset, fraction of the canvas height (-0.5 top .. 0.5 bottom; 0.35 is lower-third height; default 0)"),
+        width: S.num("Width, fraction of the canvas width (a line's length); default 0.3, an ellipse 0.2", { minimum: 0.001, maximum: 4 }),
+        height: S.num("Height, fraction of the canvas height (unused by lines); default 0.1, an ellipse a circle as wide as width", { minimum: 0.001, maximum: 4 }),
+        color: S.str("Fill color, CSS: '#ff3366', '#00000099' (with alpha), 'rgba(0,0,0,0.6)', 'white'; a line's color. Default #ffffff"),
+        gradient: S.obj(
+          {
+            from: S.str("Color at the start"),
+            to: S.str("Color at the end"),
+            angle: S.num("Degrees: 0 runs left to right (default), 90 top to bottom, 45 diagonal"),
+          },
+          ["from", "to"],
+          "A two-color fill instead of color",
+        ),
+        fill: S.bool("false draws only the outline (give stroke_width); default true"),
+        stroke_color: S.str("Outline color, CSS; default white"),
+        stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
+        radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
+        draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
+        rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
+        opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
+        track_id: S.str("Track id; default above everything at that time"),
+      },
+      ["kind", "start", "duration"],
+    ),
+    run: (p, a) => {
+      const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
+      const color = colorArg(a.color, "color") ?? "#ffffff";
+      const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
+      const height = a.height !== undefined ? Number(a.height) : kind === "ellipse" ? (width * p.width) / p.height : 0.1;
+      const strokeColor = colorArg(a.stroke_color, "stroke_color");
+      const strokeWidth = a.stroke_width !== undefined ? Number(a.stroke_width) : kind === "line" ? LINE_WIDTH : strokeColor ? 4 : 0;
+      const shape: Shape = {
+        kind,
+        width,
+        height,
+        ...(kind === "rectangle" && (a.radius !== undefined || a.kind === "rounded_rectangle") ? { radius: Number(a.radius ?? 0.35) } : {}),
+        ...(a.fill === false && kind !== "line" ? { fill: false } : {}),
+        ...(a.gradient ? { gradient: gradientArg(a.gradient as Record<string, unknown>) } : {}),
+        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" ? color : "#ffffff"), width: strokeWidth } } : {}),
+        ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
+      };
+      if (shape.fill === false && !shape.stroke) throw new CommandError("an outline-only shape needs stroke_width");
+      const base = createColorClip(color, f(p, a.start), span(p, a.start, a.duration));
+      const clip = {
+        ...base,
+        name: shapeLabel(shape),
+        shape,
+        opacity: Number(a.opacity ?? 1),
+        transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
+      } as Clip;
+      if (a.track_id !== undefined) return ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      return placeOnTop(p, clip, "Graphics");
+    },
+  },
+  {
+    name: "set_shape",
+    description:
+      "Change shape layers made with add_shape (same meanings and units). Values left out keep theirs. Numbers that are animated (have keyframes) get a keyframe at `at` instead; to start animating one, use add_keyframe on its path (shape.width, shape.height, shape.radius, shape.stroke.width, shape.draw, shape.gradient.angle). gradient with an empty from removes it; stroke_width 0 removes the outline.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Shape clips"),
+        kind: S.str("Shape", { enum: ["rectangle", "rounded_rectangle", "ellipse", "line"] }),
+        width: S.num("Fraction of the canvas width", { minimum: 0.001, maximum: 4 }),
+        height: S.num("Fraction of the canvas height", { minimum: 0.001, maximum: 4 }),
+        color: S.str("Fill color, CSS"),
+        gradient: S.obj({ from: S.str("Start color; empty removes the gradient"), to: S.str("End color"), angle: S.num("Degrees, 0 left to right") }, ["from"], "A two-color fill instead of color"),
+        fill: S.bool("false: outline only"),
+        stroke_color: S.str("Outline color, CSS"),
+        stroke_width: S.num("Pixels at 1080p; 0 removes the outline", { minimum: 0, maximum: 400 }),
+        radius: S.num("Rectangle corners 0..1", { minimum: 0, maximum: 1 }),
+        draw: S.num("Share drawn 0..1", { minimum: 0, maximum: 1 }),
+        at: S.num("Timeline seconds, for animated values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (clip.type !== "color" || !clip.shape) throw new CommandError(`clip ${id} is not a shape (add one with add_shape)`);
+        const color = colorArg(a.color, "color");
+        const strokeColor = colorArg(a.stroke_color, "stroke_color");
+        let s: Shape = { ...clip.shape };
+        if (a.kind !== undefined) {
+          s.kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
+          if (a.kind === "rounded_rectangle" && !s.radius && a.radius === undefined) s.radius = 0.35;
+        }
+        if (a.fill !== undefined) s = a.fill === false ? { ...s, fill: false } : omit(s, "fill");
+        const g = a.gradient as Record<string, unknown> | undefined;
+        if (g) s = g.from === "" ? omit(s, "gradient") : { ...s, gradient: gradientArg({ ...s.gradient, ...g }) };
+        if (strokeColor || a.stroke_width !== undefined) {
+          const w = a.stroke_width !== undefined ? Number(a.stroke_width) : (s.stroke?.width ?? (s.kind === "line" ? LINE_WIDTH : 4));
+          s = w > 0 ? { ...s, stroke: { color: strokeColor ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
+        }
+        // A name that is still the shape's own label follows the shape.
+        const name = clip.name === undefined || clip.name === shapeLabel(clip.shape) ? shapeLabel(s) : clip.name;
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, shape: s, name, ...(color ? { color } : {}) }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        const nums: [string, unknown][] = [["width", a.width], ["height", a.height], ["radius", a.radius], ["draw", a.draw], ...(s.stroke && a.stroke_width !== undefined ? [["stroke.width", a.stroke_width] as [string, unknown]] : [])];
+        for (const [k, v] of nums) if (v !== undefined) p = ops.setParam(p, [clip.id], `shape.${k}`, Number(v), rel);
+      }
+      return p;
+    },
+  },
+  {
+    name: "set_motion_blur",
+    description:
+      "Motion blur from movement (After Effects'): while a clip moves (position, scale or rotation keyframes, wiggle, in/out animations, and moving transitions such as slides, pushes, zooms and spins), its picture is averaged over the camera's shutter, so fast moves streak instead of strobing. shutter_angle in degrees: 180 (default; film's and After Effects') blurs over half a frame centered on it, 360 a whole frame (heavier), 90 crisper. Still frames cost nothing; export and the paused viewer use up to 32 samples, playback fewer.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        on: S.bool("Motion blur on or off"),
+        shutter_angle: S.num("Degrees, 1..720; default 180", { minimum: 1, maximum: 720 }),
+      },
+      ["clip_ids", "on"],
+    ),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to blur`);
+        return ops.updateClip(q, clip.id, (c) => {
+          const { motionBlur: _, ...rest } = c as Clip & { motionBlur?: unknown };
+          return (a.on ? { ...rest, motionBlur: { shutter: Number(a.shutter_angle ?? clip.motionBlur?.shutter ?? 180) } } : rest) as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_edge_mode",
+    description:
+      "What fills the canvas around a picture that is moved, shrunk, spun or shaken off it (After Effects' Motion Tile with Mirror Edges): mirror reflects the picture at its edges, seamless, the usual choice under camera shake, zoom-out and spin moves; repeat tiles it; none (default) leaves the canvas empty there. Pairs with set_wiggle and with scale below 1.",
+    input: S.obj({ clip_ids: S.ids("Visual clips"), edge: S.str("Edge mode", { enum: ["none", "mirror", "repeat"] }) }, ["clip_ids", "edge"]),
+    run: (p, a) =>
+      (a.clip_ids as Id[]).reduce((q, id) => {
+        const { clip } = clipOrThrow(q, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture`);
+        return ops.updateClip(q, clip.id, (c) => {
+          const { edge: _, ...rest } = c as Clip & { edge?: unknown };
+          return (a.edge === "none" ? rest : { ...rest, edge: a.edge as EdgeMode }) as Clip;
+        });
+      }, p),
+  },
+  {
+    name: "set_wiggle",
+    description:
+      "Organic shake or drift (After Effects' wiggle): seeded smooth noise added to a clip's position, x, y, rotation or scale, for handheld camera shake, a nervous title or a floating logo. frequency is wiggles per second (camera shake 2..6, a slow drift 0.3..1); amplitude is the largest offset: pixels for position/x/y, degrees for rotation, percent for scale (a light shake: position 12 px and rotation 0.6 degrees at 4 Hz; an impact: position 40 px). amplitude 0 removes it. strength 0..1 (default 1) scales it: with at, it is keyed there, so two calls ramp a shake in or out (or add_keyframe on wiggle.x.strength, wiggle.y.strength, wiggle.rotation.strength, wiggle.scale.strength). The same seed repeats the same path. A shaken picture uncovers the canvas edge: set_edge_mode mirror, or scale it up slightly.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        target: S.str("What shakes: position is x and y together", { enum: ["position", "x", "y", "rotation", "scale"] }),
+        frequency: S.num("Wiggles per second (Hz); default 3, or the current one", { minimum: 0.05, maximum: 30 }),
+        amplitude: S.num("Largest offset: pixels (position, x, y), degrees (rotation) or percent (scale); 0 removes the wiggle", { minimum: 0 }),
+        strength: S.num("0..1, multiplies the amplitude; keyed at `at` when given", { minimum: 0, maximum: 1 }),
+        seed: { type: "integer", description: "Noise seed; default one per clip" },
+        at: S.num("Timeline seconds: key strength there"),
+      },
+      ["clip_ids", "target"],
+    ),
+    run: (p, a) => {
+      const targets: WiggleTarget[] = a.target === "position" ? ["x", "y"] : [a.target as WiggleTarget];
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to wiggle`);
+        for (const t of targets) {
+          const now = clip.wiggle?.[t];
+          if (!now && a.amplitude === undefined) throw new CommandError(`clip ${id} has no ${t} wiggle yet: give an amplitude`);
+          if (a.amplitude !== undefined && Number(a.amplitude) === 0) {
+            p = ops.updateClip(p, clip.id, (c) => {
+              const w: Record<string, unknown> = { ...("wiggle" in c ? c.wiggle : undefined) };
+              delete w[t];
+              const { wiggle: _w, keyframes: _k, ...rest } = c as Clip & { wiggle?: unknown };
+              // Its strength and amplitude keys go with it.
+              const keys = Object.fromEntries(Object.entries(c.keyframes ?? {}).filter(([k]) => !k.startsWith(`wiggle.${t}.`)));
+              return { ...rest, ...(Object.keys(w).length ? { wiggle: w } : {}), ...(Object.keys(keys).length ? { keyframes: keys } : {}) } as Clip;
+            });
+            continue;
+          }
+          const unit = t === "x" ? p.width : t === "y" ? p.height : t === "scale" ? 100 : 1;
+          const amp = a.amplitude !== undefined ? Number(a.amplitude) / unit : now!.amplitude;
+          const seed = a.seed !== undefined ? Math.round(Number(a.seed)) : (now?.seed ?? seedOf(clip.id));
+          const keyed = a.at !== undefined && a.strength !== undefined;
+          const w: Wiggle = {
+            frequency: Number(a.frequency ?? now?.frequency ?? 3),
+            amplitude: amp,
+            seed,
+            ...(!keyed && a.strength !== undefined && Number(a.strength) !== 1 ? { strength: Number(a.strength) } : !keyed && now?.strength !== undefined && a.strength === undefined ? { strength: now.strength } : {}),
+          };
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, wiggle: { ...(c as { wiggle?: object }).wiggle, [t]: w } }) as Clip);
+          if (keyed) {
+            const key = { f: f(p, a.at) - clip.start, v: Number(a.strength) };
+            const path = `wiggle.${t}.strength`;
+            p = ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
+          }
+        }
+      }
+      return p;
+    },
+  },
   {
     name: "set_uniform_scale",
     description: "CapCut's Uniform scale switch. false: the vertical scale (transform.scaleY) separates from transform.scale, starting equal; true: it goes and the picture takes transform.scale.",
@@ -695,14 +1303,15 @@ export const COMMANDS: Command[] = [
         path: S.str("Parameter path (see set_param)"),
         at: S.num("Timeline seconds"),
         value: S.num("Value at that time"),
-        ease: S.str("Curve toward the next keyframe", { enum: ["linear", "hold", "easeIn", "easeOut", "easeInOut"] }),
+        ease: S.str("Curve toward the next keyframe; spring, elastic and bounce overshoot and settle", { enum: NAMED_EASES }),
       },
       ["clip_id", "path", "at", "value"],
     ),
     run: (p, a) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       const key = { f: f(p, a.at) - clip.start, v: Number(a.value), ...(a.ease ? { ease: a.ease as "linear" } : {}) };
-      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [String(a.path)]: upsertKey(c.keyframes?.[String(a.path)], key) } }));
+      const path = paramPath(clip, String(a.path));
+      return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
     },
   },
   {
@@ -717,7 +1326,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_effect",
-    description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults.",
+    description: "Add a video effect to a visual or adjustment clip. params override the effect's defaults. Keep the strobe flash (flash) at 3 flashes a second or slower: faster flashing can trigger seizures (WCAG 2.3.1).",
     input: S.obj({ clip_id: S.str("Clip id"), type: S.str("Effect", { enum: Object.keys(EFFECTS) }), params: { type: "object", description: "Effect parameters" } }, ["clip_id", "type"]),
     run: (p, a) => {
       const { clip, track } = clipOrThrow(p, a.clip_id);
@@ -766,15 +1375,43 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_animation",
-    description: "Set a clip's intro (in), outro (out) or looping (loop) animation, e.g. fadeIn, zoomIn, slideUp. type 'none' clears it.",
-    input: S.obj({ clip_id: S.str("Clip id"), slot: S.str("Which animation", { enum: ["in", "out", "loop"] }), type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }), duration: S.num("Seconds", { minimum: 0.05 }) }, ["clip_id", "slot", "type"]),
+    description:
+      "Set a clip's intro (in), outro (out) or looping (loop) animation; type 'none' clears the slot. Whole clip, in/out: fade, zoomIn, zoomOut, slideLeft, slideRight, slideUp, slideDown, rise, drop, pop, spin, tilt, blurIn; loop: pulse, sway, float, shake, flicker, heartbeat. Titles only (kinetic typography), in/out: typewriter (letters appear one by one behind a caret; as out it deletes from the end), letterRise, letterFade, wordPop, wordRise, wordSlide, lineRise (each letter, word or line moves on its own), highlightSweep (a marker box sweeps behind the words) and underlineWipe (an underline draws across them), both in the title's style.accent color. On a title, unit plays any in, out or loop animation per letter, word or line instead (rise by word; a float loop by letter is a wave); stagger spreads the units over the duration and order picks which goes first. duration is the whole animation in seconds, every unit included (a typewriter over 1.5 s suits a 25-letter line); for a loop, one cycle. Example: {clip_id, slot: 'in', type: 'rise', unit: 'word', stagger: 0.6, duration: 0.8}.",
+    input: S.obj(
+      {
+        clip_id: S.str("Clip id"),
+        slot: S.str("Which animation", { enum: ["in", "out", "loop"] }),
+        type: S.str("Animation", { enum: [...Object.keys(ANIMATIONS), "none"] }),
+        duration: S.num("Seconds for the whole animation (loops: one cycle); default 0.5", { minimum: 0.05 }),
+        unit: S.str("Titles only: play it by each letter, word or line instead of the whole title (the kinetic presets have their own; this overrides it)", { enum: KINETIC_UNITS }),
+        stagger: S.num("Titles, per unit: 0 moves every unit together, 1 one after another; default the preset's, else 0.5", { minimum: 0, maximum: 1 }),
+        order: S.str("Titles, per unit: which unit moves first; default forward (a typewriter's out: backward)", { enum: KINETIC_ORDERS }),
+      },
+      ["clip_id", "slot", "type"],
+    ),
     run: (p, a) => {
       const key = a.slot === "in" ? "animIn" : a.slot === "out" ? "animOut" : "animLoop";
+      const type = String(a.type);
+      const perUnit = a.unit !== undefined || a.stagger !== undefined || a.order !== undefined;
       return ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
         if (!("transform" in c)) throw new CommandError(`${c.type} clips do not animate`);
         const next = { ...c } as Record<string, unknown>;
-        if (a.type === "none") delete next[key];
-        else next[key] = { type: String(a.type), duration: Math.max(1, f(p, a.duration ?? 0.5)) };
+        if (type === "none") {
+          delete next[key];
+          return next as unknown as Clip;
+        }
+        const def = ANIMATIONS[type];
+        if (a.slot === "loop" ? !def.loop : !def.from && !def.text) throw new CommandError(`${type} is ${def.loop ? "a loop animation: use slot loop" : "an in or out animation: use slot in or out"}`);
+        if (def.text && c.type !== "text") throw new CommandError(`${type} animates a title's letters or words: it works on text clips only`);
+        if (perUnit && c.type !== "text") throw new CommandError("unit, stagger and order move a title's letters, words or lines: text clips only");
+        if (perUnit && def.text?.sweep) throw new CommandError(`${type} draws across the words as a whole; it takes no unit, stagger or order`);
+        next[key] = {
+          type,
+          duration: Math.max(1, f(p, a.duration ?? 0.5)),
+          ...(a.unit !== undefined ? { unit: a.unit } : {}),
+          ...(a.stagger !== undefined ? { stagger: Number(a.stagger) } : {}),
+          ...(a.order !== undefined ? { order: a.order } : {}),
+        };
         return next as unknown as Clip;
       });
     },
@@ -784,6 +1421,25 @@ export const COMMANDS: Command[] = [
     description: "Move a video clip's sound to its own audio clip (for J/L cuts or separate audio edits).",
     input: S.obj({ clip_id: S.str("Video clip id") }, ["clip_id"]),
     run: (p, a) => ops.detachAudio(p, clipOrThrow(p, a.clip_id).clip.id),
+  },
+  {
+    name: "sync_to_clip",
+    description:
+      "Move a clip (a separately recorded sound) into sync with another (the camera clip of the same take), given where their sources line up: source second t of to_clip_id plays with source second t + offset of clip_id. Exact to the sample: the in-point takes up what a whole frame cannot; sound that would fall before 0 is trimmed off its head; a taken spot puts it on a new track. mute_reference sets to_clip_id's volume to 0. sync_audio finds the offset by waveform.",
+    input: S.obj(
+      {
+        clip_id: S.str("The clip to move: usually an audio clip"),
+        to_clip_id: S.str("The clip it syncs to: usually the camera's video"),
+        offset: S.num("Seconds: clip_id's source time minus to_clip_id's for the same moment"),
+        mute_reference: S.bool("Silence to_clip_id's own sound (default false)"),
+      },
+      ["clip_id", "to_clip_id", "offset"],
+    ),
+    run: (p, a) => {
+      const problem = syncProblem(p, String(a.clip_id), String(a.to_clip_id));
+      if (problem) throw new CommandError(problem);
+      return syncClip(p, String(a.clip_id), String(a.to_clip_id), Number(a.offset), a.mute_reference === true);
+    },
   },
   {
     name: "freeze_frame",
@@ -833,6 +1489,15 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_caption_look",
+    description: "Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.",
+    input: S.obj({ look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }) }, ["look"]),
+    run: (p, a) => {
+      if (!p.tracks.some((t) => t.clips.some((c) => c.type === "text" && c.caption))) throw new CommandError("There are no captions yet: add_captions, or generate them in the Captions tab, first");
+      return applyCaptionLook(p, String(a.look));
+    },
+  },
+  {
     name: "add_captions",
     description: "Add captions (subtitles) as caption text clips on a Captions track. Times are timeline seconds. replace=true removes existing captions first. Captions export as SRT/VTT and restyle together.",
     input: S.obj(
@@ -843,7 +1508,7 @@ export const COMMANDS: Command[] = [
           items: S.obj({ start: S.num("Seconds", { minimum: 0 }), end: S.num("Seconds", { minimum: 0 }), text: S.str("Words shown"), words: { type: "array", items: { type: "number" }, description: "Seconds each word of text starts, for the spoken-word highlight" } }, ["start", "end", "text"]),
         },
         style: TEXT_STYLE_SCHEMA,
-        y: S.num("Vertical offset from center as a canvas fraction; 0.36 sits near the bottom"),
+        y: S.num("Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons"),
         replace: S.bool("Remove existing captions first"),
       },
       ["captions"],
@@ -904,6 +1569,109 @@ export const COMMANDS: Command[] = [
       const added = fresh.map((fr) => createMarker(fr, label, a.color ? String(a.color) : undefined));
       return { ...p, markers: [...p.markers, ...added].sort((x, y) => x.frame - y.frame) };
     },
+  },
+  // ---- epic edits (lib/epic.ts): music-synced montages in a few calls ----
+  {
+    name: "cut_to_beats",
+    description:
+      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
+    input: S.obj(
+      {
+        media: {
+          type: "array",
+          description: "The shots in order; the same asset may appear many times",
+          items: S.obj(
+            {
+              asset_id: S.str("Video or picture asset id (import_media)"),
+              in: S.num("Source seconds the shot starts at (default: where this media's previous shot ended, else 0)", { minimum: 0 }),
+              beats: { type: "integer", minimum: 1, description: "Grid steps this shot lasts, overriding pattern and every" },
+            },
+            ["asset_id"],
+          ),
+        },
+        grid: S.str("Which markers make the grid: beats (Beat, default), bars or downbeats (Bar: each bar's first beat), phrases (Phrase: every 4 bars)", { enum: ["beats", "bars", "downbeats", "phrases"] }),
+        beats: { type: "array", items: { type: "number", minimum: 0 }, description: "The grid as timeline seconds instead of markers, e.g. analyze_music's downbeats" },
+        marker_label: S.str("Use the markers with this label as the grid instead"),
+        every: { type: "integer", minimum: 1, maximum: 64, description: "Grid steps per shot (default 2 for beats, 1 for bars or phrases)" },
+        pattern: { type: "array", items: { type: "integer", minimum: 1, maximum: 64 }, description: "Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1]" },
+        start: S.num("Timeline seconds the first shot starts (default 0)", { minimum: 0 }),
+        end: S.num("Timeline seconds to stop by: no cut after it", { minimum: 0 }),
+        track_id: S.str("A video track instead of the main track"),
+        mute: S.bool("Mute the shots' own sound (default true: the music carries a montage)"),
+      },
+      ["media"],
+    ),
+    run: (p, a) => epic(() => cutToBeats(p, a as unknown as CutToBeats)),
+  },
+  {
+    name: "add_beat_hits",
+    description: `Punch up beats with short hits: flash (blown out to white), zoom (a zoom punch), shake (camera shake), rgbSplit, glow or zoomBlur, several at once as one layer (["flash", "zoom"]). Each hit is an adjustment layer on a Hits track above the footage (below bars and titles), at its peak on the beat and easing out over \`duration\` (default ${HIT_KINDS.flash.seconds} to ${HIT_KINDS.shake.seconds} s by effect), keyframed, so preview and export match. Times: \`times\` (timeline seconds), the main track's cuts (at_cuts true), or the Beat markers (or marker_label's, e.g. Bar or Drop), between from and to, thinned to every Nth. intensity 0..1 (default 1, strong). Photosensitivity: flashes keep to at most ${MAX_FLASHES_PER_SECOND} in any second (WCAG 2.3.1); a beat that would break that gets its other effects without the flash, or nothing. Example: {"effects": ["zoom", "rgb_split"], "marker_label": "Bar"}.`,
+    input: S.obj({
+      effect: S.str("One hit", { enum: Object.keys(HIT_KINDS) }),
+      effects: { type: "array", items: S.str("Hit", { enum: Object.keys(HIT_KINDS) }), description: "Several hits on each beat, as one layer" },
+      times: { type: "array", items: { type: "number", minimum: 0 }, description: "Timeline seconds of the hits" },
+      at_cuts: S.bool("Hit every cut of the main track instead"),
+      marker_label: S.str("Hit the markers with this label (default Beat)"),
+      every: { type: "integer", minimum: 1, maximum: 64, description: "Only every Nth time, from the first (default 1)" },
+      from: S.num("Timeline seconds: no hit before", { minimum: 0 }),
+      to: S.num("Timeline seconds: no hit at or after", { minimum: 0 }),
+      duration: S.num("Seconds each hit lasts", { minimum: 0.04, maximum: 2 }),
+      intensity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
+    }),
+    run: (p, a) => {
+      const kinds = [...(a.effect !== undefined ? [a.effect] : []), ...((a.effects as string[] | undefined) ?? [])] as HitKind[];
+      return epic(() => addBeatHits(p, { ...(a as object), effects: kinds } as BeatHits));
+    },
+  },
+  {
+    name: "add_cinematic_bars",
+    description:
+      "Cinematic bars: letterbox the picture to a wide ratio, 2.39 (scope, default), 2.35, 2 or 1.85 (pillarboxed when the canvas is already wider), on any canvas shape. An adjustment layer with the letterbox effect on a Bars track above the footage and hits, below titles, from start (default 0) to end (default the picture's end); animate_in and animate_out slide the bars in and out over that many seconds. Calling it again over the same time replaces the bars. Example: {\"ratio\": 2.39, \"start\": 4.0, \"animate_in\": 0.4}.",
+    input: S.obj({
+      ratio: S.num("Width over height of the picture left between the bars (default 2.39)", { minimum: 1, maximum: 4 }),
+      start: S.num("Timeline seconds (default 0)", { minimum: 0 }),
+      end: S.num("Timeline seconds (default the end of the picture)", { minimum: 0 }),
+      animate_in: S.num("Seconds the bars take to slide in (default 0: there at once)", { minimum: 0, maximum: 10 }),
+      animate_out: S.num("Seconds they take to slide out at the end (default 0)", { minimum: 0, maximum: 10 }),
+    }),
+    run: (p, a) => epic(() => addCinematicBars(p, a as CinematicBars)),
+  },
+  {
+    name: "set_speed_ramp",
+    description: `Velocity edit: ramp a video clip's speed so its slow-motion moment (moment slow, default) or its fast moment (fast) lands exactly on a beat at \`at\` (timeline seconds; default the Beat marker nearest the clip's middle). The clip keeps its start and length, so cuts made on the beat stay there; the ramp reads more or less of the media instead (the in-point moves earlier when the file would run out). Without a preset: speed ${CURVE_MIN}..${CURVE_MAX} at the moment (default 0.3 slow, 3 fast), base elsewhere (default 2 slow, 1 fast), easing over \`ease\` seconds (default 0.12) into the beat and holding \`hold\` seconds (default 0.25). Or preset (montage, hero, bullet, jumpCut, flashIn, flashOut): its slowest (or fastest) point is moved onto the beat. set_speed_curve ramps a whole clip without aligning it. Example: {"clip_id": "c_5", "at": 3.75}.`,
+    input: S.obj(
+      {
+        clip_id: S.str("Video or audio clip id"),
+        at: S.num("Timeline seconds of the beat, inside the clip", { minimum: 0 }),
+        moment: S.str("Which moment lands on the beat", { enum: ["slow", "fast"] }),
+        speed: S.num("Speed at the moment", { minimum: CURVE_MIN, maximum: CURVE_MAX }),
+        base: S.num("Speed before and after it", { minimum: CURVE_MIN, maximum: CURVE_MAX }),
+        hold: S.num("Seconds the moment holds after the beat", { minimum: 0, maximum: 10 }),
+        ease: S.num("Seconds the speed takes to change into and out of the moment", { minimum: 0.02, maximum: 5 }),
+        preset: S.str("A ready-made ramp to align instead", { enum: Object.keys(PRESETS).filter((k) => k !== "custom") }),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => epic(() => setSpeedRamp(p, a as unknown as SpeedRamp)),
+  },
+  {
+    name: "fit_music",
+    description:
+      "Fit a music clip to the cut. With drop_at, first slide the music so its drop plays at drop_at (timeline seconds): drop is where the drop plays now (analyze_music's drop; default the Drop marker on the clip), anything that would fall before 0 is cut off, and its Beat, Bar, Phrase and section markers move with it. Then end it with the picture (end video, default), on the last Beat or Bar marker before the picture ends (end beat or bar), or at end_at, fading out over fade_out seconds (default 1). trim_picture cuts the picture there too, so both stop together. Align the drop before cut_to_beats: the cuts follow the markers. Example: {\"clip_id\": \"c_2\", \"drop_at\": 4.0, \"end\": \"bar\", \"fade_out\": 1.5}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The music clip (audio, or a video's sound)"),
+        drop_at: S.num("Timeline seconds the drop should land on", { minimum: 0 }),
+        drop: S.num("Timeline seconds where the drop plays now (default the Drop marker on the clip)", { minimum: 0 }),
+        end: S.str("Where the music ends: video (the picture's end, default), beat or bar (the last Beat or Bar marker before it)", { enum: ["video", "beat", "bar"] }),
+        end_at: S.num("Timeline seconds to end at instead", { minimum: 0 }),
+        fade_out: S.num("Seconds of fade-out (default 1)", { minimum: 0, maximum: 30 }),
+        fade_in: S.num("Seconds of fade-in (default unchanged)", { minimum: 0, maximum: 30 }),
+        trim_picture: S.bool("Also cut the picture (every video track) at the music's end"),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a) => epic(() => fitMusic(p, a as unknown as FitMusic)),
   },
   {
     name: "move_keyframe",
@@ -977,7 +1745,7 @@ export const COMMANDS: Command[] = [
   // ---- color grade (ADR-020): static values; animate with add_keyframe on the paths named ----
   {
     name: "set_hsl",
-    description: "Adjust one of CapCut's eight HSL color ranges on a visual or adjustment clip; only pixels of that color change. hue turns the range up to 30° toward its neighbors, saturation -100 makes it gray, lightness darkens or lightens it; each -100..100, omitted values stay. band 'all' sets every range. reset=true zeroes the band(s) first. Animate with add_keyframe on adjust.hsl.<band>.hue|saturation|lightness.",
+    description: "Adjust one of CapCut's eight HSL color ranges on a visual or adjustment clip; only pixels of that color change. hue turns the range up to 30° toward its neighbors, saturation -100 makes it gray, lightness darkens or lightens it; each -100..100, omitted values stay. band 'all' sets every range. reset=true zeroes the band(s) first. Animate with add_keyframe on adjust.hsl.<band>.hue|saturation|lightness. Hue -100..100 is a turn of -30..30 degrees, so -30 is only 9 degrees: use 60 to 100 for a shift that shows.",
     input: S.obj(
       {
         clip_id: S.str("Visual or adjustment clip id"),
@@ -1111,7 +1879,7 @@ export const COMMANDS: Command[] = [
       const num = (v: unknown) => (v === undefined ? undefined : Number(v));
       return addStickerClip(p, asset, {
         start: f(p, a.start),
-        duration: a.duration === undefined ? undefined : Math.max(1, f(p, a.duration)),
+        duration: a.duration === undefined ? undefined : span(p, a.start, a.duration),
         motion: a.motion === undefined ? undefined : String(a.motion),
         x: num(a.x),
         y: num(a.y),
@@ -1270,8 +2038,8 @@ export const COMMANDS: Command[] = [
     input: S.obj(
       {
         clip_id: S.str("Video or image clip id"),
-        region: REGION_SCHEMA,
-        to_region: REGION_SCHEMA,
+        region: { ...REGION_SCHEMA, description: "The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner" },
+        to_region: { ...REGION_SCHEMA, description: "Where the move ends: the part of the picture shown at `to`" },
         mode: S.str("How the region meets the canvas", { enum: ["fill", "fit"] }),
         from: S.num("Timeline seconds the move starts; default the clip's start"),
         to: S.num("Timeline seconds the move ends; default the clip's end"),
@@ -1292,7 +2060,7 @@ export const COMMANDS: Command[] = [
   {
     name: "batch",
     description:
-      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes.",
+      "Run several commands in order as one edit (one undo step), all or nothing: set_animation on many clips, a run of add_keyframe, a whole title sequence. Each step sees what the steps before it did; a failing step names its number and nothing changes. A step can name what an earlier step added: \"$2\" is the first clip step 2 added, \"$2.2\" its second, \"$2.track\" the track it added (steps count from 1), anywhere in args, e.g. [{command: 'add_text', args: {text: 'SALE', start: 1, duration: 2}}, {command: 'set_animation', args: {clip_id: '$1', slot: 'in', type: 'pop'}}]. Only editing commands batch; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, import_media, previews, checks, export) are called on their own.",
     input: S.obj(
       {
         commands: {
@@ -1303,24 +2071,60 @@ export const COMMANDS: Command[] = [
       },
       ["commands"],
     ),
-    run: (p, a) =>
-      (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
+    run: (p, a) => {
+      const added: Id[][] = [], addedTracks: Id[][] = [];
+      const ids = (q: Project) => q.tracks.flatMap((t) => t.clips.map((c) => c.id));
+      // "$2" / "$2.2" / "$2.track": the first / second clip, or the track, step 2 added.
+      const ref = (v: unknown): unknown => {
+        if (Array.isArray(v)) return v.map(ref);
+        if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, ref(x)]));
+        const m = typeof v === "string" ? /^\$(\d+)(?:\.(\d+|track))?$/.exec(v) : null;
+        if (!m) return v;
+        const step = Number(m[1]) - 1;
+        const id = m[2] === "track" ? addedTracks[step]?.[0] : added[step]?.[Number(m[2] ?? 1) - 1];
+        if (!id) throw new CommandError(`${v}: step ${m[1]} ${step >= added.length ? "has not run yet" : m[2] === "track" ? "added no track" : `added no clip number ${m[2] ?? 1}`}`);
+        return id;
+      };
+      return (a.commands as { command: string; args?: unknown }[]).reduce((q, step, i) => {
         // add_sticker draws its picture outside the registry first.
         if (step.command === "batch" || step.command === "add_sticker") throw new CommandError(`step ${i + 1}: ${step.command} cannot run inside a batch`);
+        if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
-          return runCommand(q, step.command, step.args ?? {});
+          const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
+          const next = runCommand(q, step.command, ref(step.args ?? {}));
+          added.push(ids(next).filter((id) => !before.has(id)));
+          addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
+          return next;
         } catch (e) {
           throw new CommandError(`step ${i + 1} (${step.command}): ${e instanceof Error ? e.message : e}`);
         }
-      }, p),
+      }, p);
+    },
   },
 ];
+
+/**
+ * A parameter path as stored. An effect's parameter can be named by the
+ * effect's place in the stack (effects.0.amount), its id (as stored), or its
+ * type (effects.glow.amount, the first glow); an effect path naming no
+ * effect or no parameter of it is an error, never a silent no-op.
+ */
+function paramPath(clip: Clip, path: string): string {
+  const m = /^effects\.([^.]+)\.(.+)$/.exec(path);
+  if (!m) return path;
+  const stack = "effects" in clip ? clip.effects : [];
+  const fx = /^\d+$/.test(m[1]) ? stack[Number(m[1])] : (stack.find((e) => e.id === m[1]) ?? stack.find((e) => e.type === m[1]));
+  if (!fx) throw new CommandError(`clip ${clip.id} has no effect ${m[1]}; its stack: ${stack.map((e, i) => `${i} ${e.type} (${e.id})`).join(", ") || "empty (add_effect first)"}`);
+  const known = Object.keys(EFFECTS[fx.type]?.params ?? {});
+  if (!known.includes(m[2])) throw new CommandError(`${fx.type} has no parameter ${m[2]}; it has ${known.join(", ") || "none"}`);
+  return `effects.${fx.id}.${m[2]}`;
+}
 
 /** The keyframes a command names: on `path` (or every path) at the given
  * timeline seconds (or every time). Throws when that is none at all. */
 function keyRefs(p: Project, clip: Clip, path: unknown, at: number[] | undefined): KeyRef[] {
   const map = clip.keyframes ?? {};
-  const paths = path === undefined ? Object.keys(map) : [String(path)];
+  const paths = path === undefined ? Object.keys(map) : [paramPath(clip, String(path))];
   const frames = at && new Set(at.map((s) => f(p, s) - clip.start));
   const refs = paths.flatMap((pt) => (map[pt] ?? []).filter((k) => !frames || frames.has(k.f)).map((k) => ({ path: pt, f: k.f })));
   if (!refs.length) throw new CommandError(`no matching keyframes on clip ${clip.id}`);
@@ -1342,6 +2146,37 @@ function withPart<K extends keyof Grade>(a: Graded, key: K, value: Grade[K] | un
   const next = { ...a, [key]: value };
   if (value === undefined) delete next[key];
   return next;
+}
+
+// ---- helpers for the graphics commands (ADR-056 to ADR-059, ADR-062) ----
+
+/** A color argument checked the way the compositor reads it. */
+function colorArg(v: unknown, name: string): string | undefined {
+  if (v === undefined) return undefined;
+  if (!parseColor(String(v))) throw new CommandError(`${name} ${JSON.stringify(v)} is not a color: use #rrggbb, #rrggbbaa, rgb(), rgba() or a common name`);
+  return String(v);
+}
+
+function gradientArg(g: Record<string, unknown>): NonNullable<Shape["gradient"]> {
+  const from = colorArg(g.from, "gradient.from")!, to = colorArg(g.to ?? g.from, "gradient.to")!;
+  return { from, to, angle: Number(g.angle ?? 0) };
+}
+
+/** A copy of `o` without the optional field `key`. */
+function omit<T extends object>(o: T, key: keyof T): T {
+  const out = { ...o };
+  delete out[key];
+  return out;
+}
+
+/** What the timeline calls a shape clip until it is renamed. */
+const shapeLabel = (s: Shape) => ({ rectangle: s.radius ? "Rounded rectangle" : "Rectangle", ellipse: "Ellipse", line: "Line" })[s.kind];
+
+/** A clip's own wiggle seed, so two clips shake differently by default. */
+function seedOf(id: string): number {
+  let h = 7;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) % 9973;
+  return h + 1;
 }
 
 export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
@@ -1367,6 +2202,7 @@ export function describeProject(p: Project) {
     tracks: p.tracks.map(track),
     markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
+    ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).
     ...(p.compounds?.length
       ? { compounds: p.compounds.map((k) => ({ id: k.id, name: k.name, duration: s(ops.timelineEnd(k.tracks)), tracks: k.tracks.map(track), ...(k.markers.length ? { markers: k.markers.map((m) => ({ id: m.id, at: s(m.frame), label: m.label })) } : {}) })) }
@@ -1396,28 +2232,43 @@ export function describeProject(p: Project) {
         ...(c.type === "text" ? { text: c.text } : {}),
         ...(c.type === "compound" ? { compound: c.compoundId } : {}),
         ...("volume" in c && c.volume !== 1 ? { volume: +c.volume.toFixed(4) } : {}),
+        ...("fadeIn" in c && c.fadeIn ? { fade_in: s(c.fadeIn) } : {}),
+        ...("fadeOut" in c && c.fadeOut ? { fade_out: s(c.fadeOut) } : {}),
         ...("transitionOut" in c && c.transitionOut ? { transition: c.transitionOut.type } : {}),
-        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled }) => ({ id, type, enabled })) } : {}),
+        ...("effects" in c && c.effects.length ? { effects: c.effects.map((e) => e.type), effectStack: c.effects.map(({ id, type, enabled, params }) => ({ id, type, enabled, params })) } : {}),
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
         // What else departs from the defaults, so an agent can check its work.
+        ...(c.name ? { name: c.name } : {}),
+        ...(c.group ? { group: c.group } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
+        ...soundFxSummary(c),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
+        ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
+        ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
+        ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
+        ...graphicsSummary(c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
-        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}) } : {}),
+        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
-        ...("animIn" in c && (c.animIn || c.animOut || c.animLoop)
-          ? { animation: { ...(c.animIn ? { in: c.animIn.type } : {}), ...(c.animOut ? { out: c.animOut.type } : {}), ...(c.animLoop ? { loop: c.animLoop.type } : {}) } }
-          : {}),
+        ...("filter" in c && c.filter ? { filter: c.filter.type, ...(c.filter.intensity !== 1 ? { filter_intensity: c.filter.intensity } : {}) } : {}),
+        ...animSummary(c),
         ...(c.keyframes && Object.values(c.keyframes).some((k) => k.length) ? { keyframed: Object.keys(c.keyframes).filter((k) => c.keyframes![k].length) } : {}),
       })),
     };
   }
+}
+
+/** A clip's animations by slot, for describeProject: pictures carry no
+ * animIn key until one is set, so this reads all three slots on any clip. */
+function animSummary(c: Clip) {
+  const { animIn, animOut, animLoop } = c as { animIn?: { type: string }; animOut?: { type: string }; animLoop?: { type: string } };
+  return animIn || animOut || animLoop ? { animation: { ...(animIn ? { in: animIn.type } : {}), ...(animOut ? { out: animOut.type } : {}), ...(animLoop ? { loop: animLoop.type } : {}) } } : {};
 }
 
 /** Where a picture sits, when not centered at its fitted size, for
@@ -1432,6 +2283,35 @@ function placement(t: Transform) {
     ...(t.rotation ? { rotation: r(t.rotation) } : {}),
   };
   return Object.keys(out).length ? { transform: out } : {};
+}
+
+/** Shapes, mattes, motion blur, edges and wiggles, for describeProject
+ * (ADR-056 to ADR-059, ADR-062): what an agent needs to check its graphics. */
+function graphicsSummary(c: Clip) {
+  if (!("transform" in c)) return {};
+  const r = (v: number) => +v.toFixed(4);
+  const s = c.type === "color" ? c.shape : undefined;
+  return {
+    ...(c.type === "color" ? { color: c.color } : {}),
+    ...(s
+      ? {
+          shape: {
+            kind: s.kind === "rectangle" && s.radius ? "rounded_rectangle" : s.kind,
+            width: r(s.width),
+            ...(s.kind !== "line" ? { height: r(s.height) } : {}),
+            ...(s.radius ? { radius: s.radius } : {}),
+            ...(s.fill === false ? { fill: false } : {}),
+            ...(s.gradient ? { gradient: s.gradient } : {}),
+            ...(s.stroke ? { stroke: s.stroke } : {}),
+            ...(s.draw !== undefined ? { draw: s.draw } : {}),
+          },
+        }
+      : {}),
+    ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
+    ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
+    ...(c.edge ? { edge: c.edge } : {}),
+    ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
+  };
 }
 
 /** Which grade parts a clip uses, for describeProject. */
@@ -1454,7 +2334,8 @@ export const toFrame = (p: Project, seconds: number) => frameAt(seconds, p.fps);
 export const CAPTION_STYLE: Partial<TextStyle> = { size: 64, bold: true, color: "#ffffff", stroke: { color: "#000000", width: 6 }, maxWidth: 0.84, lineHeight: 1.15 };
 
 /** Place captions on one Captions track (created on top if needed). */
-export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyle> = {}, y = 0.36, replace = false): Project {
+export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyle> = {}, given?: number, replace = false): Project {
+  const y = given ?? captionY(p, 0.36);
   if (replace) {
     p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !(c.type === "text" && c.caption)) })) };
     p = ops.pruneEmptyTracks(p);
@@ -1469,14 +2350,50 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
     const start = Math.max(secondsToFrames(cap.start, p.fps), lastEnd);
     const end = Math.max(start + 1, secondsToFrames(cap.end, p.fps));
     lastEnd = end;
-    const text = createTextClip(cap.text, start, end - start, { ...CAPTION_STYLE, ...style });
+    const fit = captionFit(p, { ...CAPTION_STYLE, ...style } as TextStyle, 0);
+    const text = createTextClip(cap.text, start, end - start, fit.style);
     const clip: Clip = {
       ...text,
       caption: true,
-      transform: { ...text.transform, y },
+      transform: { ...text.transform, x: fit.x, y },
       ...(cap.words?.length ? { wordTimes: cap.words.map((s) => Math.max(0, secondsToFrames(s, p.fps) - start)) } : {}),
     };
     p = ops.addClip(p, track.id, clip);
   }
   return p;
+}
+
+// ---- sound design helpers (ADR-060) --------------------------------------------------
+
+/** Apply `fn` to each of a sound-design command's clips, refusing clips
+ * without sound of their own (compound clips mix many; edit inside). */
+function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Clip) => Clip): Project {
+  const ids = a.clip_ids as Id[];
+  ids.forEach((id) => clipOrThrow(p, id));
+  return ids.reduce(
+    (q, id) =>
+      ops.updateClip(q, id, (c) => {
+        if (c.type === "compound") throw new CommandError(`compound clips take no ${what} yet: put it on the clips inside (edit_compound)`);
+        if (c.type !== "video" && c.type !== "audio") throw new CommandError(`a ${what} needs a video or audio clip; ${id} is a ${c.type} clip`);
+        return fn(c);
+      }),
+    p,
+  );
+}
+
+/** A clip without the keyframes of `paths`. */
+function withoutKeys(c: Clip, paths: string[]): Clip {
+  if (!c.keyframes || !paths.some((k) => k in c.keyframes!)) return c;
+  const keys = { ...c.keyframes };
+  for (const k of paths) delete keys[k];
+  const out = { ...c, keyframes: keys };
+  if (!Object.keys(keys).length) delete (out as Partial<Clip>).keyframes;
+  return out;
+}
+
+/** A clip without one sound-design effect and its keyframes. */
+function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
+  const out = withoutKeys({ ...c }, paths) as Clip & Record<string, unknown>;
+  delete out[key];
+  return out;
 }

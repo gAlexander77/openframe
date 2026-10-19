@@ -176,7 +176,8 @@ function omit<T extends object>(o: T, keys: string[]): T {
   return out as T;
 }
 
-function shiftKeys(keys: Clip["keyframes"], by: number): Clip["keyframes"] {
+/** Keyframes moved by `by` frames, for edits that move a clip's head. */
+export function shiftKeys(keys: Clip["keyframes"], by: number): Clip["keyframes"] {
   if (!keys) return keys;
   const out: Record<string, Keyframe[]> = {};
   for (const [k, list] of Object.entries(keys)) out[k] = list.map((x) => ({ ...x, f: x.f + by }));
@@ -205,11 +206,39 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
  * on both halves (shifted on the right) so the animation curve is unchanged. */
 export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   const r = at - c.start;
-  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut"]);
+  // A tape stop belongs to the clip's end, so only the right part keeps it.
+  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop"]);
   const right = omit(moveLeftEdge({ ...c, id: uid("c") } as Clip, r, fps), ["animIn"]);
   if ("fadeOut" in left) (left as AudioClip).fadeOut = 0;
   if ("fadeIn" in right) (right as AudioClip).fadeIn = 0;
   return [left, right];
+}
+
+/**
+ * CapCut's Enter in a caption: split it at a character position into two
+ * captions, the words before and after. The time is where the first word
+ * after is spoken (its wordTimes), or else as far in as the characters go;
+ * each half keeps its own words' times. Returns the project and the
+ * second caption's id, or the project unchanged when a half would be empty.
+ */
+export function splitCaption(p: Project, clipId: Id, caret: number): { project: Project; second?: Id } {
+  const loc = findClip(p, clipId);
+  const c = loc?.clip;
+  if (!c || c.type !== "text") return { project: p };
+  const before = c.text.slice(0, caret).trim(), after = c.text.slice(caret).trim();
+  if (!before || !after) return { project: p };
+  const n = before.split(/\s+/).length;
+  const words = c.text.trim().split(/\s+/).length;
+  const timed = c.wordTimes && c.wordTimes.length === words && words > n;
+  const rel = timed ? c.wordTimes![n] : Math.round((c.duration * caret) / Math.max(1, c.text.length));
+  const at = c.start + Math.min(c.duration - 1, Math.max(1, rel));
+  const q = splitClip(p, clipId, at);
+  const second = findTrack(q, loc!.track.id)!.clips.find((x) => x.start === at && x.type === "text")?.id;
+  if (!second) return { project: p };
+  const keep = (id: Id, text: string, slice: (t: number[]) => number[]) =>
+    (r: Project) => updateClip(r, id, (x) => (x.type === "text" ? ({ ...x, text, ...(x.wordTimes ? { wordTimes: slice(x.wordTimes) } : {}) } as Clip) : x));
+  const out = keep(second, after, (t) => t.slice(n))(keep(clipId, before, (t) => t.slice(0, n))(q));
+  return { project: out, second };
 }
 
 export function splitClip(p: Project, clipId: Id, at: number): Project {
@@ -602,7 +631,10 @@ export function freezeFrame(p: Project, clipId: Id, at: number, frames: number):
 }
 
 /** Move a video clip's sound onto an audio track (CapCut's Extract audio),
- * so J/L cuts and separate audio edits become possible. */
+ * so J/L cuts and separate audio edits become possible. The picture and
+ * its sound are linked as a group (Premiere's linked clips): they select,
+ * move and delete together, Alt takes one side alone, and each edge trims
+ * on its own; Ungroup unlinks them. */
 export function detachAudio(p: Project, clipId: Id): Project {
   const loc = findClip(p, clipId);
   if (!loc || loc.clip.type !== "video" || loc.clip.muted) return p;
@@ -624,8 +656,9 @@ export function detachAudio(p: Project, clipId: Id): Project {
     fadeIn: v.fadeIn,
     fadeOut: v.fadeOut,
     muted: false,
+    group: v.group ?? uid("g"),
   };
-  let q = updateClip(p, clipId, (c) => ({ ...c, muted: true }) as Clip);
+  let q = updateClip(p, clipId, (c) => ({ ...c, muted: true, group: audio.group }) as Clip);
   let track = q.tracks.find((t) => t.kind === "audio" && rangeFree(t, audio.start, audio.duration));
   if (!track) {
     track = createTrack("audio", "Audio");

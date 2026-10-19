@@ -1,7 +1,7 @@
 ---
-tags: [ai, analysis, silence, scenes, beats, loudness, ducking, matting]
+tags: [ai, analysis, silence, scenes, beats, loudness, ducking, matting, sync]
 created: 2026-10-13
-updated: 2026-10-16
+updated: 2026-10-17
 status: living
 ---
 
@@ -159,9 +159,63 @@ behavior, no code was copied). Beat This! (MIT) is the planned upgrade for
 downbeats and tempo changes; madmom (non-commercial models), aubio (GPL)
 and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 
-**Gaps.** One tempo per clip, no downbeats or bars, no tempo changes.
-Markers sit on the timeline, not on the clip, so they stay put if the
-music clip moves.
+**Gaps.** One tempo per clip and no tempo changes; bars and song parts
+are the next section's. Markers sit on the timeline, not on the clip, so
+they stay put if the music clip moves (`fit_music` moves the music's
+markers with it).
+
+## Music structure (analyze_music)
+
+`musicStructure` in `src/lib/analysis/beats.ts`, for epic edits: the
+beats above, grouped the way Final Cut's beat grid shows a song (parts,
+bars, beats). `analyze_music` answers in timeline seconds and can drop
+Beat, Bar, Phrase, section and Drop markers, one undo step.
+
+1. **Beats** as above, but the tracker's trim is replaced by a gentler
+   one (a tenth of the RMS onset strength, not half): the strict trim
+   dropped a quiet intro's beats, and a song's parts need them.
+2. **Per-beat features.** The beat's loudness (RMS dB) and its spectral
+   shape: 12 mel bands from 2048-point windows half a window apart
+   across the beat, averaged as power. The band levels compare in dB
+   floored 60 dB under the loudest, so a band that is silent somewhere
+   moves a mean by what it lost.
+3. **Novelty.** At each beat, the RMS dB difference between the two bars
+   after it and the two before (Foote's idea, as a moving pair of
+   windows). A song changes part where it peaks.
+4. **Bars.** Parts change on bar lines, so novelty peaks of 3 dB or more
+   vote for the phase of the bar (which beat of four is the first).
+   Without them, accents decide: onset strength at the beat (a fifth
+   stronger counts one point), bass at it (2 dB) and how much the sound
+   changes there (2 dB); a phase must lead the first beat's by a point, or
+   the first beat starts bar one.
+5. **Phrases** are every fourth bar, counted from where the parts change.
+6. **Sections** start at bar lines with novelty of 3 dB or more, at least
+   four bars apart. Each is named by its loudness against the loudest
+   (within 0.15 of it, about 4 dB, is a drop); a quiet part before a drop
+   is a build if it rises 3 dB or more, else the intro when first; one
+   after a drop is a breakdown, the last one quieter than the one before
+   an outro, the rest verses. **The drop** is the biggest rise (3 dB or
+   more, two bars after against two before) into a drop section.
+7. **Hits:** onset envelope peaks two deviations above its mean, 100 ms
+   apart, on or off the beat.
+
+Measured: beat-128.m4a reads 128 BPM, one section, no drop, bars from the
+first beat; synthetic songs (`musicStructure.test.ts`) find an 18 dB drop
+to the beat, a breakdown between two drops, a swelling build, and the bar
+line after a one-beat pickup.
+
+Three early versions read structure that was not there, all by measuring
+at the wrong place: a 20-a-second frame grid falls at a different spot in each beat at 128
+BPM, and the pattern repeats every eight beats, so it read as accents;
+four fixed spots per beat missed the off-beat hat in some beats and not
+others, the same way; and a window reaching past a beat's end heard the
+next beat's attack, so a part seemed to start a beat early. Pure test
+tones also beat against each other in patterns that repeat every few
+beats, which is why accents need a clear lead.
+
+**Gaps.** 4/4 only; one tempo; section names come from loudness alone,
+so a loud verse reads as a drop. Beat This! (MIT) remains the upgrade for
+downbeats in real music.
 
 ## Normalize loudness
 
@@ -177,23 +231,28 @@ broadcast way (ITU-R BS.1770 / EBU R128, [[AI and automation]] §2.10).
    relative gate 10 LU under the mean. Channels are summed; **mono counts
    twice** because it plays on both speakers — the same reading as
    `ffmpeg -af ebur128=dualmono=true`.
-2. **Set the volume.** `target − measured` dB, held back so the sample
-   peak stays under −1 dBFS, and within the inspector's −60…+12 dB. All
-   selected clips in one undo step ("Normalize loudness of 2 clips").
+2. **Set the volume.** `target − measured` dB, held back so the true
+   peak (4x oversampled, `src/lib/analysis/truePeak.ts`) stays under its
+   ceiling, −1 dBTP or ATSC's −2 at −24, and within the inspector's
+   −60…+12 dB. All selected clips in one undo step ("Normalize loudness
+   of 2 clips"). `spec` (online, ebu_r128, atsc_a85) names a delivery
+   spec's target and ceiling
+   ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
 
 | Option | Default | UI |
 |---|---|---|
-| target | −14 LUFS | Social −14, Podcast −16, Broadcast −23 |
-| peak ceiling | −1 dBFS (sample peak) | — |
+| target | −14 LUFS | Social −14, Podcast −16, TV (EU) −23, TV (US) −24 |
+| peak ceiling | −1 dBTP (true peak); −2 at −24 | — |
 
 Measured: the fixtures read −14.17 and −14.63 LUFS where ffmpeg's
 `ebur128` reads −14.2 and −14.6; a stereo clip normalized to −16 and
 exported measures −16.0 LUFS in ffmpeg.
 
-**Gaps.** Sample peak, not true peak (inter-sample peaks can pass the
-ceiling by a fraction of a dB); surround weights (1.41 on the rear pair,
-no LFE) need the channel layout; clips with volume keyframes are skipped;
-track volume is not taken into account.
+**Gaps.** Surround weights (1.41 on the rear pair, no LFE) need the
+channel layout; clips with volume keyframes are skipped; track volume and
+a clip's filters, echo and reverb are not taken into account (each clip
+is measured alone, through its compressor): `measure_loudness` reads the
+mix as it exports.
 
 ## Auto ducking
 
@@ -245,6 +304,102 @@ frame-to-frame movement fell from 6.16 to 0.06 px.
 similarity fit is the upgrade). The analysis covers the clip's range;
 lengthening the clip later needs Stabilize again. Variable-frame-rate
 footage is indexed by its average rate.
+
+## Tracking
+
+`src/lib/analysis/track.ts`, `src/lib/follow.ts`, `src/state/tracking.ts`.
+CapCut's Tracking (Text/Sticker > Tracking there; Animation > Tracking
+here): select a title, sticker or picture over a video, *Pick subject*
+puts a yellow box on the viewer, drag it onto the subject and size it,
+then *Track*. The video under the layer (the main track's first) is
+decoded from the playhead to the end of the shorter clip as 320 px wide
+gray frames; the box's pixels are matched by normalized cross-correlation
+in a window around their last place (sub-pixel by a parabola through the
+peak). The path becomes the layer's position keyframes, smoothed and
+thinned to a handful ([[ADR-054 Tracking writes position keyframes]]).
+Measured by the drive on `person-pan.mp4` (the photo slides one source
+pixel a frame): 60 frames later the title had moved 0.0614 of the canvas
+for 0.0625, and kept 5 keys.
+
+**Gaps.** Position only (no scale or angle); forward only; reversed and
+frozen clips are refused. Moving the followed video later does not move
+the pin: track again.
+
+## Auto reframe
+
+The AI tools card (and `auto_reframe`): pick 9:16, 1:1, 4:5 or Keep, then
+Reframe. The canvas takes the shape with its short side kept, the clip is
+scaled to fill it, and the tracker above follows what is at the center
+of the clip's first frame through the whole clip; position keyframes then
+keep that subject centered, clamped at the picture's edges and smoothed
+like a camera pan ([[ADR-054 Tracking writes position keyframes]]). On a
+video clip, Animation > Tracking > Keep subject centered does the same
+from a box placed on the viewer, from the playhead. Measured by the drive
+on `person-pan.mp4` reframed from 16:9 to 9:16: the picture slid 0.1961
+of the canvas in 60 frames for the true 0.1975, with two keys.
+
+**Gaps.** No subject detector (a face or saliency model is the upgrade):
+the default box assumes the subject starts centered. One subject per
+clip; cuts inside the clip are not seen, so split scenes first.
+
+## Sync audio
+
+`src/lib/analysis/sync.ts`, `src/lib/project/sync.ts`. CapCut's Sync
+video and audio, Resolve's Auto Sync Audio > Based on Waveform,
+PluralEyes: select a separately recorded sound (a lav, a recorder) and
+the video it was recorded with, right-click, *Sync audio by waveform* (or
+*Sync audio and mute camera sound*); the AI tools card does the same for
+the selected audio clip and the selected video, or the video with sound
+that plays with it longest.
+
+Both clips' source windows are decoded to mono at 4 kHz. Two microphones
+hear one take differently (gain, EQ, noise, room), so the samples are
+not compared; their onsets are: each sound becomes the mel-band spectral
+flux envelope of Beat markers (40 bands, a 64 ms window every 10 ms),
+which drops a gain or a static EQ because each is a constant per band in
+the log. One FFT cross-correlates the two envelopes at every lag where
+they overlap by a second or more; each lag is normalized over its own
+overlap and scaled by the square root of how much of the shorter sound
+it covers, and a parabola through the best lag refines it between
+frames. The first frames do not count: a window filling up at the start
+reads as an attack, and every pair of sounds would match there.
+
+**Confidence is the margin, not the peak.** At its best lag an unrelated
+sound still scores 0.13 to 0.28 (speech against speech, music, a steady
+tone); a true match 0.5 to 0.93, and over a short overlap the best wrong
+lag rises with it. What separates them is how far the best lag stands
+above the best one at least 0.15 s away: 0.46 to 0.74 for one take (0.32
+with only a third of it overlapping, in the unit test), 0.00 to 0.06 for
+every unrelated pair of fixtures. Below 0.15 the tool refuses
+("The two sounds don't match clearly enough to sync"), as it does for a
+sound that repeats (a click track matches every beat equally) and for a
+video without sound of its own.
+
+**Exact, not to the nearest frame.** A clip starts on a whole frame, so
+rounding the start would leave up to half a frame (17 ms at 30 fps). The
+command `sync_to_clip` starts the clip on the nearest frame and moves its
+in-point by the rest. Sound before the timeline's start (the recorder ran
+before the camera) is trimmed off the head, a taken spot puts it on a
+new track below, and *mute camera sound* sets the video's volume to 0
+(its volume keyframes go). One undo step ("Sync audio").
+
+Measured by `scripts/drive/audio-sync.js` in Edge on `sync-camera.mp4`
+(thin, roomy AAC) and `sync-lav.wav` (warm, quieter, pink noise; started
+1.37 s earlier): offset 1.3692 s, 0.8 ms early, confidence 0.74, 0.24 s
+for 12 s of camera against 19 s of lav. On the same files decoded by
+ffmpeg (Node), a 3 s piece of the camera found its place in the lav, and
+in ten minutes of noise around it, 1.2 ms early (confidence 0.54, 0.47).
+The unit tests hold 2 ms with gain, EQ, echoes and noise (5 ms in heavy
+noise).
+
+**Gaps.** One constant offset: a recorder whose clock drifts (a few
+milliseconds a minute on cheap ones) slides out of sync over a long take
+(fit the drift from several windows). Only the clips' windows are
+searched, so a trimmed audio clip must still cover the take. Both clips
+need the same constant speed, forward. Clips on the main track are not
+moved (the magnet would close the gap back): sync the other clip to them.
+The match runs on the main thread: 0.4 s per ten minutes of recorder
+(measured in Node).
 
 ## Reduce noise
 
@@ -309,6 +464,16 @@ and the AI tools tab has a card for it.
 - **Limits**: ormbg is trained on people. It handles one clear object (an
   apple, a cat, a teapot) but not a scene without a subject. MediaPipe
   finds people only.
+- **Text behind the subject** (agents: `text_behind_subject`) reuses the
+  same matte: a silent copy of the video with the matte on goes on a track
+  above the titles, grouped with the original (no canvas fill, which would
+  cover the titles), as one undo step (`src/lib/ads.ts` putBehindSubject).
+  The text-behind drive measured the light model headless: 13 to 15 s with
+  the first download, the title's yellow gone over the jacket and kept
+  beside the face. A photo has no matte video: the model runs on it once
+  and the cut-out is a new PNG with transparency (`cutOutImage` in
+  `src/engine/cutout.ts`), drawn above the title like any picture. With the title hidden, the copy over the original
+  changes no pixel by more than 3 of 765: the matte's edges add no fringe.
 
 ## In the app and for agents
 
@@ -317,7 +482,8 @@ and the AI tools tab has a card for it.
   opens its settings in a small popover, shows progress with a cancel
   button while it runs, and keeps its last result ("Removed 4 silences,
   4.9 s shorter"). *Auto captions* opens the Captions tab; *Auto reframe*
-  is marked as coming soon.
+  reframes for real now (below). *Tracking* sits in the pinned layer's
+  Animation tab, not here, since it starts from the layer.
 - **One undo step per run**, labeled with what happened ("Remove 4
   silences", "Split into 5 scenes", "Mark 43 beats"), built from the
   registry commands `cut_ranges`, `split_at_times` and `add_markers`
@@ -332,13 +498,23 @@ and the AI tools tab has a card for it.
   `ai.duckUnderSpeech(clipId?, { depth })` returns the dips and keys made.
   `ai.reduceNoise(clipId?, { strength })` and `ai.stabilizeClip(clipId?,
   { level })` clean the sound and stabilize the picture.
+  `ai.syncAudio(clipId?, { videoId, muteCamera })` syncs an audio clip to
+  a video by waveform and returns the offset, confidence and new place.
   `ai.removeBackground(clipId?)` makes (or reuses) the matte and turns it
   on, returning the frames, speed, model and device, or `cached: true`;
   the `set_background_removal` command turns an existing matte off and on.
-- **MCP:** the same eight as tools for external agents — `remove_silences`,
+- **MCP:** the same nine as tools for external agents — `remove_silences`,
   `split_scenes`, `mark_beats`, `normalize_loudness`, `duck_under_speech`,
-  `reduce_noise`, `stabilize_clip`, `remove_background` (snake_case
-  options; unset ones keep the panel's defaults).
+  `reduce_noise`, `stabilize_clip`, `sync_audio`, `remove_background`
+  (snake_case options; unset ones keep the panel's defaults) — and
+  `analyze_music` (`ai.analyzeMusic(clipId?, { markers })`).
+- **Epic edit:** an agent makes a beat-synced montage with
+  `analyze_music` (markers bars and drop), `fit_music` (`drop_at`, before
+  cutting), `cut_to_beats`, `add_beat_hits`, `set_speed_ramp`,
+  `add_cinematic_bars`, `add_sound_effect` with `end_at` (a riser into a
+  cut) and `fit_music` again to end on a bar ([[Features]], Epic edits).
+  `scripts/drive/epic-edit.js` does all of it through MCP calls alone and
+  checks every cut lands within a frame of a true beat.
 - **Proof:** `scripts/drive/ai-tools.js` runs every tool on fixtures with
   known answers (`node scripts/make-fixtures.mjs`) and once through the
   panel. Measured in Edge on 2026-10-14: silences exactly 1.7–2.9, 4.7–5.9,

@@ -3,30 +3,36 @@
 // drive scripts, the future MCP bridge and the headless renderer all speak
 // to the app one way. Every edit made here is undoable like a user's.
 
+import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
 import { COMMANDS, describeProject, runCommand } from "./lib/commands";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
-import { findClip } from "./lib/project/ops";
+import { findClip, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, renderToUrl, stillToUrl, type RenderOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
 import { textToSpeech, voiceover, type VoiceoverOptions } from "./state/tts";
 import { autoAdjustClip } from "./state/autoColor";
+import { trackMotion } from "./state/tracking";
+import { addSoundEffect } from "./state/sfx";
+import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { platform } from "./platform";
-import { currentScreen, newProject, openProject } from "./state/project";
+import { currentScreen, newProject, openProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { secondsToFrames } from "./lib/time";
+import { sourceFrames } from "./engine/analyze";
+import { checkProject, type CheckKind } from "./lib/designCheck";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -90,26 +96,57 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover },
+  ai: { removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, analyzeMusic, loudnessReport, textBehindSubject },
+  /** export_versions: one file per version (lib/versions.ts), the project
+   * left as it is; versionsSheet draws them all without exporting. */
+  exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
+  versionsSheet,
   /** The timeline as OpenTimelineIO JSON (what File > Export timeline saves). */
   otio: () => toOtio(store.document()),
 };
 
-/** The viewer's picture at `seconds`, exactly as it draws. */
-async function grab(seconds: number): Promise<OffscreenCanvas> {
-  store.seek(secondsToFrames(seconds, store.get().project.fps));
-  await new Promise((r) => setTimeout(r, 20));
-  await player.idle();
-  const px = player.pixels();
-  if (!px) throw new Error("the viewer is not showing (open a project first)");
-  const c = new OffscreenCanvas(px.width, px.height);
-  c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(px.data), px.width, px.height), 0, 0);
-  return c;
+/** The picture at each of `seconds` as PNGs, drawn as the export draws
+ * it, `width` pixels wide (never wider than the canvas). The viewer's own
+ * canvas is only as big as it is on screen (222 pixels wide for a 9:16
+ * project), so reading it capped every preview there. The viewer seeks
+ * to the last one, so the user sees where the agent is looking. */
+async function grab(seconds: number[], width: number): Promise<Blob[]> {
+  if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+  const p = store.get().project;
+  const end = projectDuration(p);
+  // Past the last frame shows the last frame, as the viewer holds it.
+  const frames = seconds.map((t) => Math.min(secondsToFrames(t, p.fps), Math.max(0, end - 1)));
+  store.seek(secondsToFrames(seconds.at(-1) ?? 0, p.fps));
+  const w = Math.max(2, Math.round(Math.min(width, p.width)));
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)));
+}
+
+/** Frames in a grid, each stamped with its label: the contact sheets. */
+async function tiles(frames: { src: CanvasImageSource | null; label: string; w: number; h: number }[], tileWidth: number, columns: number): Promise<string> {
+  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6;
+  const h = Math.round((frames.find((f) => f.src)?.h ?? 9) * tileWidth / (frames.find((f) => f.src)?.w ?? 16));
+  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + gap) + gap);
+  const ctx = out.getContext("2d")!;
+  // A dark ground, so frames with white edges still read as separate tiles.
+  ctx.fillStyle = "#1e1e1e";
+  ctx.fillRect(0, 0, out.width, out.height);
+  for (const [i, f] of frames.entries()) {
+    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + gap);
+    if (f.src) ctx.drawImage(f.src, x, y, tileWidth, h);
+    ctx.font = "bold 13px sans-serif";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.fillRect(x + 4, y + 4, ctx.measureText(f.label).width + 10, 19);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(f.label, x + 9, y + 18);
+  }
+  return png(out);
 }
 
 /** A canvas as base64 PNG, for MCP image content. */
-async function png(c: OffscreenCanvas): Promise<string> {
-  const bytes = new Uint8Array(await (await c.convertToBlob({ type: "image/png" })).arrayBuffer());
+const png = async (c: OffscreenCanvas): Promise<string> => blobToBase64(await c.convertToBlob({ type: "image/png" }));
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
@@ -141,6 +178,7 @@ window.openFrame = window.videoEditor = automation;
 const mcpHost: McpHost = {
   name: APP_NAME,
   version: __APP_VERSION__,
+  canExport: () => platform.kind === "desktop",
   exec: (name, args) => automation.exec(name, args),
   describe: () => automation.describe(),
   projectJson: () => store.document(),
@@ -161,37 +199,41 @@ const mcpHost: McpHost = {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     return { playhead: seconds };
   },
-  frame: async (seconds, maxWidth) => {
-    const src = await grab(seconds);
-    const k = Math.min(1, maxWidth / src.width);
-    const out = new OffscreenCanvas(Math.round(src.width * k), Math.round(src.height * k));
-    out.getContext("2d")!.drawImage(src, 0, 0, out.width, out.height);
-    return png(out);
-  },
+  frame: async (seconds, maxWidth) => blobToBase64((await grab([seconds], maxWidth))[0]),
   sheet: async (times, tileWidth, columns) => {
-    const cols = Math.min(columns, times.length), rows = Math.ceil(times.length / cols), gap = 6;
-    let out: OffscreenCanvas | null = null;
-    for (const [i, t] of times.entries()) {
-      const src = await grab(t);
-      const w = tileWidth, h = Math.round((src.height * w) / src.width);
-      out ??= new OffscreenCanvas(cols * (w + gap) + gap, rows * (h + gap) + gap);
-      const ctx = out.getContext("2d")!;
-      const x = gap + (i % cols) * (w + gap), y = gap + Math.floor(i / cols) * (h + gap);
-      ctx.drawImage(src, x, y, w, h);
-      const label = `${+t.toFixed(2)} s`;
-      ctx.font = "bold 13px sans-serif";
-      ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-      ctx.fillRect(x + 4, y + 4, ctx.measureText(label).width + 10, 19);
-      ctx.fillStyle = "#fff";
-      ctx.fillText(label, x + 9, y + 18);
+    const pics = await Promise.all((await grab(times, tileWidth)).map((b) => createImageBitmap(b)));
+    try {
+      return await tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: pics[i].width, h: pics[i].height })), tileWidth, columns);
+    } finally {
+      for (const b of pics) b.close();
     }
-    return png(out!);
   },
+  mediaSheet: async (assetId, times, tileWidth, columns) => {
+    const a = store.get().project.assets.find((x) => x.id === assetId);
+    if (!a) throw new Error(`No asset ${assetId}; describe_project lists them`);
+    if (a.kind === "audio") throw new Error(`${a.name} is sound only; preview_media shows pictures and videos`);
+    // A still is one tile: the whole picture, as imported.
+    if (a.kind === "image") {
+      const bmp = await createImageBitmap(await platform.blobFor(a.src));
+      return tiles([{ src: bmp, label: `${bmp.width}x${bmp.height}`, w: bmp.width, h: bmp.height }], tileWidth, 1);
+    }
+    const pics = await sourceFrames(a, times, tileWidth);
+    return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
+  },
+  checkProject: (kind) => (needProject(), checkProject(store.document(), kind as CheckKind)),
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     return exportForAgent(options as RenderOptions);
   },
   exportStatus: () => agentExportStatus(),
+  exportVersions: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return exportVersions(options as VersionsOptions);
+  },
+  versionsSheet: async (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return blobToBase64(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+  },
   voiceover: (lines, options) => (needProject(), voiceover(lines, options as VoiceoverOptions)),
   ai: (tool, target, options) => (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
@@ -206,5 +248,10 @@ const mcpHost: McpHost = {
   newProject: async (name) => {
     if (!(await newProject(name ? { name } : {}))) throw new Error("A new project could not be started; the app shows why.");
     return automation.describe();
+  },
+  saveCopy: async (name, open) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project first.");
+    if (!(await saveProjectCopy(name, open))) throw new Error("The copy could not be saved; the app shows why.");
+    return { saved: name, open: open ? name : store.document().name };
   },
 };

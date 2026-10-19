@@ -277,6 +277,14 @@ delete folders in the same section; deleting a folder unfiles its media and
 keeps all clips and source files. Organization is saved with this project and
 can be undone. These are virtual folders, so footage stays on disk where it is.
 
+## Remove media
+
+Right-click a media card and choose **Remove from project**. A file that
+clips on the timeline use says how many and removes those clips too. To
+clear out everything the timeline does not use, open **Manage media** and
+choose **Remove unused**. Only the project forgets the file; it stays on
+disk, and Undo brings it back.
+
 ## Relink moved media
 
 Open **Media → Manage media** to check source availability and see file paths.

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Crop as CropIcon, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Loader2, Plus, RotateCw, Sparkles, Star, Trash2, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCw, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
-import { ANIMATIONS, EFFECTS, FILTERS, TRANSITIONS } from "../../lib/catalog";
+import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "../../lib/catalog";
+import { DEFAULT_STAGGER, KINETIC_ORDERS, type KineticOrder } from "../../lib/kinetic";
+import { brandOf, type ColorRole } from "../../lib/brandKit";
 import { runCommand } from "../../lib/commands";
 import type { EffectAction } from "../../lib/effectStack";
 import { compoundView } from "../../lib/project/compound";
@@ -19,11 +21,13 @@ import { canvasSize, ratioOf, RATIOS } from "../../lib/canvas";
 import { PRESETS } from "../../lib/speed";
 import { FPS_PRESETS, formatDuration, formatTimecode, framesToSeconds, secondsToFrames } from "../../lib/time";
 import { captionClips, styleAllCaptions } from "../../state/captions";
-import { edit, run } from "../../state/actions";
+import { edit, run, tipFor } from "../../state/actions";
 import { store, useEditor } from "../../state/store";
 import { beginTyping, endTyping, typeText } from "../../state/textEdit";
 import { ColorInput, patchClip, Row, Section, Segmented, SliderRow, Toggle, useClip } from "./controls";
+import { CompositingSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
+import { SoundFxSection } from "./SoundFx";
 import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
@@ -38,6 +42,8 @@ import { toast } from "../../state/toast";
 import { cancelSpeech, textToSpeech, useSpeaking } from "../../state/tts";
 import { DEFAULT_VOICE, VOICES } from "../../lib/tts";
 import { aiStore, setBackgroundRemoval, stabilizeClip, useAi } from "../../state/ai";
+import { applyTextStyle, deleteTextStyle, saveTextStyle, useTextStyles } from "../../state/textStyles";
+import { beginTrackBox, cancelTrackBox, cancelTracking, cannotTrack, trackMotion, useTrackBox, useTracking } from "../../state/tracking";
 import { LEVELS, type StabilizeLevel } from "../../lib/analysis/stabilize";
 import { canListSystemFonts, importFonts, loadSystemFonts, pickFontFiles, useFonts } from "../../state/fonts";
 import "./inspector.css";
@@ -180,12 +186,7 @@ function stripKeys(c: Clip, prefix: string, keep?: RegExp) {
   return Object.keys(k).length ? k : undefined;
 }
 
-const BLENDS: [BlendMode, string][] = [
-  ["normal", "Normal"], ["darken", "Darken"], ["multiply", "Multiply"], ["colorBurn", "Color burn"],
-  ["lighten", "Lighten"], ["screen", "Screen"], ["colorDodge", "Color dodge"], ["add", "Add"],
-  ["overlay", "Overlay"], ["softLight", "Soft light"], ["hardLight", "Hard light"],
-  ["difference", "Difference"], ["exclusion", "Exclusion"],
-];
+const BLENDS = BLEND_MODES;
 
 function VideoTab({ clip }: { clip: Clip }) {
   // CapCut's order: Basic / Remove BG / Mask (research §3.0, §3.3).
@@ -232,6 +233,8 @@ function VideoTab({ clip }: { clip: Clip }) {
               </Row>
             </Section>
           )}
+          {clip.type === "color" && <ShapeSection clip={clip} />}
+          <CompositingSection clip={clip} />
           {(clip.type === "video" || clip.type === "image") && <CanvasSection clip={clip} />}
           <CropSection clip={clip} />
           {clip.type === "video" && <StabilizeSection clip={clip} />}
@@ -527,10 +530,11 @@ function AudioTab({ clip }: { clip: Clip }) {
         ))}
       </Section>
       {clip.type !== "compound" && <CompressorSection clip={clip} />}
+      {clip.type !== "compound" && <SoundFxSection clip={clip} />}
       {clip.type === "video" && (
         <Section title="Sound">
           <div className="insp-actions">
-            <button className="btn" onClick={() => run("detachAudio")}>Extract audio</button>
+            <button className="btn" data-tip={tipFor("detachAudio")} onClick={() => run("detachAudio")}>Extract audio</button>
             <button className="btn ghost" onClick={() => patchClip(clip.id, clip.muted ? "Unmute clip" : "Mute clip", (c) => ({ ...c, muted: !(c as VideoClip).muted }) as Clip)}>
               {clip.muted ? "Unmute clip" : "Mute clip"}
             </button>
@@ -751,20 +755,32 @@ function StandardSpeed({ clip }: { clip: ops.TimedClip }) {
 
 // ---- animation -----------------------------------------------------------------
 
+const ORDER_LABELS: Record<KineticOrder, string> = { forward: "First to last", backward: "Last to first", center: "From the center", random: "Random" };
+
 function AnimationTab({ clip }: { clip: Clip }) {
   const fps = useEditor((s) => s.project.fps);
   const [slot, setSlot] = useState<"in" | "out" | "loop">("in");
   if (!("transform" in clip)) return null;
   const key = slot === "in" ? "animIn" : slot === "out" ? "animOut" : "animLoop";
   const current = (clip as unknown as Record<string, Animation | undefined>)[key];
-  const list = Object.entries(ANIMATIONS).filter(([, d]) => (slot === "loop" ? !!d.loop : !!d.from));
-  const set = (type: string | null, duration?: number) =>
+  const text = clip.type === "text";
+  // Titles also get the kinetic presets (typewriter, word pop...), which
+  // move their letters and words; other clips only the whole-layer ones.
+  const list = Object.entries(ANIMATIONS).filter(([, d]) => (d.text ? text && slot !== "loop" : slot === "loop" ? !!d.loop : !!d.from));
+  const set = (type: string | null, duration?: number, perUnit?: Pick<Animation, "unit" | "stagger" | "order">) =>
     patchClip(clip.id, type ? `${slot === "loop" ? "Loop" : slot === "in" ? "In" : "Out"} animation` : "Remove animation", (c) => {
       const next = { ...c } as Record<string, unknown>;
       if (!type) delete next[key];
-      else next[key] = { type, duration: duration ?? current?.duration ?? secondsToFrames(slot === "loop" ? 1 : 0.5, fps) };
+      else {
+        // Changing the animation keeps how it plays per unit; a sweep has none.
+        const keep = perUnit ?? (current && !ANIMATIONS[type].text?.sweep ? { unit: current.unit, stagger: current.stagger, order: current.order } : {});
+        const clean = Object.fromEntries(Object.entries(keep).filter(([, v]) => v !== undefined));
+        next[key] = { type, duration: duration ?? current?.duration ?? secondsToFrames(slot === "loop" ? 1 : 0.5, fps), ...clean };
+      }
       return next as unknown as Clip;
     });
+  const def = current && ANIMATIONS[current.type];
+  const unit = current ? (current.unit ?? def?.text?.unit) : undefined;
   return (
     <>
       <div className="insp-sub">
@@ -801,7 +817,110 @@ function AnimationTab({ clip }: { clip: Clip }) {
           </div>
         </Section>
       )}
+      {current && text && def?.text?.sweep && (
+        <Section title="Text motion">
+          <Row label={def.text.sweep === "marker" ? "Marker" : "Line"}>
+            <ColorInput
+              label={def.text.sweep === "marker" ? "Marker color" : "Line color"}
+              value={(clip as TextClip).style.accent ?? (def.text.sweep === "marker" ? "#ffd84d" : (clip as TextClip).style.color)}
+              onChange={(v) => patchClip(clip.id, "Accent color", (c) => ({ ...c, style: { ...(c as TextClip).style, accent: v } }) as Clip)}
+            />
+          </Row>
+        </Section>
+      )}
+      {current && text && !def?.text?.sweep && (
+        <Section title="Text motion">
+          <Row label="Moves by">
+            <Segmented
+              value={unit ?? "whole"}
+              onChange={(v) => set(current.type, current.duration, v === "whole" ? {} : { unit: v, stagger: current.stagger, order: current.order })}
+              options={[
+                ...(def?.text ? [] : [{ value: "whole" as const, label: "Whole" }]),
+                { value: "letter" as const, label: "Letter" },
+                { value: "word" as const, label: "Word" },
+                { value: "line" as const, label: "Line" },
+              ]}
+            />
+          </Row>
+          {unit && (
+            <>
+              <div className="insp-row">
+                <label className="insp-label">Stagger</label>
+                <input
+                  type="range"
+                  className="insp-slider"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER}
+                  onChange={(e) => set(current.type, current.duration, { unit: current.unit, stagger: Number(e.target.value), order: current.order })}
+                  aria-label="Stagger"
+                />
+                <span className="insp-num num">{Math.round((current.stagger ?? def?.text?.stagger ?? DEFAULT_STAGGER) * 100)}<span className="insp-unit">%</span></span>
+                <span className="insp-keys" />
+              </div>
+              <Row label="Order">
+                <select className="field" aria-label="Order" value={current.order ?? (slot === "out" ? def?.text?.outOrder : undefined) ?? "forward"} onChange={(e) => set(current.type, current.duration, { unit: current.unit, stagger: current.stagger, order: e.target.value as KineticOrder })}>
+                  {KINETIC_ORDERS.map((o) => (
+                    <option key={o} value={o}>
+                      {ORDER_LABELS[o]}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            </>
+          )}
+        </Section>
+      )}
+      <TrackingSection clip={clip as VisualClip} />
     </>
+  );
+}
+
+/** CapCut's Tracking: place a box on a subject in the video under this
+ * layer, and the layer follows it from the playhead; on a video, the box
+ * can instead keep its subject centered (reframe). state/tracking.ts. */
+function TrackingSection({ clip }: { clip: VisualClip }) {
+  const pinWhy = useEditor((s) => cannotTrack(s.project, clip.id, s.playhead, "pin"));
+  const centerWhy = useEditor((s) => (clip.type === "video" ? cannotTrack(s.project, clip.id, s.playhead, "center") : "Not a video"));
+  const box = useTrackBox();
+  const placing = box?.target === clip.id ? box.mode : null;
+  const job = useTracking();
+  const mine = job?.target === clip.id;
+  const track = () => void trackMotion(clip.id).catch(() => undefined);
+  const idle =
+    clip.type === "video"
+      ? (centerWhy ?? "Keep a moving subject centered while the picture fills the canvas (reframe), or pin this clip to a subject in a video under it.")
+      : (pinWhy ?? "Pin this layer to a moving subject in the video under it, from the playhead on.");
+  return (
+    <Section title="Tracking">
+      <p className="insp-hint" role={mine ? "status" : undefined}>
+        {mine ? `Following the subject… ${Math.round(job.progress * 100)}%` : placing ? `Drag the box onto the subject and size it to fit, then ${placing === "center" ? "Reframe" : "Track"}.` : idle}
+      </p>
+      <div className="insp-actions">
+        {mine ? (
+          <button className="btn ghost" onClick={cancelTracking}>Cancel</button>
+        ) : placing ? (
+          <>
+            <button className="btn primary" onClick={track}>{placing === "center" ? "Reframe" : "Track"}</button>
+            <button className="btn ghost" onClick={cancelTrackBox}>Cancel</button>
+          </>
+        ) : (
+          <>
+            {(clip.type !== "video" || !pinWhy) && (
+              <button className="btn" disabled={!!pinWhy || !!job} onClick={() => beginTrackBox(clip.id)}>
+                <Crosshair size={14} /> Pick subject
+              </button>
+            )}
+            {clip.type === "video" && (
+              <button className="btn" disabled={!!centerWhy || !!job} onClick={() => beginTrackBox(clip.id, "center")}>
+                <Ratio size={14} /> Keep subject centered
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </Section>
   );
 }
 
@@ -1034,7 +1153,81 @@ function FontPicker({ value, onChange }: { value: string; onChange: (font: strin
   );
 }
 
-const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];
+
+/** Black or white, whichever a color reads better on: the swatch behind
+ * a saved style's sample, so a dark style's "Aa" still shows. */
+const swatchFor = (hex: string) => {
+  const n = parseInt(hex.slice(1, 7), 16);
+  const lum = 0.2126 * ((n >> 16) & 255) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
+  return lum > 140 ? "#000000" : "#ffffff";
+};
+
+/** CapCut's Save as preset for text: this title's look under a name, and
+ * the saved looks as chips that give a title that look in one click, in
+ * any project (state/textStyles.ts). */
+function SavedStylesSection({ clip }: { clip: TextClip }) {
+  const saved = useTextStyles();
+  const [naming, setNaming] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const save = () => {
+    try {
+      saveTextStyle(clip.style, naming ?? "");
+      setNaming(null);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <Section title="Saved styles">
+      {saved.length ? (
+        <div className="style-chips">
+          {saved.map((t) => (
+            <span key={t.id} className="style-chip">
+              <button className="chip-btn" data-tip={`Give this title the ${t.name} style`} onClick={() => applyTextStyle(t.id, [clip.id])}>
+                <span className="style-sample" aria-hidden="true" style={{ fontFamily: t.style.font, color: t.style.color, background: swatchFor(t.style.color), fontWeight: t.style.bold ? 700 : 400, fontStyle: t.style.italic ? "italic" : undefined }}>
+                  Aa
+                </span>
+                {t.name}
+              </button>
+              <button className="icon-btn small" aria-label={`Delete style ${t.name}`} data-tip="Delete style" onClick={() => deleteTextStyle(t.id)}>
+                <X size={12} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="insp-hint">Save this title's look to give it to other titles in one click, in any project.</p>
+      )}
+      {naming === null ? (
+        <div className="insp-actions">
+          <button className="btn" onClick={() => setNaming("")}>
+            <Plus size={14} /> Save this style
+          </button>
+        </div>
+      ) : (
+        <div className="insp-actions">
+          <input
+            className="field style-name"
+            aria-label="Style name"
+            placeholder="Style name"
+            autoFocus
+            value={naming}
+            onChange={(e) => setNaming(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation(); // typing is not the editor's keys
+              if (e.key === "Enter") save();
+              if (e.key === "Escape") setNaming(null);
+            }}
+          />
+          <button className="btn primary" onClick={save}>Save</button>
+          <button className="btn ghost" onClick={() => setNaming(null)}>Cancel</button>
+        </div>
+      )}
+      {error && <p className="insp-hint" role="alert">{error}</p>}
+    </Section>
+  );
+}
 
 function TextTab({ clip }: { clip: TextClip }) {
   const s = clip.style;
@@ -1071,9 +1264,9 @@ function TextTab({ clip }: { clip: TextClip }) {
         <SliderRow clip={clip} path="style.size" label="Size" min={8} max={400} reset={96} keyframes={false} />
         <Row label="Style">
           <div className="style-toggles">
-            <button className={`chip-btn bold${s.bold ? " on" : ""}`} aria-pressed={s.bold} onClick={() => style({ bold: !s.bold }, "Bold")}>B</button>
-            <button className={`chip-btn italic${s.italic ? " on" : ""}`} aria-pressed={s.italic} onClick={() => style({ italic: !s.italic }, "Italic")}>I</button>
-            <button className={`chip-btn underline${s.underline ? " on" : ""}`} aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}>U</button>
+            <button className={`chip-btn${s.bold ? " on" : ""}`} aria-label="Bold" data-tip="Bold" aria-pressed={s.bold} onClick={() => style({ bold: !s.bold }, "Bold")}><Bold size={14} /></button>
+            <button className={`chip-btn${s.italic ? " on" : ""}`} aria-label="Italic" data-tip="Italic" aria-pressed={s.italic} onClick={() => style({ italic: !s.italic }, "Italic")}><Italic size={14} /></button>
+            <button className={`chip-btn${s.underline ? " on" : ""}`} aria-label="Underline" data-tip="Underline" aria-pressed={s.underline} onClick={() => style({ underline: !s.underline }, "Underline")}><Underline size={14} /></button>
             <Segmented value={s.align} onChange={(v) => style({ align: v }, "Align")} options={[{ value: "left", label: "Left" }, { value: "center", label: "Center" }, { value: "right", label: "Right" }]} />
           </div>
         </Row>
@@ -1083,9 +1276,9 @@ function TextTab({ clip }: { clip: TextClip }) {
             onChange={(v) => style({ case: v === "none" ? undefined : v }, "Text case")}
             options={[
               { value: "none", label: "As typed" },
-              { value: "upper", label: "AA" },
-              { value: "lower", label: "aa" },
-              { value: "title", label: "Aa" },
+              { value: "upper", label: <CaseUpper size={16} />, tip: "UPPERCASE" },
+              { value: "lower", label: <CaseLower size={16} />, tip: "lowercase" },
+              { value: "title", label: <CaseSensitive size={16} />, tip: "Title Case" },
             ]}
           />
         </Row>
@@ -1110,6 +1303,39 @@ function TextTab({ clip }: { clip: TextClip }) {
               <ColorInput label="Stroke color" value={s.stroke.color} onChange={(v) => style({ stroke: { ...s.stroke!, color: v } }, "Stroke color")} />
             </Row>
             <SliderRow clip={clip} path="style.stroke.width" label="Width" min={0} max={40} reset={4} keyframes={false} />
+            <Row label="Second">
+              <div className="spoken-word">
+                <Toggle label="Second outline" on={!!s.stroke2 && s.stroke2.width > 0} onChange={(v) => style({ stroke2: v ? { color: s.stroke2?.color ?? "#ffffff", width: Math.max(6, s.stroke2?.width ?? 0) } : undefined }, v ? "Add second outline" : "Remove second outline")} />
+                {s.stroke2 && <ColorInput label="Second outline color" value={s.stroke2.color} onChange={(v) => style({ stroke2: { ...s.stroke2!, color: v } }, "Second outline color")} />}
+              </div>
+            </Row>
+            {s.stroke2 && <SliderRow clip={clip} path="style.stroke2.width" label="Second width" min={0} max={40} reset={6} keyframes={false} />}
+          </>
+        )}
+      </Section>
+      <Section title="Glow" defaultOpen={!!s.glow} extra={<Toggle label="Glow" on={!!s.glow} onChange={(v) => style({ glow: v ? { color: s.glow?.color ?? "#00e5ff", blur: 24 } : undefined }, v ? "Add glow" : "Remove glow")} />}>
+        {s.glow && (
+          <>
+            <Row label="Color">
+              <ColorInput label="Glow color" value={s.glow.color} onChange={(v) => style({ glow: { ...s.glow!, color: v } }, "Glow color")} />
+            </Row>
+            <SliderRow clip={clip} path="style.glow.blur" label="Size" min={0} max={120} reset={24} keyframes={false} />
+            <Row label="Strength">
+              <Segmented value={String(s.glow.strength ?? 1) as "1" | "2" | "3"} onChange={(v) => style({ glow: { ...s.glow!, strength: Number(v) } }, "Glow strength")} options={[{ value: "1", label: "Soft" }, { value: "2", label: "Bright" }, { value: "3", label: "Neon" }]} />
+            </Row>
+          </>
+        )}
+      </Section>
+      <Section title="Gradient" defaultOpen={!!s.gradient} extra={<Toggle label="Gradient fill" on={!!s.gradient} onChange={(v) => style({ gradient: v ? { from: s.color, to: "#ff3d7f", angle: 0 } : undefined }, v ? "Gradient fill" : "Solid fill")} />}>
+        {s.gradient && (
+          <>
+            <Row label="From">
+              <ColorInput label="Gradient start color" value={s.gradient.from} onChange={(v) => style({ gradient: { ...s.gradient!, from: v } }, "Gradient color")} />
+            </Row>
+            <Row label="To">
+              <ColorInput label="Gradient end color" value={s.gradient.to} onChange={(v) => style({ gradient: { ...s.gradient!, to: v } }, "Gradient color")} />
+            </Row>
+            <SliderRow clip={clip} path="style.gradient.angle" label="Angle" min={-180} max={180} unit="°" reset={0} keyframes={false} />
           </>
         )}
       </Section>
@@ -1136,6 +1362,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
+      <SavedStylesSection clip={clip} />
       <TransformSection clip={clip} />
       <Section title="Opacity" defaultOpen={false}>
         <SliderRow clip={clip} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} {...pct} />
@@ -1278,7 +1505,7 @@ function ProjectDetails() {
       <div className="insp-body">
         <Section title="Project">
           <Row label="Name">
-            <input className="field" defaultValue={p.name} key={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && store.edit("Rename project", (q) => ({ ...q, name: e.target.value.trim() }))} />
+            <input className="field" aria-label="Project name" defaultValue={p.name} key={p.name} onBlur={(e) => e.target.value.trim() && e.target.value !== p.name && store.edit("Rename project", (q) => ({ ...q, name: e.target.value.trim() }))} />
           </Row>
           <Row label="Ratio">
             <div className="ratio-grid">
@@ -1291,7 +1518,7 @@ function ProjectDetails() {
             </div>
           </Row>
           <Row label="Resolution">
-            <select className="field" value={RESOLUTIONS.includes(short) ? short : ""} onChange={(e) => setCanvas(p.width, p.height, Number(e.target.value))}>
+            <select className="field" aria-label="Resolution" value={RESOLUTIONS.includes(short) ? short : ""} onChange={(e) => setCanvas(p.width, p.height, Number(e.target.value))}>
               {!RESOLUTIONS.includes(short) && <option value="">{p.width}x{p.height}</option>}
               {RESOLUTIONS.map((r) => (
                 <option key={r} value={r}>
@@ -1300,9 +1527,17 @@ function ProjectDetails() {
               ))}
             </select>
           </Row>
+          <Row label="Size">
+            <div className="size-fields">
+              <SizeField label="Canvas width" value={p.width} onSet={(width) => store.edit("Canvas size", (q) => ({ ...q, width, canvasFixed: true }))} />
+              <span aria-hidden="true">×</span>
+              <SizeField label="Canvas height" value={p.height} onSet={(height) => store.edit("Canvas size", (q) => ({ ...q, height, canvasFixed: true }))} />
+            </div>
+          </Row>
           <Row label="Frame rate">
             <select
               className="field"
+              aria-label="Frame rate"
               value={fpsLabel}
               onChange={(e) => {
                 const f = FPS_PRESETS.find((x) => x.label === e.target.value);
@@ -1320,6 +1555,8 @@ function ProjectDetails() {
             <ColorInput label="Background color" value={p.background} onChange={(v) => store.edit("Background color", (q) => ({ ...q, background: v }))} />
           </Row>
         </Section>
+        {/* Opens when a kit arrives (an agent's set_brand), closed without one. */}
+        <BrandSection key={p.brand ? "brand" : "none"} />
         <Section title="Summary">
           <dl className="summary num">
             <dt>Canvas</dt>
@@ -1329,7 +1566,8 @@ function ProjectDetails() {
             <dt>Duration</dt>
             <dd>{formatDuration(framesToSeconds(ops.projectDuration(p), p.fps))}</dd>
             <dt>Media</dt>
-            <dd>{p.assets.length} files</dd>
+            {/* As the library counts: stickers are not listed there. */}
+            <dd>{((n) => `${n} ${n === 1 ? "file" : "files"}`)(p.assets.filter((a) => !a.sticker).length)}</dd>
             <dt>Tracks</dt>
             <dd>{p.tracks.length}</dd>
           </dl>
@@ -1340,9 +1578,75 @@ function ProjectDetails() {
   );
 }
 
+/** The project's brand kit (set_brand): the colors, fonts and logo that
+ * ad elements and branded titles draw with. */
+function BrandSection() {
+  const p = useEditor((s) => s.project);
+  const b = brandOf(p);
+  const set = (label: string, args: Record<string, string>) => store.edit(label, (q) => runCommand(q, "set_brand", args));
+  const pictures = p.assets.filter((a) => a.kind === "image" && !a.sticker);
+  const roles: [ColorRole, string][] = [["primary", "Primary"], ["secondary", "Secondary"], ["accent", "Accent"], ["background", "Background"], ["text", "Text"]];
+  return (
+    <Section title="Brand" defaultOpen={!!p.brand}>
+      {roles.map(([role, label]) => (
+        <Row key={role} label={label}>
+          <ColorInput label={`Brand ${role} color`} value={b.colors[role]} onChange={(v) => set("Brand color", { [role]: v })} />
+        </Row>
+      ))}
+      <Row label="Headings">
+        <FontPicker value={b.fonts.heading} onChange={(font) => set("Brand font", { heading_font: font })} />
+      </Row>
+      <Row label="Body">
+        <FontPicker value={b.fonts.body} onChange={(font) => set("Brand font", { body_font: font })} />
+      </Row>
+      <Row label="Logo">
+        <select className="field" aria-label="Brand logo" value={b.logos?.main ?? ""} onChange={(e) => set("Brand logo", { logo: e.target.value })}>
+          <option value="">None</option>
+          {pictures.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+      </Row>
+      <p className="insp-hint">Ad elements and branded titles use these. Agents set them with set_brand.</p>
+    </Section>
+  );
+}
+
+/** A canvas side in pixels (CapCut's custom ratio): even, as encoders
+ * need, between 16 and 8192; committed on Enter or leaving the field. */
+function SizeField({ label, value, onSet }: { label: string; value: number; onSet: (v: number) => void }) {
+  const commit = (raw: string) => {
+    const n = Math.round(Number(raw) / 2) * 2;
+    if (Number.isFinite(n) && n !== value) onSet(Math.min(8192, Math.max(16, n)));
+  };
+  return (
+    <input
+      className="field num"
+      type="number"
+      min={16}
+      max={8192}
+      step={2}
+      aria-label={label}
+      defaultValue={value}
+      key={value}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+    />
+  );
+}
+
 function MultiSelection({ count }: { count: number }) {
   const sel = useEditor((s) => s.selection);
+  const project = useEditor((s) => s.project);
   const movable = useMovable(sel);
+  const clips = sel.flatMap((id) => {
+    const c = ops.findClip(project, id)?.clip;
+    return c ? [c] : [];
+  });
+  const pictures = clips.filter((c) => "transform" in c);
+  const sounds = clips.filter((c) => "volume" in c);
   return (
     <>
       <nav className="insp-tabs">
@@ -1350,14 +1654,26 @@ function MultiSelection({ count }: { count: number }) {
       </nav>
       <div className="insp-body">
         <Section title="Selection">
-          <p className="insp-hint">{count} clips selected. Move, delete, copy or split them together; select one clip to edit its properties.</p>
+          <p className="insp-hint">{count} clips selected. Move, delete, copy or split them together; what they share can be set below for all of them at once.</p>
           <div className="insp-actions">
-            <button className="btn" onClick={() => run("duplicate")}>Duplicate</button>
-            <button className="btn ghost" onClick={() => run("delete")}>Delete</button>
+            <button className="btn" data-tip={tipFor("duplicate")} onClick={() => run("duplicate")}>Duplicate</button>
+            <button className="btn ghost" data-tip={tipFor("delete")} onClick={() => run("delete")}>Delete</button>
           </div>
           <EffectClipboard />
           <AttributeClipboard />
         </Section>
+        {pictures.length > 1 && (
+          <Section title={`Picture (${pictures.length} clips)`}>
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="transform.scale" label="Scale" min={1} max={500} unit="%" reset={1} keyframes={false} {...pct} />
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="transform.rotation" label="Rotate" min={-360} max={360} step={0.1} digits={1} unit="°" reset={0} keyframes={false} />
+            <SliderRow clip={pictures[0]} also={pictures.slice(1)} path="opacity" label="Opacity" min={0} max={100} unit="%" reset={1} keyframes={false} {...pct} />
+          </Section>
+        )}
+        {sounds.length > 1 && (
+          <Section title={`Sound (${sounds.length} clips)`}>
+            <SliderRow clip={sounds[0]} also={sounds.slice(1)} path="volume" label="Volume" min={-60} max={12} step={0.1} digits={1} unit="dB" reset={1} keyframes={false} show={(v) => Math.max(-60, toDb(v))} store={(db) => (db <= -60 ? 0 : fromDb(db))} />
+          </Section>
+        )}
         {movable > 0 && (
           <Section title="Align">
             <AlignBar ids={sel} />

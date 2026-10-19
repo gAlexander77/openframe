@@ -50,6 +50,14 @@ const invert = (r, g, b) => [1 - r, 1 - g, 1 - b];
 
 const tone = (freq, seconds) => `sine=frequency=${freq}:sample_rate=48000:duration=${seconds}`;
 
+// The take both sync fixtures hear: 20 s of synthesized speech, made once.
+const syncMaster = () => {
+  const master = join(out, "_sync-master.wav");
+  const text = "Okay we are rolling. Today I want to show you how this camera handles low light. Watch the shadows on the left side of the frame. Now I will count to five so we can line up the sound later. One. Two. Three. Four. Five. That was it. Let us move on to the next shot.";
+  if (!existsSync(master)) ff("-f", "lavfi", "-i", `flite=text='${text}':voice=slt`, "-af", "aresample=48000,apad=whole_dur=20", "-ac", "1", "-c:a", "pcm_s16le", master);
+  return master;
+};
+
 const jobs = {
   "h264-1080p30.mp4": () =>
     ff("-f", "lavfi", "-i", burn(1920, 1080, 30), "-f", "lavfi", "-i", tone(440, 10), "-t", "10", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "60", "-c:a", "aac", "-shortest", join(out, "h264-1080p30.mp4")),
@@ -128,6 +136,15 @@ const jobs = {
   // tone every 3 s), for removing silences from a video with its sound.
   "talk-gaps.mp4": () =>
     ff("-f", "lavfi", "-i", burn(640, 360, 30), "-f", "lavfi", "-i", "aevalsrc='0.5*sin(2*PI*300*t)*lt(mod(t,3),1.6)':s=48000:d=12", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-shortest", join(out, "talk-gaps.mp4")),
+  // Sync audio by waveform (scripts/drive/audio-sync.js): one take heard by
+  // two microphones. The camera's own sound is thin and roomy (high-passed,
+  // with echoes) and AAC; the lav's is warm (low-passed), quieter, with
+  // pink noise, and its recorder started earlier: a moment at camera
+  // second t is at lav second t + 1.37. Both come from one speech master.
+  "sync-camera.mp4": () =>
+    ff("-f", "lavfi", "-i", burn(640, 360, 30), "-i", syncMaster(), "-filter_complex", "[1:a]atrim=start=2:duration=12,asetpts=PTS-STARTPTS,highpass=f=250,aecho=0.8:0.7:35|80:0.35|0.2[a]", "-map", "0:v", "-map", "[a]", "-t", "12", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-g", "30", "-c:a", "aac", "-b:a", "128k", join(out, "sync-camera.mp4")),
+  "sync-lav.wav": () =>
+    ff("-i", syncMaster(), "-f", "lavfi", "-i", "anoisesrc=color=pink:amplitude=0.02:sample_rate=48000:seed=7", "-filter_complex", "[0:a]atrim=start=0.63,asetpts=PTS-STARTPTS,lowpass=f=4000,volume=0.35[v];[v][1:a]amix=inputs=2:duration=first:normalize=0", "-ac", "1", "-c:a", "pcm_s16le", join(out, "sync-lav.wav")),
   // Remove background (scripts/drive/bg-removal.js) needs a real person:
   // the segmentation model is trained on portraits. The photo is CC0
   // ("Siva Vaidhyanathan.jpg", Wikimedia Commons, by Siva Vaidhyanathan,

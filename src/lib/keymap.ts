@@ -80,7 +80,8 @@ export type ActionId =
   | "toggleLoop"
   | "playInToOut"
   | "showShortcuts"
-  | "showPreferences";
+  | "showPreferences"
+  | "saveFrame";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   playPause: ["Space"],
@@ -172,6 +173,8 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   playInToOut: ["Mod+Shift+Space"],
   showShortcuts: ["Mod+/"],
   showPreferences: ["Mod+,"],
+  // Premiere's Export Frame.
+  saveFrame: ["Mod+Shift+E"],
 };
 
 export const ACTION_LABELS: Record<ActionId, string> = {
@@ -251,6 +254,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   playInToOut: "Play in to out",
   showShortcuts: "Keyboard shortcuts",
   showPreferences: "Preferences",
+  saveFrame: "Save frame as PNG",
 };
 
 /** Canonical chord for a keyboard event: modifiers in a fixed order, then

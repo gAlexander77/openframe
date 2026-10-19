@@ -8,7 +8,7 @@ import { formatTimecode, fpsValue, framesToSeconds } from "../lib/time";
 import { addToTimeline } from "../state/media";
 import { actionFor, provide } from "../state/actions";
 import { toast } from "../state/toast";
-import { tipFor } from "./TimelineToolbar";
+import { tipFor } from "../state/actions";
 import type { PlaceMode } from "../lib/project/ops";
 import { projectWork } from "../state/projectWork";
 import { store } from "../state/store";

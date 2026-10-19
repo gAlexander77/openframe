@@ -4,6 +4,7 @@ import {
   formatTimecode,
   frameAt,
   framesToSeconds,
+  parseJump,
   parseTimecode,
   secondsToFrames,
 } from "./time";
@@ -49,6 +50,16 @@ describe("timecode", () => {
     expect(parseTimecode("2.5s", f30)).toBe(75);
     expect(parseTimecode("00:00:00:30", f30)).toBeNull();
     expect(parseTimecode("abc", f30)).toBeNull();
+  });
+  it("reads digits alone right to left, and jumps by offsets", () => {
+    expect(parseTimecode("1000", f30)).toBe(300);
+    expect(parseTimecode("10215", f30)).toBe((60 + 2) * 30 + 15);
+    expect(parseTimecode("15", f30)).toBe(15);
+    expect(parseJump("+15", f30, 100)).toBe(115);
+    expect(parseJump("-1:00", f30, 100)).toBe(70);
+    expect(parseJump("-10:00", f30, 100)).toBe(0);
+    expect(parseJump("2:00", f30, 100)).toBe(60);
+    expect(parseJump("+x", f30, 100)).toBeNull();
   });
   it("rejects dropped frame labels instead of moving to the previous second", () => {
     expect(parseTimecode("00:01:00;00", f2997)).toBeNull();

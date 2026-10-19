@@ -3,9 +3,14 @@
 // version, a hand-written agent script with half the fields missing — leaves
 // as a complete, valid Project or as an error naming what is wrong.
 
+import { normalizeBrand } from "../brandKit";
 import { cleanCompressor } from "../compressor";
+import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
+import { cleanShape } from "../shapes";
+import { cleanTrackMatte, dropDanglingMattes } from "../trackMatte";
+import { cleanWiggle } from "../wiggle";
 import { secondsToFrames, type Rational } from "../time";
 import type {
   Adjust,
@@ -242,6 +247,12 @@ const num = (v: unknown, fallback: number) =>
   typeof v === "number" && Number.isFinite(v) ? v : fallback;
 
 const VISUAL_TYPES = new Set(["video", "image", "text", "color", "compound"]);
+
+/** Set an optional field, or remove it when its cleaned value is absent. */
+function optional(c: Record<string, unknown>, key: string, value: unknown) {
+  if (value === undefined) delete c[key];
+  else c[key] = value;
+}
 const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment", "compound"]);
 
 /** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
@@ -269,6 +280,13 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
     c.effects = Array.isArray(c.effects) ? c.effects : [];
+    // Graphics (ADR-056 to ADR-059, ADR-062): optional, and a malformed one is
+    // dropped rather than refused, so the clip still plays.
+    optional(c, "trackMatte", cleanTrackMatte(c.trackMatte));
+    const mb = isObj(c.motionBlur) ? num(c.motionBlur.shutter, 180) : 0;
+    optional(c, "motionBlur", mb > 0 ? { shutter: Math.min(720, mb) } : undefined);
+    optional(c, "edge", c.edge === "mirror" || c.edge === "repeat" ? c.edge : undefined);
+    optional(c, "wiggle", cleanWiggle(c.wiggle));
   }
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
@@ -291,6 +309,8 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     const comp = cleanCompressor(c.compressor);
     if (comp) c.compressor = comp;
     else delete c.compressor;
+    // Sound design (ADR-060): each effect in range, or dropped.
+    cleanSoundFx(c);
   }
   // Remove BG (ADR-033): a reference to a matte file, or nothing. A broken
   // one is dropped, not refused: the clip still plays, with its background.
@@ -302,7 +322,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (typeof c.compoundId !== "string") throw new ProjectError(`${where}: missing compoundId`);
     // Not supported on compound clips yet (ADR-037): dropped, not refused,
     // so a file that has them still opens.
-    for (const k of ["speedCurve", "reverse", "freeze"]) delete c[k];
+    for (const k of ["speedCurve", "reverse", "freeze", ...FX_KEYS]) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);
@@ -311,7 +331,10 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.text = typeof c.text === "string" ? c.text : "";
     c.style = { ...DEFAULT_TEXT_STYLE, ...(isObj(c.style) ? c.style : {}) };
   }
-  if (type === "color") c.color = typeof c.color === "string" ? c.color : "#000000";
+  if (type === "color") {
+    c.color = typeof c.color === "string" ? c.color : "#000000";
+    optional(c, "shape", cleanShape(c.shape));
+  }
   return c as unknown as Clip;
 }
 
@@ -385,6 +408,7 @@ export function normalizeProject(raw: unknown): Project {
     path.includes(id) || byId.get(id)!.tracks.some((t) => t.clips.some((c) => c.type === "compound" && cyclic(c.compoundId, [...path, id])));
   for (const k of compounds) if (cyclic(k.id, [])) throw new ProjectError(`compounds: ${k.id} contains itself`);
   const markers = normalizeMarkers(raw.markers);
+  const brand = normalizeBrand(raw.brand, assetIds);
   return {
     schema: 1,
     id: typeof raw.id === "string" ? raw.id : base.id,
@@ -401,6 +425,7 @@ export function normalizeProject(raw: unknown): Project {
     markers,
     ...(luts.length ? { luts } : {}),
     ...(compounds.length ? { compounds } : {}),
+    ...(brand ? { brand } : {}),
     createdAt: num(raw.createdAt, base.createdAt),
     updatedAt: num(raw.updatedAt, base.updatedAt),
   };
@@ -448,7 +473,7 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
     if (firstVideo) firstVideo.main = true;
     else tracks.unshift(createTrack("video", "Main", true));
   }
-  return tracks;
+  return dropDanglingMattes(tracks);
 }
 
 function normalizeMarkers(raw: unknown): Marker[] {

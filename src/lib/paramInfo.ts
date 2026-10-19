@@ -40,6 +40,22 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   "chromaKey.similarity": { label: "Key strength", unit: "", digits: 0, scale: 100 },
   "chromaKey.smoothness": { label: "Key feather", unit: "", digits: 0, scale: 100 },
   "chromaKey.spill": { label: "Spill removal", unit: "", digits: 0, scale: 100 },
+  // Sound design (lib/soundFx.ts).
+  "lowpass.cutoff": { label: "Low-pass", unit: "Hz", digits: 0 },
+  "highpass.cutoff": { label: "High-pass", unit: "Hz", digits: 0 },
+  "reverb.mix": { label: "Reverb mix", unit: "%", digits: 0, scale: 100 },
+  "echo.mix": { label: "Echo mix", unit: "%", digits: 0, scale: 100 },
+  // Shape layers and wiggle (ADR-057, ADR-062).
+  "shape.width": { label: "Shape width", unit: "%", digits: 0, scale: 100 },
+  "shape.height": { label: "Shape height", unit: "%", digits: 0, scale: 100 },
+  "shape.radius": { label: "Corners", unit: "%", digits: 0, scale: 100 },
+  "shape.draw": { label: "Draw", unit: "%", digits: 0, scale: 100 },
+  "shape.stroke.width": { label: "Thickness", unit: "px", digits: 1 },
+  "shape.gradient.angle": { label: "Gradient angle", unit: "°", digits: 0 },
+  "wiggle.x.strength": { label: "Shake X", unit: "%", digits: 0, scale: 100 },
+  "wiggle.y.strength": { label: "Shake Y", unit: "%", digits: 0, scale: 100 },
+  "wiggle.rotation.strength": { label: "Shake rotate", unit: "%", digits: 0, scale: 100 },
+  "wiggle.scale.strength": { label: "Shake scale", unit: "%", digits: 0, scale: 100 },
 };
 
 /** CapCut's Adjust labels, where they differ from the field name. */

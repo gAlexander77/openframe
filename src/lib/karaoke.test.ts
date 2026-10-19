@@ -1,7 +1,7 @@
 import { expect, it } from "vitest";
 import { spokenWord, wordsToCaptions } from "./captions";
 import { addCaptions } from "./commands";
-import { splitClip } from "./project/ops";
+import { splitCaption, splitClip } from "./project/ops";
 import { createProject } from "./project/defaults";
 import type { TextClip } from "./project/types";
 
@@ -31,4 +31,29 @@ it("stores times on caption clips that follow splits", () => {
   const right = p.tracks.flatMap((t) => t.clips).find((x) => x.id !== c.id) as TextClip;
   expect(right.wordTimes).toEqual([-20, -5, 25]);
   expect(spokenWord(right.text, right.wordTimes, 0)).toBe(1);
+});
+
+it("splits a caption where the next word is spoken, each half with its words", () => {
+  const p = addCaptions(createProject(), [{ start: 1, end: 3, text: "one two three", words: [1, 1.5, 2.5] }]);
+  const c = p.tracks.flatMap((t) => t.clips)[0] as TextClip;
+  // The caret after "one two ": "three" is spoken 1.5 s (45 frames) in.
+  const { project, second } = splitCaption(p, c.id, 8);
+  const [a, b] = project.tracks.flatMap((t) => t.clips) as TextClip[];
+  expect([a.text, b.text]).toEqual(["one two", "three"]);
+  expect(b.id).toBe(second);
+  expect(b.start).toBe(c.start + 45);
+  expect(a.wordTimes).toEqual([0, 15]);
+  expect(spokenWord(b.text, b.wordTimes, 0)).toBe(0);
+  // At either end there is nothing to split off.
+  expect(splitCaption(p, c.id, 0).project).toBe(p);
+  expect(splitCaption(p, c.id, c.text.length).project).toBe(p);
+});
+
+it("splits an untimed caption as far in as the characters go", () => {
+  const p = addCaptions(createProject(), [{ start: 0, end: 4, text: "abcd efgh" }]);
+  const c = p.tracks.flatMap((t) => t.clips)[0] as TextClip;
+  const { project } = splitCaption(p, c.id, 4);
+  const b = project.tracks.flatMap((t) => t.clips)[1] as TextClip;
+  expect(b.text).toBe("efgh");
+  expect(b.start).toBe(Math.round((c.duration * 4) / 9));
 });

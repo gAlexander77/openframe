@@ -192,6 +192,23 @@ export function closeProject(focusSearch = false) {
   });
 }
 
+/** The home screen's Duplicate (CapCut's): a copy of a saved project
+ * beside it, sharing its media files, with the card's thumbnail. */
+export async function duplicateProject(s: ProjectSummary): Promise<string> {
+  const copy = copyProject(normalizeProject(await platform.loadProject(s.id)), `${s.name} copy`.slice(0, 120));
+  await platform.saveProject(copy, { ...s, id: copy.id, name: copy.name, updatedAt: copy.updatedAt });
+  return copy.id;
+}
+
+/** The home screen's Rename, without opening the project. */
+export async function renameProject(s: ProjectSummary, name: string): Promise<void> {
+  const clean = name.trim();
+  if (!clean || clean.length > 120) throw new Error("Use a project name between 1 and 120 characters.");
+  const p = normalizeProject(await platform.loadProject(s.id));
+  const named = { ...p, name: clean, updatedAt: Date.now() };
+  await platform.saveProject(named, { ...s, name: clean, updatedAt: named.updatedAt });
+}
+
 /** Persist a detached version before switching; retries reuse the draft ID. */
 export function saveProjectCopy(name: string, openCopy: boolean, id?: string) {
   return navigate(async () => {

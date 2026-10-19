@@ -42,8 +42,36 @@ export interface Project {
   luts?: LutFile[];
   /** Nested timelines that compound clips play (ADR-037). Absent = none. */
   compounds?: Compound[];
+  /** The brand kit an ad keeps to (set_brand): colors by role, two fonts,
+   * logos. Absent = none set; ad elements then use neutral defaults. */
+  brand?: Brand;
   createdAt: number;
   updatedAt: number;
+}
+
+/** A brand kit (lib/brandKit.ts): what titles, buttons, badges and end
+ * cards draw with, so every part of an ad agrees. Colors are CSS colors. */
+export interface Brand {
+  name?: string;
+  colors: {
+    /** Buttons, bars, the main brand color. */
+    primary: string;
+    /** A second brand color: panels, the lower third's second line. */
+    secondary: string;
+    /** Highlights: badges, marker sweeps, labels. */
+    accent: string;
+    /** Behind end cards and text boxes. */
+    background: string;
+    /** Text over footage and over the background. */
+    text: string;
+  };
+  /** At most two families, as ad typography wants: headings and the rest. */
+  fonts: { heading: string; body: string };
+  /** Image assets: main (full color), light (for dark backgrounds), dark
+   * (for light ones), icon (the mark alone). */
+  logos?: { main?: Id; light?: Id; dark?: Id; icon?: Id };
+  url?: string;
+  tagline?: string;
 }
 
 export type AssetKind = "video" | "audio" | "image";
@@ -142,6 +170,12 @@ export type Ease =
   | "easeIn"
   | "easeOut"
   | "easeInOut"
+  /** Overshooting eases no bezier can draw (ADR-062): a damped spring
+   * that settles on the next value, Penner's elastic and bounce. Readers
+   * that predate them should treat an unknown name as linear. */
+  | "spring"
+  | "elastic"
+  | "bounce"
   /** Cubic bezier control points, as in CSS `cubic-bezier()`. */
   | [number, number, number, number];
 
@@ -299,6 +333,16 @@ export interface Animation {
   type: string;
   /** Frames. */
   duration: number;
+  /** Text clips: play it by each letter, word or line instead of the whole
+   * title (lib/kinetic.ts). Absent: the animation's own (whole, unless it
+   * is a typewriter-like preset). */
+  unit?: "letter" | "word" | "line";
+  /** Per unit: 0 moves every unit together, 1 one after another. Absent:
+   * the preset's, else 0.5. */
+  stagger?: number;
+  /** Per unit: which moves first. Absent: forward (a typewriter's out:
+   * backward). */
+  order?: "forward" | "backward" | "center" | "random";
 }
 
 export interface Mask {
@@ -356,9 +400,86 @@ export interface Visual {
    * cover it (a 16:9 shot in a 9:16 project). Blur draws the clip itself
    * scaled to cover and blurred; color draws a solid. */
   canvas?: CanvasFill;
+  /** After Effects' track matte (ADR-056): this clip shows only where the
+   * matte clip's picture is (alpha) or is bright (luma), or the reverse.
+   * The matte clip is not drawn itself. Absent = no matte. */
+  trackMatte?: TrackMatte;
+  /** After Effects' motion blur (ADR-058): while the transform moves, the
+   * picture is averaged over the shutter. Absent = off. */
+  motionBlur?: MotionBlur;
+  /** What fills the canvas around a picture that moved or shrank off it
+   * (ADR-059): mirrored or repeated copies of it. Absent = nothing. */
+  edge?: EdgeMode;
+  /** After Effects' wiggle() on transform values (ADR-062): seeded smooth
+   * noise added to x, y, rotation or scale. Absent = none. */
+  wiggle?: Partial<Record<WiggleTarget, Wiggle>>;
 }
 
 export type CanvasFill = { type: "blur"; amount: number } | { type: "color"; color: string };
+
+export type MatteMode = "alpha" | "alphaInverted" | "luma" | "lumaInverted";
+
+export interface TrackMatte {
+  /** The matte: absent = whatever clip is on the video track directly
+   * above at each frame (survives cuts); a clip id = that clip, on any
+   * video track of the same timeline. */
+  clipId?: Id;
+  mode: MatteMode;
+}
+
+export interface MotionBlur {
+  /** Shutter angle in degrees, 1..720: 180 (After Effects' default)
+   * blurs over half a frame, centered on it. */
+  shutter: number;
+}
+
+export type EdgeMode = "mirror" | "repeat";
+
+export type WiggleTarget = "x" | "y" | "rotation" | "scale";
+
+/** One transform value's wiggle. Keyframe `wiggle.<target>.amplitude` or
+ * `.strength` to ramp it. */
+export interface Wiggle {
+  /** Wiggles per second (Hz), 0.1..30. */
+  frequency: number;
+  /** Largest deviation, in the value's own units: canvas fractions for x
+   * and y, degrees for rotation, scale factor for scale. */
+  amplitude: number;
+  /** Multiplies the amplitude, 0..1 (absent = 1). */
+  strength?: number;
+  /** Same seed, same motion; another seed, another path. */
+  seed: number;
+}
+
+/** A shape layer (ADR-057): a color clip drawn as a rectangle, ellipse or
+ * line instead of filling the canvas. Every number keyframes by path
+ * (shape.width, shape.radius, shape.stroke.width, shape.draw,
+ * shape.gradient.angle). */
+export interface Shape {
+  kind: "rectangle" | "ellipse" | "line";
+  /** The box, as fractions of the canvas width and height. A line runs
+   * across the width (turn it with transform.rotation); its height is
+   * unused. */
+  width: number;
+  height: number;
+  /** Rectangle corners: 0 square .. 1 a radius of half the shorter side
+   * (a pill). Absent = 0. */
+  radius?: number;
+  /** false: outline only. Absent = filled (the clip's color or gradient).
+   * Lines have no fill. */
+  fill?: boolean;
+  /** A two-color linear fill in place of the clip's color (a line's
+   * color, on a line). Angle in degrees: 0 runs left to right, 90 top to
+   * bottom. */
+  gradient?: { from: string; to: string; angle: number };
+  /** The outline (a line's thickness and color), centered on the path.
+   * Width in pixels at a 1080-pixel-tall canvas. */
+  stroke?: { color: string; width: number };
+  /** Trim paths: the share of the outline (or line) drawn, 0..1, from its
+   * start (a rectangle's and ellipse's top center, clockwise; a line's
+   * left end). Absent = 1. Fills are not trimmed. */
+  draw?: number;
+}
 
 /** CapCut's Remove background (ADR-032, ADR-033): a matte a segmentation
  * model made once on this machine, multiplied into the clip's alpha. The
@@ -395,6 +516,43 @@ export interface Compressor {
   makeup: number;
 }
 
+/** A low-pass or high-pass filter on a clip's sound, 24 dB per octave
+ * (lib/soundFx.ts, ADR-060). */
+export interface AudioFilter {
+  /** Hz, 20..20000. Keyframeable (lowpass.cutoff, highpass.cutoff); between
+   * keys it moves on a log scale, the same octaves each second. */
+  cutoff: number;
+  /** Peak at the cutoff, dB, 0..24; 0 is a smooth slope. */
+  resonance: number;
+}
+
+/** A room around a clip's sound: a convolution reverb whose impulse
+ * response is made from these three numbers. */
+export interface Reverb {
+  /** 0..1: pre-delay (5 to 50 ms) and how slowly the reflections build. */
+  size: number;
+  /** Seconds for the tail to fall 60 dB (RT60), 0.1..10. */
+  decay: number;
+  /** Wet share at equal power, 0..1. Keyframeable (reverb.mix). */
+  mix: number;
+}
+
+/** Repeats of a clip's sound. */
+export interface Echo {
+  /** Seconds between repeats, 0.01..2. */
+  time: number;
+  /** Each repeat's level against the one before, 0..0.9. */
+  feedback: number;
+  /** Wet share at equal power, 0..1. Keyframeable (echo.mix). */
+  mix: number;
+}
+
+/** The sound slows to a stop, pitch falling with it, over the clip's last
+ * `duration` seconds (0.05..10), as a turntable losing power. */
+export interface TapeStop {
+  duration: number;
+}
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -411,6 +569,14 @@ export interface Sound {
   /** Premiere's Fill Left / Fill Right: one channel played on both (a lav
    * recorded on one side). Absent = the channels as recorded. */
   fill?: "left" | "right";
+  /** Sound design (ADR-060), each absent = off. The filters run after the
+   * compressor, before the volume; echo and reverb after the volume, so
+   * their tails ring past the clip's end. Video and audio clips only. */
+  highpass?: AudioFilter;
+  lowpass?: AudioFilter;
+  echo?: Echo;
+  reverb?: Reverb;
+  tapeStop?: TapeStop;
 }
 
 /** One point of a speed curve. */
@@ -466,7 +632,19 @@ export interface TextStyle {
   /** Pixels at 1080p. */
   letterSpacing: number;
   stroke?: { color: string; width: number };
+  /** A second outline around the first (sticker style), `width` pixels at
+   * 1080p beyond it. */
+  stroke2?: { color: string; width: number };
   shadow?: { color: string; blur: number; x: number; y: number };
+  /** A soft light around the letters (neon), behind them: `blur` pixels at
+   * 1080p; `strength` 1..3 draws it that many times, brighter. */
+  glow?: { color: string; blur: number; strength?: number };
+  /** Fill with a linear gradient across the whole text instead of `color`:
+   * `angle` in degrees, 0 left to right, 90 top to bottom. */
+  gradient?: { from: string; to: string; angle: number };
+  /** The color the Highlight and Underline animations draw in. Absent: a
+   * warm yellow marker, an underline in the text color. */
+  accent?: string;
   background?: { color: string; padding: number; radius: number };
   /** Text is laid out within this fraction of the canvas width. */
   maxWidth: number;
@@ -519,7 +697,8 @@ export type TextClip = ClipBase &
      * count no longer matches the text. */
     wordTimes?: number[];
   };
-export type ColorClip = ClipBase & Visual & { type: "color"; color: string };
+/** A solid; with `shape`, a shape layer whose fill is `color`. */
+export type ColorClip = ClipBase & Visual & { type: "color"; color: string; shape?: Shape };
 /** Applies its color, filter and effects to everything composited below it
  * (Premiere's adjustment layer, CapCut's effect/filter tracks). */
 export type AdjustmentClip = ClipBase &

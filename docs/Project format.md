@@ -51,7 +51,10 @@ Everything not given gets its default. This is a complete file:
 ```
 Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, background,
           assets: Asset[], mediaFolders?: string[], tracks: Track[], markers: Marker[], luts?: LutFile[],
-          compounds?: Compound[] }
+          compounds?: Compound[], brand?: Brand }
+Brand   { name?, colors: { primary, secondary, accent, background, text },
+          fonts: { heading, body }, logos?: { main?, light?, dark?, icon? } (image asset ids),
+          url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
           sticker?, folder?, favorite? }   (sticker: the library sticker an image was drawn from)
@@ -66,13 +69,23 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
             | blue | purple | pink (a timeline color label)
           video and audio clips may carry eq?: { low?, mid?, high? } (dB)
           video and audio clips may carry fill?: left | right (one channel on both)
+          video and audio clips may carry highpass?, lowpass?, echo?, reverb?,
+            tapeStop? (sound design; see Sound design below)
           text clips may carry wordTimes?: number[] (frames from the clip's start
             each word is spoken) and style.highlight?: color of the spoken word
           text styles may carry case?: upper | lower | title (shown so; the
-            text itself is kept as typed)
+            text itself is kept as typed), stroke2?: { color, width } (a second
+            outline), glow?: { color, blur, strength? }, gradient?: { from, to,
+            angle } (fills instead of color) and accent?: the color the
+            highlightSweep and underlineWipe animations draw in
+          animIn, animOut and animLoop may carry unit?: letter | word | line,
+            stagger?: 0..1 and order?: forward | backward | center | random:
+            on a text clip the animation then plays per unit (src/lib/kinetic.ts)
           video clips may carry stabilize?: { level, from, rate, x[], y[], zoom }
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
+          visual clips may carry trackMatte?, motionBlur?, edge?, wiggle?
+            and color clips shape? (see Graphics)
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
@@ -81,6 +94,34 @@ overlap; audio clips only on audio tracks and nothing else on them; every
 none is marked). Tracks are listed top to bottom; the top video track draws
 last. The same rules hold inside every compound's `tracks`; every
 `compoundId` exists, and no compound plays itself, even through others.
+
+## Sound design
+
+Video and audio clips may carry these effects
+([[ADR-060 Sound design rings past the clip and is measured as exported]]);
+each absent means off, so older projects open unchanged:
+
+```json
+{ "type": "audio", "assetId": "a2", "start": 0, "duration": 300, "in": 0, "speed": 1,
+  "lowpass": { "cutoff": 400, "resonance": 0 },
+  "reverb": { "size": 0.9, "decay": 6, "mix": 0.4 },
+  "echo": { "time": 0.3, "feedback": 0.5, "mix": 0.5 },
+  "tapeStop": { "duration": 1.5 },
+  "keyframes": { "lowpass.cutoff": [{ "f": 135, "v": 400 }, { "f": 150, "v": 20000 }] } }
+```
+
+- `highpass` / `lowpass`: `cutoff` in Hz (20..20000), `resonance` in dB
+  (0..24); 24 dB per octave. Keyframes on `lowpass.cutoff` and
+  `highpass.cutoff` move on a log scale between keys.
+- `reverb`: `size` 0..1, `decay` seconds to fall 60 dB (0.1..10), `mix`
+  0..1 wet share at equal power (keyframeable as `reverb.mix`).
+- `echo`: `time` seconds between repeats (0.01..2), `feedback` 0..0.9,
+  `mix` 0..1 (keyframeable as `echo.mix`).
+- `tapeStop`: `duration` seconds (0.05..10) over which the sound slows to
+  a stop at the clip's end.
+- The loader clamps each number into its range, fills a missing one with
+  its default, and drops an effect that is not an object. Compound clips
+  take none yet: they are dropped when a project is opened.
 
 ## Compound clips
 
@@ -123,6 +164,50 @@ folder duplicates, recovers referenced folders and discards invalid favorites.
 These optional schema-1 fields do not change rendering. Older builds can read
 the edits but may discard folder definitions on saving (ADR-042).
 
+## Graphics
+
+Shape layers, track mattes, motion blur, edges and wiggle are optional
+fields (ADR-056 to ADR-059, ADR-062); absent means off, so files without them load
+unchanged.
+
+```json
+{ "type": "color", "color": "#0f1218", "start": 60, "duration": 90,
+  "transform": { "x": -0.22, "y": 0.3, "scale": 1, "rotation": 0, "flipX": false, "flipY": false },
+  "shape": { "kind": "rectangle", "width": 0.36, "height": 0.12, "radius": 0.3,
+             "stroke": { "color": "#ffcc00", "width": 4 }, "draw": 1 },
+  "motionBlur": { "shutter": 180 } },
+{ "type": "video", "assetId": "a1", "start": 0, "duration": 75, "in": 0,
+  "trackMatte": { "clipId": "c_title", "mode": "alpha" },
+  "edge": "mirror",
+  "wiggle": { "x": { "frequency": 3, "amplitude": 0.0073, "seed": 12 },
+              "rotation": { "frequency": 2, "amplitude": 0.6, "seed": 12, "strength": 0.5 } } }
+```
+
+- `shape` (color clips only; the clip's `color` is the fill):
+  `kind` `rectangle`, `ellipse` or `line`; `width`/`height` fractions of the
+  canvas (a line is `width` long, horizontal before rotation; its height is
+  unused); `radius` 0..1 of half the shorter side (rectangles; 1 is a
+  pill); `fill: false` for an outline only; `gradient: { from, to, angle }`
+  replaces the fill color (degrees, 0 left to right, 90 top to bottom; a
+  line's color too); `stroke: { color, width }` centered on the outline,
+  width in pixels at 1080p (a line's thickness; 8 when absent); `draw` 0..1
+  the share of the outline or line drawn (absent: all), from the top
+  center clockwise or a line's left end. Colors are CSS: `#rgb`, `#rrggbb`,
+  `#rrggbbaa`, `rgb()`, `rgba()` or a common name. Older builds draw such
+  a clip as a full-canvas solid.
+- `trackMatte: { clipId?, mode }`: `mode` `alpha`, `alphaInverted`,
+  `luma` or `lumaInverted`; `clipId` a visual clip of the same timeline,
+  absent for whatever is on the video track directly above at each frame.
+  A named matte is never drawn; a track-above matte only while it cuts.
+  `normalizeProject` drops a named matte whose clip is missing, is the clip
+  itself, or has no picture.
+- `motionBlur: { shutter }`: degrees, 1..720 (180 is After Effects' and
+  film's). 0 or less is dropped.
+- `edge`: `mirror` or `repeat`.
+- `wiggle`: per value `x`, `y` (canvas fractions), `rotation` (degrees)
+  or `scale` (scale factor), each `{ frequency (Hz), amplitude, seed,
+  strength? (0..1, absent 1) }`.
+
 ## Color grading
 
 A visual or adjustment clip's `adjust` holds the Basic sliders and,
@@ -163,7 +248,11 @@ Any numeric parameter can hold keyframes by path:
 
 Mask numbers animate the same way (`mask.x`, `mask.y`, `mask.width`,
 `mask.height`, `mask.rotation`, `mask.feather`, `mask.radius`), as CapCut
-keys every mask parameter; crop edges do not.
+keys every mask parameter; crop edges do not. So do a shape's
+(`shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`,
+`shape.draw`, `shape.gradient.angle`) and a wiggle's
+(`wiggle.x.strength`, `wiggle.x.amplitude`, and the same for `y`,
+`rotation` and `scale`).
 
 ## Crop and masks
 
@@ -192,8 +281,9 @@ keys every mask parameter; crop edges do not.
   ([[ADR-049 Masks turn rigidly and grow shapes without new fields]]).
 
 `ease` shapes the curve leaving that keyframe: `linear`, `hold`, `easeIn`,
-`easeOut`, `easeInOut`, or a CSS-style bezier `[x1, y1, x2, y2]`. A missing
-`ease` is linear. The editor's other presets (Smooth, Fast in, Overshoot,
+`easeOut`, `easeInOut`, `spring`, `elastic`, `bounce` (overshoot and
+settle, ADR-062), or a CSS-style bezier `[x1, y1, x2, y2]`. A missing
+`ease` is linear, and so is a name a reader does not know. The editor's other presets (Smooth, Fast in, Overshoot,
 Anticipate) and hand-dragged curves are stored as beziers, so anything that
 evaluates CSS `cubic-bezier()` reproduces them. A path never holds two keys
 on one frame. Commands: `add_keyframe`, `move_keyframe`,
@@ -255,7 +345,10 @@ Auto removal) carries a reference to its matte
 Effects, transitions, filters and animations are referenced by name; the
 lists live in `src/lib/catalog.ts` (e.g. effects `blur`, `glitch`, `vhs`;
 transitions `dissolve`, `wipeLeft`, `zoomIn`; filters `teal`, `noir`;
-animations `fade`, `pop`, `slideUp`, and loops `pulse`, `shake`).
+animations `fade`, `pop`, `slideUp`, and loops `pulse`, `shake`; for
+titles only, the kinetic `typewriter`, `letterRise`, `letterFade`,
+`wordPop`, `wordRise`, `wordSlide`, `lineRise`, `highlightSweep` and
+`underlineWipe`).
 
 ## Building one with commands instead
 

@@ -11,6 +11,7 @@
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
 import { mediaOrigin } from "./media";
 import { LoudnessMeter } from "../lib/analysis/loudness";
+import { TruePeakMeter } from "../lib/analysis/truePeak";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
 import type { Asset, Compressor } from "../lib/project/types";
 import { compressorNodes } from "./audio";
@@ -133,17 +134,19 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
 }
 
 /**
- * Integrated loudness (LUFS) and sample peak of an asset's source seconds
+ * Integrated loudness (LUFS), sample and true peak of an asset's source seconds
  * [from, to), streamed through a BS.1770 meter at the source's own rate
  * and channel count, so nothing is held in memory but the meter.
  */
-export async function measureLoudness(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal, compressor?: Compressor): Promise<{ lufs: number; peak: number }> {
+export async function measureLoudness(asset: Asset, from: number, to: number, onProgress?: Progress, signal?: AbortSignal, compressor?: Compressor): Promise<{ lufs: number; peak: number; truePeak: number }> {
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
     const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
     let meter: LoudnessMeter | null = null;
+    // And the 4x-oversampled true peak, which broadcast ceilings are in.
+    let tp: TruePeakMeter | null = null;
     let planes: Float32Array[] = [];
     const report = throttle(onProgress);
     // With a compressor the sound is measured as it plays: the decoded audio
@@ -163,11 +166,16 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
       nodes.output.connect(ctx.destination);
       src.start();
       const out = await ctx.startRendering();
-      meter!.push(Array.from({ length: out.numberOfChannels }, (_, ch) => out.getChannelData(ch)), n);
+      const outPlanes = Array.from({ length: out.numberOfChannels }, (_, ch) => out.getChannelData(ch));
+      meter!.push(outPlanes, n);
+      tp!.push(outPlanes, n);
       block.n = 0;
     };
     const push = async (p: Float32Array[], frames: number, rate: number) => {
-      if (!compressor) return meter!.push(p, frames);
+      if (!compressor) {
+        meter!.push(p, frames);
+        return tp!.push(p, frames);
+      }
       block ??= { planes: p.map(() => new Float32Array(rate * 10)), n: 0, rate };
       for (let off = 0; off < frames; ) {
         const take = Math.min(frames - off, block.planes[0].length - block.n);
@@ -183,6 +191,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
         const rate = sample.sampleRate;
         const channels = sample.numberOfChannels;
         meter ??= new LoudnessMeter(rate, channels);
+        tp ??= new TruePeakMeter(channels);
         // Only the part of this chunk inside [from, to).
         const start = sample.timestamp - t0;
         const skip = Math.max(0, Math.round((from - start) * rate));
@@ -197,7 +206,8 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
       }
     }
     await flush();
-    return { lufs: meter?.integrated() ?? -Infinity, peak: meter?.peak ?? 0 };
+    tp?.flush();
+    return { lufs: meter?.integrated() ?? -Infinity, peak: meter?.peak ?? 0, truePeak: tp?.peak ?? 0 };
   } finally {
     input.dispose();
   }
@@ -283,6 +293,26 @@ export async function frameScores(
       report((wrapped.timestamp - t0 - from) / (to - from));
     }
     return { times: Float64Array.from(times), scores: Float32Array.from(scores) };
+  } finally {
+    input.dispose();
+  }
+}
+
+/**
+ * The frames of an asset's video at source seconds `times`, `width` pixels
+ * wide: what an agent looks at to choose the moments to cut. A time past
+ * the end gives the last frame; a file without picture gives nulls.
+ */
+export async function sourceFrames(asset: Asset, times: number[], width: number): Promise<(CanvasImageSource | null)[]> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) return times.map(() => null);
+    const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+    const sink = new CanvasSink(track, { width, fit: "contain" });
+    const out: (CanvasImageSource | null)[] = [];
+    for (const t of times) out.push((await sink.getCanvas(t0 + Math.max(0, Math.min(t, asset.duration - 1e-3))))?.canvas ?? null);
+    return out;
   } finally {
     input.dispose();
   }

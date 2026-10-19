@@ -67,6 +67,18 @@ export function editOnCanvas(id: Id) {
   store.set({ textEdit: id });
 }
 
+/** CapCut's Enter in a caption: split it at the caret, one undo step,
+ * and go on typing in the second half. */
+export function splitCaptionAt(id: Id, caret: number) {
+  let second: Id | undefined;
+  store.edit("Split caption", (p) => {
+    const r = ops.splitCaption(p, id, caret);
+    second = r.second;
+    return r.project;
+  });
+  if (second) editOnCanvas(second);
+}
+
 provide({
   editText: () => {
     const sel = store.get().selection;

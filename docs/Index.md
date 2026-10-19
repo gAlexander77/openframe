@@ -60,6 +60,14 @@ of the documentation and how agents use it as shared working memory.
   export, what users complain about
 - [[Feature gaps 2026-10-16]] — what CapCut, Premiere, Resolve, VEGAS and
   Final Cut have that we lack, with a build order
+- [[Everyday gaps 2026-10-17]] — the small, frequent gaps the survey
+  missed, a UI code audit and a styling sweep, with what was done
+- [[Pro workflows 2026-10-18]] — how agencies make ads and editors make
+  epic edits, the rules of thumb (with sources) the agent guide teaches,
+  and the gaps each toolkit took
+- [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
+  entirely through MCP: how it was made, what worked, fourteen limits
+  ranked by what they cost, and eleven product issues met while recording
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,
@@ -161,6 +169,19 @@ Every non-obvious choice gets a short Architecture Decision Record in
   writes only into the Videos folder.
 - [[ADR-053 One compressor everywhere, measured as it plays]] — the
   platform's compressor in the clip chain, and in loudness measurement.
+- [[ADR-054 Tracking writes position keyframes]] — a template-matching
+  tracker's path becomes the pinned layer's smoothed, thinned keys.
+- [[ADR-055 The MCP guide is generated from the tools]] — groups, hints,
+  examples, playbooks and the catalog in one module; the reference and
+  playbook docs are generated and tested.
+- [[ADR-060 Sound design rings past the clip and is measured as exported]] —
+  filters before the volume, echo and reverb after it; export windows
+  pre-roll by the longest tail; tape stop through the retimer.
+- [[ADR-061 Delivery holds the true peak and says whether it passes]] —
+  a 4x true-peak limiter, specs by target, `measure_loudness`.
+- [[ADR-063 Versions fit a group as one unit]] — an ad element's parts
+  keep their layout in every shape, anchored where they sat, fitted to
+  the safe area.
 - [[ADR-045 Align measures the resting box, one clip to the canvas]] —
   shared on-canvas geometry for align, distribute and edge snapping
 - [[ADR-046 A drop preview is a dry run of the drop]] — library drags run

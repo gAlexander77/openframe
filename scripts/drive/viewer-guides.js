@@ -33,7 +33,7 @@ async (page) => {
       return Math.abs(r.x - frame.x - frame.width * inset) < 1 && Math.abs(r.y - frame.y - frame.height * inset) < 1 &&
         Math.abs(r.width - frame.width * (1 - 2 * inset)) < 1 && Math.abs(r.height - frame.height * (1 - 2 * inset)) < 1;
     };
-    return { ok: check(".viewer-safe-action", .05) && check(".viewer-safe-title", .1) && document.querySelectorAll(".viewer-thirds i").length === 4,
+    return { ok: check(".viewer-safe-action", .035) && check(".viewer-safe-title", .05) && document.querySelectorAll(".viewer-thirds i").length === 4,
       frame: { width: frame.width, height: frame.height } };
   });
   details.landscape = await geometry();

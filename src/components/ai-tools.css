@@ -20,7 +20,7 @@
   display: grid; place-items: center; width: 44px; height: 28px; overflow: hidden;
   border-radius: var(--radius-sm); background: var(--bg-2); color: var(--text-2);
 }
-.ai-target-thumb.audio { background: linear-gradient(160deg, #123a66, #0e3058); color: #6fb2e8; }
+.ai-target-thumb.audio { background: linear-gradient(160deg, #123a66, var(--clip-audio)); color: #6fb2e8; }
 .ai-target-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .ai-target-text { display: grid; min-width: 0; line-height: 1.25; }
 .ai-target-label { font-size: 10px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.06em; }
@@ -47,7 +47,7 @@
    with the open settings popover must sit above the cards after it. */
 .ai-card.has-pop { z-index: 5; }
 .ai-card.running { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tool) 55%, transparent); }
-.ai-silences { --tool: #00c1cd; }
+.ai-silences { --tool: var(--accent); }
 .ai-scenes { --tool: #8d90f0; }
 .ai-beats { --tool: #f5c543; }
 .ai-cutout { --tool: #62d39b; }

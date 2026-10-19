@@ -1,3 +1,4 @@
+import { VERTICAL_SAFE } from "../lib/align";
 import { store, useEditor } from "../state/store";
 
 export const VIEWER_GUIDES = [
@@ -5,6 +6,7 @@ export const VIEWER_GUIDES = [
   ["safe", "Safe margins"],
   ["thirds", "Rule of thirds"],
   ["both", "Safe margins + thirds"],
+  ["vertical", "TikTok, Reels, Shorts"],
 ] as const;
 
 export function ViewerGuideControl() {
@@ -30,9 +32,17 @@ export function ViewerGuides() {
   return (
     <div className="viewer-guides" aria-hidden="true">
       {(guides === "safe" || guides === "both") && <>
-        <div className="viewer-safe viewer-safe-action"><span>Action 90%</span></div>
-        <div className="viewer-safe viewer-safe-title"><span>Title 80%</span></div>
+        <div className="viewer-safe viewer-safe-action"><span>Action 93%</span></div>
+        <div className="viewer-safe viewer-safe-title"><span>Title 90%</span></div>
       </>}
+      {guides === "vertical" && (
+        <div
+          className="viewer-safe viewer-safe-vertical"
+          style={{ top: `${VERTICAL_SAFE.top * 100}%`, bottom: `${VERTICAL_SAFE.bottom * 100}%`, left: `${VERTICAL_SAFE.left * 100}%`, right: `${VERTICAL_SAFE.right * 100}%` }}
+        >
+          <span>Clear of app buttons</span>
+        </div>
+      )}
       {(guides === "thirds" || guides === "both") && <div className="viewer-thirds">
         <i className="viewer-third-v" style={{ left: "33.333333%" }} />
         <i className="viewer-third-v" style={{ left: "66.666667%" }} />

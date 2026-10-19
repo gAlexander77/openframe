@@ -91,7 +91,7 @@ export function shiftBetween(a: { re: Float64Array; im: Float64Array }, b: { re:
   return { dx, dy };
 }
 
-function gaussian(xs: number[], sigma: number): number[] {
+export function gaussian(xs: number[], sigma: number): number[] {
   const r = Math.ceil(sigma * 3);
   const k = Array.from({ length: 2 * r + 1 }, (_, i) => Math.exp(-((i - r) ** 2) / (2 * sigma * sigma)));
   return xs.map((_, i) => {

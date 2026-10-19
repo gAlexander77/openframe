@@ -4,7 +4,7 @@ import { runCommand } from "../lib/commands";
 import { adjacentMarker, filterMarkers } from "../lib/markers";
 import type { Marker } from "../lib/project/types";
 import { formatTimecode, framesToSeconds, parseTimecode, type Rational } from "../lib/time";
-import { run } from "../state/actions";
+import { run, tipFor } from "../state/actions";
 import { openMarkers } from "../state/markers";
 import { store, useEditor } from "../state/store";
 import "./markers.css";
@@ -46,10 +46,10 @@ export function MarkersTab() {
           const added = store.get().project.markers.filter((m) => !markers.some((old) => old.id === m.id)).at(-1);
           setQuery(""); setColor("");
           if (added) openMarkers(added.id);
-        }}><Plus size={14} /> Add marker</button>
+        }} data-tip={tipFor("addMarker")}><Plus size={14} /> Add marker</button>
         <span className="marker-count">{list.length} / {markers.length}</span>
-        <button className="icon-btn small" aria-label="Previous marker" data-tip="Previous marker" disabled={!prev} onClick={() => prev && openMarkers(prev.id)}><ChevronLeft size={14} /></button>
-        <button className="icon-btn small" aria-label="Next marker" data-tip="Next marker" disabled={!next} onClick={() => next && openMarkers(next.id)}><ChevronRight size={14} /></button>
+        <button className="icon-btn small" aria-label="Previous marker" data-tip={tipFor("prevMarker")} disabled={!prev} onClick={() => prev && openMarkers(prev.id)}><ChevronLeft size={14} /></button>
+        <button className="icon-btn small" aria-label="Next marker" data-tip={tipFor("nextMarker")} disabled={!next} onClick={() => next && openMarkers(next.id)}><ChevronRight size={14} /></button>
       </div>
       <div className="marker-search">
         <label className="lib-search"><Search size={14} /><input className="field" aria-label="Search markers" placeholder="Search notes or timecode" value={query} onChange={(e) => setQuery(e.target.value)} /></label>
@@ -58,7 +58,10 @@ export function MarkersTab() {
           {colors.map((c) => <option key={c} value={c}>{colorName(c)}</option>)}
         </select>
       </div>
-      <button className="btn ghost marker-export-open" disabled={!list.length} onClick={() => setExporting(true)}><Download size={14} /> Export shown markers</button>
+      <div className="marker-bulk">
+        <button className="btn ghost marker-export-open" aria-label="Export shown markers" disabled={!list.length} onClick={() => setExporting(true)}><Download size={14} /> Export shown</button>
+        <button className="btn ghost" aria-label="Delete shown markers" disabled={!list.length} onClick={() => store.edit(`Delete ${list.length === 1 ? "marker" : `${list.length} markers`}`, (p) => runCommand(p, "delete_markers", { marker_ids: list.map((m) => m.id) }))}><Trash2 size={14} /> Delete shown</button>
+      </div>
       <div className="marker-list" aria-label="Timeline markers" ref={listRef}>
         {!list.length && <p className="lib-hint">{markers.length ? "No markers match. Clear the search or color filter." : "Mark chapters, beats or editing notes. Add a marker at the playhead to get started."}</p>}
         {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>

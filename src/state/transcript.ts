@@ -48,6 +48,12 @@ export function speechClips(p: Project, track: Track): SpeechClip[] {
     .sort((a, b) => a.start - b.start);
 }
 
+/** Clips with sound the transcript leaves out (speed curve or reverse),
+ * so the card can say so instead of dropping them silently. */
+export function skippedClips(p: Project, track: Track): number {
+  return track.clips.filter((c) => (c.type === "video" || c.type === "audio") && !c.muted && !c.freeze && (!!c.speedCurve || !!c.reverse) && !!ops.getAsset(p, c.assetId)?.hasAudio).length;
+}
+
 /** A clip's source window [from, to) in seconds. */
 function windowOf(c: SpeechClip, p: Project): [number, number] {
   return [c.in, ops.sourceTimeAt(c, c.start + c.duration, p.fps)];

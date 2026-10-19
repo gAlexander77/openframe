@@ -105,17 +105,30 @@ export function distributeShifts(boxes: Box[], axis: Axis): { dx: number; dy: nu
   return out;
 }
 
+/** What TikTok, Reels and Shorts cover on a 9:16 video (their buttons,
+ * captions and header), as shares of the frame: the largest of each
+ * side in the apps' ad specs, so text inside is clear on all three
+ * (1080 x 1920: 269 px top, 672 bottom, 120 left, 201 right). */
+export const VERTICAL_SAFE = { top: 0.14, bottom: 0.35, left: 0.11, right: 0.19 };
+
+export type Guides = "off" | "safe" | "thirds" | "both" | "vertical";
+
 /** Lines a moving box catches on: the canvas edges and center, and the
  * edges and centers of the other boxes. */
-export function snapLines(p: Project, others: Box[], guides: "off" | "safe" | "thirds" | "both" = "off"): { x: number[]; y: number[] } {
+export function snapLines(p: Project, others: Box[], guides: Guides = "off"): { x: number[]; y: number[] } {
   const x = [0, p.width / 2, p.width], y = [0, p.height / 2, p.height];
   // The viewer's guides catch too while they show (Premiere snaps to its
-  // guides): the action (90%) and title (80%) safe edges, and the thirds.
+  // guides): the action (93%) and title (90%) safe edges of SMPTE ST
+  // 2046-1, and the thirds.
   const at = (fs: number[]) => {
     for (const f of fs) x.push(p.width * f), y.push(p.height * f);
   };
-  if (guides === "safe" || guides === "both") at([0.05, 0.1, 0.9, 0.95]);
+  if (guides === "safe" || guides === "both") at([0.035, 0.05, 0.95, 0.965]);
   if (guides === "thirds" || guides === "both") at([1 / 3, 2 / 3]);
+  if (guides === "vertical") {
+    x.push(p.width * VERTICAL_SAFE.left, p.width * (1 - VERTICAL_SAFE.right));
+    y.push(p.height * VERTICAL_SAFE.top, p.height * (1 - VERTICAL_SAFE.bottom));
+  }
   for (const b of others) {
     x.push(b.cx - b.hw, b.cx, b.cx + b.hw);
     y.push(b.cy - b.hh, b.cy, b.cy + b.hh);

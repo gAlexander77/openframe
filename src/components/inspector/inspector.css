@@ -131,9 +131,6 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 }
 .chip-btn:hover { color: var(--text-1); background: var(--bg-3); }
 .chip-btn.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.chip-btn.bold { font-weight: 800; }
-.chip-btn.italic { font-style: italic; }
-.chip-btn.underline { text-decoration: underline; }
 .style-toggles { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .speed-presets, .fx-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .color-input { display: inline-flex; align-items: center; gap: 6px; }
@@ -170,6 +167,11 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .anim-tile:hover .a-slideDown, .anim-tile:hover .a-drop { animation-name: demo-down; }
 .anim-tile:hover .a-spin, .anim-tile:hover .a-tilt, .anim-tile:hover .a-sway { animation-name: demo-spin; }
 .anim-tile:hover .slot-loop { animation-name: demo-pulse; animation-direction: alternate; }
+.anim-tile:hover .a-typewriter, .anim-tile:hover .a-highlightSweep, .anim-tile:hover .a-underlineWipe, .anim-tile:hover .a-letterFade { animation-name: demo-wipe; animation-timing-function: steps(6, end); }
+.anim-tile:hover .a-highlightSweep, .anim-tile:hover .a-underlineWipe { animation-timing-function: var(--ease-out); }
+.anim-tile:hover .a-letterRise, .anim-tile:hover .a-wordRise, .anim-tile:hover .a-lineRise { animation-name: demo-up; }
+.anim-tile:hover .a-wordPop { animation-name: demo-zoom; }
+.anim-tile:hover .a-wordSlide { animation-name: demo-left; }
 @keyframes demo-fade { from { opacity: 0; } }
 @keyframes demo-zoom { from { transform: scale(0.3); opacity: 0; } }
 @keyframes demo-zoomout { from { transform: scale(1.8); opacity: 0; } }
@@ -179,6 +181,7 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 @keyframes demo-down { from { transform: translateY(-10px); opacity: 0; } }
 @keyframes demo-spin { from { transform: rotate(-120deg) scale(0.5); opacity: 0; } }
 @keyframes demo-pulse { to { transform: scale(1.12); } }
+@keyframes demo-wipe { from { clip-path: inset(0 100% 0 0); } }
 
 /* masks */
 .mask-shapes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
@@ -253,3 +256,14 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .cutout-pct svg { color: var(--accent); }
 .spoken-word { display: flex; align-items: center; gap: 8px; }
 .auto-adjust { padding: 8px 12px 0; margin-top: 0; }
+
+/* Canvas width x height under Resolution. */
+.size-fields { display: flex; align-items: center; gap: 6px; color: var(--text-3); }
+.size-fields .field { width: 76px; }
+
+/* Saved text styles: a sample of each look, then its name. */
+.style-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.style-chip { display: inline-flex; align-items: center; gap: 2px; }
+.style-chip .chip-btn { display: inline-flex; align-items: center; gap: 6px; padding-left: 3px; }
+.style-sample { display: inline-grid; place-items: center; width: 22px; height: 18px; border-radius: 4px; font-size: 11px; line-height: 1; }
+.style-name { flex: 1; min-width: 0; }

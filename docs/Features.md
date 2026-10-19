@@ -7,7 +7,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Home screen** with a Create project card and canvas presets named for
   where the video goes (16:9 YouTube, 9:16 TikTok/Reels/Shorts, 1:1, 4:5,
-  21:9), and searchable project cards with thumbnails. Delete asks twice.
+  21:9), and searchable project cards with thumbnails. Delete asks twice;
+  **Rename** (in place, without opening) and **Duplicate** ("Name copy",
+  sharing the same media files) sit on each card, as in CapCut.
+- **Canvas size in pixels** (project Details > Size, CapCut's custom
+  ratio): any width and height from 16 to 8192, rounded to even numbers
+  as encoders need; `set_project` also takes the frame rate.
 - **Autosave** 800 ms after every change, never overlapping; "Saved 10:42"
   in the title bar; Ctrl+S saves now. No save dialog, as in CapCut.
 - **Safe project switching:** edits made during a slow save are persisted
@@ -40,6 +45,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   list. Usage counts select all referencing clips and seek the earliest.
   Counts follow edits/Undo, including references on inactive tracks.
 
+- **Record** from the camera or the screen (CapCut's Record; Media >
+  Record, beside Import): a live pill with the elapsed time, Stop or
+  Discard; the take (MP4 where the webview can record it, else WebM) is
+  imported and placed at the playhead it started from. Checked in the
+  web build with the browser's fake camera; the desktop app's camera and
+  screen permissions are not checked yet.
+- **Remove media** (Premiere's Clear and Remove Unused): right-click a
+  media card for Add to timeline, Preview, Favorite and Remove from
+  project; a file the timeline uses offers to take its clips with it.
+  Manage media removes every unused file at once (`remove_media`). The
+  files on disk are never touched; one undo step each.
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
   Replacements require compatible streams and full source duration.
@@ -64,9 +80,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
   deactivate clip; markers; in/out range.
+- **Linked picture and sound** (Premiere's linked clips, for J and L
+  cuts): Extract audio keeps the video and its sound linked as a group,
+  so they select, move and delete together; Alt-click takes one side
+  alone, each edge trims on its own, and red frame counts (+15 / −15)
+  show on both when one is moved out of sync. Ungroup unlinks them.
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
-  labels, and undo deletion. Double-click a ruler flag to edit it. Markers
+  labels, and undo deletion. **Delete shown** removes what the search and
+  color filter show (a run of beat markers, say) in one undo step.
+  Double-click a ruler flag to edit it. Markers
   beyond the last clip remain reachable without extending export duration.
 - **Export marker text:** preview and save the displayed notes as exact
   timecodes or YouTube-style chapter timestamps. Search/color filters choose
@@ -148,7 +171,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   Track volume and pan (a dB fader and a pan slider added to each clip's
   pan, one undo step per drag), Small/Normal/Large height and Delete
   track. Agents: `update_track` (solo, height, pan) and `delete_track`.
-- Audio clips: draggable volume line (Shift for fine) and fade knobs.
+- Audio clips: draggable volume line (Shift for fine) and fade knobs; a
+  selected video's own sound has them too, on its waveform strip (the
+  whole range there takes 60 px of travel, the strip being 14 px tall).
 - **Record voiceover** (the microphone in the timeline toolbar, as in
   CapCut): pick the input, optionally mute the project, then a 3-second
   countdown and the timeline plays from the playhead while recording.
@@ -181,8 +206,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
-  23 effects (including CapCut's Reduce image noise, Motion blur, Sketch
-  and Halftone), 20 transitions, 17 looks, adjustment layers.
+  26 effects (including CapCut's Reduce image noise, Motion blur, Sketch
+  and Halftone, Premiere 26.3's **Magnify**: a round lens with its
+  center, size, zoom and feather, keyframable to follow a pointer in a
+  screen recording, and **Zoom** and **Letterbox** for epic edits),
+  24 transitions, 17 looks, adjustment layers. The **Strobe flash**
+  starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
+  2.3.1), so keep it there.
 - **Masks** (Video > Mask, CapCut's shapes): linear, mirror, circle,
   rectangle with round corners, heart and star, with feather and invert;
   every number takes keyframes, and a rotated mask turns rigidly on any
@@ -214,6 +244,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Fit / Fill / Stretch** under Transform (Resolve's and Premiere's
   framing; `frame_clips`): fit shows the whole picture, fill covers the
   canvas and crops the overflow, stretch covers it exactly; each centers.
+- **Motion path** (Premiere's): a selected picture whose position is
+  keyframed shows the dashed line its center travels, with a dot at each
+  position key, so a tracked or reframed path reads at a glance.
 - **Flip** buttons under Transform (horizontal and vertical; `set_flip`),
   and **arrow keys** on the viewer after clicking it nudge the selected
   pictures 1 px (Shift: 10 px); a held key is one undo step, and the
@@ -222,6 +255,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   bottom against the canvas; with several clips selected, against their
   combined bounds, plus distribute for three or more
   ([[ADR-045 Align measures the resting box, one clip to the canvas]]).
+  **Inside title safe** makes one clip stop at the title-safe line (the
+  viewer's Title 90% guide) instead of the canvas edge.
 - Frame-exact: the framecode drive proves the right source frame at 1x,
   2x and 0.5x across GOPs and backward seeks; the speed drive proves it
   for every frame of a ramp, a reversed ramp and a reversed clip.
@@ -229,6 +264,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   shuttle; **Loop** (the transport's repeat button, Mod+L) goes round the
   in/out range when it holds the playhead, else the whole timeline; **Play
   in to out** (Mod+Shift+Space, Premiere's key) plays the range once;
+  click the current timecode to **type where to go** (Premiere's Playhead
+  Position): a timecode, digits read right to left (1000 is ten seconds),
+  or +/- an offset (+15 is fifteen frames on);
   preview resolution Full/½/¼ (auto ½ above 1080p while playing).
 - Stereo peak meter, and a **loudness line** under it (Premiere's
   Loudness Meter in one row): momentary, short-term and integrated LUFS
@@ -243,14 +281,53 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   shape (16:9, 9:16, 1:1, 4:5, 4:3, 3:4, 21:9) without leaving the clip
   being edited; the short side is kept, and Undo restores the size.
 - **Composition guides** in the Player header and View menu: safe margins
-  (90% action / 80% title), rule of thirds, or both. Follow the canvas in
-  portrait and full screen; preview only, excluded from exported pictures.
+  (93% action / 90% title, SMPTE ST 2046-1), rule of thirds, or both, and **TikTok, Reels,
+  Shorts**: the parts of a 9:16 frame the apps' buttons, captions and
+  header cover are shaded (the largest of each side in their ad specs:
+  14% top, 35% bottom, 11% left, 19% right), and dragged pictures snap to
+  the clear area's edges. Follow the canvas in portrait and full screen;
+  preview only, excluded from exported pictures.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,
   vectorscope with 75% targets and the skin-tone line, and histogram, of
   the graded output; live while paused, 8 updates a second while playing
   ([[ADR-022 Scopes bin a GPU-downscaled readback on the CPU]]).
+
+## Graphics and compositing
+
+- **Shape layers** (After Effects' shape layers, ADR-057): rectangle,
+  rounded rectangle (1 is a pill), ellipse and line, with a solid or
+  two-color gradient fill, an outline, and a draw-on amount (Trim Paths)
+  that runs round the outline from its top center or along a line from its
+  left end. Width, height, corners, outline thickness, draw and gradient
+  angle all keyframe; drawn by the GPU at any size, so edges stay crisp at
+  4K and under any scale or rotation. The Shape section of the Video tab
+  edits them; the timeline names the clip after its shape. The pieces of
+  lower thirds, callouts, CTA buttons and end cards (`add_shape`,
+  `set_shape`).
+- **Track mattes** (After Effects', ADR-056): a clip shows only where
+  another clip's picture is opaque (Alpha) or bright (Luma), or the
+  reverse: video inside text, logo and wipe reveals. The matte is the clip
+  on the track directly above (keeps working after cuts) or a named clip;
+  it is not drawn itself, and its own animation animates the reveal.
+  Preview and export match to the level (`set_track_matte`; Compositing
+  section of the Video tab).
+- **Motion blur from movement** (ADR-058): a clip that moves (keyframes,
+  in/out animations, wiggle) is averaged over a 180-degree shutter (or any
+  angle to 720), with more samples the faster it travels; slides, pushes,
+  zooms and spins between clips blur too. Full quality paused and in
+  export, lighter while playing; still frames cost nothing
+  (`set_motion_blur`).
+- **Mirror edges** (Motion Tile's, ADR-059): a picture moved, shrunk,
+  spun or shaken off the canvas fills it with mirrored (seamless) or
+  repeated copies instead of black (`set_edge_mode`).
+- **Wiggle** (After Effects' wiggle(), ADR-062): seeded smooth noise on
+  position, rotation or scale for camera shake, nervous titles and floating
+  logos, in pixels, degrees and percent; its strength keyframes to ramp a
+  shake in or out, and the same seed repeats the same path (`set_wiggle`).
+- **Spring, Elastic and Bounce** eases for keyframes, overshooting and
+  settling exactly on the next value (ADR-062).
 
 ## Inspector
 
@@ -274,8 +351,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Uniform scale** switch under Transform, as in CapCut: off splits Scale
   into Scale X and Scale Y (keys copied, so nothing jumps); on joins them.
   Corner handles keep a stretched picture's proportions.
+- Every color field has a **pipette** where the platform has the
+  EyeDropper API (WebView2, Chromium): pick a color from anywhere on the
+  screen, the viewer included (a text color from the footage, a chroma
+  key's green before keying).
 - Every numeric row: slider, typed value with units, reset, keyframe
   cluster (‹ ◇ ›); keyframed properties auto-key at the playhead.
+- **Several clips at once** (Premiere 25's Properties panel): with more
+  than one clip selected, Scale, Rotate and Opacity for the pictures and
+  Volume for the clips with sound set all of them, one undo step; a value
+  they disagree on shows "Mixed" until it is set.
 - On a keyframe, an easing button beside the cluster opens the presets;
   the Transform header's ◇ keys (or unkeys) all four of its properties at
   once, as CapCut's section diamonds do.
@@ -297,8 +382,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   one-click keys for a clip with none.
 - **Easing presets** wherever keys are selected, with curve previews:
   Linear, Hold, Ease in, Ease out, Ease in-out, Smooth, Fast in, Overshoot
-  (passes once, no bounce), Anticipate. Presets beyond the named five and
-  hand-drawn curves are stored as CSS beziers.
+  (passes once, no bounce), Anticipate, Spring, Elastic, Bounce. Smooth to
+  Anticipate and hand-drawn curves are stored as CSS beziers; Spring,
+  Elastic and Bounce are named curves no bezier can draw (ADR-062).
 - **Diamonds on the selected clip**: click to select (Shift/Ctrl adds),
   drag to retime with snapping to the playhead and the other keys,
   right-click for easing, double-click to seek; the tooltip names what is
@@ -367,6 +453,19 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
+- **Enter splits a caption** at the caret while editing it on the canvas
+  (CapCut's): the second half starts where its first word is spoken (or
+  as far in as the characters go, untimed), each half keeps its words'
+  timings, typing goes on in the second, and it is one undo step.
+- **Caption looks** (CapCut's caption templates, Resolve 20's subtitle
+  styles): the Captions tab offers Classic, Bold yellow, Boxed, Word pop
+  (capitals with the spoken word highlighted), Neon and Minimal, each
+  previewed on its card; one click restyles and places every caption,
+  words and timings kept (`set_caption_look`).
+- **Saved styles** (CapCut's Save as preset for text, Premiere's Text
+  Styles): Text tab > Saved styles keeps a title's whole look under a
+  name, in this viewer's storage so it is there in every project; a chip
+  with a sample gives it to the selected title in one click, words kept.
 - **A new title shows when added**: a title, template or sticker added at
   the playhead plays its In animation once, silently, and stops where it
   has settled (under reduced motion it goes straight there), so the viewer
@@ -429,10 +528,56 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `get_transcript` then `cut_ranges`. The words are kept for the session,
   not in the project; clips with a speed curve or reversed are left out.
 
+## Epic edits
+
+Music-synced montages (hype, velocity and AMV edits, CapCut's beat-synced
+templates done by hand) for agents first: each is a command or MCP tool,
+so a model makes a whole edit in a dozen calls (`scripts/drive/epic-edit.js`
+makes a 13 s one). Times are timeline seconds.
+
+- **Read the music** (`analyze_music`; Final Cut's beat grid is the
+  model): tempo, every beat, downbeats (bars of four), phrases (four
+  bars), sections named intro, verse, build, drop, breakdown or outro with
+  their energy, each beat's loudness, strong hits on or off the beat, and
+  the drop, as data in timeline seconds, and as Beat, Bar, Phrase,
+  section and Drop markers when asked ([[AI tools]]).
+- **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
+  the main track, every cut on a beat, bar or phrase (or the agent's own
+  times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
+  up, or a shot's own count. One long clip gives many shots (each reads on
+  from where the last stopped); a source window past the file's end slides
+  back, and a file too short for its slot ends on an earlier beat.
+- **Hits on the beat** (`add_beat_hits`): flash (blown out to white),
+  zoom punch, camera shake, RGB split, glow or zoom blur, several as one
+  hit, on beats, bars, the main track's cuts or given times. Each is a
+  short adjustment layer on a Hits track (above the footage, below bars
+  and titles) whose effects peak on the beat and ease out, keyframed, so
+  preview and export match and the user can retime or delete any of them.
+  Flashes keep to three a second (WCAG 2.3.1): a beat that would break it
+  keeps its other effects.
+- **Cinematic bars** (`add_cinematic_bars`): letterbox to 2.39, 2.35, 2 or
+  1.85:1 on any canvas (pillarbox when the canvas is wider), sliding in
+  and out if asked; an adjustment layer with the Letterbox effect on a
+  Bars track, under the titles. New titles and media never land on a
+  track of adjustment layers.
+- **Speed ramp on the beat** (`set_speed_ramp`, velocity edits): a shot's
+  slow moment (or fast one) lands exactly on a beat while the shot keeps
+  its place and length, so the cuts stay on the beat; the ramp reads more
+  of the media instead. A speed curve preset can be aligned the same way.
+- **Fit the music** (`fit_music`): slide a song so its drop lands where
+  the cut wants it (its markers move along), then end it with the
+  picture, on the last beat or bar, or at a time, faded out; optionally
+  cut the picture there too.
+- **Moves and sound**: Whip pan left and right, Zoom punch and Spin blur
+  transitions (motion-blurred, so the cut hides in the move), and
+  `add_sound_effect`'s `end_at`, so a riser or reverse cymbal peaks on the
+  drop.
+
 ## AI tools (all on this machine)
 
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
-  loudness** (EBU R128, to −14/−16/−23 LUFS without clipping; a mono clip
+  loudness** (EBU R128, to −14/−16/−23/−24 LUFS, the true peak under
+  its ceiling, −2 dBTP for ATSC's −24; `spec` names one; a mono clip
   is measured as it plays through the mix's equal-power center pan, -3 dB
   each side) and **Auto
   ducking** (music dips under speech as editable volume keyframes) and
@@ -441,6 +586,24 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   **Reduce noise** (a spectral gate for steady hiss and hum; the clip plays
   a cleaned copy, a video's sound extracted first) in the
   library's AI tools tab, one undo step each ([[AI tools]]).
+- **Auto reframe** (CapCut's and Premiere's; AI tools card,
+  `auto_reframe`): into 9:16, 1:1 or 4:5, the canvas reshaped and the clip
+  filling it with position keyframes that keep its subject centered as it
+  moves; or from a box, with Tracking > Keep subject centered.
+- **Tracking** (CapCut's, in the layer's Animation tab; `track_motion`):
+  pin a title, sticker or picture to a moving subject in the video under
+  it. A box placed on the viewer is followed from the playhead on this
+  computer and the layer gets position keyframes, a handful, editable
+  like any others ([[ADR-054 Tracking writes position keyframes]]).
+- **Sync audio by waveform** (CapCut's Sync video and audio, Resolve's
+  Auto Sync Audio > Based on Waveform; `sync_audio`): select a separately
+  recorded sound (a lav, a recorder) and its video, right-click, and
+  "Sync audio by waveform" (or "Sync audio and mute camera sound")
+  matches the two sounds' onsets on this computer and moves the audio
+  clip into sync, exact to the sample, one undo step. Sound from before
+  the camera rolled is trimmed off the head; unrelated sounds are
+  refused. Also an AI tools card; `sync_to_clip` places a clip by a known
+  offset ([[AI tools]]).
 - **Remove filler words** (CapCut's and Premiere's; AI tools card,
   `remove_filler_words`): Whisper base or small on this computer
   transcribes the clip and its "um", "hmm" and "ah" are cut with the
@@ -458,18 +621,120 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **AI assistant** (called Copilot until 2026-10-17, renamed because Microsoft and GitHub use the name): ask for an edit in words; a model on this computer (Ollama
   or LM Studio) applies it with the editing commands, undoable as a whole.
 
+## Sound design and delivery
+
+- **Effects** (Audio tab, under Compressor; `set_audio_filter`,
+  `set_reverb`, `set_echo`, `set_tape_stop`): the trailer and epic-edit
+  moves on any video or audio clip, built into the clip's one Web Audio
+  chain, so preview and export sound the same
+  ([[ADR-060 Sound design rings past the clip and is measured as exported]]).
+  - **Low-pass and high-pass**, 24 dB per octave, resonance 0 to 24 dB.
+    The cutoff keys like any slider (a log slider, typed in Hz) and moves
+    between keys on a log scale, the same octaves each second; the
+    agent's `sweep` writes the two keys of the "muffled build, open on
+    the drop" in one call.
+  - **Reverb**: Room, Hall or Cathedral, then mix, decay (RT60) and size.
+    A convolution reverb whose impulse response is made here from those
+    numbers (seeded noise, unit energy, highs dying first), mixed at
+    equal power so the clip stays as loud.
+  - **Echo**: delay time, feedback (repeats), mix.
+  - **Tape stop**: the sound slows to a stop over the clip's last
+    seconds, its pitch falling with it (speed falls linearly, a
+    turntable coasting; the level follows the speed under half speed).
+    Only the sound: a video's picture plays on. A split keeps it on the
+    part with the end.
+  - Echo and reverb come after the clip's volume, so their tails ring on
+    past the clip's end and its fade (Premiere cuts clip-effect tails at
+    the edit); export windows start early by the longest tail, so a
+    reverb rings across them too. The keyframe panel lists the cutoffs
+    and the two mixes; Paste Attributes copies the effects with the
+    sound.
+- **Loudness report** (`measure_loudness`): the mix measured as export
+  renders it, effects and tails included: integrated loudness
+  (BS.1770), loudness range (EBU Tech 3342), the loudest 3 s and 400 ms,
+  true peak (4x oversampled, BS.1770-4 Annex 2) and sample peak, with
+  pass or fail and the reasons against online (-14 LUFS, -1 dBTP), EBU
+  R128 (-23, -1 dBTP) or ATSC A/85 (-24 LKFS, -2 dBTP). It flags a mix
+  that passes full scale, and measures as export with a target would
+  deliver it, so an agent checks before it exports
+  ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
+- **Broadcast targets**: export Loudness and Normalize loudness offer
+  -24 LKFS (ATSC A/85, US TV) beside -14, -16 and -23; the limiter holds
+  the **true peak**, not the sample peak, under -1 dBTP (-2 for ATSC),
+  and the export's answer says what the mix reached.
+
+## Ads and deliverables
+
+- **Kinetic typography** (After Effects' text animators, CapCut's
+  per-character text animations): a title's in, out or loop animation can
+  play by each letter, word or line, with a stagger (0 all together, 1 one
+  after another) and an order (first to last, last to first, from the
+  center, random, the same on every render). Presets: Typewriter (letters
+  typed behind a caret; as an out it deletes from the end), Letter rise,
+  Letter fade, Word pop, Word rise, Word slide, Line rise, and two sweeps,
+  Highlight (a marker box drawn behind the words) and Underline, in the
+  title's accent color; a finished sweep stays drawn. Any other animation
+  moves per unit too (Rise by word, Float by letter is a wave). The
+  rasterizer draws each unit, so the viewer and the export agree; the
+  Animation tab lists the presets for titles only and adds Moves by,
+  Stagger and Order (`set_animation` `unit`, `stagger`, `order`).
+- **Ad looks for titles**: a glow (neon, three strengths), a gradient fill
+  (two colors at an angle) and a second outline (sticker style), in the
+  Text tab and in every text style an agent sends.
+- **Brand kit** (kept in the project; Details > Brand, `set_brand`):
+  primary, secondary, accent, background and text colors, a heading and a
+  body font (two families at most), logo pictures by variant (main, light
+  for dark backgrounds, dark for light ones, icon), the brand's name,
+  website and tagline. Titles take a role from it (`add_text` `role`:
+  headline about 9% of the frame high with a shadow, subhead, body, label,
+  a pill button, a badge), and `apply_brand` restyles existing titles and
+  solids. Labels on a fill pick white or near-black by WCAG contrast.
+- **Ad elements** (`add_ad_element`), each one call, built from ordinary
+  clips in the brand's colors, grouped, inside the 90% title-safe area
+  (on 9:16 clear of the apps' buttons and captions): an **end card**
+  (logo, headline typed in by word, a pulsing call-to-action button, the
+  website), a **lower third** (name in a box over the title in the primary
+  color), an **offer badge** (tilted, pulsing, with a small tag), a
+  **call-to-action button**, and a **logo reveal** (the logo pops in, with
+  an optional glow flare and white flash, and the tagline).
+- **Text behind the subject** (`text_behind_subject`): a title sits behind
+  the person or product in a video or a photo. The background is removed
+  on this computer (a video's Remove background matte; a photo cut out once
+  into a new picture with transparency) for a copy on a track above the
+  title, silent and grouped with the original; one undo step.
+- **Deliverables** (`export_versions`): a campaign's versions in one call
+  (a group, such as an ad element, moves and scales as one unit, anchored
+  where it sat; [[ADR-063 Versions fit a group as one unit]]),
+  each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
+  opening and the end card kept, the middle cut, the music fading at the
+  new end) and a textless master (titles and captions off). Footage that
+  fills the frame keeps filling it, or fits over a blurred copy of itself;
+  titles, logos and badges keep their size against the short side and
+  move inside the new frame's safe area. The versions are built from the
+  master as separate documents, so the project in the editor never
+  changes; `check` answers one contact sheet of them all first. Seven 480p
+  versions of a 5 s ad took 4.4 s headless.
+- **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
+  15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
+  behind the roaster, lower third, offer, end card, faded music), checks
+  it on a contact sheet and exports 16:9, a 6 s 9:16 cut-down and 1:1.
+
 ## Export
 
 - CapCut's export dialog: MP4/MOV/WebM/MKV, H.264/HEVC/VP9/AV1 by what
   the device can encode, 480p to 4K, quality levels or a bitrate, frame
   rate, in/out range, audio-only (WAV/M4A/...) and still frames.
+- **Save frame as PNG** from the player (the camera button, File menu,
+  Mod+Shift+E, Premiere's Export Frame key): the frame under the playhead
+  at the project's size, without the export dialog.
 - Frame-exact and sample-synced (the export drive reads the framecode
   back); a canceled export never leaves a partial file.
 - **Loudness** (Audio > Loudness; Premiere's Loudness Normalization): bring
-  the mix to -14, -16 or -23 LUFS. A first pass measures the whole mix
-  (BS.1770) and its peaks, then it is rendered through the gain that meets
-  the target, with a limiter holding the raised peaks under -1 dBFS (up to
-  6 dB of limiting; the whole mix is known, so it looks ahead for free).
+  the mix to -14, -16, -23 or -24 LUFS. A first pass measures the whole mix
+  (BS.1770) and its true peaks, then it is rendered through the gain that
+  meets the target, with a limiter holding the raised true peaks under
+  -1 dBTP, -2 for ATSC's -24 (up to 6 dB of limiting; the whole mix is
+  known, so it looks ahead for free).
   The result notes what it measured, what it reached and how much the
   limiter held. Gain alone stopped the RacePulse promo at -17 LUFS of -14;
   with the limiter it measures -14.3 in ffmpeg, peaks at -0.9 dBTP.
@@ -488,6 +753,18 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-034 Timelines leave as OpenTimelineIO]]).
 ## Library
 
+- **Sound effects** in the Audio tab (CapCut's is a cloud library;
+  Resolve ships a local one): Whoosh, Swish, Pop, Click, Ding, Success,
+  Riser and Boom, and for epic edits Impact, Sub drop, Braam, Reverse
+  cymbal, Glitch, Camera shutter and Swoosh up, synthesized on this
+  computer from sines, saws and seeded noise, so they are the same
+  everywhere and nobody's license applies.
+  The card's play button auditions one; double-click, + or a drag adds it
+  on an audio track, the WAV made once per project and reused
+  (`add_sound_effect` for agents).
+- **Solid color** in the Adjustment tab (CapCut's color background): a
+  white layer on a new top track at the playhead, its color set in the
+  inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
   Captions, Filters, Adjustment, with category sub-navigation.
 - **Previews drawn by the engine**: filter, effect, transition and text
@@ -535,7 +812,10 @@ Three doors, one engine ([[Automation]]):
   an agent can look at its work, `list_projects`, `open_project` and
   `new_project` to move between projects as the home screen does, and
   `export_video` / `export_status` to make the file; HTTP or
-  `--mcp-stdio`. Edits answer with only what they changed; `batch` runs
+  `--mcp-stdio`. A model learns the tools from the `help` tool, three MCP
+  prompts (make an ad, an epic edit, a short) with design rules, guide
+  resources and a full `list_catalog`; [[MCP tools]] is the generated
+  reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
 - `window.videoEditor` in the page: commands, actions, import, render,
@@ -543,7 +823,7 @@ Three doors, one engine ([[Automation]]):
   use.
 - Keyframe commands: `add_keyframe`, `move_keyframe`, `set_keyframe_ease`
   (preset or bezier), `remove_keyframes`.
-- Workflow commands: `relink_media`, `edit_media_folder`, `organize_media`,
+- Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
   share one left edge inside the safe area), `distribute_clips`, `set_crop`

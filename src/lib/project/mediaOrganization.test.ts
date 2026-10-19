@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { createProject, normalizeProject } from "./defaults";
-import { editFolder, organizeMedia } from "./mediaOrganization";
+import { clipForAsset, createProject, normalizeProject } from "./defaults";
+import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./mediaOrganization";
 import { DEFAULT_MEDIA_BROWSER, filterMedia } from "../mediaLibrary";
 
 const project = () => normalizeProject({ assets: [{ id: "a", src: "a.png", kind: "image" }, { id: "b", src: "b.png", kind: "image" }] });
@@ -31,4 +31,20 @@ it("loads old projects and round trips new organization, repairing invalid annot
   const repaired = normalizeProject({ ...p, mediaFolders: [" Scenes ", "scenes", null], assets: [{ ...p.assets[0], folder: " scenes ", favorite: "true" }] });
   expect(repaired.mediaFolders).toEqual(["Scenes"]);
   expect(repaired.assets[0]).toMatchObject({ folder: "Scenes", favorite: undefined });
+});
+it("removes media, refusing what the timeline uses unless its clips go too", () => {
+  const p = project();
+  const clip = clipForAsset(p.assets[0], 0, p.fps);
+  p.tracks[0].clips = [clip];
+  p.compounds = [{ id: "k", name: "Nest", tracks: [{ ...p.tracks[0], id: "kt", clips: [{ ...clip, id: "inner" }] }] } as never];
+  expect(unusedMedia(p)).toEqual(["b"]);
+  expect(removeMedia(p, ["b"]).assets.map((a) => a.id)).toEqual(["a"]);
+  expect(() => removeMedia(p, ["a"])).toThrow("a.png is used on the timeline");
+  const q = removeMedia(p, ["a"], true);
+  expect(q.assets.map((a) => a.id)).toEqual(["b"]);
+  expect(q.tracks[0].clips).toEqual([]);
+  expect(q.compounds![0].tracks[0].clips).toEqual([]);
+  p.tracks[0].locked = true;
+  expect(() => removeMedia(p, ["a"], true)).toThrow("locked");
+  expect(() => removeMedia(p, ["missing"])).toThrow("no longer exists");
 });

@@ -12,6 +12,7 @@
 import type { VideoSample } from "mediabunny";
 import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
+import { MOTION_SAMPLES } from "../lib/motionBlur";
 import { getAsset, projectDuration, sourceTimeAt } from "../lib/project/ops";
 import type { Id, Project, VisualClip } from "../lib/project/types";
 import { layerAt, planFrame, planLayers, type Layer, type PlanItem } from "../lib/render/plan";
@@ -142,7 +143,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
  * the synchronous render: a sample's canvas image may close next microtask. */
 export function sourceImages(resolved: Resolved, width: number, height: number) {
   return (l: Layer): SourceImage | null => {
-    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height, l.source.word);
+    if (l.source.kind === "text") return rasterizeText(l.source.clip, width, height, l.source.word, l.source.kinetic);
     const r = resolved.get(l.clipId);
     if (!r) return null;
     if (r.bitmap) return { image: r.bitmap, width: r.bitmap.width, height: r.bitmap.height, rotation: 0, key: r.key };
@@ -298,7 +299,9 @@ export class Player {
     // frame, as CapCut does: playback stops there and adding a clip parks
     // the playhead there, and a black viewer reads as a failed import.
     const end = projectDuration(p);
-    const plan = planFrame(p, end > 0 ? Math.min(f, end - 1) : f);
+    // Motion blur at full quality paused (what preview_frame and export
+    // show), with a few samples while playing (ADR-058).
+    const plan = planFrame(p, end > 0 ? Math.min(f, end - 1) : f, { motionSamples: this.rate !== 0 ? MOTION_SAMPLES.playing : MOTION_SAMPLES.full });
     const resolved = await resolveSources(p, plan, this.pool);
     if (comp !== this.compositor) return;
     // Above 1080p, play back at half resolution and show full on pause, as

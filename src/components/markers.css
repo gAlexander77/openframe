@@ -38,3 +38,7 @@
 .marker-export-checks ul { padding-left: 18px; line-height: 1.6; margin: 6px 0; }
 .marker-export-checks .lib-hint { margin-top: 8px; }
 .marker-export footer { justify-content: flex-end; margin-top: 14px; }
+
+/* Export and Delete act on what the search and color filter show. */
+.marker-bulk { display: flex; gap: 6px; }
+.marker-bulk .btn { flex: 1; }

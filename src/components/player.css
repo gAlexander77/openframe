@@ -53,14 +53,19 @@
 
 .timecodes { display: flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; font-size: var(--fs-sm); }
 /* The transport queries its own width. Both timecodes beside the frame,
-   play and loop buttons and the ratio, quality and full-screen controls
-   take about 414 px; below that only the current time shows, and below
-   about 351 px (the player's 320 px minimum) no timecode does: the
-   playhead's time is still on the timeline. */
+   play and loop buttons and the zoom, ratio, quality, save-frame and
+   full-screen controls take about 528 px (measured at a 1180 px window,
+   where they just fit); below that only the current time shows, and
+   below about 470 px no timecode does: the playhead's time is still on
+   the timeline. Remeasure when a control joins the bar (the style sweep's
+   clipped-text check catches a cut timecode). */
 .transport { container-type: inline-size; }
-@container (max-width: 420px) { .tc-sep, .tc-total { display: none; } }
-@container (max-width: 352px) { .timecodes { display: none; } }
+@container (max-width: 532px) { .tc-sep, .tc-total { display: none; } }
+@container (max-width: 470px) { .timecodes { display: none; } }
 .tc-now { color: var(--accent); font-weight: 600; }
+button.tc-now { padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: none; color: var(--accent); font: inherit; font-weight: 600; cursor: text; }
+button.tc-now:hover { background: var(--bg-3); }
+.tc-input { width: 12ch; padding: 1px 4px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg-inset); font: inherit; font-weight: 600; outline: none; }
 .tc-sep, .tc-total { color: var(--text-3); }
 
 .quality-select {
@@ -157,6 +162,14 @@
 .crop-e { right: -4px; }
 .crop-w { left: -4px; }
 
+/* The tracking box (state/tracking.ts): the preview-axis yellow, so it
+   reads as a tool on the picture rather than the layer's own box. */
+/* Motion path: the dashed line an animated picture's center travels. */
+.motion-path { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+.motion-path polyline { fill: none; stroke: var(--preview-axis); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.motion-path circle { fill: var(--preview-axis); stroke: rgb(0 0 0 / 60%); stroke-width: 1; }
+.track-box { position: absolute; border: 1.5px solid var(--preview-axis); box-shadow: 0 0 0 1px rgb(0 0 0 / 45%); cursor: move; pointer-events: auto; }
+
 .crop-bar { display: flex; gap: 12px; justify-content: space-between; }
 .crop-ratios { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .crop-ratios .chip-btn { flex-shrink: 0; }
@@ -192,8 +205,14 @@
 .viewer-guide-select { min-width: 0; max-width: 180px; }
 .viewer-guides, .viewer-thirds { position: absolute; inset: 0; pointer-events: none; }
 .viewer-safe { position: absolute; border: 1px solid rgb(255 255 255 / 85%); box-shadow: 0 0 0 1px rgb(0 0 0 / 50%); }
-.viewer-safe-action { inset: 5%; }
-.viewer-safe-title { inset: 10%; border-style: dashed; }
+/* SMPTE ST 2046-1's safe areas (2009, replacing RP 8 and RP 13's 90% and
+   80%): action 93%, title 90% of the frame. */
+.viewer-safe-action { inset: 3.5%; }
+.viewer-safe-title { inset: 5%; border-style: dashed; }
+/* What TikTok, Reels and Shorts cover is shaded: a huge shadow around the
+   clear box, cut to the picture. */
+.viewer-guides { overflow: hidden; }
+.viewer-safe-vertical { box-shadow: 0 0 0 1px rgb(0 0 0 / 50%), 0 0 0 100vmax rgb(0 0 0 / 30%); }
 .viewer-safe span { position: absolute; left: 3px; top: 2px; font-size: 9px; line-height: 12px; color: white; text-shadow: 0 1px 2px black, 0 0 3px black; }
 .viewer-thirds i { position: absolute; background: rgb(255 255 255 / 65%); box-shadow: 0 0 0 1px rgb(0 0 0 / 35%); }
 .viewer-third-v { top: 0; bottom: 0; width: 1px; }

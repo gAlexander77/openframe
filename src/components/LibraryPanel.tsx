@@ -10,7 +10,9 @@ import {
   LayoutGrid,
   List,
   Music,
+  PaintBucket,
   Palette,
+  Play,
   Plus,
   Search,
   SlidersHorizontal,
@@ -18,17 +20,25 @@ import {
   Sticker,
   Type,
   Upload,
+  Video,
   WandSparkles,
+  X,
 } from "../icons";
 import { EFFECTS, FILTERS, TRANSITIONS } from "../lib/catalog";
 import { formatBytes } from "../lib/export";
 import { filterMedia, mediaUsage, type MediaBrowser, type MediaUse } from "../lib/mediaLibrary";
+import { organizeMedia, removeMedia } from "../lib/project/mediaOrganization";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
-import { addAdjustmentLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
+import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
+import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
+import { toast } from "../state/toast";
+import { cancelCapture, canRecordScreen, startCapture, stopCapture, useCapture } from "../state/capture";
+import { addSoundEffect, auditionSoundEffect } from "../state/sfx";
+import { SFX } from "../lib/sfx";
 import { store, useEditor, type LeftTab } from "../state/store";
 import { CaptionsTab } from "./CaptionsTab";
 import { EnginePreview } from "./EnginePreview";
@@ -37,6 +47,7 @@ import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
 import { MediaManager } from "./MediaManager";
+import { MenuList, useDismiss, type MenuItem } from "./Menu";
 import { SourceMonitor } from "./SourceMonitor";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
@@ -150,6 +161,9 @@ function useThumbs() {
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
   const assets = useEditor((s) => s.project.assets);
   const tracks = useEditor((s) => s.project.tracks);
   const compounds = useEditor((s) => s.project.compounds);
@@ -172,6 +186,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <button className="btn import-btn" onClick={() => void pickAndImport()}>
           <Upload size={14} /> Import
         </button>
+        {kind === "all" && <RecordButton />}
         <label className="lib-search">
           <Search size={14} />
           <input className="field" aria-label={kind === "audio" ? "Search audio" : "Search media"} placeholder={kind === "audio" ? "Search audio" : "Search media"} value={options.query} onChange={(e) => change({ query: e.target.value })} />
@@ -203,7 +218,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
         <label><input type="checkbox" checked={options.favorites} onChange={(e) => change({ favorites: e.target.checked })} />Favorites only</label>
       </div>
       {total === 0 ? (
-        <button className="drop-box" onClick={() => void pickAndImport()}>
+        <button className={`drop-box${kind === "audio" ? " compact" : ""}`} onClick={() => void pickAndImport()}>
           <Upload size={22} />
           <strong>Import</strong>
           <span>{kind === "audio" ? "No audio imported yet. Click to browse." : "Drag videos, audio or photos here, or click to browse"}</span>
@@ -213,10 +228,26 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
       ) : (
         <div className={options.view === "list" ? "media-list" : "card-grid"}>
           {list.map((a) => (
-            <MediaCard key={a.id} asset={a} uses={usage.get(a.id) ?? []} list={options.view === "list"} onPreview={() => setSource(a)} />
+            <MediaCard
+              key={a.id}
+              asset={a}
+              uses={usage.get(a.id) ?? []}
+              list={options.view === "list"}
+              onPreview={() => setSource(a)}
+              onMenu={(e) => {
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a)) });
+              }}
+            />
           ))}
         </div>
       )}
+      {menu && (
+        <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
+          <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
+        </div>
+      )}
+      {kind === "audio" && <SoundEffects />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
       {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
@@ -253,7 +284,81 @@ function HoverScrub({ asset }: { asset: Asset }) {
   );
 }
 
-function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void }) {
+/** CapCut's Record beside Import: the camera or the screen, a live pill
+ * with the elapsed time while it runs, and the take imported and placed
+ * at the playhead on Stop (state/capture.ts). */
+function RecordButton() {
+  const phase = useCapture();
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
+  const [, tick] = useState(0);
+  useEffect(() => {
+    if (phase.kind !== "recording") return;
+    const t = setInterval(() => tick((n) => n + 1), 250);
+    return () => clearInterval(t);
+  }, [phase.kind]);
+  if (phase.kind === "recording")
+    return (
+      <span className="rec-live" role="status">
+        <span className="rec-dot" aria-hidden="true" />
+        <span className="num">{formatDuration((performance.now() - phase.since) / 1000)}</span>
+        <button className="btn" onClick={() => void stopCapture()}>Stop</button>
+        <button className="icon-btn small" aria-label="Discard recording" data-tip="Discard" onClick={cancelCapture}>
+          <X size={13} />
+        </button>
+      </span>
+    );
+  return (
+    <>
+      <button
+        className="btn"
+        disabled={phase.kind !== "idle"}
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          setMenu({
+            x: r.left,
+            y: r.bottom + 4,
+            items: [
+              { label: "Record camera", onSelect: () => void startCapture("camera") },
+              { label: "Record screen", disabled: !canRecordScreen(), onSelect: () => void startCapture("screen") },
+            ],
+          });
+        }}
+      >
+        <Video size={14} /> {phase.kind === "saving" ? "Saving…" : "Record"}
+      </button>
+      {menu && (
+        <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}>
+          <MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} />
+        </div>
+      )}
+    </>
+  );
+}
+
+/** A media card's right-click menu. Removing takes the media out of the
+ * project only; a file the timeline uses says so and takes its clips. */
+function mediaMenu(asset: Asset, uses: number, preview: () => void): MenuItem[] {
+  const remove = (withClips: boolean) => {
+    try {
+      edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
+  };
+  return [
+    { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
+    { label: "Preview", onSelect: preview },
+    { label: "Favorite", checked: !!asset.favorite, onSelect: () => edit("Favorite media", (p) => organizeMedia(p, [asset.id], { favorite: !asset.favorite })) },
+    "-",
+    uses
+      ? { label: `Remove from project and its ${uses === 1 ? "clip" : `${uses} clips`}`, onSelect: () => remove(true) }
+      : { label: "Remove from project", hint: "The file stays", onSelect: () => remove(false) },
+  ];
+}
+
+function MediaCard({ asset, uses, list, onPreview, onMenu }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -273,6 +378,7 @@ function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: Media
       title={`${asset.name}\n${metadata}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
+      onContextMenu={onMenu}
     >
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
@@ -300,6 +406,34 @@ function MediaCard({ asset, uses, list, onPreview }: { asset: Asset; uses: Media
 }
 
 // ---- catalogs -----------------------------------------------------------------
+
+/** The built-in sound effects (lib/sfx.ts), made on this computer: play
+ * one from its card, double-click, + or drag it in to add it. */
+function SoundEffects() {
+  const add = (id: string) => void addSoundEffect(id).catch((e) => toast(e instanceof Error ? e.message : String(e), "error"));
+  return (
+    <section className="lib-section">
+      <h4 className="lib-group">Sound effects</h4>
+      <div className="card-grid small">
+        {Object.entries(SFX).map(([id, s]) => (
+          <CatalogCard
+            key={id}
+            label={s.label}
+            payload={{ kind: "sfx", id, label: s.label }}
+            onAdd={() => add(id)}
+            preview={
+              <div className="fx-preview">
+                <button className="sfx-play" aria-label={`Play ${s.label}`} data-tip="Listen" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()} onClick={() => auditionSoundEffect(id)}>
+                  <Play size={16} />
+                </button>
+              </div>
+            }
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string }) {
   return (
@@ -457,13 +591,19 @@ function TextTab() {
 function AdjustmentTab() {
   return (
     <div className="lib-content">
-      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length.</p>
+      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length. A solid color is a plain background or a flash; set its color in the inspector.</p>
       <div className="card-grid small">
         <CatalogCard
           label="Custom adjustment"
           payload={{ kind: "adjustment", label: "Adjustment" }}
           onAdd={() => addAdjustmentLayer()}
           preview={<div className="fx-preview"><SlidersHorizontal size={18} strokeWidth={1.4} /></div>}
+        />
+        <CatalogCard
+          label="Solid color"
+          payload={{ kind: "color", label: "Solid color" }}
+          onAdd={() => addColorLayer()}
+          preview={<div className="fx-preview"><PaintBucket size={18} strokeWidth={1.4} /></div>}
         />
       </div>
     </div>

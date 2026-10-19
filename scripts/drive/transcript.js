@@ -69,5 +69,14 @@ async (page) => {
   // Agents: get_transcript's path returns the piece's words in source seconds.
   const agent = await page.evaluate(async (id) => (await window.videoEditor.ai.clipTranscript(id)).words.map((w) => w.text.trim()).join(" "), voice.id);
   details.agent = { ok: /Welcome back to the show/i.test(agent) && !/goes away/i.test(agent), agent };
+  // A reversed piece cannot line its words up, so it is left out, and the
+  // card says so rather than dropping it silently.
+  await page.evaluate(() => {
+    const api = window.videoEditor;
+    const piece = api.project().tracks.filter((t) => t.kind === "audio").flatMap((t) => t.clips)[0];
+    api.exec("set_reverse", { clip_id: piece.id, reverse: true });
+    api.select([piece.id]);
+  });
+  details.leftOutSaid = { ok: (await page.getByRole("note").filter({ hasText: "left out" }).count()) === 1 };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

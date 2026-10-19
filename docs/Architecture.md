@@ -64,15 +64,20 @@ a clock, so no frame is ever dropped
 | `lib/keyframeEdit.ts` | Keyframes as a set: retime, move, ease presets, bezier handles, copy/paste |
 | `lib/crop.ts` | Crop ratios, the largest crop of a ratio, where a dragged crop handle puts the edges (ADR-048) |
 | `lib/mask.ts` | Mask shapes on the viewer: frame, outline, handles and drags, mirroring the shader's maskAlpha (ADR-049) |
+| `lib/shapes.ts`, `lib/trackMatte.ts`, `lib/motionBlur.ts`, `lib/wiggle.ts` | Graphics: shape geometry and colors, which clips are track mattes, motion blur's shutter samples, wiggle's noise; the plan resolves them and the compositor draws them (ADR-056 to ADR-059, ADR-062) |
 | `lib/paramInfo.ts` | A parameter path's name and display units (Scale %, Position px, Volume dB) |
 | `lib/catalog.ts` | Animations, effects, transitions, filters as data |
 | `engine/compositor.ts` | WebGL2 passes, nested compound plans one framebuffer level deeper; `shaders.ts` holds the GLSL |
 | `engine/cursor.ts` | One decoder per clip; scrub and play; reversed clips in backward windows |
 | `engine/player.ts` | Preview loop, transport, shuttle, a silent bounded run (`preview`) |
 | `engine/audio.ts` | Web Audio scheduling and the audible clock; retimed sound in blocks (`lib/stretch.ts`) |
+| `lib/soundFx.ts`, `engine/soundFx.ts` | A clip's filters, echo, reverb and tape stop: values, impulse responses, time warp; the nodes (ADR-060) |
+| `engine/mixdown.ts` | The mix rendered offline in pre-rolled windows, for export and `measure_loudness` |
+| `lib/analysis/truePeak.ts`, `lib/analysis/delivery.ts`, `state/delivery.ts` | True peak, loudness range, delivery specs, the export limiter's plan, the loudness report (ADR-061) |
 | `engine/thumbs.ts` | Filmstrips and waveform peaks |
 | `engine/compoundThumbs.ts` | Compound clips' filmstrips (the nested timeline rendered offscreen) and mixed peaks |
-| `engine/export.ts` | The export loop, codec choice, audio windows |
+| `engine/export.ts` | The export loop, codec choice, audio windows; stills (`exportStills`: the frames `preview_frame` and the contact sheets show, at the size asked) |
+| `lib/brandKit.ts`, `lib/ads.ts`, `lib/versions.ts` | Ads: the brand kit and text roles, the readable text floor; ad elements laid out in the safe area; an ad's other shapes, cut-downs and textless master, groups fitted as one (ADR-063) |
 | `engine/analyze.ts` | Decoding for analysis: mono PCM, per-frame scene scores |
 | `engine/cutout.ts`, `engine/matte.worker.ts`, `lib/matte.ts` | Remove BG: the clip's frames through a segmentation model in a worker, steadied over time, stored as a grayscale matte video the compositor samples (ADR-032, ADR-033) |
 | `lib/stickers.ts`, `engine/stickers.ts` | Sticker catalog and placement; the Canvas2D artwork and emoji rendering |

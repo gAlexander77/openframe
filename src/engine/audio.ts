@@ -7,16 +7,20 @@
 //
 // Ramps, reverse and pitch-kept speed changes cannot be a node's
 // playbackRate: the engine renders those clips itself in short blocks
-// (lib/stretch.ts) and schedules each block at rate 1 (ADR-028).
+// (lib/stretch.ts) and schedules each block at rate 1 (ADR-028), as it
+// does a tape stop's slowing tail. A clip's sound design (filters, echo,
+// reverb) is built by engine/soundFx.ts into the same chain (ADR-060).
 
 import type { AudioBufferSink } from "mediabunny";
 import { EQ_BANDS, panEnvelope, soundEnvelope, soundingClips, soundPanAt, soundSpan } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Compressor, Project, VideoClip } from "../lib/project/types";
+import { fxCurve, switchAt, tapeStopMap, type TapeStopMap } from "../lib/soundFx";
 import { varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
 import { mediaFor } from "./media";
+import { postFaderFx, preFaderFx } from "./soundFx";
 
 export interface Schedule {
   /** Stop every node and every pump. Safe to call twice. */
@@ -83,6 +87,8 @@ export function scheduleAudio(
   const realtime = ctx instanceof AudioContext;
   let stopped = false;
   const nodes = new Set<AudioScheduledSourceNode>();
+  /** Each clip's last node, connected to `dest`. */
+  const outs: AudioNode[] = [];
   const sr = ctx.sampleRate;
   const grid = (t: number) => Math.round(t * sr) / sr;
   const toCtx = (timelineSec: number) => at + (timelineSec - from);
@@ -110,11 +116,34 @@ export function scheduleAudio(
     const gain = ctx.createGain();
     const pan = ctx.createStereoPanner();
     pan.pan.value = soundPanAt(sounding, p.fps, lo);
-    gain.connect(pan).connect(dest);
+    pan.connect(dest);
+    outs.push(pan);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
-    // EQ, then compressor, then the gain (volume, fades, keyframes):
-    // sources feed the first band.
+    // Keyframed curves ride the clip's span; started late (realtime), the
+    // part still ahead.
+    const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
+    const envDur = toCtx(hi) - envAt;
+    const ride = (param: AudioParam, curve: Float32Array) => {
+      if (envDur > 0.01) param.setValueCurveAtTime(curve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * curve.length), curve.length - 2)), envAt, envDur);
+    };
+    const curve = (path: string, map?: (v: number) => number) => fxCurve(clip, path, clipStart, p.fps.num / p.fps.den, lo, hi, 100, map);
+    // Echo and reverb after the gain, so their tails outlast the clip and
+    // its fade (ADR-060).
+    // ponytail: playback started after a clip's end misses its tail (the
+    // clip is not scheduled); export windows pre-roll (mixdown.ts).
+    const post = postFaderFx(ctx, clip, curve, ride);
+    if (post) {
+      gain.connect(post.input);
+      post.output.connect(pan);
+    } else gain.connect(pan);
+    // EQ, then compressor, then the filters, then the gain (volume, fades,
+    // keyframes): sources feed the first band.
     let input: AudioNode = gain;
+    const pre = preFaderFx(ctx, clip, curve, ride);
+    if (pre) {
+      pre.output.connect(input);
+      input = pre.input;
+    }
     if (clip.compressor) {
       const comp = compressorNodes(ctx, clip.compressor);
       comp.output.connect(input);
@@ -146,8 +175,6 @@ export function scheduleAudio(
       input = up;
     }
     const env = soundEnvelope(sounding, p.fps, lo, hi);
-    const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
-    const envDur = toCtx(hi) - envAt;
     if (envDur > 0.01) {
       // Trim the envelope's head if we start late (realtime only).
       const skip = Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length);
@@ -157,17 +184,21 @@ export function scheduleAudio(
       if (panCurve) pan.pan.setValueCurveAtTime(panCurve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * panCurve.length), panCurve.length - 2)), envAt, envDur);
     }
 
+    const tape = clip.tapeStop ? tapeStopMap(framesToSeconds(clip.duration, p.fps), clip.tapeStop) : null;
     if (needsRetime(clip)) {
-      await retimed(clip, clipStart, lo, hi, media.audioSink, media.audioStart, asset.duration, input);
+      await retimed(clip, clipStart, lo, hi, media.audioSink, media.audioStart, asset.duration, input, tape);
       return;
     }
+    // A tape stop's slowing tail is made by the engine; the rest plays as is.
+    const stopAt = tape ? clipStart + tape.start : Infinity;
+    const playHi = Math.min(hi, stopAt);
     const speed = clip.speed;
     const perSec = speed; // source seconds per timeline second
     const srcLo = clip.in + (lo - clipStart) * perSec;
-    const srcHi = clip.in + (hi - clipStart) * perSec;
+    const srcHi = clip.in + (playHi - clipStart) * perSec;
 
     const off = media.audioStart;
-    for await (const { buffer, timestamp } of media.audioSink.buffers(srcLo + off, srcHi + off)) {
+    for await (const { buffer, timestamp } of playHi > lo ? media.audioSink.buffers(srcLo + off, srcHi + off) : []) {
       if (stopped) break;
       const srcT = timestamp - off;
       // Timeline second where this chunk's first sample would play.
@@ -188,13 +219,14 @@ export function scheduleAudio(
       node.playbackRate.value = speed;
       node.connect(input);
       node.start(grid(when), offset);
-      node.stop(grid(toCtx(hi)));
+      node.stop(grid(toCtx(playHi)));
       nodes.add(node);
       node.onended = () => nodes.delete(node);
       if (realtime) {
         while (!stopped && when - ctx.currentTime > 1.5) await sleep(100);
       }
     }
+    if (tape && !stopped && hi > Math.max(lo, stopAt)) await retimed(clip, clipStart, Math.max(lo, stopAt), hi, media.audioSink, media.audioStart, asset.duration, input, tape);
   });
 
   /**
@@ -212,11 +244,17 @@ export function scheduleAudio(
     off: number,
     srcDuration: number,
     gain: AudioNode,
+    tape: TapeStopMap | null,
   ) {
     const fpsRate = p.fps.num / p.fps.den;
     const dir = clip.reverse ? -1 : 1;
-    const pos = (n: number) => sourceOffset(clip, (n / sr - clipStart) * fpsRate, p.fps) * sr;
-    const retimer = clip.changePitch ? varispeed(pos) : wsola(pos, sr);
+    // A tape stop reads the clip's own time map at a slowing clock.
+    const warp = tape ? tape.warp : (u: number) => u;
+    const pos = (n: number) => sourceOffset(clip, warp(n / sr - clipStart) * fpsRate, p.fps) * sr;
+    // Pitch kept (WSOLA) only where the clip asks and no tape stop runs:
+    // a stopping tape's pitch falls with it.
+    const tapeLike = clip.changePitch || !needsRetime(clip);
+    const retimer = tapeLike ? varispeed(pos) : tape ? switchAt(wsola(pos, sr), varispeed(pos), Math.round((clipStart + tape.start) * sr)) : wsola(pos, sr);
     const nLo = Math.round(lo * sr);
     const nHi = Math.round(hi * sr);
     // ponytail: each block decodes its own source range (overlaps decode
@@ -245,6 +283,12 @@ export function scheduleAudio(
       }
       const out = Array.from({ length: channels }, () => new Float32Array(len));
       retimer.render(input, yLo, n, out);
+      if (tape) {
+        for (let i = 0; i < len; i++) {
+          const g = tape.gain((n + i) / sr - clipStart);
+          if (g < 1) for (const ch of out) ch[i] *= g;
+        }
+      }
       const buffer = ctx.createBuffer(channels, len, sr);
       out.forEach((ch, c) => buffer.copyToChannel(ch, c));
       let when = toCtx(n / sr);
@@ -277,6 +321,9 @@ export function scheduleAudio(
         }
       }
       nodes.clear();
+      // Echo and reverb would ring on after a pause: cut every clip off.
+      for (const o of outs) o.disconnect();
+      outs.length = 0;
     },
     done: Promise.all(pumps).then(() => undefined),
   };

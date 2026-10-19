@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import { useState, type ComponentType } from "react";
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -8,6 +8,7 @@ import {
   AlignStartHorizontal,
   AlignStartVertical,
   AlignVerticalDistributeCenter,
+  SquareDashed,
 } from "../../icons";
 import { alignClips, distributeClips, type Align, type Axis } from "../../lib/align";
 import { findClip } from "../../lib/project/ops";
@@ -27,6 +28,12 @@ const SPREAD: [Axis, string, ComponentType][] = [
   ["vertical", "Distribute vertically", AlignVerticalDistributeCenter],
 ];
 
+/** The title-safe line (90%, SMPTE ST 2046-1) is 5% of the canvas in from
+ * each edge. Kept
+ * across clips for the session, as the switch is a working mode. */
+const TITLE_SAFE = 0.05;
+let titleSafe = false;
+
 /** How many of `ids` are pictures on unlocked tracks. */
 export const useMovable = (ids: Id[]) =>
   useEditor((s) => ids.filter((id) => {
@@ -41,10 +48,14 @@ export const useMovable = (ids: Id[]) =>
  */
 export function AlignBar({ ids }: { ids: Id[] }) {
   const movable = useMovable(ids);
+  const [safe, setSafe] = useState(titleSafe);
   if (!movable) return null;
   const several = movable > 1;
+  // To the canvas, a clip can stop at the title-safe line (the viewer's
+  // Title 90% guide) instead of the edge: the margin align_clips takes.
+  const margin = !several && safe ? TITLE_SAFE : 0;
   const align = (edge: Align, label: string) =>
-    store.edit(label, (p) => alignClips(p, ids, edge, store.get().playhead));
+    store.edit(label, (p) => alignClips(p, ids, edge, store.get().playhead, margin));
   const spread = (axis: Axis, label: string) =>
     store.edit(label, (p) => distributeClips(p, ids, axis, store.get().playhead));
   return (
@@ -57,6 +68,17 @@ export function AlignBar({ ids }: { ids: Id[] }) {
           </button>
         );
       })}
+      {!several && (
+        <button
+          className={`icon-btn${safe ? " on" : ""}`}
+          aria-label="Inside title safe"
+          aria-pressed={safe}
+          data-tip="Align inside the title-safe margin, not to the edge"
+          onClick={() => setSafe((titleSafe = !safe))}
+        >
+          <SquareDashed />
+        </button>
+      )}
       <span className="align-bar-sep" />
       {SPREAD.map(([axis, label, Icon]) => (
         <button key={axis} className="icon-btn" aria-label={label} data-tip={movable < 3 ? `${label} (select three or more clips)` : label} disabled={movable < 3} onClick={() => spread(axis, label)}>

@@ -1,5 +1,6 @@
 import { EFFECTS } from "./catalog";
 import { pasteEffectStack, type EffectClipboard } from "./effectStack";
+import { NAMED_EASES } from "./keyframes";
 import type { Ease, Keyframe, Project } from "./project/types";
 
 export interface EffectPreset { id: string; name: string; stack: EffectClipboard }
@@ -37,7 +38,7 @@ export function readEffectPreset(raw: unknown): EffectPreset {
     keyframes[path] = keys.map((k) => {
       if (!obj(k) || !finite(k.f) || !finite(k.v)) throw new Error("Invalid preset keyframe.");
       const e = k.ease;
-      if (e !== undefined && !(typeof e === "string" && ["linear", "hold", "easeIn", "easeOut", "easeInOut"].includes(e)) && !(Array.isArray(e) && e.length === 4 && e.every(finite))) throw new Error("Invalid preset easing.");
+      if (e !== undefined && !(typeof e === "string" && (NAMED_EASES as string[]).includes(e)) && !(Array.isArray(e) && e.length === 4 && e.every(finite))) throw new Error("Invalid preset easing.");
       return { f: k.f, v: Math.max(def.min, Math.min(def.max, k.v)), ...(e !== undefined ? { ease: structuredClone(e) as Ease } : {}) };
     });
   }

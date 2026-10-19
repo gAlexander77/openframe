@@ -12,21 +12,31 @@ import { decodeMono, decodePcm, frameGrays, frameScores, measureLoudness } from 
 import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { denoise } from "../lib/analysis/denoise";
 import { replaceClip } from "../lib/project/replace";
+import type { Region } from "../lib/align";
+import { canvasSize } from "../lib/canvas";
+import { applyTrack, centerRegion, trackPath } from "./tracking";
 import { encodeWav } from "../lib/wav";
 import { adoptAndImport } from "./media";
-import { makeMatte } from "../engine/cutout";
-import { detectBeats } from "../lib/analysis/beats";
+import { cutOutImage, makeMatte } from "../engine/cutout";
+import { SFX } from "../lib/sfx";
+import { BEATS_PER_BAR, detectBeats, musicStructure, type SectionLabel } from "../lib/analysis/beats";
+import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
+import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
+import { syncProblem } from "../lib/project/sync";
 import { duckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
+import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { FILLERS, fillerRanges } from "../lib/fillers";
 import { transcribePcm } from "../engine/transcribe";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
+import { behindProblem, putBehindSubject, type SubjectCut } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Cutout, Id, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Cutout, Id, ImageClip, VideoClip } from "../lib/project/types";
+import { uid } from "../lib/project/defaults";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { edit } from "./actions";
@@ -34,7 +44,7 @@ import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
 
-export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout";
+export type ToolId = "silences" | "fillers" | "scenes" | "beats" | "loudness" | "ducking" | "denoise" | "stabilize" | "cutout" | "sync" | "reframe";
 
 export interface SilenceSettings {
   /** 0..1; 0.5 is the detector's default threshold. */
@@ -77,6 +87,16 @@ export interface StabilizeSettings {
   level: StabilizeLevel;
 }
 
+export interface ReframeSettings {
+  /** The canvas shape to reframe into; "keep" reframes in the current one. */
+  ratio: "9:16" | "1:1" | "4:5" | "keep";
+}
+
+export interface SyncSettings {
+  /** The camera's own sound once the recorded sound is synced to it. */
+  camera: "keep" | "mute";
+}
+
 export interface FillerSettings {
   /** A Whisper model id from ASR_MODELS. */
   model: string;
@@ -91,6 +111,8 @@ export interface AiSettings {
   denoise: DenoiseSettings;
   stabilize: StabilizeSettings;
   fillers: FillerSettings;
+  sync: SyncSettings;
+  reframe: ReframeSettings;
 }
 
 export const DEFAULT_AI_SETTINGS: AiSettings = {
@@ -105,6 +127,11 @@ export const DEFAULT_AI_SETTINGS: AiSettings = {
   stabilize: { level: "recommended" },
   // Tiny drops every "um"; base keeps them at a third of small's download.
   fillers: { model: "onnx-community/whisper-base.en_timestamped" },
+  // Kept: the camera's sound is how to check the sync by ear, and muting
+  // it is the menu's second item.
+  sync: { camera: "keep" },
+  // Shorts, Reels and TikTok: the reason most wide footage gets reframed.
+  reframe: { ratio: "9:16" },
 };
 
 export interface AiJob {
@@ -169,16 +196,20 @@ export const NEEDS: Record<ToolId, string> = {
   denoise: "a video or audio clip with sound",
   stabilize: "a video clip",
   cutout: "a video clip with a person or subject",
+  sync: "an audio clip and the video it was recorded with",
+  reframe: "a video clip",
 };
 
 /** Whether `tool` can analyze this clip, and why not. */
 function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | null {
   if (!asset) return "Its media is missing";
   if (clip.freeze) return "A freeze frame has no source to analyze";
-  if (tool === "scenes" || tool === "stabilize" || tool === "cutout") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
+  if (tool === "reframe" && (clip.reverse || clip.speedCurve)) return "Its speed is curved or reversed";
+  if (tool === "scenes" || tool === "stabilize" || tool === "cutout" || tool === "reframe") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
+  if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
   // ponytail: one static gain per clip; keyframed volume would need every
   // key scaled, so those clips are left to the user.
-  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed";
+  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove_keyframes path volume first";
   // ponytail: the cleaned sound is a new file of the source window; a
   // retimed clip would need the retimer's window instead.
   if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
@@ -487,6 +518,76 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
   return { ...res, markers };
 }
 
+export interface MusicAnalysis {
+  bpm: number;
+  beats_per_bar: number;
+  /** Timeline seconds, all of them: beats, bar starts, phrase starts, hits. */
+  beats: number[];
+  downbeats: number[];
+  phrases: number[];
+  hits: number[];
+  /** Each beat's loudness, 0..1 (1 the loudest beat, 0 24 dB under it). */
+  beat_energy: number[];
+  sections: { start: number; end: number; label: SectionLabel; energy: number }[];
+  /** Where the biggest rise into a loud section lands, or null. */
+  drop: number | null;
+  /** Markers added (analyze_music's markers option). */
+  markers: number;
+}
+
+/**
+ * A music clip's beat grid and parts (Final Cut's beat grid: song parts,
+ * bars, beats), in TIMELINE seconds, for agents to cut to. `markers` also
+ * drops markers for the kinds named, as one undoable edit: Beat, Bar,
+ * Phrase, each section by name, and Drop (lib/epic.ts MUSIC_MARKERS).
+ */
+export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[] } = {}): Promise<MusicAnalysis> {
+  const signal = projectWork.signal();
+  const { clip: c0, asset } = resolve("beats", clipId);
+  const id = c0.id;
+  const [from, to] = windowOf(c0);
+  const m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE));
+  signal.throwIfAborted();
+  const clip = stillThere(id);
+  const fps = store.get().project.fps;
+  const end = clip.start + clip.duration;
+  // Seconds into the decoded window -> timeline seconds; null outside the clip.
+  const at = (t: number) => {
+    const f = frameOfSource(clip, t + from, fps);
+    return f >= clip.start && f < end ? +framesToSeconds(f, fps).toFixed(3) : null;
+  };
+  const all = (ts: number[]) => ts.map(at).filter((t): t is number => t !== null);
+  const kept = m.beats.map((t, i) => [at(t), m.energy[i]] as const).filter(([t]) => t !== null);
+  const edge = (t: number) => at(t) ?? +framesToSeconds(Math.min(end, Math.max(clip.start, frameOfSource(clip, t + from, fps))), fps).toFixed(3);
+  const out: MusicAnalysis = {
+    bpm: m.bpm,
+    beats_per_bar: BEATS_PER_BAR,
+    beats: kept.map(([t]) => t!),
+    downbeats: all(m.downbeats),
+    phrases: all(m.phrases),
+    hits: all(m.hits),
+    beat_energy: kept.map(([, e]) => e),
+    sections: m.sections.map((s) => ({ ...s, start: edge(s.start), end: edge(s.end) })).filter((s) => s.end > s.start),
+    drop: m.drop === null ? null : at(m.drop),
+    markers: 0,
+  };
+  const kinds = [...new Set(opts.markers ?? [])].filter((k) => k in MUSIC_MARKERS);
+  if (kinds.length) {
+    const before = store.get().project.markers.length;
+    edit(`Mark the music`, (p) =>
+      kinds.reduce((q, k) => {
+        const { label, color } = MUSIC_MARKERS[k];
+        if (k === "sections") return out.sections.reduce((r, s) => runCommand(r, "add_markers", { times: [s.start], label: SECTION_NAMES[s.label], color }), q);
+        const times = k === "beats" ? out.beats : k === "bars" ? out.downbeats : k === "phrases" ? out.phrases : out.drop === null ? [] : [out.drop];
+        return times.length ? runCommand(q, "add_markers", { times, label, color }) : q;
+      }, p),
+    );
+    out.markers = store.get().project.markers.length - before;
+  }
+  finish("beats", `${Math.round(m.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
+  return out;
+}
+
 /** Source seconds inside `clip` to timeline seconds, dropping any outside it. */
 function timelineTimes(clip: MediaClip, times: number[]): number[] {
   const fps = store.get().project.fps;
@@ -509,15 +610,19 @@ export interface LoudnessResult extends Normalization {
  * loudness by setting its volume, as one undoable edit (CapCut's
  * "Normalize loudness", measured per ITU-R BS.1770).
  */
-export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> = {}): Promise<LoudnessResult[]> {
+export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> & { spec?: string } = {}): Promise<LoudnessResult[]> {
   const scope = projectWork.signal();
-  const target = opts.target ?? state.settings.loudness.target;
+  // A delivery spec names the target and the true-peak ceiling (ADR-061).
+  const spec = opts.spec === undefined ? undefined : LOUDNESS_SPECS[opts.spec as SpecId];
+  if (opts.spec !== undefined && !spec) throw new Error(`Unknown spec ${opts.spec}: use ${SPEC_IDS.join(", ")}`);
+  const target = spec?.target ?? opts.target ?? state.settings.loudness.target;
+  const ceilingDb = spec?.maxTruePeak ?? ceilingFor(target);
   const ids = clipIds ?? store.get().selection;
   const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
   if (!targets.length) throw new Error(ids.length ? String(targetFor("loudness", ids[0])) : `Select ${NEEDS.loudness} on the timeline`);
   const label = targets.length === 1 ? `Measuring the loudness of ${targets[0].asset.name}` : `Measuring the loudness of ${plural(targets.length, "clip")}`;
   const measured = await job("loudness", targets[0].clip, label, async (progress, signal) => {
-    const out: { clipId: Id; lufs: number; peak: number }[] = [];
+    const out: { clipId: Id; lufs: number; peak: number; truePeak: number }[] = [];
     for (const [i, { clip, asset }] of targets.entries()) {
       const [from, to] = windowOf(clip);
       // Measured as it plays: through the clip's compressor, if it has one.
@@ -527,7 +632,7 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
     return out;
   });
   scope.throwIfAborted();
-  const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.peak) }));
+  const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.truePeak, { ceilingDb }) }));
   const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
   if (!live.length) {
     finish("loudness", "Only silence, so nothing changed");
@@ -563,9 +668,12 @@ function voicesUnder(clip: MediaClip): Target[] {
     .filter((c) => c.start < end && c.start + c.duration > clip.start)
     .flatMap((c) => {
       const asset = ops.getAsset(p, c.assetId);
-      return asset?.hasAudio ? [{ clip: c, asset }] : [];
+      return asset?.hasAudio && !SFX_FILES.has(asset.name) ? [{ clip: c, asset }] : [];
     });
 }
+
+/** The built-in sound effects' file names (state/sfx.ts names them by label). */
+const SFX_FILES = new Set(Object.values(SFX).map((s) => `${s.label}.wav`));
 
 /**
  * Dip a music clip under the speech of every other clip with sound that
@@ -713,6 +821,130 @@ export async function stabilizeClip(clipId?: Id, opts: { level?: StabilizeLevel 
   return { frames: data.x.length, zoom: data.zoom };
 }
 
+// ---- sync audio ------------------------------------------------------------------
+
+export interface SyncEdit {
+  /** The audio clip, now in sync. */
+  clipId: Id;
+  /** The video it was synced to. */
+  videoId: Id;
+  /** Seconds: the audio's source time minus the video's for one moment. */
+  offset: number;
+  /** 0..1, how clearly the best match stands out (MIN_CONFIDENCE up). */
+  confidence: number;
+  /** Where the audio clip starts now (timeline seconds) and its in-point
+   * (source seconds). */
+  start: number;
+  in: number;
+  /** The video's own sound was set to volume 0. */
+  muted: boolean;
+}
+
+/** Throw `msg` as a toast and an error, for refusals before a job starts. */
+function refuse(msg: string): never {
+  toast(msg, "error");
+  throw new Error(msg);
+}
+
+/** The camera clip to sync `audio` to: `videoId`, else the selected video
+ * clip with sound, else the one that plays with it longest. */
+function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
+  const p = store.get().project;
+  if (videoId) {
+    const v = ops.findClip(p, videoId)?.clip;
+    if (!v) refuse(`No clip with id ${videoId}`);
+    if (v.type !== "video") refuse("Sync the audio to a video clip");
+    return v;
+  }
+  const videos = p.tracks.flatMap((t) => t.clips).filter((c): c is VideoClip => c.type === "video" && !!ops.getAsset(p, c.assetId)?.hasAudio);
+  const picked = videos.find((v) => store.get().selection.includes(v.id));
+  if (picked) return picked;
+  const overlap = (v: VideoClip) => Math.min(v.start + v.duration, audio.start + audio.duration) - Math.max(v.start, audio.start);
+  const under = videos.filter((v) => overlap(v) > 0).sort((a, b) => overlap(b) - overlap(a))[0];
+  return under ?? refuse("Select the video clip to sync to as well");
+}
+
+/**
+ * CapCut's Sync video and audio, Resolve's Auto Sync Audio > Based on
+ * Waveform: find where a separately recorded sound (a lav, a recorder)
+ * lines up with the camera's own sound by matching their waveforms
+ * (lib/analysis/sync.ts), then move the audio clip into sync, exact to the
+ * sample (sync_to_clip), as one undo step. Refuses when the sounds do not
+ * clearly match. muteCamera sets the video's volume to 0.
+ */
+export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
+  const scope = projectWork.signal();
+  const t = targetFor("sync", clipId);
+  if (typeof t === "string") refuse(t);
+  const { clip, asset } = t;
+  const video = cameraFor(clip as AudioClip, opts.videoId);
+  const p = store.get().project;
+  const vAsset = ops.getAsset(p, video.assetId);
+  if (!vAsset) refuse("The video's media is missing");
+  if (!vAsset.hasAudio) refuse(`${vAsset.name} has no sound of its own to sync to`);
+  const why = syncProblem(p, clip.id, video.id);
+  if (why) refuse(why);
+  const muteCamera = opts.muteCamera ?? state.settings.sync.camera === "mute";
+  const match = await job("sync", clip, `Syncing ${asset.name} to ${vAsset.name}`, async (progress, signal) => {
+    const [vFrom, vTo] = windowOf(video);
+    const [aFrom, aTo] = windowOf(clip);
+    const ref = await decodeMono(vAsset, vFrom, vTo, SYNC_RATE, (x) => progress(x * 0.4), signal);
+    const other = await decodeMono(asset, aFrom, aTo, SYNC_RATE, (x) => progress(0.4 + x * 0.5), signal);
+    progress(0.92, "Matching the waveforms");
+    // Let the progress paint before the (synchronous) match.
+    await new Promise((r) => setTimeout(r, 0));
+    const m = findLag(ref, other, SYNC_RATE);
+    if (!m.score) throw new Error("One of the clips is silent where it plays, so there is nothing to match");
+    if (m.confidence < MIN_CONFIDENCE) throw new Error(`The two sounds don't match clearly enough to sync (confidence ${Math.round(m.confidence * 100)}%). Are they the same take?`);
+    return { ...m, offset: aFrom - vFrom + m.lag };
+  });
+  scope.throwIfAborted();
+  const a = stillThere(clip.id), v = stillThere(video.id);
+  edit("Sync audio", (q) => runCommand(q, "sync_to_clip", { clip_id: a.id, to_clip_id: v.id, offset: match.offset, mute_reference: muteCamera }));
+  const now = ops.findClip(store.get().project, a.id)!.clip as AudioClip;
+  finish("sync", `Synced ${asset.name} to ${vAsset.name}${muteCamera ? ", camera sound muted" : ""}`);
+  const fps = store.get().project.fps;
+  return { clipId: a.id, videoId: v.id, offset: +match.offset.toFixed(4), confidence: +match.confidence.toFixed(3), start: +framesToSeconds(now.start, fps).toFixed(4), in: +now.in.toFixed(4), muted: muteCamera };
+}
+
+// ---- auto reframe ----------------------------------------------------------------
+
+export interface ReframeEdit {
+  width: number;
+  height: number;
+  /** Frames followed, and those the subject was lost on (held in place). */
+  frames: number;
+  lost: number;
+}
+
+/**
+ * CapCut's and Premiere's Auto reframe: the canvas takes the new shape
+ * (its short side kept), the subject is followed through the whole clip
+ * from a box (fractions of the picture; default a square at its center,
+ * where a framed subject starts), and the clip fills the canvas with
+ * position keyframes that keep the subject centered (state/tracking.ts,
+ * ADR-054). One undo step. The inspector's Tracking > Keep subject
+ * centered does the same from a box placed on the viewer.
+ */
+export async function reframeClip(clipId?: Id, opts: Partial<ReframeSettings> & { box?: Region } = {}): Promise<ReframeEdit> {
+  const scope = projectWork.signal();
+  const { clip, asset } = resolve("reframe", clipId);
+  const ratio = opts.ratio ?? state.settings.reframe.ratio;
+  const p0 = store.get().project;
+  const video = clip as VideoClip;
+  const [rw, rh] = ratio === "keep" ? [p0.width, p0.height] : ratio.split(":").map(Number);
+  const [width, height] = ratio === "keep" ? [p0.width, p0.height] : canvasSize(rw, rh, Math.min(p0.width, p0.height));
+  const region = opts.box ?? centerRegion(p0, video);
+  const { path, lost } = await job("reframe", clip, `Reframing ${asset.name}`, (progress, signal) =>
+    trackPath(p0, video, asset, region, video.start, video.start + video.duration, progress, signal),
+  );
+  scope.throwIfAborted();
+  const c = stillThere(clip.id);
+  store.edit("Auto reframe", (p) => applyTrack({ ...p, width, height, canvasFixed: true }, c.id, c.id, path, c.start, "center"));
+  finish("reframe", lost > path.times.length / 4 ? `Reframed ${asset.name}, but lost the subject on ${plural(lost, "frame")}` : `Reframed ${asset.name} to ${width}×${height}`);
+  return { width, height, frames: path.times.length, lost };
+}
+
 // ---- remove background -----------------------------------------------------------
 
 /** Mattes made this session, so undoing past one and turning Remove
@@ -745,25 +977,17 @@ export interface CutoutResult {
   matte: string;
 }
 
-/**
- * CapCut's Remove background: make the clip's background matte on this
- * machine (once; progress and cancel like the other tools) and turn it
- * on, as one undoable edit. A clip whose matte already exists, or whose
- * asset has one covering it, turns on instantly.
- */
-export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+/** A clip's matte, ready to put on it: its own or another of the asset's
+ * that covers it (instant), or one made now as the cutout job. Edits
+ * nothing, so a caller can apply it with other changes in one undo step. */
+export async function matteFor(clipId?: Id): Promise<{ clipId: Id; cutout: Cutout; result: CutoutResult; note: string }> {
   const { clip, asset } = resolve("cutout", clipId);
   const fps = store.get().project.fps;
   const [from, to] = clipWindow(clip as VideoClip, fps, asset.fps);
   const own = (clip as VideoClip).cutout;
   const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
-  if (ready) {
-    // A look change, like the inspector's: store.edit, because edit()'s
-    // settle would let the magnet close gaps on the main track.
-    store.edit("Remove background", (p) => ops.setCutout(p, clip.id, ready));
-    finish("cutout", "Background removed");
-    return { clipId: clip.id, cached: true, model: ready.model, matte: ready.src };
-  }
+  if (ready) return { clipId: clip.id, cutout: ready, result: { clipId: clip.id, cached: true, model: ready.model, matte: ready.src }, note: "Background removed" };
+  const scope = projectWork.signal();
   const started = performance.now();
   // Starting the model takes a moment even when it is cached.
   const made = await job("cutout", clip, "Starting the background model", async (progress, signal) => {
@@ -778,15 +1002,94 @@ export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
     const [file] = await platform.adoptFiles([new File([m.bytes as Uint8Array<ArrayBuffer>], `matte-${asset.name.replace(/\.[^.]+$/, "")}.mp4`, { type: "video/mp4" })]);
     return { ...m, src: file.src };
   });
+  scope.throwIfAborted();
   const cutout: Cutout = { enabled: true, src: made.src, from: made.from, to: made.to, model: made.model };
   madeMattes.push({ ...cutout, asset: asset.proxy ?? asset.src });
-  const c = stillThere(clip.id);
-  store.edit("Remove background", (p) => ops.setCutout(p, c.id, cutout));
   const seconds = (performance.now() - started) / 1000;
   // The light model's edge is coarser: say why it was used.
   const light = made.fellBack ? " with the light model (this computer's graphics couldn't run the detailed one)" : "";
-  finish("cutout", `Background removed${light} · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`);
-  return { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src, ...(made.fellBack ? { fellBack: made.fellBack } : {}) };
+  return {
+    clipId: clip.id,
+    cutout,
+    result: { clipId: clip.id, cached: false, frames: made.frames, fps: +made.fps.toFixed(1), seconds: +seconds.toFixed(2), model: made.model, device: made.device, matte: made.src, ...(made.fellBack ? { fellBack: made.fellBack } : {}) },
+    note: `Background removed${light} · ${plural(made.frames, "frame")} in ${seconds.toFixed(1)} s`,
+  };
+}
+
+/**
+ * CapCut's Remove background: make the clip's background matte on this
+ * machine (once; progress and cancel like the other tools) and turn it
+ * on, as one undoable edit. A clip whose matte already exists, or whose
+ * asset has one covering it, turns on instantly.
+ */
+export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
+  const m = await matteFor(clipId);
+  const c = stillThere(m.clipId);
+  // A look change, like the inspector's: store.edit, because edit()'s
+  // settle would let the magnet close gaps on the main track.
+  store.edit("Remove background", (p) => ops.setCutout(p, c.id, m.cutout));
+  finish("cutout", m.note);
+  return m.result;
+}
+
+/** Pictures cut out this session, by source, so asking again is instant. */
+const cutPictures = new Map<string, Asset>();
+
+/** A picture clip's subject as a new picture with its background
+ * transparent (engine/cutout.ts cutOutImage), made once a session. */
+async function cutOutPicture(clip: ImageClip): Promise<{ asset: Asset; cached: boolean; model: string; note: string }> {
+  const asset = ops.getAsset(store.get().project, clip.assetId);
+  if (!asset) throw new Error("Its picture is missing");
+  const have = cutPictures.get(asset.src);
+  if (have) return { asset: have, cached: true, model: "", note: "Text placed behind the subject" };
+  const made = await job("cutout", clip as unknown as MediaClip, "Starting the background model", async (progress, signal) => {
+    const r = await cutOutImage(asset, (s) => (s.stage === "downloading" ? progress(s.progress, `Downloading the background model (${s.model.size})`) : progress(s.progress, `Cutting out ${asset.name}`)), signal);
+    const name = `${asset.name.replace(/\.[^.]+$/, "")} (cut out).png`;
+    const [file] = await platform.adoptFiles([new File([r.blob], name, { type: "image/png" })]);
+    return { ...r, file, name };
+  });
+  const cut: Asset = { id: uid("a"), kind: "image", name: made.name, src: made.file.src, size: made.file.size, duration: 0, width: made.width, height: made.height, hasVideo: true, hasAudio: false };
+  cutPictures.set(asset.src, cut);
+  return { asset: cut, cached: false, model: made.model, note: made.fellBack ? "Text placed behind the subject with the light model" : "Text placed behind the subject" };
+}
+
+/**
+ * The "text behind the subject" look: the clip's subject alone (a video's
+ * matte, made or reused as Remove background does; a picture cut out into
+ * a new picture), then, in one undo step, a copy of the clip showing only
+ * the subject above the titles (lib/ads.ts putBehindSubject). Titles
+ * below the clip are lifted above it first.
+ */
+export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {}): Promise<{ subjectClipId: Id; textClipIds: Id[]; cached: boolean; model: string }> {
+  const ids = opts.textIds ?? [];
+  const problem = behindProblem(store.get().project, clipId, ids);
+  if (problem) throw new Error(problem);
+  const scope = projectWork.signal();
+  const clip = ops.findClip(store.get().project, clipId)!.clip;
+  let cut: SubjectCut, cached: boolean, model: string, note: string;
+  if (clip.type === "image") {
+    const r = await cutOutPicture(clip);
+    ({ cached, model, note } = r);
+    cut = { asset: r.asset };
+  } else {
+    const m = await matteFor(clipId);
+    stillThere(m.clipId);
+    cut = { cutout: m.cutout };
+    cached = m.result.cached;
+    model = m.cutout.model;
+    note = m.note.replace("Background removed", "Text placed behind the subject");
+  }
+  scope.throwIfAborted();
+  const again = behindProblem(store.get().project, clipId, ids);
+  if (again) throw new Error(again);
+  let subject = "";
+  store.edit("Text behind subject", (p) => {
+    const r = putBehindSubject(p, clipId, ids, cut);
+    subject = r.subjectId;
+    return r.project;
+  });
+  finish("cutout", note);
+  return { subjectClipId: subject, textClipIds: ids, cached, model };
 }
 
 /** The inspector's switch: on makes or reuses the matte, off keeps it. */

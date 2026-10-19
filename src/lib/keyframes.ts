@@ -72,17 +72,49 @@ function bezier(x1: number, y1: number, x2: number, y2: number, x: number): numb
   return sy(t);
 }
 
+/** A damped spring released at the start, settling on 1 (ADR-062): decay
+ * 7 leaves 0.1% of the swing at the end, 2.25 swings overshoot ~21% once
+ * and ring out. The tiny residue is folded in so it lands exactly on 1. */
+function spring(x: number): number {
+  const a = 7, w = 2.25 * 2 * Math.PI;
+  const raw = (t: number) => 1 - Math.exp(-a * t) * (Math.cos(w * t) + (a / w) * Math.sin(w * t));
+  return raw(x) + x * (1 - raw(1));
+}
+
+/** Robert Penner's easeOutElastic and easeOutBounce, as easings.net
+ * draws them. */
+function elastic(x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  return 2 ** (-10 * x) * Math.sin((x * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
+}
+
+function bounce(x: number): number {
+  const n = 7.5625, d = 2.75;
+  if (x < 1 / d) return n * x * x;
+  if (x < 2 / d) return n * (x -= 1.5 / d) * x + 0.75;
+  if (x < 2.5 / d) return n * (x -= 2.25 / d) * x + 0.9375;
+  return n * (x -= 2.625 / d) * x + 0.984375;
+}
+
 const CURVES: Record<Exclude<Ease, unknown[]>, (x: number) => number> = {
   linear: (x) => x,
   hold: () => 0,
   easeIn: (x) => bezier(0.42, 0, 1, 1, x),
   easeOut: (x) => bezier(0, 0, 0.58, 1, x),
   easeInOut: (x) => bezier(0.42, 0, 0.58, 1, x),
+  spring,
+  elastic,
+  bounce,
 };
+
+/** The named eases a document may store (anything else is a bezier). */
+export const NAMED_EASES = Object.keys(CURVES) as Exclude<Ease, unknown[]>[];
 
 export function ease(kind: Ease | undefined, x: number): number {
   if (Array.isArray(kind)) return bezier(kind[0], kind[1], kind[2], kind[3], x);
-  return CURVES[kind ?? "linear"](x);
+  // A name from a newer file reads as linear rather than failing the frame.
+  return (CURVES[kind ?? "linear"] ?? CURVES.linear)(x);
 }
 
 /** Value of a keyframed track at frame `f` (relative to the clip start).

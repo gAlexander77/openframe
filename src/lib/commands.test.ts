@@ -20,6 +20,42 @@ describe("command registry", () => {
     }
   });
 
+  it("sets what the inspector could and agents could not: blend, key, canvas fill, copies", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    p = runCommand(p, "add_text", { text: "Sale", start: 1, duration: 2, style: { color: "#ffcc00" } });
+    const all = () => p.tracks.flatMap((t) => t.clips);
+    const v = all().find((c) => c.type === "video")!, t = all().find((c) => c.type === "text")!;
+    p = runCommand(p, "set_blend", { clip_ids: [v.id], mode: "screen" });
+    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ blend: "screen" });
+    p = runCommand(p, "set_chroma_key", { clip_ids: [v.id], similarity: 0.6 });
+    expect((all().find((c) => c.id === v.id) as { chromaKey: object }).chromaKey).toEqual({ enabled: true, color: "#00b140", similarity: 0.6, smoothness: 0.1, spill: 0.5 });
+    p = runCommand(p, "set_canvas_fill", { clip_ids: [v.id], fill: "blur", amount: 70 });
+    expect((all().find((c) => c.id === v.id) as { canvas: object }).canvas).toEqual({ type: "blur", amount: 70 });
+    p = runCommand(p, "set_canvas_fill", { clip_ids: [v.id], fill: "none" });
+    expect("canvas" in all().find((c) => c.id === v.id)!).toBe(false);
+    expect(() => runCommand(p, "set_chroma_key", { clip_ids: [t.id] })).toThrow("Only video and image");
+    p = runCommand(p, "set_fades", { clip_ids: [v.id], fade_in: 0.5, fade_out: 9 });
+    // 25 fps: half a second is 12.5, rounded to 13 frames; 9 s is capped at half the 4 s clip.
+    expect(all().find((c) => c.id === v.id)).toMatchObject({ fadeIn: 13, fadeOut: 50 });
+    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ fade_in: 0.52, fade_out: 2 });
+    expect(() => runCommand(p, "set_fades", { clip_ids: [t.id], fade_in: 1 })).toThrow("set_animation");
+    p = runCommand(p, "duplicate_clips", { clip_ids: [t.id], at: 5 });
+    const copy = all().find((c) => c.type === "text" && c.id !== t.id)!;
+    expect(copy.start).toBe(125);
+    expect((copy as { style: { color: string } }).style.color).toBe("#ffcc00");
+  });
+
+  it("changes the frame rate it says it does, and refuses odd rates", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 2, duration: 4 });
+    const q = runCommand(p, "set_project", { fps: "50" });
+    expect(q.fps).toEqual({ num: 50, den: 1 });
+    // The clip keeps its time: 2 s at 25 fps, still 2 s at 50.
+    expect(q.tracks[0].clips[0].start).toBe(100);
+    expect(() => runCommand(p, "set_project", { fps: "48" })).toThrow();
+  });
+
   it("builds an edit from seconds, the way an agent would", () => {
     let p = withAsset();
     p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 8 });

@@ -4,7 +4,8 @@
 // list_catalog. Adding an entry here (plus its shader, for effects and
 // transitions) is the whole job of adding one.
 
-import type { Adjust, ClipLabel } from "./project/types";
+import { KINETIC_ANIMATIONS, type TextAnimation } from "./kinetic";
+import type { Adjust, BlendMode, ClipLabel } from "./project/types";
 
 export interface ParamDef {
   label: string;
@@ -42,6 +43,9 @@ export interface AnimationDef {
   loop?: (phase: number) => Partial<AnimState>;
   /** Spring overshoot on the in-animation (pop). */
   overshoot?: boolean;
+  /** Titles only (lib/kinetic.ts): played by each letter, word or line,
+   * or drawn as a sweep. */
+  text?: TextAnimation;
 }
 
 export const ANIMATIONS: Record<string, AnimationDef> = {
@@ -68,9 +72,14 @@ export const ANIMATIONS: Record<string, AnimationDef> = {
     label: "Heartbeat",
     loop: (t) => ({ scale: 1 + 0.08 * Math.max(0, Math.sin(t * Math.PI * 4)) ** 8 }),
   },
+  // Kinetic typography: titles only, each letter, word or line on its own.
+  ...KINETIC_ANIMATIONS,
 };
 
 export const isLoopAnimation = (type: string) => !!ANIMATIONS[type]?.loop;
+
+/** Animations that only a title can play (typewriter, word pop...). */
+export const isTextAnimation = (type: string) => !!ANIMATIONS[type]?.text;
 
 // ---- clip labels -------------------------------------------------------------------
 
@@ -113,7 +122,13 @@ export const EFFECTS: Record<string, EffectDef> = {
   fisheye: { label: "Fisheye", category: "Distort", params: { amount: amount(40) } },
   shake: { label: "Camera shake", category: "Motion", params: { amount: amount(40), speed: { label: "Speed", min: 0, max: 100, default: 60 } } },
   zoomPulse: { label: "Zoom pulse", category: "Motion", params: { amount: amount(30), rate: { label: "Rate", unit: "/s", min: 0.25, max: 8, default: 2, step: 0.25 } } },
-  flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 4, step: 0.5 } } },
+  // A steady zoom about the center (amount = % larger); keyframed, the
+  // zoom punch of beat hits (lib/epic.ts).
+  zoom: { label: "Zoom", category: "Motion", params: { amount: amount(20) } },
+  // Strobing faster than 3 flashes a second can trigger seizures (WCAG
+  // 2.3.1), so the default stays under it; the range is kept for slow
+  // pulses' sake and the docs say why.
+  flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 2, step: 0.5 } } },
   glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 60 } } },
   lightLeak: { label: "Light leak", category: "Light", params: { amount: amount(55), speed: { label: "Speed", min: 0, max: 100, default: 30 } } },
   // CapCut's Reduce image noise: smooths grain and sensor noise but not
@@ -122,6 +137,23 @@ export const EFFECTS: Record<string, EffectDef> = {
   motionBlur: { label: "Motion blur", category: "Blur", params: { amount: amount(30), angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
   sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 } } },
   halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10 } } },
+  // Cinematic bars: black bands that letterbox the picture to a ratio
+  // (pillarbox on a wider canvas); amount slides them in, 0 to 100.
+  letterbox: { label: "Letterbox", category: "Stylize", params: { ratio: { label: "Ratio", unit: ":1", min: 1, max: 4, default: 2.39, step: 0.01 }, amount: amount(100) } },
+  // Premiere 26.3's Magnify: a round lens over part of the picture, for
+  // tutorials and screen recordings. Center from the top left, size as a
+  // share of the frame's height; keyframe the center to follow a pointer.
+  magnify: {
+    label: "Magnify",
+    category: "Distort",
+    params: {
+      x: { label: "Center X", unit: "%", min: 0, max: 100, default: 50 },
+      y: { label: "Center Y", unit: "%", min: 0, max: 100, default: 50 },
+      size: { label: "Size", unit: "%", min: 5, max: 100, default: 35 },
+      zoom: { label: "Zoom", unit: "%", min: 100, max: 400, default: 200 },
+      feather: { label: "Feather", unit: "%", min: 0, max: 100, default: 8 },
+    },
+  },
 };
 
 export function effectDefaults(type: string): Record<string, number> {
@@ -158,6 +190,11 @@ export const TRANSITIONS: Record<string, TransitionDef> = {
   pixelate: { label: "Pixelate", category: "Stylized" },
   glitch: { label: "Glitch", category: "Stylized" },
   flash: { label: "Flash", category: "Stylized" },
+  // For epic edits: fast moves smeared with motion blur (lib/epic.ts).
+  whipLeft: { label: "Whip pan left", category: "Motion" },
+  whipRight: { label: "Whip pan right", category: "Motion" },
+  zoomPunch: { label: "Zoom punch", category: "Motion" },
+  spinBlur: { label: "Spin blur", category: "Motion" },
 };
 
 // ---- filters (looks) ---------------------------------------------------------
@@ -219,3 +256,15 @@ export function catalogNames() {
     filters: Object.keys(FILTERS),
   };
 }
+
+/** Blend modes, as the inspector's Blend list shows them. */
+export const BLEND_MODES: [BlendMode, string][] = [
+  ["normal", "Normal"], ["darken", "Darken"], ["multiply", "Multiply"], ["colorBurn", "Color burn"],
+  ["lighten", "Lighten"], ["screen", "Screen"], ["colorDodge", "Color dodge"], ["add", "Add"],
+  ["overlay", "Overlay"], ["softLight", "Soft light"], ["hardLight", "Hard light"],
+  ["difference", "Difference"], ["exclusion", "Exclusion"],
+];
+
+/** Fonts every computer running the app can draw; installed and imported
+ * fonts come on top of these. */
+export const FONTS = ["Inter", "Segoe UI", "Arial", "Arial Black", "Helvetica", "Georgia", "Times New Roman", "Trebuchet MS", "Verdana", "Tahoma", "Impact", "Courier New", "Comic Sans MS"];

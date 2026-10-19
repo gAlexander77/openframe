@@ -13,7 +13,7 @@ import { store, useEditor } from "../state/store";
 import { keySnapTargets, toggleRefs } from "./ClipKeys";
 import { EaseCurve, EaseMenu } from "./EaseMenu";
 import { Splitter } from "./Splitter";
-import { tipFor } from "./TimelineToolbar";
+import { tipFor } from "../state/actions";
 import "./keyframes.css";
 
 const ROW_H = 22;

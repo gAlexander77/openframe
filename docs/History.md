@@ -690,3 +690,507 @@ was thin. This round fixes what it found.
   and the voices measured -12.5 LUFS with peaks past full scale: Web
   Audio's compressor already makes up about 0.6 of its own reduction, so
   the presets add none.
+
+## 2026-10-17 — The improvements branch (Claude Code)
+
+The owner asked for research into what is still missing and for
+Playwright checks that the styling and the workflows are right, all on a
+branch (`improvements`), committed locally and never pushed. A fresh
+desk survey (everyday gaps the 2026-10-16 survey missed) and a code audit
+(features only an agent can reach, keys no menu shows) set the order.
+
+- **Two drives had gone stale, not the product.** The baseline run of all
+  72 web drives on this branch failed two: `ai-tools` still expected mono
+  speech to read as dual mono (-14.2 LUFS; it reads -17.2 since mono is
+  measured as it plays) and `export-loudness` still expected export to
+  stop under the peak ceiling (a limiter holds the peaks now, and the note
+  says "normalized to"). Both changed with the product earlier the same
+  day; their drives were not rerun. Run the whole suite after changing
+  shared audio paths, not only the drive of the feature.
+- **Tracking** (ADR-054). A title or sticker follows a subject in the
+  video under it: a box on the viewer, template matching on small gray
+  frames, and position keyframes. The first run kept a key on every frame:
+  the tracker's sub-pixel jitter (a tenth of an analysis pixel is half a
+  canvas pixel at 320 px wide) beat the half-pixel thinning. A light
+  binomial smoothing first left 5 keys for the drive's 3 seconds.
+- **Remove media.** Nothing removed an imported file: no command, and
+  media cards had no menu. Cards now have one, and Manage media clears the
+  unused. The project summary counted "1 files" and included stickers the
+  library hides; it says "1 file" and counts what the library lists. A
+  screenshot taken right after opening a menu shows nothing: menus pop in
+  over 180 ms, so drives wait before capturing.
+- **Names and keys a screen reader and a rebinding could not see.** A
+  code audit found the Text tab's B, I and U buttons and its AA, aa and
+  Aa case buttons named only by those letters (a screen reader read "B");
+  they are drawn icons now, with names and tips. The trim tools' T, R, Y
+  and U were typed into the tool picker and went stale once a key was
+  rebound; the picker shows the key as bound. Add marker, the marker
+  arrows, Extract audio, Duplicate, Delete and the shortcuts button now
+  show their keys, through one `tipFor` beside `chordFor` (the player had
+  its own copy). Linkage, Preview axis and the keyframe panel were
+  toolbar-only; the Timeline and View menus list them.
+- **Several clips at once.** With two or more clips selected the
+  inspector offered only Duplicate, Delete, Align and the clipboards, so
+  setting ten clips' volume took ten edits. The rows the clips share now
+  set them all (Premiere 25's Properties panel), each keyed at its own
+  frame when keyframed, with "Mixed" where they disagree.
+- **Type where to go.** The player's timecode was display only; it is a
+  field on click now, read as Premiere reads it (1000 is 10:00, +15
+  moves fifteen frames). The markers' time field gets the same digit rule.
+- **Save a frame from the player.** A still was only in the export
+  dialog, at its resolution; the transport's camera button, the File menu
+  and Mod+Shift+E (Premiere's Export Frame) save the frame at the
+  project's size.
+- **What only an agent could do.** The code audit listed commands no
+  button reached. Now in the UI: a solid color layer (Adjustment tab), the
+  canvas size in pixels, deleting the markers a search shows (after Beat
+  markers drop forty), and aligning inside the title-safe line. Going the
+  other way, `set_project` said it set the frame rate and could not; it
+  takes one of the app's rates now. Add track stays agent-only on purpose:
+  the timeline tidies empty tracks away, as CapCut does, so a button would
+  add a track that vanished.
+- **A pipette on every color field.** The native color dialog on Windows
+  has no screen picker, so matching a title to the footage meant guessing
+  hex values. WebView2 has the EyeDropper API; each color field offers it
+  where it exists. Headless browsers have no screen to sample, so the
+  drive stands in a picker with a known answer.
+- **A styling sweep, and what it found.** A new drive checks 129 states
+  (every tab, menu and dialog at three window sizes, the smallest the
+  desktop window's minimum) for clipped and spilling text, overlapping and
+  cut-off controls, unnamed controls and contrast. Before this round's
+  fixes it found the project Name field unnamed; after them it caught
+  three regressions of this round: the new clickable timecode kept the
+  browser's gray button face (cyan on gray, 2.4:1), the media card's new
+  menu ignored Escape and clicks elsewhere (it now shares `useDismiss`
+  with the toolbar's menus), and the save-frame button pushed the total
+  timecode out of the transport at the minimum window (its container
+  breakpoints were remeasured). Its first versions were slow and noisy:
+  pressing Escape after every step deselected the clip, so each inspector
+  tab waited out a 30 s timeout, and a pairwise overlap check that
+  recomputed clipping per pair took ten minutes; memoized, it takes one.
+- **Sync audio by waveform.** A lav or recorder lines up with the camera's
+  own sound by cross-correlating onset envelopes (Beat markers' spectral
+  flux), then lands exact to the sample: the start on a whole frame, the
+  in-point taking up the rest. The correlation peak alone could not tell
+  one take from two: unrelated fixtures still peaked at 0.13 to 0.28, and a
+  short true overlap's best wrong lag rises too. The margin over the best
+  lag 0.15 s away separates them (0.46 to 0.74 against 0.06 at most), so
+  that is the confidence. Measured on the new fixture pair (one take
+  through a thin camera mic and a noisy lav, 1.37 s apart): 0.8 ms early.
+- **A guide for vertical apps.** Creators keep titles clear of TikTok's,
+  Reels' and Shorts' buttons and captions; Kapwing and others draw those
+  zones, no editor we imitate does. The guides menu has one now, shading
+  what the apps cover and snapping to the clear area. The apps publish
+  margins only for ads, and third-party guides disagree (TikTok's right
+  column is 100 to 180 px depending on the source), so the guide takes the
+  largest of each side; editors can still check the upload in each app.
+- **Rename and duplicate from the home screen.** Cards could only be
+  deleted; renaming meant opening the project, and a variant meant Save a
+  copy from inside it. Both are card buttons now, built on the platform's
+  load and save so desktop and web agree. A drive caught that the card,
+  itself a button, takes its children's labels into its own name, so
+  "Rename X" matched two elements until the drive asked for exact names.
+- **Auto reframe, from the tracker.** The "Coming soon" card works now:
+  the canvas takes 9:16, 1:1 or 4:5, the clip fills it and keeps the
+  subject at the center with smoothed, clamped position keys, the same
+  path Tracking pins layers to. No face or saliency model: the subject is
+  whatever starts in the middle, or a box the user places in the
+  inspector. The tracking module was split so both use one core
+  (`trackPath`, `applyTrack`).
+- **Fade a video's sound on the timeline.** The volume line and fade
+  knobs drew only on audio clips, so a video's own sound had to be faded
+  in the inspector. The selected video's waveform strip has them now
+  (Premiere's audio handles). The strip is 14 px for 48 dB, so the first
+  drive's 5 px drag took 17 dB off; the line now moves at a quarter of
+  the pointer there, and 5 px is 4 dB.
+- **A full run, from a snapshot.** All 82 web drives ran against a
+  detached copy of the branch on its own server, so editing could go on
+  meanwhile (a drive's page reloads if `src/` changes under it). 80
+  passed. `project-copy` looked up the Save a copy field by the name
+  "Project name", which the inspector's Name field now also has (the
+  sweep had found it unnamed); the drive asks the dialog now.
+  `clip-focus` checked focus straight after an arrow key, but focus moves
+  in the next animation frame (27 to 40 ms headless) and the extra
+  inspector work this round lost the race; it waits for focus now.
+- **Saved text styles.** A title's look could be copied with Paste
+  attributes but not kept: CapCut saves text presets and Premiere has
+  Text Styles. The Text tab saves a style under a name in this viewer's
+  storage, and a chip with an "Aa" sample (on black or white, whichever
+  its color reads on) gives it to a title in one undo step.
+- **Magnify.** Premiere 26.3's lens, used constantly in tutorials and
+  screen recordings, is one more effect shader: a circle whose picture is
+  scaled up about its center. The effect pass's v_uv runs bottom-up, so
+  Center Y (from the top) flips; the drive pins that by checking the lens
+  changes pixels near the top and none near the bottom. Its first check
+  read eight color bars as seven and sampled one bar both ways.
+- **Record the camera or the screen.** Tutorial makers record their
+  screen and themselves; CapCut has Record. Media > Record does both with
+  MediaRecorder, preferring MP4 (Chromium writes it since 126, so the take
+  seeks without a scan), and imports the take like a dropped file at the
+  playhead it started from. The voiceover recorder was not reused: its
+  worklet exists to place audio to the sample, and a video take has no
+  such need. The drive records the runner's fake camera and microphone;
+  the desktop app's permissions wait for a desktop check.
+- **Sound effects, made locally.** Whooshes, pops and dings are in almost
+  every short, and CapCut's are a cloud library. Eight are synthesized
+  from sines and seeded noise (a swept band-pass for the whooshes, a
+  pitch-dropping sine for the pop, inharmonic partials for the bell), so
+  each is the same on every machine and free of any license. The Audio
+  tab's empty drop box was 180 px tall and pushed them out of view; it is
+  one line there now. Record moved out of the Audio tab, where it made
+  little sense.
+- **Caption looks.** Styling captions meant styling one and pressing
+  Apply to all; CapCut and Resolve 20 offer templates. Six looks now sit
+  in the Captions tab, each a whole style and a height (so Boxed drops
+  the outline it replaces) with a CSS sample on its card, and Word pop
+  carries the spoken-word highlight. Per-word motion stays for later.
+- **Linked picture and sound.** Extract audio split the sound off for
+  good, so a moved shot left its sound behind unless linkage happened to
+  carry it. Groups already behaved like Premiere's links (select, move and
+  delete together, Alt takes one, trims per clip), so the extracted pair
+  is grouped, and Premiere's red out-of-sync counts show when one side
+  moves alone. One fix on the way: Alt-click did not narrow a selection
+  that already held the clip, which is exactly how one side of a selected
+  pair is taken. The drive's first clicks landed on the selected sound
+  clip's volume line, which takes the pointer in the clip's middle.
+- **Motion path.** Tracking and Auto reframe write position keys that
+  were only visible as diamonds in the keyframe panel. A selected picture
+  with position keys now shows Premiere's dashed motion path and key dots
+  on the viewer. Its drive learned that a level line has a zero-height
+  box, which Playwright calls hidden: it waits for the line to exist.
+- **Two audit leftovers.** Enter in a caption only finished the edit, a
+  ponytail note waiting on CapCut's split at the caret; `splitCaption`
+  now splits where the next word is spoken, keeping each half's word
+  timings, and the editor moves to the second half. And the transcript
+  card dropped reversed and speed-curved clips without a word; it says
+  how many it leaves out and why.
+
+## 2026-10-18 — Tools an AI model can make a professional video with (Claude Code)
+
+The owner asked for MCP tooling and features good enough for an AI
+model to make a professional ad or an epic edit, documented so any model
+knows how to use each tool, with research into how professionals work.
+A research pass ([[Pro workflows 2026-10-18]]) set the list; four agents
+built toolkits in parallel worktrees (epic edits, ads, compositing, sound
+and delivery) while the MCP layer was rebuilt here.
+
+- **The MCP guide** ([[ADR-055 The MCP guide is generated from the tools]]).
+  - A model now gets `help`, three prompts, guide resources and a
+    catalog of every name the tools accept.
+  - Before, `list_catalog` named four kinds of thing; the rest (templates,
+    looks, sound effects, fonts, speed presets, blend modes, `set_param`
+    paths) could not be discovered.
+  - The reference and the playbook are generated and tested. The test
+    caught a wrong example on its first run: `batch` steps take `command`,
+    not `name`.
+- **What the inspector could do and agents could not:** blend modes,
+  chroma key, canvas fill and duplicating clips. Also sound fades:
+  `set_param` takes them in frames, while every other time in the API is
+  seconds, a trap for any model; `set_fades` takes seconds.
+- **Safe areas** follow SMPTE ST 2046-1 now: 93% action and 90% title,
+  not the old 90% and 80%. The research caught it; "Inside title safe"
+  and the guides moved.
+- **Looking and checking like an editor.**
+  - `preview_media` shows an imported video's own frames, so a model can
+    choose moments before cutting.
+  - `preview_motion` shows consecutive frames of a stretch, with the
+    cuts and beat markers in it, so a model can see whether a cut lands
+    on the beat.
+  - `check_project` measures the playbook's rules and names the fixing
+    tool for each finding. Its drive breaks three rules, fixes them with
+    the named tools, and passes.
+  - The sheets had a transparent ground, so white-edged frames (the
+    framecode fixture) ran together. They sit on dark gray now.
+- **Epic edits, for agents first.** A beat-synced montage took dozens of
+  calls (mark beats, read markers, place every shot, keyframe every hit),
+  so agents did not make one. Six tools now cover it: `analyze_music`
+  (the song as data: beats, bars, phrases, sections, the drop),
+  `cut_to_beats`, `add_beat_hits`, `add_cinematic_bars`, `set_speed_ramp`
+  and `fit_music`, with whip, zoom punch and spin blur transitions, seven
+  more synthesized sounds and `end_at` so a riser peaks on the drop.
+  `scripts/drive/epic-edit.js` builds a 13 s edit through MCP calls alone;
+  every cut lands within 17 ms of a true beat.
+- **Downbeats come from where a song changes.** Accents alone (onset
+  strength, bass, how much the sound changes) picked the wrong beat of
+  four on the beat-128 loop, where nothing marks the bar: three ways of
+  measuring each beat at a different place in it (a frame grid, four
+  fixed spots, windows reaching into the next beat) made patterns that
+  repeat every few beats and read as accents. Measured across the whole
+  beat, inside it, and averaged as power, the loop has no accent; a part
+  changing (two bars against two bars, 3 dB or more) is the strongest
+  cue and votes first. Averaging band levels in dB let a silent band in
+  one beat (the last beat's cut-off hat) move a mean by 100 dB and invent
+  a section; power averages with a floor do not.
+- **A hit fades by its effects, not its opacity.** A flash made as an
+  adjustment layer fading out by opacity would cross-fade a zoom on the
+  same layer into a ghost of two pictures, so every hit keyframes its own
+  amounts (the flash: exposure, brightness and whites) from the peak on
+  the beat to nothing. Adjustment layers on their own track meant a title
+  added later landed among the hits (the first free track from the top);
+  new titles and media now skip tracks of adjustment layers.
+- **Flashes keep to three a second** (WCAG 2.3.1, Three Flashes): beat
+  hits drop the flash from a beat that would break the limit, counting
+  flashes already on the timeline, and the strobe effect starts at 2 a
+  second, its range kept.
+- **Zero crossings misread pitch in a mix.** Checking which second of a
+  song plays by its pitch, the export read 236 Hz for a 220 Hz tone: the
+  mix's faint hiss adds crossings. Autocorrelation reads 220.2. The sound
+  effects test had one `expect` per sample; with seven more sounds it took
+  over five seconds, and one `every` makes it two.
+- **What the contact sheet showed.** The end-to-end drive's first sheet
+  had the opening title across the subject's face and the same fractal
+  in five shots of sixteen (three fixtures share one picture). Moving the
+  title to the lower third and giving the one real take three framings
+  with `frame_region` punch-ins fixed both; agents with little footage can
+  do the same. A transition drive that put a color clip before a picture
+  found no cut to transition: color clips land on an overlay track, not
+  the main one, and `set_transition` answers `unchanged`.
+- **MCP without the desktop app.** `scripts/mcp-web.mjs` serves the web
+  build's MCP over HTTP from a headless browser ([[Driving the app]]), so
+  a model can be tested against the tools exactly as a client sees them.
+- **Sound design for trailers and ads** (ADR-060). A low-pass and
+  high-pass with a keyframeable cutoff, a reverb, an echo and a tape stop
+  on any clip with sound, one command each, so an agent can make the
+  "muffled build, open on the drop" in one call (`sweep`). Lessons: echo
+  and reverb sit after the clip's volume so their tails ring past its end
+  (Premiere's clip-effect tails stop at the edit, a known complaint), and
+  that forced a change to export, whose 10 s audio windows each started
+  silent: a reverb would have been cut at every window edge. Windows now
+  pre-roll by the longest tail. Web Audio's low/high-pass `Q` is a
+  resonance in dB, not a Q (-3.01 dB is Butterworth's 0.707). A cutoff
+  swept linearly in Hz sounds open almost at once, so keys move on a log
+  scale. The reverb's two sides first came out correlated 0.5: a Lehmer
+  generator seeded with s and 2s gives the same stream doubled. A tape
+  stop cannot be a playbackRate ramp, because the scheduler places
+  constant-rate chunks; it is the retimer's varispeed at a slowing clock,
+  and its drive checks the pitch at five moments against the map (within
+  1.3%).
+- **Delivery to a spec** (ADR-061). Export's limiter held sample peaks
+  while every broadcast spec is in dBTP; it now holds the 4x-oversampled
+  true peak (a 49-tap windowed sinc, as libebur128 makes its own rather
+  than BS.1770's example table; within 0.05 dB on EBU Tech 3341's tests),
+  and lands on the ceiling with no margin. -24 LKFS (ATSC A/85, -2 dBTP)
+  joined the targets. `measure_loudness` gives an agent integrated
+  loudness, Tech 3342 loudness range (written from its MATLAB listing),
+  maxima, true peak and pass or fail against online, EBU R128 or ATSC,
+  also as an export at a target would deliver it. Its drive checks each
+  figure against the exported WAV read independently, with the true peak
+  from `decodeAudioData` into a 192 kHz context. The first mix it built
+  summed to +3.1 dBFS and the WAV clipped, which no figure had said: the
+  report now flags `clips`.
+- **Kinetic typography, for ads.** Titles animate per letter, word or
+  line with a stagger and an order, the shape of After Effects' range
+  selectors rather than a fixed list: any catalog animation plays per
+  unit, and the presets (typewriter, word pop...) are catalog entries
+  with a unit. The plan says which animation runs and how far; the text
+  rasterizer draws each unit, so preview and export agree (the drive
+  compares the viewer with an exported still of the same frame). Three
+  things the first version got wrong: a highlight swept in vanished the
+  frame it finished, because a settled title rasterized as a plain still
+  (a sweep is part of the look at rest, so it is drawn at its end, still
+  cacheable); a title with a marker in and an underline out drew only one
+  of them; and per-unit frames, each a new raster, would have filled the
+  compositor's 256 keyed textures, so a moving frame is uploaded unkeyed.
+  A gradient fill must stay put while letters travel through it: each
+  unit maps the gradient's ends through the inverse of its own transform.
+- **A brand kit and ad elements.** The kit lives in the project (two fonts,
+  colors by role, logo variants), and the elements (end card, lower third,
+  offer badge, call to action, logo reveal) are ordinary text, solid and
+  picture clips laid out inside the title-safe area, so nothing new
+  renders or saves. Buttons and badges are text with a background box, not
+  masked solids: a box measured in canvas fractions stretches when the
+  frame changes shape, a text box does not. Two lessons from the drive's
+  screenshots: a glow effect left on a logo smears it (the flare now fades
+  to nothing), and a Details section that mounted collapsed before an
+  agent set the kit stayed collapsed (it remounts when a kit arrives).
+- **Text behind the subject.** A copy of the video with Remove
+  background's matte, on a track above the title, is the whole effect;
+  `removeBackground` was split so the matte can be made first and the copy
+  added in the same undo step. A dark line at the frame's top edge in the
+  first screenshot was the viewer's overlay, not the picture: with the
+  title hidden the copy over the original differs by at most 3 of 765.
+  Product ads are often stills, and a picture clip has no matte: the
+  model runs on the photo once and the copy is a new PNG with the
+  background transparent, so nothing new had to be taught to the
+  renderer.
+- **Deliverables without touching the master.** Every version (shape,
+  cut-down, textless) is a project document computed from the master
+  (`src/lib/versions.ts`) and handed to the exporter, which already takes
+  any project: nothing to restore afterwards, no undo steps, and the user
+  can keep editing. Refitting measured in pixels against the short side is
+  what keeps a 9:16 title the size it was on 16:9 (sizes are pixels at a
+  1080-tall frame, so a literal copy would be 1.8 times larger on a
+  1920-tall one); full-frame footage instead keeps covering, its push-in
+  keyframes scaled and clamped so no frame shows an empty band. A cut-down
+  keeps the opening and the end card and lifts the middle out of the
+  picture tracks only; the music is cut at the new end and faded, since a
+  jump in the music is worse than an early fade. On the web each file goes
+  through the save dialog, which a browser opens only after a click; the
+  drive stands in a dialog that keeps the bytes and ffprobe reads them.
+- **What the ad's contact sheets caught.** `ad-spot` makes a 15 s ad with
+  MCP calls alone and saves `preview_frames` and `export_versions check`
+  sheets to look at. They showed four things no assertion did: a yellow
+  kicker label vanished over a pink, busy shot (labels are boxed in the
+  accent color now, with a readable label color); a 16:9 headline refit to
+  9:16 kept its pixels and broke into a word a line (a refit line wider
+  than the new safe area now shrinks to fit, to three quarters at most);
+  a boxed title whose letters fade in showed its empty box first (the
+  box's opacity follows the most visible unit); and the lower third and
+  the end card's website ran small (60/38 and 40 pixels now). An agent
+  had no seconds-based fade for music either: fades are frames through
+  `set_param`. This branch added `set_audio_fade` for it while the MCP
+  lane added `set_fades` for the same reason; the merge kept one
+  (`set_fades`, each fade at most half the clip) so a model is not left
+  choosing between twins.
+- **Graphics and compositing** (ADR-056 to ADR-059, ADR-062). An agent making ads
+  and title sequences needed After Effects' basics: shape layers (a color
+  clip with a `shape`, drawn as signed distances, with gradient, outline
+  and Trim Paths' draw-on), track mattes (alpha, luma, inverted; the clip
+  above or a named one, not drawn itself), motion blur from movement
+  (placements sampled over the shutter, summed in half float), mirror and
+  repeat edges, spring, elastic and bounce eases, and seeded wiggle. Each
+  is a command; one drive builds a 6-second logo reveal and lower third
+  through MCP alone and saves its contact sheet. Lessons:
+  - *A solid drew nothing once motion blur was on.* Solids and shapes bind
+    no texture, so unit 0 still held the half-float target being summed
+    into; WebGL refused every draw with only a console warning ("Feedback
+    loop formed between Framebuffer and active Texture"). A layer with no
+    texture of its own binds a blank one.
+  - *`texture()` inside a loop cost a second of compile.* Averaging the
+    transition pass over the shutter in a loop of uniform length made
+    ANGLE's D3D compiler unroll it, every transition included: 1053 ms to
+    build the program. A separate program with only the moving transitions
+    and `textureLod` (no gradients, so the loop stays a loop) builds in
+    ~70 ms, and only when used. The shape code got its own build of the
+    layer shader for the same reason (it added ~45 ms to every compile).
+  - *Averages belong in float.* Additive blending into RGBA8, each sample
+    at 1/32 opacity, rounds every share: a flat area drifts by several
+    levels. The sum goes to an RGBA16F target and is copied back once.
+  - *Wiggle's amplitude was not reached.* Two octaves of Perlin noise
+    passed 0.75 of the amplitude one time in a thousand, so a 40-pixel
+    shake wandered 25. Scaled by 1.3 and clamped, the amplitude is a
+    ceiling the shake meets.
+  - *The color bars change rows at mid-height.* A drive comparing the
+    viewer (702 px wide) with export's still (854) at y 0.5 read the 75%
+    row in one and the 100% row in the other and looked like a 13% color
+    shift. Sample off row boundaries; the two paths then agree to the
+    level.
+  - *Agents cannot space letters.* The text style schema has no
+    `letterSpacing` (nor `lineHeight`), though the document does; the
+    lower-third drive wanted tracked capitals. Left for the text work.
+- **A blind test of the tools.** A fresh agent given only the MCP
+  connection, through `scripts/mcp-web.mjs`, made a 15 s ad and a 15 s epic
+  edit from the fixtures: 180 calls, both passing `check_project`, rated 5
+  and 6 out of 10 (synthetic footage, and a mix it could not measure; the
+  merged toolkits since add `measure_loudness`, ad end cards and a brand
+  kit). Its findings, fixed:
+  - `set_filter`, and `set_animation` on a picture, answered
+    `unchanged` though they worked. `describe_project` showed no filter,
+    and a picture has no `animIn` key until one is set. It shows both now.
+  - App tools skipped argument checks: `preview_frame {time}` drew a
+    black frame instead of an error. They are validated like commands
+    now, and an unknown argument names the known ones.
+  - A clip at 6.9 s for 2.05 s and the next at 8.95 s left one black
+    frame between them, because each length was rounded on its own.
+    Ends are rounded from start + duration now.
+  - `batch` steps can name clips earlier steps added ("$1"), so a title
+    and its animations are one call. An app tool in a batch says it runs
+    on its own.
+  - `add_voiceover` lines start on their words: the voice model pads
+    about 0.5 s of silence, which put every reported time and caption
+    early. A line's `caption` can differ from its words ("20% off").
+  - Also fixed:
+    - `add_sound_effect` takes a volume;
+    - ducking ignores sound effects (12 "voices" were whooshes);
+    - the keyframed-loudness refusal says what to do;
+    - `preview_media` shows photos;
+    - marker edits answer with the markers that changed, not all of them;
+    - `slip_clip`;
+    - epic hits are named like `add_effect`'s (rgbSplit, zoomBlur);
+    - the ad playbook puts the grade's adjustment clip down before
+      titles;
+    - the epic playbook says how to make a drop in a flat loop;
+    - the design rules stopped citing a file a client cannot read.
+  - Not done: undoing a voiceover leaves its speech files in the library;
+    beat markers outlive the music `fit_music` trims.
+- **A second blind test, on the merged build.** Another fresh agent made a
+  12 s 9:16 coffee ad and a 20 s epic edit: 245 calls, 6 errors, both
+  checks passing. Its findings, fixed here (the rest in the next commit):
+  - Effect parameters could not be changed. The guide said
+    `effects.<index>.<param>`, but paths are stored by effect id, and
+    `describe_project` showed no effect values, so every attempt answered
+    `unchanged`. Paths now take the stack index, the id or the effect
+    type. A wrong effect or parameter is an error that lists what exists,
+    and `describe_project` shows each effect's values.
+  - `check_project` measured a title's raster, margin included. An
+    outline or shadow adds room for itself, so turning one on flagged a
+    centered title and turning it off cleared it. The check measures the
+    letters (with any box or outline) now, and each finding gives the
+    measured box and which zone it crossed. The 9:16 zones are named:
+    top 14%, bottom 35%, left 11%, right 19%.
+  - Captions on 9:16 sat in the apps' caption zone, at y 0.36 or 0.25.
+    On a tall canvas they now sit at y 0.05, wrapped to the column
+    between the side rails, and the check covers captions.
+  - **Smaller fixes:**
+    - The size floor scales with the canvas: 40 px on a 1080 short side,
+      which is size 23 on 9:16.
+    - Countdown digits, half-beat cuts, and text on its own solid card
+      are no longer flagged.
+    - An export limited to -1 dBTP measured -0.9996 and failed its own
+      check. The limiter now aims 0.1 dB under the ceiling, and the
+      check compares at the precision it prints.
+    - The server says up front when this build cannot export.
+    - `move_track`, and `"$2.track"` in batch.
+    - `add_sound_effect` answers where the sound landed, as `clip_id`
+      like the rest of the API.
+    - Kinetic presets are in the catalog.
+    - The design rules give 9:16 text sizes.
+    - The social-short playbook no longer sends a model to a UI tab.
+  - `save_project_copy` saves the open project as a copy and opens it,
+    for a version that needs hand work after `export_versions`.
+- **Polish from the second blind test**, by a parallel agent:
+  - **Versions:** `export_versions` lays out a group, such as an ad
+    element, as one unit, anchored where it sat
+    ([[ADR-063 Versions fit a group as one unit]]). A 9:16 end card's
+    url, button and headline overlapped on 16:9, 1:1 and 4:5: text kept
+    its size against the short side while its spacing stayed a fraction
+    of the height.
+  - **Ad elements:**
+    - they hold the size floor (`minTextSize`, 40 px at a 1080 short
+      side), and `check_project` uses the same floor;
+    - the end card sits on the center line, the badge in its half;
+    - text over footage gets a thin outline as well as its shadow;
+    - the brand's label role went from 34 to 40.
+  - **Duotone** follows the standard hue wheel; it ran backwards. Older
+    projects' duotones look mirrored: hue h now looks as 360 - h did.
+  - **`preview_frame` and the contact sheets** render through the export
+    path at the width asked. They read the viewer's on-screen canvas,
+    222 pixels wide on 9:16.
+  - **`set_hsl` on an adjustment clip** worked all along: -30 is a 9
+    degree turn. Its description says so now.
+
+- **A launch film, edited through MCP** ([[Launch film through MCP 2026-10-18]]).
+  The owner asked for a new, fully professional promo, made with the MCP
+  tools, and for every limit met.
+  - **The film:** 56 s, 1080p, -14.0 LUFS. Kinetic type on a dark,
+    drifting light; UI footage in floating windows and macro push-ins;
+    one feature a bar of an original 120 BPM track; an agent filling a
+    timeline live; an end card. Two optional voiced versions (George,
+    Heart) on project copies.
+  - **How:** agents recorded crisp 2560x1440 footage of the web build
+    (CC0 and public-domain demo media) and synthesized the music; the
+    edit itself was about 90 MCP calls, most of them batches.
+  - **Limits found**, each with a suggested fix in the note:
+    - no soft light: blur tops out near 20 px, and there are no radial
+      gradients;
+    - one font weight, and one color per title;
+    - no picture shadow or perspective;
+    - `export_versions` cannot re-lay out keyframed precomps;
+    - keyframes on paths that do not animate are accepted silently;
+    - keyframe values are invisible in answers;
+    - `analyze_music` misses a drop and a breakdown;
+    - `check_project` reports contrast and shot counts it never looked
+      at;
+    - voice-to-music balance has to be computed by hand;
+    - answers grow with compounds;
+    - sound effects take one call each.
