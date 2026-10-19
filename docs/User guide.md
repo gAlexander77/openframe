@@ -125,10 +125,18 @@ backup of the footage. Save errors keep the dialog open for retry.
 
 ## Find and reuse imported media
 
-In **Media**, combine Search media with **All types** and **All usage** to
-find video, audio, images, used files or unused files. **Clear filters**
-shows all imports again. **Audio** uses the same browsing controls but only
-shows audio files. Stickers remain in their separate tab.
+In **Media**, combine Search media with **All types**, **All usage** and
+**All folders** to find video, audio, images, used or unused files, or one
+folder's files; the heart beside the view buttons shows **Favorites only**.
+**Clear filters** shows all imports again. **Audio** uses the same browsing
+controls but only shows audio files. Stickers remain in their separate tab.
+Before anything is imported, the tab shows only Import (and Record).
+
+In a narrow or short library (a small window, the library splitter pulled
+in, or the AI assistant open beside the editor) the tabs show their icons
+alone; point at one, or focus it, for its name. In the narrowest library,
+the categories of Text, Stickers, Effects, Transitions and Filters move from
+the side column to a row above the cards.
 
 Choose **Import order**, a name sort, or shortest/longest source duration.
 Name sorting puts numbered shots in natural order (Shot2 before Shot10).
@@ -136,7 +144,8 @@ Images have no fixed source duration, so they sort after timed media in
 both duration directions. Sorting never rearranges timeline clips.
 
 Switch to **List view** beside the file count to see duration, dimensions,
-frame rate and file size when available. Click a **timeline uses** count
+frame rate and file size when available, with the folder, the timeline uses
+and Preview on one line under them. Click a **timeline uses** count
 to select every referencing clip and seek the earliest one. Counts include
 disabled clips and references on hidden, muted or locked tracks; **Unused**
 means no timeline reference. It does not remove any source files.
@@ -425,7 +434,8 @@ the preview closes. Image previews offer **Add image** instead.
 
 In **Manage media → Organize folders**, create a folder, then choose it beside
 each file. Mark **Favorite** for your preferred takes. Filter the library by
-folder or **Favorites only**, combined with its other filters. Rename and
+folder (**All folders**, beside the other filters) or **Favorites only** (the
+heart beside the view buttons), combined with its other filters. Rename and
 delete folders in the same section; deleting a folder unfiles its media and
 keeps all clips and source files. Organization is saved with this project and
 can be undone. These are virtual folders, so footage stays on disk where it is.

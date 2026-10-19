@@ -1,24 +1,29 @@
 .library-panel { display: grid; grid-template-rows: auto 1fr; }
 
-/* Icon-over-label tabs wrap into compact rows; every destination stays visible. */
+/* Icon-over-label tabs in balanced rows, every destination visible.
+   LibraryPanel sets the columns from the panel's size (lib/libraryLayout.ts)
+   and, where labels would need a third row, shows icons alone (.icons),
+   each named by its tooltip. */
 .lib-tabs {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(60px, 1fr)); gap: 0;
   padding: 6px 4px 0;
   border-bottom: 1px solid var(--line);
-  overflow: visible;
 }
-.lib-tabs::-webkit-scrollbar { display: none; }
 .lib-tab {
   display: grid; justify-items: center; gap: 3px;
-  min-width: 0; padding: 5px 4px 7px;
+  min-width: 0; padding: 5px 2px 7px;
   border: 0; border-radius: var(--radius) var(--radius) 0 0;
   background: transparent; color: var(--text-2);
   font-size: var(--fs-xs); white-space: nowrap;
   position: relative;
   transition: color var(--t-fast), background var(--t-fast);
 }
+/* A wider system font than Segoe UI ellipsizes rather than spill. */
+.lib-tab span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.lib-tabs.icons .lib-tab { padding: 7px 0 9px; }
+.lib-tabs.icons .lib-tab span { display: none; }
 .lib-tab:hover { color: var(--text-1); background: var(--bg-2); }
-/* Inset: the strip scrolls (overflow-x), which clipped the ring's bottom. */
+/* Inset: on the outer tabs an outset ring met the panel's clipped edge. */
 .lib-tab:focus-visible { outline-offset: -2px; }
 .lib-tab.on { color: var(--accent); }
 .lib-tab.on::after {
@@ -29,12 +34,17 @@
 @keyframes tab-in { from { transform: scaleX(0.2); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .lib-body { min-height: 0; overflow: hidden; animation: fade-in var(--t-med) ease-out; }
-.lib-split { display: grid; grid-template-columns: 92px 1fr; height: 100%; }
+.lib-split { display: grid; grid-template-columns: 92px minmax(0, 1fr); height: 100%; }
 .lib-subnav {
   display: flex; flex-direction: column; gap: 2px;
   padding: 10px 6px; border-right: 1px solid var(--line);
   overflow-y: auto;
 }
+/* A narrow panel (LibraryPanel's .narrow, under 300 px) puts the categories
+   above the cards as wrapping chips: beside them, the 92 px column left
+   the cards one column and the search box a sliver. */
+.library-panel.narrow .lib-split { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.library-panel.narrow .lib-subnav { flex-flow: row wrap; padding: 8px 12px; border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
 /* min-height, not height: a two-word category ("Black & white") wraps in
    the 92 px column and spilled out of a fixed 26 px button. */
 .lib-subnav button {
@@ -46,14 +56,15 @@
 .lib-subnav button.on { color: var(--accent); background: var(--accent-soft); }
 
 .lib-content { height: 100%; overflow-y: auto; padding: 10px 12px 16px; }
-.lib-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+/* The search box drops to its own line before it gets too narrow to type in. */
+.lib-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .import-btn { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .import-btn:hover { background: rgb(0 193 205 / 25%); }
 /* Recording from the camera or the screen: a pulsing dot and the time. */
 .rec-live { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .rec-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: rec-pulse 1s ease-in-out infinite alternate; }
 @keyframes rec-pulse { to { opacity: 0.35; } }
-.lib-search { flex: 1; position: relative; display: flex; align-items: center; }
+.lib-search { flex: 1 1 100px; min-width: 0; position: relative; display: flex; align-items: center; }
 .lib-search svg { position: absolute; left: 8px; color: var(--text-3); pointer-events: none; }
 .lib-search .field { width: 100%; height: 28px; padding-left: 28px; }
 .lib-hint { margin: 0 0 10px; color: var(--text-3); font-size: var(--fs-xs); }
@@ -78,7 +89,10 @@
 /* ---- cards ------------------------------------------------------------------- */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 10px; }
 .card-grid.small { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
-.card { display: grid; gap: 5px; cursor: grab; min-width: 0; animation: rise-in var(--t-med) var(--ease-out) both; }
+/* align-content: a grid row is as tall as its tallest card (one with a
+   folder line), and the others spread the extra height between their
+   rows, so names and Preview links in one row sat at different heights. */
+.card { display: grid; align-content: start; gap: 5px; cursor: grab; min-width: 0; animation: rise-in var(--t-med) var(--ease-out) both; }
 .card:active { cursor: grabbing; }
 .card-thumb {
   position: relative; aspect-ratio: 16 / 10;
@@ -120,21 +134,38 @@
 
 /* Media organization remains a view over imports, shared by Media and Audio. */
 .media-browser .lib-toolbar { margin-bottom: 8px; }
-.media-browser .lib-search { min-width: 0; }
+/* Four filters (type, usage, folder, sort) in one row from 440 px, else
+   two by two, never three and one: each is at least a quarter of the row
+   when wide and half when not, the switch made by a factor of 999 on the
+   distance to 440 px (clamp picks one end). */
 .media-filters { display: flex; flex-wrap: wrap; gap: 6px; }
-.media-filters .field { flex: 1 1 88px; min-width: 0; height: 28px; font-size: var(--fs-xs); }
+.media-filters .field { flex: 1 1 0; min-width: clamp(calc(25% - 5px), (440px - 100%) * 999, calc(50% - 3px)); height: 28px; font-size: var(--fs-xs); }
 .media-results { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 8px 0 10px; color: var(--text-3); font-size: var(--fs-xs); }
-.media-views { display: flex; margin-left: auto; }
-.media-views .icon-btn { width: 26px; height: 26px; }
-.media-views [aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+/* Favorites only, then grid or list, kept together at the row's end. */
+.media-toggles, .media-views { display: flex; }
+.media-toggles { margin-left: auto; }
+.media-toggles .icon-btn { width: 26px; height: 26px; }
+.media-toggles [aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 .media-clear, .media-uses { width: fit-content; padding: 0; border: 0; background: none; color: var(--accent); font-size: var(--fs-xs); text-align: left; }
 .media-clear:hover, .media-uses:hover { text-decoration: underline; }
-.media-info { display: grid; gap: 3px; min-width: 0; }
+.media-info { display: grid; align-content: start; gap: 3px; min-width: 0; }
+.media-details { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+/* The folder is one line; its tooltip names it when cut. */
+.media-folder { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .media-list { display: grid; gap: 6px; }
 .media-list .media-card { grid-template-columns: 56px minmax(0, 1fr) 26px; align-items: center; gap: 10px; padding: 8px; border-radius: var(--radius-sm); background: var(--bg-inset); }
 .media-list .card-thumb { width: 56px; height: 44px; aspect-ratio: auto; }
 .media-list .card-label { color: var(--text-1); }
-.media-details { color: var(--text-3); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+/* A list row: the name and its details, then the folder, the timeline uses
+   and Preview on one line. A line each made a row taller than a card. */
+.media-list .media-info { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 10px; }
+.media-list .card-label, .media-list .card-rename, .media-list .media-meta { flex: 1 0 100%; }
+.media-list .media-info > * { order: 2; }
+.media-list .media-info > :is(.card-label, .card-rename) { order: 0; }
+.media-list .media-meta { order: 1; }
+.media-list .media-folder { flex: 0 1 auto; }
+.media-list :is(.media-uses, .media-preview-button) { flex: none; }
+.media-list .media-preview-button { order: 3; padding: 0; }
 .media-add { width: 26px; height: 26px; color: var(--accent); }
 
 /* Card pictures are rendered by the engine (ADR-026): a still that fades in,
@@ -208,8 +239,10 @@
 .sfx-play { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; background: rgb(0 0 0 / 35%); color: var(--text-1); }
 .sfx-play:hover { background: var(--accent); color: var(--accent-ink); }
 
-/* Caption looks: a sample of each on a dark tile, its name under it. */
-.cap-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+/* Caption looks: a sample of each on a dark tile, its name under it. At
+   104 px the six fill one row in the widest library and two even rows of
+   three at the default 1600 px window (at 120 they made five and one). */
+.cap-looks { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
 .cap-look { display: grid; gap: 6px; justify-items: center; padding: 10px 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-2); color: var(--text-2); font-size: var(--fs-xs); }
 .cap-look:hover { border-color: var(--accent); }
 .cap-look-sample { font-size: 15px; line-height: 1.2; white-space: nowrap; }

@@ -77,7 +77,7 @@ function TargetBanner() {
       <div className={`ai-target-thumb${clip.type === "audio" ? " audio" : ""}`}>{poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={15} strokeWidth={1.6} />}</div>
       <div className="ai-target-text">
         <span className="ai-target-label">Selected clip</span>
-        <strong title={asset?.name}>{asset?.name ?? "Missing media"}</strong>
+        <strong data-cut>{asset?.name ?? "Missing media"}</strong>
       </div>
       <span className="chip-inline num">{formatDuration(framesToSeconds(clip.duration, p.fps))}</span>
     </div>
@@ -131,8 +131,10 @@ function ToolCard(props: { tool: ToolId; icon: Icon; title: string; blurb: strin
           </>
         ) : (
           <>
+            {/* A reason why not can be long: two lines, then its tooltip. */}
             <span className={`ai-status${result && !reason ? " done" : ""}`}>
-              {reason ?? (result ? <><Check size={13} strokeWidth={2.2} /> {result}</> : "Ready")}
+              {!reason && result && <Check size={13} strokeWidth={2.2} />}
+              <span className="ai-status-text" data-cut>{reason ?? (result || "Ready")}</span>
             </span>
             <button className="btn primary ai-run" disabled={!!reason} onClick={() => void RUN[tool]().catch(() => {})}>
               {props.action}
@@ -159,12 +161,16 @@ function LinkCard(props: { icon: Icon; title: string; blurb: string; action?: st
           </h3>
           <p>{props.blurb}</p>
         </div>
-        {props.action && (
+      </div>
+      {/* In the foot, where every tool card has its button: in the head it
+          squeezed the blurb to three lines in a narrow panel. */}
+      {props.action && (
+        <div className="ai-card-foot">
           <button className="btn ai-open" onClick={props.onClick}>
             {props.action}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }

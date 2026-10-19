@@ -1132,7 +1132,13 @@ results include an icon, title and next-step hint. See [[Icons]] for the mapping
 
 ### Compact layouts and keyboard controls
 
-Library tabs wrap with their icons and labels, keeping every destination visible.
+Library tabs lay out in balanced rows (all eleven in one row at 2560 px, six
+and five below), keeping every destination visible; where labels would need a
+third row or a quarter of a short panel, the tabs show icons alone, named by
+tooltips (`src/lib/libraryLayout.ts`). Below 300 px the catalog categories
+move above the cards as wrapping chips, so cards keep two columns. The media
+browser's folder filter sits with the others and Favorites only is a heart
+toggle beside the views; AI tool cards tile two across in a wide library.
 Details ratios and canvas dimensions fit the narrow inspector; text style, case
 and audio channel choices wrap between whole buttons. Segmented radio controls
 support arrow keys, Home and End with one tab stop. Fit, Fill and Stretch share

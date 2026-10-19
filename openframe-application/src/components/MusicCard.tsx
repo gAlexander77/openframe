@@ -104,7 +104,7 @@ export function MusicCard() {
             <option key={id} value={id}>{STYLES[id].label}</option>
           ))}
         </select>
-        <small title={blurb}>{blurb}</small>
+        <small data-cut>{blurb}</small>
       </label>
       <div className="music-grid">
         <label className="music-field">
@@ -162,7 +162,7 @@ export function MusicCard() {
           </>
         ) : (
           <>
-            <span className="music-status" title={status}>{status || "Ready"}</span>
+            <span className="music-status" data-cut>{status || "Ready"}</span>
             <button className="btn" onClick={() => void preview()}>
               {playing ? <Square size={13} /> : <Play size={13} />} {playing ? "Stop" : "Preview"}
             </button>

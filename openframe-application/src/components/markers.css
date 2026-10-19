@@ -1,9 +1,8 @@
 /* Scrolls when the top row is short (proportional layout, small windows):
    hidden clipped the editor's buttons under the timeline. */
 .markers-tab { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
-.marker-toolbar, .marker-search, .marker-actions { display: flex; align-items: center; gap: 6px; }
+.marker-toolbar, .marker-search, .marker-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .marker-count { margin-left: auto; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
-.marker-search .lib-search { min-width: 0; }
 .marker-search select { max-width: 100px; height: 28px; font-size: var(--fs-xs); }
 .marker-list { flex: 1 0 132px; min-height: 132px; overflow-y: auto; }
 .marker-row { display: flex; align-items: center; gap: 4px; padding-right: 4px; border-radius: var(--radius-sm); }
@@ -11,7 +10,9 @@
 .marker-row.on { background: var(--accent-soft); }
 .marker-jump { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 7px; border: 0; text-align: left; background: transparent; color: var(--text-1); }
 .marker-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 50%; }
-.marker-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.marker-note { min-width: 0; }
+/* The note on one line; its tooltip shows it whole when it is cut. */
+.marker-note > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .marker-note small { display: block; margin-top: 3px; color: var(--text-3); font-size: var(--fs-xs); }
 .marker-editor { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); overflow-y: visible; flex-shrink: 0; }
 .marker-editor label { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); }
@@ -39,6 +40,7 @@
 .marker-export-checks .lib-hint { margin-top: 8px; }
 .marker-export footer { justify-content: flex-end; margin-top: 14px; }
 
-/* Export and Delete act on what the search and color filter show. */
-.marker-bulk { display: flex; gap: 6px; }
-.marker-bulk .btn { flex: 1; }
+/* Export and Delete act on what the search and color filter show; in the
+   narrowest panel they stack rather than push the tab sideways. */
+.marker-bulk { display: flex; flex-wrap: wrap; gap: 6px; }
+.marker-bulk .btn { flex: 1 1 auto; }
