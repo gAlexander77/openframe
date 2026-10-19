@@ -55,7 +55,7 @@ import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRati
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
-import { AD_ELEMENTS, addAdElement, SPOTS, type AdBackground, type AdElement, type Spot } from "./ads";
+import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
 import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
@@ -212,7 +212,7 @@ export const TEXT_STYLE_SCHEMA = S.obj({
   accent: S.str("Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default"),
   letterSpacing: S.num("Pixels between letters at 1080p (wide-tracked labels: 6 to 20)", { minimum: -20, maximum: 200 }),
   lineHeight: S.num("Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines)", { minimum: 0.5, maximum: 3 }),
-  maxWidth: S.num("Lines wrap past this fraction of the canvas width (default 0.9)", { minimum: 0.1, maximum: 1 }),
+  maxWidth: S.num("Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons)", { minimum: 0.1, maximum: 1 }),
 }, [], "The text's look; fields left out keep their value (or the default look for new text)");
 
 /** A gradient's radial fields, shared by add_shape and set_shape. */
@@ -424,7 +424,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom).",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -440,7 +440,11 @@ export const COMMANDS: Command[] = [
     ),
     run: (p, a) => {
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
-      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), styleFrom(base, (a.style ?? {}) as Partial<TextStyle>));
+      const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
+      // A long line wraps inside the safe area where it stands, instead of
+      // running off the frame (9:16: off the apps' column).
+      style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
+      let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);

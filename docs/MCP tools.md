@@ -1445,7 +1445,8 @@ Titles, templates, stickers, captions and the transcript.
 
 ### add_text
 
-Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom).
+Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; 
+ breaks a line where you choose.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1490,7 +1491,7 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id |
 
@@ -1544,7 +1545,7 @@ Change a text clip's words and/or style.
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 
 Example:
 
@@ -1681,7 +1682,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `y` | number |  | Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons |
 | `replace` | boolean |  | Remove existing captions first |
 
@@ -2010,7 +2011,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `caption_style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
 | `caption_style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
 | `caption_style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width (default 0.9) (0.1..1) |
+| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
 
 Example:

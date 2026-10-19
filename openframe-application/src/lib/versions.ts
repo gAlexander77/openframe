@@ -245,10 +245,11 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     if (grouped) return { ...c, style: { ...scaleStyle(c.style, k, Infinity), maxWidth: +((c.style.maxWidth * a.w * short(b)) / short(a) / b.w).toFixed(5) } };
     const s = safeArea(q);
     const width = room ?? 1 - s.left - s.right;
-    // The new frame's wrap width (titleWrap's, for where it lands): a title
-    // the master let run to its default 0.9 wraps within the new safe
-    // column; one set narrower keeps its width.
-    const fitStyle = (kk: number) => scaleStyle(c.style, kk, +width.toFixed(3));
+    // The new frame's wrap width (titleWrap's, for where it lands), or the
+    // title's own when narrower: its pixels against the short side, as its
+    // type's (a fraction of 1920 is not the same fraction of 1080).
+    const own = (c.style.maxWidth * a.w * short(b)) / short(a) / b.w;
+    const fitStyle = (kk: number) => ({ ...scaleStyle(c.style, kk, Infinity), maxWidth: +Math.min(own, width).toFixed(3) });
     const wide = fittedSize(q, { ...c, style: { ...fitStyle(k), maxWidth: 1 } }).w;
     let kk = k * (wide > width * b.w ? Math.max(0.75, (width * b.w) / wide) : 1);
     // A word that cannot wrap (a 170-size wordmark on 9:16) still has to

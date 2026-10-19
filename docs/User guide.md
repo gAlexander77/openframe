@@ -428,6 +428,14 @@ Every use keeps its cuts and effects; Undo restores the old location. Choose
 the same media kind with the original audio/video streams and at least the
 original duration. When a proxy exists, the check reports that editing copy.
 
+## Titles that fit the frame
+
+A new title's lines wrap inside the frame's safe area: on a vertical (9:16)
+project, inside the column the TikTok, Reels and Shorts buttons leave, so a
+long line breaks onto the next instead of running under them. To break a
+line where you want, press Enter while editing the title on the canvas.
+Titles made before this keep the width they had.
+
 ## Inline title styling
 
 In the text inspector, expand **Style range**, choose a word, and set its color or weight. Clear word style restores that word to the title style. Agents can use `style_text_range` with character offsets or a literal match, including all occurrences, to apply color, gradient, weight, italic, underline, or size scale. Ranges use UTF-16 offsets with an exclusive end. Typing shifts and trims ranges; inserted characters inside a range inherit it. Run colors override animated base color. The inline editor preserves styling while typing; its caret and selection use the base font, so use the word picker for precise mixed-font range styling. Preview, alignment, text checks and version exports use the same run-aware raster layout.

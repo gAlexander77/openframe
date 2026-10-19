@@ -546,7 +546,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
-  stroke, shadow, background box, in/out/loop animations. **Case** (CapCut's
+  stroke, shadow, background box, in/out/loop animations. **A new title
+  wraps inside the safe area** where it stands (`titleWrap`): a centered
+  one within 90% of the width (the old default, so 16:9 is unchanged), on
+  9:16 within the column the apps' buttons leave (0.62 centered, 0.7 on the
+  column's own center), one off center within twice the room on its nearer
+  side, so a long line wraps instead of running off. A width asked for is
+  kept; titles already made keep theirs, so older projects draw the same;
+  `export_versions` gives the titles it lays out again the new frame's
+  width. A word wider than that still runs past it (`check_project` says
+  so). **Case** (CapCut's
   Aa / AA / aa): shown as typed, UPPER, lower or Title, the typed words
   kept, on the canvas and in the inline editor alike.
 - **Font weight** (100 thin to 900 black): the Text tab's Weight list

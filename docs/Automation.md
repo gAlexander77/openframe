@@ -333,6 +333,12 @@ Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
   shutter and swooshUp; `set_transition` takes whipLeft, whipRight,
   zoomPunch and spinBlur.
 
+`add_text` (and a title added from the library) wraps inside the safe area
+where the title stands unless `style.maxWidth` says otherwise: 0.9 of the
+width centered (as before), on 9:16 the apps' column (0.62 centered), off
+center twice the room on the nearer side. Titles already made keep their
+width.
+
 Text styles take `background` (`{"color": "rgba(0,0,0,0.6)", "padding":
 16, "radius": 8}`), `stroke` and `shadow`, so a title reads over busy
 footage; an empty color removes one. Ad looks: `glow` (`{"color":
