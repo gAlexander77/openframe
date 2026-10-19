@@ -35,10 +35,14 @@ import type {
   TextStyle,
   Track,
   TrackKind,
+  TrackRole,
   Transform,
   VideoClip,
   Visual,
 } from "./types";
+
+/** Every stem an audio track can be (Track.role). */
+export const TRACK_ROLES: TrackRole[] = ["dialog", "music", "effects", "ambience"];
 
 export function uid(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`;
@@ -485,6 +489,7 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
       ...(t.solo !== undefined ? { solo: t.solo === true } : {}),
       height: t.height === "small" || t.height === "large" ? t.height : undefined,
       color: typeof t.color === "string" && ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "pink"].includes(t.color) ? t.color as Track["color"] : undefined,
+      ...(kind === "audio" && typeof t.role === "string" && (TRACK_ROLES as string[]).includes(t.role) ? { role: t.role as TrackRole } : {}),
     };
   });
   if (!tracks.some((t) => t.main)) {

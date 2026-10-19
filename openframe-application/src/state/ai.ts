@@ -699,7 +699,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
   const fps = store.get().project.fps;
   let voices = voicesUnder(clip);
   if (target !== undefined) {
-    const dialogIds = new Set(original.tracks.filter(isDialog).flatMap(t => t.clips.map(c => c.id)));
+    const dialogIds = new Set(original.tracks.filter(t => isDialog(t, original)).flatMap(t => t.clips.map(c => c.id)));
     if (dialogIds.size) voices = voices.filter(v => dialogIds.has(v.clip.id));
   }
   if (!voices.length) {

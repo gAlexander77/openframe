@@ -3,6 +3,7 @@
 // current project as a dry run and draws the difference (landing), so the
 // preview never shows a spot the drop does not use (UX-12, UX-13).
 
+import { assetRole, roleTrack } from "./audioRoles";
 import { clipForAsset, createTrack } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Asset, Clip, Id, Project, Track } from "./project/types";
@@ -79,7 +80,13 @@ export function placeAsset(
   if (range) clip = withSourceRange(clip, asset, range, p.fps);
   const clipId = clip.id;
   if (asset.kind === "audio") {
-    let track = to && to !== "overlay" ? ops.findTrack(p, to) : p.tracks.find((t) => t.kind === "audio" && !t.locked && (!!mode || ops.rangeFree(t, start, clip.duration)));
+    if (!mode && (!to || to === "overlay")) {
+      // By what the sound is (ADR-098): a voice on the voiceover, an
+      // effect on the effects track, an imported song on a music track.
+      const r = roleTrack(p, assetRole(asset), clip.start, clip.duration);
+      return { project: ops.addClip(r.project, r.trackId, clip, "overwrite"), clipId };
+    }
+    let track = to && to !== "overlay" ? ops.findTrack(p, to) : p.tracks.find((t) => t.kind === "audio" && !t.locked);
     if (!track || track.kind !== "audio") {
       track = createTrack("audio", "Audio");
       p = ops.addTrack(p, track);

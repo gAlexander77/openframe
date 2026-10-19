@@ -380,6 +380,26 @@ music** card makes an original score on your computer, free to use.
 Agents get more control through `generate_music` (sections with fixed
 times, the loudness, the stems on their own tracks); see [[Automation]].
 
+## Add sound effects and natural sound
+
+The **Audio** tab also lists **Sound effects** (whooshes, hits, risers)
+and **Ambience**: wind, a stream, a waterfall, surf, rain, a rocket's
+rumble, city traffic and room tone, made on your computer and free to
+use. Play a card to hear it first.
+
+- A sound effect lands at the playhead on the **SFX** track (made the
+  first time), never in a gap on your voiceover or your music; sounds
+  that overlap get a second SFX track.
+- An ambience bed lands on the **Ambience** track from the playhead (or
+  where you drop it) to the end of the timeline, fading in and out. It
+  moves like a recording (gusts come and go, waves break, cars pass) and
+  can be trimmed like any audio clip; its level sits under a
+  voice as it is.
+
+Each audio track is a stem (dialog, music, effects or ambience), which
+the loudness check and agents use; a track the app made knows which it
+is, and an imported song counts as music.
+
 ## About OpenFrame
 
 **Help → About OpenFrame** shows the version, the license (GPL-3.0-only:

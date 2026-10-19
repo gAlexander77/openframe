@@ -23,6 +23,8 @@ import {
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
+import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
+import { TRACK_ROLES } from "./project/defaults";
 import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
@@ -190,14 +192,19 @@ function trackOrThrow(p: Project, id: unknown): Track {
  * of the right kind with room, else a new track. */
 function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] {
   if (trackId !== undefined) return [p, trackOrThrow(p, trackId).id];
-  const kind = clip.type === "audio" ? "audio" : "video";
+  if (clip.type === "audio") {
+    // By what the sound is (ADR-098): an imported song never lands in a
+    // gap on the voiceover or the effects track.
+    const r = roleTrack(p, assetRole(ops.getAsset(p, clip.assetId)), clip.start, clip.duration);
+    return [r.project, r.trackId];
+  }
   const media = clip.type === "video" || clip.type === "image";
   const main = ops.mainTrack(p);
   if (media && ops.rangeFree(main, clip.start, clip.duration)) return [p, main.id];
   // Tracks of adjustment layers (beat hits, bars, grades) take only more of them.
-  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
+  const free = p.tracks.find((t) => t.kind === "video" && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
   if (free) return [p, free.id];
-  const fresh = createTrack(kind, kind === "audio" ? "Audio" : "Overlay");
+  const fresh = createTrack("video", "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
 }
 
@@ -366,13 +373,16 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_track",
-    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom.",
-    input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name") }, ["kind"]),
-    run: (p, a) => ops.addTrack(p, createTrack(a.kind === "audio" ? "audio" : "video", String(a.name ?? (a.kind === "audio" ? "Audio" : "Overlay")))),
+    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
+    input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name"), role: S.str("Audio tracks: the stem it is", { enum: TRACK_ROLES }) }, ["kind"]),
+    run: (p, a) => {
+      if (a.role !== undefined && a.kind !== "audio") throw new CommandError("role is for audio tracks");
+      return ops.addTrack(p, { ...createTrack(a.kind === "audio" ? "audio" : "video", String(a.name ?? (a.kind === "audio" ? "Audio" : "Overlay"))), ...(a.role !== undefined ? { role: a.role as Track["role"] } : {}) });
+    },
   },
   {
     name: "update_track",
-    description: "Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.",
+    description: "Mute, solo, hide, lock, rename, resize, color, or set the volume, pan or role of a track. role (audio tracks: dialog, music, effects, ambience) says which stem it is; a track without one is judged by its files (a spoken line is dialog, a sound effect effects, an imported song music), never by its name.",
     input: S.obj(
       {
         track_id: S.str("Track id"),
@@ -385,12 +395,15 @@ export const COMMANDS: Command[] = [
         solo: S.bool("While any track is soloed, only soloed tracks sound"),
         color: S.str("Track tint; a clip label takes precedence; none clears it", { enum: ["none", ...Object.keys(CLIP_LABELS)] }),
         height: S.str("Row height on the timeline", { enum: ["small", "normal", "large"] }),
+        role: S.str("Audio tracks: the stem it is (auto clears it: judged by its files)", { enum: [...TRACK_ROLES, "auto"] }),
       },
       ["track_id"],
     ),
     run: (p, a) => {
-      const { track_id, height, color, ...patch } = a;
-      trackOrThrow(p, track_id);
+      const { track_id, height, color, role, ...patch } = a;
+      const t = trackOrThrow(p, track_id);
+      if (role !== undefined && t.kind !== "audio") throw new CommandError("role is for audio tracks");
+      if (role !== undefined) p = ops.updateTrack(p, t.id, { role: role === "auto" ? undefined : (role as Track["role"]) });
       // "normal" clears the field (undefined is dropped when saved).
       return ops.updateTrack(p, String(track_id), { ...patch, ...(color !== undefined ? { color: color === "none" ? undefined : color } : {}), ...(height ? { height: height === "normal" ? undefined : height } : {}) } as Partial<Track>);
     },
@@ -2499,6 +2512,7 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
 export function describeProject(p: Project) {
   const s = (frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
+  const assetOf = assetsOf(p);
   return {
     name: p.name,
     canvas: { width: p.width, height: p.height },
@@ -2516,10 +2530,12 @@ export function describeProject(p: Project) {
       : {}),
   };
   function track(t: Track) {
+    const role = trackRole(t, assetOf);
     return {
       id: t.id,
       kind: t.kind,
       name: t.name,
+      ...(role ? { role } : {}),
       ...(t.main ? { main: true } : {}),
       ...(t.muted ? { muted: true } : {}),
       ...(t.hidden ? { hidden: true } : {}),

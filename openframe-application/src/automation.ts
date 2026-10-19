@@ -18,6 +18,8 @@ import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { addAmbience, type AmbienceRequest } from "./state/ambience";
+import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
@@ -118,7 +120,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
+  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -307,6 +309,10 @@ const mcpHost: McpHost = {
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
+  audition: async (options) => {
+    const r = await previewAudio(options as AuditionRequest);
+    return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
+  },
   checkProject: async (kind) => {
     needProject();
     const p = store.document();
@@ -333,6 +339,7 @@ const mcpHost: McpHost = {
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>
     tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    : tool === "addAmbience" ? (needProject(), addAmbience(options as unknown as AmbienceRequest))
     : tool === "generateMusic" ? (needProject(), generateMusic(options))
     : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {

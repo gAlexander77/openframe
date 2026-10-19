@@ -32,6 +32,11 @@ function host() {
       return "iVBOR";
     },
     checkProject: (kind: string) => ({ ok: true, kind }),
+    auditions: [] as unknown[],
+    async audition(o: { audio?: boolean }) {
+      h.auditions.push(o);
+      return { ...(o.audio === false ? {} : { data: "SUQz", mimeType: "audio/mpeg" }), summary: { integrated_lufs: -16.2, stems: { dialog: -17 } } };
+    },
     exports: [] as unknown[],
     async exportVideo(o: unknown) {
       h.exports.push(o);
@@ -438,6 +443,33 @@ describe("what the launch film found (2026-10-18)", () => {
     expect(h.aiCalls[1]).toEqual(["addSoundEffects", "", { sounds: [{ name: "pop", at: 2, volume: 0.25 }] }]);
     const both = await call(h, "tools/call", { name: "add_sound_effect", arguments: { name: "pop", sounds: [{ name: "pop" }] } });
     expect(text(both)).toMatch(/not both/);
+    // A track of the agent's own, for the call or per sound.
+    await run(h, "add_sound_effect", { sounds: [{ name: "pop", start: 1 }, { name: "pop", start: 2, track_id: "t_b" }], track_id: "t_a" });
+    expect(h.aiCalls[2]).toEqual(["addSoundEffects", "", { sounds: [{ name: "pop", at: 1, trackId: "t_a" }, { name: "pop", at: 2, trackId: "t_b" }] }]);
+  });
+
+  it("lays an ambience bed through the host, by name, with its stretch, fades, level and take", async () => {
+    const h = host();
+    await run(h, "add_ambience", { name: "waterfall", start: 22, end: 34, fade_in: 1.5, volume: 0.7, seed: 2, track_id: "t_amb" });
+    expect(h.aiCalls[0]).toEqual(["addAmbience", "", { name: "waterfall", start: 22, end: 34, fadeIn: 1.5, volume: 0.7, seed: 2, trackId: "t_amb" }]);
+    expect(text(await call(h, "tools/call", { name: "add_ambience", arguments: { name: "wind", end: 4, length: 3 } }))).toMatch(/not both/);
+    expect(text(await call(h, "tools/call", { name: "add_ambience", arguments: { name: "kazoo" } }))).toMatch(/name/);
+    const cat = JSON.parse(text(await call(h, "tools/call", { name: "list_catalog", arguments: { section: "ambience" } }))) as { id: string; about: string }[];
+    expect(cat.map((b) => b.id)).toEqual(["wind", "stream", "waterfall", "surf", "rain", "rocket", "city", "roomTone"]);
+  });
+
+  it("answers preview_audio with an MP3 block and the measurements, or the measurements alone", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 6, end: 14, solo: "voice" } });
+    const content = (r!.result as { content: { type: string; data?: string; mimeType?: string; text?: string }[] }).content;
+    expect(content[0]).toEqual({ type: "audio", data: "SUQz", mimeType: "audio/mpeg" });
+    expect(JSON.parse(content[1].text!)).toMatchObject({ integrated_lufs: -16.2 });
+    expect(h.auditions[0]).toEqual({ start: 6, end: 14, solo: "voice" });
+    const quiet = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, audio: false } });
+    expect((quiet!.result as { content: { type: string }[] }).content.map((c) => c.type)).toEqual(["text"]);
+    expect(text(await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, solo: "drums" } }))).toMatch(/solo/);
+    const tool = (await call(h, "tools/list"))!.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
+    expect(tool.tools.find((t) => t.name === "preview_audio")!.annotations.readOnlyHint).toBe(true);
   });
 
   it("waits for a measured check, takes preview_motion tiles as wide as preview_frames', and checks versions at chosen moments", async () => {

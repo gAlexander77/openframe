@@ -16,7 +16,7 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film.
 - Motion: titles get an in and an out animation; push slowly into stills (frame_region); do not move everything at once; whip transitions follow the direction of motion.
 - Flashes: never more than three flashes in any one second (WCAG 2.3.1; UK ad rules test for it).
-- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades).
+- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades). Silent footage gets its place's own sound under it (add_ambience: wind, water, rain, a city, a rocket's rumble, room tone), well under the voice. Listen before export: preview_audio plays a stretch of the mix or one stem (and measures it).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.

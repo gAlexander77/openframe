@@ -15,7 +15,7 @@ export type VoiceClip = Extract<Clip, { type: "audio" }>;
 export function voiceClips(p: Project): VoiceClip[] {
   const spoken = new Set(p.assets.filter((a) => a.speech).map((a) => a.id));
   return p.tracks
-    .flatMap((t) => t.clips.filter((c): c is VoiceClip => c.type === "audio" && (spoken.has(c.assetId) || isDialog(t))))
+    .flatMap((t) => t.clips.filter((c): c is VoiceClip => c.type === "audio" && (spoken.has(c.assetId) || isDialog(t, p))))
     .sort((a, b) => a.start - b.start);
 }
 

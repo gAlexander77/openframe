@@ -1,4 +1,5 @@
 import { addSoundEffect } from "../state/sfx";
+import { addAmbience } from "../state/ambience";
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { player } from "../engine/player";
@@ -18,7 +19,7 @@ import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
 import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } from "../lib/timeline";
-import { formatTimecode, secondsToFrames } from "../lib/time";
+import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
 import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
@@ -172,6 +173,9 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
     case "sfx":
       // Its file is made on first use; it lands by an audio drop's rules.
       return { view: null, run: () => void addSoundEffect(payload.id, { frame }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };
+    case "ambience":
+      // Made on first use, from the drop to the end of the timeline.
+      return { view: null, run: () => void addAmbience({ name: payload.id, start: framesToSeconds(frame, p.fps) }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };
     case "transition": {
       const cut = transitionCut(tracks, row, frame);
       const d = secondsToFrames(transitionSeconds(), p.fps);

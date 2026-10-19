@@ -226,7 +226,7 @@ async function ensureAac(bitrate: number): Promise<string | undefined> {
 
 /** MP3 encoding: no webview has an MP3 encoder (WebCodecs never added
  * one), so LAME in WebAssembly is loaded on first use. */
-async function ensureMp3(bitrate: number): Promise<void> {
+export async function ensureMp3(bitrate: number): Promise<void> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
   if (await canEncodeAudio("mp3", opts)) return;
   const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");

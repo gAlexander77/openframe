@@ -14,6 +14,7 @@ import { ANIMATABLE_PATHS } from "./animatable";
 import { EXPORT_PRESETS } from "./export";
 import { MASK_SHAPES } from "./mask";
 import { SFX } from "./sfx";
+import { AMBIENCE } from "./ambience";
 import { PRESETS as SPEED_PRESETS } from "./speed";
 import { searchStickers, STICKER_CATEGORIES, STICKER_MOTIONS, STICKERS } from "./stickers";
 import { TEXT_TEMPLATES } from "./templates";
@@ -63,16 +64,16 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
-    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
+    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
-  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project", "measure_loudness", "export_video", "export_versions", "export_status"] },
+  { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "preview_audio", "check_project", "measure_loudness", "export_video", "export_versions", "export_status"] },
 ];
 
 /** A tool's group; new tools land in "More" until they are filed. */
 export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.includes(name))?.name ?? "More";
 
 /** Tools that only read: clients may run them without asking. */
-const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
+const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
@@ -143,6 +144,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   text_behind_subject: { clip_id: "c_2", text_clip_ids: ["c_5"] },
   export_versions: { ratios: ["16:9", "9:16", "1:1"], durations: [15, 6], textless: true, loudness: -14, check: true },
   add_sound_effect: { sounds: [{ name: "whoosh", start: 3.9 }, { name: "whoosh", start: 7.9, volume: 0.6 }, { name: "rise", end_at: 12 }, { name: "impact", start: 12 }] },
+  add_ambience: { name: "waterfall", start: 22, end: 34, fade_in: 1.5, fade_out: 2, volume: 0.7 },
   duplicate_clips: { clip_ids: ["c_window"], at: 6, unique: true },
   add_voiceover: {
     lines: [
@@ -162,6 +164,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
   preview_frames: { times: [0.5, 2, 4, 6, 8, 10, 12, 14] },
   preview_motion: { start: 7.5, end: 9.5, fps: 10 },
+  preview_audio: { start: 6, end: 14, solo: "mix" },
   preview_media: { asset_id: "a_123", count: 12 },
   check_project: { kind: "ad" },
   export_video: { name: "spring-sale-16x9", resolution: "1080p", quality: "higher", loudness: -14 },
@@ -209,6 +212,7 @@ export function fullCatalog(section?: string, query?: string): unknown {
     caption_looks: labels(CAPTION_LOOKS),
     speed_presets: labels(SPEED_PRESETS),
     sound_effects: Object.entries(SFX).map(([id, s]) => ({ id, label: s.label, seconds: s.seconds })),
+    ambience: Object.entries(AMBIENCE).map(([id, b]) => ({ id, label: b.label, about: b.blurb, lufs: b.lufs })),
     voices: VOICES.map((v) => ({ id: v.id, name: v.label.split(" (")[0], accent: v.accent, gender: v.gender, grade: v.grade, character: v.character, suited: v.suited, ...(v.id === DEFAULT_VOICE ? { default: true } : {}) })),
     blend_modes: BLEND_MODES.map(([id, label]) => ({ id, label })),
     mask_shapes: MASK_SHAPES,
@@ -245,7 +249,7 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film.
 - Motion: titles get an in and an out animation; push slowly into stills (frame_region); do not move everything at once; whip transitions follow the direction of motion.
 - Flashes: never more than three flashes in any one second (WCAG 2.3.1; UK ad rules test for it).
-- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades).
+- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades). Silent footage gets its place's own sound under it (add_ambience: wind, water, rain, a city, a rocket's rumble, room tone), well under the voice. Listen before export: preview_audio plays a stretch of the mix or one stem (and measures it).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.`;

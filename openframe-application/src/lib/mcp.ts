@@ -6,6 +6,7 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
+import { AMBIENCE, AMBIENCE_IDS, BED_MAX_SECONDS } from "./ambience";
 import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "./tts";
 import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
@@ -54,6 +55,9 @@ export interface McpHost {
   sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** A stretch of the sound rendered as export renders it (preview_audio):
+   * an MP3 (base64; absent when audio is false) and its measurements. */
+  audition(options: { start: number; end?: number; solo?: string; loudness?: number; audio?: boolean }): Promise<{ data?: string; mimeType?: string; summary: unknown }>;
   /** The design check (lib/designCheck.ts) of the open project; the app
    * measures the picture behind each title and each music clip's last
    * second first, so it may take a moment. */
@@ -102,7 +106,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
+export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -203,7 +207,7 @@ interface AppTool {
 }
 
 interface ToolResult {
-  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string } | { type: "audio"; data: string; mimeType: string })[];
   isError?: boolean;
 }
 
@@ -268,7 +272,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "list_catalog",
     description:
-      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.",
+      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.",
     inputSchema: obj({ section: { type: "string", description: "A section name from the index" }, query: { type: "string", description: "Search words, for section stickers" } }),
     call: (_h, a) => json(fullCatalog(a.section === undefined ? undefined : String(a.section), a.query === undefined ? undefined : String(a.query))),
   },
@@ -395,6 +399,25 @@ export const APP_TOOLS: AppTool[] = [
     },
   },
   {
+    name: "preview_audio",
+    description:
+      "Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.",
+    inputSchema: obj(
+      {
+        start: { type: "number", minimum: 0, description: "Timeline seconds" },
+        end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 10, at most start + 30" },
+        solo: { type: "string", enum: ["mix", "voice", "music", "effects", "ambience"], description: "What to hear: the whole mix (default) or one stem by role" },
+        loudness: { type: "number", minimum: -40, maximum: -5, description: "Hear it as export_video with this loudness (LUFS) delivers it; default as mixed" },
+        audio: { type: "boolean", description: "false: the measurements only, no MP3 (default true)" },
+      },
+      ["start"],
+    ),
+    call: async (h, a) => {
+      const r = await h.audition(given({ start: Number(a.start), end: a.end === undefined ? undefined : Number(a.end), solo: a.solo, loudness: a.loudness, audio: a.audio }) as { start: number });
+      return { content: [...(r.data ? [{ type: "audio" as const, data: r.data, mimeType: r.mimeType ?? "audio/mpeg" }] : []), { type: "text", text: JSON.stringify(r.summary) }] };
+    },
+  },
+  {
     name: "check_project",
     description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
     inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
@@ -494,7 +517,7 @@ APP_TOOLS.push(
     description:
       "Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: \"ebu_r128\", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.",
     inputSchema: obj({
-      by_track: { type: "boolean", description: "Report each audio track as mixed (integrated and three-second loudness), plus Voiceover minus other audio tracks excluding SFX; ignores master normalization for stems" },
+      by_track: { type: "boolean", description: "Report each audio track as mixed (integrated and three-second loudness) with its role, plus the dialog tracks minus the music tracks (by role: describe_project names each track's; update_track sets one); ignores master normalization for stems" },
       spec: { type: "string", enum: SPEC_IDS, description: "Delivery spec to check; default all three" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Measure as export_video with this loudness (LUFS) delivers it; default as mixed" },
       start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
@@ -551,21 +574,23 @@ APP_TOOLS.push(
   },
   {
     name: "add_sound_effect",
-    description: `Add built-in sound effects, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. One lands on an audio track at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. \`sounds\` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.`,
+    description: `Add built-in sound effects, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. One lands at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. They land on the effects stem: an SFX track (made the first time, reused after; overlapping sounds get a second SFX track), never a gap on the voiceover or the music; track_id puts them on a track of your own. \`sounds\` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. add_ambience lays continuous natural sound (wind, water, rain, city, a rocket's rumble, room tone). Answers the new clip ids.`,
     inputSchema: obj({
       name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
       start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
       end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
       volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1" },
+      track_id: { type: "string", description: "An audio track to put them on (default the SFX track); where a sound would overlap one there, a new track of its role just below" },
       sounds: {
         type: "array",
-        description: "Many sounds in one call instead of name: each with its own name, start or end_at, and volume",
+        description: "Many sounds in one call instead of name: each with its own name, start or end_at, volume and track_id",
         items: obj(
           {
             name: { type: "string", enum: Object.keys(SFX), description: "Which effect" },
             start: { type: "number", minimum: 0, description: "Timeline seconds it starts (default the playhead)" },
             end_at: { type: "number", minimum: 0, description: "Timeline seconds it ends instead" },
             volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, default 1" },
+            track_id: { type: "string", description: "Its audio track; default the call's track_id, else the SFX track" },
           },
           ["name"],
         ),
@@ -573,13 +598,37 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       if ((a.name === undefined) === (a.sounds === undefined)) throw new Error("give name (one sound) or sounds (a list), not both");
-      const list = (a.sounds ?? [a]) as { name: string; start?: number; end_at?: number; volume?: number }[];
+      const list = (a.sounds ?? [a]) as { name: string; start?: number; end_at?: number; volume?: number; track_id?: string }[];
       if (!list.length) throw new Error("sounds needs at least one sound");
       const before = h.describe();
-      const cues = list.map((x) => given({ name: x.name, at: x.start, endAt: x.end_at, volume: x.volume }));
+      const cues = list.map((x) => given({ name: x.name, at: x.start, endAt: x.end_at, volume: x.volume, trackId: x.track_id ?? a.track_id }));
       const r = (await h.ai("addSoundEffects", "", { sounds: cues })) as { clipIds: string[] };
       const ids = a.sounds === undefined ? { clip_id: r.clipIds[0] } : { clip_ids: r.clipIds };
       return json({ ...ids, ...(describeChanges(before, h.describe()) as object) });
+    },
+  },
+  {
+    name: "add_ambience",
+    description: `Lay continuous natural sound under the pictures, made on this computer (no recordings, nothing downloaded): ${AMBIENCE_IDS.map((k) => `${k} (${AMBIENCE[k].blurb})`).join("; ")}. It runs from start (default the playhead) to end, or for length seconds (default to the end of the timeline), faded in and out (fade_in 1 s and fade_out 1.5 s by default), on the Ambience track (made the first time, reused after; never the voiceover, the music or the effects). Each bed moves slowly and at random as a recording does (gusts, waves arriving every 7 to 13 s, cars passing near and far) and its file loops without a seam; a bed past ${BED_MAX_SECONDS} s repeats it. Made at a level that sits under a voice with volume 1 (about -27 LUFS; the rocket -21, room tone -46): volume 0.5 is 6 dB quieter. The same name and seed reuse the file; another seed is another take. preview_audio with solo ambience hears it. Answers the clip ids, the file's asset id and the track. It cannot go in batch.`,
+    inputSchema: obj(
+      {
+        name: { type: "string", enum: AMBIENCE_IDS, description: "Which bed (list_catalog section ambience describes each)" },
+        start: { type: "number", minimum: 0, description: "Timeline seconds it starts; default the playhead" },
+        end: { type: "number", minimum: 0, description: "Timeline seconds it ends; default the end of the timeline" },
+        length: { type: "number", minimum: 0.5, description: "Seconds it lasts, instead of end" },
+        fade_in: { type: "number", minimum: 0, description: "Seconds it fades in over; default 1" },
+        fade_out: { type: "number", minimum: 0, description: "Seconds it fades out over; default 1.5" },
+        volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB); default 1" },
+        seed: { type: "integer", minimum: 1, description: "Another take of the same bed (default 1)" },
+        track_id: { type: "string", description: "An audio track to put it on; default the Ambience track" },
+      },
+      ["name"],
+    ),
+    call: async (h, a) => {
+      if (a.end !== undefined && a.length !== undefined) throw new Error("give end or length, not both");
+      const before = h.describe();
+      const r = (await h.ai("addAmbience", "", given({ name: a.name, start: a.start, end: a.end, length: a.length, fadeIn: a.fade_in, fadeOut: a.fade_out, volume: a.volume, seed: a.seed, trackId: a.track_id }))) as object;
+      return json({ ...r, ...(describeChanges(before, h.describe()) as object) });
     },
   },
   {
@@ -791,9 +840,9 @@ To make a video:
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
-6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
