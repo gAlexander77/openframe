@@ -1494,3 +1494,57 @@ The owner asked for:
 - **Give each lane a list of files it owns.** Four lanes touching CSS
   merged with one docs conflict; what crossed a boundary came back as a
   note in the report, and the lead fixed it after the merges.
+
+## 2026-10-19 — Codex's film test, and every limit it found (Claude Code)
+
+The owner had Codex make a "studio production level" film through the
+MCP tools alone, as a test: a 72-second documentary, "Earth, from above",
+in 16:9 and 9:16, narrated, scored, graded and titled, with a report of
+every limit met. It delivered both at -14 LUFS and listed twelve
+problems, plus the status of the fifteen limits found on 2026-10-18 (seven
+of them now fixed in use). The owner then asked for all of it fixed, with
+as many agents as needed.
+
+- **Four lanes** (Claude), each in its own worktree:
+  - **The surface**
+    ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):
+    a display name without an extension no longer drops an import; export
+    and collect take a `folder`; Codex's client repeated the 3.5 KB server
+    instructions in all 156 tool descriptions (188,924 tokens), so the
+    instructions now point to `help`; clip details show typography and
+    speed-curve points; a wrong argument gets "did you mean".
+  - **Voice and music**
+    ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+    pace in words a second, each line read again until it lands (Codex
+    had retaken ten of eleven lines by hand); emphasis measured and found
+    beyond Kokoro; a trimmed song keeps the file's bars and drops; balance
+    answers name their window, and every line can be held over the music.
+  - **Checks and versions**
+    ([[ADR-097 Checks and versions judge by the picture]]): contrast is
+    measured behind every title on the rendered frame (Codex's subtitles
+    over the sky: 1.26:1); text under 4.5% of the short side (5% for
+    social) is flagged; export_versions frames each shot on its subject
+    ([[Versions keep the subject 2026-10-19]]) and can save versions as
+    projects to fine-tune.
+  - **Sound and previews**
+    ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]):
+    tracks carry a role, sound effects get an SFX track; eight ambience
+    beds (wind, stream, waterfall, surf, rain, rocket, city, room tone)
+    are synthesized locally; preview_audio lets an agent hear the mix or a
+    stem; previews draw text at the canvas's size, as export does. The
+    stale first motion tile did not reproduce and has a drive.
+
+### Lessons paid for in this round
+
+- **A real production is the best test.** One film found twelve problems
+  that unit tests and drives had passed, because each tool worked alone
+  and failed only in sequence (a trimmed song, a renamed import, a check
+  that skipped every shadowed title).
+- **An MCP client may repeat the server's instructions per tool.** Keep
+  the instructions a pointer and put the guide behind a tool.
+- **Measure over the window the claim is about.** Pace over the clip's
+  length, balance over the whole program and the music's grid over the
+  clip's excerpt each gave a number that was true and misleading.
+- **Moving a Rust target folder breaks it.** Build scripts record absolute
+  paths (Tauri's permission files); `cargo clean -p` the packages whose
+  `output` names the old path.
