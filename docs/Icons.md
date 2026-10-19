@@ -11,7 +11,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Ripple / roll / slip / slide tool | FoldHorizontal / ArrowLeftRight / ChevronsLeftRight / MoveHorizontal |
 | Reset / rotate clockwise | RotateCcw / RotateCw |
 | Undo / redo / history | Undo2 / Redo2 / History |
-| AI assistant | Bot |
+| AI assistant, an AI agent's notices | Bot |
 | Automatic tools, captions, adjustment | WandSparkles |
 | Effects | Sparkles |
 | Main track magnet / snapping | Magnet / SeparatorVertical |

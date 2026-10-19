@@ -300,3 +300,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   transcripts of a voice with a script use its words, timed by Whisper; a
   review hears a doubtful line again with a larger model before blaming the
   voice, fixes are concrete respellings, and a line's pace intent is kept.
+- [[ADR-093 An AI agent's changes are announced at the top, under the Bot]] —
+  every MCP tool call (desktop bridge or docked assistant) is the agent's;
+  an edit raises one retitled notice at the top marked AI agent with the
+  Bot icon, and the user's own toasts stay at the bottom.

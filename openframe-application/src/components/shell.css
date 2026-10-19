@@ -151,6 +151,10 @@
   animation: toast-in var(--t-slow) var(--ease-spring);
 }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-10px) scale(0.96); } to { opacity: 1; transform: none; } }
+/* An AI agent's toasts: at the top, under the title bar, marked with the Bot. */
+.toasts-agent { top: 48px; bottom: auto; }
+.toast-agent { display: inline-flex; align-items: center; gap: 6px; padding-right: 10px; border-right: 1px solid var(--bg-3); color: var(--accent); font-weight: 600; }
+.toasts-agent .toast:not(.toast-error) { box-shadow: 0 10px 30px rgb(0 0 0 / 45%), inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); }
 .toast-error { box-shadow: 0 10px 30px rgb(0 0 0 / 45%), inset 0 0 0 1px rgb(240 90 90 / 55%); }
 .toast-x { display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-3); }
 .toast-x:hover { background: var(--bg-3); color: var(--text-1); }

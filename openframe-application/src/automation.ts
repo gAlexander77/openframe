@@ -28,6 +28,7 @@ import { importFiles } from "./state/media";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
+import { agentNotice, asAgent } from "./state/toast";
 import { platform } from "./platform";
 import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy } from "./state/project";
 import { APP_NAME } from "./lib/brand";
@@ -110,7 +111,7 @@ const automation = {
   /** The current frame (or `frame`) as a PNG Blob URL. */
   still: stillToUrl,
   /** One MCP message in, one response out (null for notifications). */
-  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => handleMcp(req, mcpHost),
+  mcp: (req: JsonRpcRequest): Promise<JsonRpcResponse | null> => (req.method === "tools/call" ? agentCall(req) : handleMcp(req, mcpHost)),
   /** Local analysis without editing; times are source seconds (ADR-017).
    * Omit clipId to use the selected clip. */
   analyze: { silences: analyzeSilences, scenes: analyzeScenes, beats: analyzeBeats },
@@ -250,6 +251,16 @@ window.openFrame = window.videoEditor = automation;
 // ---- MCP ------------------------------------------------------------------------
 // The live host behind src/lib/mcp.ts. Transports (desktop HTTP/stdio bridge,
 // a browser extension, tests) post JSON-RPC to window.videoEditor.mcp.
+
+/** An AI agent's tool call (an MCP client, or the docked assistant): its
+ * toasts are the agent's, and a change to the project is announced at the
+ * top with the Bot icon, so the user knows the agent made it. */
+async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
+  const before = store.document();
+  const res = await asAgent(() => handleMcp(req, mcpHost));
+  if (store.document() !== before) agentNotice(commandLabel(String(req.params?.name ?? ""), req.params?.arguments));
+  return res;
+}
 
 const mcpHost: McpHost = {
   name: APP_NAME,

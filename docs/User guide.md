@@ -328,6 +328,11 @@ OpenFrame, an agent added with the button sees the new tools by itself;
 one connected over HTTP (the copied command) needs a reconnect: in Claude
 Code, type `/mcp`, choose openframe and Reconnect.
 
+While an agent (or the docked assistant) works, each change it makes is
+named in a notice at the top of the window, marked **AI agent** with the
+robot icon, so you can tell its edits from yours; your own notices stay at
+the bottom. Every change it makes is undoable like your own.
+
 External agents connect only after the user enables "Allow AI agents".
 [[Automation]] explains the controls, MCP connection (with step-by-step
 Codex CLI and Claude Code setup), headless rendering, and the `openframe`
