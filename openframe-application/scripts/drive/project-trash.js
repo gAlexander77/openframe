@@ -30,7 +30,7 @@ async (page) => {
   await undo.waitFor();
   await card.waitFor({ state: "detached" });
   details.trashed = { ok: (await page.locator(".home-trash").count()) === 1 };
-  await page.locator(".toasts").screenshot({ path: "scratch/project-trash-toast.png" });
+  await page.locator(".toasts:not(.toasts-agent)").screenshot({ path: "scratch/project-trash-toast.png" });
   await undo.click();
   await card.waitFor();
   details.undo = { ok: (await page.locator(".home-trash").count()) === 0 };

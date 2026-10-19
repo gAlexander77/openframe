@@ -270,8 +270,10 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 
 /* project details */
 /* Seven ratios: four over three, or one row in a wide inspector; auto-fit
-   left 21:9 alone on a last row at most widths. */
-.ratio-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+   left 21:9 alone on a last row at most widths. Under 300 px four
+   columns are too narrow for the 16:9 and 21:9 boxes, so it stays. */
+.ratio-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(36px, 1fr)); gap: 4px; }
+@container (min-width: 300px) { .ratio-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container (min-width: 480px) { .ratio-grid { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
 .ratio {
   display: grid; gap: 3px; justify-items: center; padding: 4px 0;
