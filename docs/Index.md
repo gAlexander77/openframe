@@ -65,6 +65,9 @@ of the documentation and how agents use it as shared working memory.
 - [[Pro workflows 2026-10-18]] — how agencies make ads and editors make
   epic edits, the rules of thumb (with sources) the agent guide teaches,
   and the gaps each toolkit took
+- [[Launch film through MCP 2026-10-18]] — the 56 s launch film edited
+  entirely through MCP: how it was made, what worked, fourteen limits
+  ranked by what they cost, and eleven product issues met while recording
 - [[Professional NLE features]] — VEGAS, Premiere and Resolve depth: trim
   modes, J/K/L, keyframes, color, audio, formats, interchange
 - [[Web media engine]] — mediabunny, WebCodecs, WebGL2, Web Audio,

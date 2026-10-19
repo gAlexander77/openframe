@@ -1168,3 +1168,29 @@ and delivery) while the MCP layer was rebuilt here.
     222 pixels wide on 9:16.
   - **`set_hsl` on an adjustment clip** worked all along: -30 is a 9
     degree turn. Its description says so now.
+
+- **A launch film, edited through MCP** ([[Launch film through MCP 2026-10-18]]).
+  The owner asked for a new, fully professional promo, made with the MCP
+  tools, and for every limit met.
+  - **The film:** 56 s, 1080p, -14.0 LUFS. Kinetic type on a dark,
+    drifting light; UI footage in floating windows and macro push-ins;
+    one feature a bar of an original 120 BPM track; an agent filling a
+    timeline live; an end card. Two optional voiced versions (George,
+    Heart) on project copies.
+  - **How:** agents recorded crisp 2560x1440 footage of the web build
+    (CC0 and public-domain demo media) and synthesized the music; the
+    edit itself was about 90 MCP calls, most of them batches.
+  - **Limits found**, each with a suggested fix in the note:
+    - no soft light: blur tops out near 20 px, and there are no radial
+      gradients;
+    - one font weight, and one color per title;
+    - no picture shadow or perspective;
+    - `export_versions` cannot re-lay out keyframed precomps;
+    - keyframes on paths that do not animate are accepted silently;
+    - keyframe values are invisible in answers;
+    - `analyze_music` misses a drop and a breakdown;
+    - `check_project` reports contrast and shot counts it never looked
+      at;
+    - voice-to-music balance has to be computed by hand;
+    - answers grow with compounds;
+    - sound effects take one call each.
