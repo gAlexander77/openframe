@@ -4,7 +4,7 @@
 // agent measures is what the file will hold.
 
 import { soundingClips } from "../lib/audio";
-import { planLoudness, ceilingFor, loudnessStats, type LoudnessPlan, type LoudnessStats } from "../lib/analysis/delivery";
+import { planLoudness, ceilingFor, loudnessStats, shortTermSeries, type LoudnessPlan, type LoudnessStats } from "../lib/analysis/delivery";
 import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "../lib/analysis/loudness";
 import { TruePeakMeter } from "../lib/analysis/truePeak";
 import { audioWindows, EXPORT_CHANNELS, EXPORT_SAMPLE_RATE } from "../lib/export";
@@ -53,6 +53,7 @@ export async function renderMixWindow(p: Project, t0: number, length: number, ra
 export const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));
 
 export interface MixMeasurement extends LoudnessStats {
+  shortTerm: { end: number; lufs: number }[];
   seconds: number;
   /** Linear, 4x oversampled. */
   truePeak: number;
@@ -98,5 +99,5 @@ export async function measureMix(p: Project, from: number, to: number, opts: { l
     plan = planLoudness(r.meter.integrated(), r.tp.peak, r.blocks, opts.loudness, ceilingFor(opts.loudness));
     if (plan) r = await pass(1, plan);
   }
-  return { seconds: total / rate, ...loudnessStats(r.meter.steps), truePeak: r.tp.peak, samplePeak: r.meter.peak, ...(plan !== undefined ? { plan } : {}) };
+  return { seconds: total / rate, ...loudnessStats(r.meter.steps), shortTerm: shortTermSeries(r.meter.steps), truePeak: r.tp.peak, samplePeak: r.meter.peak, ...(plan !== undefined ? { plan } : {}) };
 }

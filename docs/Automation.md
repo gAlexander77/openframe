@@ -286,3 +286,16 @@ in the web build or over the WebView2 debug port: `exec(name, args)`,
 `mcp(message)`, and the AI tools (`ai.removeSilences`, ...,
 `ai.removeBackground`). See
 [[Driving the app]].
+
+`onFrame(callback)` reports the timeline frame after a viewer draw and
+returns an unsubscribe function. `playbackStats()` reports dropped frames,
+measured decode throughput and recent preroll timings. The `longgop-cut`
+headless drive measures gaps and transition coverage using these hooks.
+
+Analysis regression drives: `music-structure` reads the private track and
+cue sheet from `scratch/`, checking every section and drop within one bar.
+`voice-balance` uses `add_voiceover` and the music fixture, checks per-track
+LUFS, a 10 LU target and undo. Its optional `{recorded: true}` argument uses
+`speech-test.wav` when testing the balance path without synthesis; report
+that mode separately. Speech synthesis still requires its initial model
+download. MCP tool reference pages are regenerated from the tool schemas.

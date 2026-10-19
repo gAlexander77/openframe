@@ -586,3 +586,28 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 The shipped app must carry this notice in its about box or third-party
 notices file once that exists.
+
+Playback prepares upcoming video decoders before their cuts (ADR-074).
+This improves live review of long-GOP footage; exported frames still use
+the same frame plan and source times.
+
+`analyze_music` now reports `drops` in chronological timeline seconds while
+keeping `drop` as the biggest rise. Section bounds follow bars or phrases,
+and two-bar breakdowns are retained. Drop markers cover every detected drop.
+
+`measure_loudness {by_track: true}` reports every audio track's integrated
+LUFS, maximum short-term LUFS and full three-second windows sampled each
+second (the timestamp is the window end). Muted or excluded-by-solo tracks
+report silence. Stems are measured before master export normalization.
+When Voiceover and music tracks exist, `balance.voice_above_music_lu` reports
+the integrated difference between the combined stems. Track names supply
+roles: Voiceover is dialog; other audio tracks except Sound effects/SFX are
+music. This convention is not automatic speech/music classification.
+
+`duck_under_speech {clip_id, voice_above_music_lu: 10}` measures the voice
+and selected music clip, chooses attenuation up to 40 dB and measures the
+result before applying editable keys. It answers depth, the measurement
+window, achieved difference and whether it met the target within 0.5 LU.
+The window spans the first through last detected speech, including pauses;
+this is a window-level target, not a promise about every word. Without the
+target, fixed-depth ducking behaves as before.

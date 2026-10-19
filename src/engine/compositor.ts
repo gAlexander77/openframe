@@ -155,6 +155,7 @@ function hexToRgb(hex: string): [number, number, number] {
 }
 
 export class Compositor {
+  private disposed = false;
   readonly gl: WebGL2RenderingContext;
   private quad: WebGLBuffer;
   private vao: WebGLVertexArrayObject;
@@ -240,6 +241,7 @@ export class Compositor {
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
       throw new Error(`program ${key}: ${gl.getProgramInfoLog(prog)}`);
     }
+    for (const sh of shaders) { gl.detachShader(prog, sh); gl.deleteShader(sh); }
     const p = { prog, loc: new Map<string, WebGLUniformLocation | null>() };
     this.programs.set(key, p);
     return p;
@@ -254,6 +256,7 @@ export class Compositor {
    * without it, each still gets its own macrotask.
    */
   async warm(): Promise<void> {
+    if (this.disposed) return;
     const gl = this.gl;
     const ext = gl.getExtension("KHR_parallel_shader_compile") as { COMPLETION_STATUS_KHR: number } | null;
     const all: [string, string, string][] = [
@@ -270,10 +273,24 @@ export class Compositor {
     ];
     const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
     const frame = () => new Promise((r) => setTimeout(r, 16));
-    if (ext) while (pending.some((p) => !gl.getProgramParameter(p.prog, ext.COMPLETION_STATUS_KHR))) await frame();
-    for (const p of pending) {
-      if (!this.programs.has(p.key)) this.finishProgram(p.key, p);
-      if (!ext) await frame();
+    const unused = new Set(pending);
+    try {
+      if (ext) while (!this.disposed && pending.some((p) => !gl.getProgramParameter(p.prog, ext.COMPLETION_STATUS_KHR))) await frame();
+      for (const p of pending) {
+        if (this.disposed) break;
+        if (!this.programs.has(p.key)) {
+          this.finishProgram(p.key, p);
+          unused.delete(p);
+        }
+        if (!ext) await frame();
+      }
+    } finally {
+      // Drawing can compile a pass before background warmup finishes;
+      // unmount can dispose the viewer meanwhile. Neither may leak a program.
+      for (const p of unused) {
+        for (const sh of p.shaders) gl.deleteShader(sh);
+        gl.deleteProgram(p.prog);
+      }
     }
   }
 
@@ -986,6 +1003,7 @@ export class Compositor {
    * same context back on the next getContext, so losing it here would leave
    * a re-mounted viewer (React StrictMode mounts twice) with a dead one. */
   dispose() {
+    this.disposed = true;
     const gl = this.gl;
     this.freeTargets();
     for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);

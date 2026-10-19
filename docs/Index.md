@@ -192,3 +192,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   before flips and transform; the crop mode's session and whole-picture view
 - [[ADR-049 Masks turn rigidly and grow shapes without new fields]] —
   rotation in layer pixels; heart, star and round corners as additive fields
+
+- [[ADR-074 Prepare preview decoders before their first visible frame]] —
+  adaptive decoder lead, memory admission and transition shader warmup.
+
+- [[ADR-075 Measure music structure and voice balance on the timeline]] -
+  two-bar sections, multiple drops and measured ducking before one edit.

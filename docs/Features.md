@@ -829,3 +829,13 @@ Three doors, one engine ([[Automation]]):
   share one left edge inside the safe area), `distribute_clips`, `set_crop`
   (edges as source fractions, or the largest centered crop of a ratio) and
   `set_mask` (any shape and number, or none).
+
+- Preview prepares long-GOP video before cuts and transition handles, with
+  adaptive lead time and a bounded admission estimate (ADR-074). Clips
+  larger than the preparation budget still decode on demand.
+
+- Music analysis reports every detected drop as well as the biggest, and
+  supports short two-bar sections and breakdowns.
+- Loudness reports can include isolated audio tracks and Voiceover-to-music
+  balance. Ducking can target a measured LU difference, returning the
+  achieved result and editable keys rather than only taking a fixed depth.

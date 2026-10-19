@@ -128,4 +128,21 @@ describe("musicStructure", () => {
     expect(b.sections.map((s) => s.label).slice(-2)).toEqual(["build", "drop"]);
     expect(Math.abs(b.drop! - 16.25)).toBeLessThan(0.03);
   });
+  it("keeps two-bar breakdowns and reports each rise, with the biggest separately", () => {
+    const m = musicStructure(song(120, [
+      { seconds: 4, kick: 0.1, hat: 0.08 },
+      { seconds: 12, kick: 0.8, hat: 0.4, bass: 0.3 },
+      { seconds: 4, kick: 0.12, hat: 0.1 },
+      { seconds: 12, kick: 0.8, hat: 0.4, bass: 0.3 },
+    ]), RATE);
+    expect(m.drops).toHaveLength(2);
+    expect(m.drops[0]).toBeCloseTo(4.25, 1);
+    expect(m.drops[1]).toBeCloseTo(20.25, 1);
+    expect(m.drops).toContain(m.drop);
+    const low = m.sections.find(s => s.label === "breakdown")!;
+    expect(low.start).toBeCloseTo(16.25, 1);
+    expect(low.end).toBeCloseTo(20.25, 1);
+    for (const s of m.sections.slice(1)) expect(m.downbeats).toContain(s.start);
+  });
+
 });

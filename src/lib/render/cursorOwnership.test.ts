@@ -1,0 +1,32 @@
+import { expect, it, vi } from "vitest";
+import type { VideoSampleSink, EncodedPacketSink, VideoSample } from "mediabunny";
+import { VideoCursor } from "../../engine/cursor";
+const keys = { getKeyPacket: async () => ({ timestamp: 0 }) } as unknown as EncodedPacketSink;
+it("lends the prepared head and closes it exactly once on advancing and disposal", async () => {
+  const samples = [0, 1].map(timestamp => ({ timestamp, duration: 1, close: vi.fn() }));
+  const sink = { async *samples() { for (const s of samples) yield s; } } as unknown as VideoSampleSink;
+  const c = new VideoCursor(sink, keys, 0);
+  expect(await c.frameAt(0)).toBe(samples[0]);
+  expect(await c.frameAt(0.5)).toBe(samples[0]);
+  expect(samples[0].close).not.toHaveBeenCalled();
+  await c.frameAt(1);
+  expect(samples[0].close).toHaveBeenCalledTimes(1);
+  c.dispose(); c.dispose();
+  await c.frameAt(2);
+  expect(samples[1].close).toHaveBeenCalledTimes(1);
+});
+it("closes an arriving sample when disposal interrupts preroll", async () => {
+  let deliver!: (s: VideoSample) => void;
+  const pending = new Promise<VideoSample>(r => { deliver = r; });
+  const arrived = { timestamp: 0, duration: 1, close: vi.fn() } as unknown as VideoSample;
+  const ended = vi.fn();
+  const sink = { async *samples() { try { yield await pending; } finally { ended(); } } } as unknown as VideoSampleSink;
+  const c = new VideoCursor(sink, keys, 0);
+  const preparing = c.frameAt(0);
+  await new Promise(r => setTimeout(r, 0));
+  c.dispose(); deliver(arrived);
+  expect(await preparing).toBeNull();
+  await c.frameAt(1);
+  expect(arrived.close).toHaveBeenCalledTimes(1);
+  expect(ended).toHaveBeenCalledTimes(1);
+});

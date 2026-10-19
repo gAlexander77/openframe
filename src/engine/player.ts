@@ -13,9 +13,10 @@ import type { VideoSample } from "mediabunny";
 import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
 import { MOTION_SAMPLES } from "../lib/motionBlur";
-import { getAsset, projectDuration, sourceTimeAt } from "../lib/project/ops";
+import { getAsset, projectDuration } from "../lib/project/ops";
 import type { Id, Project, VisualClip } from "../lib/project/types";
-import { layerAt, planFrame, planLayers, type Layer, type PlanItem } from "../lib/render/plan";
+import { planFrame, planLayers, type Layer, type PlanItem } from "../lib/render/plan";
+import { choose, DEFAULT_DECODE_RATE, entryTargets, heldBytes, leadFor, MAX_LEAD, nextDecodeRate, upcomingEntries, workFor, type Candidate, type Target } from "../lib/render/preroll";
 import { frameAt, framesToSeconds } from "../lib/time";
 import { provide } from "../state/actions";
 import { store, type EditorState } from "../state/store";
@@ -160,6 +161,28 @@ export function sourceImages(resolved: Resolved, width: number, height: number) 
   };
 }
 
+interface Prep {
+  clipId: Id;
+  at: number;
+  targets: Target[];
+  /** Pixels to decode before the first frame: undefined until looked up,
+   * null while looking. */
+  work?: number | null;
+  /** The longest catch-up in frames. */
+  frames?: number;
+  state: "waiting" | "running" | "ready";
+}
+
+export interface PrepRecord {
+  clipId: Id;
+  /** The first frame the clip was needed on. */
+  at: number;
+  gapFrames: number | null;
+  leadMs: number | null;
+  startedAheadMs: number;
+  decodeMs: number;
+}
+
 export class Player {
   private compositor: Compositor | null = null;
   // Reversed clips hold their decoded windows at about screen size.
@@ -186,6 +209,15 @@ export class Player {
   private silent = false;
   /** Last frame actually drawn, for the dropped-frame counter. */
   drawn = { frame: -1, dropped: 0 };
+  // Preparing decoders ahead of cuts (preroll, ADR-074).
+  private preps = new Map<string, Prep>();
+  private prepFor: Project | null = null;
+  private prepTargets = new Map<string, Target[]>();
+  /** Measured decode speed, pixels a second. */
+  decodeRate = DEFAULT_DECODE_RATE;
+  /** The cuts prepared lately: how far ahead each started and how long its
+   * catch-up took (playback drives read it). */
+  prepared: PrepRecord[] = [];
 
   constructor() {
     this.unsub = store.subscribe(() => this.onStore());
@@ -210,7 +242,13 @@ export class Player {
     this.compositor?.dispose();
     this.compositor = canvas ? new Compositor(canvas) : null;
     this.pool.clear();
-    if (canvas) this.request();
+    if (!canvas) return;
+    this.request();
+    // Compile every pass's program in the background: a transition's first
+    // use otherwise compiled inside a playback frame (about 0.4 s on
+    // ANGLE/D3D11), long enough to skip a short transition at its cut.
+    const comp = this.compositor!;
+    void comp.warm().catch((e) => console.warn("viewer shaders:", e));
   }
 
   /** The canvas's on-screen size changed (device pixels). */
@@ -238,9 +276,10 @@ export class Player {
     return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
   }
 
-  private frameListeners = new Set<() => void>();
-  /** Called after every frame the viewer draws, paused or playing. */
-  onFrame(fn: () => void): () => void {
+  private frameListeners = new Set<(frame: number) => void>();
+  /** Called after every frame the viewer draws, paused or playing, with
+   * the timeline frame drawn. */
+  onFrame(fn: (frame: number) => void): () => void {
     this.frameListeners.add(fn);
     return () => this.frameListeners.delete(fn);
   }
@@ -314,38 +353,89 @@ export class Player {
     } catch (e) {
       console.error("render failed", e);
     }
-    for (const fn of this.frameListeners) fn();
+    for (const fn of this.frameListeners) fn(f);
     if (this.drawn.frame >= 0 && this.rate > 0 && f > this.drawn.frame + 1) this.drawn.dropped += f - this.drawn.frame - 1;
     this.drawn.frame = f;
     this.pool.sweep(4000);
     if (this.rate > 0) this.preroll(p, f);
   }
 
-  /** Warm up decoders for clips that start within the next 0.75 s, so the
-   * first frame after a cut is not late. A compound clip warms the video
-   * its first frame shows.
+  /** Prepare the decoders of clips that enter the picture soon, so the
+   * first frame after a cut is waiting rather than late (ADR-074). Each
+   * starts as far ahead as its catch-up from the key frame takes at the
+   * measured decode speed (at least 0.75 s, at most 5 s), soonest first,
+   * within a memory budget. A clip brought in by a transition is prepared
+   * for the transition's first frame, which shows it before its cut.
    * ponytail: cuts inside a compound clip that is already playing are not
-   * warmed; plan ahead through it if playback shows them late. */
+   * prepared; plan ahead through it if playback shows them late. */
   private preroll(p: Project, f: number) {
-    const ahead = f + Math.round(0.75 * (p.fps.num / p.fps.den));
-    for (const t of p.tracks) {
-      if (t.kind !== "video" || t.hidden) continue;
-      for (const c of t.clips) {
-        if (c.type === "compound" && c.start > f && c.start <= ahead) {
-          const l = layerAt(p, c, c.start);
-          if (l?.source.kind !== "compound") continue;
-          for (const x of planLayers(l.source.items)) {
-            const src = x.source;
-            if (src.kind === "video" && !src.reverse) void this.pool.get(p, x.clipId, src.assetId).then((cur) => cur?.frameAt(src.time));
-          }
-          continue;
-        }
-        if (c.type !== "video" || c.start <= f || c.start > ahead) continue;
-        const t = sourceTimeAt(c, c.start, p.fps);
-        if (c.reverse && !c.freeze) void this.pool.getReverse(p, c.id, c.assetId).then((cur) => cur?.frameAt(t));
-        else void this.pool.get(p, c.id, c.assetId).then((cur) => cur?.frameAt(t));
-      }
+    const fps = p.fps.num / p.fps.den;
+    if (p !== this.prepFor) {
+      this.prepFor = p;
+      this.prepTargets.clear();
     }
+    const seen = new Set<string>();
+    const cands: (Candidate & { prep: Prep })[] = [];
+    for (const e of upcomingEntries(p, f, Math.round(MAX_LEAD * fps))) {
+      const ek = `${e.clip.id}@${e.at}`;
+      let targets = this.prepTargets.get(ek);
+      if (!targets) this.prepTargets.set(ek, (targets = entryTargets(p, e)));
+      if (!targets.length) continue;
+      const key = JSON.stringify([e.at, targets.map((t) => [t.clipId, t.assetId, t.kind, t.lane, t.src, t.reverse, t.time])]);
+      seen.add(key);
+      let prep = this.preps.get(key);
+      if (!prep) this.preps.set(key, (prep = { clipId: e.clip.id, at: e.at, targets, state: "waiting" }));
+      if (prep.work === undefined) this.measureWork(p, prep);
+      cands.push({ at: e.at, lead: prep.work == null ? null : leadFor(prep.work, this.decodeRate), bytes: heldBytes(targets), active: prep.state !== "waiting", prep });
+    }
+    for (const k of this.preps.keys()) if (!seen.has(k)) this.preps.delete(k);
+    // One catch-up at a time, soonest cut first: the clip playing now
+    // shares the machine with one extra decoder, not several, and the
+    // nearest deadline gets the whole of it.
+    let busy = [...this.preps.values()].some((x) => x.state === "running");
+    for (const c of choose(cands, f, fps)) {
+      for (const t of c.prep.targets) void this.cursorFor(p, t); // not idle: no sweep
+      if (busy || c.prep.state !== "waiting") continue;
+      busy = true;
+      this.prepare(p, c.prep, (c.at - f) / fps, c.lead);
+    }
+  }
+
+  private cursorFor(p: Project, t: Target): Promise<VideoCursor | ReverseCursor | null> {
+    if (t.kind === "matte") return this.pool.matte(t.clipId, t.src!, t.reverse);
+    return t.reverse ? this.pool.getReverse(p, t.clipId, t.assetId) : this.pool.get(p, t.clipId, t.assetId, t.lane);
+  }
+
+  /** Look up how far each target's first frame is from its key frame. */
+  private measureWork(p: Project, prep: Prep) {
+    prep.work = null;
+    void Promise.all(prep.targets.map(async (t) => {
+      const c = t.reverse ? null : await this.cursorFor(p, t);
+      return c instanceof VideoCursor ? c.keyGap(t.time) : 0;
+    })).then(
+      (gaps) => {
+        prep.work = workFor(prep.targets, gaps);
+        prep.frames = Math.round(Math.max(0, ...gaps.map((g, i) => g * prep.targets[i].fps)));
+      },
+      () => (prep.work = 0),
+    );
+  }
+
+  /** Decode each target of an entry up to its first frame, together. */
+  private prepare(p: Project, prep: Prep, ahead: number, lead: number | null) {
+    const cursors = prep.targets.map((t) => this.cursorFor(p, t));
+    prep.state = "running";
+    const t0 = performance.now();
+    void Promise.all(cursors.map((c, i) => c.then((cur): Promise<unknown> | undefined => cur?.frameAt(prep.targets[i].time)))).then(
+      () => {
+        prep.state = "ready";
+        const ms = performance.now() - t0;
+        if (prep.work) this.decodeRate = nextDecodeRate(this.decodeRate, prep.work, ms, prep.frames ?? 0);
+        this.prepared.push({ clipId: prep.clipId, at: prep.at, gapFrames: prep.frames ?? null, leadMs: lead === null ? null : Math.round(lead * 1000), startedAheadMs: Math.round(ahead * 1000), decodeMs: Math.round(ms) });
+        if (this.prepared.length > 50) this.prepared.shift();
+      },
+      () => (prep.state = "ready"),
+    );
   }
 
   // ---- transport ---------------------------------------------------------------
@@ -385,6 +475,8 @@ export class Player {
       this.schedule = scheduleAudio(ctx, masterBus().input, p, this.t0, framesToSeconds(end, p.fps), this.ctxAt);
     }
     this.drawn = { frame: -1, dropped: 0 };
+    // Cursors move while paused (scrubbing): prepare every cut again.
+    this.preps.clear();
     const tick = () => {
       if (this.rate === 0) return;
       const proj = store.get().project;
