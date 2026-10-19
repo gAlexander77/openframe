@@ -62,8 +62,11 @@ export function setKeymapChanges(next: KeymapChanges) {
 /** The first chord bound to an action, for tooltips and menus. */
 export const chordFor = (id: ActionId) => keymap[id]?.[0];
 
+/** A pointer gesture as this platform writes it ("Shift+click", "⇧click"). */
+export const gestureText = (id: keyof typeof GESTURE_CHORDS) => chordText(GESTURE_CHORDS[id], isMac);
+
 /** A tooltip with the action's current chord: "Split (Ctrl+B)". */
-export function tipFor(id: ActionId | keyof typeof GESTURE_CHORDS, label = id === "viewerZoom" ? "Viewer zoom" : ACTION_LABELS[id]) {
+export function tipFor(id: ActionId | "viewerZoom", label = id === "viewerZoom" ? "Viewer zoom" : ACTION_LABELS[id]) {
   const c = id === "viewerZoom" ? GESTURE_CHORDS[id] : chordFor(id);
   return c ? `${label} (${chordText(c, isMac)})` : label;
 }

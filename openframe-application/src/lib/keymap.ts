@@ -4,7 +4,7 @@
 // delete, C blade). "Mod" is Ctrl on Windows/Linux and Cmd on macOS.
 // UI prose never types a chord: it calls chordLabel(id) (Conventions rule 8).
 
-export const GESTURE_CHORDS = { viewerZoom: "Mod+wheel" } as const;
+export const GESTURE_CHORDS = { viewerZoom: "Mod+wheel", addKey: "Shift+click" } as const;
 
 export type ActionId =
   | "playPause"

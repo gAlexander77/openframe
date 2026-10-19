@@ -25,7 +25,7 @@
 /* segmented control on an inset track */
 /* Wraps rather than running out of a narrow inspector (Reverb's four
    presets at 288 px cut Cathedral off). */
-.segmented { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 2px; border-radius: var(--radius); background: var(--bg-inset); gap: 2px; }
+.segmented { display: inline-flex; flex-wrap: wrap; max-width: 100%; padding: 2px; border-radius: var(--radius); background: var(--bg-inset); box-shadow: inset 0 0 0 1px var(--line); gap: 2px; }
 .segmented button {
   height: 24px; padding: 0 7px; white-space: nowrap; border: 0; border-radius: 4px;
   background: transparent; color: var(--text-2); font-size: var(--fs-xs);
@@ -33,8 +33,8 @@
 }
 .segmented button:hover { color: var(--text-1); }
 .segmented button.on { background: var(--bg-3); color: var(--text-1); }
-/* When it does wrap, the buttons share each line evenly. Scoped: the
-   export dialog has a .segmented of its own. */
+/* When it does wrap, the buttons share each line evenly. (The export
+   dialog's Range row is .export-segmented, its own.) */
 :where(.inspector-panel, .scopes-head) .segmented button { flex: 1 0 auto; }
 
 /* sections */

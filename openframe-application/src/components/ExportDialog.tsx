@@ -476,7 +476,7 @@ function SettingsView() {
           {captionClips(project).length > 0 && <CaptionsRow s={s} set={set} />}
 
           <Row label="Range">
-            <div className="segmented" role="radiogroup" aria-label="Range">
+            <div className="export-segmented" role="radiogroup" aria-label="Range">
               <button role="radio" aria-checked={s.range === "all"} className={s.range === "all" ? "on" : ""} onClick={() => set({ range: "all" })}>
                 Whole timeline
               </button>

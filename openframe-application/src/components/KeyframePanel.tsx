@@ -14,7 +14,7 @@ import { store, useEditor } from "../state/store";
 import { keySnapTargets, toggleRefs } from "./ClipKeys";
 import { EaseCurve, EaseMenu } from "./EaseMenu";
 import { Splitter } from "./Splitter";
-import { tipFor } from "../state/actions";
+import { gestureText, tipFor } from "../state/actions";
 import "./keyframes.css";
 
 const ROW_H = 22;
@@ -446,7 +446,7 @@ function ClipGraph({ clip, headerW, scrollLeft, scrollEl }: Props & { clip: Clip
             <ChevronDown size={11} />
           </button>
         )}
-        <span className="kf-hint">Shift+click adds · drag moves · right-click for easing</span>
+        <span className="kf-hint">{gestureText("addKey")} adds · drag moves · right-click for easing</span>
       </Head>
       <div className="kf-body">
         <div className="kf-side" style={{ width: headerW }}>
