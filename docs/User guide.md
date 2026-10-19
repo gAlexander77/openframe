@@ -299,6 +299,12 @@ Undo removes it and its file. Best quality downloads the full speech model
 read at a narrator's pace with natural pauses, one level, and a quiet room
 under the silences.
 
+**Caption a voice:** the Captions tab's **Generate captions** hears the
+timeline on this computer. A voice made by the app (Text to speech, or an
+agent's voiceover) is captioned in the words it was given to read, at the
+times it says them, so a word the recognizer mishears never reaches the
+captions.
+
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
 it (in a window too narrow for four columns the media library steps aside

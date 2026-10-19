@@ -664,7 +664,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and it is compared with the script word by word; each line's pace
   (words and syllables a second), silences, longest pause, loudness, true
   peak, pitch range and margin over the music are measured, with a verdict
-  and the tool calls that fix what is wrong.
+  and the tool calls that fix what is wrong. A line that differs from its
+  script is heard again by a larger Whisper (small) before the voice is
+  blamed: what only the first one misheard needs no retake, and each
+  difference says whether the recognizer or the voice is likely wrong. A
+  misread word gets a respelling as it sounds ("does" "duz", "home"
+  "hohm"), or a slower read and the advice to reword when it was respelled
+  already; never a placeholder. A line marked `pace: slow` (an end-card
+  tagline) is not flagged as slow ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
 - **Retake one line** (agents: `retake_voiceover`): new words, a voice, a
   speed or a pronunciation, read and put in the line's place; its caption
   follows, the old take leaves the library, and `ripple` moves the lines
@@ -675,7 +682,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Auto captions on this machine** (Whisper, [[ADR-007 Auto captions run
   Whisper on the user's machine]]): no upload, no limit; readable line
   breaks, or **one word at a time** (CapCut's short-form style); caption
-  list editing; apply style to all; SRT/VTT import and export.
+  list editing; apply style to all; SRT/VTT import and export. A voice
+  read from a script (a voiceover line, text to speech) is captioned in its
+  script's words, timed by what Whisper heard, so a synthetic voice's "All
+  of it, home" is no longer "Olivet Helmed"; the transcript of a whole take
+  says its script too ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
   and case as chosen, with a live match count; titles are left alone.

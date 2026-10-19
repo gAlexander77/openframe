@@ -238,6 +238,17 @@ it("passes a voiceover script through with the options given, in the app's names
   expect(h.voiced).toEqual([[lines, { voice: "am_michael", captionY: 0.4 }]]);
 });
 
+it("passes a line's pace with its script, and review's second hearing", async () => {
+  const h = host();
+  await call(h, "tools/call", { name: "add_voiceover", arguments: { lines: [{ text: "Free. Yours.", pace: "slow", pause_after: 0.8 }] } });
+  expect(h.voiced).toEqual([[[{ text: "Free. Yours.", pace: "slow", pauseAfter: 0.8 }], {}]]);
+  await call(h, "tools/call", { name: "retake_voiceover", arguments: { clip_id: "c1", pace: "slow" } });
+  await call(h, "tools/call", { name: "review_voiceover", arguments: { recheck: false } });
+  expect(h.aiCalls).toEqual([["retakeVoiceover", "c1", { pace: "slow" }], ["reviewVoiceover", [], { recheck: false }]]);
+  const bad = await call(h, "tools/call", { name: "add_voiceover", arguments: { lines: [{ text: "Hi", pace: "dramatic" }] } });
+  expect(bad!.result).toMatchObject({ isError: true });
+});
+
 describe("MCP ad tools", () => {
   it("puts titles behind the subject through the AI host", async () => {
     const h = host();

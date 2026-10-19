@@ -233,7 +233,10 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   Voiceover track, with a caption per line, as one undo step with its
   speech files.
 - Per line: `voice` (another speaker, or a blend `"af_heart:70,af_bella:30"`),
-  `speed`, `at`, `pause_after`, `paragraph`, `caption`. The gap after a
+  `speed`, `at`, `pause_after`, `paragraph`, `caption`, `pace` (`slow`,
+  `normal`, `fast`: the pace the line is meant to have, kept with its
+  script; review then flags a slow line only under 2 syllables a second, a
+  fast one only over 7.5, and a fast line is not read again slower). The gap after a
   line follows its ending unless `pause_after` or the call's `gap` says
   otherwise: 0.4 s after a sentence, 0.1 s after a comma, 0.6 s after an
   ellipsis, 0.8 s after a paragraph.
@@ -254,7 +257,7 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   "engine": {"quality", "device", "dtype"}}`: cut the footage to those
   times.
 
-`review_voiceover` (`{"clip_ids"?, "music"?}`, read-only) hears each voice
+`review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
 timeline; a short word a letter off is `minor`), `words_per_second`,
@@ -262,9 +265,18 @@ timeline; a short word a letter off is `minor`), `words_per_second`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
 `range_st`), `voice_above_music_lu`, a `verdict` (`ok` or the problems)
 and `fixes` (`{problem, tool, args}`), plus a `summary` (lines ok, the
-script's words a second, the loudness spread). `retake_voiceover`
+script's words a second, the loudness spread). A line that differs from
+its script is heard again by Whisper small (`recheck`, default true; about
+250 MB downloaded once): each difference gains `likely`, `recognizer` (heard
+right the second time: no fix, a `notes` entry says so) or `voice`, and the
+line `heard_again` and `match_again` ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]). A misread word's fix is a
+`pronounce` respelling as it sounds ("does" "duz", "home" "hohm", "MCP"
+"M C P"), or, when it was respelled already or nothing reads differently,
+a slower read with the advice to reword; never a placeholder.
+Automatic captions and `get_transcript` give a whole voice take with a
+known script its script's words, timed by Whisper. `retake_voiceover`
 (`{"clip_id", "text"?, "caption"?, "voice"?, "speed"?, "pronounce"?,
-"quality"?, "finish"?, "ripple"?}`) reads one line again in its place:
+"quality"?, "finish"?, "pace"?, "ripple"?}`) reads one line again in its place:
 same clip id, its caption follows, the old take leaves the library,
 `ripple` moves the lines and captions after it. `list_catalog` section
 `voices` describes every voice for casting; `help` topic `voiceover` is

@@ -32,6 +32,10 @@ export interface Difference {
   heard?: string;
   /** Index of the first heard word nearest it (for its time). */
   near: number;
+  /** After a second hearing by a larger model: it heard the script's words
+   * there (the first recognizer misheard; the voice is fine), or it heard
+   * the same difference (the voice likely said it wrong). */
+  likely?: "recognizer" | "voice";
 }
 
 /** One short word against another a letter apart, or a lone short word
@@ -121,6 +125,24 @@ export function compareScript(text: string, heard: string, pronounce?: Record<st
   return b.differences.length < a.differences.length ? { words: written.length, matched: written.length - b.differences.length, differences: b.differences } : { words: written.length, ...a };
 }
 
+/** The script words a difference covers, or what was heard for an extra word. */
+const covered = (d: Difference) => new Set((d.script ?? d.heard ?? "").split(" ").filter(Boolean));
+
+/**
+ * The first hearing's differences judged against a second hearing of the
+ * same line by a larger model: one the second did not hear is the first
+ * recognizer's mistake, one it heard too (a difference over the same
+ * words) is likely the voice's. Minor slips stay as they are.
+ */
+export function judgeHearings(first: Difference[], second: Difference[]): Difference[] {
+  return first.map((d) => {
+    if (d.minor) return d;
+    const words = covered(d);
+    const again = second.some((x) => !x.minor && (x.script === undefined) === (d.script === undefined) && [...covered(x)].some((w) => words.has(w)));
+    return { ...d, likely: again ? "voice" : "recognizer" };
+  });
+}
+
 // ---- verdicts -----------------------------------------------------------------------------
 
 /** What review_voiceover holds a line to. Pace is judged in syllables,
@@ -133,6 +155,10 @@ export function compareScript(text: string, heard: string, pronounce?: Record<st
 export const REVIEW = {
   fastSps: 5.6,
   slowSps: 3.2,
+  /** A line meant to be slow (an end-card tagline, pace slow) or fast
+   * (pace fast) is held to these instead. */
+  slowIntentSps: 2,
+  fastIntentSps: 7.5,
   /** Silence before the first word and after the last, seconds. */
   leadMax: 0.3,
   tailMax: 0.6,
@@ -160,6 +186,9 @@ export interface LineMeasure {
   voice?: string;
   speed?: number;
   pronounce?: Record<string, string>;
+  /** The line's intended pace (add_voiceover's pace): a slow line is not
+   * flagged as slow, nor a fast one as fast. */
+  pace?: Pace;
   /** The clip's volume (linear). */
   volume: number;
   compressed: boolean;
@@ -182,17 +211,58 @@ export interface LineMeasure {
   differences: Difference[];
 }
 
+export type Pace = "slow" | "normal" | "fast";
+export const PACES: Pace[] = ["slow", "normal", "fast"];
+
 export interface Fix {
   problem: string;
   tool: string;
   args: Record<string, unknown>;
 }
 
-/** A respelling to try for a word the voice said wrong: CamelCase apart,
- * capitals letter by letter; anything else is the caller's to spell. */
+/** Words whose spelling a reader cannot sound out, as they sound: the
+ * voice model's guess at them, and Whisper's, goes wrong more than most. */
+const SOUNDS: Record<string, string> = {
+  does: "duz", doesnt: "duzzent", says: "sez", said: "sed", done: "dun", gone: "gawn", one: "wun", once: "wunce", none: "nun", some: "sum",
+  come: "kum", become: "bee-kum", love: "luv", above: "uh-buv", were: "wur", where: "wair", there: "thair", their: "thair", whose: "hooz",
+  who: "hoo", two: "too", eight: "ayt", height: "hite", weight: "wayt", friend: "frend", busy: "bizzy", women: "wimmin", woman: "wumman",
+  often: "offen", iron: "eye-urn", island: "eye-lund", colonel: "kernel", choir: "kwire", queue: "kyoo", recipe: "ress-ih-pee",
+  genre: "zhahn-ruh", debut: "day-byoo", suite: "sweet", niche: "neesh", segue: "seg-way", cache: "kash", data: "day-tuh", route: "root",
+  through: "throo", though: "thoh", enough: "ee-nuff", tough: "tuff", laugh: "laff", answer: "ann-ser", sword: "sord", walk: "wawk",
+  talk: "tawk", could: "kood", would: "wood", should: "shood", build: "bild", guide: "gyde", juice: "joos", ocean: "oh-shun",
+  people: "pee-pul", every: "ev-ree", business: "biz-ness", minute: "min-it", video: "vid-ee-oh", audio: "aw-dee-oh", editor: "ed-it-er",
+  edit: "ed-it", agent: "ay-junt", agents: "ay-junts", app: "ap", gif: "jif", sql: "sequel", ai: "A I", ui: "U I",
+};
+
+/** How a word sounds by the usual English rules, or itself when none
+ * applies: -tion "shun", -ture "cher", ph "f", silent kn and wr, igh
+ * "eye", a silent final e lengthening its vowel (home "hohm"). */
+function soundOut(w: string): string {
+  let x = w.toLowerCase();
+  x = x.replace(/tion$/, "shun").replace(/sion$/, "zhun").replace(/ture$/, "cher").replace(/ph/g, "f").replace(/^kn/, "n").replace(/^wr/, "r").replace(/igh/g, "eye").replace(/qu/g, "kw");
+  x = x.replace(/c(?=[eiy])/g, "s");
+  const e = /^(.*?)([aeiou])([^aeiouy])e$/.exec(x);
+  const long: Record<string, string> = { a: "ay", e: "ee", i: "eye", o: "oh", u: "oo" };
+  if (e && !/[aeiou]$/.test(e[1])) x = e[1] + long[e[2]] + e[3];
+  return x;
+}
+
+/**
+ * A respelling for a word the voice said wrong: capitals letter by letter,
+ * CamelCase apart, then the word as it sounds (a table of words English
+ * spells against their sound, "does" "duz", then the usual rules, "home"
+ * "hohm"), then a long word in syllables ("Olivet" "ol-iv-et"). Null for
+ * a short regular word, where a respelling would read the same.
+ */
 export function respell(word: string): string | null {
   if (/^[A-Z]{2,6}s?$/.test(word)) return word.replace(/s$/, "").split("").join(" ") + (word.endsWith("s") ? "s" : "");
   if (/^[A-Z]?[a-z]+(?:[A-Z][a-z]+)+$/.test(word)) return word.replace(/([a-z])([A-Z])/g, "$1 $2");
+  const key = word.toLowerCase().replace(/[^a-z]/g, "");
+  if (SOUNDS[key] && SOUNDS[key] !== key) return SOUNDS[key];
+  const heard = soundOut(key);
+  if (heard !== key) return heard;
+  const parts = key.match(/[^aeiouy]*[aeiouy]+(?:[^aeiouy](?![aeiouy]))?/g);
+  if (parts && parts.length > 1 && parts.join("") === key) return parts.join("-");
   return null;
 }
 
@@ -205,19 +275,30 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
   const fixes: Fix[] = [];
   const written = m.text ? parseLine(m.text).written.split(/\s+/) : [];
   for (const d of m.differences) {
-    if (d.minor) continue;
-    const word = written.find((w) => d.script && w.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase() === d.script.replace(/\s+/g, ""));
-    const spell = word && respell(word.replace(/[^\p{L}\p{N}]/gu, ""));
-    if (d.kind === "misheard" && spell) fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"`, tool: "retake_voiceover", args: { clip_id: m.clipId, pronounce: { ...m.pronounce, [word.replace(/[^\p{L}\p{N}]/gu, "")]: spell } } });
-    else if (d.kind === "misheard")
-      fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"`, tool: "retake_voiceover", args: { clip_id: m.clipId, pronounce: { ...m.pronounce, [d.script!.split(" ")[0]]: "<spell it as it sounds>" } } });
-    else if (d.kind === "missing") fixes.push({ problem: `"${d.script}" was not heard`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
-    else fixes.push({ problem: `"${d.heard}" was heard but is not in the script`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
+    // A slip, or a word a larger model heard right: nothing to retake.
+    if (d.minor || d.likely === "recognizer") continue;
+    const sure = d.likely === "voice" ? " (a larger model heard it the same: likely the voice)" : "";
+    const plain = (w: string) => w.replace(/[^\p{L}\p{N}']/gu, "");
+    const bare = (w: string) => w.toLowerCase().replace(/'/g, "");
+    // The script's words it covers, as written.
+    const words = (d.script ?? "").split(" ").map((t) => written.map(plain).find((w) => bare(w) === bare(t))).filter((w): w is string => !!w);
+    const tried = words.find((w) => m.pronounce?.[w]);
+    // The longest word with a respelling, the likeliest to be misread.
+    const spell = words.map((w) => [w, respell(w)] as const).filter((x): x is readonly [string, string] => !!x[1]).sort((a, b) => b[0].length - a[0].length)[0];
+    const slower = { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.9) };
+    if (d.kind === "misheard" && tried)
+      // Respelled already and still wrong: say it another way.
+      fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"${sure}, though respelled "${m.pronounce![tried]}": reword the line without "${tried}", or read it slower`, tool: "retake_voiceover", args: slower });
+    else if (d.kind === "misheard" && spell) fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, pronounce: { ...m.pronounce, [spell[0]]: spell[1] } } });
+    else if (d.kind === "misheard") fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"${sure}; no respelling reads differently: read it slower, or reword the line around it`, tool: "retake_voiceover", args: slower });
+    else if (d.kind === "missing") fixes.push({ problem: `"${d.script}" was not heard${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
+    else fixes.push({ problem: `"${d.heard}" was heard but is not in the script${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
   }
   // A speed change of more than 15% at once drags or rushes the voice;
   // review again after the retake.
-  if (m.sps !== null && m.sps > R.fastSps) fixes.push({ problem: `fast: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.max(0.5, (m.speed ?? 1) * Math.max(0.85, 4.8 / m.sps))) } });
-  if (m.sps !== null && m.sps < R.slowSps) fixes.push({ problem: `slow: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.min(2, (m.speed ?? 1) * Math.min(1.15, 4.5 / m.sps))) } });
+  const fast = m.pace === "fast" ? R.fastIntentSps : R.fastSps, slow = m.pace === "slow" ? R.slowIntentSps : R.slowSps;
+  if (m.sps !== null && m.sps > fast) fixes.push({ problem: `fast: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.max(0.5, (m.speed ?? 1) * Math.max(0.85, 4.8 / m.sps))) } });
+  if (m.sps !== null && m.sps < slow) fixes.push({ problem: `slow: ${m.sps} syllables a second (read speech runs 4-5.5)`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.min(2, (m.speed ?? 1) * Math.min(1.15, 4.5 / m.sps))) } });
   if (m.lead > R.leadMax) fixes.push({ problem: `${m.lead} s of silence before the first word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "start", to: round(m.start + m.lead - 0.06) } });
   if (m.tail > R.tailMax) fixes.push({ problem: `${m.tail} s of silence after the last word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "end", to: round(m.end - m.tail + 0.2) } });
   if (m.longestPause > R.pauseMax && !m.marks.some((s) => Math.abs(s - m.longestPause) < 0.25)) fixes.push({ problem: `a ${m.longestPause} s pause inside the line that no mark asked for`, tool: "retake_voiceover", args: { clip_id: m.clipId } });
