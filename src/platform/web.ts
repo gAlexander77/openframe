@@ -4,6 +4,7 @@
 // back from OPFS is disk-backed, so a 4 GB video costs no memory.
 
 import { BlobSource, UrlSource, type StreamTargetChunk } from "mediabunny";
+import { ABOUT_LINKS } from "../lib/about";
 import type { Project } from "../lib/project/types";
 import { capBytes, TooBigToCopy, tooBigToCopy, URL_COPY_LIMIT } from "../lib/urlImport";
 import type { ExportTarget, ImportedFile, Platform, ProjectSummary } from "./types";
@@ -96,6 +97,10 @@ export const web: Platform = {
     const file = await handle.getFile();
     live.set(key, file);
     return { name, src: key, size: file.size };
+  },
+
+  async openLink(page) {
+    window.open(ABOUT_LINKS[page], "_blank", "noopener,noreferrer");
   },
 
   async sourceFor(src) {

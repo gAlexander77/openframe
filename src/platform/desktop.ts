@@ -117,6 +117,8 @@ export const desktop: Platform = {
 
   kind: "desktop",
 
+  openLink: (page) => invoke<void>("about_open", { page }),
+
   async pickMedia() {
     const picked = await open({
       multiple: true,

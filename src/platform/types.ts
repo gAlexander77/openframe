@@ -3,6 +3,7 @@
 // app branches on platform.
 
 import type { Source, StreamTargetChunk } from "mediabunny";
+import type { AboutLink } from "../lib/about";
 import type { AgentCli, AgentCliResult } from "../lib/agentSetup";
 import type { Project } from "../lib/project/types";
 
@@ -70,6 +71,10 @@ export interface Platform {
     /** Desktop: open the CLI's install guide in the default browser. */
     openInstallPage?(cli: AgentCli): Promise<void>;
   };
+
+  /** Open one of Help > About's pages in the default browser (desktop:
+   * by name, through Rust; web: a new tab). */
+  openLink(page: AboutLink): Promise<void>;
 
   /** fetch for the local model servers (Ollama, LM Studio). The desktop
    * webview's origin is refused by Ollama's CORS, so Rust makes the call. */

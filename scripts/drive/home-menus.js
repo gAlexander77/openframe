@@ -14,8 +14,11 @@ async (page) => {
   details.help = { ok: help.length === 2 && /shortcuts/i.test(help[0]) && /^About /.test(help[1]), items: help };
   const about = await page.getByRole("menuitem", { name: /^About / }).textContent();
   await page.getByRole("menuitem", { name: /^About / }).click();
-  const messages = await page.locator(".toast").allTextContents();
-  details.about = { ok: messages.some((m) => about.replace(/^About /, "").replace(/\s+/g, "") === m.replace(/\s+/g, "")), messages };
+  // About is a dialog with the name and version (about.js checks the rest).
+  const shown = await page.locator("dialog.about-dialog .about-head").innerText();
+  const [name, version] = about.replace(/^About /, "").split(/(v\d\S*)/);
+  details.about = { ok: shown.includes(name.trim()) && shown.includes(`Version ${version.slice(1)}`), shown, about };
+  await page.keyboard.press("Escape");
   await page.locator(".menubar-button", { hasText: /^Help$/ }).click();
   await page.getByRole("menuitem", { name: /shortcuts/i }).click();
   details.shortcuts = { ok: await page.getByRole("dialog").isVisible() };

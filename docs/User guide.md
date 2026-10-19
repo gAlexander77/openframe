@@ -292,6 +292,14 @@ External agents connect only after the user enables "Allow AI agents".
 Codex CLI and Claude Code setup), headless rendering, and the `openframe`
 command line. [[AI tools]] records the algorithms and limits.
 
+## About OpenFrame
+
+**Help → About OpenFrame** shows the version, the license (GPL-3.0-only:
+you may share and change the app under its terms) and the open-source
+packages it is built with. Its links open the license text, the source
+code, this guide and the full list of third-party licenses in your
+browser.
+
 ## Report a problem or help improve it
 
 Follow [CONTRIBUTING.md](../CONTRIBUTING.md). Include the revision, OS,

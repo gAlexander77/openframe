@@ -1,3 +1,4 @@
+mod about;
 mod agent_cli;
 mod export;
 mod ffmpeg;
@@ -87,6 +88,7 @@ pub fn run() {
             mcp::mcp_reply,
             agent_cli::agent_cli_add,
             agent_cli::agent_cli_install_page,
+            about::about_open,
             models::model_request,
             render::render_job,
             render::render_open_out,

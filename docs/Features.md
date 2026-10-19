@@ -221,6 +221,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   are kept as shares of the window, so a bigger screen grows them all
   (CapCut's behavior). Drag the splitters (double-click resets one); View
   has Default, Large preview and Large timeline layouts and Reset layout.
+- **About** (Help > About, on Home and in the editor): name, version and
+  platform; the GPL-3.0-only license with a link to its text; links to the
+  source code, the user guide and [[Third-party licenses]]; and the
+  open-source packages the app uses directly, with versions and licenses,
+  read from `package.json`, the installed packages, `Cargo.toml` and
+  `Cargo.lock` when the app is built (`src/lib/about.ts`), so the list
+  cannot drift. The desktop app opens these pages by name through Rust
+  (`about_open`), never a URL from the webview; the web build opens a tab.
 - **Preferences** (Edit > Preferences, Ctrl+,; Premiere's Timeline
   preferences): the lengths new pictures (5 s), titles and effect layers
   (3 s) and transitions (0.5 s) start at. Per viewer, kept with the keymap

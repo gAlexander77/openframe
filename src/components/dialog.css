@@ -30,3 +30,18 @@
 .prefs-row input { width: 100%; }
 .prefs-unit { color: var(--text-3); font-size: var(--fs-xs); }
 .prefs-dialog footer { display: flex; justify-content: space-between; margin-top: 16px; }
+/* Help > About. */
+.about-dialog { width: min(560px, calc(100vw - 40px)); }
+.about-head { display: flex; align-items: center; gap: 12px; }
+.about-mark { width: 40px; height: 40px; border-radius: 10px; margin: 0; }
+.about-name { display: block; font-size: var(--fs-lg); }
+.about-version { color: var(--text-3); font-size: var(--fs-sm); }
+.about-text { margin: 12px 0 0; color: var(--text-2); line-height: 1.5; }
+.about-section { margin-top: 16px; }
+.about-section h3 { margin: 0; font-size: var(--fs-sm); color: var(--text-2); font-weight: 600; }
+.about-dialog .link-btn { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; font-size: inherit; }
+.about-links { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 14px; }
+.about-credits { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: var(--fs-xs); }
+.about-credits td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); color: var(--text-2); }
+.about-credits td:first-child { color: var(--text-1); }
+.about-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--fs-xs); }

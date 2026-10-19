@@ -239,7 +239,8 @@ pub fn agent_cli_install_page(cli: String) -> Result<(), String> {
     open_url(Cli::parse(&cli)?.install_page()).map_err(|e| e.to_string())
 }
 
-fn open_url(url: &str) -> std::io::Result<()> {
+/// Open a fixed address in the default browser (Help > About's links too).
+pub(crate) fn open_url(url: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
         // ShellExecute's "open", what the shell does for a clicked link:

@@ -1,8 +1,26 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
 import pkg from "./package.json" with { type: "json" };
+import { readCredits } from "./src/lib/about.ts";
 
 const host = process.env.TAURI_DEV_HOST;
+
+// Help > About's credits, read from what is installed and locked when the
+// app is built (src/lib/about.ts).
+const text = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8");
+const credits = readCredits(
+  pkg,
+  (name) => {
+    try {
+      return JSON.parse(text(`./node_modules/${name}/package.json`));
+    } catch {
+      return null;
+    }
+  },
+  text("./src-tauri/Cargo.toml"),
+  text("./src-tauri/Cargo.lock"),
+);
 
 // One config serves both targets: `tauri dev` loads this server in the
 // webview, `npm run dev` serves the same app to a browser (ADR-003). The app
@@ -14,6 +32,7 @@ export default defineConfig({
   // that cannot change while the app runs.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_CREDITS__: JSON.stringify(credits),
   },
 
   // Workers are ES modules so they can import mediabunny like the main thread.

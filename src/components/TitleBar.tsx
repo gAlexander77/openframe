@@ -16,6 +16,7 @@ import { applyLayoutPreset, currentLayout } from "../state/layout";
 import { MenuBar, type MenuItem } from "./Menu";
 import { VIEWER_GUIDES } from "./ViewerGuides";
 import { SaveCopyDialog } from "./SaveCopyDialog";
+import { AboutDialog } from "./AboutDialog";
 
 /** The frameless window's title bar: menus, the project name, export, and
  * (on Windows/Linux desktop) the window buttons. Tauri's deep drag region
@@ -26,6 +27,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const [editing, setEditing] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [copyDialog, setCopyDialog] = useState(false);
+  const [about, setAbout] = useState(false);
   const assistantOpen = useAssistantValue((s) => s.open);
 
   // Read the window, not just our button: caption double-click and the OS
@@ -149,7 +151,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { label: "Reset layout", onSelect: () => applyLayoutPreset("default") },
       ],
     },
-    { label: "Help", items: () => [{ action: "showShortcuts" }, { label: `About ${APP_NAME}`, onSelect: () => toast(`${APP_NAME} v${__APP_VERSION__}`), hint: `v${__APP_VERSION__}` }] },
+    { label: "Help", items: () => [{ action: "showShortcuts" }, { label: `About ${APP_NAME}`, onSelect: () => setAbout(true), hint: `v${__APP_VERSION__}` }] },
   ];
 
   const win = isDesktop ? getCurrentWindow() : null;
@@ -228,6 +230,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         )}
       </div>
     </header>
-    {copyDialog && !props.home && <SaveCopyDialog onClose={() => setCopyDialog(false)} />}</>
+    {copyDialog && !props.home && <SaveCopyDialog onClose={() => setCopyDialog(false)} />}
+    {about && <AboutDialog onClose={() => setAbout(false)} />}</>
   );
 }
