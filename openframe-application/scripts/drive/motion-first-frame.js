@@ -55,7 +55,8 @@ async (page) => {
     };
     /** What the viewer shows at `t` seconds. */
     const viewer = async (t) => {
-      ve.seek(Math.round(t * 30));
+      // The app's nearest frame: a time exactly between two takes the earlier (ADR-102).
+      ve.seek(Math.ceil(t * 30 - 0.5 - 1e-9));
       await new Promise((r) => setTimeout(r, 20));
       await ve.rendered();
       const { width: w, height: h, data } = ve.pixels();
