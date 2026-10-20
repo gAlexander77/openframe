@@ -19,16 +19,20 @@
 // title card) refits as one picture, a split screen that filled the frame
 // fills the new one, text never ends under the frame's readable size, and
 // a version's overrides move, resize or hide a clip by hand (ADR-101). A
-// shorter cut
-// keeps the opening and the end card, cutting the middle out of the
-// picture tracks; the music runs from the start and fades at the new end.
+// card grows as one picture to the readable size and is restacked when it
+// then does not fit, a shape that spans the frame keeps its share of it,
+// and every title ends inside the zone check_project judges, with room for
+// the outline it may suggest (ADR-103). A shorter cut keeps the opening
+// and the end card, cutting the middle out of the picture tracks; the
+// music runs from the start and fades at the new end.
 
-import { safeArea, titleWrap } from "./ads";
-import { VERTICAL_SAFE } from "./align";
+import { titleWrap } from "./ads";
+import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
 import { captionFit, captionY } from "./captionLooks";
 import { withoutCaptions } from "./captions";
+import { seenLetters, seenTexts } from "./designCheck";
 import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
@@ -123,13 +127,13 @@ interface Frame {
 
 const short = (f: Frame) => Math.min(f.w, f.h);
 
-/** The title-safe area as check_project judges a version: on any frame
- * taller than wide (4:5 as well as 9:16) the column the vertical apps'
- * buttons and captions leave; ads.ts's safeArea gives 4:5 plain margins,
- * and a 4:5 version's lower third landed under the buttons the check then
- * named. */
+/** The title-safe area as check_project judges a version (align.ts's
+ * titleZone, the one both use): on any frame taller than wide (4:5 as well
+ * as 9:16) the column the vertical apps' buttons and captions leave;
+ * ads.ts's safeArea gives 4:5 plain margins, and a 4:5 version's lower
+ * third landed under the buttons the check then named. */
 function safeOf(p: Pick<Project, "width" | "height">): { left: number; top: number; right: number; bottom: number } {
-  return p.height > p.width ? { ...VERTICAL_SAFE } : safeArea(p);
+  return titleZone(p);
 }
 
 /** titleWrap within that area: the width a title centered at `x` wraps in. */
@@ -225,6 +229,20 @@ function fullFrame(p: Project, c: VisualClip, m: Frame): boolean {
 export function fillsFrame(p: Project, c: Clip): boolean {
   const m = mediaSize(p, c);
   return !!m && fullFrame(p, c as VisualClip, m);
+}
+
+/** A shape that spans the frame where it rests: both its edges at or past
+ * the frame's on one axis (a gradient scrim across the top, a band, a
+ * dimmer over everything). It is part of the frame, as footage is: it
+ * keeps its share of the new frame instead of its pixels, and is not
+ * placed in the safe area like a box. Kept as a box, the Northbound test's
+ * scrim (1.02 of the width) became a box with hard edges on 9:16, short of
+ * the top. */
+function spansFrame(p: Project, c: Clip): boolean {
+  if (c.type !== "color" || !c.shape) return false;
+  const b = boxOf(p, c, restOf(p, [c]) - c.start);
+  const e = 0.005;
+  return (b.left <= p.width * e && b.right >= p.width * (1 - e)) || (b.top <= p.height * e && b.bottom >= p.height * (1 - e));
 }
 
 /** Text sizes are pixels at a 1080-tall frame: scaling every pixel measure
@@ -394,11 +412,13 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     }
     if (c.shape) {
       // A shape's box is fractions of the frame and its stroke pixels at a
-      // 1080-tall one: both keep their pixels against the short side.
+      // 1080-tall one: both keep their pixels against the short side; a
+      // shape that spans the frame keeps its share of it (a scrim still
+      // covers the top half), its stroke its pixels.
       const g = short(b) / short(a);
-      out = scaleShape(out as ColorClip, (a.w / b.w) * g, (a.h / b.h) * g, (a.h / b.h) * g);
+      out = spansFrame(master, c) ? scaleShape(out as ColorClip, 1, 1, (a.h / b.h) * g) : scaleShape(out as ColorClip, (a.w / b.w) * g, (a.h / b.h) * g, (a.h / b.h) * g);
     }
-    if (c.mask && c.mask.shape !== "linear" && c.mask.shape !== "mirror") {
+    if (c.mask && c.mask.shape !== "linear" && c.mask.shape !== "mirror" && !(c.shape && spansFrame(master, c))) {
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
       out = { ...out, mask: { ...c.mask, width: +(c.mask.width * kw).toFixed(5), height: +(c.mask.height * kh).toFixed(5) } } as Clip;
     }
@@ -473,6 +493,7 @@ function restOf(p: Project, set: VisualClip[]): number {
 function isOverlay(q: Project, c: Clip): c is VisualClip {
   if (c.type === "audio" || c.type === "adjustment" || (c.type === "compound" && !asUnit(q, c))) return false;
   if (c.type === "text") return true;
+  if (spansFrame(q, c)) return false;
   const b = boxOf(q, c, restOf(q, [c]) - c.start);
   return b.right - b.left < q.width * 0.95 || b.bottom - b.top < q.height * 0.95;
 }
@@ -1033,25 +1054,88 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  return keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures);
+  return settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+}
+
+/** The outline check_project suggests for a title (contrast.ts's
+ * contrastFixes: 5% of its size), in canvas pixels past what it draws
+ * around its letters now: the room a version leaves for it. */
+function outlineRoom(q: Project, c: TextClip): number {
+  const s = c.style;
+  const suggested = Math.max(2, Math.round(s.size * 0.05));
+  return Math.max(0, suggested - Math.max(s.background?.padding ?? 0, (s.stroke?.width ?? 0) + (s.stroke2?.width ?? 0))) * (q.height / 1080);
+}
+
+/**
+ * The version's titles kept inside the area check_project judges them by
+ * (titleZone), measured as it measures them (seenLetters: the letters with
+ * their box and outline, through a card's compound clip), with room for
+ * the outline it would suggest: the Northbound test's titles were wrapped
+ * to the edge of the 9:16 column exactly, so the outline the check then
+ * suggested for contrast pushed them under the apps' buttons. A lone title
+ * centered on the frame shrinks a little to stay centered (never under the
+ * readable size); a group, a card or any other title moves inside.
+ */
+function settleTitles(q: Project, pictures: Set<Id>): Project {
+  const W = q.width, H = q.height;
+  const z = titleZone(q);
+  const zone: Rect = { left: z.left * W, right: W * (1 - z.right), top: z.top * H, bottom: H * (1 - z.bottom) };
+  const floor = minTextSize(W, H);
+  // What moves together: a card (its outermost compound clip), a group's
+  // overlays (an ad element's parts), or a title alone.
+  const movers = new Map<string, { texts: ReturnType<typeof seenTexts>; clips: VisualClip[] }>();
+  const root = q.tracks.flatMap((t) => t.clips);
+  for (const s of seenTexts(q)) {
+    if (s.c.caption || (s.via.length && !pictures.has(s.via[0].compoundId))) continue;
+    const key = s.via.length ? s.via[0].id : s.c.group ? `group ${s.c.group}` : s.c.id;
+    const clips = s.via.length ? [s.via[0]] : s.c.group ? root.filter((c): c is VisualClip => c.group === s.c.group && !c.disabled && isOverlay(q, c)) : [s.c];
+    movers.set(key, { texts: [...(movers.get(key)?.texts ?? []), s], clips });
+  }
+  const changed = new Map<Id, Clip>();
+  const into = (lo: number, hi: number, min: number, max: number) => (hi - lo > max - min + 0.5 ? (min + max) / 2 - (lo + hi) / 2 : lo < min ? min - lo : hi > max ? max - hi : 0);
+  for (const { texts, clips } of movers.values()) {
+    const boxOfAll = (view: Project, list: typeof texts) => {
+      const boxes = list.flatMap((s) => seenLetters(view, s, undefined, outlineRoom(view, s.c))?.box ?? []);
+      return boxes.length ? union(boxes) : null;
+    };
+    let u = boxOfAll(q, texts);
+    if (!u || (u.left >= zone.left - 0.5 && u.right <= zone.right + 0.5 && u.top >= zone.top - 0.5 && u.bottom <= zone.bottom + 0.5)) continue;
+    let moving = clips;
+    const lone = texts.length === 1 && !texts[0].via.length && clips.length === 1 ? texts[0].c : undefined;
+    if (lone && Math.abs((u.left + u.right) / 2 - W / 2) < W * 0.01) {
+      // Centered: kept centered, a little smaller, within even margins.
+      const even = 2 * Math.min(W / 2 - zone.left, zone.right - W / 2);
+      const k = Math.max(floor / lone.style.size, Math.min(1, even / (u.right - u.left)));
+      if (k < 1 - 1e-4) {
+        const smaller = shrink(lone, k) as TextClip;
+        moving = [smaller];
+        u = boxOfAll({ ...q, tracks: q.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === lone.id ? smaller : c)) })) }, [{ ...texts[0], c: smaller }])!;
+      }
+    }
+    const dx = into(u.left, u.right, zone.left, zone.right), dy = into(u.top, u.bottom, zone.top, zone.bottom);
+    for (const c of moving) {
+      let v = mapPath(c, "transform.x", (x) => +(x + dx / W).toFixed(5));
+      v = mapPath(v, "transform.y", (y) => +(y + dy / H).toFixed(5));
+      changed.set(c.id, v);
+    }
+  }
+  if (!changed.size) return q;
+  return { ...q, tracks: q.tracks.map((t) => (t.clips.some((c) => changed.has(c.id)) ? { ...t, clips: t.clips.map((c) => changed.get(c.id) ?? c) } : t)) };
 }
 
 /** Every timeline's clips: the project's and each compound's, with the
  * compound they are in. */
 const timelines = (p: Project) => [{ k: undefined as Id | undefined, tracks: p.tracks }, ...(p.compounds ?? []).map((k) => ({ k: k.id as Id | undefined, tracks: k.tracks }))];
 
-/** How large a picture compound is drawn, at the least, where something
- * plays it (a compound inside one, times that one's). */
-function drawnScale(p: Project, id: Id, pictures: Set<Id>, depth = 0): number {
-  let least = Infinity;
-  for (const { k, tracks } of timelines(p))
-    for (const t of tracks)
-      for (const c of t.clips) {
-        if (c.type !== "compound" || c.compoundId !== id) continue;
-        const own = Math.min(Math.abs(c.transform.scale), ...(c.keyframes?.["transform.scale"] ?? []).map((x) => Math.abs(x.v)));
-        least = Math.min(least, own * (k && pictures.has(k) && depth < 6 ? drawnScale(p, k, pictures, depth + 1) : 1));
-      }
-  return Number.isFinite(least) ? least : 1;
+/** How large a title must grow to read on q (minTextSize, as check_project
+ * judges it): to q's floor when the master's type met the master's floor,
+ * else to keep its share of the short side. `sa` and `sb`: the scale the
+ * master and the version draw it at (a compound clip's). 1 or less: as it is. */
+function readableNeed(p: Project, q: Project, before: TextClip, now: TextClip, sa = 1, sb = 1): number {
+  const floorOf = (x: Project) => shareOf(x, minTextSize(x.width, x.height));
+  const a = shareOf(p, before.style.size * sa), b = shareOf(q, now.style.size * sb);
+  const target = a >= floorOf(p) - 1e-6 ? floorOf(q) : Math.min(floorOf(q), a);
+  return b > 0 ? target / b : 1;
 }
 
 /**
@@ -1060,30 +1144,274 @@ function drawnScale(p: Project, id: Id, pictures: Set<Id>, depth = 0): number {
  * third's 49 on 16:9 (4.5% of the short side) kept its pixels on 9:16 as
  * size 28, under 9:16's 31 (5%), so the version made what its check
  * named. Text the master had smaller keeps at least its share of the short
- * side. Inside a picture compound (a card) it counts at the size the
- * compound clip draws it; the text grows about its own center, keeping its
- * wrap width.
+ * side. A title grows about its own center, keeping its wrap width; a
+ * picture compound (a card) grows as one picture instead (readableCards).
  */
 function keepReadable(p: Project, out: Project, pictures: Set<Id>): Project {
-  const floorOf = (q: Project) => shareOf(q, minTextSize(q.width, q.height));
   const was = new Map(timelines(p).flatMap(({ tracks }) => tracks.flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text").map((c) => [c.id, c] as const))));
-  const scales = new Map<Id, [number, number]>();
-  const drawn = (k: Id | undefined): [number, number] => {
-    if (!k || !pictures.has(k)) return [1, 1];
-    if (!scales.has(k)) scales.set(k, [drawnScale(p, k, pictures), drawnScale(out, k, pictures)]);
-    return scales.get(k)!;
-  };
-  const bump = (c: TextClip, k: Id | undefined): TextClip => {
+  const bump = (c: TextClip): TextClip => {
     const before = was.get(c.id);
     if (!before || c.disabled) return c;
-    const [sa, sb] = drawn(k);
-    const a = shareOf(p, before.style.size * sa), b = shareOf(out, c.style.size * sb);
-    const target = a >= floorOf(p) - 1e-6 ? floorOf(out) : Math.min(floorOf(out), a);
-    if (!(b > 0) || b >= target - 1e-6) return c;
-    return { ...c, style: scaleStyle(c.style, target / b, Infinity) };
+    const k = readableNeed(p, out, before, c);
+    return k > 1 + 1e-6 ? { ...c, style: scaleStyle(c.style, k, Infinity) } : c;
   };
-  const fix = (tracks: Track[], k: Id | undefined) => tracks.map((t) => (t.clips.some((c) => c.type === "text") ? { ...t, clips: t.clips.map((c) => (c.type === "text" ? bump(c, k) : c)) } : t));
-  return { ...out, tracks: fix(out.tracks, undefined), ...(out.compounds ? { compounds: out.compounds.map((k) => ({ ...k, tracks: fix(k.tracks, k.id) })) } : {}) };
+  const fix = (tracks: Track[]) => tracks.map((t) => (t.clips.some((c) => c.type === "text") ? { ...t, clips: t.clips.map((c) => (c.type === "text" ? bump(c) : c)) } : t));
+  const bumped = { ...out, tracks: fix(out.tracks), ...(out.compounds ? { compounds: out.compounds.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: fix(k.tracks) })) } : {}) };
+  return readableCards(p, bumped, pictures);
+}
+
+/** A clip's least scale where it rests and through its keys. */
+const leastScale = (c: VisualClip) => Math.min(Math.abs(c.transform.scale), ...(c.keyframes?.["transform.scale"] ?? []).map((x) => Math.abs(x.v)));
+
+/** The titles a picture compound shows, through the compounds nested in
+ * it, each with the scale it is drawn at (times `scale`). */
+function cardTexts(q: Project, id: Id, scale: number, depth = 0): { c: TextClip; s: number }[] {
+  const k = findCompound(q, id);
+  if (!k || depth > 5) return [];
+  return k.tracks.flatMap((t) =>
+    t.hidden || t.kind !== "video"
+      ? []
+      : t.clips.flatMap((c) => (c.disabled ? [] : c.type === "text" ? [{ c, s: scale }] : c.type === "compound" ? cardTexts(q, c.compoundId, scale * leastScale(c), depth + 1) : [])),
+  );
+}
+
+/**
+ * Picture compounds (title cards) whose type a version drew under the
+ * frame's readable size grow as one picture to meet it, so their parts
+ * keep their layout (ADR-103). Raised title by title instead, the
+ * Northbound test's end card on 9:16 kept its offsets at a third of the
+ * master's while its tagline, pill and url grew to the floor: the pill
+ * sat on the tagline. A card that then would not fit its room (a 16:9
+ * wordmark on a 9:16 frame) is restacked (fitCard).
+ */
+function readableCards(p: Project, out: Project, pictures: Set<Id>): Project {
+  if (!pictures.size) return out;
+  const was = new Map(timelines(p).flatMap(({ tracks }) => tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const))));
+  const tall = out.height > out.width;
+  const captions = tall ? out.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled))).map((c) => ({ ...spanOf([c]), top: boxOf(out, c).top })) : [];
+  let q = out;
+  // The cards on the project's timeline and on the scenes nested whole in it.
+  for (const { k, tracks } of timelines(out)) {
+    if (k && pictures.has(k)) continue;
+    for (const t of tracks)
+      for (const c of t.clips) {
+        if (c.type !== "compound" || c.disabled || !pictures.has(c.compoundId)) continue;
+        const m = was.get(c.id);
+        const before = new Map(m?.type === "compound" ? cardTexts(p, m.compoundId, leastScale(m)).map((x) => [x.c.id, x] as const) : []);
+        const need = Math.max(1, ...cardTexts(q, c.compoundId, leastScale(c)).map((x) => {
+          const b = before.get(x.c.id);
+          return b ? readableNeed(p, q, b.c, x.c, b.s, x.s) : 1;
+        }));
+        if (need <= 1 + 1e-4) continue;
+        const view: Project = { ...q, tracks };
+        const rest = restOf(view, [c]);
+        const box = boxOf(view, c, rest - c.start);
+        const room = areaOf(q, Math.abs((box.left + box.right) / 2 - q.width / 2) < q.width * 0.01);
+        room.bottom = aboveCaptions(q, room, spanOf([c]), captions);
+        const floor = minTextSize(q.width, q.height);
+        const fitted = fitCard(q, view, c, need, room, floor, m?.type === "compound" ? titlesPlace(p, k === undefined ? p.tracks : (findCompound(p, k)?.tracks ?? p.tracks), m) : undefined);
+        const swap = (ts: Track[]) => ts.map((x) => (x.clips.some((y) => y.id === c.id) ? { ...x, clips: x.clips.map((y) => (y.id === c.id ? fitted.clip : y)) } : x));
+        q = {
+          ...q,
+          ...(k === undefined ? { tracks: swap(q.tracks) } : {}),
+          compounds: q.compounds!.map((x) => (x.id === c.compoundId ? { ...x, tracks: fitted.tracks } : k !== undefined && x.id === k ? { ...x, tracks: swap(x.tracks) } : x)),
+        };
+      }
+  }
+  return q;
+}
+
+/** Where a card's titles sat up and down the master's safe area, 0 (at its
+ * top) to 1 (at its bottom): their box through the card's compound clip,
+ * where it rests. A soft glow behind them makes the card's own box taller
+ * than its titles, and placed by that box a card went to the top. */
+function titlesPlace(p: Project, tracks: Track[], m: CompoundClip): number | undefined {
+  const k = findCompound(p, m.compoundId);
+  if (!k) return undefined;
+  const view: Project = { ...p, tracks };
+  const rel = restOf(view, [m]) - m.start;
+  const S = paramAt(m, "transform.scale", rel), Y = paramAt(m, "transform.y", rel) * p.height;
+  const inner: Project = { ...p, tracks: k.tracks };
+  const texts = k.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((x): x is TextClip => x.type === "text" && !x.disabled)));
+  if (!texts.length) return undefined;
+  const u = union(texts.map((x) => boxOf(inner, x, restOf(inner, [x]) - x.start)));
+  const top = p.height / 2 + Y + (u.top - p.height / 2) * S, bottom = p.height / 2 + Y + (u.bottom - p.height / 2) * S;
+  const a = areaOf(p, false);
+  return share(top, bottom, a.top, a.bottom);
+}
+
+/**
+ * A card grown `F` times about its center (its smallest type then at the
+ * frame's readable size), fitted to its room (pixels of q's frame) as one
+ * picture: when it fits, it only moves inside. When it does not, its
+ * layout shrinks to the room as the whole card would (`r`), and its parts
+ * are restacked so nothing overlaps: type that would fall under the floor
+ * is held there and wraps within the card's width, a word too wide for
+ * the room shrinks to it, a row of parts side by side that is still too
+ * wide stacks (left to right becoming top to bottom), and the rows are
+ * laid out again in their order with their gaps, shrunk with the layout.
+ * A panel behind the titles keeps its margins around them (shrunk too); a
+ * soft glow behind them is fitted to the new stack as it was to the old.
+ * Never type grown inside a layout that shrank around it.
+ */
+function fitCard(q: Project, view: Project, c: CompoundClip, F: number, room: Rect, floor: number, place?: number): { clip: CompoundClip; tracks: Track[] } {
+  const W = q.width, H = q.height;
+  const k = findCompound(q, c.compoundId)!;
+  const rel = restOf(view, [c]) - c.start;
+  const was = boxOf(view, c, rel);
+  let clip = shrink(c, F) as CompoundClip;
+  const grown = boxOf(view, clip, rel);
+  const shift = (v: CompoundClip, dx: number, dy: number) => mapPath(mapPath(v, "transform.x", (x) => +(x + dx / W).toFixed(5)), "transform.y", (y) => +(y + dy / H).toFixed(5)) as CompoundClip;
+  clip = shift(clip, (was.left + was.right) / 2 - (grown.left + grown.right) / 2, (was.top + was.bottom) / 2 - (grown.top + grown.bottom) / 2);
+  const S = paramAt(clip, "transform.scale", rel), X = paramAt(clip, "transform.x", rel) * W, Y = paramAt(clip, "transform.y", rel) * H;
+  const drawn = (r: Rect): Rect => ({ left: W / 2 + X + (r.left - W / 2) * S, right: W / 2 + X + (r.right - W / 2) * S, top: H / 2 + Y + (r.top - H / 2) * S, bottom: H / 2 + Y + (r.bottom - H / 2) * S });
+  const inner: Project = { ...q, tracks: k.tracks };
+  const restIn = (x: VisualClip) => restOf(inner, [x]) - x.start;
+  const parts = k.tracks.flatMap((t) => (t.hidden || t.kind !== "video" ? [] : t.clips.filter((x): x is VisualClip => !x.disabled && "transform" in x)));
+  const at = new Map(parts.map((x) => [x.id, drawn(boxOf(inner, x, restIn(x)))]));
+  const D = (x: VisualClip) => at.get(x.id)!;
+  const center = (r: Rect): [number, number] => [(r.left + r.right) / 2, (r.top + r.bottom) / 2];
+  const size = (r: Rect) => ({ w: r.right - r.left, h: r.bottom - r.top });
+  const texts = parts.filter((x) => x.type === "text");
+  // Behind the titles: a part (not a title) that a title's middle lies on;
+  // a soft one (a glow: feathered, fading to transparent, or lightening)
+  // draws less than its box and need not stay in the room.
+  const behind = parts.filter((x) => x.type !== "text" && texts.some((t) => inRect(center(D(t)), D(x))));
+  const soft = (x: VisualClip) =>
+    ["screen", "add", "lighten", "colorDodge"].includes(x.blend) || (x.type === "color" && !!x.shape && ((x.shape.feather ?? 0) > 0 || /transparent|#[0-9a-f]{6}00$|#[0-9a-f]{3}0$/i.test(x.shape.gradient?.to ?? "")));
+  const panels = behind.filter((x) => !soft(x)), glows = behind.filter(soft);
+  const fg = parts.filter((x) => !behind.includes(x));
+  if (!fg.length) return { clip, tracks: k.tracks };
+  const into = (lo: number, hi: number, min: number, max: number) => (hi - lo > max - min ? (min + max) / 2 - (lo + hi) / 2 : lo < min ? min - lo : hi > max ? max - hi : 0);
+  const U = union(fg.map(D));
+  const whole = union([U, ...panels.map(D)]);
+  const roomW = room.right - room.left, roomH = room.bottom - room.top;
+  // The share of the grown card's layout that fits the room.
+  const r = Math.min(1, roomW / size(whole).w, roomH / size(whole).h);
+  if (r > 1 - 1e-4) {
+    // It fits as one picture: its titles where they sat in the master's
+    // safe area, the whole inside the room.
+    const dy = place === undefined ? 0 : startAt(place, U.bottom - U.top, room.top, room.bottom) - U.top;
+    const w2 = { ...whole, top: whole.top + dy, bottom: whole.bottom + dy };
+    return { clip: shift(clip, into(w2.left, w2.right, room.left, room.right), dy + into(w2.top, w2.bottom, room.top, room.bottom)), tracks: k.tracks };
+  }
+  // Restacked. The panels' margins around the titles, shrunk with the layout.
+  const margin = {
+    l: Math.max(0, ...panels.map((x) => U.left - D(x).left)) * r,
+    r: Math.max(0, ...panels.map((x) => D(x).right - U.right)) * r,
+    t: Math.max(0, ...panels.map((x) => U.top - D(x).top)) * r,
+    b: Math.max(0, ...panels.map((x) => D(x).bottom - U.bottom)) * r,
+  };
+  const left = room.left + margin.l, right = room.right - margin.r, innerW = right - left;
+  // Each part at the layout's share; type held at the floor, wrapping
+  // within the card's width; a part still wider than that shrinks to it.
+  const placed = new Map<Id, { v: VisualClip; box: Rect }>();
+  for (const x of fg) {
+    const f = x.type === "text" ? Math.max(r, Math.min(1, floor / (x.style.size * S))) : r;
+    // Only type held over the layout's share wraps anew (at the layout's
+    // share every part fits, by the share's choice).
+    const make = (ff: number): VisualClip => {
+      const v = shrink(x, ff);
+      return v.type === "text" && ff > r + 1e-6 ? { ...v, style: { ...v.style, maxWidth: +Math.min(v.style.maxWidth, innerW / (W * S)).toFixed(5) } } : v;
+    };
+    let v = make(f);
+    let b = drawn(boxOf(inner, v, restIn(x)));
+    if (size(b).w > innerW + 0.5) {
+      v = make((f * innerW) / size(b).w);
+      b = drawn(boxOf(inner, v, restIn(x)));
+    }
+    placed.set(x.id, { v, box: b });
+  }
+  const now = (x: VisualClip) => size(placed.get(x.id)!.box);
+  // Rows: parts shown together and level with each other (their heights
+  // overlap by 30%), as the card had them.
+  const rows: VisualClip[][] = [];
+  for (const x of [...fg].sort((a, b) => D(a).top - D(b).top)) {
+    const row = rows.find((rw) => rw.some((y) => together(spanOf([x]), spanOf([y])) && Math.min(D(x).bottom, D(y).bottom) - Math.max(D(x).top, D(y).top) >= 0.3 * Math.min(size(D(x)).h, size(D(y)).h)));
+    if (row) row.push(x);
+    else rows.push([x]);
+  }
+  const gapMin = 0.025 * Math.min(W, H);
+  // A row still too wide stacks, left to right becoming top to bottom.
+  const laid: { parts: VisualClip[]; gap: number; alone: boolean }[] = [];
+  rows.forEach((rw, i) => {
+    const byX = [...rw].sort((a, b) => D(a).left - D(b).left);
+    const gap = i ? (union(rw.map(D)).top - union(rows[i - 1].map(D)).bottom) * r : 0;
+    const width = byX.reduce((n, x, j) => n + now(x).w + (j ? Math.max(0, D(x).left - D(byX[j - 1]).right) * r : 0), 0);
+    if (rw.length > 1 && width > innerW + 0.5) byX.forEach((x, j) => laid.push({ parts: [x], gap: j ? gapMin : gap, alone: true }));
+    else laid.push({ parts: rw, gap, alone: false });
+  });
+  // Each row's extent about its middle: its parts' middles keep their
+  // offsets from it (shrunk with the layout), each part its new height.
+  const ext = laid.map((rw) => {
+    const cy = center(union(rw.parts.map(D)))[1];
+    const spans = rw.parts.map((x) => {
+      const dy = (center(D(x))[1] - cy) * r, h = now(x).h;
+      return [dy - h / 2, dy + h / 2];
+    });
+    return { lo: Math.min(...spans.map((s) => s[0])), hi: Math.max(...spans.map((s) => s[1])), cy };
+  });
+  const total = ext.reduce((n, e) => n + e.hi - e.lo, 0) + laid.reduce((n, rw) => n + rw.gap, 0);
+  const [ux, uy] = center(U);
+  // The stack where the card's titles sat in the master's safe area (a
+  // glow's box would otherwise push it to the top), inside the room.
+  let y = place === undefined ? uy - total / 2 : startAt(place, total, room.top + margin.t, room.bottom - margin.b);
+  y += into(y, y + total, room.top + margin.t, room.bottom - margin.b);
+  const target = new Map<Id, [number, number]>();
+  laid.forEach((rw, i) => {
+    y += rw.gap;
+    const e = ext[i];
+    for (const x of rw.parts) {
+      const w = now(x).w;
+      // Its offset from the card's middle shrinks with the layout; a part
+      // stacked out of its row is centered on the card.
+      let nx = rw.alone ? ux : ux + (center(D(x))[0] - ux) * r;
+      nx += into(nx - w / 2, nx + w / 2, left, right);
+      target.set(x.id, [nx, y - e.lo + (center(D(x))[1] - e.cy) * r]);
+    }
+    y += e.hi - e.lo;
+  });
+  const U2 = union(
+    fg.map((x) => {
+      const [nx, ny] = target.get(x.id)!, s = now(x);
+      return { left: nx - s.w / 2, right: nx + s.w / 2, top: ny - s.h / 2, bottom: ny + s.h / 2 };
+    }),
+  );
+  // A panel keeps its margins around the new stack; a glow its place and
+  // size in the stack's box, each way.
+  const boxes = new Map<Id, Rect>();
+  for (const x of panels) {
+    const b = D(x);
+    boxes.set(x.id, { left: U2.left - (U.left - b.left) * r, right: U2.right + (b.right - U.right) * r, top: U2.top - (U.top - b.top) * r, bottom: U2.bottom + (b.bottom - U.bottom) * r });
+  }
+  const gx = size(U2).w / Math.max(1, size(U).w), gy = size(U2).h / Math.max(1, size(U).h);
+  const [vx, vy] = center(U2);
+  for (const x of glows) {
+    const b = D(x), [bx, by] = center(b), s = size(b);
+    const nx = vx + (bx - ux) * gx, ny = vy + (by - uy) * gy;
+    boxes.set(x.id, { left: nx - (s.w * gx) / 2, right: nx + (s.w * gx) / 2, top: ny - (s.h * gy) / 2, bottom: ny + (s.h * gy) / 2 });
+  }
+  // Back to the card's own frame: pixels divided by its scale.
+  const moveTo = (v: VisualClip, from: Rect, cx: number, cy: number): VisualClip => {
+    const [bx, by] = center(from);
+    return mapPath(mapPath(v, "transform.x", (val) => +(val + (cx - bx) / S / W).toFixed(5)), "transform.y", (val) => +(val + (cy - by) / S / H).toFixed(5));
+  };
+  const tracks = k.tracks.map((t) => ({
+    ...t,
+    clips: t.clips.map((x): Clip => {
+      const done = placed.get(x.id);
+      if (done) {
+        const [nx, ny] = target.get(x.id)!;
+        return moveTo(done.v, done.box, nx, ny);
+      }
+      const b = boxes.get(x.id);
+      if (!b || !("transform" in x)) return x;
+      const old = D(x as VisualClip), ax = size(b).w / Math.max(1, size(old).w), ay = size(b).h / Math.max(1, size(old).h);
+      const v = x.type === "color" && x.shape ? scaleShape(x, ax, ay, Math.min(ax, ay)) : shrink(x as VisualClip, Math.min(ax, ay));
+      return moveTo(v, old, ...center(b));
+    }),
+  }));
+  return { clip, tracks };
 }
 
 // ---- by hand: a version's overrides ----------------------------------------------------
@@ -1204,6 +1532,16 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   // By hand, last: the version's overrides.
   if (v.overrides?.length) q = applyOverrides(q, v.overrides);
   return { ...q, name: versionName(p.name, v) };
+}
+
+/** What one version's file reached, as export_video answers it: the
+ * loudness measured with a loudness target (integrated LUFS, true peak
+ * dBTP), the good news (info: normalized, the limiter's work) and the
+ * warnings (note), with the numbered name the file took. export_versions
+ * answered none of it, so an agent asking -14 could not see it was met. */
+export function versionSound(r: { loudness?: { integrated: number; truePeak: number }; info?: string; note?: string }, renamed?: string): { loudness?: { integrated: number; truePeak: number }; info?: string; note?: string } {
+  const note = [r.note, renamed].filter(Boolean).join(" ");
+  return { ...(r.loudness ? { loudness: r.loudness } : {}), ...(r.info ? { info: r.info } : {}), ...(note ? { note } : {}) };
 }
 
 /** What an agent asks export_versions for: explicit versions, or every

@@ -978,7 +978,10 @@ makes a 13 s one). Times are timeline seconds.
   the person or product in a video or a photo. The background is removed
   on this computer (a video's Remove background matte; a photo cut out once
   into a new picture with transparency) for a copy on a track above the
-  title, silent and grouped with the original; one undo step.
+  title, silent and grouped with the original; one undo step. The copy
+  takes the grade of an adjustment layer it sits above, and a version
+  whose shape lets the subject hide the title shows the title in front
+  ([[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]).
 - **Deliverables** (`export_versions`): a campaign's versions in one call
   (a group, such as an ad element, moves and scales as one unit, anchored
   where it sat; [[ADR-063 Versions fit a group as one unit]]),

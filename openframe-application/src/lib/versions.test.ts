@@ -16,7 +16,7 @@ setTextMeasure((c, w, h) => {
   const lines = c.text.split("\n").length * Math.max(1, Math.ceil(widest / (c.style.maxWidth * w)));
   return { width: Math.min(widest, c.style.maxWidth * w) + 4, height: size * c.style.lineHeight * lines + 4 };
 });
-import { cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject } from "./versions";
+import { cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject, versionSound } from "./versions";
 
 /** A 15 s 16:9 master: a wide shot pushing in, a title low on the left,
  * a logo-sized picture, music, and a 3 s end card. */
@@ -91,7 +91,10 @@ describe("versions", () => {
     const room = (1 - 0.11 - 0.19) * 1080;
     expect(short.style.size).toBeLessThan(120 * (1080 / 1920));
     expect(fittedSize({ ...p, width: 1080, height: 1920 }, { ...short, style: { ...short.style, maxWidth: 1 } }).w).toBeLessThanOrEqual(room + 1);
-    expect(long.style.size).toBeCloseTo(120 * (1080 / 1920) * 0.75, 1);
+    // Three quarters, then a few percent more: room for the outline
+    // check_project would suggest, so it stays clear of the buttons (ADR-103).
+    expect(long.style.size).toBeLessThanOrEqual(120 * (1080 / 1920) * 0.75 + 0.01);
+    expect(long.style.size).toBeGreaterThan(120 * (1080 / 1920) * 0.75 * 0.95);
   });
 
   it("fits the footage over a blurred copy when asked", () => {
@@ -243,8 +246,11 @@ describe("a 9:16 ad in other shapes", () => {
       const q = reshape(p, ratio, "fill");
       const badge = clips(q).filter((c) => c.name === "Offer badge").map((c) => boxOn(q, c));
       const r = area(q);
-      expect(Math.max(...badge.map((b) => b.right)), ratio).toBeCloseTo(r.right, 0);
-      expect(Math.min(...badge.map((b) => b.top)), ratio).toBeCloseTo(r.top, 0);
+      // In its corner, a few pixels in: room for the outline check_project
+      // would suggest on its text (ADR-103).
+      const near = (v: number, edge: number, inward: number) => expect(Math.abs(v - (edge + inward * 1.5)), ratio).toBeLessThanOrEqual(2);
+      near(Math.max(...badge.map((b) => b.right)), r.right, -1);
+      near(Math.min(...badge.map((b) => b.top)), r.top, 1);
       // The photo reached past 9:16's safe area into the captions' band; it
       // stays on the center line rather than against an edge.
       const photo = byType(q, "image").find((c) => c.assetId === "photo")!;
@@ -260,5 +266,18 @@ describe("a 9:16 ad in other shapes", () => {
     expect(b.shape.height * 1920).toBeCloseTo(a.shape.height * 1080, 1);
     // Stroke pixels at a 1080-tall frame: the same 6 px on a 1920-tall one.
     expect((b.shape.stroke.width * 1920) / 1080).toBeCloseTo(6, 1);
+  });
+});
+
+describe("a version's file", () => {
+  it("answers the loudness its mix reached, as export_video does (ADR-103)", () => {
+    const exported = { bytes: 1, loudness: { integrated: -14.15, truePeak: -1.1 }, info: "Loudness -14.8 LUFS, normalized to -14.1 LUFS." };
+    expect(versionSound(exported, "Saved as Roast 9x16 (2).mp4: the name was taken.")).toEqual({
+      loudness: { integrated: -14.15, truePeak: -1.1 },
+      info: "Loudness -14.8 LUFS, normalized to -14.1 LUFS.",
+      note: "Saved as Roast 9x16 (2).mp4: the name was taken.",
+    });
+    expect(versionSound({ note: "AAC encoded in software." })).toEqual({ note: "AAC encoded in software." });
+    expect(versionSound({})).toEqual({});
   });
 });

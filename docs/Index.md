@@ -360,6 +360,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sentence; trims say why they stop; slip_clip moves the source by its
   seconds; hidden cuts are not counted; half-frame times take the earlier
   frame.
+- [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]] —
+  check_project judges titles inside compound clips where they show; a
+  title card grows as one picture and is restacked rather than overlapping;
+  one title zone for the check and versions, with room for the suggested
+  outline; a subject's copy takes the grade it sits above and says where
+  it went; a title its subject hides is flagged and shown in front in a
+  version; frame-spanning shapes stretch; versions answer their loudness.
 - [[ADR-104 Voice and sound an agent can trust without ears]] —
   a words_per_second band asked is held over any pace; pause marks stay
   out of a line's pace and a slow line reads no faster than speed 1; a

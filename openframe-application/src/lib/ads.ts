@@ -18,7 +18,8 @@ import { brandOf, LIFT, minTextSize, pickLogo, readableOn, roleStyle, textOn, ty
 import { placeOnTop } from "./overlays";
 import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
-import type { Animation, Asset, Clip, ColorClip, Cutout, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
+import type { Adjust, Animation, Asset, Clip, ColorClip, Cutout, Grade, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
+import { FILTERS } from "./catalog";
 import { fittedSize } from "./render/size";
 import { secondsToFrames } from "./time";
 
@@ -401,7 +402,7 @@ export type SubjectCut = { cutout: Cutout } | { asset: Asset };
  * cover the text), and is grouped with the original so they move
  * together. A layer below the clip moves to a track just above it first.
  */
-export function putBehindSubject(p: Project, clipId: Id, layerIds: Id[], cut: SubjectCut): { project: Project; subjectId: Id } {
+export function putBehindSubject(p: Project, clipId: Id, layerIds: Id[], cut: SubjectCut): { project: Project; subjectId: Id; placed: BehindPlace; graded: GradeCopied[] } {
   const problem = behindProblem(p, clipId, layerIds);
   if (problem) throw new Error(problem);
   const original = findClip(p, clipId)!.clip as VideoClip | ImageClip;
@@ -428,14 +429,98 @@ export function putBehindSubject(p: Project, clipId: Id, layerIds: Id[], cut: Su
     ...(into ? { animIn: { type: "fade", duration: Math.max(1, Math.ceil(into.duration / 2)) } } : {}),
     ...(original.transitionOut ? { animOut: { type: "fade", duration: Math.max(1, Math.ceil(original.transitionOut.duration / 2)) } } : {}),
   };
-  const subject: Clip =
+  let subject: VideoClip | ImageClip =
     "cutout" in cut
       ? ({ ...rest, ...fades, id: uid("c"), name: "Subject", muted: true, cutout: { ...cut.cutout, enabled: true }, group } as VideoClip)
       : ({ ...rest, ...fades, id: uid("c"), name: "Subject", assetId: cut.asset.id, group } as ImageClip);
   if ("asset" in cut && !p.assets.some((a) => a.id === cut.asset.id)) p = { ...p, assets: [...p.assets, cut.asset] };
+  // The copy sits above the titles, so above any grade (an adjustment
+  // layer) between them and the original: that grade reaches the original
+  // and not the copy, which would play ungraded over its own picture (the
+  // Northbound test's rocket, without its teal and orange). It takes that
+  // grade itself.
+  const graded: GradeCopied[] = [];
+  const below = p.tracks.slice(top, index(clipId)).filter((t) => !t.hidden && t.kind === "video");
+  for (const t of [...below].reverse())
+    for (const a of t.clips) {
+      if (a.type !== "adjustment" || a.disabled || a.start >= subject.start + subject.duration || a.start + a.duration <= subject.start) continue;
+      const g = withGradeOf(subject, a);
+      subject = g.clip;
+      graded.push({ adjustment_clip_id: a.id, track: t.name, copied: g.copied, ...(g.left.length ? { not_copied: g.left } : {}), ...(a.start > subject.start || a.start + a.duration < subject.start + subject.duration ? { note: "the adjustment layer covers only part of the copy's time; the copy carries its grade throughout" } : {}) });
+    }
   const track = createTrack("video", "Subject");
   p = addTrack(p, track, top);
   p = addClip(p, track.id, subject);
   if (!original.group) p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === clipId ? { ...c, group } : c)) })) };
-  return { project: p, subjectId: subject.id };
+  const above = p.tracks[top + 1];
+  return { project: p, subjectId: subject.id, placed: { track_id: track.id, track: track.name, above_track_id: above.id, above: above.name }, graded };
+}
+
+/** Where text_behind_subject put the subject's copy: on a new track, right
+ * above the titles' (topmost) track. */
+export interface BehindPlace {
+  track_id: Id;
+  track: string;
+  above_track_id: Id;
+  above: string;
+}
+
+/** A grade the subject's copy took from an adjustment layer it does not
+ * sit under: what was copied, in words, and what could not be. */
+export interface GradeCopied {
+  adjustment_clip_id: Id;
+  track: string;
+  copied: string[];
+  not_copied?: string[];
+  note?: string;
+}
+
+const ADJUST_RANGE: Partial<Record<keyof Adjust, [number, number]>> = { hue: [-180, 180], sharpen: [0, 100], vignette: [0, 100], grain: [0, 100] };
+
+/**
+ * A clip given an adjustment layer's grade as its own, mixed by the
+ * layer's opacity: its Basic sliders added to the clip's, its look (or,
+ * when the clip has another look, the look's slider moves), its LUT,
+ * curves, wheels and HSL where the clip has none, its effects after the
+ * clip's. One pass on the clip for two on the frame: close, not exact
+ * (two contrasts multiply where their sum is drawn), and a vignette or
+ * grain is drawn on the clip's own picture rather than the frame's.
+ */
+export function withGradeOf<T extends VideoClip | ImageClip>(c: T, a: Clip): { clip: T; copied: string[]; left: string[] } {
+  if (a.type !== "adjustment") return { clip: c, copied: [], left: [] };
+  const k = Math.max(0, Math.min(1, a.opacity));
+  const copied: string[] = [], left: string[] = [];
+  const adjust = { ...c.adjust };
+  const add = (key: keyof Adjust, v: number) => {
+    const [lo, hi] = ADJUST_RANGE[key] ?? [-100, 100];
+    adjust[key] = Math.max(lo, Math.min(hi, +(adjust[key] + v).toFixed(2)));
+  };
+  for (const key of Object.keys(a.adjust) as (keyof (Adjust & Grade))[]) {
+    const v = a.adjust[key];
+    if (typeof v === "number") {
+      if (!v) continue;
+      add(key as keyof Adjust, v * k);
+      copied.push(`${key} ${+(v * k).toFixed(2)}`);
+    } else if (v !== undefined) {
+      if (c.adjust[key] === undefined) {
+        (adjust as Record<string, unknown>)[key] = key === "lut" ? { ...(v as { id: Id; intensity: number }), intensity: (v as { intensity: number }).intensity * k } : v;
+        copied.push(key);
+      } else left.push(`${key} (the clip has its own)`);
+    }
+  }
+  let filter = c.filter;
+  if (a.filter) {
+    const f = a.filter;
+    if (!filter) filter = { type: f.type, intensity: +(f.intensity * k).toFixed(3) };
+    else if (filter.type === f.type) filter = { type: f.type, intensity: Math.min(1, +(filter.intensity + f.intensity * k).toFixed(3)) };
+    else {
+      for (const [key, v] of Object.entries(FILTERS[f.type]?.adjust ?? {}) as [keyof Adjust, number][]) add(key, v * f.intensity * k);
+      left.push(`the ${f.type} look's toning (the clip has the ${filter.type} look)`);
+    }
+    copied.push(`filter ${f.type} ${+(f.intensity * k).toFixed(2)}`);
+  }
+  const effects = [...c.effects, ...a.effects.filter((e) => e.enabled).map((e) => ({ ...e, id: uid("fx") }))];
+  if (a.effects.some((e) => e.enabled)) copied.push(...a.effects.filter((e) => e.enabled).map((e) => `effect ${e.type}`));
+  if (Object.keys(a.keyframes ?? {}).length) left.push("its keyframes (the copy takes the grade where it rests)");
+  return { clip: { ...c, adjust, ...(filter ? { filter } : {}), effects }, copied, left };
 }

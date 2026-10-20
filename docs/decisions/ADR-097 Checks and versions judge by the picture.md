@@ -1,6 +1,6 @@
 # ADR-097: Checks and versions judge by the picture
 
-**Date:** 2026-10-19. **Status:** accepted.
+**Date:** 2026-10-19. **Status:** accepted; titles inside compound clips are measured since [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]].
 
 ## Context
 

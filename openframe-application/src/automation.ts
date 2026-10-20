@@ -15,6 +15,8 @@ import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
+import { measureBehind } from "./state/behind";
+import { hiddenNote } from "./lib/behind";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
@@ -40,7 +42,7 @@ import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { framesToSeconds, secondsToFrames } from "./lib/time";
 import { decodeMono, sourceFrames } from "./engine/analyze";
-import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
+import { checkProject, contrastTargets, tailTargets, withoutTitles, type CheckKind, type Measured } from "./lib/designCheck";
 import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
 import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
 import type { Project } from "./lib/project/types";
@@ -214,7 +216,8 @@ async function measureForCheck(p: Project): Promise<Measured> {
   if (targets.length) {
     try {
       // Without its titles, at a width that is plenty for a luminance.
-      const bare: Project = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.type === "text" ? { ...c, disabled: true } : c)) })) };
+      // Inside compound clips too: their titles are measured where shown.
+      const bare = withoutTitles(p);
       const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
       const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
       const contrast: NonNullable<Measured["contrast"]> = {};
@@ -242,13 +245,22 @@ async function measureForCheck(p: Project): Promise<Measured> {
       }
       out.contrast = contrast;
       out.moments = frames.length;
-      const missed = [skipped && `${skipped} titles past the first 40 were not measured`, p.compounds?.some((k) => k.tracks.some((t) => t.clips.some((c) => c.type === "text"))) && "titles inside compound clips are part of their picture and were not measured"].filter(Boolean);
-      if (missed.length) out.contrastNote = missed.join("; ");
+      if (skipped) out.contrastNote = `${skipped} titles past the first 40 were not measured`;
     } catch (e) {
       // Say why, so an agent knows the contrast findings are guesses.
       out.contrastNote = `not measured, the picture could not be rendered here (${e instanceof Error ? e.message : String(e)}); titles over footage without an outline, shadow or box are tips instead`;
     }
   } else if (p.tracks.some((t) => t.clips.some((c) => c.type === "text" && !c.disabled))) out.contrastNote = "no title is on screen long enough to measure";
+  // Titles behind their subject: how much the subject hides (ADR-103).
+  try {
+    const texts = new Map(p.tracks.flatMap((t) => t.clips).flatMap((c) => (c.type === "text" ? [[c.id, c.text] as const] : [])));
+    out.hidden = (await measureBehind(p)).flatMap((h) => {
+      const say = hiddenNote(p, h, texts.get(h.titleId) ?? "");
+      return say ? [{ clipId: h.titleId, frame: h.frame, ...say }] : [];
+    });
+  } catch {
+    // Unrenderable here: the check goes on without it.
+  }
   for (const t of tailTargets(p)) {
     const a = getAsset(p, t.assetId);
     if (!a?.hasAudio) continue;
@@ -372,7 +384,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
