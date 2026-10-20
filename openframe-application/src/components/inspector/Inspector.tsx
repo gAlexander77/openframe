@@ -17,7 +17,7 @@ import type { EffectAction } from "../../lib/effectStack";
 import { compoundView } from "../../lib/project/compound";
 import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
-import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, Id, Mask, Project, TextClip, TextStyle, VideoClip, VisualClip } from "../../lib/project/types";
+import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, CompoundClip, Id, Mask, Project, TextClip, TextStyle, VideoClip, VisualClip } from "../../lib/project/types";
 import { frameClips, pictureAspect } from "../../lib/align";
 import { MASK_LABELS, MASK_SHAPES, newMask, type MaskShape } from "../../lib/mask";
 import { canCrop, NO_CROP } from "../../lib/crop";
@@ -565,7 +565,7 @@ function AudioTab({ clip }: { clip: Clip }) {
           <SliderRow key={b.key} clip={clip} path={`eq.${b.key}`} label={b.label} min={-12} max={12} step={0.5} digits={1} unit="dB" reset={0} keyframes={false} />
         ))}
       </Section>
-      {clip.type !== "compound" && <CompressorSection clip={clip} />}
+      <CompressorSection clip={clip} />
       {clip.type !== "compound" && <SoundFxSection clip={clip} />}
       {clip.type === "video" && (
         <Section title="Sound">
@@ -583,7 +583,7 @@ function AudioTab({ clip }: { clip: Clip }) {
 
 /** CapCut's Enhance voice and Premiere's Dynamics: presets first, the
  * three settings that matter most once one is on. */
-function CompressorSection({ clip }: { clip: AudioClip | VideoClip }) {
+function CompressorSection({ clip }: { clip: AudioClip | VideoClip | CompoundClip }) {
   const c = clip.compressor;
   const set = (preset: string) =>
     edit(preset === "off" ? "Compressor off" : `Compressor: ${COMPRESSOR_LABELS[preset]}`, (p) => runCommand(p, "set_compressor", { clip_ids: [clip.id], preset }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { soundGainAt, soundingClips, soundSpan } from "../audio";
+import { busEnvelope, isBus, soundBuses, soundEnvelope, soundGainAt, soundingClips, soundSpan } from "../audio";
 import { describeProject, runCommand } from "../commands";
 import { mediaUsage } from "../mediaLibrary";
 import { toOtio } from "../interchange/otio";
@@ -149,6 +149,50 @@ describe("compound clip sound", () => {
     expect(soundSpan(m, p.fps)).toEqual([2, 4]);
     expect(soundGainAt(m, p.fps, 3)).toBeCloseTo(0.5);
     expect(soundGainAt(m, p.fps, 4.5)).toBe(0);
+  });
+
+  it("mixes through a bus when the compound clip has a compressor or an EQ: its volume and fades after it (ADR-100)", () => {
+    const { project: p0, clipId } = createCompound(fixture(), ["B", "T", "M"]);
+    const id = clipId!;
+    // set_compressor took video and audio clips only: a compound's mix
+    // could not be compressed, and its EQ was stored but never heard.
+    let p = runCommand(p0, "set_compressor", { clip_ids: [id], preset: "voice" });
+    p = updateClip(p, id, (c) => ({ ...c, volume: 0.5, fadeOut: 15 }) as Clip);
+    expect(describeProject(p).tracks.flatMap((t) => t.clips).find((c) => c.id === id)).toMatchObject({ compressor: "voice" });
+    const m = soundingClips(p, () => true).find((x) => x.clip.id === "M")!;
+    const route = soundBuses(m);
+    expect(route.through).toBe(0);
+    expect(route.buses.map((b) => [b.key, b.clip.id, b.gains.map((g) => g.clip.id)])).toEqual([[id, id, [id]]]);
+    // The clip's own envelope leaves the compound clip's gain to the bus.
+    expect(soundEnvelope(m, p.fps, 2, 4, 10, route.through)[5]).toBeCloseTo(1);
+    const bus = busEnvelope(route.buses[0], p.fps, 2, 4, 10);
+    expect(bus[5]).toBeCloseTo(0.5);
+    expect(bus[18]).toBeLessThan(0.25);
+    // Without one, nothing changes: the compound clip's gain stays the clip's.
+    expect(isBus(compoundClip(p0))).toBe(false);
+    expect(soundBuses(soundingClips(p0, () => true).find((x) => x.clip.id === "M")!)).toEqual({ through: 1, buses: [] });
+    // An EQ alone makes it a bus; a flat one does not.
+    expect(isBus({ ...compoundClip(p0), eq: { high: -6 } })).toBe(true);
+    expect(isBus({ ...compoundClip(p0), eq: { low: 0 } })).toBe(false);
+  });
+
+  it("keys each bus by its path: nested buses feed out in turn, and two uses of one compound are two buses", () => {
+    const { project: p0, clipId: inner } = createCompound(fixture(), ["B", "T", "M"]);
+    let p = runCommand(p0, "set_compressor", { clip_ids: [inner!], preset: "gentle" });
+    const { project: p1, clipId: outer } = createCompound(p, [inner!, "C"]);
+    // The outer compound is not a bus: the inner one's gains run out to the track.
+    let m = soundingClips(p1, () => true).find((x) => x.clip.id === "M")!;
+    expect(soundBuses(m).buses.map((b) => [b.key, b.gains.map((g) => g.clip.id)])).toEqual([[`${inner}/${outer}`, [inner, outer]]]);
+    p = runCommand(p1, "set_compressor", { clip_ids: [outer!], preset: "strong" });
+    m = soundingClips(p, () => true).find((x) => x.clip.id === "M")!;
+    expect(soundBuses(m).buses.map((b) => [b.key, b.gains.map((g) => g.clip.id)])).toEqual([
+      [`${inner}/${outer}`, [inner]],
+      [outer, [outer]],
+    ]);
+    // The same compound played again is another bus.
+    const twice = runCommand(p, "duplicate_clips", { clip_ids: [outer!], at: 20 });
+    const keys = soundingClips(twice, () => true).filter((x) => x.clip.id === "M").map((x) => soundBuses(x).buses[1].key);
+    expect(new Set(keys).size).toBe(2);
   });
 
   it("speeds up with the compound clip and is silent when it is muted", () => {

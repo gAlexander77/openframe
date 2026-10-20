@@ -638,10 +638,10 @@ export const COMMANDS: Command[] = [
   {
     name: "set_compressor",
     description:
-      "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
+      "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. On a compound clip it acts on the mix of everything inside, as a bus does: one compressor over a voice and its music, after the compound clip's EQ and before its volume and fades. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
     input: S.obj(
       {
-        clip_ids: S.ids("Video or audio clips"),
+        clip_ids: S.ids("Video, audio or compound clips"),
         preset: S.str("Starting point", { enum: ["voice", "gentle", "strong", "off"] }),
         threshold: S.num("dBFS where compression starts", { minimum: -60, maximum: 0 }),
         ratio: S.num("dB in over the threshold per dB out", { minimum: 1, maximum: 20 }),
@@ -659,7 +659,7 @@ export const COMMANDS: Command[] = [
       return ids.reduce(
         (q, id) =>
           ops.updateClip(q, id, (c) => {
-            if (c.type !== "video" && c.type !== "audio") throw new CommandError(`${c.type} clips have no sound to compress`);
+            if (c.type !== "video" && c.type !== "audio" && c.type !== "compound") throw new CommandError(`${c.type} clips have no sound to compress`);
             if (a.preset === "off") {
               const { compressor: _, ...rest } = c;
               return rest as Clip;

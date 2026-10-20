@@ -334,3 +334,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   new sounds and splits stems; eight ambience beds are synthesized
   locally; preview_audio returns the mix or a stem as MP3 with numbers;
   previews draw text at the canvas's size.
+- [[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]] —
+  a compound clip with an EQ or compressor mixes its clips as a bus
+  (EQ, compressor, then its volume and fades); renders pre-roll a second
+  for any compressor; beds levelled by a seed-free reference take, peaks
+  limited, wind lulls bounded; check_project finds a sound cut off
+  mid-video; preview_audio names the picture's stem.

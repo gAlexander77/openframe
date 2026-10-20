@@ -30,7 +30,7 @@ None.
   shadow on pictures (layer shader), a subject detector for auto reframe
   (a box picks it today),
   proxies on demand, translated captions (waits on a non-English speech
-  fixture), a compressor on compound clips.
+  fixture).
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
 
 ## Later

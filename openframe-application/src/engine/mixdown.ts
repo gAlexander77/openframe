@@ -3,14 +3,13 @@
 // loudness report (measure_loudness) both render through here, so what an
 // agent measures is what the file will hold.
 
-import { soundingClips } from "../lib/audio";
+import { soundingClips, soundPreroll } from "../lib/audio";
 import { planLoudness, ceilingFor, loudnessStats, shortTermSeries, type LoudnessPlan, type LoudnessStats } from "../lib/analysis/delivery";
 import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "../lib/analysis/loudness";
 import { TruePeakMeter } from "../lib/analysis/truePeak";
 import { audioWindows, EXPORT_CHANNELS, EXPORT_SAMPLE_RATE } from "../lib/export";
 import { getAsset } from "../lib/project/ops";
 import type { Project } from "../lib/project/types";
-import { fxTail } from "../lib/soundFx";
 import { scheduleAudio } from "./audio";
 
 /** Audio rendered per OfflineAudioContext: 10 s of stereo float is 3.8 MB,
@@ -26,10 +25,11 @@ export const hasSound = (p: Project) => soundingClips(p, (id) => getAsset(p, id)
 
 /** Seconds each window starts early: the longest tail any clip's sound
  * design rings (lib/soundFx fxTail), so echoes, reverb and filter state
- * carry across window edges instead of starting again at each. 0 when no
- * clip has any, which keeps a plain mix rendered exactly as before. */
+ * carry across window edges instead of starting again at each, and a
+ * compressor's settling (lib/audio soundPreroll). 0 when no clip has any,
+ * which keeps a plain mix rendered exactly as before. */
 export function mixPreroll(p: Project): number {
-  const tails = soundingClips(p, (id) => getAsset(p, id)?.hasAudio ?? false).map((s) => fxTail(s.clip));
+  const tails = soundingClips(p, (id) => getAsset(p, id)?.hasAudio ?? false).map(soundPreroll);
   return Math.min(PREROLL_MAX, Math.max(0, ...tails));
 }
 

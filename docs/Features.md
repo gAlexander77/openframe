@@ -195,15 +195,20 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   side; a mono file is upmixed first, so either choice keeps it whole.
   Paste Attributes copies it with the sound.
 - **Equalizer** (Audio tab): low shelf (120 Hz), mid bell (1 kHz) and
-  high shelf (8 kHz), -12 to +12 dB, on audio clips and a video's own
-  sound; the same biquads in preview and export; copied by Paste
-  Attributes with the rest of the sound.
+  high shelf (8 kHz), -12 to +12 dB, on audio clips, a video's own
+  sound and a compound clip (over the mix of everything in it); the same
+  biquads in preview and export; copied by Paste Attributes with the
+  rest of the sound.
 - **Compressor** (Audio tab; CapCut's Enhance voice, Premiere's Dynamics):
   Off, Enhance voice, Gentle or Strong, then threshold, ratio and makeup;
   after the EQ, before volume, the same node in preview and export, and
   Normalize loudness measures through it. Evens out speech so export
   loudness reaches its target without heavy limiting
-  ([[ADR-053 One compressor everywhere, measured as it plays]]).
+  ([[ADR-053 One compressor everywhere, measured as it plays]]). On a
+  compound clip it compresses the mix of everything inside as one bus,
+  after its EQ and before its volume and fades; export's windows start a
+  second early so a compressor never starts cold
+  ([[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]]).
 - **Sound crossfades under transitions**: a video transition between two
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,
@@ -1111,7 +1116,9 @@ Three doors, one engine ([[Automation]]):
 - `check_project` measures what it judges: each title's WCAG contrast
   with the rendered picture behind it, a music clip's last second, and the
   shots on the busiest picture track
-  ([[ADR-068 check_project measures the picture and the sound it judges]]).
+  ([[ADR-068 check_project measures the picture and the sound it judges]]);
+  an audio clip cut off before the end while it still sounds, with no
+  fade, is a warning (`sound_cut_off`, ADR-100).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
