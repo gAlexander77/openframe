@@ -20,7 +20,7 @@ import type { AudioClip, Compressor, Project, Sound, VideoClip } from "../lib/pr
 import { fxCurve, switchAt, tapeStopMap, type TapeStopMap } from "../lib/soundFx";
 import { varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
-import { mediaFor } from "./media";
+import { DECODE_PREROLL, mediaFor } from "./media";
 import { postFaderFx, preFaderFx } from "./soundFx";
 
 export interface Schedule {
@@ -49,7 +49,8 @@ interface Pcm {
  * source 0), as planar channels. Null when nothing decodes there. */
 async function decodeRange(sink: AudioBufferSink, a: number, b: number, off: number, stopped: () => boolean): Promise<Pcm | null> {
   const chunks: { buffer: AudioBuffer; t: number }[] = [];
-  for await (const { buffer, timestamp } of sink.buffers(a + off, b + off)) {
+  // Decoded from a little earlier: a cold decoder's first packet can be silence.
+  for await (const { buffer, timestamp } of sink.buffers(Math.max(0, a + off - DECODE_PREROLL), b + off)) {
     if (stopped()) break;
     chunks.push({ buffer, t: timestamp - off });
   }
@@ -264,7 +265,9 @@ export function scheduleAudio(
     const srcHi = clip.in + (playHi - clipStart) * perSec;
 
     const off = media.audioStart;
-    for await (const { buffer, timestamp } of playHi > lo ? media.audioSink.buffers(srcLo + off, srcHi + off) : []) {
+    // Decoded from a little earlier (DECODE_PREROLL): a cold decoder's first
+    // packet can be silence, a hole at every window and every mid-file start.
+    for await (const { buffer, timestamp } of playHi > lo ? media.audioSink.buffers(Math.max(0, srcLo + off - DECODE_PREROLL), srcHi + off) : []) {
       if (stopped) break;
       const srcT = timestamp - off;
       // Timeline second where this chunk's first sample would play.

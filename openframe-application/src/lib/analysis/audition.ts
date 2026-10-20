@@ -26,6 +26,35 @@ export interface AuditionSummary {
   correlation: number;
   /** Samples at or past full scale. */
   clipped: number;
+  /** Where the sound drops out for a few milliseconds inside sound
+   * (timeline seconds; absent when nowhere): a lost packet, a hole. */
+  dropouts?: number[];
+}
+
+/** A dropout: 3 to 100 ms under -80 dBFS with sound (over -40 dBFS RMS)
+ * in the 50 ms either side (a longer silence is a pause, or `silent`). Music and speech never fall that far, that
+ * briefly: the film test's MP3 song lost 12-26 ms at every 10 s render
+ * window (ADR-104). */
+export function dropouts(L: Float32Array, R: Float32Array, rate: number, start = 0, max = 20): number[] {
+  const out: number[] = [];
+  const floor = 1e-4, side = Math.round(0.05 * rate), least = Math.round(0.003 * rate), most = Math.round(0.1 * rate);
+  const level = (a: number, b: number) => {
+    a = Math.max(0, a);
+    b = Math.min(L.length, b);
+    let s = 0;
+    for (let i = a; i < b; i++) s += ((L[i] + R[i]) / 2) ** 2;
+    return b > a ? Math.sqrt(s / (b - a)) : 0;
+  };
+  let run = -1;
+  for (let i = 0; i <= L.length && out.length < max; i++) {
+    const low = i < L.length && Math.abs((L[i] + R[i]) / 2) < floor;
+    if (low && run < 0) run = i;
+    if (!low && run >= 0) {
+      if (i - run >= least && i - run <= most && run >= side && i + side <= L.length && level(run - side, run) > 0.01 && level(i, i + side) > 0.01) out.push(+(start + run / rate).toFixed(3));
+      run = -1;
+    }
+  }
+  return out;
 }
 
 const lufsOf = (meanSquare: number) => -0.691 + 10 * Math.log10(meanSquare);
@@ -54,6 +83,7 @@ export function auditionSummary(L: Float32Array, R: Float32Array, rate: number, 
     }
   }
   const b = L.length >= 8192 ? balance(L, R, rate) : null;
+  const holes = dropouts(L, R, rate, start);
   const s = stats(L, R);
   return {
     seconds: +(L.length / rate).toFixed(3),
@@ -66,5 +96,6 @@ export function auditionSummary(L: Float32Array, R: Float32Array, rate: number, 
     spectrum: b ? { low: +b.low.toFixed(3), mid: +b.mid.toFixed(3), high: +b.high.toFixed(3), slope_db_per_octave: b.slope } : { low: 0, mid: 0, high: 0, slope_db_per_octave: 0 },
     correlation: Number.isFinite(s.correlation) ? s.correlation : 0,
     clipped: s.clipped,
+    ...(holes.length ? { dropouts: holes } : {}),
   };
 }

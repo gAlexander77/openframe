@@ -141,9 +141,13 @@ export interface SpeechInfo {
   /** The pace the line is meant to have: slow (an end card's tagline) or
    * fast, so review_voiceover does not flag it for being so. */
   pace?: "slow" | "normal" | "fast";
-  /** The words a second it was read to, [lowest, highest], before its
-   * pace moves them (lib/voicePace.ts); none: narration's 2.3-2.8. */
+  /** The words a second it was read to, [lowest, highest], as asked: a
+   * band asked wins over the pace (lib/voicePace.ts, ADR-104). Takes
+   * saved before readAs kept a kind's band here (bandSource reads them). */
   wps?: [number, number];
+  /** The kind of read (narration, ad, social) whose band, moved for the
+   * pace, it was read to when no band was asked; none: narration's. */
+  readAs?: "narration" | "ad" | "social";
   /** The speed was chosen to land on that, not asked for: a retake with
    * new words chooses again. */
   speedChosen?: boolean;
@@ -710,6 +714,24 @@ export interface Sound {
   echo?: Echo;
   reverb?: Reverb;
   tapeStop?: TapeStop;
+  /** How duck_under_speech dipped this clip (music under a voice), kept
+   * so a voice line that changes length dips it again the same way
+   * (lib/analysis/duck.ts staleDucks, ADR-104). */
+  duck?: DuckRecord;
+}
+
+/** What duck_under_speech was asked for a music clip, and the volume keys
+ * it wrote. */
+export interface DuckRecord {
+  voiceAboveMusicLu?: number;
+  minLineLu?: number;
+  maxLineLu?: number;
+  depth?: number;
+  /** Ducked with every clip of its track in one call (track_id). */
+  track?: boolean;
+  /** A signature of the volume keys it wrote (duckSignature): keys changed
+   * since, by hand, are not dipped again over them. */
+  keys: number;
 }
 
 /** One point of a speed curve. */
@@ -834,7 +856,17 @@ export type VideoClip = ClipBase &
      * falls instead of repeating one. */
     frameBlend?: boolean;
   };
-export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
+export type AudioClip = ClipBase &
+  Sound &
+  Timed & {
+    type: "audio";
+    /** Seconds its sound crossfades into the next clip on its track, which
+     * starts where it ends (set_crossfade, cut_music): at equal power,
+     * ending at the cut, the next clip's sound rising over the seconds
+     * before its start (lib/audio.ts soundOverlaps, ADR-104). Absent: a
+     * butt cut, each side ramped over the 4 ms click guard. */
+    crossfade?: number;
+  };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &
   Visual & {

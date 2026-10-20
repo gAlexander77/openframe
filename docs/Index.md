@@ -360,6 +360,15 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sentence; trims say why they stop; slip_clip moves the source by its
   seconds; hidden cuts are not counted; half-frame times take the earlier
   frame.
+- [[ADR-104 Voice and sound an agent can trust without ears]] —
+  a words_per_second band asked is held over any pace; pause marks stay
+  out of a line's pace and a slow line reads no faster than speed 1; a
+  word heard that is not in the script is heard again and counts against
+  match; duck_under_speech ducks a whole track under a 15 LU ceiling,
+  keeps how it ducked and dips again under a retake; cut_music cuts a
+  song on its bars with a crossfade, set_crossfade joins any two audio
+  clips, preview_audio measures every join and dropout; decoding starts
+  0.1 s early so an MP3 loses no packet.
 - [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]] —
   describe_project narrows to clips, tracks or a stretch with the media
   and markers they use; analyze_music answers a grid and counts unless

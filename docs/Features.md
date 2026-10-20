@@ -213,6 +213,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,
   Premiere's default audio transition, in preview and export alike.
+- **Audio crossfades and music cuts** (agents: `set_crossfade`,
+  `cut_music`): an audio clip crossfades into the next on its track at
+  equal power over the seconds before the cut; `cut_music` takes bars out
+  of a song on its grid and joins the pieces so the beat runs on.
+  `preview_audio` measures every join, click and dropout
+  ([[ADR-104 Voice and sound an agent can trust without ears]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -686,7 +692,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
   Each line lands on a pace: a narrator's 2.3-2.8 words a second (or an
   ad's, a social video's, or as asked), its speed chosen by reading and
-  measuring it, never by stretching the audio. A word cannot be marked
+  measuring it, never by stretching the audio; its pause marks are out of
+  the pace, a band asked is held over a slow or fast pace, and a slow
+  line reads no faster than the voice's own speed
+  ([[ADR-104 Voice and sound an agent can trust without ears]]). A word cannot be marked
   for emphasis: the voice model has no such control, measured
   ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]).
 - **Listen back** (agents: `review_voiceover`): Whisper hears each line
