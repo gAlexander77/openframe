@@ -8,6 +8,7 @@ import {
   AudioBufferSink,
   EncodedPacketSink,
   Input,
+  Mp3InputFormat,
   VideoSampleSink,
   type InputAudioTrack,
   type InputVideoTrack,
@@ -17,6 +18,7 @@ import type { Asset, AssetKind } from "../lib/project/types";
 import { animationFor, animatedBitmap, closeAnimation } from "./animatedImage";
 import { platform } from "../platform";
 import { AUDIO_EXT, IMAGE_EXT, SNIFF_BYTES, sniffFormat, sourceName } from "../lib/mediaKind";
+import { id3v2Size, mp3Trim, MP3_TRIM_BYTES } from "../lib/gapless";
 
 export interface MediaFile {
   input: Input;
@@ -26,7 +28,8 @@ export interface MediaFile {
   keySink: EncodedPacketSink | null;
   audioSink: AudioBufferSink | null;
   /** Container time that source time 0 maps to, shared by both tracks so
-   * they stay in sync (see mediaOrigin). */
+   * they stay in sync (see mediaOrigin); the sound's is past an MP3's
+   * encoder delay (soundOrigin). */
   videoStart: number;
   audioStart: number;
   /** Container rotation in quarter turns clockwise. */
@@ -50,6 +53,8 @@ export interface Probe {
   /** False when the webview cannot decode the video track; the desktop
    * makes an ffmpeg proxy, the web says why it cannot open the file. */
   decodable: boolean;
+  /** An MP3's encoder delay and padding, left out of `duration`. */
+  gapless?: { start: number; end: number };
 }
 
 export { isImageName } from "../lib/mediaKind";
@@ -85,7 +90,43 @@ export async function mediaOrigin(video: InputVideoTrack | null, audio: InputAud
   return known.length ? Math.max(0, Math.min(...known)) : 0;
 }
 
-async function openInput(source: Source): Promise<MediaFile> {
+const trims = new Map<string, Promise<{ start: number; end: number } | null>>();
+
+/**
+ * Seconds of an MP3's decoded sound that are not the sound: the encoder's
+ * delay before it and its padding after, as its LAME tag names them
+ * (lib/gapless.ts). WebCodecs presents both, ffmpeg and gapless players
+ * leave them out; read once per file. Null for any other file (AAC's
+ * priming is the container's edit list, which mediabunny honors).
+ */
+export function gaplessTrim(input: Input, src: string): Promise<{ start: number; end: number } | null> {
+  let t = trims.get(src);
+  if (!t) {
+    t = (async () => {
+      if (!((await input.getFormat()) instanceof Mp3InputFormat)) return null;
+      let at = 0;
+      for (let tag; (tag = id3v2Size(await platform.head(src, 10, at))); ) at += tag;
+      const trim = mp3Trim(await platform.head(src, MP3_TRIM_BYTES, at));
+      return trim && { start: trim.start / trim.sampleRate, end: trim.end / trim.sampleRate };
+    })().catch(() => null);
+    trims.set(src, t);
+  }
+  return t;
+}
+
+/**
+ * Where an input's source time 0 is for its sound, in container time:
+ * mediaOrigin, past an MP3's encoder delay (gaplessTrim), so playback,
+ * export, waveforms and every analysis hear the file as ffmpeg decodes it
+ * (ADR-112). Measured on music-30s.mp3: 23.02 ms (1105 samples) late
+ * without it. An MP3 has no picture, so its tracks stay together.
+ */
+export async function soundOrigin(input: Input, src: string): Promise<number> {
+  const [video, audio] = await Promise.all([input.getPrimaryVideoTrack(), input.getPrimaryAudioTrack()]);
+  return (await mediaOrigin(video, audio)) + ((await gaplessTrim(input, src))?.start ?? 0);
+}
+
+async function openInput(source: Source, src: string): Promise<MediaFile> {
   const input = new Input({ source, formats: ALL_FORMATS });
   const video = await input.getPrimaryVideoTrack();
   const audio = await input.getPrimaryAudioTrack();
@@ -93,6 +134,7 @@ async function openInput(source: Source): Promise<MediaFile> {
   const audioOk = audio ? await audio.canDecode() : false;
   const rotation = video ? await video.getRotation() : 0;
   const origin = await mediaOrigin(video, audio);
+  const delay = (await gaplessTrim(input, src))?.start ?? 0;
   return {
     input,
     video: videoOk ? video : null,
@@ -101,7 +143,7 @@ async function openInput(source: Source): Promise<MediaFile> {
     keySink: videoOk && video ? new EncodedPacketSink(video) : null,
     audioSink: audioOk && audio ? new AudioBufferSink(audio) : null,
     videoStart: origin,
-    audioStart: origin,
+    audioStart: origin + delay,
     quarterTurns: ((rotation / 90) % 4) as 0 | 1 | 2 | 3,
     width: video ? await video.getDisplayWidth() : 0,
     height: video ? await video.getDisplayHeight() : 0,
@@ -118,7 +160,7 @@ export const mediaFor = (asset: Asset): Promise<MediaFile> => mediaForSrc(asset.
 export function mediaForSrc(src: string): Promise<MediaFile> {
   let m = files.get(src);
   if (!m) {
-    m = platform.sourceFor(src).then(openInput);
+    m = platform.sourceFor(src).then((source) => openInput(source, src));
     files.set(src, m);
     m.catch(() => files.delete(src));
   }
@@ -130,6 +172,7 @@ export async function closeMedia(src: string) {
   await closeAnimation(src);
   const m = files.get(src);
   files.delete(src);
+  trims.delete(src);
   (await m?.catch(() => null))?.input.dispose();
 }
 
@@ -172,7 +215,8 @@ export async function probe(src: string, name: string): Promise<Probe> {
   try {
     const video = await input.getPrimaryVideoTrack();
     const audio = await input.getPrimaryAudioTrack();
-    const duration = await input.computeDuration();
+    const gapless = (await gaplessTrim(input, src)) ?? undefined;
+    const duration = (await input.computeDuration()) - (gapless ? gapless.start + gapless.end : 0);
     const kind: AssetKind = video && !AUDIO_EXT.test(name) ? "video" : "audio";
     let fps: number | undefined;
     if (video) {
@@ -192,6 +236,7 @@ export async function probe(src: string, name: string): Promise<Probe> {
       audioCodec: (await audio?.getCodec()) ?? undefined,
       rotation: rotation as Probe["rotation"],
       decodable: video ? await video.canDecode() : audio ? await audio.canDecode() : false,
+      ...(gapless ? { gapless } : {}),
     };
   } finally {
     input.dispose();

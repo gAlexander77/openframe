@@ -50,6 +50,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   WebP, GIF, AVIF. On desktop, what the webview cannot decode (ProRes,
   DNxHR, MPEG-2...) gets an FFmpeg proxy when FFmpeg is installed; the web
   build refuses it with the codec named.
+- **Gapless MP3:** an MP3's encoder delay and padding (its LAME tag) are
+  left out of its playback, export, waveform, analysis and length, so it
+  lines up with other material sample for sample, as ffmpeg plays it; an
+  AAC file's priming was already left out by its edit list
+  ([[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]).
 - Background filmstrips and waveforms, two files at a time.
 - **Hover scrub** on video cards, as in CapCut: moving across a card shows
   the frame under the pointer, with a line, from the timeline's

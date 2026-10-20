@@ -92,6 +92,12 @@ export interface Asset {
   animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */
   duration: number;
+  /** An MP3's encoder delay and padding in seconds, as its LAME tag names
+   * them, which `duration` leaves out. The engine reads the tag from the
+   * file and plays, draws and measures every MP3 without them, as ffmpeg
+   * does (ADR-112). Absent for other files, and on an MP3 imported
+   * before, whose duration still counts them. */
+  gapless?: { start: number; end: number };
   width?: number;
   height?: number;
   /** Average source frame rate; absent for audio and images. */

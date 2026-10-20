@@ -9,7 +9,7 @@
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
 import type { Asset } from "../lib/project/types";
 import { platform } from "../platform";
-import { imageFor, mediaOrigin } from "./media";
+import { imageFor, mediaOrigin, soundOrigin } from "./media";
 
 export interface Filmstrip {
   /** Seconds between thumbnails. */
@@ -148,7 +148,7 @@ async function makePeaks(asset: Asset, src: string) {
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) return;
-    const start = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    const start = await soundOrigin(input, src);
     const duration = asset.duration || (await input.computeDuration());
     const data = new Float32Array(Math.ceil(duration * PEAK_RATE) + 1);
     peaks.set(src, { data, rate: PEAK_RATE });

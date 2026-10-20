@@ -137,6 +137,16 @@ const jobs = {
     const hat = `0.5*(2*random(0)-1)*exp(-mod(t-0.25-${b / 2},${b})/0.015)*gte(t,0.25+${b / 2})`;
     ff("-f", "lavfi", "-i", `aevalsrc='${kick}':s=44100:d=20`, "-f", "lavfi", "-i", `aevalsrc='${hat}':s=44100:d=20`, "-filter_complex", "[1]highpass=f=6000[h];[0][h]amix=inputs=2:normalize=0", "-c:a", "aac", "-b:a", "160k", join(out, "beat-128.m4a"));
   },
+  // One known onset, three files (scripts/drive/mp3-timing.js, ADR-112): a
+  // kick that starts at full level on every beat of 120 BPM from exactly
+  // 1.000 s (sample 44100), 12 s at 44.1 kHz, as PCM, then that WAV
+  // encoded by LAME (ffmpeg writes its delay and padding in the Info tag)
+  // and by AAC (an edit list hides its priming). Each must decode onto
+  // the WAV, sample for sample in time.
+  "onset-120.wav": () =>
+    ff("-f", "lavfi", "-i", "aevalsrc='0.8*cos(2*PI*90*mod(t-1,0.5))*exp(-mod(t-1,0.5)/0.05)*gte(t,1)':s=44100:d=12", "-c:a", "pcm_s16le", join(out, "onset-120.wav")),
+  "onset-120.mp3": () => ff("-i", join(out, "onset-120.wav"), "-c:a", "libmp3lame", "-b:a", "192k", join(out, "onset-120.mp3")),
+  "onset-120.m4a": () => ff("-i", join(out, "onset-120.wav"), "-c:a", "aac", "-b:a", "160k", join(out, "onset-120.m4a")),
   // Handheld shake for stabilization (scripts/drive/stabilize.js): a still
   // photo seen through a window that jitters 40 x 30 px every frame, so
   // the true motion is known; needs photo.jpg (made above).
