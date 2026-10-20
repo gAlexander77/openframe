@@ -193,9 +193,9 @@ export function resolveGrade(p: Project, clip: Graded, r: number): GradeParams |
     if (file && intensity > 0) out.lut = { src: file.src, intensity };
   }
   if (g.colorize) {
-    const rgb = colorizeTint(g.colorize);
-    const amount = Math.max(0, Math.min(1, paramAt(clip, "adjust.colorize.amount", r)));
-    if (rgb && amount > 0) out.colorize = { rgb, amount };
+    const tint = colorizeTint(g.colorize);
+    const amount = Math.max(0, Math.min(1, paramAt(clip, "adjust.colorize.amount", r))) * (tint?.alpha ?? 0);
+    if (tint && amount > 0) out.colorize = { rgb: tint.rgb, amount };
   }
   return out.hsl || out.wheels || out.curves || out.lut || out.colorize ? out : undefined;
 }

@@ -657,8 +657,9 @@ uniform float u_width;     // render pixels
 uniform vec4 u_color;      // premultiplied, its opacity and the layer's included
 out vec4 outColor;
 ${FLOOD_CODE}
+float alphaAt(ivec2 q, ivec2 size) { return texelFetch(u_layer, clamp(q, ivec2(0), size - 1), 0).a; }
 void main() {
-  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 p = ivec2(gl_FragCoord.xy), size = textureSize(u_layer, 0);
   vec4 l = texelFetch(u_layer, p, 0);
   vec4 v = texelFetch(u_seeds, p, 0);
   float cov = 0.0;
@@ -669,7 +670,24 @@ void main() {
   }
   // Only outside the picture: what it covers at full opacity stays its own,
   // so a faded picture does not show its border through itself.
-  outColor = l + u_color * cov * (1.0 - min(l.a / u_level, 1.0));
+  float behind = 1.0 - min(l.a / u_level, 1.0);
+  // Inside it (at least half covered), only what its edge's anti-aliasing
+  // leaves of the pixels beside it: a see-through picture (a half-clear box
+  // behind a title, a letter fading in) shows what is under it, not the
+  // border's color, while an opaque picture's soft edge pixel still meets
+  // the border without a seam (ADR-108).
+  if (cov > 0.0 && behind > 0.0 && l.a >= 0.5 * u_level) {
+    float most = 0.0;
+    bool edge = false;
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        float a = alphaAt(p + ivec2(i, j), size);
+        most = max(most, a);
+        edge = edge || a < 0.5 * u_level;
+      }
+    behind = edge ? clamp((most - l.a) / u_level, 0.0, 1.0) : 0.0;
+  }
+  outColor = l + u_color * cov * behind;
 }`;
 
 /** Blend a premultiplied layer over the premultiplied accumulator using the

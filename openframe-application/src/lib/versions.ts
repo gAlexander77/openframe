@@ -275,20 +275,48 @@ function readableK(master: Project, q: Project, c: TextClip, k: number): number 
   return met ? Math.max(k, minTextSize(q.width, q.height) / c.style.size) : k;
 }
 
-/** A shape's box (fractions of the frame) and stroke (pixels at a
- * 1080-tall one) scaled by kw, kh and ks, keys and all. */
+/** A shape's box (fractions of the frame), stroke and feather (pixels at
+ * a 1080-tall one) scaled by kw, kh and ks, keys and all. */
 function scaleShape(c: ColorClip, kw: number, kh: number, ks: number): ColorClip {
   const sh = c.shape!;
   const keyed: Record<string, Keyframe[]> = {};
-  for (const [path, k] of [["shape.width", kw], ["shape.height", kh], ["shape.stroke.width", ks]] as const) {
+  for (const [path, k] of [["shape.width", kw], ["shape.height", kh], ["shape.stroke.width", ks], ["shape.feather", ks]] as const) {
     const keys = c.keyframes?.[path];
     if (keys?.length) keyed[path] = keys.map((key) => ({ ...key, v: +(key.v * k).toFixed(5) }));
   }
   return {
     ...c,
-    shape: { ...sh, width: +(sh.width * kw).toFixed(5), height: +(sh.height * kh).toFixed(5), ...(sh.stroke ? { stroke: { ...sh.stroke, width: +(sh.stroke.width * ks).toFixed(2) } } : {}) },
+    shape: {
+      ...sh,
+      width: +(sh.width * kw).toFixed(5),
+      height: +(sh.height * kh).toFixed(5),
+      ...(sh.stroke ? { stroke: { ...sh.stroke, width: +(sh.stroke.width * ks).toFixed(2) } } : {}),
+      // A feather, like the stroke, keeps its pixels (ADR-108): left as it
+      // was, a 120 px glow drew 213 px soft on 9:16 around the same shape.
+      ...(sh.feather ? { feather: +(sh.feather * ks).toFixed(2) } : {}),
+    },
     ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}),
   };
+}
+
+/** A picture's border and drop shadow (pixels at a 1080-tall frame) scaled
+ * by k, keys and all: they keep their pixels against the short side, as
+ * type and strokes do (ADR-108). Left as they were, a 12 px frame drew 21
+ * px on 9:16 around a picture that kept its size. */
+function scaleFrame(c: Clip, k: number): Clip {
+  if (!("transform" in c) || k === 1 || (!c.border && !c.shadow)) return c;
+  const r = (v: number) => +(v * k).toFixed(2);
+  const keyed: Record<string, Keyframe[]> = {};
+  for (const path of ["border.width", "shadow.blur", "shadow.x", "shadow.y"]) {
+    const keys = c.keyframes?.[path];
+    if (keys?.length) keyed[path] = keys.map((key) => ({ ...key, v: +(key.v * k).toFixed(5) }));
+  }
+  return {
+    ...c,
+    ...(c.border ? { border: { ...c.border, width: r(c.border.width) } } : {}),
+    ...(c.shadow ? { shadow: { ...c.shadow, blur: r(c.shadow.blur), x: r(c.shadow.x), y: r(c.shadow.y) } } : {}),
+    ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}),
+  } as Clip;
 }
 
 /**
@@ -303,7 +331,7 @@ function asPicture(p: Project, a: Frame, b: Frame, c: Clip): Clip {
   const u = Math.min(b.w / a.w, b.h / a.h);
   // Fractions of the width and of the height, and pixels at a 1080-tall frame.
   const kx = (a.w * u) / b.w, ky = (a.h * u) / b.h;
-  let v = mapPath(c, "transform.x", (x) => +(x * kx).toFixed(5));
+  let v = mapPath(scaleFrame(c, ky) as VisualClip, "transform.x", (x) => +(x * kx).toFixed(5));
   v = mapPath(v, "transform.y", (y) => +(y * ky).toFixed(5));
   const m = mediaSize(p, c);
   if (m) {
@@ -1043,7 +1071,9 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
       if (stacks.some((comp) => comp.includes(set))) rooms.set(c.id, Math.min(1 - s.left - s.right, 1 - VERTICAL_SAFE.left - VERTICAL_SAFE.right));
       else if (Math.abs((box.left + box.right) / 2 - m.width / 2) < m.width * 0.01) rooms.set(c.id, wrapOf(out, 0));
     }
-    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame))) })) };
+    // Pixels at a 1080-tall frame that keep their pixels against the short side.
+    const px = (a.h / b.h) * (short(b) / short(a));
+    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame), px)) })) };
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));

@@ -81,7 +81,7 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `clip_ids` | string[] |  | Only these clips, each under its track (or its compound) |
 | `track_ids` | string[] |  | Only these tracks, each listed empty or not |
 | `start` | number |  | Only clips still playing after this timeline second (0..) |
-| `end` | number |  | Only clips starting before this timeline second (0..) |
+| `end` | number |  | Only clips starting before this timeline second; the same as start: what plays at that moment (0..) |
 | `assets` | boolean |  | false: no media list; true: all of it (default: all, or the clips' own when narrowed) |
 | `markers` | boolean |  | false: no markers; true: all (default: all, or those in the stretch or on the clips shown) |
 | `compounds` | boolean |  | false: no nested timelines (default: all, or those the clips shown play) |
@@ -1987,7 +1987,7 @@ Colorize a picture (Premiere's Tint): its brightness drawn in one color, so whit
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Visual or adjustment clips |
-| `color` | string |  | CSS color white becomes, e.g. #ffb347 amber |
+| `color` | string |  | CSS color white becomes, e.g. #ffb347 amber; its alpha multiplies amount |
 | `amount` | number |  | 0..1, how much of the colorized picture shows over the original (default 1) (0..1) |
 | `off` | boolean |  | Remove the colorize and its keyframes |
 | `at` | number |  | Timeline seconds, for a keyframed amount |

@@ -217,6 +217,9 @@ picture by default; `clip_ids`, `track_ids` or a stretch (`start`, `end`)
 narrow it to those clips with the media and markers they use, `assets` and
 `markers` false leave those lists out, and `shown` says how much of each
 list the answer holds ([[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]).
+The compounds a clip shown plays come whole, nested ones too; a track or
+clip inside a compound is found by its id; an empty id list is no filter,
+and `start` equal to `end` is a moment ([[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]]).
 Keyframes are included: each keyed path's keys as `[at, value]` or
 `[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
 "fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,

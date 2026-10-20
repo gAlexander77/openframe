@@ -9,6 +9,8 @@
 // - at half opacity the border fades with the picture;
 // - a keyed width grows the border (20 px partway through its keys);
 // - the shadow is cast by the picture and its border together;
+// - a see-through picture (blue at 60%) shows the ground through itself,
+//   not the border's red (ADR-108: the border filled it at 40%);
 // - the Video tab has a Border section.
 // Needs ffmpeg on PATH (it shells out); exports land in scratch/.
 async (page) => {
@@ -36,8 +38,8 @@ async (page) => {
     };
     call("set_project", { width: 1920, height: 1080, background: "#000000" });
     const main = v.project().tracks.find((t) => t.main).id;
-    // A gray ground under everything, 0-5 s.
-    call("add_color_clip", { color: "#808080", start: 0, duration: 5, track_id: main });
+    // A gray ground under everything, 0-6 s.
+    call("add_color_clip", { color: "#808080", start: 0, duration: 6, track_id: main });
     added();
     /** A blue picture (a solid at `scale`) with a rounded mask and a red border. */
     const framed = (start, scale, extra = {}) => {
@@ -57,6 +59,9 @@ async (page) => {
     call("add_keyframe", { clip_id: keyed, path: "border.width", at: 3.9, value: 36 });
     const shadowed = framed(4, 0.5);
     call("set_shadow", { clip_ids: [shadowed], color: "#000000", blur: 0, x: 0, y: 40, opacity: 1 });
+    // A see-through picture: its own pixels at 60%, the clip at full opacity.
+    call("add_shape", { kind: "rectangle", start: 5, duration: 1, width: 0.5, height: 0.5, color: "#0000ff99" });
+    call("set_border", { clip_ids: [added().id], color: "#ff0000", width: 20 });
     return { half, main };
   });
 
@@ -134,6 +139,22 @@ async (page) => {
     return { y815: [col[15 * 4], col[15 * 4 + 1], col[15 * 4 + 2]], y850: [col[50 * 4], col[50 * 4 + 1], col[50 * 4 + 2]], y880: [col[80 * 4], col[80 * 4 + 1], col[80 * 4 + 2]] };
   });
   details.shadowOfBoth = { ok: near(s.y815, RED) && near(s.y850, [0, 0, 0], 12) && near(s.y880, GRAY), ...s };
+
+  // See-through: blue at 0.6 over gray is (51, 51, 204) inside, red around.
+  // The border used to fill it at 40% too: (102, 0, 153), and its first
+  // pixel inside the edge too.
+  const t = await still(165);
+  const { center, edge } = await page.evaluate(async () => {
+    const st = await window.videoEditor.still(165);
+    const bmp = await createImageBitmap(await (await fetch(st.url)).blob());
+    URL.revokeObjectURL(st.url);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const g = c.getContext("2d");
+    g.drawImage(bmp, 0, 0);
+    const at = (x, y) => [...g.getImageData(x, y, 1, 1).data.slice(0, 3)];
+    return { center: at(960, 540), edge: at(481, 540) };
+  });
+  details.seeThrough = { ok: near(t.inLeft, [51, 51, 204], 12) && near(center, [51, 51, 204], 12) && near(edge, [51, 51, 204], 24) && near(t.left, RED) && near(t.pastLeft, GRAY), inLeft: t.inLeft, center, edge, left: t.left };
 
   // Preview: the viewer's own pixels at 0.5 s, scaled to its size.
   await page.evaluate(() => window.videoEditor.seek(15));

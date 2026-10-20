@@ -90,13 +90,15 @@ export function measureRuns(text: string, start: number, style: TextStyle, measu
 
 /** A piece of a title as the rasterizer draws it: where its text starts,
  * its left edge and width, and its line's middle (raster pixels). */
-export interface RunPiece { start?: number; x: number; width: number; y: number }
+export interface RunPiece { start?: number; text?: string; x: number; width: number; y: number }
 
 /** The box each run's letters cover in the raster, across every line it
  * wraps onto (ADR-099): a run's own gradient runs from its first letter to
  * its last, as a word styled in a layout tool does, not across the whole
- * title. Keyed by the run. */
-export function runBoxes(runs: TextRun[], pieces: RunPiece[], lineHeight: number): Map<TextRun, { left: number; top: number; right: number; bottom: number }> {
+ * title. A piece's width is its advance, which counts `letterSpacing`
+ * after its last letter too: the box ends on the letter (ADR-108). Keyed
+ * by the run. */
+export function runBoxes(runs: TextRun[], pieces: RunPiece[], lineHeight: number, letterSpacing = 0): Map<TextRun, { left: number; top: number; right: number; bottom: number }> {
   const boxes = new Map<TextRun, { left: number; top: number; right: number; bottom: number }>();
   for (const p of pieces) {
     const at = p.start ?? 0;
@@ -104,7 +106,8 @@ export function runBoxes(runs: TextRun[], pieces: RunPiece[], lineHeight: number
     if (!run) continue;
     const b = boxes.get(run);
     const top = p.y - lineHeight / 2, bottom = p.y + lineHeight / 2;
-    boxes.set(run, b ? { left: Math.min(b.left, p.x), top: Math.min(b.top, top), right: Math.max(b.right, p.x + p.width), bottom: Math.max(b.bottom, bottom) } : { left: p.x, top, right: p.x + p.width, bottom });
+    const right = p.x + p.width - (p.text === "" ? 0 : letterSpacing);
+    boxes.set(run, b ? { left: Math.min(b.left, p.x), top: Math.min(b.top, top), right: Math.max(b.right, right), bottom: Math.max(b.bottom, bottom) } : { left: p.x, top, right, bottom });
   }
   return boxes;
 }

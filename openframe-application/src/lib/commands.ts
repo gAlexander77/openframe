@@ -30,7 +30,7 @@ import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslB
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
-import { keyframeProblem } from "./animatable";
+import { keyframeProblem, partNeeds } from "./animatable";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
@@ -849,6 +849,11 @@ export const COMMANDS: Command[] = [
         if (COLOR_PATHS.has(path) && !keyed) return ops.updateClip(q, id, (c) => (c.type === "text" ? { ...c, style: { ...c.style, color: keyColor(Number(a.value)) } } : c));
         const now = COLOR_PATHS.has(path) ? undefined : rawValueAt(clip, path);
         if (now !== undefined && typeof now !== "number") throw new CommandError(`${a.path} holds ${typeof now === "string" ? `"${now}"` : `a ${typeof now}`}, not a number: set_param sets numbers (a title's look is set_text, a shape's set_shape)`);
+        // A part the clip lacks is added by its own command: set_param stored
+        // half of one (a colorize with no color crashed every frame, a mask
+        // with one number every describe_project and undo; ADR-108).
+        const lacking = now === undefined ? missingPart(clip, path) : null;
+        if (lacking) throw new CommandError(`${a.path} is not on clip ${clip.id}: ${partNeeds(clip, path) ?? `it has no ${lacking}`}`);
         return ops.setParam(q, [id], path, Number(a.value), rel);
       }, p);
     },
@@ -1178,13 +1183,12 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
+        // The mask and its keys: kept, they animated the next mask (ADR-108).
         if (a.shape === "none") {
-          p = ops.updateClip(p, clip.id, (c) => {
-            const { mask: _, ...rest } = c as Clip & { mask?: unknown };
-            return rest as Clip;
-          });
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { mask?: unknown }, "mask") as Clip, MASK_PARAMS.map((k) => `mask.${k}`)));
           continue;
         }
+        for (const k of MASK_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `mask.${k}`, a.at);
         const now = (clip as { mask?: Mask }).mask;
         if (!now && a.shape === undefined) throw new CommandError(`clip ${id} has no mask yet: give a shape`);
         const shape = (a.shape as MaskShape | undefined) ?? now!.shape;
@@ -1192,7 +1196,7 @@ export const COMMANDS: Command[] = [
         if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
-        for (const k of ["x", "y", "width", "height", "rotation", "feather", "radius"] as const) {
+        for (const k of MASK_PARAMS) {
           if (a[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(a[k]), rel);
         }
       }
@@ -1414,6 +1418,7 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to cast a shadow`);
+        if (a.off !== true) for (const k of SHADOW_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `shadow.${k}`, a.at);
         if (a.off === true) {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { shadow?: unknown }, "shadow") as Clip, SHADOW_PARAMS.map((k) => `shadow.${k}`)));
           continue;
@@ -1452,6 +1457,7 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to border`);
+        if (a.off !== true) for (const k of BORDER_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `border.${k}`, a.at);
         if (a.off === true) {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { border?: unknown }, "border") as Clip, BORDER_PARAMS.map((k) => `border.${k}`)));
           continue;
@@ -2353,7 +2359,7 @@ export const COMMANDS: Command[] = [
     input: S.obj(
       {
         clip_ids: S.ids("Visual or adjustment clips"),
-        color: S.str("CSS color white becomes, e.g. #ffb347 amber"),
+        color: S.str("CSS color white becomes, e.g. #ffb347 amber; its alpha multiplies amount"),
         amount: S.num("0..1, how much of the colorized picture shows over the original (default 1)", { minimum: 0, maximum: 1 }),
         off: S.bool("Remove the colorize and its keyframes"),
         at: S.num("Timeline seconds, for a keyframed amount"),
@@ -2365,6 +2371,7 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (!("adjust" in clip)) throw new CommandError(`${clip.type} clips have no picture to colorize`);
+        if (a.off !== true && a.amount !== undefined) keyedNeedsAt(clip, "adjust.colorize.amount", a.at);
         if (a.off === true) {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(c, ["adjust.colorize.amount"]));
           p = editGrade(p, clip.id, (adj) => withPart(adj, "colorize", undefined));
@@ -2642,6 +2649,30 @@ function rawValueAt(clip: Clip, path: string): unknown {
     else return undefined;
   }
   return cur;
+}
+
+/** The part of `path` a clip lacks ("border", "adjust.colorize"), or null
+ * when everything above the value is there. A grade's HSL bands and wheels
+ * start from nothing (the grade reads what is missing as 0), so set_param
+ * may make them. */
+function missingPart(clip: Clip, path: string): string | null {
+  if (/^adjust\.(hsl|wheels)\./.test(path)) return null;
+  const segs = path.split(".");
+  let cur: unknown = clip;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (Array.isArray(cur)) {
+      const el = cur.find((e) => (e as { id?: string }).id === segs[i]) as { params?: unknown } | undefined;
+      cur = el && "params" in el ? el.params : el;
+    } else cur = cur && typeof cur === "object" ? (cur as Record<string, unknown>)[segs[i]] : undefined;
+    if (cur === undefined || cur === null) return segs.slice(0, i + 1).join(".");
+  }
+  return null;
+}
+
+/** A keyed value given without `at` would go under its keys, where nothing
+ * shows it, and the answer would tell it as set (ADR-108). */
+function keyedNeedsAt(clip: Clip, path: string, at: unknown) {
+  if (at === undefined && clip.keyframes?.[path]?.length) throw new CommandError(`${path} is keyframed on clip ${clip.id}: give at (timeline seconds) to key it there, or remove_keyframes path ${path} first`);
 }
 
 /**
@@ -3039,6 +3070,9 @@ function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Cl
     p,
   );
 }
+
+/** A mask's numbers, each keyable as mask.<name>. */
+const MASK_PARAMS = ["x", "y", "width", "height", "rotation", "feather", "radius"] as const;
 
 /** A clip without the keyframes of `paths`. */
 function withoutKeys(c: Clip, paths: string[]): Clip {

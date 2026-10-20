@@ -230,7 +230,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // drawn moved maps its ends into its own coordinates, so the colors stay
   // put while the letters travel through them.
   // A run's own gradient runs across its own letters (ADR-099).
-  const boxes = s.runs?.length ? runBoxes(s.runs, pieces, lineH) : undefined;
+  const boxes = s.runs?.length ? runBoxes(s.runs, pieces, lineH, ls) : undefined;
   const fillStyle = (p: Piece): string | CanvasGradient => {
     const style = p.style ?? s;
     if (p.spoken && !s.runs?.some(r => r.start <= (p.start ?? 0) && r.end > (p.start ?? 0) && (r.color || r.gradient))) return s.highlight!;
