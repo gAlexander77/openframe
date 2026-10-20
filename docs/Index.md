@@ -353,3 +353,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   picture, fill the frame with a full-bleed split screen, hold text at the
   readable size, judge 4:5 by the apps' zones and take overrides by hand;
   unique copies copy nested compounds.
+- [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]] —
+  describe_project narrows to clips, tracks or a stretch with the media
+  and markers they use; analyze_music answers a grid and counts unless
+  asked for detail full; the design rules and a title's style are listed
+  once; lines are laid out without the spacing after the last letter;
+  set_colorize makes white a color; the glow starts at luma 85.

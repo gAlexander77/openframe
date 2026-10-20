@@ -25,7 +25,7 @@ async (page) => {
   const offBeat = (t) => Math.abs(t - (0.25 + BEAT * Math.round((t - 0.25) / BEAT)));
 
   const music = (await call("add_media_clip", { asset_id: id("beat-128.m4a"), start: 0 })).added_clips[0];
-  const m = await call("analyze_music", { clip_id: music.id, markers: ["beats", "bars"] });
+  const m = await call("analyze_music", { clip_id: music.id, markers: ["beats", "bars"], detail: "full" });
   details.analysis = {
     ok: Math.abs(m.bpm - 128) < 0.5 && m.beats.length >= 40 && m.beats.every((t) => offBeat(t) < 1 / 30) && m.downbeats.length >= 10 && m.downbeats.every((t, i) => i === 0 || Math.abs(t - m.downbeats[i - 1] - 4 * BEAT) < 0.04) && m.beat_energy.length === m.beats.length && m.sections.length >= 1 && m.markers > 0,
     bpm: m.bpm,

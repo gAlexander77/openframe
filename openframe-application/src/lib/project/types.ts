@@ -376,6 +376,18 @@ export interface Grade {
   wheels?: Partial<Record<WheelName, Wheel>>;
   /** A LUT from Project.luts, mixed in at intensity 0..1. */
   lut?: { id: Id; intensity: number };
+  /** Colorize (ADR-105): the picture's brightness in one color, before
+   * the rest of its color settings. */
+  colorize?: Colorize;
+}
+
+/** Premiere's Tint: white becomes `color`, black stays black, grays
+ * become darker shades of it; mixed over the picture by `amount`, 0..1.
+ * Keyframe adjust.colorize.amount. */
+export interface Colorize {
+  /** CSS color. */
+  color: string;
+  amount: number;
 }
 
 export type BlendMode =

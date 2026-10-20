@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { copyEffectStack, editEffects, effectClip, pasteEffectStack } from "./effectStack";
 import { runCommand, describeProject } from "./commands";
 import { effectDefaults } from "./catalog";
-import { createColorClip, createProject, createTextClip } from "./project/defaults";
+import { createColorClip, createProject, createTextClip, normalizeProject } from "./project/defaults";
 import { addClip, mainTrack } from "./project/ops";
+import { layerAt } from "./render/plan";
 
 function fixture() {
   let p = createProject();
@@ -138,5 +139,25 @@ describe("effect stack reuse", () => {
     const next = runCommand(p, "copy_effects", { source_clip_id: id, clip_ids: [id] });
     expect(effectClip(next, id).effects).toHaveLength(4);
     expect(effectClip(p, id).effects).toHaveLength(2);
+  });
+});
+
+// The Claude film test's glow at the default threshold, 60, turned a
+// launch's towers and sky into white smears; it set 88 by hand.
+describe("the glow's threshold (ADR-105)", () => {
+  it("adds a glow that starts at luma 85, keeping it to the highlights", () => {
+    expect(effectDefaults("glow")).toEqual({ amount: 50, threshold: 85 });
+    const { p, id } = fixture();
+    const next = runCommand(p, "add_effect", { clip_id: id, type: "glow" });
+    expect(effectClip(next, id).effects.at(-1)!.params).toEqual({ amount: 50, threshold: 85 });
+  });
+
+  it("leaves a stored glow at the threshold it was added with", () => {
+    const { p, id } = fixture();
+    const old = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.id === id ? { ...c, effects: [{ id: "fxg", type: "glow", enabled: true, params: { amount: 50, threshold: 60 } }] } : c)) })) };
+    const loaded = normalizeProject(JSON.parse(JSON.stringify(old)));
+    const clip = effectClip(loaded, id);
+    expect(clip.effects[0].params.threshold).toBe(60);
+    expect(layerAt(loaded, clip as Parameters<typeof layerAt>[1], 10)!.effects[0].params).toEqual({ amount: 50, threshold: 60 });
   });
 });

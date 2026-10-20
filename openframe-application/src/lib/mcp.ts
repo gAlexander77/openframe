@@ -14,6 +14,9 @@ import { MODE_IDS } from "./music/theory";
 import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
+import { filterDescription, type DescribeFilter } from "./describeFilter";
+import { musicSummary } from "./musicSummary";
+import type { MappedMusic } from "./analysis/musicMap";
 import { PROGRAM_KINDS, SPEC_IDS } from "./analysis/delivery";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionRatio, type VersionSpec } from "./versions";
@@ -328,15 +331,24 @@ const columns = (dflt: number): JsonSchema => ({ type: "integer", minimum: 1, ma
 export const APP_TOOLS: AppTool[] = [
   {
     name: "help",
-    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
+    description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
     call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), guideFor(h)) }] }),
   },
   {
     name: "describe_project",
-    description: "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds. Call this first and after edits.",
-    inputSchema: obj(),
-    call: (h) => json(h.describe()),
+    description:
+      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips, and the media and markers listed follow them; shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
+    inputSchema: obj({
+      clip_ids: { type: "array", items: { type: "string" }, description: "Only these clips, each under its track (or its compound)" },
+      track_ids: { type: "array", items: { type: "string" }, description: "Only these tracks, each listed empty or not" },
+      start: { type: "number", minimum: 0, description: "Only clips still playing after this timeline second" },
+      end: { type: "number", minimum: 0, description: "Only clips starting before this timeline second" },
+      assets: { type: "boolean", description: "false: no media list; true: all of it (default: all, or the clips' own when narrowed)" },
+      markers: { type: "boolean", description: "false: no markers; true: all (default: all, or those in the stretch or on the clips shown)" },
+      compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },
+    }),
+    call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
   },
   {
     name: "list_catalog",
@@ -766,7 +778,7 @@ APP_TOOLS.push(
   {
     name: "analyze_music",
     description:
-      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
+      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; grid, the beats as an even grid (first_beat, beat_seconds, bar_seconds, and off_grid: the beats more than 25 ms off it); downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null); counts of beats, bars, phrases and hits. detail full also lists every beat (beats), each beat's energy 0..1 (beat_energy) and hits (strong onsets on or off the beat: drum hits, stabs), about 2-3 KB a minute of music. Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The music clip (audio, or a video with sound)" },
@@ -778,10 +790,14 @@ APP_TOOLS.push(
           description: "The parts, when known, in the music file's own seconds: each starts at its at and runs to the next; a drop cue after another part is a drop. [{at: 0, label: 'intro'}, {at: 4, label: 'build'}, {at: 8, label: 'drop'}, {at: 32, label: 'breakdown'}, {at: 36, label: 'drop'}, {at: 48, label: 'outro'}]",
           items: obj({ at: { type: "number", minimum: 0, description: "Source seconds the part starts" }, label: { type: "string", enum: ["intro", "verse", "build", "drop", "breakdown", "outro"], description: "What the part is" } }, ["at", "label"]),
         },
+        detail: { type: "string", enum: ["summary", "full"], description: "summary (default): the grid, bars, phrases, parts and drops with counts; full: also every beat, hit and beat's energy" },
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers, bpm: a.bpm, first_downbeat: a.first_downbeat, cues: a.cues }))),
+    call: async (h, a) => {
+      const full = (await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers, bpm: a.bpm, first_downbeat: a.first_downbeat, cues: a.cues }))) as MappedMusic;
+      return json(a.detail === "full" || !Array.isArray(full?.beats) ? full : musicSummary(full));
+    },
   },
   {
     name: "remove_background",
@@ -830,7 +846,7 @@ APP_TOOLS.push(
         finish: FINISH,
         captions: { type: "boolean", description: "A caption per line (default true)" },
         enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true; finish raw has none)" },
-        caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look: the same fields as add_text's style" },
+        caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look, as a title's style takes it" },
         caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons)" },
       },
       ["lines"],
@@ -976,7 +992,7 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
-Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.

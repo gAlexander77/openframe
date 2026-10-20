@@ -24,6 +24,25 @@ export interface TextLayout {
   baselineShift: number;
 }
 
+/**
+ * A line's width on its letters. Canvas and CSS letter spacing both add
+ * the spacing after every letter, the last one too, so the advance they
+ * measure, and center or right-align, ends one spacing past the last glyph
+ * (measured in Edge: NORTH in 100 px Arial with spacing 34 advances 523.7
+ * px, 5 x 34 more than untracked, and a centered fillText drew its ink 17
+ * px left of center). Lines are laid out on this width instead, so tracked
+ * titles center on their letters (ADR-105).
+ */
+export function letterWidth(advance: number, letterSpacing: number, text: string): number {
+  return text ? advance - letterSpacing : advance;
+}
+
+/** Where a line `width` wide (letterWidth) starts in a raster `rasterWidth`
+ * wide with `pad` on each side, aligned as the style says. */
+export function lineStart(align: "left" | "center" | "right", width: number, rasterWidth: number, pad: number): number {
+  return align === "left" ? pad : align === "right" ? rasterWidth - pad - width : (rasterWidth - width) / 2;
+}
+
 export interface EditBox {
   /** The raster's box in viewer pixels: center, size, turn in degrees. */
   cx: number;
@@ -52,7 +71,10 @@ export interface EditBox {
  * viewer of `viewer` pixels showing a canvas `canvasWidth` pixels wide.
  * The text area is as wide as the wrap width (or the widest line, when one
  * word overflows it), anchored the way the alignment anchors the lines, so
- * the textarea wraps where the rasterizer does.
+ * the textarea wraps where the rasterizer does. CSS aligns a line with its
+ * spacing after the last letter, which the raster leaves out (letterWidth):
+ * a centered area moves half a spacing right, a right-aligned one a whole
+ * spacing, so the typed letters stay on the drawn ones.
  */
 export function editBox(
   layout: TextLayout,
@@ -63,9 +85,11 @@ export function editBox(
 ): EditBox {
   const k = (viewer.width / canvasWidth) * Math.abs(at.scale);
   const width = layout.width * k;
-  const textWidth = Math.max(layout.wrapWidth, layout.textWidth) * k;
+  // The widest line as CSS measures it: with the trailing spacing.
+  const textWidth = Math.max(layout.wrapWidth, layout.textWidth + layout.letterSpacing) * k;
   const pad = layout.pad * k;
-  const left = align === "left" ? pad : align === "right" ? width - pad - textWidth : (width - textWidth) / 2;
+  const trail = layout.letterSpacing * k;
+  const left = align === "left" ? pad : align === "right" ? width - pad - textWidth + trail : (width - textWidth + trail) / 2;
   const slack = (layout.size * k) / 2;
   return {
     cx: viewer.width / 2 + at.x * viewer.width,

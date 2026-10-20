@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 161 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 162 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -19,7 +19,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
-Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
@@ -49,7 +49,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
-- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
+- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
 - **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
 - **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
@@ -59,7 +59,7 @@ Read before editing: the guide, the timeline and the names the tools accept.
 
 ### help
 
-The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.
+The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -73,9 +73,17 @@ Example:
 
 ### describe_project
 
-Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds. Call this first and after edits.
+Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips, and the media and markers listed follow them; shown says how much of each list is in the answer. Example: {"clip_ids": ["c_12"]}.
 
-No parameters.
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] |  | Only these clips, each under its track (or its compound) |
+| `track_ids` | string[] |  | Only these tracks, each listed empty or not |
+| `start` | number |  | Only clips still playing after this timeline second (0..) |
+| `end` | number |  | Only clips starting before this timeline second (0..) |
+| `assets` | boolean |  | false: no media list; true: all of it (default: all, or the clips' own when narrowed) |
+| `markers` | boolean |  | false: no markers; true: all (default: all, or those in the stretch or on the clips shown) |
+| `compounds` | boolean |  | false: no nested timelines (default: all, or those the clips shown play) |
 
 ### list_catalog
 
@@ -709,7 +717,7 @@ Example:
 
 ### analyze_music
 
-Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
+Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; grid, the beats as an even grid (first_beat, beat_seconds, bar_seconds, and off_grid: the beats more than 25 ms off it); downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null); counts of beats, bars, phrases and hits. detail full also lists every beat (beats), each beat's energy 0..1 (beat_energy) and hits (strong onsets on or off the beat: drum hits, stabs), about 2-3 KB a minute of music. Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -720,6 +728,7 @@ Read a music clip's structure on this computer, as Final Cut's beat grid shows i
 | `cues` | { at, label }[] |  | The parts, when known, in the music file's own seconds: each starts at its at and runs to the next; a drop cue after another part is a drop. [{at: 0, label: 'intro'}, {at: 4, label: 'build'}, {at: 8, label: 'drop'}, {at: 32, label: 'breakdown'}, {at: 36, label: 'drop'}, {at: 48, label: 'outro'}] |
 | `cues[].at` | number | yes | Source seconds the part starts (0..) |
 | `cues[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
+| `detail` | "summary" \| "full" |  | summary (default): the grid, bars, phrases, parts and drops with counts; full: also every beat, hit and beat's energy |
 
 Example:
 
@@ -1585,43 +1594,7 @@ Change text clips' style with clip_ids (or clip_id). New text requires exactly o
 | `clip_id` | string |  | Text clip id; alternatively use clip_ids |
 | `clip_ids` | string[] |  | Text clips receiving the same style; text requires one clip |
 | `text` | string |  | New words; one clip only |
-| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
-| `style.font` | string |  | Font family |
-| `style.size` | number |  | Pixels at 1080p canvas height (4..) |
-| `style.color` | string |  | CSS color |
-| `style.bold` | boolean |  | Bold (weight 700); setting it clears weight |
-| `style.weight` | number |  | Font weight: 100 thin, 300 light, 400 regular, 500 medium, 600 semibold, 700 bold, 800 extra bold, 900 black. Wins over bold; a weight the font lacks draws its nearest face. Pair a heavy display line with a light one (100..900) |
-| `style.italic` | boolean |  | Italic |
-| `style.align` | "left" \| "center" \| "right" |  | Alignment |
-| `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
-| `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
-| `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
-| `style.background.padding` | number |  | Pixels (0..) |
-| `style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
-| `style.stroke.color` | string | yes | CSS color |
-| `style.stroke.width` | number |  | Pixels (0..) |
-| `style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
-| `style.stroke2.color` | string | yes | CSS color |
-| `style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
-| `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
-| `style.shadow.color` | string | yes | CSS color |
-| `style.shadow.blur` | number |  | Pixels (0..) |
-| `style.shadow.x` | number |  | Pixels |
-| `style.shadow.y` | number |  | Pixels |
-| `style.glow` | { color, blur, strength } |  | A neon glow around the letters |
-| `style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
-| `style.glow.blur` | number |  | Pixels, default 24 (0..) |
-| `style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
-| `style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
-| `style.gradient.from` | string | yes | CSS color at the start |
-| `style.gradient.to` | string | yes | CSS color at the end |
-| `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
-| `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
-| `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
-| `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
 
 Example:
 
@@ -1722,43 +1695,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 | `captions[].end` | number | yes | Seconds (0..) |
 | `captions[].text` | string | yes | Words shown |
 | `captions[].words` | number[] |  | Seconds each word of text starts, for the spoken-word highlight |
-| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text) |
-| `style.font` | string |  | Font family |
-| `style.size` | number |  | Pixels at 1080p canvas height (4..) |
-| `style.color` | string |  | CSS color |
-| `style.bold` | boolean |  | Bold (weight 700); setting it clears weight |
-| `style.weight` | number |  | Font weight: 100 thin, 300 light, 400 regular, 500 medium, 600 semibold, 700 bold, 800 extra bold, 900 black. Wins over bold; a weight the font lacks draws its nearest face. Pair a heavy display line with a light one (100..900) |
-| `style.italic` | boolean |  | Italic |
-| `style.align` | "left" \| "center" \| "right" |  | Alignment |
-| `style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
-| `style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
-| `style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
-| `style.background.padding` | number |  | Pixels (0..) |
-| `style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
-| `style.stroke.color` | string | yes | CSS color |
-| `style.stroke.width` | number |  | Pixels (0..) |
-| `style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
-| `style.stroke2.color` | string | yes | CSS color |
-| `style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
-| `style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
-| `style.shadow.color` | string | yes | CSS color |
-| `style.shadow.blur` | number |  | Pixels (0..) |
-| `style.shadow.x` | number |  | Pixels |
-| `style.shadow.y` | number |  | Pixels |
-| `style.glow` | { color, blur, strength } |  | A neon glow around the letters |
-| `style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
-| `style.glow.blur` | number |  | Pixels, default 24 (0..) |
-| `style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
-| `style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
-| `style.gradient.from` | string | yes | CSS color at the start |
-| `style.gradient.to` | string | yes | CSS color at the end |
-| `style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
-| `style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
-| `style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
-| `style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
 | `y` | number |  | Vertical offset from center as a canvas fraction; default 0.36 near the bottom, or 0.05 on a tall canvas, above the apps' captions and buttons |
 | `replace` | boolean |  | Remove existing captions first |
 
@@ -1893,7 +1830,7 @@ Add a video effect to a visual or adjustment clip. params override the effect's 
 Example:
 
 ```json
-{"name":"add_effect","arguments":{"clip_id":"c_123","type":"glow","params":{"amount":60,"threshold":55}}}
+{"name":"add_effect","arguments":{"clip_id":"c_123","type":"glow","params":{"amount":60,"threshold":88}}}
 ```
 
 ### edit_effects
@@ -2024,6 +1961,24 @@ Apply a .cube LUT to a visual or adjustment clip, mixed in at intensity 0..1 (de
 | `lut_id` | string | yes | LUT id, or 'none' |
 | `intensity` | number |  | 0..1 (0..1) |
 
+### set_colorize
+
+Colorize a picture (Premiere's Tint): its brightness drawn in one color, so white becomes the color, black stays black and grays become darker shades of it, mixed over the picture by amount 0..1. This is how a white sprite, glow, light leak or logo becomes amber or a brand color: temperature cannot warm pure white, which is already at the top of every channel. On video, image, title, shape and compound clips, and on an adjustment clip (everything under it). color: CSS (default '#ffb347', amber); amount default 1 (0.3-0.5 tints footage and keeps some of its own color). It runs first in the clip's color, so its exposure, temperature, filter and LUT act on the colorized picture. Values left out keep theirs. Animate with add_keyframe on adjust.colorize.amount (a white flash warming to amber); a keyframed amount gets a key at `at` instead. off: true removes it and its keyframes. Example: {"clip_ids": ["c_7"], "color": "#ffb347"}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual or adjustment clips |
+| `color` | string |  | CSS color white becomes, e.g. #ffb347 amber |
+| `amount` | number |  | 0..1, how much of the colorized picture shows over the original (default 1) (0..1) |
+| `off` | boolean |  | Remove the colorize and its keyframes |
+| `at` | number |  | Timeline seconds, for a keyframed amount |
+
+Example:
+
+```json
+{"name":"set_colorize","arguments":{"clip_ids":["c_7"],"color":"#ffb347","amount":1}}
+```
+
 ## Sound
 
 Voice, music, effects and the mix.
@@ -2055,43 +2010,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
 | `captions` | boolean |  | A caption per line (default true) |
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true; finish raw has none) |
-| `caption_style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The captions' look: the same fields as add_text's style |
-| `caption_style.font` | string |  | Font family |
-| `caption_style.size` | number |  | Pixels at 1080p canvas height (4..) |
-| `caption_style.color` | string |  | CSS color |
-| `caption_style.bold` | boolean |  | Bold (weight 700); setting it clears weight |
-| `caption_style.weight` | number |  | Font weight: 100 thin, 300 light, 400 regular, 500 medium, 600 semibold, 700 bold, 800 extra bold, 900 black. Wins over bold; a weight the font lacks draws its nearest face. Pair a heavy display line with a light one (100..900) |
-| `caption_style.italic` | boolean |  | Italic |
-| `caption_style.align` | "left" \| "center" \| "right" |  | Alignment |
-| `caption_style.highlight` | string |  | Captions: color of the word being spoken; an empty string turns it off |
-| `caption_style.case` | "none" \| "upper" \| "lower" \| "title" |  | Letter case as shown (the text is kept): none, upper, lower or title |
-| `caption_style.background` | { color, padding, radius } |  | A box behind the text, so it reads over busy footage; an empty color removes it |
-| `caption_style.background.color` | string | yes | CSS color, e.g. rgba(0,0,0,0.6) |
-| `caption_style.background.padding` | number |  | Pixels (0..) |
-| `caption_style.background.radius` | number |  | Corner radius, pixels (0..) |
-| `caption_style.stroke` | { color, width } |  | An outline around the letters (6-10 for titles over footage); width 0 or an empty color removes it |
-| `caption_style.stroke.color` | string | yes | CSS color |
-| `caption_style.stroke.width` | number |  | Pixels (0..) |
-| `caption_style.stroke2` | { color, width } |  | A second outline outside the first, for a sticker-like double edge |
-| `caption_style.stroke2.color` | string | yes | CSS color |
-| `caption_style.stroke2.width` | number |  | Pixels beyond the first outline; default 6 (0..) |
-| `caption_style.shadow` | { color, blur, x, y } |  | A drop shadow; an empty color removes it |
-| `caption_style.shadow.color` | string | yes | CSS color |
-| `caption_style.shadow.blur` | number |  | Pixels (0..) |
-| `caption_style.shadow.x` | number |  | Pixels |
-| `caption_style.shadow.y` | number |  | Pixels |
-| `caption_style.glow` | { color, blur, strength } |  | A neon glow around the letters |
-| `caption_style.glow.color` | string | yes | CSS color, e.g. #00e5ff |
-| `caption_style.glow.blur` | number |  | Pixels, default 24 (0..) |
-| `caption_style.glow.strength` | number |  | 1..3, how bright; default 1 (1..3) |
-| `caption_style.gradient` | { from, to, angle } |  | A two-color fill instead of color |
-| `caption_style.gradient.from` | string | yes | CSS color at the start |
-| `caption_style.gradient.to` | string | yes | CSS color at the end |
-| `caption_style.gradient.angle` | number |  | Degrees: 0 left to right (default), 90 top to bottom (-360..360) |
-| `caption_style.accent` | string |  | Color the highlightSweep marker and the underlineWipe line draw in; an empty string returns to the default |
-| `caption_style.letterSpacing` | number |  | Pixels between letters at 1080p (wide-tracked labels: 6 to 20) (-20..200) |
-| `caption_style.lineHeight` | number |  | Line spacing, a multiple of the size (default 1.2; 0.9-1.0 for tight display headlines) (0.5..3) |
-| `caption_style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
+| `caption_style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The captions' look, as a title's style takes it; its fields are add_text's style (help add_text) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
 
 Example:

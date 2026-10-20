@@ -64,6 +64,7 @@ import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
+import { cleanColorize, COLORIZE_DEFAULT } from "./colorize";
 import { COLOR_PATHS, colorKey, keyColor } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
@@ -2283,6 +2284,38 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_colorize",
+    description:
+      "Colorize a picture (Premiere's Tint): its brightness drawn in one color, so white becomes the color, black stays black and grays become darker shades of it, mixed over the picture by amount 0..1. This is how a white sprite, glow, light leak or logo becomes amber or a brand color: temperature cannot warm pure white, which is already at the top of every channel. On video, image, title, shape and compound clips, and on an adjustment clip (everything under it). color: CSS (default '#ffb347', amber); amount default 1 (0.3-0.5 tints footage and keeps some of its own color). It runs first in the clip's color, so its exposure, temperature, filter and LUT act on the colorized picture. Values left out keep theirs. Animate with add_keyframe on adjust.colorize.amount (a white flash warming to amber); a keyframed amount gets a key at `at` instead. off: true removes it and its keyframes. Example: {\"clip_ids\": [\"c_7\"], \"color\": \"#ffb347\"}.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual or adjustment clips"),
+        color: S.str("CSS color white becomes, e.g. #ffb347 amber"),
+        amount: S.num("0..1, how much of the colorized picture shows over the original (default 1)", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the colorize and its keyframes"),
+        at: S.num("Timeline seconds, for a keyframed amount"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const color = colorArg(a.color, "color");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("adjust" in clip)) throw new CommandError(`${clip.type} clips have no picture to colorize`);
+        if (a.off === true) {
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(c, ["adjust.colorize.amount"]));
+          p = editGrade(p, clip.id, (adj) => withPart(adj, "colorize", undefined));
+          continue;
+        }
+        const keyed = !!clip.keyframes?.["adjust.colorize.amount"]?.length;
+        const now = clip.adjust.colorize ?? COLORIZE_DEFAULT;
+        p = editGrade(p, clip.id, (adj) => withPart(adj, "colorize", cleanColorize({ ...now, ...(color ? { color } : {}), ...(a.amount !== undefined && !keyed ? { amount: Number(a.amount) } : {}) })));
+        if (a.amount !== undefined && keyed) p = ops.setParam(p, [clip.id], "adjust.colorize.amount", Number(a.amount), a.at !== undefined ? f(p, a.at) - clip.start : undefined);
+      }
+      return p;
+    },
+  },
+  {
     name: "add_sticker",
     description:
       "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
@@ -2862,6 +2895,7 @@ function gradeSummary(a: Graded) {
     ...(Object.keys(basic).length ? { adjust: basic } : {}),
     ...(parts.length ? { grade: parts } : {}),
     ...(a.lut ? { lut: { id: a.lut.id, intensity: a.lut.intensity } } : {}),
+    ...(a.colorize ? { colorize: a.colorize } : {}),
   };
 }
 

@@ -40,6 +40,7 @@ import { SoundFxSection } from "./SoundFx";
 import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
+import { ColorizeSection } from "./ColorizeSection";
 import { WheelsPanel } from "./WheelsPanel";
 import { CurvePreview, SpeedGraph } from "./SpeedGraph";
 import { EffectClipboard } from "./EffectClipboard";
@@ -1010,7 +1011,7 @@ const SAT_TRACK = "linear-gradient(90deg, #8a8a8a, #e0453a)";
 type AdjustSub = "basic" | "hsl" | "curves" | "wheels" | "lut";
 /** Kept across clips, like CapCut keeps the open sub-tab. */
 let lastAdjustSub: AdjustSub = "basic";
-const GRADE_PATH = /^adjust\.(hsl|curves|wheels|lut)\./;
+const GRADE_PATH = /^adjust\.(hsl|curves|wheels|lut|colorize)\./;
 
 function AdjustTab({ clip }: { clip: Clip }) {
   const [sub, setSubState] = useState<AdjustSub>(lastAdjustSub);
@@ -1082,6 +1083,7 @@ function AdjustBasic({ clip }: { clip: Clip }) {
         {a("fade", "Fade", 0)}
         {a("vignette", "Vignette", 0)}
       </Section>
+      <ColorizeSection clip={clip} />
     </>
   );
 }

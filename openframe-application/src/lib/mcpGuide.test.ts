@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { validate, type JsonSchema } from "./commands";
 import { guide, handleMcp, instructions, listTools, type McpHost } from "./mcp";
-import { agentPlaybook, EXAMPLES, fullCatalog, groupOf, helpText, HELP_TOPICS, promptMessages, PROMPTS, TOOL_GROUPS, toolReference } from "./mcpGuide";
+import { agentPlaybook, DESIGN, EXAMPLES, fullCatalog, groupOf, helpText, HELP_TOPICS, promptMessages, PROMPTS, TOOL_GROUPS, toolReference } from "./mcpGuide";
 
 const tools = listTools();
 // The docs live beside the app, at the repository root.
@@ -61,6 +61,28 @@ describe("the MCP guide", () => {
     expect((fullCatalog("effects") as { id: string; params: object }[]).find((e) => e.id === "glow")!.params).toHaveProperty("threshold");
     expect((fullCatalog("stickers", "fire") as unknown[]).length).toBeGreaterThan(0);
     expect(() => fullCatalog("colours")).toThrow("No catalog section");
+  });
+
+  it("gives the design rules once: the playbooks point to the design topic, a prompt carries them (ADR-105)", () => {
+    // The Claude film test read the same 1.2k-token block in ad, epic_edit,
+    // social_short and design.
+    const rule = DESIGN.split("\n")[1];
+    for (const topic of ["ad", "epic_edit", "social_short", "voiceover"]) {
+      const text = helpText(topic, tools, guide());
+      expect(text, topic).not.toContain(rule);
+      if (topic !== "voiceover") expect(text, topic).toContain("help topic design");
+    }
+    expect(helpText("design", tools, guide())).toContain(rule);
+    for (const p of PROMPTS) expect(promptMessages(p.name, { product: "x", theme: "x", media: "x" }).messages[0].content.text, p.name).toContain(rule);
+    expect(agentPlaybook().split(rule)).toHaveLength(2);
+  });
+
+  it("lists a title's style fields under add_text alone; other tools name them there (ADR-105)", () => {
+    const voice = helpText("add_voiceover", tools, guide());
+    expect(voice).not.toContain("`caption_style.size`");
+    expect(voice).toMatch(/`caption_style` \|.*help add_text/);
+    expect(helpText("add_text", tools, guide())).toContain("`style.size`");
+    for (const name of ["set_text", "add_captions"]) expect(helpText(name, tools, guide()), name).not.toContain("`style.size`");
   });
 
   it("fills a prompt with the user's details, and asks for what it needs", () => {

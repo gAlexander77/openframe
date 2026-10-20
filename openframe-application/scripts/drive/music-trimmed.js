@@ -22,7 +22,7 @@ async (page) => {
     const whole = await call("analyze_music", { clip_id: score.clip_id });
     // Source 0-32 from timeline 0, as the documentary cut it.
     await call("trim_clip", { clip_id: score.clip_id, edge: "end", to: 32 });
-    const trimmed = await call("analyze_music", { clip_id: score.clip_id });
+    const trimmed = await call("analyze_music", { clip_id: score.clip_id, detail: "full" });
     // Source 8-24 played again from timeline 40, on a track of its own.
     const track = (await call("add_track", { kind: "audio", name: "Music 2" })).tracks?.[0]?.id ?? ve.project().tracks.find((t) => t.name === "Music 2").id;
     await call("add_media_clip", { asset_id: score.asset_id, track_id: track, start: 40, in: 8, duration: 16 });

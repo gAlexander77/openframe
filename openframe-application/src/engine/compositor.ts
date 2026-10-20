@@ -608,6 +608,8 @@ export class Compositor {
     }
     gl.uniform1i(u("u_hslOn"), g?.hsl ? 1 : 0);
     if (g?.hsl) gl.uniform3fv(u("u_hsl"), g.hsl);
+    gl.uniform1f(u("u_colorizeAmount"), g?.colorize?.amount ?? 0);
+    if (g?.colorize) gl.uniform3fv(u("u_colorize"), g.colorize.rgb);
     // LUT: 1D on unit 2, 3D on unit 3. A sampler3D must never share a unit
     // with a sampler2D, so both always point at their own units.
     const lut = g?.lut ? this.lutTexture(g.lut.src) : null;
