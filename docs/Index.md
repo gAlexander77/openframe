@@ -353,3 +353,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   picture, fill the frame with a full-bleed split screen, hold text at the
   readable size, judge 4:5 by the apps' zones and take overrides by hand;
   unique copies copy nested compounds.
+- [[ADR-102 An edit moves only what its answer names, and the main track keeps the gaps it was given]] —
+  the magnet closes only the gaps an edit opens, so an agent's pause on
+  the main track survives AI tools; agents' commands get linkage, never
+  the magnet; every clip a tool moves is in its answer, a closed gap in a
+  sentence; trims say why they stop; slip_clip moves the source by its
+  seconds; hidden cuts are not counted; half-frame times take the earlier
+  frame.

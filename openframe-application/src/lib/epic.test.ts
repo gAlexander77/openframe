@@ -91,10 +91,10 @@ describe("add_beat_hits", () => {
     expect(clips.map((c) => c.start)).toEqual([b[0], b[2], b[4]]);
     const c = clips[1];
     expect(c.name).toBe("Hit: Zoom punch + RGB split");
-    expect(c.duration).toBe(8); // 0.25 s at 30 fps
+    expect(c.duration).toBe(7); // 0.25 s at 30 fps: 7.5 frames, a tie, to the earlier (ADR-102)
     expect(c.effects.map((e) => e.type)).toEqual(["zoom", "rgbSplit"]);
     const zoom = c.keyframes![`effects.${c.effects[0].id}.amount`];
-    expect(zoom).toEqual([{ f: 0, v: 25, ease: "easeOut" }, { f: 8, v: 0 }]);
+    expect(zoom).toEqual([{ f: 0, v: 25, ease: "easeOut" }, { f: 7, v: 0 }]);
     // At the cuts instead, a second call fits on the same track when free.
     const q = runCommand(p, "add_beat_hits", { effect: "flash", at_cuts: true, intensity: 0.5, duration: 0.1 });
     expect(hitsTracks(q)).toHaveLength(2);

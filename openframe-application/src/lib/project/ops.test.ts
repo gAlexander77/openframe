@@ -272,6 +272,47 @@ describe("settle", () => {
     expect(findClip(s, "t1")!.clip.start).toBe(5);
     expect(findClip(s, "music")!.clip.start).toBe(0);
   });
+
+  /** The Claude film (2026-10-20): a 7-frame breath on the main track,
+   * [30, 37), before the drop; a picture-in-picture mostly over c2. */
+  const breath = () => {
+    const p = project([0, 30, 0], [37, 30, 0], [67, 30, 0]);
+    const pip = { ...clipForAsset(asset, 40, p.fps), id: "pip", duration: 20 } as Clip;
+    return { ...p, tracks: [{ ...createTrack("video", "PiP"), clips: [pip] }, ...p.tracks, { ...createTrack("audio", "Voice"), clips: [] }] };
+  };
+
+  it("keeps a gap that was there before the edit: an edit elsewhere moves nothing (ADR-102)", () => {
+    // A voiceover added under the pictures (an audio track only) packed the
+    // main track and moved the drop and everything after it 7 frames early.
+    const p = breath();
+    const voice = { ...clipForAsset(asset, 0, p.fps), id: "vo", type: "audio", duration: 40 } as Clip;
+    const after = { ...p, tracks: p.tracks.map((t) => (t.kind === "audio" ? { ...t, clips: [voice] } : t)) };
+    const s = settle(p, after, linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37, 67]);
+    expect(findClip(s, "pip")!.clip.start).toBe(40);
+  });
+
+  it("closes only the gap an edit opens, keeping the one before it", () => {
+    // Deleting c2 without ripple opens [37, 67); the magnet closes that and
+    // c3 keeps the breath before it.
+    const p = breath();
+    const s = settle(p, deleteClips(p, ["c2"]), linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37]);
+    // Trimming c1's tail by 5 frames opens 5 more: those close, the 7 stay.
+    const t = settle(p, trimClip(p, "c1", "end", 25), linked);
+    expect(clips(t, 1).map((c) => c[0])).toEqual([0, 32, 62]);
+    expect(findClip(t, "pip")!.clip.start).toBe(35);
+  });
+
+  it("carries clips with a shot that moved whole, not with one whose head was trimmed", () => {
+    // An agent's trim (no magnet) of c1's head moves c1's start to 10 but
+    // not where its pictures play: the title on it stays.
+    const p = scene();
+    const s = settle(p, trimClip(p, "c1", "start", 10), { magnet: false, linkage: true });
+    expect(findClip(s, "c1")!.clip.start).toBe(10);
+    expect(findClip(s, "t1")!.clip.start).toBe(5);
+    expect(findClip(s, "whoosh")!.clip.start).toBe(5);
+  });
 });
 
 describe("setFps", () => {

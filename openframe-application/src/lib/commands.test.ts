@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, CommandError, describeProject, runCommand, validate } from "./commands";
+import { COMMANDS, CommandError, describeProject, runAgentCommand, runCommand, validate, type CommandReport } from "./commands";
 import { createProject } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Project } from "./project/types";
@@ -48,9 +48,10 @@ describe("command registry", () => {
     expect("canvas" in all().find((c) => c.id === v.id)!).toBe(false);
     expect(() => runCommand(p, "set_chroma_key", { clip_ids: [t.id] })).toThrow("Only video and image");
     p = runCommand(p, "set_fades", { clip_ids: [v.id], fade_in: 0.5, fade_out: 9 });
-    // 25 fps: half a second is 12.5, rounded to 13 frames; 9 s is capped at half the 4 s clip.
-    expect(all().find((c) => c.id === v.id)).toMatchObject({ fadeIn: 13, fadeOut: 50 });
-    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ fade_in: 0.52, fade_out: 2 });
+    // 25 fps: half a second is 12.5 frames, a tie, taken to 12 (the frame
+    // on screen then, ADR-102); 9 s is capped at half the 4 s clip.
+    expect(all().find((c) => c.id === v.id)).toMatchObject({ fadeIn: 12, fadeOut: 50 });
+    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ fade_in: 0.48, fade_out: 2 });
     expect(() => runCommand(p, "set_fades", { clip_ids: [t.id], fade_in: 1 })).toThrow("set_animation");
     p = runCommand(p, "duplicate_clips", { clip_ids: [t.id], at: 5 });
     const copy = all().find((c) => c.type === "text" && c.id !== t.id)!;
@@ -359,5 +360,70 @@ describe("set_mask", () => {
     const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
     const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
     expect(() => runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" })).toThrow(/no picture/);
+  });
+});
+
+describe("what the Claude film test found (2026-10-20, ADR-102)", () => {
+  /** 30 fps; a 12 s file. Main: a [0, 2), b [2, 4), c [4, 8); a PiP mostly
+   * over c, a music bed over all of them. */
+  const film = () => {
+    let p: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "launch.mp4", src: "launch.mp4", duration: 12, hasVideo: true, hasAudio: false }, { id: "m", kind: "audio", name: "song.wav", src: "song.wav", duration: 30, hasVideo: false, hasAudio: true }] };
+    for (const [start, duration, at] of [[0, 2, 0], [2, 2, 3], [4, 4, 6]]) p = runCommand(p, "add_media_clip", { asset_id: "a1", start, duration, in: at });
+    p = runCommand(p, "add_track", { kind: "video", name: "PiP" });
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 4.5, duration: 3, in: 0, track_id: p.tracks[0].id });
+    return runCommand(p, "add_media_clip", { asset_id: "m", start: 0, duration: 8 });
+  };
+  const at = (p: Project, id: string) => ops.findClip(p, id)!.clip.start / 30;
+  const ids = (p: Project) => ({ a: p.tracks.find((t) => t.main)!.clips[0].id, c: p.tracks.find((t) => t.main)!.clips[2].id, pip: p.tracks[0].clips[0].id, bed: p.tracks.find((t) => t.kind === "audio")!.clips[0].id });
+
+  it("carries clips on a main-track shot through a ripple trim and an insert, as the user's edits do", () => {
+    const p = film(), { a, c, pip, bed } = ids(p);
+    const trimmed = runAgentCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 2.5, ripple: true });
+    expect([at(trimmed, c), at(trimmed, pip), at(trimmed, bed)]).toEqual([4.5, 5, 0]);
+    const inserted = runAgentCommand(trimmed, "add_media_clip", { asset_id: "a1", start: 2.5, duration: 1, in: 10, mode: "insert", track_id: p.tracks.find((t) => t.main)!.id });
+    expect([at(inserted, c), at(inserted, pip), at(inserted, bed)]).toEqual([5.5, 6, 0]);
+    // A command alone ripples its own track: that was the PiP left behind.
+    expect(at(runCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 2.5, ripple: true }), pip)).toBe(4.5);
+  });
+
+  it("never closes a gap on the main track unless the call asks", () => {
+    const p = film(), b = p.tracks.find((t) => t.main)!.clips[1].id;
+    const lifted = runAgentCommand(p, "delete_clips", { clip_ids: [b] });
+    expect(lifted.tracks.find((t) => t.main)!.clips.map((x) => x.start / 30)).toEqual([0, 4]);
+    expect(runAgentCommand(p, "delete_clips", { clip_ids: [b], ripple: true }).tracks.find((t) => t.main)!.clips.map((x) => x.start / 30)).toEqual([0, 2]);
+  });
+
+  it("says where a trim stopped and why, and describes a trimmed ramp from 0 to 1", () => {
+    let p = film();
+    const { c } = ids(p);
+    // c reads 6 s of the 12 s file at 1x and ramps to 4x by its end.
+    p = runCommand(p, "set_speed_curve", { clip_id: c, points: [{ t: 0, speed: 1 }, { t: 0.5, speed: 1 }, { t: 0.95, speed: 4 }, { t: 1, speed: 4 }] });
+    const report: CommandReport = {};
+    const end = (ops.findClip(p, c)!.clip.start + ops.findClip(p, c)!.clip.duration) / 30;
+    const q = runCommand(p, "trim_clip", { clip_id: c, edge: "end", to: end + 2, ripple: true }, report);
+    const got = (ops.findClip(q, c)!.clip.start + ops.findClip(q, c)!.clip.duration) / 30;
+    expect(got).toBeLessThan(end + 2);
+    expect(report.notes).toEqual([`Stopped at ${+got.toFixed(3)} s, not ${end + 2} s: the source ends there (launch.mp4 is 12 s long, and the clip reads it at 4x at its end).`]);
+    const points = describeProject(q).tracks.flatMap((t) => t.clips).find((x) => x.id === c)!.speed_points as number[][];
+    expect(points[0]).toEqual([0, 1]);
+    expect(points.at(-1)).toEqual([1, 4]);
+    // A trim without ripple stops at the next clip, and says so.
+    const r2: CommandReport = {};
+    const a = ids(p).a;
+    runCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 3 }, r2);
+    expect(r2.notes?.[0]).toMatch(/^Stopped at 2 s, not 3 s: the next clip on its track starts there/);
+  });
+
+  it("slips by seconds of source on a ramped clip, and says where the file stopped it", () => {
+    let p = film();
+    const { c } = ids(p);
+    p = runCommand(p, "set_speed_curve", { clip_id: c, points: [{ t: 0, speed: 2 }, { t: 0.5, speed: 0.5 }, { t: 1, speed: 2 }] });
+    const inOf = (q: Project) => (ops.findClip(q, c)!.clip as { in: number }).in;
+    const slipped = runCommand(p, "slip_clip", { clip_id: c, by: -0.75 });
+    expect(inOf(slipped) - inOf(p)).toBeCloseTo(-0.75, 9);
+    const report: CommandReport = {};
+    const stopped = runCommand(p, "slip_clip", { clip_id: c, by: -20 }, report);
+    expect(inOf(stopped)).toBe(0);
+    expect(report.notes).toEqual([`Slipped ${+(-inOf(p)).toFixed(3)} s, not -20 s: the source starts there.`]);
   });
 });

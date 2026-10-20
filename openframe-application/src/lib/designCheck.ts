@@ -200,6 +200,39 @@ export function seenShots(p: Project, solids = false): { start: number; duration
   return runs;
 }
 
+/**
+ * Does a clip hide everything below it at frame f: footage or a solid card
+ * (not a shape) drawn plainly over the whole frame, opaque, unmasked,
+ * unkeyed and upright? Pictures and compounds may be transparent, so they
+ * never count.
+ */
+function hidesBelow(p: Project, c: Clip, f: number): boolean {
+  if (c.disabled || !(c.type === "video" || (c.type === "color" && !c.shape))) return false;
+  if ((c.blend ?? "normal") !== "normal" || c.mask || c.chromaKey || c.trackMatte || (c.type === "video" && c.cutout)) return false;
+  const l = layerAt(p, c, f);
+  if (!l || l.opacity < 0.99 || Math.abs(l.rotation % 360) > 0.01) return false;
+  const b = layerBox(p, c, l);
+  return b.cx - b.hw <= 1 && b.cx + b.hw >= p.width - 1 && b.cy - b.hh <= 1 && b.cy + b.hh >= p.height - 1;
+}
+
+/**
+ * Shots with the cuts nobody sees taken out: a cut at frame f under a clip
+ * on a higher visible track that hides the whole frame on both sides of f
+ * (a black breath laid over a filler shot) joins its two shots into one.
+ * check_project counted those and flagged them off the beat (ADR-102).
+ */
+export function shownCuts<T extends { start: number; duration: number; trackIndex: number }>(p: Project, shots: T[]): T[] {
+  const out: T[] = [];
+  for (const s of shots) {
+    const last = out.at(-1);
+    const f = s.start;
+    const hidden = last && last.start + last.duration === f && p.tracks.some((t, i) => i < Math.min(s.trackIndex, last.trackIndex) && t.kind === "video" && !t.hidden && t.clips.some((c) => c.start < f && f < c.start + c.duration && hidesBelow(p, c, f - 1) && hidesBelow(p, c, f)));
+    if (hidden) out[out.length - 1] = { ...last, duration: last.duration + s.duration };
+    else out.push(s);
+  }
+  return out;
+}
+
 /** The 90% title-safe inset (SMPTE ST 2046-1), a fraction of each side. */
 const TITLE_SAFE = 0.05;
 
@@ -315,8 +348,9 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   // frontmost full picture across tracks when those are more (A and B
   // rolls, cutaways over an interview).
   const shotTrack = cutTrack(p);
-  const onTrack = shotTrack.clips.filter((c) => c.type === "video" || c.type === "image" || c.type === "compound" || shotTrack.main).sort((a, b) => a.start - b.start);
-  const seen = seenShots(p);
+  const level = (id: Id) => p.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
+  const onTrack = shownCuts(p, shotTrack.clips.filter((c) => c.type === "video" || c.type === "image" || c.type === "compound" || shotTrack.main).sort((a, b) => a.start - b.start).map((c) => ({ start: c.start, duration: c.duration, trackIndex: p.tracks.indexOf(shotTrack) })));
+  const seen = shownCuts(p, seenShots(p).map((s) => ({ ...s, trackIndex: level(s.clipId) })));
   const across = seen.length > onTrack.length;
   const cuts: { start: number; duration: number }[] = across ? seen : onTrack;
   const cutsWhere = across ? "the picture (across tracks)" : shotTrack.main ? "the main track" : `track ${shotTrack.name}`;

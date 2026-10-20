@@ -19,6 +19,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
+The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip, and not across two whole shots: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a music bed or a grade across several shots stays. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
@@ -367,7 +368,7 @@ Split a video or audio clip at several SOURCE times (seconds into its media file
 
 ### trim_clip
 
-Move a clip's start or end edge to a time. Limited by the source media and neighbors; ripple=true shifts later clips instead of stopping at them.
+Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -378,12 +379,12 @@ Move a clip's start or end edge to a time. Limited by the source media and neigh
 
 ### slip_clip
 
-Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.
+Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. by is seconds of the source file, like in and cut_ranges, at any speed or ramp: in moves by exactly that much. Stops at the ends of the source, and says so.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip |
-| `by` | number | yes | Seconds of source to move by: positive shows later material |
+| `by` | number | yes | Seconds of source to move by (the in-point moves this much, whatever the clip's speed): positive shows later material |
 
 Example:
 
