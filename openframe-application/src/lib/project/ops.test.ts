@@ -304,6 +304,46 @@ describe("settle", () => {
     expect(findClip(t, "pip")!.clip.start).toBe(35);
   });
 
+  /** Shots c1 [0,30), c2 [30,60), c3 [60,90) with a caption on each, end
+   * to end on one track. */
+  const captioned = () => {
+    const p = project([0, 30, 0], [30, 30, 0], [60, 30, 0]);
+    const caps = [0, 30, 60].map((s, i) => ({ ...createTextClip(`cap${i}`, s, 28), id: `cap${i}` }));
+    return { ...p, tracks: [{ ...createTrack("video", "Captions"), clips: caps }, ...p.tracks] };
+  };
+  const capStarts = (p: Project) => ["cap0", "cap1", "cap2"].map((id) => findClip(p, id)!.clip.start);
+
+  it("carries a run of captions on one track with their shots through an insert (ADR-106)", () => {
+    // A shot inserted at 0 moves every shot 30 frames later. Each caption,
+    // moved in track order, found the next one's old spot taken: only the
+    // last one followed its shot.
+    const p = captioned();
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 0, p.fps), id: "new", duration: 30 } as Clip, "insert");
+    const s = settle(p, ins, { magnet: false, linkage: true });
+    expect(capStarts(s)).toEqual([30, 60, 90]);
+    expect(capStarts(settle(s, deleteClips(s, ["new"], true), { magnet: false, linkage: true }))).toEqual([0, 30, 60]);
+  });
+
+  it("keeps the captions after a shot deleted with its own caption on their shots (ADR-106)", () => {
+    // Ripple-deleting c2 and its caption: the caption track rippled by the
+    // caption's 28 frames, c3 by its 30, so c3's caption landed 2 frames
+    // off its shot.
+    const p = captioned();
+    const s = settle(p, deleteClips(p, ["c2", "cap1"], true), { magnet: true, linkage: true });
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 30]);
+    expect(findClip(s, "cap2")!.clip.start).toBe(30);
+  });
+
+  it("keeps the pause before a shot when a clip is inserted at its start (ADR-106)", () => {
+    // The magnet took the inserted clip for one that keeps no gap, pulled it
+    // onto c1 and the breath was gone; c2 and the PiP moved 7 frames early.
+    const p = breath();
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 37, p.fps), id: "new", duration: 10 } as Clip, "insert");
+    const s = settle(p, ins, linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37, 47, 77]);
+    expect(findClip(s, "pip")!.clip.start).toBe(50);
+  });
+
   it("carries clips with a shot that moved whole, not with one whose head was trimmed", () => {
     // An agent's trim (no magnet) of c1's head moves c1's start to 10 but
     // not where its pictures play: the title on it stays.

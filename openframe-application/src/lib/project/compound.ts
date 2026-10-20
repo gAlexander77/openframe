@@ -165,7 +165,10 @@ export function copyCompound(p: Project, id: Id): { project: Project; compoundId
   const names = new Set((p.compounds ?? []).map((x) => x.name));
   let name = `${k.name} copy`;
   for (let n = 2; names.has(name); n++) name = `${k.name} copy ${n}`;
-  const copy: Compound = { id: uid("k"), name, tracks, markers: k.markers.map((m) => ({ ...m, id: uid("m") })) };
+  // A marker following a clip inside (a song's beats) follows its copy:
+  // naming the original's clip, the copy's markers all went (ADR-106).
+  const markers = k.markers.map((m) => ({ ...m, id: uid("m"), ...(m.follows ? { follows: { ...m.follows, clip: ids.get(m.follows.clip) ?? m.follows.clip } } : {}) }));
+  const copy: Compound = { id: uid("k"), name, tracks, markers };
   return { project: { ...p, compounds: [...(p.compounds ?? []), copy] }, compoundId: copy.id };
 }
 

@@ -370,7 +370,11 @@ export function compactTrack(p: Project, trackId: Id): Project {
  * the edit opened (a clip deleted or dragged away, a tail or head
  * trimmed), never over a gap that was there before it. A clip keeps at
  * most the empty time that lay, before the edit, between it and the clip
- * now before it (a new clip keeps none). A pause left on the main track on
+ * now before it; a new clip after an old one (or the start) keeps the empty
+ * time that lay between that clip and where it now starts, so a piece left
+ * by a cut (remove_silences taking a shot's head, a drop at a shot's start)
+ * keeps the pause before it, and one dropped past the end keeps none. A
+ * pause left on the main track on
  * purpose (an agent's breath before a drop) survives every later edit, an
  * AI tool's included, which used to pack the track and move every later
  * shot without a word (ADR-102).
@@ -394,9 +398,10 @@ export function closeOpenedGaps(before: Project, after: Project, trackId: Id): P
   let prev: Clip | undefined;
   const clips = t.clips.map((c) => {
     const was = old.get(c.id), prevWas = prev && old.get(prev.id);
-    // After a new clip, the gap it had; after an old one (or the start),
-    // all the empty time that lay between them.
-    const keep = !was ? 0 : prev && !prevWas ? gapBefore.get(c.id)! : emptyIn(prevWas ? clipEnd(prevWas) : 0, was.start);
+    // After a new clip, the gap it had (none for a new clip); after an old
+    // one (or the start), all the empty time that lay between them.
+    const from = prevWas ? clipEnd(prevWas) : 0;
+    const keep = prev && !prevWas ? (was ? gapBefore.get(c.id)! : 0) : emptyIn(from, was ? was.start : c.start);
     const start = at + Math.max(0, Math.min(c.start - prevEnd, keep));
     prevEnd = Math.max(prevEnd, clipEnd(c));
     at = start + c.duration;
@@ -936,19 +941,36 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
   }
   if (!moves.length) return p;
   const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  const kept = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+  /** Did only its own track's ripple move it: a ripple delete that took a
+   * clip before it there too (a shot and its title deleted together)?
+   * Then it still sits on its shot and follows that, not the ripple: it
+   * landed off its shot by the shot's length less the title's (ADR-106). */
+  const rippled = (t: Track, was: Clip, c: Clip) => {
+    const shift = (findTrack(before, t.id)?.clips ?? []).filter((x) => !kept.has(x.id) && x.start < was.start).reduce((n, x) => n + x.duration, 0);
+    return shift > 0 && c.start === was.start - shift;
+  };
   for (const t of p.tracks) {
     if (t.main || t.locked) continue;
+    const wants: { c: Clip; to: number }[] = [];
     for (const c of t.clips) {
       const was = old.get(c.id);
-      if (!was || was.start !== c.start) continue; // new or moved by the edit itself
+      if (!was || (was.start !== c.start && !rippled(t, was, c))) continue; // new or moved by the edit itself
       // A bed covering a whole cut belongs to the sequence, even when one
       // of its shots supplies a majority of the duration. Short titles
       // that merely straddle a cut still follow their dominant shot.
       if (oldMain.clips.filter(x => was.start <= x.start && was.start + was.duration >= x.start + x.duration).length > 1) continue;
       const m = moves.find((x) => 2 * overlap(was.start, was.duration, x.start, x.duration) > was.duration);
-      if (!m) continue;
+      if (m && was.start + m.delta !== c.start) wants.push({ c, to: was.start + m.delta });
+    }
+    // Clips moving left go from the left, clips moving right from the
+    // right: a run of captions on one track each moving later would
+    // otherwise find the next one's old spot taken, and only the last
+    // caption followed an insert (ADR-106).
+    const dir = (w: { c: Clip; to: number }) => Math.sign(w.to - w.c.start);
+    wants.sort((a, b) => dir(a) - dir(b) || (dir(a) < 0 ? a.c.start - b.c.start : b.c.start - a.c.start));
+    for (const { c, to: start } of wants) {
       const track = findTrack(p, t.id)!;
-      const start = c.start + m.delta;
       if (start < 0 || !rangeFree(track, start, c.duration, c.id)) continue;
       p = withTrack(p, t.id, (tr) => setClips(tr, tr.clips.map((x) => (x.id === c.id ? ({ ...x, start } as Clip) : x))));
     }

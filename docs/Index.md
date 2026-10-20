@@ -382,13 +382,21 @@ Every non-obvious choice gets a short Architecture Decision Record in
   asked for detail full; the design rules and a title's style are listed
   once; lines are laid out without the spacing after the last letter;
   set_colorize makes white a color; the glow starts at luma 85.
-- [[ADR-109 What an agent can set, a person can see and change]] —
-  a section opens when its header switch turns on and keeps the focus;
-  activate and deactivate act on the selection as one, named for what
-  they do; agents' notices name the new commands and parameters; a
-  title shows the drop shadow, border and colorize it carries; paste
-  attributes carries shadow, border and compressor; audio crossfades are
-  offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-106 What sits on a shot or marks a song follows it through every edit]] —
+  linkage moves a run of titles into each other's old spots, follows a
+  shot ripple-deleted with its title, and applies inside edit_compound
+  and between a batch's steps; a new main-track clip keeps the pause
+  before it; cut_ranges keeps the clip's id on its first piece left; a
+  song's markers follow it into compound clips and unique copies, never
+  double another use's, and round ties as secondsToFrames does; cut_music
+  of an intro starts on the bar; reversed trims and frozen slips say why.
+- [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]] —
+  a split of one sound plays on with no click guard; cut_music stops
+  before the bar line so both downbeats play whole; preview_audio's edges
+  judge a join's click and level against the incoming file's own; a duck
+  keeps its keys' shape and place, so moved music says its dips moved and
+  splits are not hand edits; the lines stay on the speech target under the
+  ceiling; voices in compound clips duck music.
 - [[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]] —
   set_param refuses a part the clip lacks, naming what adds it (a half
   colorize crashed renders, a half mask wedged describe_project); a keyed
@@ -398,10 +406,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   compounds, finds compound tracks, reads [] as all and start = end as a
   moment; a colorize color's alpha scales it; a tracked range's gradient
   ends on its letters.
-- [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]] —
-  a split of one sound plays on with no click guard; cut_music stops
-  before the bar line so both downbeats play whole; preview_audio's edges
-  judge a join's click and level against the incoming file's own; a duck
-  keeps its keys' shape and place, so moved music says its dips moved and
-  splits are not hand edits; the lines stay on the speech target under the
-  ceiling; voices in compound clips duck music.
+- [[ADR-109 What an agent can set, a person can see and change]] —
+  a section opens when its header switch turns on and keeps the focus;
+  activate and deactivate act on the selection as one, named for what
+  they do; agents' notices name the new commands and parameters; a
+  title shows the drop shadow, border and colorize it carries; paste
+  attributes carries shadow, border and compressor; audio crossfades are
+  offered in the clip menu, drawn on the timeline and set in the Audio tab.

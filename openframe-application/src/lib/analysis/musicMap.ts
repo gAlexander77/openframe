@@ -7,7 +7,7 @@
 
 import { framesForSource, sourceRange, type TimedClip } from "../project/ops";
 import type { MusicGrid } from "../project/types";
-import { framesToSeconds, type Rational } from "../time";
+import { framesToSeconds, nearestFrame, type Rational } from "../time";
 import { BARS_PER_PHRASE, BEATS_PER_BAR, type MusicStructure, type SectionLabel, type StructureHints } from "./beats";
 
 export interface MappedMusic {
@@ -44,20 +44,23 @@ export function sourceToTimeline(c: TimedClip, fps: Rational): { at: (t: number)
     return f + (c.reverse ? -1 : 1) * (t - u) / (sps || 1);
   };
   const toSec = (f: number) => +framesToSeconds(c.start + f, fps).toFixed(3);
+  // Rounded as secondsToFrames rounds, a tie to the earlier frame: a beat
+  // at 3.75 s at 30 fps is frame 112, for its marker and for a command
+  // given 3.75 alike (ADR-102, ADR-106).
   return {
     lo,
     hi,
     at: (t) => {
-      const f = Math.round(frameOf(t));
+      const f = nearestFrame(frameOf(t));
       return f >= 0 && f < c.duration ? toSec(f) : null;
     },
     // The timeline frame instead (markers that follow the clip).
     frame: (t) => {
-      const f = Math.round(frameOf(t));
+      const f = nearestFrame(frameOf(t));
       return f >= 0 && f < c.duration ? c.start + f : null;
     },
     // A section's edge: held inside the clip.
-    edge: (t) => toSec(Math.min(c.duration, Math.max(0, Math.round(frameOf(Math.min(hi, Math.max(lo, t))))))),
+    edge: (t) => toSec(Math.min(c.duration, Math.max(0, nearestFrame(frameOf(Math.min(hi, Math.max(lo, t))))))),
   };
 }
 

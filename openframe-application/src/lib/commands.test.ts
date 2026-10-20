@@ -427,3 +427,61 @@ describe("what the Claude film test found (2026-10-20, ADR-102)", () => {
     expect(report.notes).toEqual([`Slipped ${+(-inOf(p)).toFixed(3)} s, not -20 s: the source starts there.`]);
   });
 });
+
+describe("what the edits hunt found (ADR-106)", () => {
+  /** 30 fps; three 2 s shots of a 12 s file, a caption on each. */
+  const captioned = () => {
+    let p: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "launch.mp4", src: "launch.mp4", duration: 12, hasVideo: true, hasAudio: false }] };
+    for (const start of [0, 2, 4]) p = runCommand(p, "add_media_clip", { asset_id: "a1", start, duration: 2, in: start });
+    return runCommand(p, "add_captions", { captions: [{ start: 0, end: 1.8, text: "One" }, { start: 2, end: 3.8, text: "Two" }, { start: 4, end: 5.5, text: "Three" }] });
+  };
+  const starts = (p: Project, kind: "video" | "text") => p.tracks.flatMap((t) => t.clips).filter((c) => c.type === kind).map((c) => c.start / 30).sort((a, b) => a - b);
+
+  it("an agent's insert carries every caption with its shot, not only the last", () => {
+    const p = captioned();
+    const q = runAgentCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 1, in: 8, mode: "insert", track_id: p.tracks.find((t) => t.main)!.id });
+    expect(starts(q, "video")).toEqual([0, 1, 3, 5]);
+    expect(starts(q, "text")).toEqual([1, 3, 5]);
+  });
+
+  it("an agent's ripple delete of a shot and its caption keeps the later captions on their shots", () => {
+    const p = captioned();
+    const two = (kind: string) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === kind && c.start === 60)!.id;
+    const q = runAgentCommand(p, "delete_clips", { clip_ids: [two("video"), two("text")], ripple: true });
+    expect(starts(q, "video")).toEqual([0, 2]);
+    expect(starts(q, "text")).toEqual([0, 2]);
+  });
+
+  it("an agent's edits inside a compound and a batch's steps carry captions as its single edits do", () => {
+    const p = captioned();
+    // Inside a compound: the ripple trim moved the shots and left the captions.
+    const q = runAgentCommand(p, "create_compound_clip", { clip_ids: p.tracks.flatMap((t) => t.clips.map((c) => c.id)) });
+    const k = q.compounds![0];
+    const r = runAgentCommand(q, "edit_compound", { compound_id: k.id, command: "trim_clip", args: { clip_id: k.tracks.find((t) => t.main)!.clips[0].id, edge: "end", to: 1.9, ripple: true } });
+    const inner = { ...r, tracks: r.compounds![0].tracks };
+    expect(starts(inner, "video")).toEqual([0, 1.9, 3.9]);
+    expect(starts(inner, "text")).toEqual([0, 1.9, 3.9]);
+    // A batch: its second step saw the first caption where the insert had
+    // left it, and wrote the hook over it.
+    const main = p.tracks.find((t) => t.main)!.id, captions = p.tracks.find((t) => t.name === "Captions")!.id;
+    const b = runAgentCommand(p, "batch", { commands: [{ command: "add_media_clip", args: { asset_id: "a1", start: 0, duration: 1, in: 8, mode: "insert", track_id: main } }, { command: "add_text", args: { text: "Hook", start: 0, duration: 1, track_id: captions } }] });
+    expect(b.tracks.find((t) => t.id === captions)!.clips.map((c) => [c.start / 30, c.duration / 30])).toEqual([[0, 1], [1, 1.8], [3, 1.8], [5, 1.5]]);
+  });
+
+  it("a reversed clip's end stops at the file's start, and says so", () => {
+    let p = captioned();
+    const c = p.tracks.find((t) => t.main)!.clips[2].id;
+    p = runCommand(p, "set_reverse", { clip_id: c, reverse: true });
+    const report: CommandReport = {};
+    runCommand(p, "trim_clip", { clip_id: c, edge: "end", to: 20, ripple: true }, report);
+    // Read backward from 6 s, its end reaches the file's first frame 6 s in.
+    expect(report.notes).toEqual(["Stopped at 10 s, not 20 s: the source starts there (launch.mp4 has nothing earlier, played reversed)."]);
+  });
+
+  it("a freeze frame has nothing to slip, and says so instead of naming the source's end", () => {
+    let p = captioned();
+    p = runCommand(p, "freeze_frame", { clip_id: p.tracks.find((t) => t.main)!.clips[0].id, at: 1, duration: 1 });
+    const freeze = p.tracks.find((t) => t.main)!.clips.find((c) => c.type === "video" && c.freeze)!.id;
+    expect(() => runCommand(p, "slip_clip", { clip_id: freeze, by: 1 })).toThrow(/freeze frame holds one frame/);
+  });
+});

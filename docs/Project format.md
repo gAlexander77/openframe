@@ -75,7 +75,9 @@ Track   { id, kind: video|audio, name, main?, clips: Clip[],
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
 Marker  { id, frame, label, color, follows?: { clip, at } }   (follows: a song's beat,
           bar, part or drop on a video or audio clip, at that second of its file;
-          the marker moves with the clip, and goes when nothing plays it: ADR-101)
+          the marker moves with the clip, through a compound clip that plays it
+          once the clip is inside one, and goes when nothing plays it: ADR-101,
+          ADR-106)
 Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together
           every clip may carry labelColor?: red | orange | yellow | green | cyan

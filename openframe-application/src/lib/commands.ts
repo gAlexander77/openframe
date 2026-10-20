@@ -199,9 +199,14 @@ function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop):
   if (why === "neighbor") return edge === "end" ? "the next clip on its track starts there (ripple: true pushes it later)" : "the clip before it on its track ends there (ripple: true keeps this clip's start and moves the clips after it)";
   if (!ops.isTimed(c)) return "the source ends there";
   const file = c.type === "compound" ? "its compound's timeline" : (ops.getAsset(p, c.assetId)?.name ?? "the file");
-  if (edge === "start") return `the source starts there (${file} has nothing earlier)`;
-  const rate = c.speedCurve ? speedAt(c.speedCurve.points, c.duration) : c.speed;
-  return `the source ends there (${file} is ${+ops.sourceSeconds(p, c).toFixed(3)} s long${Math.abs(rate - 1) > 1e-3 ? `, and the clip reads it at ${+rate.toFixed(2)}x at its end` : ""})`;
+  // A reversed clip reads its file backward: its end reaches toward the
+  // file's start and its start toward the file's end. Its end edge said
+  // "the source ends there" when it had reached the file's first frame
+  // (ADR-106).
+  const rev = "reverse" in c && c.reverse ? ", played reversed" : "";
+  if ((edge === "start") !== !!rev) return `the source starts there (${file} has nothing earlier${rev})`;
+  const rate = c.speedCurve ? speedAt(c.speedCurve.points, edge === "end" ? c.duration : 0) : c.speed;
+  return `the source ends there (${file} is ${+ops.sourceSeconds(p, c).toFixed(3)} s long${rev}${Math.abs(rate - 1) > 1e-3 ? `, and the clip reads it at ${+rate.toFixed(2)}x at its ${edge}` : ""})`;
 }
 
 function trackOrThrow(p: Project, id: unknown): Track {
@@ -1105,6 +1110,8 @@ export const COMMANDS: Command[] = [
     run: (p, a, report) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!("in" in clip)) throw new CommandError(`${clip.type} clips have no source to slip`);
+      // It answered "the source ends there" for a freeze (ADR-106).
+      if ("freeze" in clip && clip.freeze) throw new CommandError("a freeze frame holds one frame of its source, so there is nothing to slip: freeze_frame the shot again at the moment wanted");
       const by = Number(a.by);
       const { project, moved } = ops.slipBySource(p, clip.id, by);
       if (report && Math.abs(moved - by) > 5e-4) (report.notes ??= []).push(`Slipped ${+moved.toFixed(3)} s, not ${by} s: the source ${by > 0 ? "ends" : "starts"} there.`);
@@ -1931,7 +1938,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_ranges",
     description:
-      "Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The primitive behind silence and filler removal.",
+      "Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The clip keeps its id on the first piece left, its head cut or not; the other pieces get new ids. The primitive behind silence and filler removal.",
     input: S.obj(
       {
         clip_id: S.str("Video or audio clip id"),
@@ -2550,7 +2557,7 @@ export const COMMANDS: Command[] = [
       const id = String(a.compound_id);
       if (!ops.findCompound(p, id)) throw new CommandError(`no compound with id ${id}`);
       const view = compoundView(p, id);
-      const inside = runCommand(view, String(a.command), a.args ?? {}, report);
+      const inside = runNested(view, String(a.command), a.args ?? {}, report);
       if (inside === view) return p;
       const out = withCompoundView(p, id, inside);
       if (out === p) throw new CommandError("a compound clip cannot contain itself");
@@ -2627,7 +2634,7 @@ export const COMMANDS: Command[] = [
         if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
           const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
-          const next = runCommand(q, step.command, ref(step.args ?? {}), report);
+          const next = runNested(q, step.command, ref(step.args ?? {}), report);
           added.push(ids(next).filter((id) => !before.has(id)));
           addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
@@ -2795,9 +2802,27 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
  * close_gaps, lift_range), so a pause left on purpose stays (ADR-102).
  */
 export function runAgentCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport, linkage = true): Project {
-  const next = runCommand(p, name, args, report);
-  return next === p ? p : ops.settle(p, next, { magnet: false, linkage });
+  const outer = agentLinkage;
+  agentLinkage = linkage;
+  try {
+    const next = runCommand(p, name, args, report);
+    return next === p ? p : ops.settle(p, next, { magnet: false, linkage });
+  } finally {
+    agentLinkage = outer;
+  }
 }
+
+/** The linkage an agent's command runs with, while one runs (null for the
+ * app's own calls of runCommand). */
+let agentLinkage: boolean | null = null;
+
+/** A command inside another (edit_compound's, a batch's step): as an agent
+ * runs it when an agent's command called it. edit_compound's ripple left
+ * the titles inside the compound behind, as a person's edit with the
+ * compound open never does, and a batch's step saw the captions where the
+ * insert before it had left them, writing over them (ADR-106). */
+const runNested = (p: Project, name: string, args: unknown, report?: CommandReport) =>
+  agentLinkage === null ? runCommand(p, name, args, report) : runAgentCommand(p, name, args, report, agentLinkage);
 
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
 export function describeProject(p: Project) {

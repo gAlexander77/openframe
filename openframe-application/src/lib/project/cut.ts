@@ -3,7 +3,7 @@
 // cuts). Pure ops like ops.ts; the commands cut_ranges and split_at_times
 // wrap them (ADR-017 explains why their times are source seconds).
 
-import type { Rational } from "../time";
+import { nearestFrame, type Rational } from "../time";
 import { clipEnd, deleteClips, findClip, isTimed, sourcePerFrame, splitClip } from "./ops";
 import type { AudioClip, Clip, Id, Project, VideoClip } from "./types";
 
@@ -15,8 +15,15 @@ export interface SourceRange {
 
 type TimedClip = VideoClip | AudioClip;
 
-/** The timeline frame where source time `t` plays inside `c` (unclamped). */
-export const frameOfSource = (c: TimedClip, t: number, fps: Rational) => c.start + Math.round((t - c.in) / sourcePerFrame(c, fps));
+/** The timeline frame where source time `t` plays inside `c` (unclamped),
+ * a tie to the earlier frame, as secondsToFrames rounds (ADR-106). */
+export const frameOfSource = (c: TimedClip, t: number, fps: Rational) => c.start + nearestFrame((t - c.in) / sourcePerFrame(c, fps));
+
+/** Two clips' ids traded. */
+const swapIds = (p: Project, a: Id, b: Id): Project => ({
+  ...p,
+  tracks: p.tracks.map((t) => (t.clips.some((c) => c.id === a || c.id === b) ? { ...t, clips: t.clips.map((c) => (c.id === a ? { ...c, id: b } : c.id === b ? { ...c, id: a } : c) as Clip) } : t)),
+});
 
 /** Timeline frame ranges [a, b) of `c` that the source ranges cover:
  * clamped to the clip, rounded to frames, sorted, overlaps merged. */
@@ -97,10 +104,22 @@ export function cutRanges(p: Project, clipId: Id, ranges: SourceRange[], ripple 
     const edges = spans.flatMap(([a, b]) => [a, b]).filter((f) => f > c.start && f < clipEnd(c));
     let pieces: Id[];
     [p, pieces] = splitPieces(p, id, edges);
-    for (const pid of pieces) {
+    const cut = pieces.filter((pid) => {
       const piece = findClip(p, pid)!.clip;
-      if (spans.some(([a, b]) => piece.start >= a && clipEnd(piece) <= b)) gone.push(pid);
+      return spans.some(([a, b]) => piece.start >= a && clipEnd(piece) <= b);
+    });
+    // The clip's id stays on the first piece kept, as when the cut leaves
+    // its head. A cut from its first frame (cut_music of a song's intro,
+    // remove_silences of a shot's first second) deleted the id: the clip_id
+    // an agent held named nothing, every marker following the song went,
+    // and the magnet took the piece left for a new clip and closed the
+    // pause before it (ADR-106).
+    const kept = pieces.find((pid) => !cut.includes(pid));
+    if (kept && cut[0] === id) {
+      p = swapIds(p, id, kept);
+      cut[0] = kept;
     }
+    gone.push(...cut);
   }
   return {
     project: deleteClips(p, gone, ripple),

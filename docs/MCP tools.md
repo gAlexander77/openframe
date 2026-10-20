@@ -465,7 +465,7 @@ Close empty space on a track by rippling later clips left: the gap at `at` secon
 
 ### cut_ranges
 
-Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The primitive behind silence and filler removal.
+Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The clip keeps its id on the first piece left, its head cut or not; the other pieces get new ids. The primitive behind silence and filler removal.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

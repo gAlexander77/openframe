@@ -219,7 +219,8 @@ export interface Marker {
   /** A mark of a clip's media (a beat, a bar, a part or the drop of a
    * song: analyze_music, mark_beats, set_music_grid, generate_music): the
    * clip and the second of its file the marker stands on. It follows the
-   * clip when the clip is moved, trimmed, split or sped up, and goes when
+   * clip when the clip is moved, trimmed, split or sped up, or put in a
+   * compound clip (through the compound clip that plays it), and goes when
    * nothing plays that second any more (lib/markers.ts followClips). */
   follows?: { clip: Id; at: number };
 }
