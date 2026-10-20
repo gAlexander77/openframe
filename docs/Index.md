@@ -334,3 +334,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   new sounds and splits stems; eight ambience beds are synthesized
   locally; preview_audio returns the mix or a stem as MP3 with numbers;
   previews draw text at the canvas's size.
+- [[ADR-099 Feathers blur the shape, title runs share a baseline, pictures take a border]] —
+  a feather is the shape blurred (no creases on wide feathers); a run's
+  gradient spans its own letters and mixed sizes share a baseline; keys
+  and set_param take only what a path holds; a group move keys only what
+  it changes; set_border frames any picture around its finished edge.

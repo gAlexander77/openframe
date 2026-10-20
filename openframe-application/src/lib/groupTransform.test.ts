@@ -44,3 +44,20 @@ it("rejects missing members and locked tracks without changing the input", () =>
   expect(() => transformGroup(p, ids, { scale: 2 })).toThrow(/Unlock/);
   expect(() => transformGroup(p, ["missing"], {})).toThrow(/Unknown/);
 });
+it("leaves an animated path the move does not change as it was, ease and all", () => {
+  // A member's scale eases in over 0..60; the group moves right at frame 30
+  // (keyed, so every member's other paths gain a key there).
+  const { p, a, ids } = fixture();
+  a.keyframes = { "transform.scale": [{ f: 0, v: 0.2, ease: "easeInOut" }, { f: 60, v: 0.4 }], "transform.rotation": [{ f: 0, v: 0 }, { f: 60, v: 90 }] };
+  for (const frame of [30, undefined]) {
+    const q = transformGroup(p, ids, { x: 0.1 }, frame, frame !== undefined);
+    const moved = q.tracks.flatMap(t => t.clips)[0];
+    expect(moved.keyframes?.["transform.scale"]).toEqual(a.keyframes["transform.scale"]);
+    expect(moved.keyframes?.["transform.rotation"]).toEqual(a.keyframes["transform.rotation"]);
+    for (const f of [10, 20, 45]) expect(paramAt(moved, "transform.scale", f)).toBeCloseTo(paramAt(a, "transform.scale", f), 9);
+  }
+  // A rotation does change them: the rotation gains its key, the scale still not.
+  const r = transformGroup(p, ids, { rotation: 15 }, 30, true).tracks.flatMap(t => t.clips)[0];
+  expect(r.keyframes?.["transform.rotation"]?.map(k => [k.f, k.v])).toEqual([[0, 0], [30, 60], [60, 90]]);
+  expect(r.keyframes?.["transform.scale"]).toEqual(a.keyframes["transform.scale"]);
+});

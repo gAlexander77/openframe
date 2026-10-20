@@ -132,6 +132,13 @@ describe("drop shadows and animated titles (ADR-070, ADR-071)", () => {
     expect(layers(stack(solid("plain", 0, 30)), 5)[0].shadow).toBeUndefined();
   });
 
+  it("carry the border, keyed, on the layer (ADR-099)", () => {
+    const p = stack(solid("b", 0, 30, { border: { color: "#fff", width: 8, opacity: 1 }, keyframes: { "border.opacity": [{ f: 0, v: 0 }, { f: 10, v: 1 }] } }));
+    expect(layers(p, 5)[0].border).toEqual({ color: "#fff", width: 8, opacity: 0.5 });
+    expect(layers(p, 0)[0].border).toBeUndefined();
+    expect(layers(stack(solid("plain", 0, 30)), 5)[0].border).toBeUndefined();
+  });
+
   it("give a keyed title its style at the frame, and an unkeyed one itself", () => {
     const keyed = { ...createTextClip("Grow", 0, 30, { size: 80 }), id: "t", keyframes: { "style.size": [{ f: 0, v: 80 }, { f: 10, v: 160 }], "style.color": [{ f: 0, v: 0x000000 }, { f: 10, v: 0xffffff }] } } as Clip;
     const l = layers(stack(keyed), 5)[0];

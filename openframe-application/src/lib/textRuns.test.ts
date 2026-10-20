@@ -1,7 +1,7 @@
 import { textStyleAt } from "./textAnim";
 import { versionProject } from "./versions";
 import { describe, expect, it } from "vitest";
-import { cleanRuns, measureRuns, runStyle, shiftRuns, styleRange } from "./textRuns";
+import { baselineShifts, cleanRuns, measureRuns, runBoxes, runStyle, shiftRuns, styleRange } from "./textRuns";
 import { createProject, createTextClip, createTrack, normalizeProject } from "./project/defaults";
 
 describe("inline runs", () => {
@@ -52,4 +52,31 @@ it("preserves a run between two equal-length replacements", () => {
 });
 it("maps surviving run characters across separate unequal edits", () => {
   expect(shiftRuns([{ start: 4, end: 9, color: "red" }], "one STYLE end", "first STYLE ending")).toEqual([{ start: 6, end: 11, color: "red" }]);
+});
+
+describe("run geometry (ADR-099)", () => {
+  it("gives a run's gradient its own letters' box, across the lines it wraps onto", () => {
+    // "Big SALE today / only at OpenFrame": OpenFrame (23..32) on line 2 and
+    // a run wrapping from line 1 (9..18, "today only").
+    const runs = [{ start: 9, end: 19, gradient: { from: "red", to: "blue", angle: 0 } }, { start: 23, end: 32, gradient: { from: "cyan", to: "violet", angle: 0 } }];
+    const pieces = [
+      { start: 0, x: 100, width: 300, y: 50 }, { start: 9, x: 400, width: 200, y: 50 },
+      { start: 15, x: 120, width: 90, y: 150 }, { start: 19, x: 210, width: 120, y: 150 }, { start: 23, x: 330, width: 260, y: 150 },
+    ];
+    const boxes = runBoxes(runs, pieces, 100);
+    // The word's own box: its first letter at the gradient's start, its last at the end.
+    expect(boxes.get(runs[1])).toEqual({ left: 330, top: 100, right: 590, bottom: 200 });
+    // A wrapped run: the box around both of its pieces.
+    expect(boxes.get(runs[0])).toEqual({ left: 120, top: 0, right: 600, bottom: 200 });
+    expect(boxes.size).toBe(2);
+  });
+
+  it("puts a line's pieces on one baseline: the tallest piece's", () => {
+    // "Big SALE today" with SALE at 1.4x: centered alone, SALE's baseline
+    // would sit 0.4 x 30 = 12 px lower than its neighbors'.
+    const shifts = baselineShifts([{ y: 60, above: 30 }, { y: 60, above: 42 }, { y: 60, above: 30 }, { y: 160, above: 30 }]);
+    expect(shifts).toEqual([12, 0, 12, 0]);
+    // A smaller run moves down onto the line's baseline too.
+    expect(baselineShifts([{ y: 0, above: 30 }, { y: 0, above: 15 }])).toEqual([0, 15]);
+  });
 });

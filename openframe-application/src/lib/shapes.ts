@@ -53,6 +53,77 @@ export const featherReach = (feather: number, height: number) => (Math.max(0, fe
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
+// ---- feather: the shape blurred (ADR-099) ------------------------------------
+//
+// A feathered shape is the crisp shape blurred by a Gaussian of sigma a
+// quarter of the feather, as After Effects feathers a mask. ADR-069 took a
+// Gaussian of the signed distance instead: the same on a straight edge, but
+// on a feather as wide as the shape it creased along the shape's middle (a
+// rectangle's diagonals, a long ellipse pinched at its center) and reached
+// past the quad on a long ellipse, whose distance was only approximate. The
+// blur here is exact across (erf) and summed in slices along y over each
+// rounded end. The shader's blurredCover is this, line for line.
+
+/** erf to about 1e-4 (Winitzki's approximation), as the shader has it. */
+export function erfApprox(x: number): number {
+  const x2 = x * x;
+  return Math.sign(x) * Math.sqrt(1 - Math.exp((-x2 * (1.2732395 + 0.147 * x2)) / (1 + 0.147 * x2)));
+}
+
+/** The standard normal's distribution function. */
+const phi = (z: number) => 0.5 + 0.5 * erfApprox(z * Math.SQRT1_2);
+
+/** How much of the span -w..w a Gaussian of sigma `s` centered at x covers. */
+const spanCover = (x: number, w: number, s: number) => (w > 0 ? phi((w - x) / s) - phi((-w - x) / s) : 0);
+
+/** Slices across each rounded end of a feathered shape. */
+export const FEATHER_SLICES = 12;
+
+/** The rounded end at the top of the box's +y side, t from h to by, with
+ * the corner's radii cx, cy: its slices' spans blurred across, weighted by
+ * the Gaussian along y. In angle, so the end's tangent costs nothing. */
+function capCover(qx: number, qy: number, bx: number, by: number, cx: number, cy: number, s: number): number {
+  if (cy < 1e-3) return 0;
+  const h = by - cy;
+  const lo = Math.max(h, qy - 4 * s), hi = Math.min(by, qy + 4 * s);
+  if (hi <= lo) return 0;
+  const a0 = Math.asin(clamp01((lo - h) / cy)), a1 = Math.asin(clamp01((hi - h) / cy));
+  const d = (a1 - a0) / FEATHER_SLICES;
+  let sum = 0;
+  for (let i = 0; i < FEATHER_SLICES; i++) {
+    const a = a0 + (i + 0.5) * d;
+    const y = (qy - (h + cy * Math.sin(a))) / s;
+    sum += Math.exp(-0.5 * y * y) * spanCover(qx, bx - cx + cx * Math.cos(a), s) * cy * Math.cos(a);
+  }
+  return (sum * d * 0.39894228) / s;
+}
+
+/**
+ * How much of a box (half sizes bx, by) with elliptical corners (radii cx,
+ * cy) a Gaussian blur of sigma `s` leaves at (qx, qy), all in pixels from
+ * its center: a rounded rectangle's corners are its radius both ways, an
+ * ellipse is all corner (cx = bx, cy = by). The middle, where the sides
+ * run straight, is exact; each end is FEATHER_SLICES slices.
+ */
+export function blurredCover(qx: number, qy: number, bx: number, by: number, cx: number, cy: number, s: number): number {
+  if (bx <= 0 || by <= 0) return 0;
+  cx = Math.min(cx, bx);
+  cy = Math.min(cy, by);
+  const h = by - cy;
+  const mid = h > 0 ? (phi((h - qy) / s) - phi((-h - qy) / s)) * spanCover(qx, bx, s) : 0;
+  return clamp01(mid + capCover(qx, qy, bx, by, cx, cy, s) + capCover(qx, -qy, bx, by, cx, cy, s));
+}
+
+/** A feathered outline's trim paths: the drawn stretch, 0 to `draw` of the
+ * way round a perimeter `per` pixels long, blurred along the outline at
+ * `s`, so both of its ends are as soft as its sides. `at` is where the
+ * point lies round the outline (rectOutlineAt, ellipseOutlineAt); the
+ * undrawn gap is split at its middle between the two ends. */
+export function trimCover(at: number, draw: number, per: number, s: number): number {
+  const u = (at > 0.5 + 0.5 * draw ? at - 1 : at) * per;
+  return phi(u / s) - phi((u - draw * per) / s);
+}
+
 /** A line with no stroke is drawn this thick (pixels at 1080p). */
 export const LINE_WIDTH = 8;
 

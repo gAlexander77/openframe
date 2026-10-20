@@ -5,6 +5,9 @@
 //   wider than the old maximum (100);
 // - a radial gradient runs linearly from its center to its rim;
 // - a feathered box's edge is a Gaussian of sigma a quarter of the feather;
+// - a long ellipse feathered wider than it is tall is that ellipse blurred
+//   (ADR-099): no pinch at its center, no notch past its ends, nothing cut
+//   off where its quad ends;
 // - a title at weight 300 and at 800 draws differently (more ink, wider);
 // - keyed letter spacing and size widen a title over time, and a keyed
 //   color turns it red;
@@ -77,6 +80,9 @@ async (page) => {
     // 12-13 s: a white box 768 x 540, its right side turned away 30 degrees.
     call("add_shape", { kind: "rectangle", start: 12, duration: 1, width: 0.4, height: 0.5, color: "#ffffff" });
     call("set_tilt", { clip_ids: [added().id], y: 30, perspective: 1500 });
+    // 13-14 s: a white ellipse 960 x 162, feathered 300 (sigma 75).
+    call("add_shape", { kind: "ellipse", start: 13, duration: 1, width: 0.5, height: 0.15, color: "#ffffff", feather: 300 });
+    added();
     return { tracking: tracking.id, win: win.id, photo: photo.id, main };
   });
 
@@ -142,6 +148,25 @@ async (page) => {
   const featherX = [376, 476, 526, 576, 626, 676, 776, 960];
   const wantFeather = featherX.map((x) => 255 * Phi((x - 576) / 50));
   details.feather = { ok: feather.every((v, i) => Math.abs(v - wantFeather[i]) < 10), got: feather, want: wantFeather.map(Math.round) };
+
+  // The long feathered ellipse: the blurred ellipse's values (lib/shapes.ts
+  // blurredCover) along its middle row and column, every row and column
+  // smooth (the Gaussian of the distance jumped 36 levels at the center),
+  // and no step where the quad ends, 705 px either side of the center.
+  const glow = await measure(405, (px, lum) => ({
+    row: Array.from({ length: 1920 }, (_, x) => lum(x, 540)),
+    col: Array.from({ length: 1080 }, (_, y) => lum(960, y)),
+    above: Array.from({ length: 1920 }, (_, x) => lum(x, 420)),
+  }));
+  const wantRow = [[0, 182], [240, 162], [400, 99], [480, 46], [560, 11], [640, 1]];
+  const wantCol = [[0, 182], [60, 146], [120, 75], [180, 23], [240, 4]];
+  const steps = (v) => Math.max(...v.slice(1).map((x, i) => Math.abs(x - v[i])));
+  details.featheredEllipse = {
+    ok: wantRow.every(([d, v]) => Math.abs(glow.row[960 + d] - v) <= 6 && Math.abs(glow.row[960 - d] - v) <= 6) && wantCol.every(([d, v]) => Math.abs(glow.col[540 + d] - v) <= 6) && steps(glow.row) <= 3 && steps(glow.col) <= 3 && steps(glow.above) <= 3 && glow.row[250] <= 1 && glow.row[1670] <= 1,
+    row: wantRow.map(([d]) => glow.row[960 + d]),
+    col: wantCol.map(([d]) => glow.col[540 + d]),
+    largestStep: [steps(glow.row), steps(glow.col), steps(glow.above)],
+  };
 
   // Weights: ink and width of the same words at 300 and 800.
   const inkOf = (px, lum, img) => {
