@@ -15,7 +15,7 @@
 
 import { biquad, Svf, type Coeffs } from "./music/dsp";
 import { hashSeed, Rng } from "./music/arrange";
-import { LoudnessMeter } from "./analysis/loudness";
+import { applyLimiter, blockPeaks, LIMIT_BLOCK, limiterGains, LoudnessMeter } from "./analysis/loudness";
 import { roleTrack } from "./audioRoles";
 import { clipForAsset } from "./project/defaults";
 import { addClip } from "./project/ops";
@@ -44,8 +44,9 @@ export const BED_MAX_SECONDS = 300;
 /** Seconds of the tail crossfaded into the head, so the file loops. */
 const LOOP_FADE = 3;
 const BLOCK = 4096;
-/** Seconds of each layer measured to set its level. */
-const CALIBRATE = 20;
+/** Seconds of each layer's reference take measured to set its level:
+ * long enough for a dozen cars or half a dozen waves. */
+const CALIBRATE = 60;
 
 // ---- sources --------------------------------------------------------------------
 
@@ -86,18 +87,24 @@ class Drift {
   private b: number;
   private k = 0;
   private len = 1;
-  constructor(private rng: Rng, private rate: number, private step: number, private jitter = 0.5, private shape = 1) {
+  constructor(private rng: Rng, private rate: number, private step: number, private jitter = 0.5, private shape = 1, private lift = 0) {
     this.a = rng.next() ** shape;
-    this.b = rng.next() ** shape;
+    this.b = this.target();
     this.len = this.span();
   }
   private span() {
     return Math.max(1, Math.round(this.rate * this.step * (1 + this.jitter * (this.rng.next() * 2 - 1))));
   }
+  /** The next target: with `lift`, one under it is followed by one over
+   * it, so a lull never lasts two steps (a lull in the wind ends in a gust). */
+  private target() {
+    const v = this.rng.next() ** this.shape;
+    return this.a < this.lift ? this.lift + (1 - this.lift) * v : v;
+  }
   next(): number {
     if (this.k >= this.len) {
       this.a = this.b;
-      this.b = this.rng.next() ** this.shape;
+      this.b = this.target();
       this.len = this.span();
       this.k = 0;
     }
@@ -184,14 +191,14 @@ interface Voice {
 
 /** Events at random times, each sounding through its own voice,
  * overlapping: a Poisson process at `perSecond` (read at each event), or
- * `gap` seconds apart when the events come more evenly (waves). */
-function events(rng: Rng, rate: number, perSecond: () => number, voice: (rng: Rng) => (L: Float32Array, R: Float32Array, at: number, len: number) => boolean, gap?: () => number): Layer {
+ * `gap` seconds apart when the events come more evenly (waves). With
+ * `first`, the first begins within that many seconds, so a short bed of
+ * events that define it (waves, cars) never opens on a long lull. */
+function events(rng: Rng, rate: number, perSecond: () => number, voice: (rng: Rng) => (L: Float32Array, R: Float32Array, at: number, len: number) => boolean, gap?: () => number, first?: number): Layer {
   const active: Voice[] = [];
   let pos = 0;
   const after = () => Math.max(1, (gap ? gap() : -Math.log(1 - rng.next()) / Math.max(1e-3, perSecond())) * rate);
-  // Evenly spaced events (waves) begin within a second and a half, so a
-  // short bed never opens on a long lull.
-  let next = gap ? rng.next() * Math.min(after(), 1.5 * rate) : after();
+  let next = first !== undefined ? rng.next() * Math.min(after(), first * rate) : after();
   return {
     fill(L, R, len) {
       L.fill(0, 0, len);
@@ -289,7 +296,9 @@ function drops(rng: Rng, rate: number, perSecond: number): Layer {
  * Cars passing on a street: tire roar (pink noise through a band near
  * 900 Hz) and engine (brown noise under 150 Hz), louder as 1/distance
  * toward the closest point, the band falling through it (Doppler), panned
- * across. Some near, most farther (quieter and duller).
+ * across. Some near, most farther (quieter and duller). The first is on
+ * its way within a second and a half: a street bed under one shot of a
+ * city carries traffic, not only its hum.
  */
 function cars(rng: Rng, rate: number, every: number): Layer {
   return events(rng, rate, () => 1 / every, (r) => {
@@ -319,7 +328,7 @@ function cars(rng: Rng, rate: number, every: number): Layer {
       }
       return true;
     };
-  });
+  }, undefined, 1.5);
 }
 
 /**
@@ -372,7 +381,7 @@ function waves(rng: Rng, rate: number): Layer {
       }
       return true;
     };
-  }, () => rng.range(6.5, 13));
+  }, () => rng.range(6.5, 13), 1.5);
 }
 
 /**
@@ -414,13 +423,21 @@ function crackle(rng: Rng, rate: number, perSecond: number): Layer {
   };
 }
 
+/** FLOOR: the wind's strength in its deepest lull, a share of its
+ * strongest gust. LULL: a gust's target under this is followed by one over
+ * it, so a lull never runs into the next. */
+const FLOOR = 0.3, LULL = 0.3;
+
 /** Wind: noise through a band that rises and opens with each gust, the
  * gusts reaching one side a moment before the other, a low buffeting
  * under it and a faint whistle only when it blows hard. */
 function wind(rng: Rng, rate: number): Layer {
   const seed = rng.int(2 ** 31);
   const cr = rate / CONTROL;
-  const [gustL, gustR] = [new Drift(new Rng(seed), cr, 3.2, 0.7, 1.4), new Drift(new Rng(seed), cr, 3.2, 0.7, 1.4)];
+  // A lull keeps some wind and ends in a gust: gusts drawn at random from
+  // 0.2 up let two or three lulls run together, the bed then 10 dB or more
+  // under its average for up to 7 s and 17 dB down at worst.
+  const [gustL, gustR] = [new Drift(new Rng(seed), cr, 3.2, 0.7, 1.4, LULL), new Drift(new Rng(seed), cr, 3.2, 0.7, 1.4, LULL)];
   gustL.skip(Math.round(cr * 0.35));
   const flutter = new Drift(new Rng(rng.int(2 ** 31)), cr, 0.35, 0.8);
   const [nl, nr] = [new Pink(new Rng(rng.int(2 ** 31))), new Pink(new Rng(rng.int(2 ** 31)))];
@@ -435,7 +452,7 @@ function wind(rng: Rng, rate: number): Layer {
       for (let i = 0; i < len; i++, i0++) {
         if (i0 % CONTROL === 0) {
           const gl = gustL.next(), gr = gustR.next(), fl = flutter.next();
-          const sl = 0.2 + 0.8 * gl, sr = 0.2 + 0.8 * gr;
+          const sl = FLOOR + (1 - FLOOR) * gl, sr = FLOOR + (1 - FLOOR) * gr;
           bl.set(170 + 700 * sl * (0.85 + 0.3 * fl), 0.8);
           br.set(170 + 700 * sr * (0.85 + 0.3 * fl), 0.8);
           whistle.set(850 + 900 * (gl + gr) * 0.5, 14);
@@ -562,18 +579,8 @@ export function makeBed(id: string, seconds: number, rate: number, seed = 1, onP
   const L = new Float32Array(total), R = new Float32Array(total);
   const bl = new Float32Array(BLOCK), br = new Float32Array(BLOCK);
   const layerSeed = (k: number) => hashSeed("ambience", id, seed, k);
-  // Each layer's level from its first 20 seconds (long enough for a few
-  // cars or waves), run on a copy of itself.
-  const gains = bed.layers.map(([make, db], k) => {
-    const probe = make(new Rng(layerSeed(k)), rate);
-    let ss = 0, m = 0;
-    for (let done = 0; done < Math.min(CALIBRATE * rate, total); done += BLOCK) {
-      probe.fill(bl, br, BLOCK);
-      for (let i = 0; i < BLOCK; i++) ss += bl[i] * bl[i] + br[i] * br[i];
-      m += 2 * BLOCK;
-    }
-    return 10 ** (db / 20) / Math.max(1e-9, Math.sqrt(ss / m));
-  });
+  const levels = layerLevels(id, rate);
+  const gains = bed.layers.map(([, db], k) => 10 ** (db / 20) / levels[k]);
   bed.layers.forEach(([make], k) => {
     const layer = make(new Rng(layerSeed(k)), rate);
     for (let at = 0; at < total; at += BLOCK) {
@@ -603,20 +610,56 @@ export function makeBed(id: string, seconds: number, rate: number, seed = 1, onP
     R[i] = R[i] * gin + R[n + i] * gout;
   }
   const outL = L.subarray(0, n), outR = R.subarray(0, n);
-  // At the bed's loudness, the peaks held under -1 dBFS.
+  // At the bed's loudness, the rare peaks over -1 dBFS (a rocket's shocks)
+  // held by a limiter rather than the whole bed turned down: lowering it
+  // left a rocket up to 2.4 LU under its loudness. The limiter reads the
+  // file as a loop (three turns, the middle one kept), so its gain runs on
+  // from the last sample into the first.
   const meter = new LoudnessMeter(rate, 2);
   meter.push([outL, outR], n);
   const lufs = meter.integrated();
-  let peak = 0;
-  for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(outL[i]), Math.abs(outR[i]));
-  const g = Math.min(Number.isFinite(lufs) ? 10 ** ((bed.lufs - lufs) / 20) : 1, 0.89 / Math.max(1e-9, peak));
-  for (let i = 0; i < n; i++) {
-    outL[i] *= g;
-    outR[i] *= g;
-  }
+  const g = Number.isFinite(lufs) ? 10 ** ((bed.lufs - lufs) / 20) : 1;
+  const blocks = Math.ceil(n / LIMIT_BLOCK);
+  const peaks = new Float32Array(3 * blocks);
+  blockPeaks([outL, outR], blocks * LIMIT_BLOCK, peaks);
+  peaks.copyWithin(0, blocks, 2 * blocks);
+  peaks.copyWithin(2 * blocks, blocks, 2 * blocks);
+  const held = limiterGains(peaks, g, PEAK_CEILING).subarray(blocks, 2 * blocks + 1);
+  applyLimiter([outL, outR], 0, g, held);
   onProgress?.(1);
   return [outL, outR];
 }
+
+/** The highest sample a bed reaches: -1 dBFS. */
+const PEAK_CEILING = 0.89;
+
+/**
+ * Each layer's level (RMS) in a reference take of CALIBRATE seconds, the
+ * same for every seed: a layer is set against the first by its level in
+ * the long run. Measured on each take's own first seconds, a city take
+ * with no car in them had its cars raised without bound and the street
+ * under them pushed down to digital silence for 23 s.
+ */
+function layerLevels(id: string, rate: number): number[] {
+  const key = `${id} ${rate}`;
+  let out = LEVELS.get(key);
+  if (!out) {
+    const bl = new Float32Array(BLOCK), br = new Float32Array(BLOCK);
+    out = AMBIENCE[id].layers.map(([make], k) => {
+      const probe = make(new Rng(hashSeed("ambience level", id, k)), rate);
+      let ss = 0, m = 0;
+      for (let done = 0; done < CALIBRATE * rate; done += BLOCK) {
+        probe.fill(bl, br, BLOCK);
+        for (let i = 0; i < BLOCK; i++) ss += bl[i] * bl[i] + br[i] * br[i];
+        m += 2 * BLOCK;
+      }
+      return Math.max(1e-9, Math.sqrt(ss / m));
+    });
+    LEVELS.set(key, out);
+  }
+  return out;
+}
+const LEVELS = new Map<string, number[]>();
 
 // ---- placing one ---------------------------------------------------------------------
 

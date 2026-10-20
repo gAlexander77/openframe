@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clipGainAt, fromDb, gainEnvelope, panEnvelope, soundingClips, soundOverlaps, soundPanAt, toDb } from "./audio";
+import { clipGainAt, COMPRESSOR_SETTLE, fromDb, gainEnvelope, panEnvelope, soundingClips, soundOverlaps, soundPanAt, soundPreroll, toDb } from "./audio";
+import { COMPRESSOR_PRESETS } from "./compressor";
 import { clipForAsset, createProject, createTrack } from "./project/defaults";
-import type { AudioClip, Project, VideoClip } from "./project/types";
+import type { AudioClip, CompoundClip, Project, VideoClip } from "./project/types";
 
 const fps = { num: 30, den: 1 };
 const track = { ...createTrack("audio", "A"), volume: 0.5 };
@@ -119,5 +120,19 @@ describe("soundOverlaps", () => {
     }
     expect(clipGainAt(a, t, p.fps, 2.34, o.get(a.id))).toBe(0);
     expect(clipGainAt(b, t, p.fps, 1.6, o.get(b.id))).toBe(0);
+  });
+});
+
+describe("soundPreroll", () => {
+  it("starts a render early for a compressor, the clip's own or a compound clip's it plays through", () => {
+    const voice = { ...clip, compressor: COMPRESSOR_PRESETS.voice };
+    expect(soundPreroll({ clip, track })).toBe(0);
+    // Each 10 s export window began with the compressor's 6 ms lookahead
+    // empty: a gap in the sound, then its gain out of step.
+    expect(soundPreroll({ clip: voice, track })).toBe(COMPRESSOR_SETTLE);
+    const k = { id: "k", type: "compound", compoundId: "kk", start: 0, duration: 300, in: 0, speed: 1, volume: 1, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, compressor: COMPRESSOR_PRESETS.gentle } as unknown as CompoundClip;
+    expect(soundPreroll({ clip, track, via: [{ clip: k, track }] })).toBe(COMPRESSOR_SETTLE);
+    // An echo's tail longer than that wins.
+    expect(soundPreroll({ clip: { ...voice, echo: { time: 1, feedback: 0.8, mix: 0.5 } }, track })).toBeGreaterThan(COMPRESSOR_SETTLE);
   });
 });

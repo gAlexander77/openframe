@@ -4,6 +4,7 @@
 
 import { paramAt } from "./keyframes";
 import { findCompound, isTimed } from "./project/ops";
+import { fxTail } from "./soundFx";
 import type { AudioClip, Clip, CompoundClip, Id, Keyframe, Project, Sound, Track, VideoClip } from "./project/types";
 import { framesToSeconds, type Rational } from "./time";
 
@@ -170,11 +171,74 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
 }
 
 /** A sounding clip's gain at timeline second `t`: its own, times every
- * compound clip's it plays through. */
-export function soundGainAt(s: SoundingClip, fps: Rational, t: number): number {
+ * compound clip's it plays through (or only the first `through` of them,
+ * innermost first: the rest are applied by a bus, soundBuses). */
+export function soundGainAt(s: SoundingClip, fps: Rational, t: number, through = Infinity): number {
   let g = clipGainAt(s.clip, s.track, fps, t, s.overlap);
-  for (const v of s.via ?? []) g *= clipGainAt(v.clip, v.track, fps, t);
+  for (const v of (s.via ?? []).slice(0, through)) g *= clipGainAt(v.clip, v.track, fps, t);
   return g;
+}
+
+/** A compound clip's sound is mixed as a bus when it has an EQ or a
+ * compressor: those act on its clips' sound together (ADR-100). */
+export const isBus = (k: CompoundClip) => !!k.compressor || EQ_BANDS.some((b) => !!k.eq?.[b.key]);
+
+/** One bus a sounding clip's sound passes through. */
+export interface BusHop {
+  /** The compound clip's path from the outer timeline, outermost last:
+   * the same compound played twice is two buses. */
+  key: string;
+  /** The compound clip, in the outer timeline's frames, and its track. */
+  clip: CompoundClip;
+  /** The compound clips whose volume and fades the bus applies after its
+   * EQ and compressor: itself and those out to the next bus. */
+  gains: { clip: CompoundClip; track: Track }[];
+}
+
+/**
+ * The buses a sounding clip's sound passes through, innermost first, and
+ * how many of the compound clips it plays through (innermost first) its
+ * own envelope still carries: those under the first bus. A compound clip's
+ * volume and fades come after its compressor, as a clip's do after its
+ * own, so its fade-out is not undone by the compressor.
+ */
+export function soundBuses(s: SoundingClip): { through: number; buses: BusHop[] } {
+  const via = s.via ?? [];
+  const at = via.flatMap((v, i) => (isBus(v.clip) ? [i] : []));
+  return {
+    through: at.length ? at[0] : via.length,
+    buses: at.map((i, n) => ({
+      key: via.slice(i).map((v) => v.clip.id).join("/"),
+      clip: via[i].clip,
+      gains: via.slice(i, at[n + 1] ?? via.length),
+    })),
+  };
+}
+
+/** Seconds a compressor runs before what it is heard on: its 6 ms
+ * lookahead filled and its gain settled (a release is at most 1 s). */
+export const COMPRESSOR_SETTLE = 1;
+
+/** Seconds an offline render of a stretch starts early for this clip:
+ * its echo and reverb tails, and for a compressor of its own or of a
+ * compound clip it plays through, the compressor's settling. Started cold
+ * at each 10 s export window, a compressor's empty lookahead cut 6 ms of
+ * silence into the sound and its gain stepped. */
+export function soundPreroll(s: SoundingClip): number {
+  const compressed = [s.clip, ...(s.via ?? []).map((v) => v.clip)].some((c) => !!c.compressor);
+  return Math.max(fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0);
+}
+
+/** A bus's gain (its compound clips' volume and fades) over [from, to),
+ * sampled as soundEnvelope samples a clip's. */
+export function busEnvelope(hop: BusHop, fps: Rational, from: number, to: number, rate = 200): Float32Array {
+  const n = Math.max(2, Math.ceil((to - from) * rate) + 1);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = Math.min(from + i / rate, to - 1e-6);
+    out[i] = hop.gains.reduce((g, v) => g * clipGainAt(v.clip, v.track, fps, t), 1);
+  }
+  return out;
 }
 
 /** Pan at timeline second t: the clip's own (keyframed) pan plus its
@@ -227,13 +291,14 @@ export function gainEnvelope(
   return soundEnvelope({ clip: c, track, overlap: o }, fps, from, to, rate);
 }
 
-/** gainEnvelope for a sounding clip, through its compound clips too. */
-export function soundEnvelope(s: SoundingClip, fps: Project["fps"], from: number, to: number, rate = 200): Float32Array {
+/** gainEnvelope for a sounding clip, through its compound clips too (the
+ * first `through` of them; soundBuses). */
+export function soundEnvelope(s: SoundingClip, fps: Project["fps"], from: number, to: number, rate = 200, through = Infinity): Float32Array {
   const n = Math.max(2, Math.ceil((to - from) * rate) + 1);
   const out = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const t = Math.min(from + i / rate, to - 1e-6);
-    out[i] = soundGainAt(s, fps, t);
+    out[i] = soundGainAt(s, fps, t, through);
   }
   return out;
 }

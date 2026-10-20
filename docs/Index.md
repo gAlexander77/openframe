@@ -339,3 +339,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   gradient spans its own letters and mixed sizes share a baseline; keys
   and set_param take only what a path holds; a group move keys only what
   it changes; set_border frames any picture around its finished edge.
+- [[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]] —
+  a compound clip with an EQ or compressor mixes its clips as a bus
+  (EQ, compressor, then its volume and fades); renders pre-roll a second
+  for any compressor; beds levelled by a seed-free reference take, peaks
+  limited, wind lulls bounded; check_project finds a sound cut off
+  mid-video; preview_audio names the picture's stem.

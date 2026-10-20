@@ -283,8 +283,9 @@ Sound by role ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent 
   "fade_out" (1.5), "volume", "seed", "track_id"}` lays a bed made on this
   computer: `wind`, `stream`, `waterfall`, `surf`, `rain`, `rocket`,
   `city`, `roomTone` (`list_catalog` section `ambience`). Each moves as a
-  recording does (gusts, waves every 6.5 to 13 s, cars passing near and
-  far), is made at a level that sits under a voice at volume 1 (about -27
+  recording does (gusts with no lull running into the next, waves every
+  6.5 to 13 s, cars passing near and far, the first wave or car within
+  1.5 s), is made at a level that sits under a voice at volume 1 (about -27
   LUFS; waterfall -24, rocket -21, room tone -46) and loops without a seam;
   past 300 s the file repeats. It answers `clip_ids`, `asset_id`,
   `track_id`, `start`, `end`, `file_seconds` and `reused` (the same name

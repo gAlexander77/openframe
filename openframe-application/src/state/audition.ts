@@ -45,7 +45,10 @@ export interface AuditionAnswer {
     solo: Solo;
     /** The tracks heard, when one stem is. */
     tracks?: string[];
-    stems?: Partial<Record<TrackRole, number | null>>;
+    /** Each stem's own integrated loudness where it sounds, and the
+     * picture's: what the video tracks play (their footage's own sound,
+     * compound clips' mix), which no stem holds. */
+    stems?: Partial<Record<TrackRole | "picture", number | null>>;
     as_exported_at?: number;
     note?: string;
   };
@@ -128,6 +131,14 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
         if (!stems[role].length) continue;
         const [l, r] = await render(isolateTracks(p, stems[role]), start, end, signal);
         summary.stems[role] = auditionSummary(l, r, RATE, start).integrated_lufs;
+      }
+      // What the video tracks play (an interview's voice, a scene's own
+      // sound, a compound clip's mix) is in the mix but in no stem:
+      // without it the stems did not account for the mix.
+      const picture = isolateTracks(p, p.tracks.filter((t) => t.kind === "video").map((t) => t.id));
+      if (hasSound(picture)) {
+        const [l, r] = await render(picture, start, end, signal);
+        summary.stems.picture = auditionSummary(l, r, RATE, start).integrated_lufs;
       }
     }
     if (asExported !== undefined) summary.as_exported_at = asExported;

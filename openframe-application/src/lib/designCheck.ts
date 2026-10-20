@@ -124,21 +124,27 @@ export function contrastTargets(p: Project, limit = 40, captions = 12): { target
   return { targets, skipped: Math.max(0, titles.length - limit) };
 }
 
-/** Long music clips that end with the video and have no fade of their own
- * (set_fades or volume keys): their sound's last seconds decide whether it
- * stops dead. Source seconds, `from` up to the clip's end. */
+/** Audio clips with no fade of their own (set_fades or volume keys) whose
+ * sound may stop dead: one that ends with the video, or one that cuts its
+ * file off before the end with nothing after it on its track (a song or a
+ * bed trimmed mid-phrase, a line cut mid-word). Their sound's last seconds
+ * decide. Source seconds, `from` up to the clip's end. */
 export function tailTargets(p: Project): { clipId: Id; assetId: Id; from: number; to: number }[] {
   const total = projectDuration(p);
   const second = secondsToFrames(1, p.fps);
+  const length = new Map(p.assets.map((a) => [a.id, a.duration]));
   return p.tracks.flatMap((t) =>
     t.muted
       ? []
       : t.clips.flatMap((c) => {
-          if (c.type !== "audio" || c.muted || c.start + c.duration < total - 1 || framesToSeconds(c.duration, p.fps) <= 5 || c.fadeOut) return [];
+          if (c.type !== "audio" || c.muted || c.disabled || c.reverse || c.fadeOut) return [];
+          const last = c.start + c.duration, to = sourceTimeAt(c, last, p.fps);
+          // Before the end: only where the file sounds on past the cut and
+          // nothing on the track carries on from it.
+          if (last < total - 1 && (to >= (length.get(c.assetId) ?? 0) - 0.05 || t.clips.some((o) => o !== c && Math.abs(o.start - last) <= 1))) return [];
           // Volume keys that bring the end 18 dB under two seconds before fade it.
           const end = paramAt(c, "volume", c.duration - 1), body = paramAt(c, "volume", Math.max(0, c.duration - 2 * second));
           if (body > 0 && end / body <= 0.126) return [];
-          const to = sourceTimeAt(c, c.start + c.duration, p.fps);
           return [{ clipId: c.id, assetId: c.assetId, from: Math.max(c.in, to - 4), to }];
         }),
   );
@@ -321,8 +327,13 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     const t = measured.tails?.[clipId];
     if (t && endsByItself(t)) continue;
     const c = all.find((x) => x.c.id === clipId)!.c as Clip;
+    const last = c.start + c.duration, long = framesToSeconds(c.duration, p.fps) > 5;
+    // Unmeasured (a test, an unreadable file), only a long clip is suspect.
+    if (!t && !long) continue;
     const heard = t?.lastSecond ? `its last second runs ${t.lastSecond.join(", ")} dBFS by quarters and ends at ${t.endDb}, against ${t.bodyDb} dBFS before` : t ? `its very end is at ${t.endDb} dBFS against ${t.bodyDb} dBFS before` : "";
-    add({ rule: "music_ends_abruptly", level: "tip", clip_id: clipId, at: sec(c.start + c.duration), message: t ? `A long audio clip stops at the very end while still playing: ${heard}` : "A long audio clip stops at the very end without a fade (its sound was not measured)", fix: "set_fades fade_out 1.5" });
+    if (last >= total - 1) add({ rule: "music_ends_abruptly", level: "tip", clip_id: clipId, at: sec(last), message: t ? `${long ? "A long audio clip" : "An audio clip"} stops at the very end while still playing: ${heard}` : "A long audio clip stops at the very end without a fade (its sound was not measured)", fix: "set_fades fade_out 1.5" });
+    // Cut off before the end, with the picture going on: heard as a fault.
+    else add({ rule: "sound_cut_off", level: "warning", clip_id: clipId, at: sec(last), message: t ? `An audio clip is cut off at ${sec(last)} s while still sounding, with no fade, and the video goes on: ${heard}` : `A long audio clip stops at ${sec(last)} s without a fade, its file running on (its sound was not measured)`, fix: "set_fades fade_out 0.3 (a song or a bed: 1.5), or trim_clip its end to where the sound pauses" });
   }
 
   if (kind === "ad" && !texts.some(({ c }) => c.start + c.duration >= total - 1 && !c.caption))

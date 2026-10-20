@@ -195,6 +195,48 @@ it("lets music that fades out in its own audio end, judged by its last second, a
   expect(rules(k)).not.toContain("music_ends_abruptly");
 });
 
+it("finds a sound cut off before the end with no fade: a song trimmed mid-phrase, a line cut mid-word", () => {
+  // A 20 s video; music 0-12 s of a 30 s song, a voice line cut 2.5 s
+  // into its 6.4 s, neither faded: the check found neither (it only
+  // looked at long clips that end with the video).
+  let p = createProject();
+  p = {
+    ...p,
+    assets: [
+      { id: "song", kind: "audio", name: "song.mp3", src: "song.mp3", duration: 30, hasVideo: false, hasAudio: true },
+      { id: "line", kind: "audio", name: "line.wav", src: "line.wav", duration: 6.4, hasVideo: false, hasAudio: true },
+      { id: "hit", kind: "audio", name: "hit.wav", src: "hit.wav", duration: 1.2, hasVideo: false, hasAudio: true },
+    ],
+  };
+  p = runCommand(p, "add_color_clip", { color: "#203040", start: 0, duration: 20, track_id: p.tracks[0].id });
+  p = runCommand(p, "add_media_clip", { asset_id: "song", start: 0, duration: 12 });
+  p = runCommand(p, "add_track", { kind: "audio", name: "Voiceover", role: "dialog" });
+  p = runCommand(p, "add_media_clip", { asset_id: "line", start: 14, duration: 2.5, track_id: p.tracks.find((t) => t.role === "dialog")!.id });
+  p = runCommand(p, "add_media_clip", { asset_id: "hit", start: 4 });
+  const clip = (asset: string) => p.tracks.flatMap((t) => t.clips).find((c) => "assetId" in c && c.assetId === asset)!.id;
+  const [song, line] = [clip("song"), clip("line")];
+  // The hit plays its whole file: it ends as it was made, not cut off.
+  expect(tailTargets(p)).toEqual([
+    { clipId: song, assetId: "song", from: 8, to: 12 },
+    { clipId: line, assetId: "line", from: 0, to: 2.5 },
+  ]);
+  const holds = { endDb: -15, bodyDb: -14, lastSecond: [-14, -15, -14, -15] };
+  const cut = checkProject(p, "any", { tails: { [song]: holds, [line]: holds } }).findings.filter((f) => f.rule === "sound_cut_off");
+  expect(cut.map((f) => [f.clip_id, f.at, f.level])).toEqual([[song, 12, "warning"], [line, 16.5, "warning"]]);
+  expect(cut[1].message).toMatch(/cut off at 16.5 s while still sounding, with no fade, and the video goes on: its last second runs -14, -15, -14, -15 dBFS/);
+  // A line cut in a pause, or a song whose own audio falls away, is fine.
+  const ends = checkProject(p, "any", { tails: { [song]: { endDb: -55, bodyDb: -14 }, [line]: { endDb: -60, bodyDb: -20 } } });
+  expect(ends.findings.map((f) => f.rule)).not.toContain("sound_cut_off");
+  // Unmeasured, only the long clip is suspect.
+  expect(checkProject(p).findings.filter((f) => f.rule === "sound_cut_off").map((f) => f.clip_id)).toEqual([song]);
+  // A fade, or the song carrying on in the next clip of its track, ends it.
+  const faded = runCommand(p, "set_fades", { clip_ids: [song, line], fade_out: 0.3 });
+  expect(tailTargets(faded)).toEqual([]);
+  const track = p.tracks.find((t) => t.clips.some((c) => c.id === song))!.id;
+  const carried = runCommand(p, "add_media_clip", { asset_id: "song", start: 12, in: 12, duration: 8, track_id: track });
+  expect(tailTargets(carried).map((t) => t.clipId)).not.toContain(song);
+});
+
 it("counts the shots on the busiest picture track, not the one-clip background", () => {
   const r = checkProject(designed());
   expect(r.summary).toMatchObject({ shots: 4, shots_on: "Windows", average_shot: 1.5 });
