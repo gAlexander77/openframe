@@ -80,6 +80,7 @@ export {
   LayoutGrid,
   Link2,
   List,
+  ListChecks,
   Loader2,
   Lock,
   LockOpen,

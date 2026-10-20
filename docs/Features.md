@@ -227,7 +227,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   transitions' default length, as far as the join allows, or why none
   fits), sees it drawn at the cut like a transition, and sets its length
   in the Audio tab's **Crossfade** row
-  ([[ADR-109 What an agent can set, a person can see and change]]).
+  ([[ADR-109 What an agent can set, a person can see and change]]);
+  a transition dropped on the join of two audio clips makes the same
+  crossfade
+  ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -1093,7 +1096,19 @@ makes a 13 s one). Times are timeline seconds.
   white layer on a new top track at the playhead, its color set in the
   inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
-  Captions, Filters, Adjustment, with category sub-navigation.
+  Captions, Filters, Adjustment, with category sub-navigation; then AI
+  tools, Markers and Check.
+- **Check** (also File > Check project, and the Export dialog's Check
+  row): the agent's `check_project`, run for a person on request, with
+  the same measuring (each title's contrast on the rendered picture, the
+  sound's last seconds), progress and Cancel. What is made (General
+  video, Ad, Social short, Cut to music) picks the rules. Findings are
+  grouped as text, timing and sound with counts, each in plain words
+  with the control that fixes it; clicking one moves the playhead to it,
+  selects its clip and opens the inspector tab with the fix. An edit
+  marks the check out of date; Export shows the last check's counts and
+  leads to it, without blocking the export
+  ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
 - **Previews drawn by the engine**: filter, effect, transition and text
   cards show the real shaders and text rasterizer on a generated sample
   shot, or on the selected clip's own frame; effects, transitions and
@@ -1123,6 +1138,9 @@ makes a 13 s one). Times are timeline seconds.
 - CapCut's in-app shortcut list, Premiere's where CapCut has none
   (`src/lib/keymap.ts`); a searchable shortcuts panel; tooltips show each
   button's chord, read from the keymap.
+- Space presses a button, switch, checkbox, tab or menu item reached
+  with the keyboard, as on the web; from the page, the timeline, the
+  viewer, a slider, or a button a click left focused, it plays (ADR-111).
 - **Custom shortcuts**, as in Premiere's Keyboard Shortcuts: Change on any
   row and press the new keys; a chord another action uses is named and
   moves only on Replace. Remove, per-row reset and Reset all; changes are
@@ -1196,8 +1214,8 @@ results include an icon, title and next-step hint. See [[Icons]] for the mapping
 
 ### Compact layouts and keyboard controls
 
-Library tabs lay out in balanced rows (all eleven in one row at 2560 px, six
-and five below), keeping every destination visible; where labels would need a
+Library tabs lay out in balanced rows (all twelve in one row at 2560 px, six
+and six below), keeping every destination visible; where labels would need a
 third row or a quarter of a short panel, the tabs show icons alone, named by
 tooltips (`src/lib/libraryLayout.ts`). Below 300 px the catalog categories
 move above the cards as wrapping chips, so cards keep two columns. The media

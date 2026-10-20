@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bindChord, buildIndex, chordOf, chordText, DEFAULT_KEYMAP, usersOf, withChanges } from "./keymap";
+import { bindChord, buildIndex, chordOf, chordText, DEFAULT_KEYMAP, focusKeeps, usersOf, withChanges, type Focused } from "./keymap";
 
 const ev = (key: string, code: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   key,
@@ -60,5 +60,41 @@ describe("custom shortcuts", () => {
     expect(withChanges({ split: "Mod+B", nope: ["X"], freeze: ["F"] }).split).toEqual(DEFAULT_KEYMAP.split);
     expect(withChanges({ freeze: ["F"] }).freeze).toEqual(["F"]);
     expect(withChanges(null)).toEqual(DEFAULT_KEYMAP);
+  });
+});
+
+describe("focusKeeps", () => {
+  const at = (kind: Focused["kind"], keyboard = true): Focused => ({ kind, keyboard });
+  const space = ev(" ", "Space");
+  it("lets Space press a button, switch, checkbox or menu item the keyboard reached (ADR-111)", () => {
+    // It played the timeline instead: a switch reached with Tab never toggled.
+    expect(focusKeeps(space, at("control"))).toBe(true);
+    expect(focusKeeps(space, at("dropdown"))).toBe(true);
+    // The play chord still plays from the timeline, the viewer and the page.
+    expect(focusKeeps(space, at("none"))).toBe(false);
+    expect(focusKeeps(space, at("none", false))).toBe(false);
+    // A slider keeps its arrows, not Space: adjust, then play (UX-06).
+    expect(focusKeeps(space, at("slider"))).toBe(false);
+    expect(focusKeeps(ev("ArrowLeft", "ArrowLeft"), at("slider"))).toBe(true);
+    // A link is pressed by Enter; Space would only scroll.
+    expect(focusKeeps(space, at("link"))).toBe(false);
+  });
+  it("still plays after a click left a button focused, as CapCut does", () => {
+    expect(focusKeeps(space, at("control", false))).toBe(false);
+    expect(focusKeeps(space, at("dropdown", false))).toBe(false);
+  });
+  it("gives chords with Space to the app, and every key to a text field", () => {
+    expect(focusKeeps(ev(" ", "Space", { ctrlKey: true, shiftKey: true }), at("control"))).toBe(false);
+    expect(focusKeeps(ev(" ", "Space", { shiftKey: true }), at("control"))).toBe(false);
+    expect(focusKeeps(space, at("text"))).toBe(true);
+    expect(focusKeeps(ev("Escape", "Escape"), at("text", false))).toBe(true);
+    expect(focusKeeps(ev("b", "KeyB", { ctrlKey: true }), at("text"))).toBe(true);
+  });
+  it("lets Enter press a focused control or link however it got focus, and leaves other keys to the app", () => {
+    expect(focusKeeps(ev("Enter", "Enter"), at("control", false))).toBe(true);
+    expect(focusKeeps(ev("Enter", "Enter"), at("link"))).toBe(true);
+    expect(focusKeeps(ev("Enter", "Enter"), at("none"))).toBe(false);
+    expect(focusKeeps(ev("Delete", "Delete"), at("control"))).toBe(false);
+    expect(focusKeeps(ev("ArrowLeft", "ArrowLeft", { ctrlKey: true }), at("dropdown"))).toBe(false);
   });
 });

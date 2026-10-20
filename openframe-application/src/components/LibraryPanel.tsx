@@ -11,6 +11,7 @@ import {
   Image,
   LayoutGrid,
   List,
+  ListChecks,
   Music,
   PaintBucket,
   Palette,
@@ -51,6 +52,7 @@ import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
 import { MarkersTab } from "./MarkersTab";
+import { CheckTab } from "./CheckTab";
 import { MediaManager } from "./MediaManager";
 import { MusicCard } from "./MusicCard";
 import { MenuList, useDismiss, type MenuItem } from "./Menu";
@@ -70,6 +72,7 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "adjustment", label: "Adjustment", icon: SlidersHorizontal },
   { id: "ai", label: "AI tools", icon: WandSparkles },
   { id: "markers", label: "Markers", icon: Bookmark },
+  { id: "check", label: "Check", icon: ListChecks },
 ];
 
 /** Text cut short by its ellipsis or line clamp (marked data-cut) names
@@ -132,6 +135,7 @@ export function LibraryPanel() {
         {tab === "captions" && <CaptionsTab />}
         {tab === "ai" && <AiToolsTab />}
         {tab === "markers" && <MarkersTab />}
+        {tab === "check" && <CheckTab />}
       </div>
     </section>
   );
@@ -561,7 +565,7 @@ function TransitionsTab() {
   return (
     <CatalogTab
       defs={TRANSITIONS}
-      hint="Drop on the cut between two clips, or select a clip and click +."
+      hint="Drop on the cut between two clips, or select a clip and click +. Between two audio clips it makes a crossfade."
       render={(k, d) => (
         <CatalogCard
           key={k}

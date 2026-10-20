@@ -413,3 +413,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]] —
+  the library's Check tab (and File > Check project, and Export's Check
+  row) runs the agent's check_project with the same measuring, on
+  request, and says each finding in a person's words, grouped as text,
+  timing and sound, jumping to its clip, time and inspector tab; Space
+  presses a button, switch or menu item the keyboard reached (a click's
+  focus still plays); a transition dropped on an audio join crossfades.

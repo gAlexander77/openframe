@@ -52,6 +52,8 @@ import { backToSettings, cancelExport, closeExportDialog, saveStill, startExport
 import { documentOf, rootInPoint, rootOutPoint, store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { chordFor } from "../state/actions";
+import { checkCounts, checkHeadline } from "../lib/checkFindings";
+import { openCheck, useCheck } from "../state/check";
 import { chordText } from "../lib/keymap";
 import { isMac } from "../platform/env";
 import "./export.css";
@@ -498,6 +500,7 @@ function SettingsView() {
               To export part of the timeline, mark In ({markKey("markIn")}) and Out ({markKey("markOut")}) on it first.
             </p>
           )}
+          <CheckRow />
         </div>
       </div>
 
@@ -521,6 +524,47 @@ function SettingsView() {
         </button>
       </footer>
     </>
+  );
+}
+
+/** The project check before export (ADR-111): what the last check found,
+ * and the way to the Check tab, where the findings jump to their clips. A
+ * check that is missing, or older than the last edit, is one click away. */
+function CheckRow() {
+  const job = useCheck((s) => s.job);
+  const last = useCheck((s) => s.last);
+  const docId = useEditor((s) => documentOf(s).id);
+  const revision = useEditor((s) => s.revision);
+  const run = last && last.projectId === docId ? last : null;
+  const fresh = !!run && run.revision === revision;
+  const head = run ? checkHeadline(run.report.summary) : null;
+  const open = (check: boolean) => {
+    closeExportDialog();
+    openCheck(check);
+  };
+  return (
+    <Row label="Check">
+      <div className="export-pair export-check">
+        <span className={`export-static${fresh && head ? ` ${head.tone}` : ""}`}>
+          {job ? (
+            <>
+              <Loader2 size={14} className="spin" /> Checking the project…
+            </>
+          ) : !run ? (
+            "Not checked yet"
+          ) : fresh ? (
+            <>
+              {head?.tone === "ok" ? <Check size={14} /> : <CircleAlert size={14} />} {checkCounts(run.report.summary)}
+            </>
+          ) : (
+            `${checkCounts(run.report.summary)} before your last changes`
+          )}
+        </span>
+        <button className="btn ghost" onClick={() => open(!job && !fresh)}>
+          {job ? "Show" : fresh ? "Review" : run ? "Check again" : "Check project"}
+        </button>
+      </div>
+    </Row>
   );
 }
 

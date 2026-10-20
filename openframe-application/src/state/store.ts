@@ -33,7 +33,8 @@ export type LeftTab =
   | "adjustment"
   | "captions"
   | "markers"
-  | "ai";
+  | "ai"
+  | "check";
 
 /** A compound clip opened for editing (ADR-037): the level the document
  * needs back, and what the timeline above was showing. */

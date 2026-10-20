@@ -1,0 +1,58 @@
+/* The library's Check tab (CheckTab.tsx): a toolbar, the run's progress,
+   a summary, and the findings grouped as text, timing and sound. Rows
+   follow the Markers tab's (a full-width jump button, hover and current
+   states); the level is a word, not only a color. */
+.check-tab { display: flex; flex-direction: column; gap: 10px; }
+.check-tab > .lib-hint { margin: -4px 0 0; }
+.check-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.check-kind { display: flex; flex: 1 1 160px; min-width: 0; align-items: center; gap: 8px; color: var(--text-2); font-size: var(--fs-xs); white-space: nowrap; }
+.check-kind select { flex: 1; min-width: 0; height: 28px; font-size: var(--fs-sm); }
+.check-run { flex: 0 0 auto; min-width: 112px; }
+
+.check-progress { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 8px; padding: 8px 10px; border-radius: var(--radius); background: var(--bg-inset); box-shadow: inset 0 0 0 1px var(--line); }
+.check-bar { grid-column: 1; height: 4px; border-radius: 4px; background: var(--bg-3); overflow: hidden; }
+.check-bar span { display: block; height: 100%; border-radius: 4px; transform-origin: left; background: var(--accent); transition: transform 150ms linear; }
+.check-stage { grid-column: 1; display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); }
+.check-stage svg { flex: none; color: var(--accent); }
+.check-stage > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.check-progress .icon-btn { grid-column: 2; grid-row: 1 / span 2; }
+.check-error { display: flex; gap: 6px; margin: 0; color: var(--danger); font-size: var(--fs-xs); line-height: 1.4; }
+.check-error svg { flex: none; margin-top: 1px; }
+
+.check-summary { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius); background: var(--bg-2); border-left: 3px solid var(--ok); }
+.check-summary.warning { border-left-color: var(--warn); }
+.check-summary.error { border-left-color: var(--danger); }
+.check-summary > svg { flex: none; margin-top: 1px; color: var(--ok); }
+.check-summary.warning > svg { color: var(--warn); }
+.check-summary.error > svg { color: var(--danger); }
+.check-summary div { display: grid; gap: 3px; min-width: 0; }
+.check-summary strong { font-size: var(--fs-md); line-height: 1.35; }
+.check-summary small { color: var(--text-3); font-size: var(--fs-xs); }
+.check-summary .check-stale { color: var(--warn); }
+
+.check-group-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 4px; color: var(--text-2); font-size: var(--fs-xs); font-weight: 600; text-transform: none; }
+.check-count { min-width: 18px; padding: 0 5px; border-radius: 9px; background: var(--bg-3); color: var(--text-1); font-size: 10px; line-height: 16px; text-align: center; }
+.check-count.none { background: transparent; color: var(--text-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.check-list { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.check-row { border-radius: var(--radius-sm); }
+.check-row:hover { background: var(--bg-2); }
+.check-row.on { background: var(--accent-soft); }
+.check-jump { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 8px; width: 100%; padding: 7px; border: 0; border-radius: var(--radius-sm); text-align: left; background: transparent; color: var(--text-1); font: inherit; }
+.check-jump.static { cursor: default; }
+.check-level { margin-top: 1px; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; line-height: 14px; white-space: nowrap; }
+.check-level.error { background: color-mix(in srgb, var(--danger) 22%, transparent); color: #ff9a9a; }
+.check-level.warning { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.check-level.tip { background: var(--bg-3); color: var(--text-2); }
+.check-text { display: grid; gap: 3px; min-width: 0; font-size: var(--fs-sm); line-height: 1.4; }
+.check-text strong { font-weight: 600; overflow-wrap: anywhere; }
+.check-detail { color: var(--text-3); font-size: var(--fs-xs); }
+.check-action { color: var(--text-2); font-size: var(--fs-xs); }
+.check-time { margin-top: 2px; color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }
+.check-none { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; padding: 0 7px; color: var(--text-3); font-size: var(--fs-xs); }
+.check-none svg { color: var(--ok); }
+.check-foot { margin: 4px 0 0; padding: 8px 0 0 16px; border-top: 1px solid var(--line); color: var(--text-3); font-size: var(--fs-xs); line-height: 1.45; }
+
+/* A narrow library (under 300 px, libraryLayout's NARROW): the time goes
+   under the words instead of beside them. */
+.library-panel.narrow .check-jump { grid-template-columns: auto minmax(0, 1fr); }
+.library-panel.narrow .check-time { grid-column: 2; margin-top: 0; }
