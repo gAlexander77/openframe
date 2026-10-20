@@ -12,7 +12,7 @@ import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
-import { versionProject, versionSound, type VersionSpec } from "../lib/versions";
+import { captionCollisions, versionProject, versionSound, type CaptionCollision, type VersionSpec } from "../lib/versions";
 import { hiddenNote, titlesInFront, type Hidden } from "../lib/behind";
 import { measureBehind } from "./behind";
 import { copyProject } from "../lib/project/copy";
@@ -324,6 +324,8 @@ export interface VersionFile {
   subjects?: SubjectReport[];
   /** Titles behind their subject that the subject hides in this shape. */
   titles?: TitleReport[];
+  /** Pictures and graphics drawn across the burned captions in this shape. */
+  caption_overlaps?: CaptionCollision[];
 }
 
 /** A title behind its subject (text_behind_subject) that a version's
@@ -405,7 +407,8 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
       const f = secondsToFrames(n.at, project.fps);
       return runs.some((r) => r.clipId === n.clipId && f >= r.start && f < r.start + r.duration);
     };
-    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles });
+    // A picture or graphic across the burned captions (ADR-116).
+    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: captionCollisions(project) });
   }
   return out;
 }
@@ -447,7 +450,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   job = new AbortController();
   const tid = toast(`Exporting ${items.length} versions`, "progress");
   try {
-    for (const [i, { spec, project: q, notes, titles }] of items.entries()) {
+    for (const [i, { spec, project: q, notes, titles, overlaps }] of items.entries()) {
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
@@ -468,7 +471,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
       const renamed = platform.createAgentExportTarget ? renamedNote(`${name}.${plan.extension}`, path) : undefined;
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}) });
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);
@@ -487,17 +490,17 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
  * cut before rendering any. A tile where the framing cuts a shot's
  * subject outlines the subject in orange and says so; the reports list
  * every such shot with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[] }> {
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[] }> {
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
   const th = o.tileHeight ?? 220, gap = 6, label = 22;
-  const rows = items.map(({ project: q, notes, titles }) => ({ q, notes, titles, tw: Math.round((th * q.width) / q.height) }));
+  const rows = items.map(({ project: q, notes, titles, overlaps }) => ({ q, notes, titles, overlaps, tw: Math.round((th * q.width) / q.height) }));
   const width = Math.max(...rows.map((r) => gap + at.length * (r.tw + gap)), 480);
   const out = new OffscreenCanvas(width, gap + rows.length * (label + th + gap));
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw, notes, titles }] of rows.entries()) {
+  for (const [ri, { q, tw, notes, titles, overlaps }] of rows.entries()) {
     const y = gap + ri * (label + th + gap);
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
@@ -575,12 +578,34 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
         g.fillStyle = "#ff9f1a";
         g.fillText(say, x + 9, y + label + th - 33);
       }
+      // A picture or graphic across the captions showing now: outlined
+      // where it shows (a porthole's circle, not its whole frame).
+      for (const c of overlaps) {
+        const clip = findClip(q, c.clip_id)?.clip;
+        if (!clip || frame < clip.start || frame >= clip.start + clip.duration) continue;
+        const k = tw / q.width, b = c.box;
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
+        g.restore();
+        const say = `${c.layer} the captions`;
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 68, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 55);
+      }
     }
   }
   // JPEG like the other contact sheets: a PNG sheet of footage can pass the
   // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
   const blob = await out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
-  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length), titles: items.map((it) => ({ version: it.project.name, reports: it.titles })).filter((x) => x.reports.length) };
+  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length), titles: items.map((it) => ({ version: it.project.name, reports: it.titles })).filter((x) => x.reports.length), overlaps: items.map((it) => ({ version: it.project.name, reports: it.overlaps })).filter((x) => x.reports.length) };
 }
 
 /**
@@ -589,13 +614,13 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
  * fine-tune by hand or with tools and export from there; nothing is
  * exported and the master stays open and as it was.
  */
-export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[] }[]> {
+export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[] }[]> {
   const items = await versionProjects(o);
   const saved = [];
-  for (const { project: q, notes, titles } of items) {
+  for (const { project: q, notes, titles, overlaps } of items) {
     const copy = copyProject(q, q.name);
     await platform.saveProject(copy, projectSummary(copy));
-    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}) });
+    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
   }
   toast(`Saved ${saved.length} version${saved.length === 1 ? "" : "s"} as projects`);
   return saved;

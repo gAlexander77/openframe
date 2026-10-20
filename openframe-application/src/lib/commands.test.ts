@@ -353,6 +353,35 @@ describe("set_mask", () => {
     expect(mask(runCommand(box, "set_mask", { clip_ids: [id], shape: "none" }))).toBeUndefined();
   });
 
+  it("makes a round circle on a 16:9 picture with aspect 1, and says when a mask leaves the picture", () => {
+    // Claude film test 2's porthole: 16:9 footage on a 9:16 frame, its
+    // circle sized by hand (0.44 by 0.782) and moved past the bottom edge.
+    let p: Project = { ...createProject({ fps: { num: 30, den: 1 }, width: 1080, height: 1920 }), assets: [{ id: "st", kind: "video", name: "station.mp4", src: "station.mp4", duration: 10, width: 1920, height: 1080, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "st", start: 0, duration: 2 });
+    const id = p.tracks[0].clips[0].id;
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "transform.scale", value: 1.6 });
+    const mask = (q: Project) => (ops.findClip(q, id)!.clip as { mask?: Record<string, number> }).mask!;
+    const report: CommandReport = {};
+    const round = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle", width: 0.44, aspect: 1, feather: 0 }, report);
+    expect(mask(round).width).toBe(0.44);
+    expect(mask(round).height).toBeCloseTo(0.44 * (1920 / 1080), 4);
+    expect(report.notes).toBeUndefined();
+    // A height alone sets the width; a square on a tall picture likewise.
+    expect(mask(runCommand(round, "set_mask", { clip_ids: [id], height: 0.5, aspect: 1 })).width).toBeCloseTo(0.5 * (1080 / 1920), 4);
+    expect(() => runCommand(round, "set_mask", { clip_ids: [id], width: 0.3, height: 0.3, aspect: 1 })).toThrow(/not both/);
+    // Past the bottom edge: cut flat there, and the answer says so, with the y that keeps it whole.
+    const low: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.2 }, low);
+    expect(low.notes?.join(" ")).toMatch(/circle mask on c_\w+ runs past the picture's bottom edge \(to 0\.591 of its height from the center; the edge is at 0\.5\), so it is cut flat there: y 0\.109 keeps it whole/);
+    const inside: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.08 }, inside);
+    expect(inside.notes).toBeUndefined();
+    // Inverted, or a band: nothing to say.
+    const inv: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.3, invert: true }, inv);
+    expect(inv.notes).toBeUndefined();
+  });
+
   it("needs a shape for a clip with no mask and refuses clips without a picture", () => {
     const { p, id } = masked();
     expect(() => runCommand(p, "set_mask", { clip_ids: [id], feather: 0.2 })).toThrow(/give a shape/);

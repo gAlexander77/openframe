@@ -26,10 +26,10 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { upsertKey } from "./keyframes";
+import { paramAt, upsertKey } from "./keyframes";
 import { keyframeProblem, partNeeds } from "./animatable";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
@@ -53,7 +53,7 @@ import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup 
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
 import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
-import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
+import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
@@ -61,7 +61,7 @@ import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/music
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
-import { placeOnTop } from "./overlays";
+import { isFootage, placeOnTop, underAdjustmentNote } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
 import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
@@ -225,6 +225,36 @@ function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop):
   if ((edge === "start") !== !!rev) return `the source starts there (${file} has nothing earlier${rev})`;
   const rate = c.speedCurve ? speedAt(c.speedCurve.points, edge === "end" ? c.duration : 0) : c.speed;
   return `the source ends there (${file} is ${+ops.sourceSeconds(p, c).toFixed(3)} s long${rev}${Math.abs(rate - 1) > 1e-3 ? `, and the clip reads it at ${+rate.toFixed(2)}x at its ${edge}` : ""})`;
+}
+
+/** Where a closed mask leaves its picture at clip frame `rel` (and is cut
+ * flat there), with the place or size that keeps it whole; nothing when it
+ * stays inside, is inverted, or is a line or a band (Claude film test 2: a
+ * porthole's circle ran past the picture's bottom edge in silence). */
+function maskEdgeNote(p: Project, id: Id, rel: number, at: number): string | undefined {
+  const c = ops.findClip(p, id)?.clip as VisualClip | undefined;
+  const m = c && "mask" in c ? c.mask : undefined;
+  if (!c || !m || m.invert) return undefined;
+  const v = (k: string) => paramAt(c, `mask.${k}`, rel);
+  const now = { ...m, x: v("x"), y: v("y"), width: v("width"), height: v("height"), rotation: v("rotation") };
+  const r = maskReach(now, pictureAspect(p, c, at));
+  if (!r) return undefined;
+  const past = (["left", "right", "top", "bottom"] as const).filter((e) => (e === "left" || e === "top" ? -r[e] : r[e]) > 0.502);
+  if (!past.length) return undefined;
+  const n = (x: number) => +x.toFixed(3);
+  const hx = (r.right - r.left) / 2, hy = (r.bottom - r.top) / 2;
+  const fix: string[] = [];
+  if (past.some((e) => e === "left" || e === "right")) fix.push(hx <= 0.5 ? `x ${n(Math.max(hx - 0.5, Math.min(0.5 - hx, now.x)))}` : `width ${n(now.width / (2 * hx))}`);
+  if (past.some((e) => e === "top" || e === "bottom")) fix.push(hy <= 0.5 ? `y ${n(Math.max(hy - 0.5, Math.min(0.5 - hy, now.y)))}` : `height ${n(now.height / (2 * hy))}`);
+  const edges = past.map((e) => `${e} edge (to ${n(Math.abs(r[e]))} of its ${e === "left" || e === "right" ? "width" : "height"} from the center; the edge is at 0.5)`).join(" and its ");
+  return `The ${m.shape} mask on ${id} runs past the picture's ${edges}, so it is cut flat there: ${fix.join(" and ")} keeps it whole.`;
+}
+
+/** Say so when a title or graphic placed on a track the caller chose sits
+ * under an adjustment layer (ADR-116). */
+function noteUnderAdjustment(p: Project, id: Id, what: string, report?: CommandReport) {
+  const note = report && underAdjustmentNote(p, id, what);
+  if (note) (report!.notes ??= []).push(note);
 }
 
 function trackOrThrow(p: Project, id: unknown): Track {
@@ -493,7 +523,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -503,11 +533,11 @@ export const COMMANDS: Command[] = [
         y: S.num("Vertical offset, -0.5..0.5"),
         style: TEXT_STYLE_SCHEMA,
         role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
-        track_id: S.str("Track id"),
+        track_id: S.str("Track id; default above everything at that time"),
       },
       ["text", "start", "duration"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
@@ -515,8 +545,13 @@ export const COMMANDS: Command[] = [
       style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
       let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
-      const [q, trackId] = landingTrack(p, clip, a.track_id);
-      return ops.addClip(q, trackId, clip);
+      // Above everything showing then, as add_shape and stickers land: a
+      // text added after its button went under it, on a free track below
+      // the grade (Claude film test 2, ADR-116).
+      if (a.track_id === undefined) return placeOnTop(p, clip, "Titles");
+      const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      noteUnderAdjustment(q, clip.id, "a title", report);
+      return q;
     },
   },
   // ---- ads: the brand kit and ad elements (lib/brandKit.ts, lib/ads.ts) ----
@@ -657,9 +692,13 @@ export const COMMANDS: Command[] = [
     name: "move_clip",
     description: "Move a clip to a time and (optionally) another track of the same kind. Overwrites whatever is under its new position.",
     input: S.obj({ clip_id: S.str("Clip id"), start: S.num("Seconds", { minimum: 0 }), track_id: S.str("Destination track id") }, ["clip_id", "start"]),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const loc = clipOrThrow(p, a.clip_id);
-      return ops.moveClip(p, loc.clip.id, String(a.track_id ?? loc.track.id), f(p, a.start));
+      const q = ops.moveClip(p, loc.clip.id, String(a.track_id ?? loc.track.id), f(p, a.start));
+      // A title or graphic moved under a grade or a beat hit (ADR-116).
+      const c = loc.clip;
+      if (a.track_id !== undefined && (c.type === "text" || (c.type === "color" && c.shape) || (c.type === "compound" && !isFootage(q, c)))) noteUnderAdjustment(q, c.id, c.type === "text" ? "a title" : c.type === "compound" ? "a title card" : "a shape", report);
+      return q;
     },
   },
   {
@@ -1215,7 +1254,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height; rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). Values left out keep theirs; animated values get a keyframe at `at`.",
+    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.",
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1228,11 +1267,13 @@ export const COMMANDS: Command[] = [
         feather: S.num("Edge softness", { minimum: 0, maximum: 1 }),
         radius: S.num("Rectangle corner roundness", { minimum: 0, maximum: 1 }),
         invert: S.bool("Keep the outside instead"),
+        aspect: S.num("The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone", { minimum: 0.05, maximum: 20 }),
         at: S.num("Timeline seconds, for animated values"),
       },
       ["clip_ids"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
+      if (a.aspect !== undefined && a.width !== undefined && a.height !== undefined) throw new CommandError("give width or height with aspect, not both: aspect sets the other");
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
@@ -1249,9 +1290,23 @@ export const COMMANDS: Command[] = [
         if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
-        for (const k of MASK_PARAMS) {
-          if (a[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(a[k]), rel);
+        const at = clip.start + (rel ?? 0);
+        // aspect: the size the caller left out, so the mask is that many
+        // pixels wide for each tall on this picture (ADR-116).
+        const sizes: Record<string, unknown> = { ...a };
+        if (a.aspect !== undefined) {
+          const now = ops.findClip(p, clip.id)!.clip as VisualClip;
+          const width = a.width !== undefined ? Number(a.width) : a.height !== undefined ? undefined : paramAt(now, "mask.width", rel ?? 0);
+          const s = sizeForAspect({ width, height: a.height !== undefined ? Number(a.height) : undefined }, Number(a.aspect), pictureAspect(p, now, at));
+          sizes.width = +s.width.toFixed(5);
+          sizes.height = +s.height.toFixed(5);
+          for (const k of ["width", "height"] as const) keyedNeedsAt(clip, `mask.${k}`, a.at);
         }
+        for (const k of MASK_PARAMS) {
+          if (sizes[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
+        }
+        const note = maskEdgeNote(p, clip.id, rel ?? 0, at);
+        if (note && report) (report.notes ??= []).push(note);
       }
       return p;
     },
@@ -1328,7 +1383,7 @@ export const COMMANDS: Command[] = [
       },
       ["kind", "start", "duration"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
       const color = colorArg(a.color, "color") ?? "#ffffff";
       const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
@@ -1357,8 +1412,10 @@ export const COMMANDS: Command[] = [
         opacity: Number(a.opacity ?? 1),
         transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
       } as Clip;
-      if (a.track_id !== undefined) return ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
-      return placeOnTop(p, clip, "Graphics");
+      if (a.track_id === undefined) return placeOnTop(p, clip, "Graphics");
+      const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      noteUnderAdjustment(q, clip.id, "a shape", report);
+      return q;
     },
   },
   {

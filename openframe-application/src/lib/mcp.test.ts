@@ -31,6 +31,10 @@ function host() {
       h.sheets.push([assetId, times, width, columns]);
       return "iVBOR";
     },
+    async fileSheet(src: string, times: number[] | undefined, count: number, width: number, columns: number) {
+      h.sheets.push([src, times, count, width, columns]);
+      return { image: "/9j/", file: { file: src, kind: "video", seconds: 46.5, width: 1920, height: 1080, frames: [1, 2] } };
+    },
     checkProject: (kind: string) => ({ ok: true, kind }),
     auditions: [] as unknown[],
     async audition(o: { audio?: boolean }) {
@@ -589,6 +593,18 @@ describe("what the Codex film test found (2026-10-19)", () => {
     await call(h, "tools/call", { name: "preview_media", arguments: { asset_id: "a1", columns: 8, count: 8 } });
     expect(h.sheets.at(-1)![3]).toBe(8);
     for (const n of ["preview_frames", "preview_motion", "preview_media"]) expect(listTools().find((t) => t.name === n)!.inputSchema.properties!.columns.maximum, n).toBe(8);
+  });
+
+  it("looks inside an exported file with preview_media file, importing nothing", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "preview_media", arguments: { file: "D:/Out/film-16x9.mp4", count: 8, columns: 4 } });
+    const content = (r!.result as { content: { type: string; text?: string; data?: string }[] }).content;
+    expect(content[0]).toMatchObject({ type: "image", data: "/9j/", mimeType: "image/jpeg" });
+    expect(JSON.parse(content[1].text!)).toMatchObject({ file: "D:/Out/film-16x9.mp4", seconds: 46.5, width: 1920 });
+    expect(h.sheets.at(-1)).toEqual(["D:/Out/film-16x9.mp4", undefined, 8, 320, 4]);
+    expect(h.project.assets).toHaveLength(1);
+    expect(await err(h, "preview_media", { file: "x.mp4", asset_id: "a1" })).toMatch(/asset_id or file, not both/);
+    expect(await err(h, "preview_media", {})).toMatch(/give asset_id .* or file/);
   });
 
   it("describes a title's type and a custom speed curve, compactly", async () => {

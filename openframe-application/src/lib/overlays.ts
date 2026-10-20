@@ -5,26 +5,61 @@
 import { createTrack } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Clip, Project, Track } from "./project/types";
+import { framesToSeconds } from "./time";
 
 const overlaps = (t: Track, start: number, end: number) => t.clips.some((c) => c.start < end && c.start + c.duration > start);
 
-/** Footage: video, compounds and pictures other than stickers. A title or
- * sticker never shares a track with it, so B-roll stays a B-roll row. */
-const isFootage = (p: Project, c: Clip) =>
-  c.type === "video" || c.type === "compound" || (c.type === "image" && !p.assets.find((a) => a.id === c.assetId)?.sticker);
+/** Footage: video, pictures other than stickers, and compound clips that
+ * play some (a title card built as a compound is a graphic, as its titles
+ * and shapes are). A title or sticker never shares a track with it, so
+ * B-roll stays a B-roll row, and beat hits go above it (lib/epic.ts). */
+export function isFootage(p: Project, c: Clip, depth = 0): boolean {
+  if (c.type === "video") return true;
+  if (c.type === "image") return !p.assets.find((a) => a.id === c.assetId)?.sticker;
+  if (c.type !== "compound") return false;
+  const k = ops.findCompound(p, c.compoundId);
+  return !k || depth > 4 || k.tracks.some((t) => t.kind === "video" && t.clips.some((x) => isFootage(p, x, depth + 1)));
+}
+
+/** A track of adjustment layers only (beat hits, bars, a grade). */
+const effectRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => c.type === "adjustment");
+/** A track of captions only (add_captions, a voiceover's). */
+const captionRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => c.type === "text" && !!c.caption);
 
 /** A track an overlay may join: an unlocked video track other than the
- * main one, holding no footage. */
+ * main one, holding no footage, and neither a row of adjustment layers
+ * nor of captions. */
 const joinable = (p: Project, t: Track | undefined): t is Track =>
-  !!t && t.kind === "video" && !t.main && !t.locked && !t.clips.some((c) => isFootage(p, c));
+  !!t && t.kind === "video" && !t.main && !t.locked && !effectRow(t) && !captionRow(t) && !t.clips.some((c) => isFootage(p, c));
 
 /** The track overlays over [start, end) go directly above: the topmost
- * video track that shows anything then or holds footage at all (the main
- * track when none does), so a title never sits under a B-roll row that is
- * only empty for now. Every track above it is free over the range. */
+ * video track that shows anything then, holds footage at all or is a row
+ * of adjustment layers (the main track when none does), so a title never
+ * sits under a B-roll row, or a grade or the beat hits, that is only empty
+ * for now. Every track above it is free over the range. */
 function baseTrack(p: Project, start: number, end: number): number {
-  const top = p.tracks.findIndex((t) => t.kind === "video" && (overlaps(t, start, end) || t.clips.some((c) => isFootage(p, c))));
+  const top = p.tracks.findIndex((t) => t.kind === "video" && (overlaps(t, start, end) || effectRow(t) || t.clips.some((c) => isFootage(p, c))));
   return top >= 0 ? top : Math.max(0, p.tracks.findIndex((t) => t.main));
+}
+
+/** The adjustment layers drawn over a clip during its time: enabled ones
+ * on visible video tracks above its own. A title placed under one takes
+ * its look and effects (a grade, a beat hit's zoom). */
+export function adjustmentsOver(p: Project, clipId: string): { clip: Clip; track: Track }[] {
+  const at = p.tracks.findIndex((t) => t.clips.some((c) => c.id === clipId));
+  if (at < 0) return [];
+  const c = p.tracks[at].clips.find((x) => x.id === clipId)!;
+  return p.tracks.slice(0, at).flatMap((t) => (t.kind !== "video" || t.hidden ? [] : t.clips.filter((x) => x.type === "adjustment" && !x.disabled && x.start < c.start + c.duration && x.start + x.duration > c.start).map((clip) => ({ clip, track: t }))));
+}
+
+/** A note for an answer when a title or graphic sits under an adjustment
+ * layer, or nothing. */
+export function underAdjustmentNote(p: Project, clipId: string, what: string): string | undefined {
+  const over = adjustmentsOver(p, clipId);
+  if (!over.length) return undefined;
+  const sec = (f: number) => +framesToSeconds(f, p.fps).toFixed(2);
+  const list = over.slice(0, 3).map(({ clip, track }) => `${clip.id} on track ${track.id} "${track.name}" (${sec(clip.start)}-${sec(clip.start + clip.duration)} s)`).join(", ");
+  return `${clipId} (${what}) is under the adjustment layer${over.length > 1 ? "s" : ""} ${list}${over.length > 3 ? ` and ${over.length - 3} more` : ""}: ${over.length > 1 ? "their" : "its"} look and effects (a grade, a beat hit's zoom) apply to it too. Leave track_id out to put it above everything at that time, or move_track the adjustment track below it.`;
 }
 
 /**

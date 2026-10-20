@@ -42,6 +42,30 @@ export function maskFrame(m: Mask, lw: number, lh: number): MaskFrame {
   return { cx: m.x * lw, cy: m.y * lh, hw: (m.width * lw) / 2, hh: (m.height * lh) / 2, rot: (m.rotation * Math.PI) / 180 };
 }
 
+/** How far a closed mask reaches on its layer: its edges as offsets from
+ * the layer's center in fractions of the layer's width and height (the
+ * picture's own edges are at ±0.5), the shape turned with it. Null for
+ * linear and mirror, which run across the layer by design. `aspect`: the
+ * layer's width over its height. A mask past an edge is cut flat there. */
+export function maskReach(m: Mask, aspect: number): { left: number; right: number; top: number; bottom: number } | null {
+  if (m.shape === "linear" || m.shape === "mirror") return null;
+  const f = maskFrame(m, aspect, 1);
+  const c = Math.abs(Math.cos(f.rot)), s = Math.abs(Math.sin(f.rot));
+  // An ellipse's box turned with it; any other shape's box, turned.
+  const hx = m.shape === "circle" ? Math.hypot(f.hw * c, f.hh * s) : f.hw * c + f.hh * s;
+  const hy = m.shape === "circle" ? Math.hypot(f.hw * s, f.hh * c) : f.hw * s + f.hh * c;
+  return { left: m.x - hx / aspect, right: m.x + hx / aspect, top: m.y - hy, bottom: m.y + hy };
+}
+
+/** The other size of a mask `aspect` times as wide as tall in pixels
+ * (1: a round circle, a square), on a layer `layer` wide over tall: the
+ * height for a width, or the width for a height, as fractions of it. */
+export function sizeForAspect(given: { width?: number; height?: number }, aspect: number, layer: number): { width: number; height: number } {
+  if (given.height !== undefined && given.width === undefined) return { width: (given.height * aspect) / layer, height: given.height };
+  const width = given.width ?? 0.6;
+  return { width, height: (width * layer) / aspect };
+}
+
 /** A layer-pixel point in the mask's own frame: centered, unrotated. */
 export function toMask(f: MaskFrame, x: number, y: number) {
   const dx = x - f.cx, dy = y - f.cy, c = Math.cos(f.rot), s = Math.sin(f.rot);

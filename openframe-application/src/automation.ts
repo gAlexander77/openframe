@@ -43,6 +43,8 @@ import { sourceFrames } from "./engine/analyze";
 import { checkProject, type CheckKind } from "./lib/designCheck";
 import { measureForCheck } from "./state/check";
 import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
+import { probe } from "./engine/media";
+import type { Asset } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -282,6 +284,22 @@ const mcpHost: McpHost = {
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
+  fileSheet: async (src, given, count, tileWidth, columns) => {
+    // A file read where it is, never imported: an export looked at as delivered.
+    const name = sourceName(src);
+    let info: Awaited<ReturnType<typeof probe>>;
+    try {
+      info = await probe(src, name);
+    } catch (e) {
+      throw new Error(`${src} could not be read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (!info.hasVideo) throw new Error(`${name} is sound only; preview_media shows pictures and videos`);
+    const asset = { id: "file", kind: info.kind, name, src, duration: info.duration, width: info.width, height: info.height, hasVideo: info.hasVideo, hasAudio: info.hasAudio } as Asset;
+    const times = info.kind === "image" ? [0] : given ?? Array.from({ length: count }, (_, i) => +((info.duration * (i + 0.5)) / count).toFixed(2));
+    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth);
+    const image = await tiles(times.map((t, i) => ({ src: pics[i], label: info.kind === "image" ? `${info.width}x${info.height}` : `${+t.toFixed(2)} s`, w: info.width || 16, h: info.height || 9 })), tileWidth, info.kind === "image" ? 1 : columns);
+    return { image, file: { file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
+  },
   audition: async (options) => {
     const r = await previewAudio(options as AuditionRequest);
     return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
@@ -308,7 +326,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
