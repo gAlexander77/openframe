@@ -375,3 +375,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   asked for detail full; the design rules and a title's style are listed
   once; lines are laid out without the spacing after the last letter;
   set_colorize makes white a color; the glow starts at luma 85.
+- [[ADR-109 What an agent can set, a person can see and change]] —
+  a section opens when its header switch turns on and keeps the focus;
+  activate and deactivate act on the selection as one, named for what
+  they do; agents' notices name the new commands and parameters; a
+  title shows the drop shadow, border and colorize it carries; paste
+  attributes carries shadow, border and compressor; audio crossfades are
+  offered in the clip menu, drawn on the timeline and set in the Audio tab.

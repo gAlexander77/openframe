@@ -159,15 +159,16 @@ export function CompositingSection({ clip }: { clip: VisualClip }) {
 }
 
 /** A picture's drop shadow (ADR-070): cast by the finished picture, so a
- * masked or compound window casts its own shape. */
-export function ShadowSection({ clip }: { clip: VisualClip }) {
+ * masked or compound window casts its own shape. A title names it "Drop
+ * shadow": its Shadow is the letters' own. */
+export function ShadowSection({ clip, title = "Shadow" }: { clip: VisualClip; title?: string }) {
   // Pixels of this canvas per 1080p pixel, the stored unit.
   const px = useEditor((st) => st.project.height) / 1080;
   const sh = clip.shadow;
   const ids = [clip.id];
   const pxRow = { show: (v: number) => v * px, store: (v: number) => v / px };
   return (
-    <Section title="Shadow" defaultOpen={!!sh} extra={<Toggle label="Drop shadow" on={!!sh} onChange={(on) => run(on ? "Drop shadow" : "No drop shadow", "set_shadow", on ? { clip_ids: ids, ...SHADOW_DEFAULT } : { clip_ids: ids, off: true })} />}>
+    <Section title={title} defaultOpen={!!sh} on={!!sh} extra={<Toggle label="Drop shadow" on={!!sh} onChange={(on) => run(on ? "Drop shadow" : "No drop shadow", "set_shadow", on ? { clip_ids: ids, ...SHADOW_DEFAULT } : { clip_ids: ids, off: true })} />}>
       {sh && (
         <>
           <Row label="Color">
@@ -192,7 +193,7 @@ export function BorderSection({ clip }: { clip: VisualClip }) {
   const ids = [clip.id];
   const pxRow = { show: (v: number) => v * px, store: (v: number) => v / px };
   return (
-    <Section title="Border" defaultOpen={!!b} extra={<Toggle label="Border" on={!!b} onChange={(on) => run(on ? "Border" : "No border", "set_border", on ? { clip_ids: ids, ...BORDER_DEFAULT } : { clip_ids: ids, off: true })} />}>
+    <Section title="Border" defaultOpen={!!b} on={!!b} extra={<Toggle label="Border" on={!!b} onChange={(on) => run(on ? "Border" : "No border", "set_border", on ? { clip_ids: ids, ...BORDER_DEFAULT } : { clip_ids: ids, off: true })} />}>
       {b && (
         <>
           <Row label="Color">

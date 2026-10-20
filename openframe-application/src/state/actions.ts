@@ -9,6 +9,8 @@ import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, withChan
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
+import { runCommand } from "../lib/commands";
+import { enableToggle } from "../lib/clipEnable";
 import { nudgeClips } from "../lib/project/gaps";
 import { exportRange } from "../lib/export";
 import { groupClips, regroupCopies, ungroupClips } from "../lib/project/groups";
@@ -270,13 +272,15 @@ provide({
     const f = store.get().playhead;
     store.select(store.get().project.tracks.flatMap((t) => t.clips.filter((c) => c.start + c.duration > f).map((c) => c.id)));
   },
+  // One switch for the selection, through the command an agent runs
+  // (ADR-109): toggling each clip turned a mixed selection inside out
+  // under a menu item that named only the clicked clip.
   toggleClipEnabled: () => {
-    const sel = store.get().selection;
-    if (!sel.length) return;
-    store.edit("Deactivate clip", (p) => {
-      for (const id of sel) p = ops.updateClip(p, id, (c) => ({ ...c, disabled: !c.disabled }));
-      return p;
-    });
+    const p = store.get().project;
+    const clips = store.get().selection.map((id) => ops.findClip(p, id)?.clip).filter((c): c is Clip => !!c);
+    if (!clips.length) return;
+    const { enabled, label } = enableToggle(clips);
+    store.edit(label, (q) => runCommand(q, "set_clip_enabled", { clip_ids: clips.map((c) => c.id), enabled }));
   },
   nextMarker: () => {
     const s = store.get();

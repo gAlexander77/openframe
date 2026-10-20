@@ -116,3 +116,11 @@ export function formatParam(info: ParamInfo, stored: number): string {
   const text = Number.isFinite(v) ? v.toFixed(info.digits) : "-∞";
   return info.unit === "%" || info.unit === "°" || !info.unit ? `${text}${info.unit}` : `${text} ${info.unit}`;
 }
+
+/** A parameter's name where its path alone tells it (an effect's own label
+ * needs its clip), else undefined: an agent's set_param reads in its undo
+ * step and notice as the keyframe panel names the lane (ADR-109). */
+export function paramLabel(path: string): string | undefined {
+  const { label } = paramInfo(path, {} as Clip, { width: 1, height: 1 });
+  return label === path ? undefined : label;
+}

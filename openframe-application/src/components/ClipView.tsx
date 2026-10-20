@@ -248,7 +248,8 @@ export const ClipView = memo(function ClipView(p: Props) {
         e.preventDefault();
         (document.activeElement as HTMLElement | null)?.blur();
       }}
-      aria-label={`${name}, ${formatDuration(framesToSeconds(c.start, p.fps))} to ${formatDuration(framesToSeconds(c.start + c.duration, p.fps))}${p.selected ? ", selected" : ""}`}
+      // An off clip says so to a screen reader, as its hatching does to the eye.
+      aria-label={`${name}, ${formatDuration(framesToSeconds(c.start, p.fps))} to ${formatDuration(framesToSeconds(c.start + c.duration, p.fps))}${c.disabled ? ", deactivated" : ""}${p.selected ? ", selected" : ""}`}
       onContextMenu={(e) => p.onContext(e, c)}
       // CapCut: double-click a caption (or title) on the timeline to edit its
       // words; ours opens the canvas editor. The blade's double-click just cuts.

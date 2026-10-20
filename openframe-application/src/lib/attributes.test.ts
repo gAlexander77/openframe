@@ -45,3 +45,22 @@ it("validates every target before editing and copies LUT references across proje
   expect(() => pasteAttributes(p, [b.id, "locked"], copy, ["color"])).toThrow("unlocked");
   expect(b.adjust.exposure).toBe(0);
 });
+it("pastes a picture's shadow and border with its transform, and a voice's compressor with its EQ (ADR-109)", () => {
+  const { p, a, b } = setup();
+  a.shadow = { color: "#000000", blur: 60, x: 0, y: 24, opacity: 0.5 };
+  a.border = { color: "#ffffff", width: 10, opacity: 1 };
+  a.keyframes = { ...a.keyframes, "border.width": [{ f: 0, v: 0 }, { f: 30, v: 10 }] };
+  const c = pasteAttributes(p, [b.id], copyAttributes(p, a.id), ["transform"]).tracks[0].clips[1] as ColorClip;
+  expect(c.shadow).toEqual(a.shadow);
+  expect(c.border).toEqual(a.border);
+  expect(c.keyframes?.["border.width"]).toEqual([{ f: 0, v: 0 }, { f: 30, v: 10 }]);
+  // Color alone leaves the frame as it was.
+  expect((pasteAttributes(p, [b.id], copyAttributes(p, a.id), ["color"]).tracks[0].clips[1] as ColorClip).border).toBeUndefined();
+
+  const q = createProject();
+  const voice = clipForAsset({ id: "v", src: "v.wav", name: "v", kind: "audio", duration: 10, hasAudio: true, hasVideo: false }, 0, q.fps);
+  if (voice.type !== "audio") throw new Error();
+  voice.compressor = { threshold: -26, ratio: 4, knee: 6, attack: 0.005, release: 0.15, makeup: 0 };
+  q.tracks = [{ ...createTrack("audio", "Voice"), clips: [voice, { ...voice, id: "w", start: 400, compressor: undefined }] }];
+  expect(pasteAttributes(q, ["w"], copyAttributes(q, voice.id), ["audio"]).tracks[0].clips[1]).toMatchObject({ compressor: voice.compressor });
+});

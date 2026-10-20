@@ -51,7 +51,9 @@ one Undo step, and so is dragging in a color picker. A typed value applies
 when you press Enter or leave the field, including by clicking another
 clip; Escape puts the old value back. An empty or non-numeric entry
 changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
-open or closed as you left them, across clips and reloads.
+open or closed as you left them, across clips and reloads. A section with
+a switch in its header (Border, Shadow, Colorize, a title's Glow) opens
+when you switch it on, so its settings show.
 
 The inspector fits any width its splitter gives it. Narrower than about
 340 px, each slider takes a line of its own, with its keyframe buttons,
@@ -191,13 +193,23 @@ Split, **Speed…** (opens the Speed tab), **Reverse** (shows a check while
 the clip plays backward), **Copy effects** and **Paste effects** (onto
 every selected clip), Rename, Ungroup and Duplicate, among others.
 
+**Deactivate clip** in the same menu (or its shortcut, V by default) turns
+the selected clips off: they stay in place, hatched, and preview and
+export skip them. With some clips off and some on, it turns them all off;
+when every selected clip is off, the menu reads **Activate clip** and
+turns them all back on. Undo names which it did.
+
 Name a clip with right-click > **Rename…**, or double-click the name on
 its strip (a title's double-click edits its words, so use the menu for
 titles). Clear the name to show the file's name again.
 
 Add a transition between touching clips, or click its timeline marker, to
 open **Transition** settings. Undo history gives agent edits readable names
-such as **Add clip** and **Change opacity**.
+such as **Add clip**, **Change opacity** and **Change border width**.
+
+A title an AI agent gave a drop shadow, a border or a colorize shows them
+in its **Text** tab (as **Drop shadow**, **Border** and **Colorize**), where
+you can change them or switch them off.
 
 ## Compose with viewer guides
 
@@ -428,7 +440,8 @@ projects on this device. Rename/delete them in the same dialog. Applying is
 undoable; deleting a saved preset does not remove already applied effects.
 
 Use **Copy attributes** in a clip inspector, select the destination clip(s),
-then **Paste attributes…**. Choose transform, color, audio or effects. Checked
+then **Paste attributes…**. Choose transform (with crop, opacity, the drop
+shadow and the border), color, audio (with the EQ and compressor) or effects. Checked
 groups replace those settings and their animation; effects append unless
 **Replace existing effects** is selected. Timing and source offsets stay put.
 Unavailable groups need compatible targets on unlocked tracks. Undo restores
@@ -513,6 +526,21 @@ A multi-selection has one viewer box: drag it to move, use a corner to scale the
 ## Motion path points
 
 Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
+
+## Crossfade audio clips
+
+Where one audio clip ends and another starts on the same track, right-click
+the first and choose **Crossfade into next clip**: the first fades out as
+the second fades in, at constant power, over the seconds before the cut, so
+the cut itself still lands where you put it. It takes the default
+transition length from **Preferences** (0.5 s), or as much as the clips
+allow when that is less.
+The timeline draws it as a small marker at the end of the first clip;
+click it to open the clip's **Audio** tab, where **Crossfade** sets its
+length (0 removes it). The second clip rises from the part of its file
+before its start, so it needs some: when it starts at the very beginning
+of its file, the menu says to trim its start first. Choose the menu item
+again to remove the crossfade.
 
 ## Mix tracks
 

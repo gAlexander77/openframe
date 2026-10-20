@@ -15,6 +15,9 @@ import { expandGroups, syncOffsets } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
 import { CLIP_LABELS } from "../lib/catalog";
+import { enableToggle } from "../lib/clipEnable";
+import { crossfadeJoin, newCrossfade } from "../lib/crossfadeJoin";
+import { audioCrossfade } from "../lib/audio";
 import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
@@ -746,6 +749,20 @@ export function Timeline() {
         toast((err as Error).message, "error");
       }
     };
+    // An audio clip crossfades into the next one where they meet (ADR-109):
+    // on with the transitions' default length, as far as the join allows;
+    // where none fits, choosing it says what to change.
+    const join = clip.type === "audio" ? crossfadeJoin(p0, clip.id) : null;
+    const crossfade = () => {
+      if (!join) return;
+      if (!join.plays && join.why) return toast(join.why, "error");
+      const seconds = join.plays ? 0 : newCrossfade(join, transitionSeconds());
+      try {
+        edit(seconds ? "Crossfade" : "Remove crossfade", (p) => runCommand(p, "set_crossfade", { clip_id: clip.id, seconds }));
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    };
     // Effects go to unlocked clips that carry them, as the inspector's
     // Paste effects does.
     const effectTargets = sel.filter((l) => "effects" in l.clip && !l.track.locked).map((l) => l.clip.id);
@@ -775,6 +792,7 @@ export function Timeline() {
         disabled: clip.type !== "video" && clip.type !== "image" && clip.type !== "audio",
         onSelect: () => void replaceFromPicker(clip.id),
       },
+      ...(clip.type === "audio" ? ([{ label: "Crossfade into next clip", checked: !!join?.plays, disabled: !join || lockedTrack, onSelect: crossfade }] as MenuItem[]) : []),
       ...(syncVideo && syncSound
         ? ([
             { label: "Sync audio by waveform", onSelect: () => sync(false) },
@@ -788,7 +806,8 @@ export function Timeline() {
       { label: "Rename…", disabled: lockedTrack, onSelect: () => setRenaming(clip.id) },
       { action: "groupClips", disabled: store.get().selection.length < 2 },
       { action: "ungroupClips", disabled: !sel.some((l) => l.clip.group) },
-      { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
+      // Named by what it does to the whole selection (ADR-109).
+      { action: "toggleClipEnabled", label: enableToggle(sel.map((l) => l.clip)).label },
       { action: "createCompound" },
       ...(clip.type === "compound"
         ? ([{ label: "Open compound clip", onSelect: () => openCompound(clip.id) }, { action: "breakCompound", label: "Break apart" }] as MenuItem[])
@@ -907,6 +926,34 @@ export function Timeline() {
                           e.stopPropagation();
                           store.select([c.id]);
                           store.set({ transitionEdit: c.id });
+                        }}
+                      >
+                        <Blend size={12} />
+                      </button>
+                    );
+                  })}
+                  {/* An audio crossfade (ADR-104) where the mix plays one:
+                      over the seconds before the cut, so it ends there. */}
+                  {row.track.clips.map((c, i) => {
+                    const next = row.track.clips[i + 1];
+                    if (c.type !== "audio" || !c.crossfade || next?.type !== "audio") return null;
+                    const x = audioCrossfade(c, next, project.fps);
+                    if (!x) return null;
+                    const cut = (c.start + c.duration + (drop?.shifts.get(c.id) ?? 0)) * zoom;
+                    const w = Math.max(16, x * (project.fps.num / project.fps.den) * zoom);
+                    const h = Math.min(22, row.height - 8);
+                    return (
+                      <button
+                        key={`xf-${c.id}`}
+                        className="tl-transition tl-crossfade"
+                        style={{ left: cut - w, width: w, height: h, top: (row.height - h) / 2 }}
+                        data-tip={`Crossfade ${x < 0.1 ? x.toFixed(3) : x.toFixed(2)} s`}
+                        aria-label={`Edit crossfade, ${+x.toFixed(3)} seconds`}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          store.select([c.id]);
+                          store.set({ transitionEdit: null });
+                          showInspectorTab("audio");
                         }}
                       >
                         <Blend size={12} />
