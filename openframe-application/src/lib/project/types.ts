@@ -157,6 +157,10 @@ export interface SpeechInfo {
   /** The speed was chosen to land on that, not asked for: a retake with
    * new words chooses again. */
   speedChosen?: boolean;
+  /** Its captions show this many words at a time (1-3), each word timed
+   * to the voice (add_voiceover caption_words, ADR-115): a retake captions
+   * the new take the same way. */
+  captionWords?: number;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */

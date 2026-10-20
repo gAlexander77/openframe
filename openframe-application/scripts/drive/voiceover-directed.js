@@ -101,7 +101,7 @@ async (page) => {
   }, L[0].voice_clip);
 
   // ---- listen back ---------------------------------------------------------------------
-  const review = await call("review_voiceover", {});
+  const review = await call("review_voiceover", { detail: "full" });
   const R = review.lines;
   details.review = {
     ok: R.length === 4 && R.every((l) => l.match >= 0.85 && l.pace.over_speech.words_per_second > 1.8 && l.pace.over_speech.words_per_second < 4 && l.pitch && l.voice_above_music_lu !== null && Number.isFinite(l.loudness_lufs)),
@@ -115,9 +115,10 @@ async (page) => {
   details.pronounced = { ok: !R[0].differences.some((d) => /open|frame/i.test(d.script ?? "")) && !R[1].differences.some((d) => /mcp/i.test(d.script ?? "")), r0: R[0].differences, r1: R[1].differences };
 
   // ---- the fix it names, applied, clears the verdict ---------------------------------------
-  const duck = R.flatMap((l) => l.fixes ?? []).find((f) => f.tool === "duck_under_speech");
+  // One duck of the music track for every line short of its margin (ADR-115): the lines point at it.
+  const duck = (review.summary.fixes ?? []).find((f) => f.tool === "duck_under_speech" && f.args?.track_id);
   if (duck) await call(duck.tool, duck.args);
-  const again = await call("review_voiceover", {});
+  const again = await call("review_voiceover", { detail: "full" });
   // The measured depth lands each line near 12 LU over the music, not under it nor ducked to nothing.
   details.fixApplied = { ok: !!duck && again.lines.every((l) => l.voice_above_music_lu >= 8 && l.voice_above_music_lu <= 16) && again.summary.to_fix === 0, depth: duck?.args.depth, over: again.lines.map((l) => l.voice_above_music_lu), verdicts: again.lines.map((l) => l.verdict) };
 

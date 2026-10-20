@@ -30,7 +30,7 @@ async (page) => {
 
   // ---- a project, answered in a few words ------------------------------------------
   const fresh = await text("new_project", { name: "Launch film check" });
-  details.newProject = { ok: !!fresh.counts && !fresh.tracks && /describe_project/.test(fresh.note), fresh };
+  details.newProject = { ok: !!fresh.counts && fresh.tracks?.length === 1 && fresh.tracks[0].main === true && fresh.tracks[0].clips === 0 && /describe_project/.test(fresh.note), fresh };
 
   // A sound that fades out in its own audio: 7 s of tone, the last 1.5 s
   // fading to nothing, written beside the drive's other scratch and served.

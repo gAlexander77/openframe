@@ -43,7 +43,7 @@ async (page) => {
     });
   }, [tool.voice_clip, home.voice_clip]);
   const t0 = Date.now();
-  const review = await call("review_voiceover", { music: false });
+  const review = await call("review_voiceover", { music: false, detail: "full" });
   const R = Object.fromEntries(review.lines.map((l) => [l.voice_clip, l]));
   const diffOf = (l, word) => R[l.voice_clip].differences.find((d) => d.script === word);
   details.secondHearing = {
@@ -70,7 +70,7 @@ async (page) => {
   };
   // The applied respelling makes the voice say "home": the retake is heard right.
   await call("retake_voiceover", fh.args);
-  const again = await call("review_voiceover", { clip_ids: [home.voice_clip], music: false });
+  const again = await call("review_voiceover", { clip_ids: [home.voice_clip], music: false, detail: "full" });
   details.respellingWorks = { ok: !again.lines[0].differences.some((d) => d.script === "home" && d.likely !== "recognizer"), heard: again.lines[0].heard, differences: again.lines[0].differences };
   // The pace is kept with the script through a retake.
   await call("retake_voiceover", { clip_id: slow.voice_clip, speed: 0.72 });

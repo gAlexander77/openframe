@@ -30,6 +30,9 @@ export interface Finding {
   /** What to call (or do) to fix it. */
   fix: string;
   clip_id?: Id;
+  /** Every clip a finding about several names (a line of captions; the
+   * same finding on many clips, grouped), clip_id the first. */
+  clip_ids?: Id[];
   /** A title inside a compound clip: the compound clip that shows it
    * (clip_id is the title's own id on the compound's timeline). */
   compound_clip_id?: Id;
@@ -343,6 +346,52 @@ export function shownCuts<T extends { start: number; duration: number; trackInde
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 
+/** A caption read as part of a line: at most this many words... */
+const CHUNK_WORDS = 3;
+/** ...following the caption before it on its track within this many seconds. */
+const CHUNK_GAP = 0.3;
+/** A chunk up for less than this flashes by, however its line reads (the
+ * one-word auto captions hold each word at least this long). */
+const CHUNK_MIN = 0.25;
+
+export interface CaptionShown {
+  id: Id;
+  track: Id;
+  /** Seconds. */
+  start: number;
+  end: number;
+  text: string;
+}
+
+/**
+ * Captions shown a few words at a time (word-by-word, CapCut's pop
+ * captions, add_voiceover's caption_words): runs of two or more captions of
+ * at most three words, each following the one before on its track within
+ * 0.3 s. Such a run is read as the line it makes, so its reading speed is
+ * the line's characters over the run's seconds, not each chunk's; a chunk
+ * still flashes by under 0.25 s. The film test's 25 warnings were chunks
+ * up 0.3-0.6 s of lines that read at 9-14 characters a second (ADR-115).
+ */
+export function captionRuns(caps: CaptionShown[]): CaptionShown[][] {
+  const out: CaptionShown[][] = [];
+  const sorted = [...caps].sort((a, b) => a.track.localeCompare(b.track) || a.start - b.start);
+  let run: CaptionShown[] = [];
+  const flush = () => {
+    if (run.length >= 2) out.push(run);
+    run = [];
+  };
+  for (const c of sorted) {
+    const prev = run.at(-1);
+    const chunk = words(c.text) <= CHUNK_WORDS;
+    if (prev && (!chunk || prev.track !== c.track || c.start - prev.end > CHUNK_GAP + 1e-6)) flush();
+    if (chunk) run.push(c);
+  }
+  flush();
+  return out;
+}
+
+const shownChars = (text: string) => text.replace(/\s+/g, " ").trim().length;
+
 export function checkProject(p: Project, kind: CheckKind = "any", measured: Measured = {}) {
   const out: Finding[] = [];
   const sec = (f: number) => +framesToSeconds(f, p.fps).toFixed(2);
@@ -363,6 +412,9 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   const smallCaptions: { id: Id; at: number; size: number; need: number; why: string }[] = [];
   // Canvas fractions from the center, as transform.x / y use them.
   const z = { safe: 0.5 - TITLE_SAFE, top: VERTICAL_SAFE.top - 0.5, bottom: 0.5 - VERTICAL_SAFE.bottom, left: VERTICAL_SAFE.left - 0.5, right: 0.5 - VERTICAL_SAFE.right };
+  // Captions shown a few words at a time are read as the line they make.
+  const runs = captionRuns(texts.filter((s) => s.c.caption).map((s) => ({ id: s.c.id, track: s.track.id, start: framesToSeconds(s.start, p.fps), end: framesToSeconds(s.start + s.duration, p.fps), text: s.c.text })));
+  const inRun = new Set(runs.flatMap((r) => r.map((c) => c.id)));
 
   for (const s of texts) {
     const { c, track } = s;
@@ -391,8 +443,10 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
       else add({ rule: "text_too_small", level: "warning", ...where0, at: sec(s.start), message: `${name} is ${pct(size)}% of the frame's height (size ${Math.round(size)}${outer ? " as its compound clip draws it" : ""}); ${why}`, fix: outer ? `transform.scale on the compound clip ${outer.id} up by ${+(minSize / size).toFixed(2)} times, or ${inside(`set_text style.size ${need} or more`)}` : `set_text style.size ${need} or more (wrap it with style.maxWidth if it grows too wide)` });
     }
     const seconds = framesToSeconds(s.duration, p.fps);
-    if (c.caption) {
-      const cps = c.text.replace(/\s+/g, " ").trim().length / Math.max(seconds, 1e-3);
+    if (c.caption && inRun.has(c.id)) {
+      if (seconds < CHUNK_MIN) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption of a line shown a few words at a time flashes by: "${c.text}" for ${seconds.toFixed(2)} s (each chunk at least ${CHUNK_MIN} s)`, fix: "join it to the chunk before or after (fewer, longer chunks), or trim_clip it longer" });
+    } else if (c.caption) {
+      const cps = shownChars(c.text) / Math.max(seconds, 1e-3);
       if (cps > 20 || seconds < 5 / 6) add({ rule: "caption_too_fast", level: "warning", ...where0, at: sec(s.start), message: `A caption shows ${cps.toFixed(0)} characters a second for ${seconds.toFixed(2)} s (keep under 20 a second, at least 0.83 s)`, fix: "fewer words per caption, or a longer caption (trim_clip)" });
     } else {
       // A countdown digit or a one-word hit reads at a glance.
@@ -430,6 +484,12 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   // A title behind its subject that the subject hides (text_behind_subject
   // on a shape the subject now fills), as rendered.
   for (const h of measured.hidden ?? []) add({ rule: "title_hidden_by_subject", level: "warning", clip_id: h.clipId, at: sec(h.frame), message: h.message, fix: h.fix });
+
+  for (const run of runs) {
+    const seconds = run.at(-1)!.end - run[0].start;
+    const cps = shownChars(run.map((c) => c.text).join(" ")) / Math.max(seconds, 1e-3);
+    if (cps > 20) add({ rule: "caption_too_fast", level: "warning", clip_id: run[0].id, clip_ids: run.map((c) => c.id), at: +run[0].start.toFixed(2), message: `${run.length} captions shown a few words at a time read ${cps.toFixed(0)} characters a second over ${seconds.toFixed(2)} s, ${+run[0].start.toFixed(2)}-${+run.at(-1)!.end.toFixed(2)} s (keep a line under 20 a second)`, fix: "fewer words, or the captions held longer (trim_clip), or the voice read slower (retake_voiceover words_per_second)" });
+  }
 
   if (smallCaptions.length) {
     const [first] = smallCaptions, need = Math.max(...smallCaptions.map((x) => x.need));

@@ -37,6 +37,38 @@ it("flags captions read faster than 20 characters a second", () => {
   expect(rules(p)).toContain("caption_too_fast");
 });
 
+it("judges captions shown a few words at a time over the spoken line they make (ADR-115)", () => {
+  // The film test's word-by-word captions: each chunk is up well under
+  // 0.83 s, but the line they make reads at 9-11 characters a second.
+  const chunks = [
+    { start: 3.133, end: 4.267, text: "Day one.", words: [3.133, 3.44] },
+    { start: 4.267, end: 4.867, text: "They strap", words: [4.267, 4.54] },
+    { start: 4.867, end: 5.467, text: "you to a", words: [4.867, 4.98, 5.1] },
+    { start: 5.467, end: 6.333, text: "fire...", words: [5.467] },
+    { start: 6.333, end: 7.4, text: "and let go.", words: [6.333, 6.52, 6.9] },
+  ];
+  let p = base();
+  p = runCommand(p, "add_color_clip", { color: "#203040", start: 6, duration: 4, track_id: p.tracks[0].id });
+  p = runCommand(p, "add_captions", { captions: chunks });
+  expect(rules(p, "social_short")).not.toContain("caption_too_fast");
+  // The same chunks crammed into a second and a half read too fast as a line: one finding for the run.
+  let fast = base();
+  fast = runCommand(fast, "add_captions", { captions: chunks.map((c, i) => ({ text: c.text, start: 1 + i * 0.3, end: 1.3 + i * 0.3 })) });
+  const found = checkProject(fast, "social_short").findings.filter((f) => f.rule === "caption_too_fast");
+  expect(found).toHaveLength(1);
+  expect(found[0].message).toMatch(/^5 captions shown a few words at a time read \d+ characters a second over 1.50 s/);
+  // A chunk that flashes by is still named, however the line reads.
+  let flash = base();
+  flash = runCommand(flash, "add_captions", { captions: [{ start: 1, end: 2, text: "Three." }, { start: 2, end: 2.1, text: "Two." }, { start: 2.1, end: 3, text: "One." }] });
+  const flashed = checkProject(flash, "social_short").findings.filter((f) => f.rule === "caption_too_fast");
+  expect(flashed).toHaveLength(1);
+  expect(flashed[0].message).toMatch(/for 0.10 s/);
+  // A full caption on its own is judged as before.
+  let one = base();
+  one = runCommand(one, "add_captions", { captions: [{ start: 1, end: 1.5, text: "Hi there" }] });
+  expect(rules(one)).toContain("caption_too_fast");
+});
+
 it("errs on strobes over three a second and on black holes in the main track", () => {
   let p = base();
   const id = p.tracks[0].clips[0].id;

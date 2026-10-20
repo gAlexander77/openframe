@@ -130,7 +130,7 @@ async (page) => {
   await text("new_project", { name: "io-surface scratch 2" }); // saves the film
   const reopened = await text("open_project", { project: projectId });
   details.compoundsQuiet = {
-    ok: !beside.includes("compounds") && beside.length < 900 && whole.includes("\"compounds\"") && reopened.counts.compounds === 3 && reopened.tracks === undefined,
+    ok: !beside.includes("compounds") && beside.length < 900 && whole.includes("\"compounds\"") && reopened.counts.compounds === 3 && reopened.tracks.every((t) => typeof t.clips === "number"), // track ids, never their clips (ADR-115)
     answerBytes: beside.length,
     describeBytes: whole.length,
     openProjectBytes: JSON.stringify(reopened).length,

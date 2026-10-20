@@ -49,7 +49,7 @@ async (page) => {
   const lows = keys.filter((k) => k[1] < 0.9);
   await call("undo");
   const undone = (await call("describe_project")).tracks.flatMap((t) => t.clips).find((c) => c.id === tagline.voice_clip);
-  const review = await call("review_voiceover", {});
+  const review = await call("review_voiceover", { detail: "full" });
   const moved = await call("move_clip", { clip_id: vo.lines[0].voice_clip, start: 2 });
   const each = duck.balance?.per_line?.each ?? [];
   const details = {

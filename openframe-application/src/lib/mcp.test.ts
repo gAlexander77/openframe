@@ -449,7 +449,9 @@ describe("what the launch film found (2026-10-18)", () => {
     const h = windows();
     h.openProject = async () => describeProject(h.project);
     const r = await run(h, "open_project", { project: "p1" });
-    expect(r).toEqual({ name: h.project.name, canvas: { width: 1920, height: 1080 }, fps: 30, duration: 5, counts: { tracks: 1, clips: 2, assets: 1, markers: 0, compounds: 2 }, note: expect.stringContaining("describe_project") });
+    const main = h.project.tracks[0];
+    // The tracks' ids: the film test added a clip to learn the main track's (ADR-115).
+    expect(r).toEqual({ name: h.project.name, canvas: { width: 1920, height: 1080 }, fps: 30, duration: 5, counts: { tracks: 1, clips: 2, assets: 1, markers: 0, compounds: 2 }, tracks: [{ id: main.id, kind: "video", name: main.name, main: true, clips: 2 }], note: expect.stringContaining("describe_project") });
   });
 
   it("places a list of sound effects in one call, with their volumes, as one host call", async () => {
@@ -633,7 +635,8 @@ describe("what the Codex film test found (2026-10-19)", () => {
     h.exec = ((name: string) => (name === "open_project_file" ? { opened: true, project: describeProject(h.project) } : null)) as unknown as typeof h.exec;
     const opened = await run(h, "open_project_file", { path: "D:/films/cut.json" });
     expect(opened).toEqual({ opened: true, project: expect.objectContaining({ counts: expect.objectContaining({ compounds: 3 }), note: expect.stringContaining("describe_project") }) });
-    expect(opened.project.tracks).toBeUndefined();
+    // The tracks' ids and clip counts, never their clips (ADR-115).
+    expect(opened.project.tracks.every((t: { clips: unknown }) => typeof t.clips === "number")).toBe(true);
   });
 });
 

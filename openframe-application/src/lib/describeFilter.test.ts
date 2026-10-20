@@ -91,6 +91,26 @@ describe("describe_project's filters", () => {
     expect(i.not_found).toBeUndefined();
   });
 
+  it("lists every track over a stretch, those with nothing in it empty (ADR-115)", () => {
+    // The film test learned a track's id by adding a clip to it: a stretch
+    // left out the tracks with nothing playing in it.
+    const d = filterDescription(all, { start: 13, end: 14 }) as Desc;
+    expect(d.tracks.map((t) => t.id)).toEqual(all.tracks.map((t) => t.id));
+    expect(d.tracks.find((t) => t.main)!.clips).toEqual([]);
+    expect(d.shown?.tracks).toBeUndefined();
+  });
+
+  it("lists the tracks alone, with how many clips each holds, for clips false", () => {
+    const d = filterDescription(all, { clips: false }) as Desc & { tracks: { clips: unknown }[] };
+    expect(d.tracks).toEqual(all.tracks.map(({ clips: c, ...t }) => ({ ...t, clips: c.length })));
+    expect(d.assets).toBeUndefined();
+    expect(d.markers).toBeUndefined();
+    expect(d.compounds).toBeUndefined();
+    expect(JSON.stringify(d).length).toBeLessThan(JSON.stringify(all).length / 3);
+    // A list asked for stays.
+    expect((filterDescription(all, { clips: false, markers: true }) as Desc).markers).toHaveLength(6);
+  });
+
   it("is what the tool answers over MCP", async () => {
     const host = { describe: () => describeProject(p) } as unknown as McpHost;
     const call = async (args: Record<string, unknown>) => {

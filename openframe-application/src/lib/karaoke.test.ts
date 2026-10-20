@@ -23,6 +23,14 @@ it("names the word being spoken, and gives up when the text was edited", () => {
   expect(spokenWord("one", undefined, 0)).toBeUndefined();
 });
 
+it("never lights a caption's only word: it keeps the caption's color (ADR-115)", () => {
+  // The film test's "THREE." and "STATION," drew in the highlight color
+  // from start to end, so a cyan caption with a white highlight read white.
+  expect(spokenWord("THREE.", [0], 0)).toBeUndefined();
+  expect(spokenWord("THREE.", [0], 12)).toBeUndefined();
+  expect(spokenWord("how's the", [0, 8], 9)).toBe(1);
+});
+
 it("stores times on caption clips that follow splits", () => {
   let p = addCaptions(createProject(), [{ start: 1, end: 3, text: "one two three", words: [1, 1.5, 2.5] }]);
   const c = p.tracks.flatMap((t) => t.clips)[0] as TextClip;
@@ -43,7 +51,8 @@ it("splits a caption where the next word is spoken, each half with its words", (
   expect(b.id).toBe(second);
   expect(b.start).toBe(c.start + 45);
   expect(a.wordTimes).toEqual([0, 15]);
-  expect(spokenWord(b.text, b.wordTimes, 0)).toBe(0);
+  // "three" is spoken as its half starts (a lone word is never lit, ADR-115).
+  expect(b.wordTimes).toEqual([0]);
   // At either end there is nothing to split off.
   expect(splitCaption(p, c.id, 0).project).toBe(p);
   expect(splitCaption(p, c.id, c.text.length).project).toBe(p);

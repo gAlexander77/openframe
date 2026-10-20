@@ -24,6 +24,7 @@ import type { SubjectNote } from "../lib/reframe";
 import type { VisualClip } from "../lib/project/types";
 import { lookAtShots } from "./subjects";
 import { seenLetters, seenShots, seenTexts } from "../lib/designCheck";
+import { sheetGrid, tileSize } from "../lib/sheetGrid";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { rootInPoint, rootOutPoint, store } from "./store";
@@ -490,25 +491,38 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
  * cut before rendering any. A tile where the framing cuts a shot's
  * subject outlines the subject in orange and says so; the reports list
  * every such shot with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[] }> {
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[] }> {
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
-  const th = o.tileHeight ?? 220, gap = 6, label = 22;
-  const rows = items.map(({ project: q, notes, titles, overlaps }) => ({ q, notes, titles, overlaps, tw: Math.round((th * q.width) / q.height) }));
-  const width = Math.max(...rows.map((r) => gap + at.length * (r.tw + gap)), 480);
-  const out = new OffscreenCanvas(width, gap + rows.length * (label + th + gap));
+  const gap = 6, label = 22;
+  // Each version's moments wrap into rows inside the sheet's width (ADR-115).
+  const blocks = items.map(({ project: q, notes, titles, overlaps }) => {
+    const { tw, th } = tileSize(q.width, q.height, o.tileWidth);
+    return { q, notes, titles, overlaps, tw, th, ...sheetGrid(tw, at.length, gap) };
+  });
+  const tops: number[] = [];
+  let height = gap;
+  for (const b of blocks) {
+    tops.push(height);
+    height += label + b.rows * (b.th + gap);
+  }
+  const width = Math.max(...blocks.map((b) => gap + b.columns * (b.tw + gap)), 480);
+  const out = new OffscreenCanvas(width, height);
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw, notes, titles, overlaps }] of rows.entries()) {
-    const y = gap + ri * (label + th + gap);
+  for (const [ri, { q, tw, th, columns, notes, titles, overlaps }] of blocks.entries()) {
+    const top = tops[ri];
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
     g.font = "bold 14px sans-serif";
-    g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, y + 16);
-    for (const [ci, share] of at.entries()) {
+    g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, top + 16);
+    for (const [i, share] of at.entries()) {
       const frame = Math.min(length - 1, Math.max(0, Math.round(share * length)));
       const bmp = await createImageBitmap(await exportStill(q, frame, tw * 2, th * 2));
+      const ci = i % columns;
+      // y + label is the tile's top, as before: a wrapped row sits one tile lower.
+      const y = top + Math.floor(i / columns) * (th + gap);
       const x = gap + ci * (tw + gap);
       g.drawImage(bmp, x, y + label, tw, th);
       bmp.close();
