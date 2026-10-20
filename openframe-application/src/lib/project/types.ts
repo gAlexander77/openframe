@@ -120,6 +120,10 @@ export interface Asset {
   /** The built-in sound this file was made from (lib/sfx.ts, an effect;
    * lib/ambience.ts, a bed with its seed): adding it again reuses it. */
   sound?: { id: string; seed?: number };
+  /** The song's grid, given (set_music_grid) or known from making it
+   * (generate_music): analyze_music, mark_beats and check_project read
+   * the song through it. */
+  musicGrid?: MusicGrid;
 }
 
 export interface SpeechInfo {
@@ -208,6 +212,27 @@ export interface Marker {
   frame: number;
   label: string;
   color: string;
+  /** A mark of a clip's media (a beat, a bar, a part or the drop of a
+   * song: analyze_music, mark_beats, set_music_grid, generate_music): the
+   * clip and the second of its file the marker stands on. It follows the
+   * clip when the clip is moved, trimmed, split or sped up, and goes when
+   * nothing plays that second any more (lib/markers.ts followClips). */
+  follows?: { clip: Id; at: number };
+}
+
+/** The parts a song's grid names. */
+export type MusicPart = "intro" | "verse" | "build" | "drop" | "breakdown" | "outro";
+
+/** A song's grid as someone who knows it gives it (a cue sheet, the
+ * composer's notes), in its file's own seconds, 4/4: analysis reads the
+ * song through it instead of guessing (set_music_grid, ADR-101). */
+export interface MusicGrid {
+  /** Beats a minute. */
+  bpm: number;
+  /** A bar's first beat. */
+  firstDownbeat: number;
+  /** The parts, each from its `at` to the next one's; a drop after another part is a drop. */
+  sections?: { at: number; label: MusicPart }[];
 }
 
 // ---- Clips ---------------------------------------------------------------

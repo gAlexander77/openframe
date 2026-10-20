@@ -20,8 +20,9 @@ import { adoptAndImport } from "./media";
 import { cutOutImage, makeMatte } from "../engine/cutout";
 import { SFX } from "../lib/sfx";
 import { BEATS_PER_BAR, detectBeats, musicStructure, type MusicStructure } from "../lib/analysis/beats";
-import { confidenceNote, mapMusic, readMusicHints, type MappedMusic } from "../lib/analysis/musicMap";
-import { MUSIC_MARKERS, SECTION_NAMES, type MusicMarkerKind } from "../lib/epic";
+import { confidenceNote, gridHints, mapMusic, readMusicHints, type MappedMusic } from "../lib/analysis/musicMap";
+import type { StructureHints } from "../lib/analysis/beats";
+import { markMusicClip, MUSIC_MARKERS, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
@@ -496,29 +497,40 @@ export async function splitScenes(clipId?: Id, opts: Partial<SceneSettings> = {}
   return { ...res, output: o.output };
 }
 
-export interface BeatEdit extends BeatAnalysis {
+export interface BeatEdit {
+  /** Beats a minute as the clip plays them; file_bpm, the file's own, when it plays at another speed. */
+  bpm: number;
+  file_bpm?: number;
+  /** Timeline seconds of the beats marked. */
+  beats: number[];
+  /** Markers added: 0 when the clip's beats were marked already (they are replaced, never doubled). */
   markers: number;
+  /** The song's grid was given (set_music_grid), not guessed. */
+  grid?: "given";
 }
 
-/** Drop a marker on every (Nth) beat of a clip as one undoable edit. */
+/**
+ * Drop a marker on every (Nth) beat of a clip as one undoable edit, from
+ * the whole song's reading (analyze_music's, through its given grid when
+ * it has one), so a trimmed or moved clip keeps the song's beats. The
+ * markers follow the clip and replace its earlier Beat markers.
+ */
 export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): Promise<BeatEdit> {
-  const signal = projectWork.signal();
-  const id = resolve("beats", clipId).clip.id;
-  const every = opts.every ?? state.settings.beats.every;
-  const res = await analyzeBeats(id);
-  signal.throwIfAborted();
-  const clip = stillThere(id);
-  const picked = res.beats.filter((_, i) => i % every === 0);
+  const every = Math.max(1, opts.every ?? state.settings.beats.every);
+  const song = await readSong(clipId, {});
+  const fps = store.get().project.fps;
+  const mapped = mapMusic(song.m, song.clip, fps, song.from);
+  const picked = mapped.beats.filter((_, i) => i % every === 0);
   if (!picked.length) {
     finish("beats", "No beat found");
-    return { ...res, markers: 0 };
+    return { bpm: mapped.bpm, beats: [], markers: 0 };
   }
-  const times = timelineTimes(clip, picked);
   const before = store.get().project.markers.length;
-  edit(`Mark ${plural(times.length, "beat")}`, (p) => runCommand(p, "add_markers", { times, label: "Beat", color: "#f5c543" }));
+  edit(`Mark ${plural(picked.length, "beat")}`, (p) => markMusicClip(p, song.clip.id, { beats: song.m.beats.map((t) => t + song.from), downbeats: [], phrases: [], sections: [], drops: [] }, ["beats"], every));
+  // Added: a second call replaces the clip's Beat markers, never doubles them.
   const markers = store.get().project.markers.length - before;
-  finish("beats", markers ? `Marked ${plural(markers, "beat")} · ${Math.round(res.bpm)} BPM` : `Every beat is already marked · ${Math.round(res.bpm)} BPM`);
-  return { ...res, markers };
+  finish("beats", markers > 0 ? `Marked ${plural(markers, "beat")} · ${Math.round(mapped.bpm)} BPM` : `Every beat is already marked · ${Math.round(mapped.bpm)} BPM`);
+  return { bpm: mapped.bpm, ...(mapped.file_bpm !== undefined ? { file_bpm: mapped.file_bpm } : {}), beats: picked, markers, ...(song.asset.musicGrid ? { grid: "given" as const } : {}) };
 }
 
 export interface MusicAnalysis extends MappedMusic {
@@ -529,8 +541,8 @@ export interface MusicAnalysis extends MappedMusic {
   source: { asset_id: Id; analyzed: [number, number]; whole_file: boolean; cached: boolean; clip_in: number; clip_speed: number | "curve"; reversed?: boolean };
   /** How sure the reading is, 0..1 each (beats.ts MusicStructure). */
   confidence: { tempo: number; bars: number; sections: number; note?: string };
-  /** The hints given, as used (source seconds). */
-  given?: { bpm?: number; first_downbeat?: number; cues?: number };
+  /** The hints given, as used (source seconds); grid: the file's own given grid (set_music_grid) was read through. */
+  given?: { bpm?: number; first_downbeat?: number; cues?: number; grid?: true };
   /** Markers added (analyze_music's markers option). */
   markers: number;
 }
@@ -554,10 +566,13 @@ const musicReadings = new Map<string, MusicStructure>();
  * drops markers for the kinds named, as one undoable edit: Beat, Bar,
  * Phrase, each section by name, and Drop (lib/epic.ts MUSIC_MARKERS).
  */
-export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[]; bpm?: number; first_downbeat?: number; cues?: unknown } = {}): Promise<MusicAnalysis> {
+/** A song read whole (once; kept), through the grid its file was given
+ * (set_music_grid) and the call's own hints, for a clip of it. Times in
+ * `m` are seconds from `from` in the file. */
+async function readSong(clipId: Id | undefined, given: StructureHints): Promise<{ m: MusicStructure; clip: MediaClip; asset: Asset; from: number; to: number; whole: boolean; cached: boolean; hints: StructureHints }> {
   const signal = projectWork.signal();
-  const hints = readMusicHints(opts);
   const { clip: c0, asset } = resolve("beats", clipId);
+  const hints = gridHints(asset.musicGrid, given);
   const id = c0.id;
   const [lo, hi] = ops.sourceRange(c0, store.get().project.fps);
   const whole = !(asset.duration > WHOLE_FILE_MAX);
@@ -572,7 +587,11 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     musicReadings.set(key, m);
   }
   signal.throwIfAborted();
-  const clip = stillThere(id);
+  return { m, clip: stillThere(id), asset, from, to, whole, cached, hints };
+}
+
+export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[]; bpm?: number; first_downbeat?: number; cues?: unknown } = {}): Promise<MusicAnalysis> {
+  const { m, clip, asset, from, to, whole, cached, hints } = await readSong(clipId, readMusicHints(opts));
   const fps = store.get().project.fps;
   const note = confidenceNote(m.confidence, hints);
   const out: MusicAnalysis = {
@@ -580,20 +599,16 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     beats_per_bar: BEATS_PER_BAR,
     source: { asset_id: asset.id, analyzed: [+from.toFixed(3), +to.toFixed(3)], whole_file: whole, cached, clip_in: +clip.in.toFixed(3), clip_speed: clip.speedCurve ? "curve" : clip.speed, ...(clip.reverse ? { reversed: true } : {}) },
     confidence: { ...m.confidence, ...(note ? { note } : {}) },
-    ...(Object.keys(hints).length ? { given: { ...(hints.bpm !== undefined ? { bpm: hints.bpm } : {}), ...(hints.firstDownbeat !== undefined ? { first_downbeat: hints.firstDownbeat } : {}), ...(hints.cues ? { cues: hints.cues.length } : {}) } } : {}),
+    ...(Object.keys(hints).length ? { given: { ...(hints.bpm !== undefined ? { bpm: hints.bpm } : {}), ...(hints.firstDownbeat !== undefined ? { first_downbeat: hints.firstDownbeat } : {}), ...(hints.cues ? { cues: hints.cues.length } : {}), ...(asset.musicGrid ? { grid: true as const } : {}) } } : {}),
     markers: 0,
   };
   const kinds = [...new Set(opts.markers ?? [])].filter((k) => k in MUSIC_MARKERS);
   if (kinds.length) {
+    // Following the clip, replacing its earlier markers of these kinds (a
+    // second reading never doubles the first).
+    const at = (ts: number[]) => ts.map((t) => t + from);
     const before = store.get().project.markers.length;
-    edit(`Mark the music`, (p) =>
-      kinds.reduce((q, k) => {
-        const { label, color } = MUSIC_MARKERS[k];
-        if (k === "sections") return out.sections.reduce((r, s) => runCommand(r, "add_markers", { times: [s.start], label: SECTION_NAMES[s.label], color }), q);
-        const times = k === "beats" ? out.beats : k === "bars" ? out.downbeats : k === "phrases" ? out.phrases : out.drops;
-        return times.length ? runCommand(q, "add_markers", { times, label, color }) : q;
-      }, p),
-    );
+    edit(`Mark the music`, (p) => markMusicClip(p, clip.id, { beats: at(m.beats), downbeats: at(m.downbeats), phrases: at(m.phrases), sections: m.sections.map((x) => ({ start: x.start + from, label: x.label })), drops: at(m.drops) }, kinds));
     out.markers = store.get().project.markers.length - before;
   }
   finish("beats", `${Math.round(out.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);

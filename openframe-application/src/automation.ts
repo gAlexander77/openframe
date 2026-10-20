@@ -38,7 +38,7 @@ import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
-import { secondsToFrames } from "./lib/time";
+import { framesToSeconds, secondsToFrames } from "./lib/time";
 import { decodeMono, sourceFrames } from "./engine/analyze";
 import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
 import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
@@ -385,7 +385,7 @@ const mcpHost: McpHost = {
     // A new project is saved once it is touched (state/project.ts); until
     // then it is listed as the open one all the same.
     const doc = store.document();
-    const listed = open && !saved.some((x) => x.id === open) ? [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt, duration: 0, width: doc.width, height: doc.height }, ...saved] : saved;
+    const listed = open && !saved.some((x) => x.id === open) ? [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt, duration: framesToSeconds(projectDuration(doc), doc.fps), width: doc.width, height: doc.height }, ...saved] : saved;
     return listed.map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));
   },
   openProject: async (id) => {

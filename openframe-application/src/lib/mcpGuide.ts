@@ -37,12 +37,12 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
     blurb: "Compose an original score that fits the edit, or read an imported track's structure; cut and hit on it, fit it to the picture; mark moments.",
-    tools: ["generate_music", "plan_music", "analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
+    tools: ["generate_music", "plan_music", "analyze_music", "set_music_grid", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
   },
   {
     name: "Picture and motion",
@@ -124,6 +124,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   generate_music: { style: "launch", key: "Am", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", at: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }], seed: 7, stems: true, markers: ["bars", "drop"] },
   plan_music: { style: "cinematic", length: 45, ending: "stop" },
   analyze_music: { clip_id: "c_3", markers: ["beats", "bars", "drop"] },
+  set_music_grid: { clip_id: "c_3", bpm: 128, first_downbeat: 0.12, sections: [{ at: 0, label: "intro" }, { at: 7.62, label: "build" }, { at: 15.12, label: "drop" }], markers: ["beats", "bars", "drop"] },
   cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
@@ -281,7 +282,7 @@ ${DESIGN}`,
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop), or compose one: generate_music (style launch or cinematic) with sections that fit the edit (a drop at the climax, the outro ending with the video; plan_music tries them without rendering) places the music and answers its cue sheet: tempo, bars, beats, sections, drops and the final hit.
-2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds; the markers follow the music clip through later trims, moves and speed changes. When the reading is wrong (the bars fall between the kicks in preview_motion, the drop is missed or early, a confidence is low), give the song's grid with set_music_grid (its tempo, a bar's first beat and the parts, in the file's seconds): the markers move onto it, and analyze_music, mark_beats and check_project use it from then on. Cut on downbeats and at phrase starts.
 3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.

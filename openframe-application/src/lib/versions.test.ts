@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addAdElement, safeArea } from "./ads";
+import { VERTICAL_SAFE } from "./align";
 import { runCommand } from "./commands";
 import { paramAt } from "./keyframes";
 import { createProject } from "./project/defaults";
@@ -187,8 +188,10 @@ describe("a 9:16 ad in other shapes", () => {
     return { left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh, h };
   }
   const card = (p: Project) => clips(p).filter((c) => c.name === "End card" && c.type !== "color");
+  // The safe area as check_project judges it: on any tall frame (4:5 too)
+  // the column the apps' buttons leave (ADR-101).
   const area = (p: Project) => {
-    const s = safeArea(p);
+    const s = p.height > p.width ? VERTICAL_SAFE : safeArea(p);
     return { left: s.left * p.width, right: p.width * (1 - s.right), top: s.top * p.height, bottom: p.height * (1 - s.bottom) };
   };
 
@@ -211,7 +214,9 @@ describe("a 9:16 ad in other shapes", () => {
       expect(Math.max(...boxes.map((b) => b.bottom)), ratio).toBeLessThanOrEqual(r.bottom + 0.5);
       expect((Math.min(...boxes.map((b) => b.left)) + Math.max(...boxes.map((b) => b.right))) / 2, ratio).toBeCloseTo(q.width / 2, 0);
       // The same rhythm as the master's: the stack grew as its type did.
-      rhythm(boxes).forEach((g, i) => expect(g, ratio).toBeCloseTo(rhythm(before)[i], 2));
+      // (4:5's column is too short for it: the card shrinks, its type held
+      // at the readable size, so its gaps close a little.)
+      if (ratio !== "4:5") rhythm(boxes).forEach((g, i) => expect(g, ratio).toBeCloseTo(rhythm(before)[i], 2));
     }
   });
 

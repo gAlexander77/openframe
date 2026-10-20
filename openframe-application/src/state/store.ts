@@ -10,6 +10,7 @@ import { projectWork } from "./projectWork";
 import { toast } from "./toast";
 import { closePath, compoundView, innerFrameAt, nestsItself, openPath, pruneCompounds, withCompoundView, type NestLevel } from "../lib/project/compound";
 import { createProject } from "../lib/project/defaults";
+import { followClips } from "../lib/markers";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { clipEnd, findClip, findCompound, projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
@@ -235,6 +236,8 @@ function liveSelection(p: Project, sel: Id[]): Id[] {
 }
 
 function setProject(project: Project, extra: Partial<EditorState> = {}) {
+  // Every edit, drag and step: a song's markers stay on its beats.
+  project = followClips(project);
   set({
     project,
     selection: liveSelection(project, extra.selection ?? state.selection),

@@ -160,9 +160,10 @@ downbeats and tempo changes; madmom (non-commercial models), aubio (GPL)
 and Essentia (AGPL) are ruled out ([[AI and automation]] §2.6).
 
 **Gaps.** One tempo per clip and no tempo changes; bars and song parts
-are the next section's. Markers sit on the timeline, not on the clip, so
-they stay put if the music clip moves (`fit_music` moves the music's
-markers with it).
+are the next section's. The Beat markers card and `mark_beats` now read
+the song as `analyze_music` does (the next section) and mark its beats
+following the clip: moved, trimmed, split or sped up, the markers stay on
+the song's beats ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]).
 
 ## Music structure (analyze_music)
 
@@ -173,7 +174,14 @@ Beat, Bar, Phrase, section and Drop markers, one undo step.
 
 1. **Beats** as above, but the tracker's trim is replaced by a gentler
    one (a tenth of the RMS onset strength, not half): the strict trim
-   dropped a quiet intro's beats, and a song's parts need them.
+   dropped a quiet intro's beats, and a song's parts need them. **One
+   phase** (`keepPhase`): when 70% of the beats sit within a tenth of a
+   beat of one line (one tempo, found by consensus so an off run cannot
+   tilt it), a run of four or more a quarter beat off it is moved onto
+   it. An intro of pads and off-beat hats with no kick had its beats and
+   bars half a beat late (the promo's Liftoff, 233 ms at 128 BPM).
+   A song's grid given with `set_music_grid` (tempo, a downbeat, parts)
+   replaces all of this for every clip of it (ADR-101).
 2. **Per-beat features.** The beat's loudness (RMS dB) and its spectral
    shape: 12 mel bands from 2048-point windows half a window apart
    across the beat, averaged as power. The band levels compare in dB

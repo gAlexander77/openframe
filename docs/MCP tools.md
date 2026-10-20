@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 159 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 161 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -42,8 +42,8 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Start here**: `help`, `describe_project`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
-- **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
@@ -412,13 +412,13 @@ Move clips by whole frames on their tracks (negative is earlier). Nothing moves 
 
 ### duplicate_clips
 
-Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.
+Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline, and of every compound nested in it (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Clips to copy |
 | `at` | number |  | Seconds where the earliest copy starts (0..) |
-| `unique` | boolean |  | Compound clips: copy their nested timelines too, so each copy can change on its own (default false: shared) |
+| `unique` | boolean |  | Compound clips: copy their nested timelines too (and the compounds nested in them), so each copy can change on its own (default false: shared) |
 
 Example:
 
@@ -505,6 +505,15 @@ Move, scale and rotate visual group members about their combined bounds in canva
 | `scale` | number |  | Uniform multiplier about the group center; default 1 (0.01..) |
 | `rotation` | number |  | Clockwise rotation offset in degrees; default 0 |
 | `at` | number |  | Timeline seconds to key every member; clamped to each member span (0..) |
+
+### set_clip_enabled
+
+Turn clips off or on (Premiere's Enable): an off clip stays on the timeline, in place, but preview and export skip it (describe_project marks it disabled). A textless version's titles, or a clip an export_versions override hid, come back on with enabled true.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Clips |
+| `enabled` | boolean | yes | false: off, skipped by preview and export; true: on |
 
 ### set_clip_label
 
@@ -700,7 +709,7 @@ Example:
 
 ### analyze_music
 
-Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
+Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; they follow the clip through moves, trims, splits and speed changes (a second the clip no longer plays loses its marker), and a second reading replaces the clip's own markers of those kinds instead of adding to them; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. bpm is the tempo as the clip plays it (file_bpm, the file's own, when it is sped up). When the reading is wrong for good (bars between the kicks, a drop missed), set_music_grid keeps the right grid with the file, and every later reading uses it. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -716,6 +725,27 @@ Example:
 
 ```json
 {"name":"analyze_music","arguments":{"clip_id":"c_3","markers":["beats","bars","drop"]}}
+```
+
+### set_music_grid
+
+Give a song's grid yourself, when analyze_music reads it wrong (its confidence is low, the bars fall between the kicks, the drop is missed or early) or when it is known (a cue sheet, the composer's notes): the tempo, a bar's first beat and, if known, its parts (a drop after another part is a drop), all in the music file's own seconds, four beats a bar. The grid is kept with the file: analyze_music, mark_beats and check_project read the song through it instead of guessing, on every clip of it, through trims, moves and speed changes. markers places the grid's markers on this clip now (Beat, Bar, Phrase, each part by name, Drop), following the clip as analyze_music's do and replacing the clip's own earlier ones of those kinds; by default the kinds it is marked with already (parts and the drop only when sections are given). The answer's note says where the grid plays on the timeline. clear: true forgets the grid. Example: {clip_id: 'c_3', bpm: 128, first_downbeat: 0, sections: [{at: 0, label: 'intro'}, {at: 7.5, label: 'build'}, {at: 15, label: 'drop'}, {at: 33.75, label: 'outro'}], markers: ['beats', 'bars', 'drop']}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The music clip (audio, or a video with sound); the grid is kept with its file |
+| `bpm` | number |  | Beats a minute, in the file's own time (a clip sped up plays it faster) (40..240) |
+| `first_downbeat` | number |  | A bar's first beat, in the music file's own seconds (0 for a song that starts on a bar) (0..) |
+| `sections` | { at, label }[] |  | The parts, if known, in the music file's own seconds: each starts at its at and runs to the next |
+| `sections[].at` | number | yes | File seconds the part starts (0..) |
+| `sections[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
+| `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Markers to place on this clip from the grid: beats, bars, phrases, sections, drop (default: the kinds the clip is marked with already; [] none) |
+| `clear` | boolean |  | Forget the grid: analysis guesses again |
+
+Example:
+
+```json
+{"name":"set_music_grid","arguments":{"clip_id":"c_3","bpm":128,"first_downbeat":0.12,"sections":[{"at":0,"label":"intro"},{"at":7.62,"label":"build"},{"at":15.12,"label":"drop"}],"markers":["beats","bars","drop"]}}
 ```
 
 ### cut_to_beats
@@ -790,7 +820,7 @@ Example:
 
 ### mark_beats
 
-Drop a timeline marker on the beat of a music clip. Returns the BPM and beat count.
+Mark a music clip's beats (every Nth) with Beat markers, from the whole song's reading (analyze_music's beats, read through the grid set_music_grid gave the file), placed where the clip plays them: trimmed, moved or sped up, the markers stand on the song's beats, and they follow the clip through later edits, replacing its earlier Beat markers. Answers bpm as the clip plays it (file_bpm, the file's own, when it is sped up or slowed), the beats marked in timeline seconds and how many markers it added (0 when they were there already: a second call replaces them, never doubles them).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2438,7 +2468,7 @@ Example:
 
 ### check_project
 
-Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
+Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2494,11 +2524,11 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16 (as check_project judges both). overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `versions` | { ratio, duration, textless, fit, captions, name, reframe, focus }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions` | { ratio, duration, textless, fit, captions, name, reframe, focus, overrides }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
 | `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
 | `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
 | `versions[].textless` | boolean |  | Titles and captions off |
@@ -2510,6 +2540,12 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `versions[].focus[].clip_id` | string | yes | A full-frame video or picture clip |
 | `versions[].focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
 | `versions[].focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
+| `versions[].overrides` | { clip_id, x, y, scale, hidden }[] |  | Clips placed by hand in this version, after the automatic adaptation (raise a lower third, enlarge a headline, hide a logo): [{clip_id, x, y, scale, hidden}]. Any clip: a title, a picture, a compound clip, or a clip inside a compound by its own id. A clip in a group (an ad element) moves and resizes with its group; hidden is the clip alone. Kept in a saved version project. On the call, for every version that does not say |
+| `versions[].overrides[].clip_id` | string | yes | The clip, as describe_project names it in the master |
+| `versions[].overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it (-1..1) |
+| `versions[].overrides[].y` | number |  | Where it rests down the frame: its transform.y (-0.5 top .. 0.5 bottom; on a tall frame a title's box stays above y 0.15, where the apps' captions and buttons begin) (-1..1) |
+| `versions[].overrides[].scale` | number |  | Times its size as the version adapted it (1.25 a quarter larger: a title's type, any other layer's scale), about its own center (0.1..10) |
+| `versions[].overrides[].hidden` | boolean |  | true: off in this version; false: on, though the master hides it |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
 | `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
 | `textless` | boolean |  | Also a textless version, in the first ratio |
@@ -2520,6 +2556,12 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `focus[].clip_id` | string | yes | A full-frame video or picture clip |
 | `focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
 | `focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
+| `overrides` | { clip_id, x, y, scale, hidden }[] |  | Clips placed by hand in this version, after the automatic adaptation (raise a lower third, enlarge a headline, hide a logo): [{clip_id, x, y, scale, hidden}]. Any clip: a title, a picture, a compound clip, or a clip inside a compound by its own id. A clip in a group (an ad element) moves and resizes with its group; hidden is the clip alone. Kept in a saved version project. On the call, for every version that does not say |
+| `overrides[].clip_id` | string | yes | The clip, as describe_project names it in the master |
+| `overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it (-1..1) |
+| `overrides[].y` | number |  | Where it rests down the frame: its transform.y (-0.5 top .. 0.5 bottom; on a tall frame a title's box stays above y 0.15, where the apps' captions and buttons begin) (-1..1) |
+| `overrides[].scale` | number |  | Times its size as the version adapted it (1.25 a quarter larger: a title's type, any other layer's scale), about its own center (0.1..10) |
+| `overrides[].hidden` | boolean |  | true: off in this version; false: on, though the master hides it |
 | `save_projects` | boolean |  | true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |

@@ -40,7 +40,7 @@ import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { breakCompound, breakProblem, compoundProblem, compoundView, copyCompound, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
-import { deleteMarkers, updateMarker } from "./markers";
+import { deleteMarkers, followClips, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
@@ -55,7 +55,8 @@ import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary,
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
-import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
+import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
+import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
@@ -833,6 +834,21 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_clip_enabled",
+    description: "Turn clips off or on (Premiere's Enable): an off clip stays on the timeline, in place, but preview and export skip it (describe_project marks it disabled). A textless version's titles, or a clip an export_versions override hid, come back on with enabled true.",
+    input: S.obj({ clip_ids: S.ids("Clips"), enabled: S.bool("false: off, skipped by preview and export; true: on") }, ["clip_ids", "enabled"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ids.reduce((q, id) => ops.updateClip(q, id, (c) => {
+        if (a.enabled === false) return c.disabled ? c : ({ ...c, disabled: true } as Clip);
+        if (!c.disabled) return c;
+        const { disabled: _, ...rest } = c;
+        return rest as Clip;
+      }), p);
+    },
+  },
+  {
     name: "set_clip_label",
     description: "Color-label clips (Premiere's Label): the timeline paints them with it. \"none\" removes the label.",
     input: S.obj({ clip_ids: S.ids("Clips to label"), label: S.str("A label color, or none", { enum: [...Object.keys(CLIP_LABELS), "none"] }) }, ["clip_ids", "label"]),
@@ -1069,8 +1085,8 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "duplicate_clips",
-    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.",
-    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }), unique: S.bool("Compound clips: copy their nested timelines too, so each copy can change on its own (default false: shared)") }, ["clip_ids"]),
+    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline, and of every compound nested in it (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.",
+    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }), unique: S.bool("Compound clips: copy their nested timelines too (and the compounds nested in them), so each copy can change on its own (default false: shared)") }, ["clip_ids"]),
     run: (p, a) => {
       const found = (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id));
       const origin = Math.min(...found.map((x) => x.clip.start));
@@ -2042,6 +2058,62 @@ export const COMMANDS: Command[] = [
     run: (p, a) => epic(() => fitMusic(p, a as unknown as FitMusic)),
   },
   {
+    name: "set_music_grid",
+    description:
+      "Give a song's grid yourself, when analyze_music reads it wrong (its confidence is low, the bars fall between the kicks, the drop is missed or early) or when it is known (a cue sheet, the composer's notes): the tempo, a bar's first beat and, if known, its parts (a drop after another part is a drop), all in the music file's own seconds, four beats a bar. The grid is kept with the file: analyze_music, mark_beats and check_project read the song through it instead of guessing, on every clip of it, through trims, moves and speed changes. markers places the grid's markers on this clip now (Beat, Bar, Phrase, each part by name, Drop), following the clip as analyze_music's do and replacing the clip's own earlier ones of those kinds; by default the kinds it is marked with already (parts and the drop only when sections are given). The answer's note says where the grid plays on the timeline. clear: true forgets the grid. Example: {clip_id: 'c_3', bpm: 128, first_downbeat: 0, sections: [{at: 0, label: 'intro'}, {at: 7.5, label: 'build'}, {at: 15, label: 'drop'}, {at: 33.75, label: 'outro'}], markers: ['beats', 'bars', 'drop']}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The music clip (audio, or a video with sound); the grid is kept with its file"),
+        bpm: S.num("Beats a minute, in the file's own time (a clip sped up plays it faster)", { minimum: 40, maximum: 240 }),
+        first_downbeat: S.num("A bar's first beat, in the music file's own seconds (0 for a song that starts on a bar)", { minimum: 0 }),
+        sections: {
+          type: "array",
+          description: "The parts, if known, in the music file's own seconds: each starts at its at and runs to the next",
+          items: S.obj({ at: S.num("File seconds the part starts", { minimum: 0 }), label: S.str("What the part is", { enum: ["intro", "verse", "build", "drop", "breakdown", "outro"] }) }, ["at", "label"]),
+        },
+        markers: { type: "array", items: S.str("Kind", { enum: Object.keys(MUSIC_MARKERS) }), description: "Markers to place on this clip from the grid: beats, bars, phrases, sections, drop (default: the kinds the clip is marked with already; [] none)" },
+        clear: S.bool("Forget the grid: analysis guesses again"),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a, report) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (clip.type !== "audio" && clip.type !== "video") throw new CommandError(`${clip.type} clips have no song; give the music clip`);
+      const asset = ops.getAsset(p, clip.assetId);
+      if (!asset?.hasAudio) throw new CommandError(`clip ${clip.id} has no sound`);
+      const withGrid = (g: typeof asset.musicGrid) => ({ ...p, assets: p.assets.map((x) => (x.id !== asset.id ? x : g ? { ...x, musicGrid: g } : omit(x, "musicGrid"))) });
+      if (a.clear === true) {
+        if (a.bpm !== undefined || a.first_downbeat !== undefined || a.sections !== undefined || a.markers !== undefined) throw new CommandError("clear forgets the grid: give it alone");
+        return asset.musicGrid ? withGrid(undefined) : p;
+      }
+      let grid;
+      try {
+        grid = readMusicGrid(a);
+      } catch (e) {
+        throw new CommandError((e as Error).message);
+      }
+      // By default, the kinds this clip is marked with already, read again.
+      const kindOf = (label: string): MusicMarkerKind | undefined =>
+        label === MUSIC_MARKERS.drop.label ? "drop" : (Object.entries(MUSIC_MARKERS).find(([, m]) => m.label === label)?.[0] as MusicMarkerKind | undefined) ?? (Object.values(SECTION_NAMES).includes(label) ? "sections" : undefined);
+      const parts = !!grid.sections?.length;
+      const asked = a.markers as MusicMarkerKind[] | undefined;
+      if (asked && !parts && asked.some((k) => k === "sections" || k === "drop")) throw new CommandError("markers sections and drop need the grid's sections (or analyze_music with markers drop, which reads the parts through this grid)");
+      const had = [...new Set(p.markers.filter((m) => m.follows?.clip === clip.id).map((m) => kindOf(m.label)))].filter((k): k is MusicMarkerKind => !!k);
+      const kinds = asked ?? had.filter((k) => parts || (k !== "sections" && k !== "drop"));
+      const q = markMusicClip(withGrid(grid), clip.id, gridStructure(grid, asset.duration), kinds);
+      if (report) {
+        // Where it plays: the tempo heard, the first bar and the drop, timeline seconds.
+        const s = gridStructure(grid, asset.duration);
+        const map = sourceToTimeline(clip, p.fps);
+        const bar = s.downbeats.map((t) => map.at(t)).find((t) => t !== null);
+        const drops = s.drops.map((t) => map.at(t)).filter((t) => t !== null);
+        const speed = clip.speedCurve ? 1 : clip.speed;
+        (report.notes ??= []).push(`The grid on ${clip.id}: ${+(grid.bpm * speed).toFixed(2)} BPM as it plays${speed !== 1 ? ` (${grid.bpm} in the file)` : ""}${bar != null ? `, a bar every ${+((240 / grid.bpm) / speed).toFixed(3)} s from ${bar} s` : ""}${drops.length ? `, drop at ${drops.join(", ")} s` : ""}${kinds.length ? `; markers placed: ${kinds.join(", ")}` : "; no markers placed (markers: ['beats', 'bars'] places them)"}.`);
+      }
+      return q;
+    },
+  },
+  {
     name: "move_keyframe",
     description: "Retime a keyframe and/or change its value. at is the keyframe's current timeline time, to the new one (seconds). It stays inside the clip and replaces a keyframe already at its new time on that path.",
     input: S.obj(
@@ -2577,7 +2649,9 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
       }
     }
   }
-  return next;
+  // A song's markers follow its clip, so the next step (a batch's, a
+  // cut_to_beats after a move) sees them where the beats now play.
+  return followClips(next);
 }
 
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
@@ -2590,9 +2664,10 @@ export function describeProject(p: Project) {
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
     ...(p.masterVolume !== undefined ? { master_volume: p.masterVolume } : {}),
-    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}) })),
+    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
     tracks: p.tracks.map(track),
-    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
+    // A marker that follows a clip (a song's beat) names it.
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.follows ? { clip: m.follows.clip } : {}) })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
     ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).
@@ -2636,6 +2711,7 @@ export function describeProject(p: Project) {
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
         // What else departs from the defaults, so an agent can check its work.
+        ...(c.disabled ? { disabled: true } : {}),
         ...(c.name ? { name: c.name } : {}),
         ...(c.group ? { group: c.group } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
@@ -2761,6 +2837,10 @@ function graphicsSummary(c: Clip) {
           },
         }
       : {}),
+    // A mask and a crop, as set_mask and set_crop take them, so a framed
+    // picture (a round picture-in-picture, a split screen's half) can be checked.
+    ...("mask" in c && c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
+    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom) } } : {}),
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),

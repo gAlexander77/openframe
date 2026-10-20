@@ -57,9 +57,12 @@ Brand   { name?, colors: { primary, secondary, accent, background, text },
           url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
-          sticker?, folder?, favorite?, speech?, role?, sound? }   (sticker: the library sticker an image was drawn from;
+          sticker?, folder?, favorite?, speech?, role?, sound?, musicGrid? }   (sticker: the library sticker an image was drawn from;
           role: dialog|music|effects|ambience, what a file the app made is;
-          sound: { id, seed? }, the built-in effect or ambience bed it was made from)
+          sound: { id, seed? }, the built-in effect or ambience bed it was made from;
+          musicGrid: { bpm, firstDownbeat, sections?: [{ at, label }] }, a song's
+          grid in its own seconds, given by set_music_grid or kept by
+          generate_music; analysis reads the song through it: ADR-101)
 Speech  { text, caption?, voice, speed, pronounce?: { word: respelling },
           quality?: best|draft, finish?: natural|clean|raw }
           (on a speech file the app read: the line as written, pause marks included;
@@ -70,6 +73,9 @@ Track   { id, kind: video|audio, name, main?, clips: Clip[],
           solo?, height?: small|large, role? }   (role, audio tracks only: dialog|music|effects|ambience,
           the stem it is; absent, it is judged by its clips' files: ADR-098)
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
+Marker  { id, frame, label, color, follows?: { clip, at } }   (follows: a song's beat,
+          bar, part or drop on a video or audio clip, at that second of its file;
+          the marker moves with the clip, and goes when nothing plays it: ADR-101)
 Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together
           every clip may carry labelColor?: red | orange | yellow | green | cyan

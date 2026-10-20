@@ -396,4 +396,28 @@ describe("a compound clip as a template (duplicate_clips unique)", () => {
     expect(q.compounds!.map((k) => k.name)).toEqual(["Window", "Window copy", "Window copy 2"]);
     expect(describeProject(q).compounds!.map((k) => k.name)).toContain("Window copy 2");
   });
+
+  it("copies the compounds nested inside a unique copy, so its window is its own", () => {
+    // The window, with a label, nested in a card: a compound that plays a compound.
+    const { p: w, clipId: windowClip, compoundId: windowId } = window();
+    let p = runCommand(w, "add_text", { text: "HARBOR", start: 0, duration: 2, y: 0.3 });
+    const label = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "text")!.id;
+    const made = createCompound(p, [windowClip, label], "Card");
+    p = made.project;
+    const card = findClip(p, made.clipId!)!.clip as CompoundClip;
+    let q = runCommand(p, "duplicate_clips", { clip_ids: [card.id], unique: true });
+    const copy = q.tracks.flatMap((t) => t.clips).find((c): c is CompoundClip => c.type === "compound" && c.id !== card.id)!;
+    const inner = (k: string) => findCompound(q, k)!.tracks.flatMap((t) => t.clips).find((c): c is CompoundClip => c.type === "compound")!;
+    // The copy's card plays a window of its own, under a name of its own.
+    expect(inner(copy.compoundId).compoundId).not.toBe(windowId);
+    expect(inner(card.compoundId).compoundId).toBe(windowId);
+    expect(findCompound(q, inner(copy.compoundId).compoundId)!.name).toBe("Window copy");
+    // Other footage in the copy's window leaves the original card's window alone.
+    const copyWindow = inner(copy.compoundId).compoundId;
+    const ui = findCompound(q, copyWindow)!.tracks.flatMap((t) => t.clips).find((c) => c.type === "video")!;
+    q = runCommand(q, "edit_compound", { compound_id: copyWindow, command: "replace_clip", args: { clip_id: ui.id, asset_id: "v2" } });
+    const asset = (id: string) => (findCompound(q, id)!.tracks.flatMap((t) => t.clips).find((c) => c.type === "video") as Clip & { assetId: string }).assetId;
+    expect([asset(windowId), asset(copyWindow)]).toEqual(["v", "v2"]);
+    expect(q.compounds).toHaveLength(4);
+  });
 });
