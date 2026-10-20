@@ -315,13 +315,47 @@ float erfApprox(float x) {
   return sign(x) * sqrt(1.0 - exp(-x2 * (1.2732395 + 0.147 * x2) / (1.0 + 0.147 * x2)));
 }
 
-// How much of a point d pixels outside an edge (negative: inside) is
-// covered: one screen pixel's ramp, or with a feather (ADR-069) a
-// Gaussian's falloff, the edge centered in it and sigma a quarter of it.
+// How much of a point d pixels outside a crisp edge (negative: inside) is
+// covered: one screen pixel's ramp.
 float edgeCover(float d, float aa) {
-  if (u_shapeFeather <= 0.0) return clamp(0.5 - d / aa, 0.0, 1.0);
-  float s = max(u_shapeFeather * 0.25, aa * 0.4);
-  return 0.5 - 0.5 * erfApprox(d / (s * 1.4142136));
+  return clamp(0.5 - d / aa, 0.0, 1.0);
+}
+
+// A feather (ADR-099) is the shape blurred by a Gaussian of sigma a quarter
+// of it: exact across, in slices along y over each rounded end.
+// src/lib/shapes.ts blurredCover is this, line for line.
+const int FEATHER_SLICES = 12;
+float phi(float z) { return 0.5 + 0.5 * erfApprox(z * 0.70710678); }
+float spanCover(float x, float w, float s) { return w > 0.0 ? phi((w - x) / s) - phi((-w - x) / s) : 0.0; }
+float capCover(vec2 q, vec2 b, vec2 c, float s) {
+  if (c.y < 1e-3) return 0.0;
+  float h = b.y - c.y;
+  float lo = max(h, q.y - 4.0 * s), hi = min(b.y, q.y + 4.0 * s);
+  if (hi <= lo) return 0.0;
+  float a0 = asin(clamp((lo - h) / c.y, 0.0, 1.0)), a1 = asin(clamp((hi - h) / c.y, 0.0, 1.0));
+  float d = (a1 - a0) / float(FEATHER_SLICES);
+  float sum = 0.0;
+  for (int i = 0; i < FEATHER_SLICES; i++) {
+    float a = a0 + (float(i) + 0.5) * d;
+    float y = (q.y - (h + c.y * sin(a))) / s;
+    sum += exp(-0.5 * y * y) * spanCover(q.x, b.x - c.x + c.x * cos(a), s) * c.y * cos(a);
+  }
+  return sum * d * 0.39894228 / s;
+}
+// A feathered outline's drawn stretch (0..draw round a perimeter per),
+// blurred along it; the gap is split at its middle. shapes.ts trimCover.
+float trimCover(float at, float draw, float per, float s) {
+  float u = (at > 0.5 + 0.5 * draw ? at - 1.0 : at) * per;
+  return phi(u / s) - phi((u - draw * per) / s);
+}
+// A box of half sizes b with elliptical corners of radii c (a rounded
+// rectangle: its radius both ways; an ellipse: c = b), blurred, at q.
+float blurredCover(vec2 q, vec2 b, vec2 c, float s) {
+  if (b.x <= 0.0 || b.y <= 0.0) return 0.0;
+  c = min(c, b);
+  float h = b.y - c.y;
+  float mid = h > 0.0 ? (phi((h - q.y) / s) - phi((-h - q.y) / s)) * spanCover(q.x, b.x, s) : 0.0;
+  return clamp(mid + capCover(q, b, c, s) + capCover(vec2(q.x, -q.y), b, c, s), 0.0, 1.0);
 }
 
 // The shape's straight color at display uv d. aa: pixels of the shape per
@@ -337,11 +371,14 @@ vec4 shapeColor(vec2 d, float aa) {
   if (u_gradient && u_gradKind == 1) t = clamp(length((q - u_gradCenter) / max(u_gradRadius, vec2(1e-3))), 0.0, 1.0);
   vec4 p1 = vec4(u_fill.rgb * u_fill.a, u_fill.a), p2 = vec4(u_fill2.rgb * u_fill2.a, u_fill2.a);
   vec4 paint = mix(p1, p2, t);
+  // A feather blurs the shape (ADR-099); sigma a quarter of it.
+  bool soft = u_shapeFeather > 0.0;
+  float sig = max(u_shapeFeather * 0.25, aa * 0.4);
   if (u_shape == 3) {
     // A line: a butt-capped bar from the left end, draw of the way along.
     float len = 2.0 * b.x * u_shapeDraw;
-    float dist = sdRoundBox(q - vec2(-b.x + len * 0.5, 0.0), vec2(len * 0.5, b.y), 0.0);
-    float cov = u_shapeDraw > 0.0 ? edgeCover(dist, aa) : 0.0;
+    vec2 lq = q - vec2(-b.x + len * 0.5, 0.0);
+    float cov = u_shapeDraw <= 0.0 ? 0.0 : soft ? spanCover(lq.x, len * 0.5, sig) * spanCover(lq.y, b.y, sig) : edgeCover(sdRoundBox(lq, vec2(len * 0.5, b.y), 0.0), aa);
     vec4 o = paint * cov;
     return o.a > 0.0 ? vec4(o.rgb / o.a, o.a) : vec4(0.0);
   }
@@ -360,11 +397,16 @@ vec4 shapeColor(vec2 d, float aa) {
     per = 3.1415927 * (3.0 * (bb.x + bb.y) - sqrt((3.0 * bb.x + bb.y) * (bb.x + 3.0 * bb.y)));
     s = u_shapeDraw < 1.0 ? fract(atan(q.x / bb.x, -q.y / bb.y) / 6.2831853 + 1.0) : 0.0;
   }
-  vec4 o = u_shapeFill ? paint * edgeCover(dist, aa) : vec4(0.0);
+  // The corners' radii: a rectangle's radius both ways; an ellipse is all corner.
+  vec2 c = u_shape == 1 ? vec2(min(u_shapeRadius, min(b.x, b.y))) : b;
+  vec4 o = u_shapeFill ? paint * (soft ? blurredCover(q, b, c, sig) : edgeCover(dist, aa)) : vec4(0.0);
   if (sw > 0.0) {
-    float cov = edgeCover(abs(dist) - sw * 0.5, aa);
-    // Trim paths: the outline drawn up to draw of the way round.
-    if (u_shapeDraw < 1.0) cov *= u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
+    // The outline is the shape grown by half its width less the shape shrunk by it.
+    float hw = sw * 0.5;
+    float cov = soft ? blurredCover(q, b + hw, c + hw, sig) - blurredCover(q, b - hw, max(c - hw, 0.0), sig) : edgeCover(abs(dist) - hw, aa);
+    // Trim paths: the outline drawn up to draw of the way round; feathered,
+    // its ends blurred along it as its sides are across.
+    if (u_shapeDraw < 1.0) cov *= soft ? trimCover(s, u_shapeDraw, per, sig) : u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
     vec4 st = vec4(u_strokeColor.rgb * u_strokeColor.a, u_strokeColor.a) * cov;
     o = st + o * (1.0 - st.a);
   }
@@ -547,6 +589,82 @@ void main() {
   float a = u_spline ? bspline(u_blur, uv, u_size).a : texture(u_blur, uv).a;
   if (a > 0.002) a = clamp(a + dither(5.7), 0.0, 1.0);
   outColor = l + u_color * a * (1.0 - l.a);
+}`;
+
+// ---- borders (ADR-099) ------------------------------------------------------
+// The picture's edge, found by a jump flood: each pixel holds the nearest
+// pixel inside the picture found so far (at least half covered), its x and
+// y in two bytes each; all 255 is none yet. Steps of 2^k, then 1, carry
+// every inside pixel out as far as the border reaches (src/lib/border.ts
+// floodSteps). Read with texelFetch: the coordinates must not be filtered.
+const FLOOD_CODE = `
+const vec4 NONE = vec4(1.0);
+vec4 enc(vec2 s) { return vec4(floor(s.x / 256.0), mod(s.x, 256.0), floor(s.y / 256.0), mod(s.y, 256.0)) / 255.0; }
+vec2 dec(vec4 v) { v = floor(v * 255.0 + 0.5); return vec2(v.r * 256.0 + v.g, v.b * 256.0 + v.a); }
+bool none(vec4 v) { return all(equal(v, NONE)); }`;
+
+/** The flood's start: inside pixels hold themselves. The layer's opacity
+ * scales what counts as inside, so a faded picture keeps its border. */
+export const FLOOD_SEED_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_layer;
+uniform float u_level;
+out vec4 outColor;
+${FLOOD_CODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  outColor = texelFetch(u_layer, p, 0).a >= 0.5 * u_level ? enc(vec2(p)) : NONE;
+}`;
+
+/** One flood step: the nearest of the nine pixels u_step apart. */
+export const FLOOD_STEP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_seeds;
+uniform int u_step;
+out vec4 outColor;
+${FLOOD_CODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy), size = textureSize(u_seeds, 0);
+  vec4 best = NONE;
+  float bd = 1e20;
+  for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) {
+      ivec2 q = p + ivec2(i, j) * u_step;
+      if (q.x < 0 || q.y < 0 || q.x >= size.x || q.y >= size.y) continue;
+      vec4 v = texelFetch(u_seeds, q, 0);
+      if (none(v)) continue;
+      vec2 d = dec(v) - vec2(p);
+      float dd = dot(d, d);
+      if (dd < bd) { bd = dd; best = v; }
+    }
+  outColor = best;
+}`;
+
+/** The border around the picture, out to u_width pixels past its edge. The
+ * edge lies past the nearest inside pixel's center by as much of that
+ * pixel as is covered beyond half, so a curve's border stays smooth. */
+export const BORDER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_layer;
+uniform sampler2D u_seeds;
+uniform float u_level;     // the layer's opacity
+uniform float u_width;     // render pixels
+uniform vec4 u_color;      // premultiplied, its opacity and the layer's included
+out vec4 outColor;
+${FLOOD_CODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  vec4 l = texelFetch(u_layer, p, 0);
+  vec4 v = texelFetch(u_seeds, p, 0);
+  float cov = 0.0;
+  if (!none(v)) {
+    vec2 s = dec(v);
+    float a = min(texelFetch(u_layer, ivec2(s), 0).a / u_level, 1.0);
+    cov = clamp(u_width - (length(s - vec2(p)) - (a - 0.5)) + 0.5, 0.0, 1.0);
+  }
+  // Only outside the picture: what it covers at full opacity stays its own,
+  // so a faded picture does not show its border through itself.
+  outColor = l + u_color * cov * (1.0 - min(l.a / u_level, 1.0));
 }`;
 
 /** Blend a premultiplied layer over the premultiplied accumulator using the

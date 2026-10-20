@@ -1,6 +1,7 @@
 // The graphics commands (ADR-056 to ADR-059, ADR-062) and their project format.
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand } from "./commands";
+import { checkProject } from "./designCheck";
 import { createProject, normalizeProject } from "./project/defaults";
 import type { Clip, ColorClip, Project } from "./project/types";
 
@@ -268,5 +269,70 @@ describe("set_tilt (ADR-070)", () => {
     p = runCommand(p, "set_tilt", { clip_ids: [id], x: 0, y: 0 });
     expect(["rotateX", "rotateY", "perspective"].filter((k) => k in (clips(p)[0] as ColorClip).transform)).toEqual([]);
     expect(() => runCommand(p, "set_tilt", { clip_ids: [id], y: 120 })).toThrow(/<= 89/);
+  });
+});
+
+describe("style keys take only what they animate (ADR-099)", () => {
+  it("add_keyframe refuses a color on a number's path instead of keying it as the number", () => {
+    let p = runCommand(fresh(), "add_text", { text: "Grow", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    // #ff0000 as a size was a 16,711,680-pixel title.
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "style.size", at: 1, color: "#ff0000" })).toThrow(/color is for a color path/);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "transform.x", at: 1, color: "red" })).toThrow(/takes value/);
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "style.color", at: 1, color: "#ff3366" });
+    expect(clips(p)[0].keyframes!["style.color"]).toEqual([{ f: 30, v: 0xff3366 }]);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "style.weight", at: 1, value: 300 })).toThrow(/does not animate/);
+  });
+
+  it("set_param keeps a title's color CSS, keys it when it is keyed, and sets only numbers", () => {
+    let p = runCommand(fresh(), "add_text", { text: "Hue", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.color", value: 0x0000ff });
+    expect((clips(p)[0] as Clip & { style: { color: unknown } }).style.color).toBe("#0000ff");
+    // The number used to stay, and the design check crashed on it.
+    expect(() => checkProject(p)).not.toThrow();
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "style.color", at: 0, color: "#ffffff" });
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.color", value: 0xff0000, at: 1 });
+    expect(clips(p)[0].keyframes!["style.color"].map((k) => [k.f, k.v])).toEqual([[0, 0xffffff], [30, 0xff0000]]);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "style.font", value: 3 })).toThrow(/holds "Inter", not a number/);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "style.bold", value: 0 })).toThrow(/a boolean, not a number/);
+    const q = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_param", { clip_ids: [clips(q)[0].id], path: "color", value: 5 })).toThrow(/not a number/);
+    expect(() => runCommand(q, "set_param", { clip_ids: [clips(q)[0].id], path: "style.color", value: 5 })).toThrow(/a title's color/);
+    // Numbers still set as before.
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.size", value: 120 });
+    expect((clips(p)[0] as Clip & { style: { size: number } }).style.size).toBe(120);
+  });
+});
+
+describe("set_border (ADR-099)", () => {
+  it("frames a picture, changes and keys the frame, and takes it off", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_border", { clip_ids: [id] });
+    expect((clips(p)[0] as ColorClip).border).toEqual({ color: "#ffffff", width: 8, opacity: 1 });
+    p = runCommand(p, "set_border", { clip_ids: [id], color: "#102030", width: 14, opacity: 0.7 });
+    expect((clips(p)[0] as ColorClip).border).toEqual({ color: "#102030", width: 14, opacity: 0.7 });
+    expect(described(p, id).border).toEqual({ color: "#102030", width: 14, opacity: 0.7 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "border.width", at: 0, value: 0 });
+    p = runCommand(p, "set_border", { clip_ids: [id], width: 20, at: 1 });
+    expect(clips(p)[0].keyframes!["border.width"].map((k) => [k.f, k.v])).toEqual([[0, 0], [30, 20]]);
+    expect((clips(p)[0] as ColorClip).border!.width).toBe(14);
+    // It survives a save and load.
+    expect(clips(normalizeProject(JSON.parse(JSON.stringify(p))))).toEqual(clips(p));
+    p = runCommand(p, "set_border", { clip_ids: [id], off: true });
+    expect("border" in clips(p)[0]).toBe(false);
+    expect(clips(p)[0].keyframes).toBeUndefined();
+    expect(() => runCommand(p, "set_border", { clip_ids: [id], color: "chalk" })).toThrow(/not a color/);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "border.width", at: 0, value: 4 })).toThrow(/set_border first/);
+    const q = runCommand(fresh(), "add_adjustment_clip", { start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_border", { clip_ids: [clips(q)[0].id] })).toThrow(/no picture/);
+  });
+
+  it("describe_project shows a picture's mask as set_mask takes it", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "rectangle", width: 1, height: 1, radius: 0.25, feather: 0 });
+    expect(described(p, id).mask).toEqual({ shape: "rectangle", x: 0, y: 0, width: 1, height: 1, radius: 0.25 });
   });
 });

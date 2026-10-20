@@ -472,6 +472,21 @@ export interface Visual {
    * mask, matte and effects, so a rounded or compound window casts its own
    * shape. Absent = none. */
   shadow?: DropShadow;
+  /** A border (stroke) around the finished picture (ADR-099): outside its
+   * shape after its mask, matte and effects, so a rounded mask gets a
+   * rounded border; drawn before the shadow, which it casts too. Absent =
+   * none. */
+  border?: Border;
+}
+
+/** A border around a picture. Keyframe border.width, border.opacity. */
+export interface Border {
+  /** CSS color; its alpha multiplies `opacity`. */
+  color: string;
+  /** Pixels at 1080p, outside the picture's edge, 0..200. */
+  width: number;
+  /** 0..1 */
+  opacity: number;
 }
 
 /** A drop shadow. Keyframe shadow.blur, shadow.x, shadow.y, shadow.opacity. */

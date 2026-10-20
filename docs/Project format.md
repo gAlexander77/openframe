@@ -93,7 +93,7 @@ Clip    = video | audio | image | text | color | adjustment | compound   (see ty
           video clips may carry frameBlend?: true (mix neighboring source frames)
             (per-source-frame moves onto the smooth path; src/lib/analysis/stabilize.ts)
           visual clips may carry trackMatte?, motionBlur?, edge?, wiggle?,
-            shadow? and color clips shape? (see Graphics)
+            shadow?, border? and color clips shape? (see Graphics)
 ```
 
 Rules `normalizeProject` enforces: clips on a track are sorted and never
@@ -174,8 +174,9 @@ the edits but may discard folder definitions on saving (ADR-042).
 
 ## Graphics
 
-Shape layers, track mattes, motion blur, edges, wiggle and drop shadows
-are optional fields (ADR-056 to ADR-059, ADR-062, ADR-069, ADR-070);
+Shape layers, track mattes, motion blur, edges, wiggle, drop shadows and
+borders are optional fields (ADR-056 to ADR-059, ADR-062, ADR-069, ADR-070,
+ADR-099);
 absent means off, so files without them load unchanged.
 
 ```json
@@ -184,7 +185,8 @@ absent means off, so files without them load unchanged.
   "shape": { "kind": "rectangle", "width": 0.36, "height": 0.12, "radius": 0.3,
              "stroke": { "color": "#ffcc00", "width": 4 }, "draw": 1 },
   "motionBlur": { "shutter": 180 },
-  "shadow": { "color": "#000000", "blur": 60, "x": 0, "y": 24, "opacity": 0.5 } },
+  "shadow": { "color": "#000000", "blur": 60, "x": 0, "y": 24, "opacity": 0.5 },
+  "border": { "color": "#ffffff", "width": 8, "opacity": 1 } },
 { "type": "color", "color": "#6a5cff", "start": 0, "duration": 240,
   "shape": { "kind": "ellipse", "width": 0.6, "height": 0.8, "feather": 120,
              "gradient": { "kind": "radial", "from": "#6a5cffcc", "to": "#6a5cff00", "angle": 0, "radius": 0.9 } } },
@@ -206,8 +208,11 @@ absent means off, so files without them load unchanged.
   moving the center by fractions of the box from its middle (absent 0)
   and `radius` a fraction of its half size (absent 1, its sides); older
   builds draw a radial gradient as a linear one; `feather` pixels at 1080p
-  of soft edge, centered on the outline, a Gaussian's falloff (absent 0,
-  crisp; older builds draw it crisp); `stroke: { color, width }` centered on the outline,
+  of soft edge: the shape blurred by a Gaussian of sigma a quarter of it,
+  so the edge falls off centered on the outline and a feather wider than
+  the shape dims its middle (absent 0, crisp; older builds draw it crisp,
+  and builds before ADR-099 as a Gaussian of the distance to the edge,
+  which creased on wide feathers); `stroke: { color, width }` centered on the outline,
   width in pixels at 1080p (a line's thickness; 8 when absent); `draw` 0..1
   the share of the outline or line drawn (absent: all), from the top
   center clockwise or a line's left end. Colors are CSS: `#rgb`, `#rrggbb`,
@@ -231,6 +236,13 @@ absent means off, so files without them load unchanged.
   `opacity` 0..1 multiplies the color's alpha. Missing numbers load as the
   defaults (60, 0, 24, 0.5), out-of-range ones clamped; anything that is
   not an object is dropped.
+- `border: { color, width, opacity }` (any visual clip): a border drawn
+  outside the finished picture's edge (its alpha after mask, crop,
+  effects and matte), before its shadow. `width` 0..200 pixels at 1080p,
+  whatever the clip's scale; `opacity` 0..1 multiplies the color's alpha
+  and the clip's opacity. Missing numbers load as the defaults (8, 1),
+  out-of-range ones clamped; anything that is not an object is dropped.
+  Older builds draw no border.
 
 ## Color grading
 
@@ -276,7 +288,8 @@ keys every mask parameter; crop edges do not. So do a shape's
 (`shape.width`, `shape.height`, `shape.radius`, `shape.stroke.width`,
 `shape.draw`, `shape.feather`, `shape.gradient.angle`, `shape.gradient.x`,
 `shape.gradient.y`, `shape.gradient.radius`), a drop shadow's
-(`shadow.blur`, `shadow.x`, `shadow.y`, `shadow.opacity`) and a wiggle's
+(`shadow.blur`, `shadow.x`, `shadow.y`, `shadow.opacity`), a border's
+(`border.width`, `border.opacity`) and a wiggle's
 (`wiggle.x.strength`, `wiggle.x.amplitude`, and the same for `y`,
 `rotation` and `scale`). A picture's tilt keys as
 `transform.rotateX`, `transform.rotateY` and `transform.perspective`:

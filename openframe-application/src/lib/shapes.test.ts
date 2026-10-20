@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createColorClip } from "./project/defaults";
 import type { ColorClip, Shape } from "./project/types";
-import { cleanShape, ellipseOutlineAt, featherReach, parseColor, rectOutlineAt, resolveShape, shapeExtent, strokePx } from "./shapes";
+import { blurredCover, cleanShape, ellipseOutlineAt, featherReach, parseColor, rectOutlineAt, resolveShape, shapeExtent, strokePx, trimCover } from "./shapes";
 
 describe("rectOutlineAt", () => {
   // A square of half size 100: perimeter 800, from the top center clockwise.
@@ -158,5 +158,84 @@ describe("feather and radial gradients (ADR-069)", () => {
     expect(featherReach(200, 1080)).toBe(150);
     expect(featherReach(200, 2160)).toBe(300);
     expect(featherReach(0, 1080)).toBe(0);
+  });
+});
+
+describe("a feather blurs the shape (ADR-099)", () => {
+  // The truth: the shape's inside convolved with the Gaussian on a fine grid.
+  const brute = (inside: (x: number, y: number) => boolean, qx: number, qy: number, s: number) => {
+    const step = s / 30, reach = 4 * s;
+    let sum = 0, all = 0;
+    for (let y = -reach + step / 2; y < reach; y += step)
+      for (let x = -reach + step / 2; x < reach; x += step) {
+        const g = Math.exp(-(x * x + y * y) / (2 * s * s));
+        all += g;
+        if (inside(qx + x, qy + y)) sum += g;
+      }
+    return sum / all;
+  };
+  const roundBox = (bx: number, by: number, r: number) => (x: number, y: number) => {
+    const ex = Math.abs(x) - bx + r, ey = Math.abs(y) - by + r;
+    return Math.hypot(Math.max(ex, 0), Math.max(ey, 0)) + Math.min(Math.max(ex, ey), 0) - r <= 0;
+  };
+  const worst = (cover: (x: number, y: number) => number, inside: (x: number, y: number) => boolean, bx: number, by: number, s: number) => {
+    let w = 0;
+    for (let i = -4; i <= 4; i++) for (let j = -3; j <= 3; j++) {
+      const [x, y] = [(i / 4) * (bx + 2 * s), (j / 3) * (by + 2 * s)];
+      w = Math.max(w, Math.abs(cover(x, y) - brute(inside, x, y, s)));
+    }
+    return w * 255;
+  };
+
+  it("matches a true Gaussian blur of a long ellipse, a rectangle and a rounded rectangle to a level or two of 255", () => {
+    // The launch-film case that creased: an ellipse 960 x 162 feathered 300.
+    expect(worst((x, y) => blurredCover(x, y, 480, 81, 480, 81, 75), (x, y) => (x / 480) ** 2 + (y / 81) ** 2 <= 1, 480, 81, 75)).toBeLessThan(2);
+    expect(worst((x, y) => blurredCover(x, y, 240, 65, 0, 0, 100), roundBox(240, 65, 0), 240, 65, 100)).toBeLessThan(2);
+    expect(worst((x, y) => blurredCover(x, y, 144, 81, 28, 28, 40), roundBox(144, 81, 28), 144, 81, 40)).toBeLessThan(2);
+  });
+
+  it("has no crease or pinch: smooth through a long ellipse's middle, peaked at its center", () => {
+    // The old Gaussian of the distance jumped here: along x the center was
+    // 480 px deep, along y only 81.
+    const row = Array.from({ length: 201 }, (_, i) => blurredCover(i - 100, 0, 480, 81, 480, 81, 75));
+    const col = Array.from({ length: 201 }, (_, i) => blurredCover(0, i - 100, 480, 81, 480, 81, 75));
+    const steps = (v: number[]) => Math.max(...v.slice(1).map((x, i) => Math.abs(x - v[i])));
+    expect(steps(row)).toBeLessThan(0.002);
+    expect(steps(col)).toBeLessThan(0.005);
+    expect(row[100]).toBeCloseTo(col[100], 9);
+    expect(Math.max(...row, ...col)).toBe(row[100]);
+  });
+
+  it("is spent where the quad ends: three sigma past every side", () => {
+    // featherReach grows the quad by three sigma; nothing past it may show.
+    for (const [bx, by, cx, cy] of [[480, 81, 480, 81], [240, 65, 0, 0], [144, 81, 28, 28]])
+      for (let k = 0; k <= 8; k++) {
+        const t = k / 8;
+        expect(blurredCover(bx + 225, (by + 225) * t, bx, by, cx, cy, 75) * 255).toBeLessThan(0.5);
+        expect(blurredCover((bx + 225) * t, by + 225, bx, by, cx, cy, 75) * 255).toBeLessThan(0.5);
+      }
+  });
+
+  it("keeps a straight edge a Gaussian step centered on it, and a big shape's middle full", () => {
+    // Phi, the standard normal's CDF (Abramowitz-Stegun 26.2.17).
+    const Phi = (z: number) => {
+      const t = 1 / (1 + 0.2316419 * Math.abs(z));
+      const p = 0.3989423 * Math.exp((-z * z) / 2) * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
+      return z > 0 ? 1 - p : p;
+    };
+    for (const d of [-100, -50, 0, 50, 100]) expect(blurredCover(400 + d, 0, 400, 300, 0, 0, 50)).toBeCloseTo(Phi(-d / 50), 3);
+    expect(blurredCover(0, 0, 400, 300, 40, 40, 50)).toBeGreaterThan(0.9999);
+  });
+
+  it("blurs a trimmed outline's two ends along it, as soft as its sides", () => {
+    const per = 1000, s = 20;
+    // Drawn 0..0.6 of the way: half at each end, full between, nothing in the gap.
+    expect(trimCover(0, 0.6, per, s)).toBeCloseTo(0.5, 3);
+    expect(trimCover(0.6, 0.6, per, s)).toBeCloseTo(0.5, 3);
+    expect(trimCover(0.3, 0.6, per, s)).toBeGreaterThan(0.999);
+    expect(trimCover(0.8, 0.6, per, s)).toBeLessThan(0.001);
+    // Just before the start (round from the top, counterclockwise) as soft as just past the end.
+    expect(trimCover(1 - 0.02, 0.6, per, s)).toBeCloseTo(trimCover(0.62, 0.6, per, s), 6);
+    expect(trimCover(0.4, 0, per, s)).toBe(0);
   });
 });

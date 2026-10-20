@@ -1,6 +1,7 @@
 // The inspector's graphics rows: a shape layer's shape (ADR-057, its
 // feather and radial fill ADR-069), any picture's track matte, motion blur
-// and edges (ADR-056, ADR-058, ADR-059), and its drop shadow (ADR-070).
+// and edges (ADR-056, ADR-058, ADR-059), its drop shadow (ADR-070) and its
+// border (ADR-099).
 // Every edit runs the command an agent would, so the two agree.
 
 import { runCommand } from "../../lib/commands";
@@ -10,6 +11,7 @@ import type { ColorClip, EdgeMode, MatteMode, VisualClip } from "../../lib/proje
 import { store, useEditor } from "../../state/store";
 import { toast } from "../../state/toast";
 import { SHADOW_DEFAULT } from "../../lib/shadow";
+import { BORDER_DEFAULT, BORDER_WIDTH_MAX } from "../../lib/border";
 import { ColorInput, Row, Section, Segmented, SliderRow, Toggle } from "./controls";
 
 const pct = { show: (v: number) => v * 100, store: (v: number) => v / 100 };
@@ -175,6 +177,29 @@ export function ShadowSection({ clip }: { clip: VisualClip }) {
           <SliderRow clip={clip} path="shadow.x" label="Offset X" min={-300} max={300} unit="px" reset={SHADOW_DEFAULT.x} {...pxRow} />
           <SliderRow clip={clip} path="shadow.y" label="Offset Y" min={-300} max={300} unit="px" reset={SHADOW_DEFAULT.y} {...pxRow} />
           <SliderRow clip={clip} path="shadow.opacity" label="Opacity" min={0} max={100} unit="%" reset={SHADOW_DEFAULT.opacity} {...pct} />
+        </>
+      )}
+    </Section>
+  );
+}
+
+/** A picture's border (ADR-099): around the finished picture's edge, so a
+ * masked window gets its rounded frame; its shadow is cast with it. */
+export function BorderSection({ clip }: { clip: VisualClip }) {
+  // Pixels of this canvas per 1080p pixel, the stored unit.
+  const px = useEditor((st) => st.project.height) / 1080;
+  const b = clip.border;
+  const ids = [clip.id];
+  const pxRow = { show: (v: number) => v * px, store: (v: number) => v / px };
+  return (
+    <Section title="Border" defaultOpen={!!b} extra={<Toggle label="Border" on={!!b} onChange={(on) => run(on ? "Border" : "No border", "set_border", on ? { clip_ids: ids, ...BORDER_DEFAULT } : { clip_ids: ids, off: true })} />}>
+      {b && (
+        <>
+          <Row label="Color">
+            <ColorInput label="Border color" value={b.color} onChange={(color) => run("Border color", "set_border", { clip_ids: ids, color })} />
+          </Row>
+          <SliderRow clip={clip} path="border.width" label="Width" min={0} max={BORDER_WIDTH_MAX} unit="px" reset={BORDER_DEFAULT.width} {...pxRow} />
+          <SliderRow clip={clip} path="border.opacity" label="Opacity" min={0} max={100} unit="%" reset={BORDER_DEFAULT.opacity} {...pct} />
         </>
       )}
     </Section>

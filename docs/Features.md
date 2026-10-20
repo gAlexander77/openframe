@@ -376,8 +376,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `set_shape`).
 - **Soft light** (ADR-069): a shape's **radial gradient** (from the
   center to its rim, an ellipse fitting the box, with a center and
-  radius that keyframe) and **feather** (the edge fades over that many
-  pixels with a Gaussian's falloff) make soft background glows without
+  radius that keyframe) and **feather** (the shape blurred: the edge fades
+  over that many pixels with a Gaussian's falloff, and a long ellipse
+  feathered wider than it is tall stays one smooth glow, ADR-099) make
+  soft background glows without
   image files; with the Blur effect at 300 to 500 they are as soft as
   any launch film's. Kind (Linear, Radial), Fade out, Radius, Center and
   Feather in the Shape section.
@@ -388,6 +390,15 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   track matte, so a rounded window casts a rounded shadow and a compound
   clip (footage, a border and a bar) casts one shadow for the whole
   floating window. Shadow section of the Video tab (`set_shadow`).
+- **Border on pictures** (After Effects' Stroke layer style, outside,
+  ADR-099): any video, image, title, shape or compound clip gets a border
+  around its finished picture (color, width up to 200 px at 1080p,
+  opacity; width and opacity keyframe). It follows the picture's edge
+  after its mask, so a rounded picture-in-picture gets a rounded frame
+  and a circle mask a ring; it keeps its width however the clip is
+  scaled, fades with the clip, and the drop shadow is cast by the picture
+  and its border together. Border section of the Video tab
+  (`set_border`).
 - **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
   Tilt Y in the Transform section turn a picture in depth, seen from a
   camera 2000 pixels (at 1080p) in front of the canvas center, the

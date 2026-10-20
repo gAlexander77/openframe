@@ -62,7 +62,8 @@ import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type Ad
 import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
-import { COLOR_PATHS, colorKey } from "./textAnim";
+import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
+import { COLOR_PATHS, colorKey, keyColor } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
 import { didYouMean } from "./didYouMean";
@@ -818,8 +819,15 @@ export const COMMANDS: Command[] = [
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
         // A keyed path takes a key here: refuse one nothing would read (ADR-066).
-        const problem = clip.keyframes?.[path]?.length && rel !== undefined ? keyframeProblem(clip, path) : null;
+        const keyed = !!clip.keyframes?.[path]?.length && rel !== undefined;
+        const problem = keyed ? keyframeProblem(clip, path) : null;
         if (problem) throw new CommandError(`${problem}; remove_keyframes path ${a.path} clears the dead keys`);
+        // A color's key holds 0xRRGGBB, but the color itself stays CSS: a
+        // number there broke every reader of style.color (ADR-099).
+        if (COLOR_PATHS.has(path) && clip.type !== "text") throw new CommandError(`${path} is a title's color; clip ${clip.id} is a ${clip.type} clip`);
+        if (COLOR_PATHS.has(path) && !keyed) return ops.updateClip(q, id, (c) => (c.type === "text" ? { ...c, style: { ...c.style, color: keyColor(Number(a.value)) } } : c));
+        const now = COLOR_PATHS.has(path) ? undefined : rawValueAt(clip, path);
+        if (now !== undefined && typeof now !== "number") throw new CommandError(`${a.path} holds ${typeof now === "string" ? `"${now}"` : `a ${typeof now}`}, not a number: set_param sets numbers (a title's look is set_text, a shape's set_shape)`);
         return ops.setParam(q, [id], path, Number(a.value), rel);
       }, p);
     },
@@ -1217,7 +1225,7 @@ export const COMMANDS: Command[] = [
         stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
         radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
         draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
-        feather: S.num(`Soft edge: the edge fades over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default). An ellipse feathered by half its size or more is a soft glow`, { minimum: 0, maximum: FEATHER_MAX }),
+        feather: S.num(`Soft edge: the shape blurred, its edge fading over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default); a feather wider than the shape also dims its middle, as a blur would. An ellipse feathered by half its size or more is a soft glow`, { minimum: 0, maximum: FEATHER_MAX }),
         rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
         opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
         track_id: S.str("Track id; default above everything at that time"),
@@ -1381,6 +1389,43 @@ export const COMMANDS: Command[] = [
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, shadow: next }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
         for (const k of SHADOW_PARAMS) if (a[k] !== undefined && keyed(k)) p = ops.setParam(p, [clip.id], `shadow.${k}`, Number(a[k]), rel);
+      }
+      return p;
+    },
+  },
+  {
+    name: "set_border",
+    description:
+      "A border (stroke) around a picture: a video, image, title, shape or compound clip, as picture-in-picture shots and social layouts frame theirs. It follows the finished picture's edge, after its mask, crop, effects and track matte, outside it: a rounded mask gets a rounded border, a circle mask a ring, a compound clip one border around the whole window; set_shadow's shadow is cast by the picture and its border together. color (CSS, default white), width: pixels at 1080p outside the edge, 0..200 (default 8; it stays that wide however the clip is scaled), opacity 0..1 (default 1; the clip's opacity fades it too). A framed inset: {width: 10, color: '#ffffff'}; a thin dark keyline: {width: 2, color: '#000000', opacity: 0.6}. Values left out keep theirs (or the defaults for a new border). Animate with add_keyframe on border.width, border.opacity; values that are keyframed get a key at `at` instead. off: true removes it and its keyframes. Titles and shapes also have their own outline (style.stroke, stroke_width), drawn with the letters or the shape; this one goes around the whole finished picture, a title's box included.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        color: S.str("CSS color; its alpha multiplies opacity"),
+        width: S.num("Pixels at 1080p outside the picture's edge (0 shows none)", { minimum: 0, maximum: BORDER_WIDTH_MAX }),
+        opacity: S.num("0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the border and its keyframes"),
+        at: S.num("Timeline seconds, for keyframed values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const color = colorArg(a.color, "color");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to border`);
+        if (a.off === true) {
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { border?: unknown }, "border") as Clip, BORDER_PARAMS.map((k) => `border.${k}`)));
+          continue;
+        }
+        const keyed = (k: string) => !!clip.keyframes?.[`border.${k}`]?.length;
+        const next = cleanBorder({
+          ...(clip.border ?? BORDER_DEFAULT),
+          ...(color ? { color } : {}),
+          ...Object.fromEntries(BORDER_PARAMS.filter((k) => a[k] !== undefined && !keyed(k)).map((k) => [k, Number(a[k])])),
+        })!;
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, border: next }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of BORDER_PARAMS) if (a[k] !== undefined && keyed(k)) p = ops.setParam(p, [clip.id], `border.${k}`, Number(a[k]), rel);
       }
       return p;
     },
@@ -1594,6 +1639,9 @@ export const COMMANDS: Command[] = [
       const problem = keyframeProblem(clip, path);
       if (problem) throw new CommandError(problem);
       const e = easeArg(a.ease, a.bezier);
+      // A color on a number's path would key its 0xRRGGBB as the number (a
+      // 16-million-pixel title, ADR-099): refuse it.
+      if (a.color !== undefined && !COLOR_PATHS.has(path)) throw new CommandError(`color is for a color path (style.color); ${path} takes value`);
       // Colors key as 0xRRGGBB numbers (lib/textAnim.ts); a model gives CSS.
       const v = a.color !== undefined ? colorKey(String(a.color)) : a.value !== undefined ? Number(a.value) : undefined;
       if (v === undefined) throw new CommandError(COLOR_PATHS.has(path) ? `give color (a CSS color) for ${path}` : a.color !== undefined ? `${a.color} is not a color` : "give value");
@@ -2414,6 +2462,20 @@ export const COMMANDS: Command[] = [
   },
 ];
 
+/** What a clip holds at a parameter path, whatever its kind (an effect's
+ * parameter by the effect's id); undefined where nothing is. */
+function rawValueAt(clip: Clip, path: string): unknown {
+  let cur: unknown = clip;
+  for (const seg of path.split(".")) {
+    if (Array.isArray(cur)) {
+      const el = cur.find((e) => (e as { id?: string }).id === seg) as { params?: unknown } | undefined;
+      cur = el && "params" in el ? el.params : el;
+    } else if (cur && typeof cur === "object") cur = (cur as Record<string, unknown>)[seg];
+    else return undefined;
+  }
+  return cur;
+}
+
 /**
  * A parameter path as stored. An effect's parameter can be named by the
  * effect's place in the stack (effects.0.amount), its id (as stored), or its
@@ -2702,7 +2764,11 @@ function graphicsSummary(c: Clip) {
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),
+    // The mask as set_mask takes it: describe_project left it out, so a
+    // model could not see the masks it had set (ADR-099).
+    ...(c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
     ...(c.shadow ? { shadow: c.shadow } : {}),
+    ...(c.border ? { border: c.border } : {}),
     ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
   };
 }

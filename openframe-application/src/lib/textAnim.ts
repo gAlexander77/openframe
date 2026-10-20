@@ -60,7 +60,8 @@ export const styleKeyed = (clip: Clip) => TEXT_STYLE_PARAMS.some((k) => !!clip.k
  * itself when nothing on it is keyed, so an unanimated title rasterizes
  * once, as before. */
 export function textStyleAt(clip: TextClip, r: number): TextStyle {
-  // set_param on style.color stores the key's kind of number: read it so.
+  // set_param on style.color once stored the key's kind of number (it
+  // writes CSS since ADR-099, and the loader converts old ones): read it so.
   const raw = clip.style.color as unknown;
   if (!styleKeyed(clip)) return typeof raw === "number" ? { ...clip.style, color: keyColor(raw) } : clip.style;
   const keys = clip.keyframes!;

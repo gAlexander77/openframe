@@ -30,7 +30,8 @@ import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
 import type { Placement } from "../lib/motionBlur";
-import type { BlendMode, DropShadow, MatteMode } from "../lib/project/types";
+import type { BlendMode, Border, DropShadow, MatteMode } from "../lib/project/types";
+import { floodSteps } from "../lib/border";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
 import { tiltMatrix } from "../lib/tilt";
@@ -38,9 +39,12 @@ import {
   ADJUST_FS,
   BLEND_FS,
   BLEND_IDS,
+  BORDER_FS,
   COPY_FS,
   DOWN_FS,
   EFFECT_SHADERS,
+  FLOOD_SEED_FS,
+  FLOOD_STEP_FS,
   FULLSCREEN_VS,
   GAUSS_FS,
   LAYER_FS,
@@ -184,6 +188,8 @@ export class Compositor {
    * size; level 0 is full size, each next one half the last. One set for
    * every nesting level: a blur finishes before anything else draws. */
   private pyramid: { w: number; h: number; a: Target; b: Target }[] = [];
+  /** The border's jump flood ping-pongs between these (ADR-099), made on first use. */
+  private flood: [Target, Target] | null = null;
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
@@ -286,6 +292,9 @@ export class Compositor {
       ["blur:gauss", FULLSCREEN_VS, GAUSS_FS],
       ["blur:up", FULLSCREEN_VS, UP_FS],
       ["shadow", FULLSCREEN_VS, SHADOW_FS],
+      ["border:seed", FULLSCREEN_VS, FLOOD_SEED_FS],
+      ["border:step", FULLSCREEN_VS, FLOOD_STEP_FS],
+      ["border", FULLSCREEN_VS, BORDER_FS],
       ...Object.entries(EFFECT_SHADERS).map(([k, fs]): [string, string, string] => [`fx:${k}`, FULLSCREEN_VS, fs]),
     ];
     const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
@@ -357,7 +366,7 @@ export class Compositor {
   private freeTargets() {
     const gl = this.gl;
     const pyramid = this.pyramid.flatMap((l) => [l.a, l.b]);
-    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...pyramid, ...(this.accum ? [this.accum] : [])]) {
+    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...pyramid, ...(this.accum ? [this.accum] : []), ...(this.flood ?? [])]) {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
@@ -365,6 +374,7 @@ export class Compositor {
     this.baked = [];
     this.matteTargets = [];
     this.pyramid = [];
+    this.flood = null;
     this.accum = undefined;
   }
 
@@ -455,6 +465,40 @@ export class Compositor {
     gl.uniform2f(u("u_offset"), (sh.x * k) / this.width, (-sh.y * k) / this.height);
     const [cr, cg, cb, ca] = rgba(sh.color);
     const a = ca * sh.opacity;
+    gl.uniform4f(u("u_color"), cr * a, cg * a, cb * a, a);
+    this.draw();
+  }
+
+  /** A border (ADR-099) around the finished layer `src`, into `out`: the
+   * picture's edge flooded out on two scratch targets, then the border drawn
+   * outside the picture. `level` is the layer's opacity. */
+  private castBorder(src: Target, b: Border, level: number, out: Target) {
+    const gl = this.gl;
+    const width = (b.width * this.height) / 1080;
+    const lv = Math.max(level, 0.01);
+    const [A, B] = (this.flood ??= [this.makeTarget(), this.makeTarget()]);
+    this.bindTarget(A);
+    let u = this.use(this.program("border:seed", FULLSCREEN_VS, FLOOD_SEED_FS));
+    this.bindTex(0, src.tex, u("u_layer"));
+    gl.uniform1f(u("u_level"), lv);
+    this.draw();
+    let [from, to] = [A, B];
+    u = this.use(this.program("border:step", FULLSCREEN_VS, FLOOD_STEP_FS));
+    for (const k of floodSteps(width)) {
+      this.bindTarget(to);
+      this.bindTex(0, from.tex, u("u_seeds"));
+      gl.uniform1i(u("u_step"), k);
+      this.draw();
+      [from, to] = [to, from];
+    }
+    this.bindTarget(out);
+    u = this.use(this.program("border", FULLSCREEN_VS, BORDER_FS));
+    this.bindTex(0, src.tex, u("u_layer"));
+    this.bindTex(1, from.tex, u("u_seeds"));
+    gl.uniform1f(u("u_level"), lv);
+    gl.uniform1f(u("u_width"), width);
+    const [cr, cg, cb, ca] = rgba(b.color);
+    const a = ca * b.opacity * Math.min(1, level);
     gl.uniform4f(u("u_color"), cr * a, cg * a, cb * a, a);
     this.draw();
   }
@@ -1029,6 +1073,13 @@ export class Compositor {
         const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
         cut = [target, ...temps].find((t) => t !== done)!;
         this.applyMatte(done, matte, tm.mode, cut);
+      }
+      // The border (ADR-099) around the picture as it is now, before the
+      // shadow, which it casts too.
+      if (layer.border) {
+        const framed = [target, ...temps].find((t) => t !== cut)!;
+        this.castBorder(cut, layer.border, layer.opacity, framed);
+        cut = framed;
       }
       // The drop shadow last (ADR-070): cast by the picture as it is now.
       if (!layer.shadow) return cut;

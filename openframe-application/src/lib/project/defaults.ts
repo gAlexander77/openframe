@@ -11,6 +11,7 @@ import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { cleanShape } from "../shapes";
 import { cleanShadow } from "../shadow";
+import { cleanBorder } from "../border";
 import { cleanWeight } from "../textLook";
 import { keyColor } from "../textAnim";
 import { cleanTrackMatte, dropDanglingMattes } from "../trackMatte";
@@ -296,6 +297,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     optional(c, "edge", c.edge === "mirror" || c.edge === "repeat" ? c.edge : undefined);
     optional(c, "wiggle", cleanWiggle(c.wiggle));
     optional(c, "shadow", cleanShadow(c.shadow));
+    optional(c, "border", cleanBorder(c.border));
   }
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);

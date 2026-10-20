@@ -16,6 +16,7 @@ import { frameAt, framesToSeconds } from "../time";
 import { MOTION_SAMPLES, MOVING_TRANSITIONS, samplesFor, shutterOffsets, travel, type Placement } from "../motionBlur";
 import { resolveShape, type ResolvedShape } from "../shapes";
 import { resolveShadow } from "../shadow";
+import { resolveBorder } from "../border";
 import { styleKeyed, textStyleAt } from "../textAnim";
 import { resolveTilt, type Tilt } from "../tilt";
 import { matteClip, mattesAt } from "../trackMatte";
@@ -24,6 +25,7 @@ import type {
   Adjust,
   AdjustmentClip,
   BlendMode,
+  Border,
   ChromaKey,
   Clip,
   Crop,
@@ -121,6 +123,9 @@ export interface Layer {
   trackMatte?: { layer: Layer | null; mode: MatteMode };
   /** Drop shadow (ADR-070), keyframes applied; cast by the finished layer. */
   shadow?: DropShadow;
+  /** Border (ADR-099), keyframes applied; drawn around the finished layer
+   * before its shadow. */
+  border?: Border;
   /** Perspective tilt (ADR-070), keyframes applied; absent when flat. */
   tilt?: Tilt;
 }
@@ -362,6 +367,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
   const motion = clip.motionBlur ? shutterPath(p, clip, r, clip.motionBlur.shutter, opts, placeAt) : undefined;
   const cut = clip.type === "video" && clip.cutout?.enabled ? clip.cutout : undefined;
   const shadow = resolveShadow(clip, r);
+  const border = resolveBorder(clip, r);
   const tilt = resolveTilt(clip, r);
   return {
     clipId: prefix + clip.id,
@@ -393,6 +399,7 @@ export function layerAt(p: Project, clip: VisualClip, f: number, prefix = "", de
     ...(motion ? { motion } : {}),
     ...(clip.edge ? { edge: clip.edge } : {}),
     ...(shadow ? { shadow } : {}),
+    ...(border ? { border } : {}),
     ...(tilt ? { tilt } : {}),
   };
 }
@@ -437,7 +444,7 @@ export function anchorShift(
 export function canvasLayer(p: Project, clip: VisualClip, layer: Layer): Layer | null {
   const fill = clip.canvas;
   if (!fill) return null;
-  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined, tilt: undefined };
+  const base: Layer = { ...layer, clipId: `${layer.clipId}#canvas`, x: 0, y: 0, rotation: 0, flipX: false, flipY: false, opacity: 1, blend: "normal", mask: undefined, chromaKey: undefined, matte: undefined, effects: [], blur: 0, shadow: undefined, border: undefined, tilt: undefined };
   if (fill.type === "color") return { ...base, source: { kind: "color", color: fill.color } };
   if (clip.type !== "video" && clip.type !== "image") return null;
   const a = getAsset(p, clip.assetId);

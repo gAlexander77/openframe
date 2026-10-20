@@ -1,4 +1,4 @@
-import { measureRuns, runSegments } from "../lib/textRuns";
+import { baselineShifts, measureRuns, runBoxes, runSegments } from "../lib/textRuns";
 // Text clips rasterized with Canvas2D at render resolution, then drawn by
 // the compositor as a "native" source (already canvas-scale pixels). The
 // raster is cached by content: transform animation moves the quad, so only
@@ -177,6 +177,18 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
         return piece;
       });
     });
+    // Mixed sizes share a baseline (ADR-099): each piece is drawn centered
+    // on its line, so a bigger one would hang below its neighbors; the
+    // line takes its tallest piece's baseline instead.
+    const above = (st: TextStyle) => {
+      ctx.font = textFont(st, st.size * k);
+      ctx.textBaseline = "alphabetic";
+      const a = ctx.measureText("").fontBoundingBoxAscent;
+      ctx.textBaseline = "middle";
+      return a - ctx.measureText("").fontBoundingBoxAscent;
+    };
+    const dy = baselineShifts(pieces.map((p) => ({ y: p.y, above: above(p.style ?? s) })));
+    pieces = pieces.map((p, i) => (dy[i] ? { ...p, y: p.y + dy[i] } : p));
   }
   ctx.font = font;
 
@@ -213,11 +225,15 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // The gradient runs across the whole text block, in raster pixels; a unit
   // drawn moved maps its ends into its own coordinates, so the colors stay
   // put while the letters travel through them.
+  // A run's own gradient runs across its own letters (ADR-099).
+  const boxes = s.runs?.length ? runBoxes(s.runs, pieces, lineH) : undefined;
   const fillStyle = (p: Piece): string | CanvasGradient => {
     const style = p.style ?? s;
     if (p.spoken && !s.runs?.some(r => r.start <= (p.start ?? 0) && r.end > (p.start ?? 0) && (r.color || r.gradient))) return s.highlight!;
     const gradient = style.gradient;
-    const grad = gradient && gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle);
+    const run = boxes && s.runs!.find((r) => r.start <= (p.start ?? 0) && (p.start ?? 0) < r.end);
+    const box = run?.gradient ? boxes!.get(run) : undefined;
+    const grad = gradient && (box ? gradientLine((box.left + box.right) / 2, (box.top + box.bottom) / 2, box.right - box.left, box.bottom - box.top, gradient.angle) : gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle));
     if (!grad || !gradient) return style.color;
     const m = ctx.getTransform().invertSelf();
     const a = m.transformPoint({ x: grad[0], y: grad[1] }), b = m.transformPoint({ x: grad[2], y: grad[3] });

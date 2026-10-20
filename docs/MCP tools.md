@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 158 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 159 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -45,7 +45,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
@@ -1207,7 +1207,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 
 ## Graphics and compositing
 
-Shapes (bars, boxes, lines that draw on, soft glows), drop shadows and perspective tilt for floating windows, track mattes, motion blur, mirrored edges and camera shake.
+Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.
 
 ### add_shape
 
@@ -1236,7 +1236,7 @@ Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid
 | `stroke_width` | number |  | Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline (0..400) |
 | `radius` | number |  | Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35 (0..1) |
 | `draw` | number |  | Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1 (0..1) |
-| `feather` | number |  | Soft edge: the edge fades over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default). An ellipse feathered by half its size or more is a soft glow (0..1000) |
+| `feather` | number |  | Soft edge: the shape blurred, its edge fading over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default); a feather wider than the shape also dims its middle, as a blur would. An ellipse feathered by half its size or more is a soft glow (0..1000) |
 | `rotation` | number |  | Degrees, clockwise (turn a line to any angle) |
 | `opacity` | number |  | 0..1, default 1 (0..1) |
 | `track_id` | string |  | Track id; default above everything at that time |
@@ -1299,6 +1299,25 @@ Example:
 
 ```json
 {"name":"set_shadow","arguments":{"clip_ids":["c_6"],"blur":80,"y":30,"opacity":0.55}}
+```
+
+### set_border
+
+A border (stroke) around a picture: a video, image, title, shape or compound clip, as picture-in-picture shots and social layouts frame theirs. It follows the finished picture's edge, after its mask, crop, effects and track matte, outside it: a rounded mask gets a rounded border, a circle mask a ring, a compound clip one border around the whole window; set_shadow's shadow is cast by the picture and its border together. color (CSS, default white), width: pixels at 1080p outside the edge, 0..200 (default 8; it stays that wide however the clip is scaled), opacity 0..1 (default 1; the clip's opacity fades it too). A framed inset: {width: 10, color: '#ffffff'}; a thin dark keyline: {width: 2, color: '#000000', opacity: 0.6}. Values left out keep theirs (or the defaults for a new border). Animate with add_keyframe on border.width, border.opacity; values that are keyframed get a key at `at` instead. off: true removes it and its keyframes. Titles and shapes also have their own outline (style.stroke, stroke_width), drawn with the letters or the shape; this one goes around the whole finished picture, a title's box included.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Visual clips |
+| `color` | string |  | CSS color; its alpha multiplies opacity |
+| `width` | number |  | Pixels at 1080p outside the picture's edge (0 shows none) (0..200) |
+| `opacity` | number |  | 0..1 (0..1) |
+| `off` | boolean |  | Remove the border and its keyframes |
+| `at` | number |  | Timeline seconds, for keyframed values |
+
+Example:
+
+```json
+{"name":"set_border","arguments":{"clip_ids":["c_6"],"width":10,"color":"#ffffff"}}
 ```
 
 ### set_tilt

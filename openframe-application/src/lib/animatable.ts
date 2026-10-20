@@ -9,6 +9,7 @@
 import { DEFAULT_ADJUST } from "./project/defaults";
 import { HSL_BANDS, WHEELS } from "./grade";
 import { SHADOW_PARAMS } from "./shadow";
+import { BORDER_PARAMS } from "./border";
 import { SHAPE_PARAMS } from "./shapes";
 import { TILT_PARAMS } from "./tilt";
 import { WIGGLE_TARGETS } from "./wiggle";
@@ -40,6 +41,7 @@ const ROWS: Row[] = [
   // Perspective tilt (ADR-069 to ADR-071's render work).
   { path: `transform.${any(TILT_PARAMS)}`, on: visual },
   { path: `shadow.${any(SHADOW_PARAMS)}`, on: visual, needs: (c) => ("shadow" in c && c.shadow ? null : "it has no drop shadow: set_shadow first") },
+  { path: `border.${any(BORDER_PARAMS)}`, on: visual, needs: (c) => ("border" in c && c.border ? null : "it has no border: set_border first") },
   { path: "opacity", on: (c) => "opacity" in c },
   { path: "volume", on: sound },
   { path: "pan", on: sound },
