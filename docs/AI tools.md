@@ -482,6 +482,12 @@ and the AI tools tab has a card for it.
   and the cut-out is a new PNG with transparency (`cutOutImage` in
   `src/engine/cutout.ts`), drawn above the title like any picture. With the title hidden, the copy over the original
   changes no pixel by more than 3 of 765: the matte's edges add no fringe.
+  The copy sits above the titles, so above a grade kept under them: it
+  takes that grade (look, sliders, LUT, effects) as its own, and the answer
+  says where the copy went and what it took. check_project and
+  export_versions render the title alone and the copy alone to measure how
+  much of the letters the subject covers; from 25% a version shows the
+  title in front ([[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]).
 
 ## Voiceover: pauses, finish and review
 

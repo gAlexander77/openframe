@@ -36,7 +36,7 @@ import { FILLERS, fillerRanges } from "../lib/fillers";
 import { transcribePcm } from "../engine/transcribe";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
-import { behindProblem, putBehindSubject, type SubjectCut } from "../lib/ads";
+import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
 import type { Asset, AudioClip, Cutout, Id, ImageClip, VideoClip } from "../lib/project/types";
@@ -1225,7 +1225,7 @@ async function cutOutPicture(clip: ImageClip): Promise<{ asset: Asset; cached: b
  * the subject above the titles (lib/ads.ts putBehindSubject). Titles
  * below the clip are lifted above it first.
  */
-export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {}): Promise<{ subjectClipId: Id; textClipIds: Id[]; cached: boolean; model: string }> {
+export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {}): Promise<{ subjectClipId: Id; textClipIds: Id[]; cached: boolean; model: string; placed: BehindPlace; graded?: GradeCopied[]; note: string }> {
   const ids = opts.textIds ?? [];
   const problem = behindProblem(store.get().project, clipId, ids);
   if (problem) throw new Error(problem);
@@ -1247,14 +1247,22 @@ export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {
   scope.throwIfAborted();
   const again = behindProblem(store.get().project, clipId, ids);
   if (again) throw new Error(again);
-  let subject = "";
+  let made: ReturnType<typeof putBehindSubject> | undefined;
   store.edit("Text behind subject", (p) => {
-    const r = putBehindSubject(p, clipId, ids, cut);
-    subject = r.subjectId;
-    return r.project;
+    made = putBehindSubject(p, clipId, ids, cut);
+    return made.project;
   });
   finish("cutout", note);
-  return { subjectClipId: subject, textClipIds: ids, cached, model };
+  const { subjectId, placed, graded } = made!;
+  // Where the copy went, and the grade it took (ADR-103): said, so an
+  // agent knows the copy is a clip of its own to keep in step.
+  const said = [
+    `The subject's copy (${subjectId}) is on a new track "${placed.track}", right above "${placed.above}"${ids.length > 1 ? ", the highest of the titles' tracks" : ", the title's track"}.`,
+    graded.length
+      ? `It sits above ${graded.length === 1 ? "an adjustment layer that grades" : `${graded.length} adjustment layers that grade`} the clip under it (${graded.map((g) => g.adjustment_clip_id).join(", ")}), so it took that grade itself: ${graded.flatMap((g) => g.copied).join(", ")}. A grade changed later goes on the copy too (set_filter, set_param on ${subjectId}).`
+      : "No adjustment layer lies between it and the clip, so it is graded as the clip is.",
+  ].join(" ");
+  return { subjectClipId: subjectId, textClipIds: ids, cached, model, placed, ...(graded.length ? { graded } : {}), note: said };
 }
 
 /** The inspector's switch: on makes or reuses the matte, off keeps it. */

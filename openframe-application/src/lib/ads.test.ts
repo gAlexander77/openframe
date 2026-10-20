@@ -237,6 +237,35 @@ describe("text behind the subject", () => {
     expect((q.tracks.flatMap((t) => t.clips).find((c) => c.id === subjectId) as VideoClip).canvas).toBeUndefined();
   });
 
+  it("gives the copy the grade of the adjustment layers it sits above, and says where it went (ADR-103)", () => {
+    // The Northbound test: the footage, the grade's adjustment layer over
+    // it, the titles above the grade, and a look over everything on top.
+    let { p, video, title } = setup();
+    p = runCommand(p, "add_track", { kind: "video", name: "Grade" });
+    const gradeTrack = p.tracks[0].id;
+    p = runCommand(p, "move_track", { track_id: gradeTrack, below_track_id: p.tracks.find((t) => t.clips.some((c) => c.id === title))!.id });
+    p = runCommand(p, "add_adjustment_clip", { start: 0, duration: 5, track_id: gradeTrack });
+    const grade = p.tracks.find((t) => t.id === gradeTrack)!.clips[0].id;
+    p = runCommand(p, "set_filter", { clip_id: grade, type: "teal", intensity: 0.6 });
+    for (const [path, value] of [["adjust.contrast", 8], ["adjust.vignette", 22], ["adjust.grain", 8]] as const) p = runCommand(p, "set_param", { clip_ids: [grade], path, value });
+    p = runCommand(p, "add_track", { kind: "video", name: "Look" });
+    p = runCommand(p, "add_adjustment_clip", { start: 0, duration: 5, track_id: p.tracks[0].id });
+    const look = p.tracks[0].clips[0].id;
+    p = runCommand(p, "set_param", { clip_ids: [look], path: "adjust.saturation", value: -40 });
+    const { project: q, subjectId, placed, graded } = putBehindSubject(p, video, [title], { cutout: cut });
+    const copy = q.tracks.flatMap((t) => t.clips).find((c) => c.id === subjectId) as VideoClip;
+    // The grade under it is its own now; the look above reaches it anyway.
+    expect(copy.filter).toEqual({ type: "teal", intensity: 0.6 });
+    expect(copy.adjust).toMatchObject({ contrast: 8, vignette: 22, grain: 8, saturation: 0 });
+    expect(graded.map((g) => g.adjustment_clip_id)).toEqual([grade]);
+    expect(graded[0].copied).toEqual(expect.arrayContaining(["filter teal 0.6", "contrast 8", "vignette 22", "grain 8"]));
+    // On a new track right above the title's, under the look.
+    const index = (id: string) => q.tracks.findIndex((t) => t.clips.some((c) => c.id === id));
+    expect(placed).toMatchObject({ track: "Subject", above_track_id: q.tracks[index(title)].id });
+    expect(index(subjectId)).toBe(index(title) - 1);
+    expect(index(look)).toBeLessThan(index(subjectId));
+  });
+
   it("refuses what it cannot do, saying why", () => {
     const { p, video, title } = setup();
     expect(behindProblem(p, title, [video])).toMatch(/must be in a video or picture clip/);

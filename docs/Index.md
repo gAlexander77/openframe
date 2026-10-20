@@ -353,3 +353,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   picture, fill the frame with a full-bleed split screen, hold text at the
   readable size, judge 4:5 by the apps' zones and take overrides by hand;
   unique copies copy nested compounds.
+- [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]] —
+  check_project judges titles inside compound clips where they show; a
+  title card grows as one picture and is restacked rather than overlapping;
+  one title zone for the check and versions, with room for the suggested
+  outline; a subject's copy takes the grade it sits above and says where
+  it went; a title its subject hides is flagged and shown in front in a
+  version; frame-spanning shapes stretch; versions answer their loudness.

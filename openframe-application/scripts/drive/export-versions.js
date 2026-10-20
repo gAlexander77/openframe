@@ -4,8 +4,9 @@
 // master. First check: true answers a contact sheet (saved to
 // scratch/versions-sheet.png) and exports nothing. Then the browser's
 // save dialog is replaced by one that keeps the bytes; each file is
-// written to scratch/versions/ and ffprobe reads its size and length. The
-// project in the editor must be exactly as before.
+// written to scratch/versions/ and ffprobe reads its size and length; each
+// answers the loudness its mix reached (-16 asked). The project in the
+// editor must be exactly as before.
 async (page) => {
   const fs = await import("node:fs");
   const path = await import("node:path");
@@ -32,7 +33,7 @@ async (page) => {
   const before = await page.evaluate(() => ({ project: JSON.stringify(window.videoEditor.project()), undo: window.videoEditor.state().undoLabel }));
 
   // ---- look first ------------------------------------------------------------------
-  const ask = { ratios: ["16:9", "9:16", "1:1"], durations: [5, 3], textless: true, resolution: "480p" };
+  const ask = { ratios: ["16:9", "9:16", "1:1"], durations: [5, 3], textless: true, resolution: "480p", loudness: -16 };
   const sheet = await call("export_versions", { ...ask, check: true });
   fs.mkdirSync("__REPO__/scratch/versions", { recursive: true });
   fs.writeFileSync("__REPO__/scratch/versions-sheet.png", Buffer.from(sheet[0].data, "base64"));
@@ -96,6 +97,9 @@ async (page) => {
     cut: named(/ 3s/).length === 3 && named(/ 3s/).every((p) => Math.abs(p.duration - 3) < 0.15),
   };
   details.shapes = { ok: Object.values(shapes).every(Boolean), ...shapes };
+  // Each file answers the loudness its mix reached, as export_video does (ADR-103).
+  const levels = (done.versions ?? []).map((v) => ({ name: v.name, loudness: v.loudness, info: v.info }));
+  details.loudness = { ok: levels.length === 7 && levels.every((v) => v.loudness && Math.abs(v.loudness.integrated + 16) < 1.5 && v.loudness.truePeak <= -0.9), levels };
   details.names = { ok: (done.versions ?? []).map((v) => v.name.replace(/^.*? (?=\d+x\d+)/, "")).join(", ") === "16x9, 16x9 3s, 9x16, 9x16 3s, 1x1, 1x1 3s, 16x9 textless", names: (done.versions ?? []).map((v) => v.name) };
   const after = await page.evaluate(() => ({ project: JSON.stringify(window.videoEditor.project()), undo: window.videoEditor.state().undoLabel }));
   details.untouched = { ok: after.project === before.project && after.undo === before.undo };

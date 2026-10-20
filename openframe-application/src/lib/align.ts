@@ -111,6 +111,21 @@ export function distributeShifts(boxes: Box[], axis: Axis): { dx: number; dy: nu
  * (1080 x 1920: 269 px top, 672 bottom, 120 left, 201 right). */
 export const VERTICAL_SAFE = { top: 0.14, bottom: 0.35, left: 0.11, right: 0.19 };
 
+/** The 90% title-safe inset (SMPTE ST 2046-1), a fraction of each side. */
+export const TITLE_SAFE = 0.05;
+
+/** Where titles belong on a frame, as fractions of its width and height
+ * from each edge: the 90% title-safe area, and on any frame taller than
+ * wide (4:5 as well as 9:16) clear of the apps' buttons and captions. The
+ * one area check_project judges titles by and export_versions places them
+ * in (ADR-103): the two had their own, and a version's titles met the
+ * check's edge exactly, so the outline the check suggested pushed them
+ * over it. */
+export function titleZone(p: { width: number; height: number }): { left: number; top: number; right: number; bottom: number } {
+  if (!(p.height > p.width)) return { left: TITLE_SAFE, top: TITLE_SAFE, right: TITLE_SAFE, bottom: TITLE_SAFE };
+  return { left: Math.max(TITLE_SAFE, VERTICAL_SAFE.left), top: Math.max(TITLE_SAFE, VERTICAL_SAFE.top), right: Math.max(TITLE_SAFE, VERTICAL_SAFE.right), bottom: Math.max(TITLE_SAFE, VERTICAL_SAFE.bottom) };
+}
+
 export type Guides = "off" | "safe" | "thirds" | "both" | "vertical";
 
 /** Lines a moving box catches on: the canvas edges and center, and the

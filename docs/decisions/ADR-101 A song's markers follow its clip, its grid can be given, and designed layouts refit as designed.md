@@ -1,6 +1,6 @@
 # ADR-101: A song's markers follow its clip, its grid can be given, and designed layouts refit as designed
 
-**Date:** 2026-10-20. **Status:** accepted.
+**Date:** 2026-10-20. **Status:** accepted; a card's type is held at the readable size by growing the card as one picture since [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]].
 
 ## Context
 
