@@ -122,6 +122,20 @@ export function transitionCut(tracks: Track[], row: number, frame: number): { cl
   return list.reduce<ReturnType<typeof transitionCut>>((b, c) => (!b || Math.abs(c.frame - frame) < Math.abs(b.frame - frame) ? c : b), null);
 }
 
+/** The audio join a transition dropped on audio track `row` near `frame`
+ * goes on, as the clip before it: the nearest place on that track where
+ * an audio clip ends and another starts. Sound's transition is a crossfade
+ * (Premiere's constant power, ADR-111); null off an audio track, on a
+ * locked one, or where no two audio clips meet. */
+export function audioJoin(tracks: Track[], row: number, frame: number): { clipId: Id; row: number; frame: number } | null {
+  const t = tracks[row];
+  if (!t || t.kind !== "audio" || t.locked) return null;
+  const joins = t.clips
+    .filter((c) => c.type === "audio" && t.clips.some((o) => o.type === "audio" && o.start === c.start + c.duration))
+    .map((c) => ({ clipId: c.id, row, frame: c.start + c.duration }));
+  return joins.reduce<ReturnType<typeof audioJoin>>((b, c) => (!b || Math.abs(c.frame - frame) < Math.abs(b.frame - frame) ? c : b), null);
+}
+
 /** What a drop does, in the layout of the timeline before it. */
 export interface Landing {
   /** The row the clip lands on; with `newTrack`, the index a new track is

@@ -62,6 +62,13 @@
   color: var(--text-2); font-size: var(--fs-sm);
 }
 .export-static svg { flex: none; color: var(--text-3); }
+/* The Check row (ADR-111): the last check's counts, colored as the tab
+   colors its summary, and the way to it. */
+.export-check { align-items: center; justify-content: space-between; }
+.export-check .export-static.ok svg { color: var(--ok); }
+.export-check .export-static.warning svg { color: var(--warn); }
+.export-check .export-static.error svg { color: var(--danger); }
+.export-check .btn { flex: none; }
 
 .export-select { position: relative; display: block; }
 .export-select select {

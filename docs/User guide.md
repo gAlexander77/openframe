@@ -41,7 +41,8 @@ resizing does not submit an unfinished project rename.
 4. Select a clip to adjust its visual or audio properties in the inspector.
    Add text or captions as needed. Double-click a title or caption in the
    viewer to edit its text on the canvas. Undo is available for edits.
-5. Play the timeline and review the picture and sound, then open Export.
+5. Play the timeline and review the picture and sound, check it (the
+   library's **Check** tab, below), then open Export.
    Choose from the formats and codecs the current platform can encode.
    Select the output destination when offered, or use Download when the
    browser's export workflow provides it. Play the exported file to check it.
@@ -260,6 +261,37 @@ Times refer to the full timeline, even if an export In/Out range is set;
 chapter timestamps round down to whole seconds. This saves a text file for
 your video description; chapter display also depends on the destination's
 requirements. [YouTube's chapter guidance](https://support.google.com/youtube/answer/9884579?hl=en).
+
+## Check the edit before you export
+
+The library's **Check** tab reviews the edit against the rules
+professional editors keep, the same check an AI agent runs: text that
+runs past the title-safe area or under TikTok, Reels and Shorts buttons,
+text too small for a phone, on screen too briefly to read, or hard to
+read against the picture behind it (measured on the rendered frames),
+captions too fast, more than two fonts, a title hidden behind its
+subject, strobes that flash too fast, black gaps on the main track,
+music that stops dead at the end and sound cut off mid-sound. Choose
+what you are making under **Made as**: an **Ad** also asks for an end
+card, a **Social short** sizes text for a phone, **Cut to music** checks
+that the cuts land on the beat. **File → Check project…** opens the tab
+and checks.
+
+**Check project** measures the picture and the sound, so it runs only
+when you ask, with its progress shown; Cancel stops it. The findings are
+grouped as **Text**, **Timing** and **Sound**, with a count for each and
+a summary that says whether anything must be fixed before you export.
+Each says what is wrong, what was measured, and what to change in the
+app ("Raise Size in the Text tab to 49 or more"). Click one to go to it:
+the playhead moves to its time, its clip is selected and the inspector
+opens on the tab with the fix. After you change something the tab says
+the check is out of date; **Check again** checks once more.
+
+The Export dialog's **Check** row shows what the last check found;
+**Review** opens the tab, and **Check project** (or **Check again**, after
+changes) checks first. The check never stops an export. It does not
+measure loudness: choose a **Loudness** target in Export, or run
+**Normalize loudness** in AI tools.
 
 ## Manage effects
 
@@ -540,7 +572,9 @@ click it to open the clip's **Audio** tab, where **Crossfade** sets its
 length (0 removes it). The second clip rises from the part of its file
 before its start, so it needs some: when it starts at the very beginning
 of its file, the menu says to trim its start first. Choose the menu item
-again to remove the crossfade.
+again to remove the crossfade. Dragging any transition from the
+**Transitions** tab onto the cut between two audio clips makes the same
+crossfade.
 
 ## Mix tracks
 

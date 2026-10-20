@@ -5,7 +5,7 @@
 // call run(id) — one path, so they cannot disagree.
 
 import { clampZoom } from "../lib/timeline";
-import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, withChanges, type ActionId, type KeymapChanges } from "../lib/keymap";
+import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, focusKeeps, withChanges, type ActionId, type Focused, type KeymapChanges } from "../lib/keymap";
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
 import { createMarker, uid } from "../lib/project/defaults";
 import { adjacentMarker } from "../lib/markers";
@@ -350,21 +350,41 @@ function targetsAtPlayhead(p: Project) {
 /** Inputs whose keys are not text: a focused slider or swatch must not
  * swallow play, shuttle and the other shortcuts, as CapCut's never do. */
 const NOT_TEXT = new Set(["range", "checkbox", "radio", "color", "button", "submit", "reset", "file"]);
-/** The keys a focused slider or dropdown uses itself. */
-const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+/** What a key presses when focused (lib/keymap.ts focusKeeps). */
+const PRESSABLE = "button, input, summary, [role=button], [role=switch], [role=checkbox], [role=radio], [role=tab], [role=option], [role^=menuitem]";
 
-/** Global key handling. Typing in a text field is left alone, Escape
- * included: it is the field's (revert, cancel, leave), and passing it on
- * deselected the clip and closed the inspector being typed in. Sliders and
- * dropdowns keep only the keys they move by, and Enter on a focused button
- * or link presses it rather than opening a title for typing. */
-export function onKeyDown(e: KeyboardEvent) {
-  const el = e.target as HTMLElement | null;
+// How the focus arrived. Chromium matches :focus-visible on whatever has
+// the focus as soon as a key is pressed, the Space being decided included,
+// so the handler cannot ask it. A focus that came with a key (Tab, a
+// menu's arrows, Escape handing it back) is the keyboard's; a pointer
+// press makes it a click's, even on the control that already had it.
+let lastInput: "key" | "pointer" = "pointer";
+let keyboardFocus: EventTarget | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("keydown", () => void (lastInput = "key"), true);
+  window.addEventListener("pointerdown", () => void ((lastInput = "pointer"), (keyboardFocus = null)), true);
+  window.addEventListener("focusin", (e) => void (keyboardFocus = lastInput === "key" ? e.target : null), true);
+}
+
+/** The focused element as the shortcuts see it (lib/keymap.ts Focused). */
+function focused(el: HTMLElement | null): Focused {
+  if (!el?.closest) return { kind: "none", keyboard: false };
   const input = el instanceof HTMLInputElement ? el : null;
-  const typing = !!el && ((!!input && !NOT_TEXT.has(input.type)) || el.tagName === "TEXTAREA" || el.isContentEditable);
-  if (typing) return;
-  if ((input?.type === "range" || el?.tagName === "SELECT") && CONTROL_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey) return;
-  if (e.key === "Enter" && el?.closest?.("button, a, select, [role=button]")) return;
+  const kind: Focused["kind"] =
+    (input && !NOT_TEXT.has(input.type)) || el.tagName === "TEXTAREA" || el.isContentEditable ? "text"
+    : input?.type === "range" ? "slider"
+    : el.tagName === "SELECT" ? "dropdown"
+    : el.closest(PRESSABLE) ? "control"
+    : el.closest("a[href]") ? "link"
+    : "none";
+  return { kind, keyboard: keyboardFocus === el };
+}
+
+/** Global key handling: what the focused element keeps for itself
+ * (focusKeeps: typing, a slider's arrows, Enter or a keyboard user's Space
+ * on a button) is left to it; the rest goes to the shortcuts. */
+export function onKeyDown(e: KeyboardEvent) {
+  if (focusKeeps(e, focused(e.target as HTMLElement | null))) return;
   const id = index.get(chordOf(e, isMac));
   if (!id) return;
   e.preventDefault();

@@ -428,3 +428,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   markers follow a song any compounds deep; a piece cut off a shot (a
   freeze's second half) carries its titles; per-letter border fades stay
   open.
+- [[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]] —
+  the library's Check tab (and File > Check project, and Export's Check
+  row) runs the agent's check_project with the same measuring, on
+  request, and says each finding in a person's words, grouped as text,
+  timing and sound, jumping to its clip, time and inspector tab; Space
+  presses a button, switch or menu item the keyboard reached (a click's
+  focus still plays); a transition dropped on an audio join crossfades.

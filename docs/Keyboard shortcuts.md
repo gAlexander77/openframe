@@ -121,6 +121,11 @@ on 2026-10-18; when they change, change this page with them.
 - **The timeline:** Tab lands on the selected clip (or the first), the
   arrows move between clips and tracks, and every edit key acts on the
   focused clip. Ctrl with the mouse wheel zooms at the cursor.
+- **Buttons and switches:** Space presses a button, switch, checkbox,
+  tab or menu item you reached with Tab or the arrow keys, and Enter
+  presses a focused button whichever way it got the focus. After a mouse
+  click leaves a button focused, Space still plays, as it does from the
+  timeline, the viewer and a slider.
 - **Typing on the canvas:** Escape or a click outside finishes; Enter
   breaks a title's line, and in a caption it finishes (Ctrl+Enter breaks
   the line). Shortcuts stay off while typing.

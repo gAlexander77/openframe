@@ -10,13 +10,11 @@ import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
-import { findClip, getAsset, projectDuration } from "./lib/project/ops";
+import { findClip, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
-import { measureBehind } from "./state/behind";
-import { hiddenNote } from "./lib/behind";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
@@ -41,11 +39,10 @@ import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
 import { framesToSeconds, secondsToFrames } from "./lib/time";
-import { decodeMono, sourceFrames } from "./engine/analyze";
-import { checkProject, contrastTargets, tailTargets, withoutTitles, type CheckKind, type Measured } from "./lib/designCheck";
+import { sourceFrames } from "./engine/analyze";
+import { checkProject, type CheckKind } from "./lib/designCheck";
+import { measureForCheck } from "./state/check";
 import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
-import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
-import type { Project } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -199,79 +196,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
-}
-
-/**
- * What check_project measures before it judges (ADR-068, ADR-097): every
- * title's contrast with the picture behind it at a few moments of its life
- * (designCheck.titleMoments), rendered as export draws it with every title
- * off, its box, shadow and outline counted, and the fixes it names tried
- * on the same pixels; and each long music clip's last seconds, decoded. A
- * failure to measure falls back to the check's own guess and the answer
- * says why; it never fails the check.
- */
-async function measureForCheck(p: Project): Promise<Measured> {
-  const out: Measured = {};
-  const { targets, skipped } = contrastTargets(p);
-  if (targets.length) {
-    try {
-      // Without its titles, at a width that is plenty for a luminance.
-      // Inside compound clips too: their titles are measured where shown.
-      const bare = withoutTitles(p);
-      const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
-      const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
-      const contrast: NonNullable<Measured["contrast"]> = {};
-      const canvas = new OffscreenCanvas(w, h);
-      const g = canvas.getContext("2d", { willReadFrequently: true })!;
-      // A few frames a render, so a long film's titles do not hold every
-      // picture in memory at once.
-      for (let i = 0; i < frames.length; i += 8) {
-        const batch = frames.slice(i, i + 8);
-        const pics = await exportStills(bare, batch, w, h);
-        for (const [j, frame] of batch.entries()) {
-          const bmp = await createImageBitmap(pics[j]);
-          g.drawImage(bmp, 0, 0, w, h);
-          bmp.close();
-          const rgba = g.getImageData(0, 0, w, h).data;
-          for (const t of targets) {
-            const s = t.samples.find((x) => x.frame === frame);
-            if (!s) continue;
-            const px = boxPixels(rgba, w, { left: s.box.left * k, right: s.box.right * k, top: s.box.top * k, bottom: s.box.bottom * k });
-            const m = measureLook(t.look, px);
-            if (!m || (contrast[t.clipId] && contrast[t.clipId].ratio <= m.ratio)) continue;
-            contrast[t.clipId] = { ...m, frame, fixes: t.fixes.map((x) => ({ say: x.say, ratio: measureLook(x.look, px)?.ratio ?? 0 })) };
-          }
-        }
-      }
-      out.contrast = contrast;
-      out.moments = frames.length;
-      if (skipped) out.contrastNote = `${skipped} titles past the first 40 were not measured`;
-    } catch (e) {
-      // Say why, so an agent knows the contrast findings are guesses.
-      out.contrastNote = `not measured, the picture could not be rendered here (${e instanceof Error ? e.message : String(e)}); titles over footage without an outline, shadow or box are tips instead`;
-    }
-  } else if (p.tracks.some((t) => t.clips.some((c) => c.type === "text" && !c.disabled))) out.contrastNote = "no title is on screen long enough to measure";
-  // Titles behind their subject: how much the subject hides (ADR-103).
-  try {
-    const texts = new Map(p.tracks.flatMap((t) => t.clips).flatMap((c) => (c.type === "text" ? [[c.id, c.text] as const] : [])));
-    out.hidden = (await measureBehind(p)).flatMap((h) => {
-      const say = hiddenNote(p, h, texts.get(h.titleId) ?? "");
-      return say ? [{ clipId: h.titleId, frame: h.frame, ...say }] : [];
-    });
-  } catch {
-    // Unrenderable here: the check goes on without it.
-  }
-  for (const t of tailTargets(p)) {
-    const a = getAsset(p, t.assetId);
-    if (!a?.hasAudio) continue;
-    try {
-      const rate = 8000;
-      (out.tails ??= {})[t.clipId] = tailLevels(await decodeMono(a, t.from, t.to, rate), rate);
-    } catch {
-      // Unreadable sound: the check keeps its plain rule.
-    }
-  }
-  return out;
 }
 
 /** describeProject of the whole document, plus the compound clips the user

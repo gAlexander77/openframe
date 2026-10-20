@@ -327,6 +327,39 @@ export function buildIndex(map: Record<ActionId, string[]>): Map<string, ActionI
   return index;
 }
 
+/** What holds the keyboard focus, as the shortcuts see it (state/actions.ts
+ * reads it off the element): a text field; a slider; a dropdown; a
+ * control a key presses (a button, switch, checkbox, radio, tab or menu
+ * item); a link; or nothing of the kind (the body, the timeline's clips,
+ * the viewer). `keyboard`: the focus came with a key (Tab, a menu's
+ * arrows), not with a click, which leaves a button focused by the way. */
+export interface Focused {
+  kind: "text" | "slider" | "dropdown" | "control" | "link" | "none";
+  keyboard: boolean;
+}
+
+/** The keys a focused slider or dropdown uses itself. */
+const CONTROL_KEYS = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+/**
+ * Does the focused element keep this key press for itself, rather than the
+ * app's shortcut taking it? Typing keeps every key, Escape included.
+ * Sliders and dropdowns keep only the keys they move by. Enter presses a
+ * focused button or link. Space presses a button, switch, checkbox or menu
+ * item (or opens a dropdown) that the keyboard reached, as everywhere on
+ * the web: it played the timeline instead (ADR-109's gap, ADR-111). A
+ * control left focused by a mouse click does not keep it, so Space still
+ * plays after clicking a tool or a tab, as in CapCut; nor does the
+ * timeline, the viewer or the page, where Space is play.
+ */
+export function focusKeeps(e: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }, f: Focused): boolean {
+  if (f.kind === "text") return true;
+  if ((f.kind === "slider" || f.kind === "dropdown") && CONTROL_KEYS.has(e.key) && !e.ctrlKey && !e.metaKey) return true;
+  if (e.key === "Enter" && (f.kind === "control" || f.kind === "link" || f.kind === "dropdown")) return true;
+  const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+  return e.key === " " && plain && f.keyboard && (f.kind === "control" || f.kind === "dropdown");
+}
+
 /** How a chord reads on this platform: Ctrl+B on Windows, ⌘B on a Mac. */
 export function chordText(chord: string, mac: boolean): string {
   const names: Record<string, string> = mac

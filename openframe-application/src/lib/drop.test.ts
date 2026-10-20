@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { landing, nearestCut, placeAsset, transitionCut, visualDrop } from "./drop";
+import { audioJoin, landing, nearestCut, placeAsset, transitionCut, visualDrop } from "./drop";
 import { clipForAsset, createProject, createTextClip, createTrack } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Asset, Project, Track } from "./project/types";
@@ -42,6 +42,21 @@ describe("drops", () => {
     expect(transitionCut(tracks, 1, 70)).toEqual({ clipId: main.clips[0].id, row: 1, frame: 30 });
     expect(transitionCut(tracks, 0, 70)).toEqual({ clipId: main.clips[0].id, row: 1, frame: 30 });
     expect(transitionCut([createTrack("video", "Main", true)], 0, 10)).toBeNull();
+  });
+
+  it("a transition dropped on an audio track goes on its nearest join of two audio clips (ADR-111)", () => {
+    const music: Asset = { id: "music", kind: "audio", name: "music.mp3", src: "music.mp3", duration: 30, hasVideo: false, hasAudio: true };
+    const fps = { num: 30, den: 1 };
+    const at = (start: number, id: string) => ({ ...clipForAsset(music, start, fps), id, duration: 60 });
+    // [0,60) [60,120) touch; [200,260) stands alone.
+    const audio: Track = { ...createTrack("audio", "Music"), clips: [at(0, "a"), at(60, "b"), at(200, "c")] };
+    const rows = [text, main, audio];
+    expect(audioJoin(rows, 2, 50)).toEqual({ clipId: "a", row: 2, frame: 60 });
+    expect(audioJoin(rows, 2, 230)).toEqual({ clipId: "a", row: 2, frame: 60 });
+    // Not on a video row, a locked track, or a track where no clips meet.
+    expect(audioJoin(rows, 1, 30)).toBeNull();
+    expect(audioJoin([text, main, { ...audio, locked: true }], 2, 50)).toBeNull();
+    expect(audioJoin([text, main, { ...audio, clips: [at(0, "a"), at(200, "c")] }], 2, 50)).toBeNull();
   });
 });
 

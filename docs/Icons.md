@@ -34,6 +34,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Grid view / list view (media library, Home) | LayoutGrid / List |
 | Keyframe / animation graph | Diamond / ChartSpline |
 | Markers / search / shortcuts | Bookmark / Search / Keyboard |
+| Project check (the Check tab) | ListChecks |
 | Play / pause / stop / loop | Play / Pause / Square / Repeat |
 | Previous or next frame | ChevronLeft / ChevronRight |
 | Start or end / preferences / new project | SkipBack or SkipForward / Settings / FilePlus2 |
