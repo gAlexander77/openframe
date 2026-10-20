@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AUTO_SPEED, bandSource, firstSpeed, judgePace, landSpeed, nextSpeed, onPace, paceOf, readBand, readWps, speedBounds, targetBand, type ReadSpan } from "./voicePace";
+import { AUTO_SPEED, bandSource, CHOSEN_MAX_SPS, firstSpeed, judgePace, landSpeed, nextSpeed, onPace, paceOf, readBand, readWps, speedBounds, syllableBand, targetBand, type ReadSpan } from "./voicePace";
 
 describe("the band a line is read to", () => {
   it("comes from its kind, or as asked, moved for a slow or fast line", () => {
@@ -130,5 +130,38 @@ describe("landing a line on its band (film test 3.7, 3.8)", () => {
     const r = await landSpeed(read, { words: 12, syllables: 16, natural: 1, band: [2.3, 2.8], bounds: AUTO_SPEED });
     expect(r.wps).toBeCloseTo(12 / (4.2 / r.speed + 1), 2);
     expect(onPace(r.wps, [2.3, 2.8])).toBe(true);
+  });
+});
+
+describe("long words are not rushed to make a band (film test 2, ADR-114)", () => {
+  // Heart reading "Honestly? [pause 0.2] Mostly water.": three words, seven
+  // syllables, 1.17 s of speech at speed 1.29 (2.56 words, 6.0 syllables a
+  // second: the review called it rushed), the mark's 0.2 s on top.
+  const honestly = (speed: number): Promise<ReadSpan> => Promise.resolve({ span: (1.172 * 1.29) / speed + 0.2, fixed: 0.2, directed: 0.2 });
+  const sps = (wps: number) => (wps * 7) / 3;
+
+  it("moves a band down, keeping its width, until its top says 5 syllables a second", () => {
+    expect(syllableBand([2.3, 2.8], 3, 7)).toEqual([1.64, 2.14]);
+    // The review's own fix band, as the tester asked it: its top was 5.6.
+    expect(syllableBand([1.9, 2.4], 3, 7)).toEqual([1.64, 2.14]);
+    // Short words: as it was.
+    expect(syllableBand([2.3, 2.8], 11, 13)).toEqual([2.3, 2.8]);
+    expect(syllableBand([2.3, 2.8], 0, 0)).toEqual([2.3, 2.8]);
+  });
+
+  it("lands the tester's line slower than the band in words alone did", async () => {
+    const old = await landSpeed(honestly, { words: 3, syllables: 7, natural: 0, band: [2.3, 2.8], bounds: AUTO_SPEED });
+    expect(old.speed).toBe(1.29);
+    expect(sps(old.wps)).toBeGreaterThan(5.9);
+    const r = await landSpeed(honestly, { words: 3, syllables: 7, natural: 0, band: syllableBand([2.3, 2.8], 3, 7), bounds: AUTO_SPEED });
+    expect(sps(r.wps)).toBeLessThanOrEqual(CHOSEN_MAX_SPS);
+    expect(r.speed).toBeLessThan(1);
+    // The retake asked for 1.9-2.4 read 2.36 (5.5 syllables a second).
+    const asked = await landSpeed(honestly, { words: 3, syllables: 7, natural: 0, band: syllableBand([1.9, 2.4], 3, 7), bounds: AUTO_SPEED });
+    expect(sps(asked.wps)).toBeLessThanOrEqual(CHOSEN_MAX_SPS);
+  });
+
+  it("judges the line against its moved band, saying why it aims lower", () => {
+    expect(judgePace(2.56, 5.97, [1.64, 2.14])).toEqual([{ level: "fix", problem: "fast: 2.56 words a second over the speech, 5.97 syllables (aim 1.64-2.14 words a second: long words, at most 5 syllables a second)" }]);
   });
 });

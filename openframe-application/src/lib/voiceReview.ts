@@ -4,7 +4,7 @@
 // caller's (state/voiceReview.ts).
 
 import { numberWords, parseLine } from "./voiceScript";
-import { judgePace, targetBand, type Pace, type ReadAs } from "./voicePace";
+import { CHOSEN_MAX_SPS, judgePace, syllableBand, targetBand, type Pace, type ReadAs } from "./voicePace";
 
 // ---- words --------------------------------------------------------------------------
 
@@ -239,8 +239,13 @@ export interface Advice {
   args?: Record<string, unknown>;
 }
 
-/** The band a line is held to: as asked, or its kind's moved for its pace. */
-export const bandOf = (m: Pick<LineMeasure, "asked" | "pace" | "readAs">) => targetBand(m.readAs ?? "narration", m.asked, m.pace ?? "normal");
+/** The band a line is held to: as asked, or its kind's moved for its pace,
+ * moved down for long words as the speed chooser moves it (its syllables
+ * to its words as measured: ADR-114). */
+export const bandOf = (m: Pick<LineMeasure, "asked" | "pace" | "readAs"> & Partial<Pick<LineMeasure, "wps" | "sps">>) => {
+  const band = targetBand(m.readAs ?? "narration", m.asked, m.pace ?? "normal");
+  return m.wps && m.sps ? syllableBand(band, m.wps, m.sps) : band;
+};
 
 /** Words whose spelling a reader cannot sound out, as they sound: the
  * voice model's guess at them, and Whisper's, goes wrong more than most. */
@@ -290,6 +295,10 @@ export function respell(word: string): string | null {
 
 const round = (x: number, d = 2) => +x.toFixed(d);
 
+/** A line read over CHOSEN_MAX_SPS syllables a second at a speed chosen
+ * before the chooser held syllables (ADR-114): a retake lands it slower. */
+const longRushed = (m: Pick<LineMeasure, "sps">) => (m.sps ?? 0) > CHOSEN_MAX_SPS + 0.25;
+
 /** What is wrong with a line and the call that fixes each, given the
  * median loudness of the lines reviewed. */
 export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
@@ -325,10 +334,10 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
   for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
     if (p.level !== "fix") continue;
     if (/^rushed/.test(p.problem)) {
-      // Long words: aim the words a second where 5 syllables a second land.
-      const w = (5 * m.wps!) / m.sps!;
-      fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: [round(w - 0.25), round(w + 0.25)] } });
-    } else if (!m.speedChosen) fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } });
+      // Long words: a band whose top says CHOSEN_MAX_SPS syllables a second.
+      const w = (CHOSEN_MAX_SPS * m.wps!) / m.sps!;
+      fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: [round(w - 0.5), round(w)] } });
+    } else if (!m.speedChosen || longRushed(m)) fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } });
   }
   if (m.lead > R.leadMax) fixes.push({ problem: `${m.lead} s of silence before the first word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "start", to: round(m.start + m.lead - 0.06) } });
   if (m.tail > R.tailMax) fixes.push({ problem: `${m.tail} s of silence after the last word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "end", to: round(m.end - m.tail + 0.2) } });
@@ -357,7 +366,7 @@ export function advise(m: LineMeasure): Advice[] {
   for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
     if (p.level === "advice" && /^short words/.test(p.problem)) out.push({ note: p.problem });
     else if (p.level === "advice") out.push({ note: `${p.problem}: within a tenth of its band, so it passes${m.speedChosen ? "" : "; a retake with words_per_second lands it"}`, ...(m.speedChosen ? {} : { tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } }) });
-    else if (m.speedChosen && !/^rushed/.test(p.problem))
+    else if (m.speedChosen && !/^rushed/.test(p.problem) && !longRushed(m))
       out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3; a line meant slow no faster than 1); ${/^slow/.test(p.problem) ? "fewer or longer words, or pace slow if the line is meant so" : "fewer words, or the line split in two, or pace fast if the line is meant so"}` });
   }
   return out;

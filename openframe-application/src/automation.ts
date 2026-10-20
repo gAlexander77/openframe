@@ -24,7 +24,7 @@ import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importEach, importFiles } from "./state/media";
 import { sourceName } from "./lib/mediaKind";
@@ -67,6 +67,12 @@ const automation = {
     }
     const report: CommandReport = {};
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
+    // keep_loudness measures the clip with and without the filter first (ADR-114).
+    if (name === "set_audio_filter" && (args as { keep_loudness?: unknown } | null)?.keep_loudness === true) {
+      const problems = validate(args, COMMANDS.find((c) => c.name === name)!.input);
+      if (problems.length) throw new Error(problems.join("; "));
+      return keepFilterLoudness(args as Record<string, unknown>).then((notes) => ({ ...describe(), notes }));
+    }
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
     // The timeline's linkage applies, its magnet never does (ADR-102).

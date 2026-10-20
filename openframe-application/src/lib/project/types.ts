@@ -668,6 +668,9 @@ export interface AudioFilter {
   cutoff: number;
   /** Peak at the cutoff, dB, 0..24; 0 is a smooth slope. */
   resonance: number;
+  /** Gain after the filter, dB (-24..24; absent 0): what a band-passed
+   * voice lost, made up (set_audio_filter keep_loudness, ADR-114). */
+  makeup?: number;
 }
 
 /** A room around a clip's sound: a convolution reverb whose impulse
@@ -734,8 +737,19 @@ export interface DuckRecord {
   minLineLu?: number;
   maxLineLu?: number;
   depth?: number;
+  /** Moments the music stays up at (open_at): timeline seconds, or the
+   * labels of markers ("Drop"). */
+  openAt?: (number | string)[];
+  /** Seconds a pause must last for the music to come up (min_gap). */
+  minGap?: number;
+  /** Seconds the music takes to come back up after a line (release). */
+  release?: number;
   /** Ducked with every clip of its track in one call (track_id). */
   track?: boolean;
+  /** The keys it wrote, each as its place in the clip's file (ms) and its
+   * value (x 1e4): a later duck replaces these and keeps the rest, made by
+   * hand, outside the lines (lib/analysis/duck.ts mergeKeys, ADR-114). */
+  written?: [number, number][];
   /** A signature of the volume keys it wrote (duckSignature: their shape,
    * which a move, split or trim keeps): keys changed since, by hand, are
    * not dipped again over them. */

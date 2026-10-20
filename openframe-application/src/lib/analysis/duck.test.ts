@@ -4,9 +4,10 @@ import { createProject, createTrack } from "../project/defaults";
 import { addTrack, findClip, updateClip } from "../project/ops";
 import type { Asset, AudioClip, Clip, Project } from "../project/types";
 import { retakeLine } from "../voiceLines";
-import { duckArgs, duckKeys, duckMark, staleDuckNote, staleDucks, trackDuckKeys, voicesUnder } from "./duck";
+import { duckArgs, duckKeys, duckMark, duckPlan, duckWrote, mergeKeys, staleDuckNote, staleDucks, trackDuckKeys, voicesUnder, writtenKeys } from "./duck";
 
-const O = { depthDb: 20, attack: 3, release: 12, hold: 15 };
+// A pause under 31 frames stays down (the old hold: 3 + 12 + 15 frames, and one).
+const O = { depthDb: 20, attack: 3, release: 12, gap: 31 };
 const LOW = 0.1; // -20 dB of 1
 
 const keys = (speech: [number, number][], start = 100, end = 400) => duckKeys(speech, start, end, 1, O).map((k) => [k.f, +k.v.toFixed(6)]);
@@ -22,9 +23,9 @@ describe("duckKeys", () => {
   });
 
   it("bridges a short pause and comes back up for a long one", () => {
-    // gap 25 <= 3 + 12 + 15: one dip
+    // a pause of 25 < 31: one dip
     expect(keys([[150, 200], [225, 260]])).toHaveLength(4);
-    // gap 31 > 30: two dips
+    // 31: two dips
     expect(keys([[150, 200], [231, 260]])).toHaveLength(8);
   });
 
@@ -70,6 +71,103 @@ describe("duckKeys", () => {
   });
 });
 
+describe("where the music comes up between lines (film test 2, ADR-114)", () => {
+  // The tester's opening at 30 fps: a first line 0.13 s into the song,
+  // pauses of 0.3, 1.0 and 0.7 s, and the song's drop at 8 s (frame 240)
+  // in the 1.0 s pause. Pauses under 1.1 s (33 frames) stay down.
+  const T = { depthDb: 20, attack: 3, release: 12, gap: 33 };
+  const lines: [number, number][] = [[4, 79], [88, 220], [250, 349], [370, 415]];
+  const k = (ks: { f: number; g: number }[]) => ks.map((x) => [x.f, +x.g.toFixed(6)]);
+
+  it("holds short pauses down and says which, with no blip before the first line", () => {
+    const plan = duckPlan(lines, 0, 1440, T);
+    // It was [1, 1] at frame 1 and dipped by frame 4: 0.1 s at full level.
+    expect(k(plan.keys)).toEqual([[0, LOW], [415, LOW], [427, 1]]);
+    expect(plan.held).toEqual([[79, 88], [220, 250], [349, 370]]);
+    expect(plan.dips).toBe(1);
+  });
+
+  it("comes up on a moment asked for (a drop), however short its pause, and down after it", () => {
+    const plan = duckPlan(lines, 0, 1440, { ...T, open: [240] });
+    expect(k(plan.keys)).toEqual([[0, LOW], [220, LOW], [232, 1], [247, 1], [250, LOW], [415, LOW], [427, 1]]);
+    expect(plan.held).toEqual([[79, 88], [349, 370]]);
+    expect(plan.open).toEqual([{ at: 240, up: [232, 247] }]);
+    expect(plan.dips).toBe(2);
+    // A drop right after a line comes up a frame later; never into a line.
+    const close = duckPlan([[100, 200], [206, 300]], 0, 600, { ...T, open: [201] });
+    expect(close.open).toEqual([{ at: 201, up: [201, 203] }]);
+    expect(k(close.keys).filter(([f]) => f >= 200 && f <= 206)).toEqual([[200, LOW], [201, 1], [203, 1], [206, LOW]]);
+  });
+
+  it("keeps a moment inside a line down, and says so", () => {
+    const plan = duckPlan(lines, 0, 1440, { ...T, open: [300, 2000] });
+    expect(plan.open).toEqual([{ at: 300, line: [250, 349] }, { at: 2000 }]);
+    expect(k(plan.keys)).toEqual([[0, LOW], [415, LOW], [427, 1]]);
+  });
+
+  it("lets a shorter gap open, part of the way up when the ramps meet", () => {
+    expect(duckPlan(lines, 0, 1440, { ...T, gap: 25 }).held).toEqual([[79, 88], [349, 370]]);
+    // A pause of 8 frames, under the attack and release together (15):
+    // the music comes half way up, where the ramps meet.
+    expect(k(duckPlan([[100, 150], [158, 200]], 0, 400, { ...T, gap: 5 }).keys).slice(2, 5)).toEqual([[150, LOW], [156, 0.55], [158, LOW]]);
+  });
+
+  it("plans a song cut in two as one bed: no full-level blip at the cut between two lines", () => {
+    // Line ends 15.6 s, the next starts 16.3 s, the song cut at 16 s: the
+    // second piece started at its volume and dipped 0.3 s later.
+    const ks = trackDuckKeys([[400, 468], [489, 560]], [{ id: "a", start: 0, end: 480, base: 1 }, { id: "b", start: 480, end: 1440, base: 1 }], T).keys;
+    expect(ks.get("a")!.map((x) => [x.f, +x.v.toFixed(6)])).toEqual([[397, 1], [400, LOW], [479, LOW]]);
+    expect(ks.get("b")!.map((x) => [x.f, +x.v.toFixed(6)])).toEqual([[0, LOW], [80, LOW], [92, 1]]);
+  });
+});
+
+describe("keys made by hand outlive a duck (film test 2, ADR-114)", () => {
+  const fps = { num: 30, den: 1 };
+  // The duck's keys (clip frames): down under two lines, up in the pause.
+  const duck = [{ f: 0, v: 0.2 }, { f: 100, v: 0.2 }, { f: 112, v: 1 }, { f: 190, v: 1 }, { f: 200, v: 0.2 }, { f: 300, v: 0.2 }];
+  const lines: [number, number][] = [[0, 100], [200, 300]];
+  const music = { in: 10, speed: 1, duck: { keys: 0, written: writtenKeys({ in: 10, speed: 1 }, duck, fps) } };
+
+  it("knows the keys it wrote through a trim, and a key changed by hand as the hand's", () => {
+    const wrote = duckWrote(music, fps);
+    expect(wrote({ f: 112, v: 1 })).toBe(true);
+    expect(wrote({ f: 190, v: 0.75 })).toBe(false);
+    expect(wrote({ f: 150, v: 0.75 })).toBe(false);
+    // Trimmed 15 frames at the head: the keys shift with the in-point.
+    expect(duckWrote({ ...music, in: 10.5 }, fps)({ f: 97, v: 1 })).toBe(true);
+    // Never ducked: every key is the hand's; ducked before its keys were kept: none is.
+    expect(duckWrote({ in: 0, speed: 1 }, fps)({ f: 0, v: 1 })).toBe(false);
+    expect(duckWrote({ in: 0, speed: 1, duck: { keys: 0 } }, fps)({ f: 0, v: 1 })).toBe(true);
+  });
+
+  it("keeps the hand's keys in a pause in place of its own, held at the lines, and replaces those under a line", () => {
+    // The tester capped the lift in the pause at 0.75 and lifted the music
+    // under the second line; then ducked again.
+    const current = [...duck.filter((x) => x.f !== 190), { f: 150, v: 0.75 }, { f: 190, v: 0.75 }, { f: 250, v: 0.5 }].sort((a, b) => a.f - b.f);
+    const m = mergeKeys(current, duckWrote(music, fps), duck, lines);
+    expect(m.keys.map((x) => [x.f, x.v])).toEqual([[0, 0.2], [100, 0.2], [150, 0.75], [190, 0.75], [200, 0.2], [300, 0.2]]);
+    expect(m.kept.map((x) => x.f)).toEqual([150, 190]);
+    expect(m.replaced.map((x) => x.f)).toEqual([250]);
+    // Untouched, it is all the duck's: ducked again, the same keys.
+    expect(mergeKeys(duck, duckWrote(music, fps), duck, lines).keys).toEqual(duck);
+  });
+
+  it("holds the duck's level at a line's edge when a held pause gets a key by hand, so it never ramps under the voice", () => {
+    // Held down from 100 to 140 with no key between; a hand key at 120.
+    const flat = [{ f: 0, v: 0.2 }, { f: 240, v: 0.2 }];
+    const m = mergeKeys([{ f: 120, v: 0.55 }], () => false, flat, [[0, 100], [140, 240]]);
+    expect(m.keys.map((x) => [x.f, x.v])).toEqual([[0, 0.2], [100, 0.2], [120, 0.55], [140, 0.2], [240, 0.2]]);
+  });
+
+  it("moves a key made by hand on a line's last frame a frame into the pause (a lift for the hit after the line)", () => {
+    // The tester set the duck's key at a line's end to 0.55 for the hit after it.
+    const flat = [{ f: 0, v: 0.2 }, { f: 240, v: 0.2 }];
+    const m = mergeKeys([{ f: 100, v: 0.55 }, { f: 90, v: 0.2 }], () => false, flat, [[0, 100], [140, 240]]);
+    expect(m.keys.map((x) => [x.f, x.v])).toEqual([[0, 0.2], [100, 0.2], [101, 0.55], [140, 0.2], [240, 0.2]]);
+    expect(m.replaced.map((x) => x.f)).toEqual([90]);
+  });
+});
+
 describe("the voices under the music", () => {
   // An interview kept in a compound clip (a template): duck_under_speech
   // answered "No other clip with sound plays under it", ducking nothing.
@@ -108,7 +206,7 @@ describe("the voices under the music", () => {
 describe("a music track ducked as one bed (film test 3.14)", () => {
   it("gives each piece its own keys, a line across the cut dipping on both sides", () => {
     // A song cut at frame 420 (14 s), a line from 400 to 440 across it.
-    const ks = trackDuckKeys([[400, 440], [600, 650]], [{ id: "a", start: 0, end: 420, base: 1 }, { id: "b", start: 420, end: 1200, base: 1 }], O);
+    const ks = trackDuckKeys([[400, 440], [600, 650]], [{ id: "a", start: 0, end: 420, base: 1 }, { id: "b", start: 420, end: 1200, base: 1 }], O).keys;
     expect([...ks.keys()]).toEqual(["a", "b"]);
     expect(ks.get("a")!.map((k) => [k.f, +k.v.toFixed(6)])).toEqual([[397, 1], [400, LOW], [419, LOW]]);
     expect(ks.get("b")!.map((k) => [k.f, +k.v.toFixed(6)])).toEqual([[0, LOW], [20, LOW], [32, 1], [177, 1], [180, LOW], [230, LOW], [242, 1]]);

@@ -158,3 +158,37 @@ describe("an end, and a start", () => {
     expect(edgeReport(a, a, RATE, 0, [edge({ at: 0.05 })])).toEqual([]);
   });
 });
+
+describe("a cut inside a ring-out (film test 2, ADR-114)", () => {
+  // A chord dying away 8 dB a second, cut at 1.5 s onto a part 10 dB over
+  // where the tail had fallen, joined over 30 ms.
+  const at = 1.5, n = Math.round(at * RATE);
+  const amp = (t: number) => 0.5 * Math.pow(10, (-8 * t) / 20);
+  const x = new Float32Array(3 * RATE);
+  for (let i = 0; i < x.length; i++) {
+    const t = i / RATE;
+    const k = Math.min(1, Math.max(0, (i - n + 0.03 * RATE) / (0.03 * RATE)));
+    x[i] = (amp(t) * (1 - k) + amp(at) * Math.pow(10, 10 / 20) * k) * Math.sin(2 * Math.PI * 220 * t);
+  }
+  const ring = (o: Partial<AudioEdge>) => report(x, edge({ at, faded: 0.03, ...o }));
+
+  it("flags a step in the tail that neither file makes there, at half a plain join's size", () => {
+    // The tail would have gone on dying (1 dB), the part after is steady.
+    const r = ring({ goesOn: -1, cameIn: 0 });
+    expect(r.step_db).toBeGreaterThan(8);
+    expect(r.step_db).toBeLessThan(12);
+    expect(r.verdict).toMatch(/jumps up .* dB inside a ring-out/);
+    expect(r.fix).toEqual({ tool: "set_crossfade", args: { clip_id: "c_a", seconds: 0.25 } });
+  });
+
+  it("calls the same step clean when the music makes it there itself, and says so", () => {
+    // The tester's outro: its file steps 6.0 dB on the bar the cut took out,
+    // and the join 6.9; a step the outgoing file makes uncut, or the
+    // incoming one at its in-point, is the music's.
+    for (const own of [{ goesOn: 8.5 }, { cameIn: -8.5 }]) {
+      const r = ring({ goesOn: -1, cameIn: 0, ...own });
+      expect(r.verdict).toBe("clean");
+      expect(r.step_note).toMatch(/^the music steps 8.5 dB there itself/);
+    }
+  });
+});

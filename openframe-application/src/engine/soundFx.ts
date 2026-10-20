@@ -32,7 +32,11 @@ function filterNodes(ctx: BaseAudioContext, kind: FilterKind, f: AudioFilter, cu
     ride(a.frequency, sweep);
     ride(b.frequency, sweep);
   }
-  return { input: a, output: b };
+  // What the filter took out, made up after it (keep_loudness).
+  if (!f.makeup) return { input: a, output: b };
+  const gain = new GainNode(ctx, { gain: Math.pow(10, f.makeup / 20) });
+  b.connect(gain);
+  return { input: a, output: gain };
 }
 
 /** An effect between a dry and a wet gain at equal power, the mix
