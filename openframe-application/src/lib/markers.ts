@@ -32,16 +32,31 @@ function follow(tracks: Track[], markers: Marker[], fps: Rational, compounds: Co
     if (!maps.has(c.id)) maps.set(c.id, sourceToTimeline(c, fps));
     return maps.get(c.id)!.frame(at);
   };
+  /** The frames of compound `kid`'s timeline where clip `id` plays `at`,
+   * however deep inside compounds in it the clip is: one deep only, a song
+   * in a compound inside a compound lost its markers (ADR-110). */
+  const framesInside = (kid: Id, id: Id, at: number, depth: number): number[] => {
+    const k = compounds.find((x) => x.id === kid);
+    if (!k || depth > 8) return [];
+    return k.tracks.flatMap((t) =>
+      t.clips.flatMap((c) => {
+        if (c.id === id && isMedia(c)) return [sourceToTimeline(c, fps).frame(at)];
+        if (c.type !== "compound") return [];
+        const map = sourceToTimeline(c, fps);
+        return framesInside(c.compoundId, id, at, depth + 1).map((f) => map.frame(framesToSeconds(f, fps)));
+      }),
+    ).filter((f): f is number => f !== null);
+  };
   /** Where a compound clip here plays `at` of clip `id` inside its
    * compound, nearest `near` (the song went into a compound clip:
    * create_compound_clip, a bus for its sound). */
   const throughNests = (id: Id, at: number, near: number): number | null => {
     let best: number | null = null;
     for (const k of nests) {
-      const inner = compounds.find((x) => x.id === k.compoundId)?.tracks.flatMap((t) => t.clips).find((c) => c.id === id);
-      const f = inner && isMedia(inner) ? sourceToTimeline(inner, fps).frame(at) : null;
-      const outer = f === null ? null : frameIn(k, framesToSeconds(f, fps));
-      if (outer !== null && (best === null || Math.abs(outer - near) < Math.abs(best - near))) best = outer;
+      for (const f of framesInside(k.compoundId, id, at, 0)) {
+        const outer = frameIn(k, framesToSeconds(f, fps));
+        if (outer !== null && (best === null || Math.abs(outer - near) < Math.abs(best - near))) best = outer;
+      }
     }
     return best;
   };

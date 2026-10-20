@@ -198,6 +198,7 @@ export const PARAM_PATHS: { path: string; range: string; meaning: string }[] = [
   { path: "opacity", range: "0..1", meaning: "0 invisible" },
   { path: "volume", range: "0..4", meaning: "Gain: 1 is 0 dB, 0.5 about -6 dB, 0 silent" },
   { path: "pan", range: "-1..1", meaning: "Left to right" },
+  { path: "eq.low / eq.mid / eq.high", range: "-12..12", meaning: "A sound's three-band EQ, dB; 0 is flat" },
   { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100. Temperature cannot warm pure white (a white sprite or logo): set_colorize can" },
   { path: "adjust.lut.intensity", range: "0..1", meaning: "Strength of an applied LUT" },
   { path: "adjust.colorize.amount", range: "0..1", meaning: "Strength of set_colorize's color (white becomes it)" },

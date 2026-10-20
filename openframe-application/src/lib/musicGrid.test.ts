@@ -214,6 +214,25 @@ describe("a song's markers through the edits that hid or cut its clip (ADR-106)"
     expect(beats(p).every((m) => m.follows!.clip === id)).toBe(true);
   });
 
+  it("follow the song two compounds deep, and out again (ADR-110)", () => {
+    // One compound deep only: a song in a compound inside a compound lost
+    // every root marker.
+    let { p, id } = marked();
+    const frames = beats(p).map((m) => m.frame);
+    p = runCommand(p, "create_compound_clip", { clip_ids: [p.tracks.find((t) => t.main)!.clips[0].id, id] });
+    const inner = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "compound")!.id;
+    p = runCommand(p, "create_compound_clip", { clip_ids: [inner] });
+    expect(p.compounds).toHaveLength(2);
+    expect(beats(p).map((m) => m.frame)).toEqual(frames);
+    const outer = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "compound")!.id;
+    p = runCommand(p, "move_clip", { clip_id: outer, start: 2 });
+    expect(beats(p).map((m) => m.frame)).toEqual(frames.map((f) => f + 60));
+    p = runCommand(p, "break_compound_clip", { clip_id: outer });
+    p = runCommand(p, "break_compound_clip", { clip_id: inner });
+    expect(beats(p).map((m) => m.frame)).toEqual(frames.map((f) => f + 60));
+    expect(beats(p).every((m) => m.follows!.clip === id)).toBe(true);
+  });
+
   it("are a unique copy's own inside it", () => {
     // The copy's markers named the original's clip, so all of them went.
     let { p, id } = project();

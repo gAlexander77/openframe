@@ -30,6 +30,7 @@ import { titleWrap } from "./ads";
 import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
+import { EFFECTS } from "./catalog";
 import { captionFit, captionY } from "./captionLooks";
 import { withoutCaptions } from "./captions";
 import { seenLetters, seenTexts } from "./designCheck";
@@ -320,6 +321,64 @@ function scaleFrame(c: Clip, k: number): Clip {
 }
 
 /**
+ * What rides on a clip's picture, scaled as the picture is, keys too: its
+ * effects' pixel-sized parameters (a blur's radius, a pixelate's blocks:
+ * pixels at a 1080-tall frame, the catalog's `pixels`) and its position
+ * wiggle (fractions of the frame's width and height). `g` is how many
+ * times larger the picture is drawn, in pixels. Left as they were, a blur
+ * on a title drew 1.78 times as wide on 9:16 against the title, and a
+ * shake 1.78 times as far up and down but 0.56 as far across (ADR-110).
+ */
+function scalePixels(c: Clip, g: number, a: Frame, b: Frame): Clip {
+  if (!("transform" in c)) return c;
+  // To four places: a scale's rounding is not a change.
+  const kh = +((g * a.h) / b.h).toFixed(4), kw = +((g * a.w) / b.w).toFixed(4);
+  const fx = c.effects.filter((e) => Object.keys(e.params).some((k) => EFFECTS[e.type]?.params[k]?.pixels));
+  const shake = (["x", "y"] as const).filter((t) => c.wiggle?.[t]);
+  if ((!fx.length && !shake.length) || (kh === 1 && kw === 1)) return c;
+  const r = (v: number, k: number) => +(v * k).toFixed(5);
+  const keyed: Record<string, Keyframe[]> = {};
+  const keys = (path: string, k: number) => {
+    const list = c.keyframes?.[path];
+    if (list?.length) keyed[path] = list.map((key) => ({ ...key, v: r(key.v, k) }));
+  };
+  const effects = c.effects.map((e) => {
+    if (!fx.includes(e)) return e;
+    const params = { ...e.params };
+    for (const k of Object.keys(params)) {
+      if (!EFFECTS[e.type]?.params[k]?.pixels) continue;
+      params[k] = r(params[k], kh);
+      keys(`effects.${e.id}.${k}`, kh);
+    }
+    return { ...e, params };
+  });
+  const wiggle = { ...c.wiggle };
+  for (const t of shake) {
+    const k = t === "x" ? kw : kh;
+    wiggle[t] = { ...wiggle[t]!, amplitude: r(wiggle[t]!.amplitude, k) };
+    keys(`wiggle.${t}.amplitude`, k);
+  }
+  return { ...c, effects, ...(shake.length ? { wiggle } : {}), ...(Object.keys(keyed).length ? { keyframes: { ...c.keyframes, ...keyed } } : {}) } as Clip;
+}
+
+/** How many times larger clip `c` (now `v`) is drawn in pixels in q than
+ * in the master: a title by its size, footage by how it fits and its
+ * scale, a solid or a shape by the short side, as their strokes are
+ * scaled; undefined where nothing is said (an adjustment clip, a whole
+ * scene in a compound, drawn as before). */
+function grownBy(master: Project, q: Project, c: Clip, v: Clip, pictures: Set<Id>): number | undefined {
+  if (!("transform" in c) || !("transform" in v)) return undefined;
+  const a: Frame = { w: master.width, h: master.height }, b: Frame = { w: q.width, h: q.height };
+  const s = paramAt(c, "transform.scale", 0), sv = paramAt(v, "transform.scale", 0);
+  const ks = s ? sv / s : 1;
+  if (c.type === "text" && v.type === "text") return ((v.style.size * b.h) / (c.style.size * a.h)) * ks;
+  if (c.type === "compound" && !pictures.has(c.compoundId)) return undefined;
+  const m = c.type === "compound" ? a : mediaSize(master, c);
+  if (m) return (Math.min(b.w / m.w, b.h / m.h) / Math.min(a.w / m.w, a.h / m.h)) * ks;
+  return (short(b) / short(a)) * ks;
+}
+
+/**
  * A clip inside a compound that plays as a picture (a floating window),
  * from the master's frame `a` to `b`: the whole inner frame shrinks to fit
  * inside the new one, centered, as a video's picture does, so the compound
@@ -331,7 +390,8 @@ function asPicture(p: Project, a: Frame, b: Frame, c: Clip): Clip {
   const u = Math.min(b.w / a.w, b.h / a.h);
   // Fractions of the width and of the height, and pixels at a 1080-tall frame.
   const kx = (a.w * u) / b.w, ky = (a.h * u) / b.h;
-  let v = mapPath(scaleFrame(c, ky) as VisualClip, "transform.x", (x) => +(x * kx).toFixed(5));
+  // Everything inside shrinks by u as one picture: what rides on each too.
+  let v = mapPath(scalePixels(scaleFrame(c, ky), u, a, b) as VisualClip, "transform.x", (x) => +(x * kx).toFixed(5));
   v = mapPath(v, "transform.y", (y) => +(y * ky).toFixed(5));
   const m = mediaSize(p, c);
   if (m) {
@@ -1084,7 +1144,19 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  return settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  const done = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  // What rides on each picture, once its size is settled (ADR-110).
+  const was = new Map([...p.tracks, ...(p.compounds ?? []).filter((k) => !pictures.has(k.id)).flatMap((k) => k.tracks)].flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  const ride = (tracks: Track[]) =>
+    tracks.map((t) => ({
+      ...t,
+      clips: t.clips.map((v) => {
+        const c = was.get(v.id);
+        const g = c && grownBy(p, done, c, v, pictures);
+        return !g ? v : scalePixels(v, g, a, b);
+      }),
+    }));
+  return { ...done, tracks: ride(done.tracks), ...(done.compounds ? { compounds: done.compounds.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: ride(k.tracks) })) } : {}) };
 }
 
 /** The outline check_project suggests for a title (contrast.ts's

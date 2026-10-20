@@ -464,3 +464,68 @@ describe("set_param sets what a clip has, and only that (ADR-108)", () => {
     expect(clips(p)[0].keyframes!["mask.width"]).toBeUndefined();
   });
 });
+
+describe("left over from the graphics hunt (ADR-110)", () => {
+  it("an outline-only shape takes its color for the outline, in add_shape and set_shape", () => {
+    // The outline was white, whatever color was given.
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 1, fill: false, color: "#ffcc00", stroke_width: 12 });
+    const id = clips(p)[0].id;
+    expect((clips(p)[0] as ColorClip).shape!.stroke).toEqual({ color: "#ffcc00", width: 12 });
+    // stroke_color still wins, and a filled shape's outline stays white by default.
+    p = runCommand(p, "add_shape", { kind: "rectangle", start: 1, duration: 1, fill: false, color: "#ffcc00", stroke_color: "#00ff00", stroke_width: 12 });
+    expect((byStart(p, 1) as ColorClip).shape!.stroke!.color).toBe("#00ff00");
+    p = runCommand(p, "add_shape", { kind: "rectangle", start: 2, duration: 1, color: "#ffcc00", stroke_width: 12 });
+    expect((byStart(p, 2) as ColorClip).shape!.stroke!.color).toBe("#ffffff");
+    // set_shape: a new color on a hollow shape colors its outline; a filled
+    // shape made hollow takes it too, and one with no outline is refused.
+    p = runCommand(p, "set_shape", { clip_ids: [id], color: "#3366ff" });
+    expect((clips(p).find((c) => c.id === id) as ColorClip).shape!.stroke).toEqual({ color: "#3366ff", width: 12 });
+    const filled = byStart(p, 2).id;
+    p = runCommand(p, "set_shape", { clip_ids: [filled], fill: false, color: "#ff0000" });
+    expect((clips(p).find((c) => c.id === filled) as ColorClip).shape!.stroke!.color).toBe("#ff0000");
+    let q = runCommand(fresh(), "add_shape", { kind: "ellipse", start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_shape", { clip_ids: [clips(q)[0].id], fill: false })).toThrow(/stroke_width/);
+    q = runCommand(q, "set_shape", { clip_ids: [clips(q)[0].id], fill: false, color: "#ff0000" });
+    expect((clips(q)[0] as ColorClip).shape).toMatchObject({ fill: false, stroke: { color: "#ff0000", width: 4 } });
+  });
+
+  it("add_color_clip takes any CSS color the compositor reads, alpha too, and refuses others", () => {
+    // The compositor read only hex, and dropped its alpha: #ff000080 drew
+    // opaque red, and red or rgba() drew black (scripts/drive/shapes.js measures it).
+    for (const color of ["#ff000080", "red", "rgba(0, 255, 0, 0.5)"]) {
+      const p = runCommand(fresh(), "add_color_clip", { color, start: 0, duration: 1 });
+      expect((clips(p)[0] as ColorClip).color).toBe(color);
+    }
+    expect(() => runCommand(fresh(), "add_color_clip", { color: "blurple", start: 0, duration: 1 })).toThrow(/not a color/);
+  });
+
+  it("set_param, set_shape and set_tilt refuse a keyed value without at", () => {
+    // set_param wrote the value under the keys, where nothing reads it, and
+    // answered as if it had taken.
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 4, stroke_width: 4 });
+    const id = clips(p)[0].id;
+    for (const path of ["opacity", "transform.x", "shape.width", "shape.stroke.width", "transform.rotateY"]) {
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 0, value: 0.2 });
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 2, value: 0.4 });
+    }
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 })).toThrow(/opacity is keyframed on clip .*give at/);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "transform.x", value: 0.1 })).toThrow(/transform.x is keyframed/);
+    expect(() => runCommand(p, "set_shape", { clip_ids: [id], width: 0.5 })).toThrow(/shape.width is keyframed/);
+    expect(() => runCommand(p, "set_shape", { clip_ids: [id], stroke_width: 9 })).toThrow(/shape.stroke.width is keyframed/);
+    expect(() => runCommand(p, "set_tilt", { clip_ids: [id], y: 20 })).toThrow(/transform.rotateY is keyframed/);
+    // With at they key; unkeyed paths and clips still set without it.
+    const q = runCommand(p, "set_param", { clip_ids: [id], path: "opacity", value: 0.9, at: 1 });
+    expect(clips(q)[0].keyframes!.opacity.map((k) => [k.f, k.v])).toEqual([[0, 0.2], [30, 0.9], [60, 0.4]]);
+    expect((clips(runCommand(p, "set_param", { clip_ids: [id], path: "transform.y", value: 0.1 }))[0] as ColorClip).transform.y).toBe(0.1);
+    expect((clips(runCommand(p, "set_shape", { clip_ids: [id], height: 0.3 }))[0] as ColorClip).shape!.height).toBe(0.3);
+  });
+
+  it("set_param starts a sound's EQ, which no other command sets", () => {
+    // ADR-108's refusal of a part the clip lacks took it for a half part:
+    // "eq.low is not on clip: it has no eq", and an agent could not EQ at all.
+    let p: Project = { ...fresh(), assets: [{ id: "s", kind: "audio", name: "s.wav", src: "s.wav", duration: 10, hasVideo: false, hasAudio: true }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "s", start: 0, duration: 4 });
+    p = runCommand(p, "set_param", { clip_ids: [clips(p)[0].id], path: "eq.low", value: -12 });
+    expect((clips(p)[0] as Clip & { eq?: object }).eq).toEqual({ low: -12 });
+  });
+});

@@ -413,3 +413,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-110 Outlines take their color, solids their alpha, borders blur with their picture, and a shot's pieces carry their titles]] —
+  a hollow shape's outline takes its color; solids draw any CSS color,
+  alpha too (names and rgba() drew black); a motion-blurred picture is
+  framed per shutter sample; versions scale effects' pixel sizes and a
+  position wiggle with their picture; set_param, set_shape and set_tilt
+  need at for a keyed value, set_param starts an EQ again, and
+  normalize_loudness scales a duck's keys;
+  markers follow a song any compounds deep; a piece cut off a shot (a
+  freeze's second half) carries its titles; per-letter border fades stay
+  open.

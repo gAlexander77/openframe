@@ -794,6 +794,20 @@ export function setParam(p: Project, clipIds: Id[], path: string, value: number,
   return p;
 }
 
+/** A sound clip's level set to `gain`: its volume, and its volume keys (a
+ * duck, a swell) scaled so the loudest is `gain`, their shape kept.
+ * normalize_loudness sets a ducked song this way: the volume under its keys
+ * is never heard, and set_param refuses it without at (ADR-110). */
+export function setLevel(p: Project, clipId: Id, gain: number): Project {
+  return updateClip(p, clipId, (c) => {
+    if (!("volume" in c)) return c;
+    const keys = c.keyframes?.volume;
+    const top = keys?.length ? Math.max(...keys.map((k) => k.v)) : 0;
+    const scaled = keys?.length && top > 0 ? { keyframes: { ...c.keyframes, volume: keys.map((k) => ({ ...k, v: +((k.v * gain) / top).toFixed(5) })) } } : {};
+    return { ...c, volume: gain, ...scaled } as Clip;
+  });
+}
+
 /** Mirror pictures: each given direction is set as asked, the other kept. */
 export function setFlip(p: Project, clipIds: Id[], flip: { horizontal?: boolean; vertical?: boolean }): Project {
   for (const id of clipIds) {
@@ -918,6 +932,61 @@ export interface SettleOptions {
 /** Frames of [a, a+da) that overlap [b, b+db). */
 const overlap = (a: number, da: number, b: number, db: number) => Math.max(0, Math.min(a + da, b + db) - Math.max(a, b));
 
+/** What a clip reads at a constant rate: its file (or compound), the
+ * second its first frame reads, seconds per frame and direction; null for
+ * a freeze, a speed curve or a clip with no source time. */
+function readsOf(c: Clip, fps: Rational): { key: string; at: number; rate: number; dir: number } | null {
+  if (c.type === "image") return { key: `i:${c.assetId}`, at: c.imageIn ?? 0, rate: fps.den / fps.num, dir: 1 };
+  if (!isTimed(c) || c.freeze || c.speedCurve) return null;
+  return { key: c.type === "compound" ? `k:${c.compoundId}` : `a:${c.assetId}`, at: c.in, rate: (c.speed * fps.den) / fps.num, dir: c.reverse ? -1 : 1 };
+}
+
+/** The pieces cut off old main-track shots that are still there, shorter
+ * (a split's second half, moved by a freeze frame or an insert after it):
+ * where each played before the edit and how far it moved. A new clip two
+ * old shots could have given, or pieces that claim more of a shot than it
+ * lost (a replay of its own frames inserted into it), move nothing. */
+function pieceMoves(oldMain: Track, newMain: Track, fps: Rational): { start: number; duration: number; delta: number }[] {
+  const span = (c: Clip, x: { at: number; rate: number; dir: number }): [number, number] => {
+    const end = x.at + x.dir * c.duration * x.rate;
+    return [Math.min(x.at, end), Math.max(x.at, end)];
+  };
+  const claims = new Map<Id, { n: Clip; start: number; lo: number; hi: number }[]>();
+  const old = new Set(oldMain.clips.map((c) => c.id));
+  const nowById = new Map(newMain.clips.map((c) => [c.id, c]));
+  // Only shots that got shorter can have given a piece.
+  const cut = oldMain.clips.filter((o) => (nowById.get(o.id)?.duration ?? Infinity) < o.duration);
+  for (const n of newMain.clips) {
+    const r = cut.length ? readsOf(n, fps) : null;
+    if (!r || old.has(n.id)) continue;
+    const eps = r.rate / 2;
+    const [lo, hi] = span(n, r);
+    const found: { o: Clip; start: number }[] = [];
+    for (const o of cut) {
+      const ro = readsOf(o, fps);
+      const now = nowById.get(o.id)!;
+      const rn = readsOf(now, fps);
+      if (!ro || !rn || ro.key !== r.key || ro.rate !== r.rate || ro.dir !== r.dir) continue;
+      const [olo, ohi] = span(o, ro), [klo, khi] = span(now, rn);
+      if (lo < olo - eps || hi > ohi + eps || Math.min(hi, khi) - Math.max(lo, klo) > eps) continue;
+      found.push({ o, start: o.start + Math.round((r.dir * (r.at - ro.at)) / r.rate) });
+    }
+    if (found.length !== 1) continue;
+    const { o, start } = found[0];
+    claims.set(o.id, [...(claims.get(o.id) ?? []), { n, start, lo, hi }]);
+  }
+  const moves: { start: number; duration: number; delta: number }[] = [];
+  for (const [id, list] of claims) {
+    const o = cut.find((c) => c.id === id)!;
+    const lost = o.duration - nowById.get(id)!.duration;
+    const sorted = [...list].sort((x, y) => x.lo - y.lo);
+    const apart = sorted.every((x, i) => i === 0 || x.lo >= sorted[i - 1].hi - (readsOf(o, fps)!.rate / 2));
+    if (!apart || list.reduce((n, x) => n + x.n.duration, 0) > lost) continue;
+    for (const x of list) if (x.start !== x.n.start) moves.push({ start: x.start, duration: x.n.duration, delta: x.n.start - x.start });
+  }
+  return moves;
+}
+
 /**
  * Apply the magnet and linkage after an edit turned `before` into `after`.
  * Linkage looks at where each main-track clip was and where it is now, and
@@ -927,7 +996,9 @@ const overlap = (a: number, da: number, b: number, db: number) => Math.max(0, Ma
  * follows that shot, a music bed or a logo spanning several shots belongs
  * to none of them and stays put (ADR-035). Only a shot that moved whole
  * carries its clips: one whose head was trimmed changed its start but not
- * where its pictures play (ADR-102).
+ * where its pictures play (ADR-102). A piece cut off a shot counts as a
+ * shot of its own there: the second half of a shot split by a freeze
+ * frame carries its title past the freeze (ADR-110).
  */
 export function settle(before: Project, after: Project, o: SettleOptions): Project {
   let p = o.magnet ? closeOpenedGaps(before, after, mainTrack(after).id) : after;
@@ -939,6 +1010,11 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
     const now = newMain.clips.find((x) => x.id === c.id);
     if (now && now.start !== c.start && now.duration === c.duration) moves.push({ start: c.start, duration: c.duration, delta: now.start - c.start });
   }
+  // A piece cut off a shot that moved whole carries what sat on that part
+  // of the shot: the second half of a shot split by a freeze frame or an
+  // insert, which the shot's own id (on its first half) no longer names
+  // (ADR-110).
+  moves.push(...pieceMoves(oldMain, newMain, before.fps));
   if (!moves.length) return p;
   const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   const kept = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));

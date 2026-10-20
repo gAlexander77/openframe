@@ -606,9 +606,9 @@ export const COMMANDS: Command[] = [
   {
     name: "add_color_clip",
     description: "Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
-    input: S.obj({ color: S.str("CSS color"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
+    input: S.obj({ color: S.str("CSS color: '#ff3366', '#00000080' (with alpha, see-through), 'rgba(0,0,0,0.5)', 'white'"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
     run: (p, a) => {
-      const clip = createColorClip(String(a.color), f(p, a.start), span(p, a.start, a.duration));
+      const clip = createColorClip(colorArg(a.color, "color")!, f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -834,7 +834,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead (without at it is refused: remove_keyframes first to set one value). An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
     input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
@@ -844,6 +844,9 @@ export const COMMANDS: Command[] = [
       return ids.reduce((q, id) => {
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
+        // Without at, a keyed value went under its keys, where nothing reads
+        // it, and the answer told it as set (ADR-110, as ADR-108's commands).
+        keyedNeedsAt(clip, path, a.at);
         // A keyed path takes a key here: refuse one nothing would read (ADR-066).
         const keyed = !!clip.keyframes?.[path]?.length && rel !== undefined;
         const problem = keyed ? keyframeProblem(clip, path) : null;
@@ -1271,7 +1274,7 @@ export const COMMANDS: Command[] = [
           "A two-color fill instead of color: linear (default) or radial",
         ),
         fill: S.bool("false draws only the outline (give stroke_width); default true"),
-        stroke_color: S.str("Outline color, CSS; default white"),
+        stroke_color: S.str("Outline color, CSS; default white, or color when fill is false"),
         stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
         radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
         draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
@@ -1296,7 +1299,9 @@ export const COMMANDS: Command[] = [
         ...(kind === "rectangle" && (a.radius !== undefined || a.kind === "rounded_rectangle") ? { radius: Number(a.radius ?? 0.35) } : {}),
         ...(a.fill === false && kind !== "line" ? { fill: false } : {}),
         ...(a.gradient ? { gradient: gradientArg(a.gradient as Record<string, unknown>) } : {}),
-        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" ? color : "#ffffff"), width: strokeWidth } } : {}),
+        // A line's color, or an outline-only shape's, is its outline's
+        // (ADR-110: fill false with a color drew a white outline).
+        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" || (a.fill === false && a.color !== undefined) ? color : "#ffffff"), width: strokeWidth } } : {}),
         ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
         ...(Number(a.feather ?? 0) > 0 ? { feather: Number(a.feather) } : {}),
       };
@@ -1339,6 +1344,8 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (clip.type !== "color" || !clip.shape) throw new CommandError(`clip ${id} is not a shape (add one with add_shape)`);
+        for (const k of ["width", "height", "radius", "draw", "feather"]) if (a[k] !== undefined) keyedNeedsAt(clip, `shape.${k}`, a.at);
+        if (a.stroke_width !== undefined && Number(a.stroke_width) > 0) keyedNeedsAt(clip, "shape.stroke.width", a.at);
         const color = colorArg(a.color, "color");
         const strokeColor = colorArg(a.stroke_color, "stroke_color");
         let s: Shape = { ...clip.shape };
@@ -1349,10 +1356,13 @@ export const COMMANDS: Command[] = [
         if (a.fill !== undefined) s = a.fill === false ? { ...s, fill: false } : omit(s, "fill");
         const g = a.gradient as Record<string, unknown> | undefined;
         if (g) s = g.from === "" ? omit(s, "gradient") : { ...s, gradient: gradientArg({ ...s.gradient, ...g }) };
-        if (strokeColor || a.stroke_width !== undefined) {
+        // An outline-only shape's color is its outline's, as add_shape's (ADR-110).
+        const outline = strokeColor ?? (s.fill === false && s.kind !== "line" ? color : undefined);
+        if (outline || a.stroke_width !== undefined) {
           const w = a.stroke_width !== undefined ? Number(a.stroke_width) : (s.stroke?.width ?? (s.kind === "line" ? LINE_WIDTH : 4));
-          s = w > 0 ? { ...s, stroke: { color: strokeColor ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
+          s = w > 0 ? { ...s, stroke: { color: outline ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
         }
+        if (s.fill === false && !s.stroke && s.kind !== "line") throw new CommandError("an outline-only shape needs stroke_width");
         // A feather is set as given (0 makes the edge crisp), or keyed when animated.
         if (a.feather !== undefined && !clip.keyframes?.["shape.feather"]?.length) s = Number(a.feather) > 0 ? { ...s, feather: Number(a.feather) } : omit(s, "feather");
         // A name that is still the shape's own label follows the shape.
@@ -1502,6 +1512,7 @@ export const COMMANDS: Command[] = [
         const { clip } = clipOrThrow(p, id);
         if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to tilt`);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of TILT_PARAMS) if (given[k] !== undefined) keyedNeedsAt(clip, `transform.${k}`, a.at);
         for (const k of TILT_PARAMS) {
           if (given[k] === undefined) continue;
           if (clip.keyframes?.[`transform.${k}`]?.length) p = ops.setParam(p, [clip.id], `transform.${k}`, Number(given[k]), rel);
@@ -2663,9 +2674,11 @@ function rawValueAt(clip: Clip, path: string): unknown {
 /** The part of `path` a clip lacks ("border", "adjust.colorize"), or null
  * when everything above the value is there. A grade's HSL bands and wheels
  * start from nothing (the grade reads what is missing as 0), so set_param
- * may make them. */
+ * may make them; so may a sound's EQ, whose bands are each flat when
+ * missing and which no other command sets (ADR-110: refused, an agent
+ * could not set an EQ at all). */
 function missingPart(clip: Clip, path: string): string | null {
-  if (/^adjust\.(hsl|wheels)\./.test(path)) return null;
+  if (/^adjust\.(hsl|wheels)\./.test(path) || (/^eq\.(low|mid|high)$/.test(path) && "volume" in clip)) return null;
   const segs = path.split(".");
   let cur: unknown = clip;
   for (let i = 0; i < segs.length - 1; i++) {

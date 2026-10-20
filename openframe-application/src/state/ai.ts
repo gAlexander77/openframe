@@ -211,9 +211,7 @@ function fit(tool: ToolId, clip: MediaClip, asset: Asset | undefined): string | 
   if (tool === "reframe" && (clip.reverse || clip.speedCurve)) return "Its speed is curved or reversed";
   if (tool === "scenes" || tool === "stabilize" || tool === "cutout" || tool === "reframe") return clip.type === "video" && asset.hasVideo ? null : `Needs ${NEEDS[tool]}`;
   if (tool === "sync") return clip.type === "audio" && asset.hasAudio ? null : `Needs ${NEEDS[tool]}`;
-  // ponytail: one static gain per clip; keyframed volume would need every
-  // key scaled, so those clips are left to the user.
-  if (tool === "loudness" && clip.keyframes?.volume?.length) return "Its volume is keyframed (ducking keys it): normalize before ducking, or remove its volume keyframes first";
+  // A ducked clip's volume keys scale with its level (setLevel, ADR-110).
   // ponytail: the cleaned sound is a new file of the source window; a
   // retimed clip would need the retimer's window instead.
   if (tool === "denoise" && (clip.speedCurve || clip.reverse)) return "Its speed is curved or reversed";
@@ -666,7 +664,8 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
     return results;
   }
   edit(live.length === 1 ? "Normalize loudness" : `Normalize loudness of ${plural(live.length, "clip")}`, (p) =>
-    live.reduce((q, r) => runCommand(q, "set_param", { clip_ids: [r.clipId], path: "volume", value: r.gain }), p),
+    // A ducked song's keys scale to the level (ADR-110): its volume under them is never heard.
+    live.reduce((q, r) => ops.setLevel(q, r.clipId, r.gain), p),
   );
   const held = live.filter((r) => r.limitedBy).length;
   const one = live.length === 1 ? ` from ${live[0].lufs.toFixed(1)}` : "";
