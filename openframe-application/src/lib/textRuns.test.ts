@@ -80,3 +80,16 @@ describe("run geometry (ADR-099)", () => {
     expect(baselineShifts([{ y: 0, above: 30 }, { y: 0, above: 15 }])).toEqual([0, 15]);
   });
 });
+
+describe("run geometry under letter spacing (ADR-108)", () => {
+  it("ends a run's gradient on its last letter, not the spacing after it", () => {
+    // "Big SALE today" tracked 30: each piece's width is its advance, which
+    // counts 30 after its last letter too (canvas and CSS both do), so SALE's
+    // gradient ended 30 px past its E and the E stopped short of `to`.
+    const runs = [{ start: 4, end: 8, gradient: { from: "cyan", to: "violet", angle: 0 } }];
+    const pieces = [{ start: 0, text: "Big ", x: 100, width: 230, y: 50 }, { start: 4, text: "SALE", x: 330, width: 520, y: 50 }, { start: 8, text: " today", x: 850, width: 400, y: 50 }];
+    expect(runBoxes(runs, pieces, 100, 30).get(runs[0])).toEqual({ left: 330, top: 0, right: 820, bottom: 100 });
+    // Untracked, the advance is the letters.
+    expect(runBoxes(runs, pieces, 100).get(runs[0])!.right).toBe(850);
+  });
+});

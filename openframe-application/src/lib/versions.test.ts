@@ -262,3 +262,40 @@ describe("a 9:16 ad in other shapes", () => {
     expect((b.shape.stroke.width * 1920) / 1080).toBeCloseTo(6, 1);
   });
 });
+
+describe("pixel sizes in versions (ADR-108)", () => {
+  /** A framed, shadowed picture-in-picture (its border keyed) and a
+   * feathered glow (its feather keyed), on a 16:9 master. */
+  function framed(): Project {
+    let p: Project = { ...createProject(), assets: [{ id: "shot", kind: "video", name: "shot.mp4", src: "shot.mp4", duration: 20, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const pip = clips(p).find((c) => c.type === "video" && !p.tracks.find((t) => t.clips.includes(c))!.main)!.id;
+    p = runCommand(p, "set_param", { clip_ids: [pip], path: "transform.scale", value: 0.4 });
+    p = runCommand(p, "set_border", { clip_ids: [pip], width: 12 });
+    p = runCommand(p, "add_keyframe", { clip_id: pip, path: "border.width", at: 1, value: 24 });
+    p = runCommand(p, "set_shadow", { clip_ids: [pip], blur: 60, x: 9, y: 30 });
+    p = runCommand(p, "add_shape", { kind: "ellipse", start: 0, duration: 4, width: 0.2, feather: 120 });
+    const glow = byType(p, "color")[0].id;
+    return runCommand(p, "add_keyframe", { clip_id: glow, path: "shape.feather", at: 1, value: 60 });
+  }
+  const pip = (p: Project) => clips(p).find((c) => c.type === "video" && "border" in c && c.border) as VideoClip;
+  const glow = (p: Project) => byType(p, "color")[0];
+
+  it("keeps a border's, a drop shadow's and a feather's pixels against the short side, keys too", () => {
+    const p = framed();
+    const q = reshape(p, "9:16", "fill");
+    // Pixels at a 1080-tall frame drawn on a 1920-tall one: the same pixels
+    // there take 1080/1920 of the number. Before, a 12 px frame drew 21 px
+    // and a 120 px feather 213 px around shapes that kept their size.
+    const k = 1080 / 1920;
+    expect(pip(q).border).toEqual({ ...pip(p).border!, width: +(12 * k).toFixed(2) });
+    expect(pip(q).keyframes!["border.width"][0].v).toBeCloseTo(24 * k, 2);
+    expect(pip(q).shadow).toMatchObject({ blur: +(60 * k).toFixed(2), x: +(9 * k).toFixed(2), y: +(30 * k).toFixed(2), opacity: 0.5 });
+    expect(glow(q).shape!.feather! * (1920 / 1080)).toBeCloseTo(120, 1);
+    expect(glow(q).keyframes!["shape.feather"][0].v * (1920 / 1080)).toBeCloseTo(60, 1);
+    // A square version keeps the height, so the numbers stay.
+    const s = reshape(p, "1:1", "fill");
+    expect([pip(s).border!.width, pip(s).shadow!.blur, glow(s).shape!.feather]).toEqual([12, 60, 120]);
+  });
+});

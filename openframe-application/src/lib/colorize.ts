@@ -27,10 +27,12 @@ export function colorizeRgb(rgb: Rgb, tint: Rgb, amount: number): Rgb {
   return rgb.map((v, i) => v + (l * tint[i] - v) * k) as Rgb;
 }
 
-/** The color as straight RGB for the shader; null when it is not a color. */
-export function colorizeTint(c: Colorize): Rgb | null {
+/** The color as straight RGB for the shader, and its alpha, which scales
+ * the amount as a border's or a shadow's color alpha scales its opacity
+ * (ADR-108); null when it is not a color. */
+export function colorizeTint(c: Colorize): { rgb: Rgb; alpha: number } | null {
   const p = parseColor(c.color);
-  return p ? [p[0], p[1], p[2]] : null;
+  return p ? { rgb: [p[0], p[1], p[2]], alpha: p[3] } : null;
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);

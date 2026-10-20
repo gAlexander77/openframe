@@ -10,7 +10,8 @@
 export interface DescribeFilter {
   track_ids?: string[];
   clip_ids?: string[];
-  /** Timeline seconds: clips playing inside [start, end). */
+  /** Timeline seconds: clips playing inside [start, end); start = end is
+   * a moment, the clips playing at it. */
   start?: number;
   end?: number;
   /** false leaves the list out; true lists all of it however the clips are narrowed. */
@@ -43,16 +44,21 @@ export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "
 /** The description narrowed as `f` asks, with `shown` saying how much of
  * each list is in it ("5 of 43") wherever something was left out, and
  * `not_found` naming ids that are not in the project. */
-export function filterDescription(description: unknown, f: DescribeFilter): unknown {
+export function filterDescription(description: unknown, asked: DescribeFilter): unknown {
   const d = description as Desc;
+  // An empty list of ids is no filter: an agent that fills in every
+  // optional argument sends [] for "all" (ADR-108).
+  const f = { ...asked, clip_ids: asked.clip_ids?.length ? asked.clip_ids : undefined, track_ids: asked.track_ids?.length ? asked.track_ids : undefined };
   if (!d?.tracks || !FILTER_KEYS.some((k) => f[k] !== undefined)) return description;
-  if (f.start !== undefined && f.end !== undefined && f.end <= f.start) throw new Error("end must be after start");
+  if (f.start !== undefined && f.end !== undefined && f.end < f.start) throw new Error("end must not be before start");
   const lo = f.start ?? -Infinity, hi = f.end ?? Infinity;
   const ranged = f.start !== undefined || f.end !== undefined;
   const narrow = ranged || !!f.track_ids || !!f.clip_ids;
   const ids = f.clip_ids && new Set(f.clip_ids);
   const trackIds = f.track_ids && new Set(f.track_ids);
-  const inRange = (c: ClipDesc) => c.end > lo && c.start < hi;
+  // start = end is a moment: what plays at it.
+  const moment = lo === hi;
+  const inRange = (c: ClipDesc) => c.end > lo && (c.start < hi || (moment && c.start <= hi));
   const wanted = (c: ClipDesc) => (!ids || ids.has(c.id)) && inRange(c);
 
   const tracks = d.tracks
@@ -62,22 +68,35 @@ export function filterDescription(description: unknown, f: DescribeFilter): unkn
     .filter((t) => t.clips.length || trackIds?.has(t.id));
   const shownClips = tracks.flatMap((t) => t.clips);
 
-  // Nested timelines: one a clip shown plays, whole; one holding a clip
-  // asked for by id, with only those clips (their times are its own, so a
-  // stretch does not apply inside).
-  const played = new Set(shownClips.map((c) => c.compound).filter(Boolean));
-  const compounds = (d.compounds ?? []).flatMap((k) => {
-    if (!narrow || f.compounds === true || played.has(k.id)) return [k];
-    if (!ids) return [];
-    const inside = k.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => ids.has(c.id)) })).filter((t) => t.clips.length);
-    return inside.length ? [{ ...k, tracks: inside }] : [];
-  });
+  // Nested timelines: one holding a track or a clip asked for by id, with
+  // only those (their times are its own, so a stretch does not apply
+  // inside); one a clip listed plays, whole, and what that one plays in
+  // turn, all the way down (ADR-108).
+  const nested = d.compounds ?? [];
+  const chosen = new Map<string, NonNullable<Desc["compounds"]>[number]>();
+  if (!narrow || f.compounds === true) for (const k of nested) chosen.set(k.id, k);
+  else {
+    for (const k of nested) {
+      const inside = k.tracks
+        .filter((t) => trackIds?.has(t.id) || (ids && t.clips.some((c) => ids.has(c.id))))
+        .map((t) => ({ ...t, clips: ids ? t.clips.filter((c) => ids.has(c.id)) : t.clips }));
+      if (inside.length) chosen.set(k.id, { ...k, tracks: inside });
+    }
+    const queue = [...shownClips, ...[...chosen.values()].flatMap((k) => k.tracks.flatMap((t) => t.clips))];
+    for (let c = queue.pop(); c; c = queue.pop()) {
+      const k = c.compound ? nested.find((x) => x.id === c!.compound) : undefined;
+      if (!k || chosen.get(k.id) === k) continue;
+      chosen.set(k.id, k);
+      queue.push(...k.tracks.flatMap((t) => t.clips));
+    }
+  }
+  const compounds = nested.filter((k) => chosen.has(k.id)).map((k) => chosen.get(k.id)!);
   const everyClip = [...shownClips, ...compounds.flatMap((k) => k.tracks.flatMap((t) => t.clips))];
 
   const used = new Set(everyClip.map((c) => c.asset).filter(Boolean));
   const assets = !narrow || f.assets === true ? d.assets : d.assets?.filter((a) => used.has(a.id));
   const shownIds = new Set(shownClips.map((c) => c.id));
-  const markers = !narrow || f.markers === true ? d.markers : d.markers?.filter((m) => (ranged ? m.at >= lo && m.at < hi : !!m.clip && shownIds.has(m.clip)));
+  const markers = !narrow || f.markers === true ? d.markers : d.markers?.filter((m) => (ranged ? m.at >= lo && (m.at < hi || (moment && m.at === hi)) : !!m.clip && shownIds.has(m.clip)));
 
   const out: Desc = { ...d, tracks };
   const shown: Record<string, string> = {};
@@ -98,7 +117,8 @@ export function filterDescription(description: unknown, f: DescribeFilter): unkn
     tell(key, list?.length ?? 0, all?.length ?? 0);
   }
   if (Object.keys(shown).length) out.shown = shown;
-  const missing = [...(f.clip_ids ?? []).filter((id) => !d.tracks!.some((t) => t.clips.some((c) => c.id === id)) && !(d.compounds ?? []).some((k) => k.tracks.some((t) => t.clips.some((c) => c.id === id)))), ...(f.track_ids ?? []).filter((id) => !d.tracks!.some((t) => t.id === id))];
+  const timelines = [d.tracks, ...nested.map((k) => k.tracks)];
+  const missing = [...(f.clip_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.clips.some((c) => c.id === id)))), ...(f.track_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.id === id)))];
   if (missing.length) out.not_found = missing;
   return out;
 }

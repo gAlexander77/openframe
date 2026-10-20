@@ -389,7 +389,7 @@ export interface Grade {
  * become darker shades of it; mixed over the picture by `amount`, 0..1.
  * Keyframe adjust.colorize.amount. */
 export interface Colorize {
-  /** CSS color. */
+  /** CSS color; its alpha multiplies `amount`. */
   color: string;
   amount: number;
 }

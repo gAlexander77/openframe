@@ -422,7 +422,7 @@ export const APP_TOOLS: AppTool[] = [
       clip_ids: { type: "array", items: { type: "string" }, description: "Only these clips, each under its track (or its compound)" },
       track_ids: { type: "array", items: { type: "string" }, description: "Only these tracks, each listed empty or not" },
       start: { type: "number", minimum: 0, description: "Only clips still playing after this timeline second" },
-      end: { type: "number", minimum: 0, description: "Only clips starting before this timeline second" },
+      end: { type: "number", minimum: 0, description: "Only clips starting before this timeline second; the same as start: what plays at that moment" },
       assets: { type: "boolean", description: "false: no media list; true: all of it (default: all, or the clips' own when narrowed)" },
       markers: { type: "boolean", description: "false: no markers; true: all (default: all, or those in the stretch or on the clips shown)" },
       compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },

@@ -101,6 +101,60 @@ describe("describe_project's filters", () => {
     expect(one.error).toBeFalsy();
     expect(clips(JSON.parse(one.text))).toEqual([shot]);
     expect((await call({})).text).toBe(JSON.stringify(describeProject(p)));
-    expect((await call({ start: 5, end: 4 })).text).toContain("end must be after start");
+    expect((await call({ start: 5, end: 4 })).text).toContain("end must not be before start");
+  });
+});
+
+describe("describe_project's filters on nested timelines and edge cases (ADR-108)", () => {
+  /** The ad with its end card nested again: the outer compound "Outro"
+   * holds the End card compound clip and a logo picture. */
+  function nested(): { p: Project; outer: string; inner: string; d: Desc } {
+    let p = project();
+    p = { ...p, assets: [...p.assets, { id: "logo", kind: "image", name: "logo.png", src: "logo.png", duration: 0, width: 400, height: 400, hasVideo: true, hasAudio: false }] };
+    const card = clips(desc(p)).find((c) => c.type === "compound")!;
+    p = runCommand(p, "add_media_clip", { asset_id: "logo", start: 12, duration: 3 });
+    const logo = clips(desc(p)).find((c) => c.asset === "logo")!;
+    p = runCommand(p, "create_compound_clip", { clip_ids: [card.id, logo.id], name: "Outro" });
+    const d = desc(p);
+    const outer = clips(d).find((c) => c.type === "compound")!;
+    return { p, outer: outer.compound!, inner: card.compound!, d };
+  }
+
+  it("lists the compounds a compound shown plays, all the way down, with their media", () => {
+    const { outer, inner, d } = nested();
+    const clip = clips(d).find((c) => c.compound === outer)!;
+    const one = filterDescription(d, { clip_ids: [clip.id] }) as Desc;
+    // The End card plays inside the Outro: before, only the Outro was listed.
+    expect(one.compounds!.map((k) => k.id).sort()).toEqual([outer, inner].sort());
+    expect(one.compounds).toEqual(d.compounds!.filter((k) => k.id === outer || k.id === inner));
+    expect(one.assets!.map((a) => a.id)).toEqual(["logo"]);
+    // A stretch over the outro lists both too.
+    expect((filterDescription(d, { start: 13, end: 14 }) as Desc).compounds!.length).toBe(2);
+  });
+
+  it("finds a track inside a compound by its id, as it finds a clip there", () => {
+    const { inner, d } = nested();
+    const k = d.compounds!.find((x) => x.id === inner)! as unknown as { id: string; tracks: { id: string; clips: { id: string }[] }[] };
+    const track = k.tracks[0];
+    const one = filterDescription(d, { track_ids: [track.id] }) as Desc;
+    // Before: not_found named it, and nothing was listed.
+    expect(one.not_found).toBeUndefined();
+    expect(one.compounds!.map((x) => x.id)).toEqual([inner]);
+    expect(one.compounds![0].tracks).toEqual([track]);
+    expect(one.tracks).toEqual([]);
+  });
+
+  it("reads an empty list of ids as no filter, and a stretch with no length as a moment", () => {
+    const d = desc(project());
+    // An agent that fills every optional argument sends []: it meant all.
+    expect(filterDescription(d, { clip_ids: [], track_ids: [] })).toBe(d);
+    const main = d.tracks.find((t) => t.main)!;
+    expect((filterDescription(d, { clip_ids: [], track_ids: [main.id] }) as Desc).tracks).toEqual([main]);
+    // start = end: what plays at that moment (the shot from 4 to 8, the
+    // song), and the marker on it.
+    const at = filterDescription(d, { start: 4, end: 4 }) as Desc;
+    expect(clips(at).map((c) => [c.type, c.start]).sort()).toEqual([["audio", 0], ["video", 4]]);
+    expect(at.markers!.map((m) => m.at)).toEqual([4]);
+    expect(() => filterDescription(d, { start: 5, end: 4 })).toThrow("end must not be before start");
   });
 });

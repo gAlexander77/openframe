@@ -84,3 +84,19 @@ describe("colorize (ADR-105)", () => {
     expect(clipOf(loaded, id).adjust.colorize).toEqual({ color: "#ffb347", amount: 0.9 });
   });
 });
+
+describe("colorize with a see-through color (ADR-108)", () => {
+  it("takes the color's alpha as a share of the amount, as border and shadow colors do", () => {
+    const { p, id } = sprite();
+    // #ffb34780 drew white as full amber: the alpha was dropped.
+    const half = runCommand(p, "set_colorize", { clip_ids: [id], color: "#ffb34780" });
+    const g = resolveGrade(half, clipOf(half, id), 0)!;
+    g.colorize!.rgb.forEach((v, i) => expect(v).toBeCloseTo(AMBER[i], 9));
+    expect(g.colorize!.amount).toBeCloseTo(0x80 / 255, 6);
+    const keyed = runCommand(runCommand(half, "add_keyframe", { clip_id: id, path: "adjust.colorize.amount", at: 0, value: 0.5 }), "add_keyframe", { clip_id: id, path: "adjust.colorize.amount", at: 2, value: 0.5 });
+    expect(resolveGrade(keyed, clipOf(keyed, id), 30)!.colorize!.amount).toBeCloseTo(0.5 * (0x80 / 255), 6);
+    // A transparent color colors nothing.
+    const none = runCommand(p, "set_colorize", { clip_ids: [id], color: "transparent" });
+    expect(resolveGrade(none, clipOf(none, id), 0)).toBeUndefined();
+  });
+});

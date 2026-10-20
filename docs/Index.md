@@ -375,3 +375,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   asked for detail full; the design rules and a title's style are listed
   once; lines are laid out without the spacing after the last letter;
   set_colorize makes white a color; the glow starts at luma 85.
+- [[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]] —
+  set_param refuses a part the clip lacks, naming what adds it (a half
+  colorize crashed renders, a half mask wedged describe_project); a keyed
+  border, shadow, colorize or mask value needs at; a border no longer
+  tints a see-through picture; versions keep borders, drop shadows and
+  feathers against the short side; describe_project lists nested
+  compounds, finds compound tracks, reads [] as all and start = end as a
+  moment; a colorize color's alpha scales it; a tracked range's gradient
+  ends on its letters.
