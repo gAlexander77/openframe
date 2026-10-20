@@ -133,7 +133,12 @@ export const EFFECTS: Record<string, EffectDef> = {
   // 2.3.1), so the default stays under it; the range is kept for slow
   // pulses' sake and the docs say why.
   flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 2, step: 0.5 } } },
-  glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 60 } } },
+  // Threshold: the brightness (luma, 0..100) where the glow starts, fully
+  // on 20 above it. 60 bloomed a launch's sky, towers and smoke into white
+  // smears in the Claude film test (it set 88); at 80 the towers still
+  // streaked, at 85 only the exhaust glows (ADR-105). A stored effect keeps
+  // the threshold it was added with.
+  glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 85 } } },
   lightLeak: { label: "Light leak", category: "Light", params: { amount: amount(55), speed: { label: "Speed", min: 0, max: 100, default: 30 } } },
   // CapCut's Reduce image noise: smooths grain and sensor noise but not
   // edges (a bilateral filter), so detail survives.

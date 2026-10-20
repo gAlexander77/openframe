@@ -49,6 +49,7 @@ const ROWS: Row[] = [
   { path: `adjust.hsl.${any(HSL_BANDS)}.<hue|saturation|lightness>`, on: graded },
   { path: `adjust.wheels.${any(WHEELS)}.<r|g|b|y>`, on: graded },
   { path: "adjust.lut.intensity", on: graded },
+  { path: "adjust.colorize.amount", on: graded, needs: (c) => ("adjust" in c && c.adjust.colorize ? null : "it is not colorized: set_colorize first") },
   { path: "effects.<index|id|type>.<param>", on: (c) => "effects" in c },
   { path: "mask.<x|y|width|height|rotation|feather|radius>", on: visual, needs: (c) => ("mask" in c && c.mask ? null : "it has no mask: set_mask first") },
   { path: `shape.${any(SHAPE_PARAMS)}`, on: (c) => c.type === "color" && !!c.shape },

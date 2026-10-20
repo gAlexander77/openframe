@@ -213,7 +213,11 @@ only when they changed, summed up (`added_compounds`, `changed_compounds`:
 `edit_compound` changes them; `removed_compounds`), never with their whole
 nested timelines (3 KB an edit on the launch film's six windows). `undo`
 and `redo` answer the same way. `describe_project` is still the whole
-picture, keyframes included: each keyed path's keys as `[at, value]` or
+picture by default; `clip_ids`, `track_ids` or a stretch (`start`, `end`)
+narrow it to those clips with the media and markers they use, `assets` and
+`markers` false leave those lists out, and `shown` says how much of each
+list the answer holds ([[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]).
+Keyframes are included: each keyed path's keys as `[at, value]` or
 `[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
 "fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,
 first, last, range}`), so an edit to a key shows in its answer. A title
@@ -467,10 +471,11 @@ Original music ([[Features]], Generated music;
 
 Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 
-- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?}`:
-  tempo, beats, downbeats, phrases, sections (intro, verse, build, drop,
-  breakdown, outro, with energy), per-beat energy, hits and the drops, in
-  timeline seconds; `markers` (`beats`, `bars`, `phrases`, `sections`,
+- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?, detail?}`:
+  tempo, the beat grid (`first_beat`, `beat_seconds`, `bar_seconds` and the
+  beats `off_grid`), downbeats, phrases, sections (intro, verse, build,
+  drop, breakdown, outro, with energy), counts and the drops, in timeline
+  seconds; `detail: "full"` adds every beat, its energy and the hits; `markers` (`beats`, `bars`, `phrases`, `sections`,
   `drop`) also drops markers. The whole music file is read (once per file
   and hints; files over ten minutes, the clip's stretch and a minute either
   side) and its grid mapped through the clip's in-point, speed or speed

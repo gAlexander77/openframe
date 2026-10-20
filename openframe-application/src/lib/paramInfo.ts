@@ -67,6 +67,7 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   // Borders (ADR-099).
   "border.width": { label: "Border width", unit: "px", digits: 0 },
   "border.opacity": { label: "Border opacity", unit: "%", digits: 0, scale: 100 },
+  "adjust.colorize.amount": { label: "Colorize amount", unit: "%", digits: 0, scale: 100 },
   "style.size": { label: "Text size", unit: "px", digits: 1 },
   "transform.rotateX": { label: "Tilt X", unit: "°", digits: 1 },
   "transform.rotateY": { label: "Tilt Y", unit: "°", digits: 1 },

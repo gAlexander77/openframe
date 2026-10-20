@@ -360,3 +360,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sentence; trims say why they stop; slip_clip moves the source by its
   seconds; hidden cuts are not counted; half-frame times take the earlier
   frame.
+- [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]] —
+  describe_project narrows to clips, tracks or a stretch with the media
+  and markers they use; analyze_music answers a grid and counts unless
+  asked for detail full; the design rules and a title's style are listed
+  once; lines are laid out without the spacing after the last letter;
+  set_colorize makes white a color; the glow starts at luma 85.

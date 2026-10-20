@@ -516,7 +516,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-020 The grade lives in adjust, in Lumetri's order]]):
   - **Basic**: filter looks and the temperature, tint, saturation,
     vibrance, hue, exposure, contrast, highlights, shadows, whites, blacks,
-    sharpen, grain, fade and vignette sliders.
+    sharpen, grain, fade and vignette sliders, and **Colorize**: the
+    picture's brightness in one color (white becomes it, black stays),
+    with a keyframable amount, so a white glow or logo can be made amber,
+    which warming cannot do (`set_colorize`,
+    [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]).
   - **HSL**: eight color ranges, hue, saturation and lightness each; only
     that color changes, grays never.
   - **Curves**: luma, red, green and blue; click to add a point, drag to

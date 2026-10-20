@@ -33,6 +33,8 @@ uniform bool u_curvesOn, u_wheelsOn, u_hslOn;
 uniform sampler2D u_curves;              // 256x1: R, G, B curves, luma in A
 uniform vec3 u_lift, u_gamma, u_gain, u_offset;
 uniform vec3 u_hsl[8];                   // hue, saturation, lightness per band, -1..1
+uniform vec3 u_colorize;                 // colorize (ADR-105): white becomes this
+uniform float u_colorizeAmount;          // 0 off .. 1, mirrored from src/lib/colorize.ts
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -116,6 +118,9 @@ vec3 grade(vec3 c) {
 }
 
 vec3 adjustColor(vec3 c, vec2 local) {
+  // Colorize first: the brightness in one color, which the sliders, the
+  // filter and the grade then act on (a white sprite made amber, then warmed).
+  if (u_colorizeAmount > 0.0) c = mix(c, luma(c) * u_colorize, u_colorizeAmount);
   c *= exp2(u_exposure * 2.0);
   c += u_brightness * 0.25;
   // white balance: warm adds red/removes blue, tint adds magenta/removes green

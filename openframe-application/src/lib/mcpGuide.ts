@@ -9,7 +9,7 @@ import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from ".
 import { KINETIC_ANIMATIONS } from "./kinetic";
 import { CAPTION_LOOKS } from "./captionLooks";
 import { RATIOS } from "./canvas";
-import type { JsonSchema } from "./commands";
+import { TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
 import { ANIMATABLE_PATHS } from "./animatable";
 import { EXPORT_PRESETS } from "./export";
 import { MASK_SHAPES } from "./mask";
@@ -61,7 +61,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
     tools: ["set_brand", "apply_brand", "add_ad_element", "text_behind_subject"],
   },
-  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut"] },
+  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
@@ -114,7 +114,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   add_keyframe: { clip_id: "c_123", path: "transform.x", at: 1, value: 0.75, ease: "fastIn" },
   frame_region: { clip_id: "c_123", region: { x: 0.25, y: 0.2, w: 0.5, h: 0.5 }, to_region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, from: 0, to: 3 },
   set_transition: { clip_id: "c_123", type: "dissolve", duration: 0.5 },
-  add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 55 } },
+  add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 88 } },
   set_filter: { clip_id: "c_123", type: "teal", intensity: 0.8 },
   set_speed_curve: { clip_id: "c_123", preset: "hero" },
   set_blend: { clip_ids: ["c_123"], mode: "screen" },
@@ -137,6 +137,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_edge_mode: { clip_ids: ["c_4"], edge: "mirror" },
   set_shadow: { clip_ids: ["c_6"], blur: 80, y: 30, opacity: 0.55 },
   set_border: { clip_ids: ["c_6"], width: 10, color: "#ffffff" },
+  set_colorize: { clip_ids: ["c_7"], color: "#ffb347", amount: 1 },
   set_tilt: { clip_ids: ["c_6"], y: -18, x: 6 },
   animate_text_style: { clip_id: "c_5", keys: [{ at: 1, letter_spacing: 0, ease: "easeOut" }, { at: 2.5, letter_spacing: 24 }] },
   set_wiggle: { clip_ids: ["c_4"], target: "position", frequency: 4, amplitude: 12 },
@@ -194,8 +195,9 @@ export const PARAM_PATHS: { path: string; range: string; meaning: string }[] = [
   { path: "opacity", range: "0..1", meaning: "0 invisible" },
   { path: "volume", range: "0..4", meaning: "Gain: 1 is 0 dB, 0.5 about -6 dB, 0 silent" },
   { path: "pan", range: "-1..1", meaning: "Left to right" },
-  { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100" },
+  { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100. Temperature cannot warm pure white (a white sprite or logo): set_colorize can" },
   { path: "adjust.lut.intensity", range: "0..1", meaning: "Strength of an applied LUT" },
+  { path: "adjust.colorize.amount", range: "0..1", meaning: "Strength of set_colorize's color (white becomes it)" },
   { path: "mask.x / mask.y / mask.width / mask.height / mask.feather", range: "fractions", meaning: "Animate a mask set with set_mask" },
   { path: "effects.<index|id|type>.<param>", range: "per effect", meaning: "An effect's parameter: its place in the stack from 0 (effects.0.amount), its id, or its type (effects.glow.threshold); list_catalog section effects has each one's parameters and range" },
 ];
@@ -261,6 +263,11 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.`;
 
+/** What a playbook says in place of the design rules: they were repeated in
+ * full in three playbooks (1.2k tokens each time a model read one, the
+ * Claude film test found, ADR-105), so a model reads them once. */
+export const DESIGN_POINTER = "Design rules: help topic design (hook, pacing, words, type sizes, contrast, color, motion, flashes, sound, loudness, end card), read once for every playbook; check_project measures the result against them.";
+
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
   ad: {
     title: "A professional ad",
@@ -276,13 +283,13 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Each version's crops follow the shots' subjects; the check sheet outlines in orange a subject a framing still cuts (focus [{clip_id, x, y}] on that version places it by hand). Where a version needs more work by hand (an end card to lay out), export_versions with save_projects true saves it as a project in that shape: open_project it, fix it, export_video.
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
   epic_edit: {
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop), or compose one: generate_music (style launch or cinematic) with sections that fit the edit (a drop at the climax, the outro ending with the video; plan_music tries them without rendering) places the music and answers its cue sheet: tempo, bars, beats, sections, drops and the final hit.
-2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds; the markers follow the music clip through later trims, moves and speed changes. When the reading is wrong (the bars fall between the kicks in preview_motion, the drop is missed or early, a confidence is low), give the song's grid with set_music_grid (its tempo, a bar's first beat and the parts, in the file's seconds): the markers move onto it, and analyze_music, mark_beats and check_project use it from then on. Cut on downbeats and at phrase starts.
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, the beat grid, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds (detail full adds every beat and hit); the markers follow the music clip through later trims, moves and speed changes. When the reading is wrong (the bars fall between the kicks in preview_motion, the drop is missed or early, a confidence is low), give the song's grid with set_music_grid (its tempo, a bar's first beat and the parts, in the file's seconds): the markers move onto it, and analyze_music, mark_beats and check_project use it from then on. Cut on downbeats and at phrase starts.
 3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
@@ -292,7 +299,7 @@ ${DESIGN}`,
 9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; a set_audio_filter lowpass sweep that opens onto the drop, set_tape_stop for a stop before it; then fit_music end bar (or video) with fade_out to end the music cleanly.
 10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
   voiceover: {
     title: "A directed voiceover",
@@ -316,7 +323,7 @@ ${DESIGN}`,
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p).
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
 };
 
@@ -326,16 +333,26 @@ export const HELP_TOPICS = ["overview", "design", ...Object.keys(PLAYBOOKS), "ca
 const typeOf = (s: JsonSchema): string =>
   s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
 
+/** Object parameters several tools share, by their fields, with the tool
+ * and parameter whose help lists them: a title's style is 24 rows (about
+ * 3 KB), which help add_voiceover's caption_style, set_text and
+ * add_captions repeated whole (ADR-105). */
+const SHARED_FIELDS = new Map<object, { tool: string; param: string }>([[TEXT_STYLE_SCHEMA.properties!, { tool: "add_text", param: "style" }]]);
+
 /** A tool's parameters as a markdown table; the fields of object
  * parameters (style, region) and of array items (files[], lines[]) get
- * rows of their own, since that is where models guess wrong. */
-export function paramTable(schema: JsonSchema): string {
+ * rows of their own, since that is where models guess wrong. Fields
+ * another tool's help lists (SHARED_FIELDS) are named there instead. */
+export function paramTable(schema: JsonSchema, tool?: string): string {
   const rows: string[] = [];
   const cell = (v: string) => v.replace(/\|/g, "\\|").replace(/\n/g, " ");
   const walk = (s: JsonSchema, prefix: string, depth: number) => {
     for (const [k, p] of Object.entries(s.properties ?? {})) {
       const range = p.minimum !== undefined || p.maximum !== undefined ? ` (${p.minimum ?? ""}..${p.maximum ?? ""})` : "";
-      rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range} |`);
+      const shared = p.properties && SHARED_FIELDS.get(p.properties);
+      const elsewhere = shared && shared.tool !== tool ? `; its fields are ${shared.tool}'s ${shared.param} (help ${shared.tool})` : "";
+      rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range}${elsewhere} |`);
+      if (elsewhere) continue;
       if (depth < 2 && p.type === "object" && p.properties) walk(p, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "array" && p.items?.type === "object" && p.items.properties) walk(p.items, `${prefix}${k}[].`, depth + 1);
     }
@@ -347,7 +364,7 @@ export function paramTable(schema: JsonSchema): string {
 /** One tool, fully: what it does, its parameters and an example call. */
 export function toolHelp(t: ToolInfo): string {
   const ex = EXAMPLES[t.name];
-  return [`## ${t.name} (${groupOf(t.name)})`, "", t.description, "", paramTable(t.inputSchema), ...(ex ? ["", "Example:", "", "```json", JSON.stringify({ name: t.name, arguments: ex }), "```"] : [])].join("\n");
+  return [`## ${t.name} (${groupOf(t.name)})`, "", t.description, "", paramTable(t.inputSchema, t.name), ...(ex ? ["", "Example:", "", "```json", JSON.stringify({ name: t.name, arguments: ex }), "```"] : [])].join("\n");
 }
 
 /** The help tool's answer for a topic or a tool's name. */
@@ -412,7 +429,8 @@ export function promptMessages(name: string, args: Record<string, string>) {
   if (missing.length) throw new Error(`prompt ${name} needs ${missing.join(", ")}`);
   const book = PLAYBOOKS[name === "make_ad" ? "ad" : name];
   const given = p.arguments.filter((a) => args[a.name]).map((a) => `- ${a.name}: ${args[a.name]}`);
-  const text = [`${p.description}`, "", "Details:", ...(given.length ? given : ["- (none given: ask for what is missing, or choose sensibly)"]), "", book.text].join("\n");
+  // A prompt starts a task once, so it carries the design rules whole.
+  const text = [`${p.description}`, "", "Details:", ...(given.length ? given : ["- (none given: ask for what is missing, or choose sensibly)"]), "", book.text.replace(DESIGN_POINTER, DESIGN)].join("\n");
   return { description: p.description, messages: [{ role: "user", content: { type: "text", text } }] };
 }
 
@@ -469,7 +487,7 @@ export function agentPlaybook(): string {
     "",
     DESIGN.replace(/^Design rules[^\n]*\n/, ""),
     "",
-    ...Object.values(PLAYBOOKS).flatMap((b) => [`## ${b.title}`, "", b.text.split("\n\nDesign rules")[0], ""]),
+    ...Object.values(PLAYBOOKS).flatMap((b) => [`## ${b.title}`, "", b.text.replace(`\n\n${DESIGN_POINTER}`, ""), ""]),
     "## Prompts",
     "",
     ...PROMPTS.flatMap((p) => [`- \`${p.name}\`: ${p.description} Arguments: ${p.arguments.map((a) => `${a.name}${a.required ? " (required)" : ""}`).join(", ")}.`]),
