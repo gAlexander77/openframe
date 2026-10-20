@@ -11,6 +11,8 @@
 // - the shadow is cast by the picture and its border together;
 // - a see-through picture (blue at 60%) shows the ground through itself,
 //   not the border's red (ADR-108: the border filled it at 40%);
+// - a motion-blurred picture's border blurs with it (ADR-110: it was
+//   drawn crisp, 20 px of pure red, around the blurred picture);
 // - the Video tab has a Border section.
 // Needs ffmpeg on PATH (it shells out); exports land in scratch/.
 async (page) => {
@@ -62,6 +64,16 @@ async (page) => {
     // A see-through picture: its own pixels at 60%, the clip at full opacity.
     call("add_shape", { kind: "rectangle", start: 5, duration: 1, width: 0.5, height: 0.5, color: "#0000ff99" });
     call("set_border", { clip_ids: [added().id], color: "#ff0000", width: 20 });
+    // A framed picture rushing right with motion blur: x -0.45 to 0.45 in
+    // 1 s (57.6 px a frame), at the center at 6.5 s; a 360 degree shutter.
+    call("add_color_clip", { color: "#808080", start: 6, duration: 1, track_id: main });
+    added();
+    call("add_shape", { kind: "rectangle", start: 6, duration: 1, width: 0.25, height: 0.3, color: "#0000ff" });
+    const moving = added().id;
+    call("add_keyframe", { clip_id: moving, path: "transform.x", at: 6, value: -0.45 });
+    call("add_keyframe", { clip_id: moving, path: "transform.x", at: 7, value: 0.45 });
+    call("set_border", { clip_ids: [moving], color: "#ff0000", width: 20 });
+    call("set_motion_blur", { clip_ids: [moving], on: true, shutter_angle: 360 });
     return { half, main };
   });
 
@@ -155,6 +167,31 @@ async (page) => {
     return { center: at(960, 540), edge: at(481, 540) };
   });
   details.seeThrough = { ok: near(t.inLeft, [51, 51, 204], 12) && near(center, [51, 51, 204], 12) && near(edge, [51, 51, 204], 24) && near(t.left, RED) && near(t.pastLeft, GRAY), inLeft: t.inLeft, center, edge, left: t.left };
+
+  // Motion blur: at 6.5 s the picture's left edge (x 720) sweeps 691..749
+  // over the shutter, its border with it. Framed once, after the blur, the
+  // border was a crisp band of pure red around the smear; blurred with the
+  // picture, no pixel of the smear is pure red. Its top border, which the
+  // move only slides along itself, stays red.
+  const mb = await page.evaluate(async () => {
+    const st = await window.videoEditor.still(195);
+    const bmp = await createImageBitmap(await (await fetch(st.url)).blob());
+    URL.revokeObjectURL(st.url);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    const g = c.getContext("2d");
+    g.drawImage(bmp, 0, 0);
+    const row = g.getImageData(620, 540, 160, 1).data;
+    let pure = 0, reddest = 0;
+    for (let i = 0; i < 160; i++) {
+      const [r, gg, b] = [row[i * 4], row[i * 4 + 1], row[i * 4 + 2]];
+      if (r > 200 && gg < 60 && b < 60) pure++;
+      reddest = Math.max(reddest, r - Math.max(gg, b));
+    }
+    return { pure, reddest, top: [...g.getImageData(960, 368, 1, 1).data.slice(0, 3)] };
+  });
+  // The border covers a point of the smear for about 20 of its 57.6 px: red
+  // leads by about 90 (crisp, it led by 167, three pixels pure red).
+  details.motionBlurred = { ok: mb.pure === 0 && mb.reddest > 40 && mb.reddest < 130 && near(mb.top, RED), ...mb };
 
   // Preview: the viewer's own pixels at 0.5 s, scaled to its size.
   await page.evaluate(() => window.videoEditor.seek(15));

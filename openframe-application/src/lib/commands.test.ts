@@ -478,6 +478,17 @@ describe("what the edits hunt found (ADR-106)", () => {
     expect(report.notes).toEqual(["Stopped at 10 s, not 20 s: the source starts there (launch.mp4 has nothing earlier, played reversed)."]);
   });
 
+  it("an agent's freeze frame carries the caption on the shot's second half past it (ADR-110)", () => {
+    // Shots [0,2) [2,4) [4,6) s; captions "Two" at 2-3.8 and a new one on
+    // the second shot's second half, 3.1-3.8. A 1 s freeze at 3: that half
+    // is a new clip at 4, and its caption stayed over the freeze.
+    let p = captioned();
+    p = runCommand(p, "add_text", { text: "Late", start: 3.1, duration: 0.7 });
+    const q = runAgentCommand(p, "freeze_frame", { clip_id: p.tracks.find((t) => t.main)!.clips[1].id, at: 3, duration: 1 });
+    const at = (text: string) => q.tracks.flatMap((t) => t.clips).find((c) => c.type === "text" && c.text === text)!.start / 30;
+    expect([at("One"), at("Two"), at("Late"), at("Three")]).toEqual([0, 2, 4.1, 5]);
+  });
+
   it("a freeze frame has nothing to slip, and says so instead of naming the source's end", () => {
     let p = captioned();
     p = runCommand(p, "freeze_frame", { clip_id: p.tracks.find((t) => t.main)!.clips[0].id, at: 1, duration: 1 });

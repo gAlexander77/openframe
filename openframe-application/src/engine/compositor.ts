@@ -699,13 +699,15 @@ export class Compositor {
 
   // ---- passes -------------------------------------------------------------------
 
-  /** Upload a source and return its texture. Keyed sources upload once. */
-  private sourceTexture(src: SourceImage, slot: number): WebGLTexture {
+  /** Upload a source and return its texture. Keyed sources upload once;
+   * `fresh` false reuses what the slot already holds (the same frame drawn
+   * again at another shutter placement). */
+  private sourceTexture(src: SourceImage, slot: number, fresh = true): WebGLTexture {
     const gl = this.gl;
     if (src.key) {
       const hit = this.sourceTextures.get(src.key);
       if (hit) return hit;
-    }
+    } else if (!fresh && this.slotTextures[slot]) return this.slotTextures[slot];
     const tex = src.key ? this.makeTexture() : (this.slotTextures[slot] ??= this.makeTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     // Full texImage2D re-spec (not texSubImage2D) keeps Chrome's zero-copy
@@ -725,7 +727,7 @@ export class Compositor {
   /** Draw one layer's source into `out` (cleared first). With motion
    * blur, it is drawn at each shutter placement into the half-float target
    * at its share of the opacity, and the sum copied into `out` (ADR-058). */
-  private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number) {
+  private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number, fresh = true) {
     const gl = this.gl;
     const W = this.width;
     const H = this.height;
@@ -736,7 +738,7 @@ export class Compositor {
     // Frame blending's next frame uploads first, while unit 0 is free.
     const next = src && !isRendered(src) ? src.next : undefined;
     gl.activeTexture(gl.TEXTURE0);
-    const nextTex = next && src && !isRendered(src) ? this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS) : null;
+    const nextTex = next && src && !isRendered(src) ? this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS, fresh) : null;
     const shape = layer.source.kind === "shape" ? layer.source.shape : undefined;
     const p = shape ? this.program("layer:shape", LAYER_VS, LAYER_SHAPE_FS) : this.program("layer", LAYER_VS, LAYER_FS);
     const u = this.use(p);
@@ -820,8 +822,9 @@ export class Compositor {
     gl.uniform1i(u("u_solid"), solid || shape || !src ? 1 : 0);
     gl.uniform1i(u("u_edge"), layer.edge === "mirror" ? 1 : layer.edge === "repeat" ? 2 : 0);
     if (layer.source.kind === "color") {
-      const [r, g, b] = hexToRgb(layer.source.color);
-      gl.uniform4f(u("u_color"), r, g, b, 1);
+      // Any CSS color, its alpha too (ADR-110): read as hex only, a solid
+      // at #ff000080 drew opaque red, and "red" or rgba() drew black.
+      gl.uniform4fv(u("u_color"), rgba(layer.source.color));
     } else gl.uniform4f(u("u_color"), 0, 0, 0, 0);
     this.setShapeUniforms(u, layer, sw, sh);
     let mainTex: WebGLTexture | null = null;
@@ -833,7 +836,7 @@ export class Compositor {
       this.bindTex(0, mainTex, u("u_tex"));
       gl.uniform2f(u("u_texel"), 1 / W, 1 / H);
     } else if (src && !solid && !shape) {
-      mainTex = this.sourceTexture(src, slot);
+      mainTex = this.sourceTexture(src, slot, fresh);
       this.bindTex(0, mainTex, u("u_tex"));
       const tw = src.rotation % 2 ? src.height : src.width;
       const th = src.rotation % 2 ? src.width : src.height;
@@ -1060,32 +1063,69 @@ export class Compositor {
      * holding it is returned): source, effects, then its track matte, which
      * draws into the level's own matte targets. */
     const layerToTarget = (layer: Layer, src: DrawSource | null, target: Target, temps: [Target, Target]): Target => {
-      this.drawLayer(layer, src, target, slot.n++);
-      // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
-      const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
-      const done = fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
+      const all = [target, ...temps];
+      // The track matte first, into the level's own matte targets. The
+      // matte layer is planned without a matte of its own, so this never
+      // recurses further.
       const tm = layer.trackMatte;
-      let cut = done;
-      if (tm) {
+      let matte: Target | null = null;
+      if (tm?.layer) {
         const [M1, M2, M3] = this.matteLevel(depth);
-        const ml = tm.layer;
-        const msrc = ml && sourceOf(ml);
-        // The matte layer is planned without a matte of its own, so this
-        // never recurses further.
-        const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
-        cut = [target, ...temps].find((t) => t !== done)!;
-        this.applyMatte(done, matte, tm.mode, cut);
+        const msrc = sourceOf(tm.layer);
+        if (drawable(tm.layer, msrc)) matte = layerToTarget(tm.layer, msrc, M1, [M2, M3]);
       }
-      // The border (ADR-099) around the picture as it is now, before the
-      // shadow, which it casts too.
-      if (layer.border) {
-        const framed = [target, ...temps].find((t) => t !== cut)!;
-        this.castBorder(cut, layer.border, layer.opacity, framed);
-        cut = framed;
-      }
+      /** The picture at one placement (or blurred over its shutter):
+       * source, effects, matte, then its border (ADR-099), outside the
+       * picture as it is now, before the shadow, which it casts too. */
+      const picture = (one: Layer, at: number, fresh: boolean): Target => {
+        this.drawLayer(one, src, target, at, fresh);
+        // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
+        const fx = one.blur > 0.5 ? [...one.effects, { type: "blur", params: { amount: one.blur / 0.6 } }] : one.effects;
+        const done = fx.length ? this.applyEffects(fx, target, one.time, temps) : target;
+        let cut = done;
+        if (tm) {
+          cut = all.find((t) => t !== done)!;
+          this.applyMatte(done, matte, tm.mode, cut);
+        }
+        if (one.border) {
+          const framed = all.find((t) => t !== cut)!;
+          this.castBorder(cut, one.border, one.opacity, framed);
+          cut = framed;
+        }
+        return cut;
+      };
+      // A framed picture with motion blur is framed at each placement and
+      // the framed pictures averaged, so its border blurs with it, as After
+      // Effects blurs a layer's stroke (ADR-110). Framed once, the blurred
+      // picture got a crisp border around its half-covered contour.
+      // ponytail: its effects and border run once per sample (up to 32 on
+      // export, 6 playing); only a framed picture that moves pays that.
+      const samples = layer.border && layer.motion && layer.motion.length > 1 ? layer.motion : null;
+      const acc = samples ? this.accumTarget() : null;
+      let cut: Target;
+      if (samples && acc) {
+        const at = slot.n++;
+        this.clear(acc);
+        samples.forEach((t, i) => {
+          const one = picture({ ...layer, ...t, motion: undefined }, at, i === 0);
+          this.bindTarget(acc);
+          const c = this.use(this.program("copy", FULLSCREEN_VS, COPY_FS));
+          this.bindTex(0, one.tex, c("u_tex"));
+          gl.enable(gl.BLEND);
+          gl.blendColor(0, 0, 0, 1 / samples.length);
+          gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+          this.draw();
+          gl.disable(gl.BLEND);
+        });
+        cut = target;
+        this.bindTarget(cut);
+        const c = this.use(this.program("copy", FULLSCREEN_VS, COPY_FS));
+        this.bindTex(0, acc.tex, c("u_tex"));
+        this.draw();
+      } else cut = picture(layer, slot.n++, true);
       // The drop shadow last (ADR-070): cast by the picture as it is now.
       if (!layer.shadow) return cut;
-      const out = [target, ...temps].find((t) => t !== cut)!;
+      const out = all.find((t) => t !== cut)!;
       this.castShadow(cut, layer.shadow, out);
       return out;
     };

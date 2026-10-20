@@ -18,6 +18,10 @@ export interface ParamDef {
   unit?: string;
   /** Names for the whole values min..max: a choice, not a slider. */
   options?: string[];
+  /** Pixels at a 1080-tall frame (drawn larger on a taller one, as a
+   * title's size): export_versions scales it with the picture it is on
+   * (ADR-110). */
+  pixels?: boolean;
 }
 
 // ---- animations --------------------------------------------------------------
@@ -110,13 +114,13 @@ export const EFFECTS: Record<string, EffectDef> = {
   // Radius 0.6 px at 1080p per unit: 100 (60 px) was the old maximum and
   // draws as it always has; past it, up to 300 px, the blur runs on a
   // downsampled pyramid for big, soft glows (ADR-069).
-  blur: { label: "Blur", category: "Blur", params: { amount: { ...amount(30), max: BLUR_MAX } } },
+  blur: { label: "Blur", category: "Blur", params: { amount: { ...amount(30), max: BLUR_MAX, pixels: true } } },
   zoomBlur: { label: "Zoom blur", category: "Blur", params: { amount: amount(40) } },
-  pixelate: { label: "Pixelate", category: "Stylize", params: { size: { label: "Block size", min: 2, max: 120, default: 24 } } },
+  pixelate: { label: "Pixelate", category: "Stylize", params: { size: { label: "Block size", min: 2, max: 120, default: 24, pixels: true } } },
   rgbSplit: { label: "RGB split", category: "Distort", params: { amount: amount(30), angle: { label: "Angle", min: 0, max: 360, default: 0 } } },
   glitch: { label: "Glitch", category: "Distort", params: { amount: amount(50), speed: { label: "Speed", min: 0, max: 100, default: 50 } } },
   vhs: { label: "VHS", category: "Stylize", params: { amount: amount(60) } },
-  grain: { label: "Film grain", category: "Stylize", params: { amount: amount(35), size: { label: "Size", min: 1, max: 4, default: 1.5, step: 0.1 } } },
+  grain: { label: "Film grain", category: "Stylize", params: { amount: amount(35), size: { label: "Size", min: 1, max: 4, default: 1.5, step: 0.1, pixels: true } } },
   scanlines: { label: "Scanlines", category: "Stylize", params: { amount: amount(40), density: { label: "Density", min: 50, max: 800, default: 300 } } },
   invert: { label: "Invert", category: "Color", params: { amount: amount(100) } },
   posterize: { label: "Posterize", category: "Color", params: { levels: { label: "Levels", min: 2, max: 16, default: 5 } } },
@@ -143,9 +147,9 @@ export const EFFECTS: Record<string, EffectDef> = {
   // CapCut's Reduce image noise: smooths grain and sensor noise but not
   // edges (a bilateral filter), so detail survives.
   denoise: { label: "Reduce image noise", category: "Blur", params: { amount: amount(50) } },
-  motionBlur: { label: "Motion blur", category: "Blur", params: { amount: amount(30), angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
+  motionBlur: { label: "Motion blur", category: "Blur", params: { amount: { ...amount(30), pixels: true }, angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
   sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 } } },
-  halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10 } } },
+  halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10, pixels: true } } },
   // Cinematic bars: black bands that letterbox the picture to a ratio
   // (pillarbox on a wider canvas); amount slides them in, 0 to 100.
   letterbox: { label: "Letterbox", category: "Stylize", params: { ratio: { label: "Ratio", unit: ":1", min: 1, max: 4, default: 2.39, step: 0.01 }, amount: amount(100) } },

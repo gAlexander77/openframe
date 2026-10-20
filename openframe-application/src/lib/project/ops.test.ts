@@ -22,6 +22,7 @@ import {
   trimClip,
   settle,
   setFps,
+  setLevel,
 } from "./ops";
 import type { Asset, Clip, Project, VideoClip } from "./types";
 
@@ -344,6 +345,25 @@ describe("settle", () => {
     expect(findClip(s, "pip")!.clip.start).toBe(50);
   });
 
+  it("carries what sat on a piece cut off a shot when the piece moves (ADR-110)", () => {
+    // c1 [0,90) and c2 [90,120): a title on each half of c1 and one on c2.
+    // A freeze at 45 holds 30 frames: c1's second half is a new clip at 75,
+    // which no id named, so its title stayed over the freeze.
+    let p = project([0, 90, 0], [90, 30, 0]);
+    const text = (id: string, start: number, duration: number) => ({ ...createTextClip(id, start, duration), id });
+    p = { ...p, tracks: [{ ...createTrack("video", "Titles"), clips: [text("tA", 10, 20), text("tB", 50, 30), text("tC", 95, 20)] }, ...p.tracks] };
+    const at = (s: Project) => ["tA", "tB", "tC"].map((id) => findClip(s, id)!.clip.start);
+    expect(at(settle(p, freezeFrame(p, "c1", 45, 30), linked))).toEqual([10, 80, 125]);
+    // An insert into the shot does the same; a split alone moves nothing.
+    const ins = addClip(p, p.tracks[1].id, { ...createColorClip("#000", 45, 15), id: "black" } as Clip, "insert");
+    expect(at(settle(p, ins, linked))).toEqual([10, 65, 110]);
+    expect(at(settle(p, splitClip(p, "c1", 45), linked))).toEqual([10, 50, 95]);
+    // A replay of the shot's own tail inserted into it claims more than the
+    // shot lost: which piece is which is unclear, so nothing follows it.
+    const replay = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 45, p.fps), id: "replay", duration: 30, in: 2 } as Clip, "insert");
+    expect(at(settle(p, replay, linked))).toEqual([10, 50, 125]);
+  });
+
   it("carries clips with a shot that moved whole, not with one whose head was trimmed", () => {
     // An agent's trim (no magnet) of c1's head moves c1's start to 10 but
     // not where its pictures play: the title on it stays.
@@ -352,6 +372,21 @@ describe("settle", () => {
     expect(findClip(s, "c1")!.clip.start).toBe(10);
     expect(findClip(s, "t1")!.clip.start).toBe(5);
     expect(findClip(s, "whoosh")!.clip.start).toBe(5);
+  });
+});
+
+describe("setLevel (ADR-110)", () => {
+  it("sets a sound's level, scaling its volume keys so the loudest is it", () => {
+    // normalize_loudness set the volume under a ducked song's keys, where
+    // nothing reads it: the song kept its old level.
+    let p = project([0, 90, 0]);
+    p = setParam(p, ["c1"], "volume", 1);
+    p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => ({ ...c, keyframes: { volume: [{ f: 0, v: 0.8 }, { f: 30, v: 0.2 }, { f: 60, v: 0.8 }] } }) as Clip) })) };
+    const c = findClip(setLevel(p, "c1", 0.5), "c1")!.clip as VideoClip;
+    expect(c.volume).toBe(0.5);
+    expect(c.keyframes!.volume.map((k) => k.v)).toEqual([0.5, 0.125, 0.5]);
+    const plain = findClip(setLevel(project([0, 90, 0]), "c1", 0.5), "c1")!.clip as VideoClip;
+    expect([plain.volume, plain.keyframes?.volume]).toEqual([0.5, undefined]);
   });
 });
 

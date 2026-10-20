@@ -318,3 +318,56 @@ describe("pixel sizes in versions (ADR-108)", () => {
     expect([pip(s).border!.width, pip(s).shadow!.blur, glow(s).shape!.feather]).toEqual([12, 60, 120]);
   });
 });
+
+describe("what rides on a picture in versions (ADR-110)", () => {
+  /** On a 16:9 master: a full-frame shot blurred, a picture-in-picture
+   * pixelated and blurred (its blur keyed), a title blurred and shaken. */
+  function looks(): { p: Project; shot: string; pip: string; title: string } {
+    let p: Project = { ...createProject(), assets: [{ id: "shot", kind: "video", name: "shot.mp4", src: "shot.mp4", duration: 20, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const shot = clips(p)[0].id;
+    p = runCommand(p, "add_effect", { clip_id: shot, type: "blur", params: { amount: 30 } });
+    p = runCommand(p, "add_effect", { clip_id: shot, type: "glow" });
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const pip = clips(p).find((c) => c.type === "video" && c.id !== shot)!.id;
+    p = runCommand(p, "set_param", { clip_ids: [pip], path: "transform.scale", value: 0.4 });
+    p = runCommand(p, "add_effect", { clip_id: pip, type: "pixelate", params: { size: 24 } });
+    p = runCommand(p, "add_effect", { clip_id: pip, type: "blur", params: { amount: 20 } });
+    p = runCommand(p, "add_keyframe", { clip_id: pip, path: "effects.blur.amount", at: 1, value: 40 });
+    p = runCommand(p, "add_text", { text: "Hot", start: 0, duration: 4, style: { size: 120 } });
+    const title = byType(p, "text")[0].id;
+    p = runCommand(p, "add_effect", { clip_id: title, type: "blur", params: { amount: 10 } });
+    p = runCommand(p, "set_wiggle", { clip_ids: [title], target: "position", amplitude: 12 });
+    return { p, shot, pip, title };
+  }
+  const by = (p: Project, id: string) => clips(p).find((c) => c.id === id) as VideoClip | TextClip;
+  const param = (c: Clip, type: string, k: string) => ("effects" in c ? c.effects.find((e) => e.type === type)!.params[k] : NaN);
+
+  it("scales effects' pixels and a position wiggle with the picture they are on, keys too", () => {
+    const { p, shot, pip, title } = looks();
+    const q = reshape(p, "9:16", "fill");
+    // The picture-in-picture keeps its pixels against the short side, so
+    // its blocks and blur do: the same pixels on a 1920-tall frame take
+    // 1080/1920 of the number. Before, they drew 1.78 times as large.
+    const k = 1080 / 1920;
+    expect(param(by(q, pip), "pixelate", "size")).toBeCloseTo(24 * k, 4);
+    expect(param(by(q, pip), "blur", "amount")).toBeCloseTo(20 * k, 4);
+    const blurId = (by(q, pip) as VideoClip).effects.find((e) => e.type === "blur")!.id;
+    expect(by(q, pip).keyframes![`effects.${blurId}.amount`][0].v).toBeCloseTo(40 * k, 4);
+    // The full-frame shot is drawn 1.78 times larger to cover the tall
+    // frame: its blur grows with it, as it did, against what it shows.
+    expect(param(by(q, shot), "blur", "amount")).toBe(30);
+    // A glow has no pixel-sized number to scale.
+    expect((by(q, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params).toEqual((by(p, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params);
+    // The title's blur and shake keep their size against its letters: the
+    // shake was 1.78 times as far up and down, 0.56 across.
+    const [a, b] = [by(p, title) as TextClip, by(q, title) as TextClip];
+    const px = (c: TextClip, f: Project) => (c.style.size * f.height) / 1080;
+    expect((param(b, "blur", "amount") * q.height) / px(b, q)).toBeCloseTo((param(a, "blur", "amount") * p.height) / px(a, p), 3);
+    expect((b.wiggle!.x!.amplitude * q.width) / px(b, q)).toBeCloseTo((a.wiggle!.x!.amplitude * p.width) / px(a, p), 3);
+    expect((b.wiggle!.y!.amplitude * q.height) / px(b, q)).toBeCloseTo((a.wiggle!.y!.amplitude * p.height) / px(a, p), 3);
+    // A square version keeps the height and the picture's pixels: nothing changes.
+    const s = reshape(p, "1:1", "fill");
+    expect([param(by(s, pip), "pixelate", "size"), param(by(s, pip), "blur", "amount")]).toEqual([24, 20]);
+  });
+});

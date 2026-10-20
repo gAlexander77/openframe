@@ -418,3 +418,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   out of every MP3's playback, export, waveform, analysis and duration
   (23 ms earlier at 48 kHz, sample for sample with ffmpeg); markers and
   cuts saved from an old reading stay as measured; AAC was already exact.
+- [[ADR-110 Outlines take their color, solids their alpha, borders blur with their picture, and a shot's pieces carry their titles]] —
+  a hollow shape's outline takes its color; solids draw any CSS color,
+  alpha too (names and rgba() drew black); a motion-blurred picture is
+  framed per shutter sample; versions scale effects' pixel sizes and a
+  position wiggle with their picture; set_param, set_shape and set_tilt
+  need at for a keyed value, set_param starts an EQ again, and
+  normalize_loudness scales a duck's keys;
+  markers follow a song any compounds deep; a piece cut off a shot (a
+  freeze's second half) carries its titles; per-letter border fades stay
+  open.

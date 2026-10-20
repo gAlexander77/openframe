@@ -3,7 +3,10 @@
 // leaves its box's corners empty; a left-to-right gradient runs red to
 // blue; an outline-only box is hollow; a line drawn halfway stops at its
 // middle; an outline drawn a quarter of the way covers the top edge's right
-// half only; and shape.draw keyed 0 to 1 draws a line on over time.
+// half only; shape.draw keyed 0 to 1 draws a line on over time; an
+// outline-only box given a color is outlined in it (ADR-110: white); and
+// solids take any CSS color, alpha too (ADR-110: #ff000080 drew opaque
+// red, lime drew black).
 // One clip a second; the canvas is 1920x1080 on black.
 async (page) => {
   await page.setViewportSize({ width: 1600, height: 950 });
@@ -30,6 +33,10 @@ async (page) => {
     const line = clips.find((c) => c.start === 210);
     call("add_keyframe", { clip_id: line.id, path: "shape.draw", at: 7, value: 0 });
     call("add_keyframe", { clip_id: line.id, path: "shape.draw", at: 7.9, value: 1 });
+    call("add_shape", { kind: "rectangle", start: 8, duration: 1, width: 0.5, height: 0.5, fill: false, color: "#ffcc00", stroke_width: 24 });
+    call("add_color_clip", { color: "#0000ff", start: 9, duration: 1 });
+    call("add_color_clip", { color: "#ff000080", start: 9, duration: 1 });
+    call("add_color_clip", { color: "lime", start: 10, duration: 1 });
     const d = v.describe();
     return { shapes: d.tracks.flatMap((t) => t.clips).filter((c) => c.shape).map((c) => c.shape.kind), count: clips.length };
   });
@@ -52,7 +59,7 @@ async (page) => {
   const near = (c, want, tol = 40) => c.every((v, i) => Math.abs(v - want[i]) <= tol);
   const dark = (c) => c.every((v) => v < 30);
   const details = {};
-  details.described = { ok: made.shapes.join() === "rectangle,rounded_rectangle,ellipse,rectangle,rectangle,line,rectangle,line", ...made };
+  details.described = { ok: made.shapes.join() === "rectangle,rounded_rectangle,ellipse,rectangle,rectangle,line,rectangle,line,rectangle", ...made };
 
   // A 0.5 x 0.4 box spans x 0.25..0.75, y 0.3..0.7.
   const [c0, in0, out0, outY] = await sample(15, [[0.5, 0.5], [0.27, 0.32], [0.23, 0.5], [0.5, 0.27]]);
@@ -87,6 +94,15 @@ async (page) => {
   const [s7a, s7b] = await sample(210, [[0.25, 0.5], [0.75, 0.5]]);
   const [e7a, e7b] = await sample(237, [[0.25, 0.5], [0.75, 0.5]]);
   details.drawOn = { ok: dark(s7a) && dark(s7b) && near(e7a, [255, 255, 255], 60) && near(e7b, [255, 255, 255], 60), s7a, s7b, e7a, e7b };
+
+  // An outline-only box with a color: its outline in that color.
+  const [c8, e8] = await sample(255, [[0.5, 0.5], [0.5, 0.25]]);
+  details.outlineColor = { ok: dark(c8) && near(e8, [255, 204, 0], 60), c8, e8 };
+
+  // Red at half over blue, and a named color.
+  const [s9] = await sample(285, [[0.5, 0.5]]);
+  const [s10] = await sample(315, [[0.5, 0.5]]);
+  details.solidColors = { ok: near(s9, [128, 0, 127], 12) && near(s10, [0, 255, 0], 12), s9, s10 };
 
   await page.evaluate(async () => {
     window.videoEditor.seek(195);
