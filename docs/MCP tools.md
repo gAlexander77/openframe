@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 164 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 165 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -19,7 +19,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
-The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip, and not across two whole shots: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a music bed or a grade across several shots stays. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
+The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
@@ -43,7 +43,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Start here**: `help`, `describe_project`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
 - **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
@@ -385,6 +385,22 @@ Move a clip's start or end edge to a time. Limited by the source media and neigh
 | `to` | number | yes | Seconds (0..) |
 | `ripple` | boolean |  | Shift later clips |
 
+### roll_edit
+
+Roll edit (the timeline's Roll tool): move the cut between a clip and the clip touching it to `to` (timeline seconds), the cut at its end by default (with the next clip) or at its start with edge start (with the clip before). One clip grows by what the other loses, so nothing else on the timeline moves: one call puts a cut on a beat, where two trim_clip calls had to come in the right order. Each clip keeps the pictures it shows at every other time; limited by both clips' source and by each keeping a frame (the answer says where it stopped and why). A cut with a gap at it has nothing to roll: trim_clip moves one edge.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | A clip on one side of the cut |
+| `to` | number | yes | Timeline seconds the cut moves to (0..) |
+| `edge` | "start" \| "end" |  | Which of the clip's cuts: end (default, with the next clip) or start (with the clip before) |
+
+Example:
+
+```json
+{"name":"roll_edit","arguments":{"clip_id":"c_7","to":8}}
+```
+
 ### slip_clip
 
 Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. by is seconds of the source file, like in and cut_ranges, at any speed or ramp: in moves by exactly that much. Stops at the ends of the source, and says so.
@@ -544,13 +560,20 @@ Name clips (Premiere's Rename): the timeline shows the name instead of the media
 
 ### freeze_frame
 
-Insert a still of the frame at a time inside a video clip, pushing the rest of the track right.
+Hold the frame at a time inside a video clip as a still for `duration` seconds (default 3). mode insert (the default, CapCut's Freeze) splits the clip there and pushes the rest of its track right by the hold, the clips sitting on those shots (titles, captions, voice lines, effects) with them; at the clip's last frame the still takes that frame's place, so no one-frame piece is left after it. mode overwrite lays the still over what is there instead (the rest of the shot, a gap left on the main track for it, the next shot's head) and moves nothing: the freeze for a pause already cut to the music.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video clip id |
 | `at` | number | yes | Timeline seconds |
 | `duration` | number |  | Seconds to hold (0.04..) |
+| `mode` | "insert" \| "overwrite" |  | insert pushes the rest of the track right; overwrite covers what is there and moves nothing |
+
+Example:
+
+```json
+{"name":"freeze_frame","arguments":{"clip_id":"c_7","at":6.267,"duration":1.733,"mode":"overwrite"}}
+```
 
 ### detach_audio
 
@@ -906,7 +929,7 @@ Position, scale, crop, mask, key and animate pictures; keyframes for anything nu
 
 ### set_param
 
-Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.
+Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead, which ramps from the key before; hold true keeps what plays before `at` as it was (a key on the frame before holds it) and changes the value there, as a step (on a path without keys it makes those two keys). An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -914,6 +937,7 @@ Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), tr
 | `path` | string | yes | Parameter path |
 | `value` | number | yes | New value |
 | `at` | number |  | Timeline seconds, for keyframed paths |
+| `hold` | boolean |  | With at: hold the value before at until the frame before it, so the change is a step there and not a ramp from the key before |
 
 Example:
 
@@ -2011,7 +2035,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `lines` | { text, caption, at, voice, speed, words_per_second, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
 | `lines[].text` | string | yes | Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/> |
 | `lines[].caption` | string |  | What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL) |
-| `lines[].at` | number |  | Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before (0..) |
+| `lines[].at` | number |  | Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before. A line the one before runs past starts where that one ends, and a note says so (0..) |
 | `lines[].voice` | string |  | This line's voice (another speaker); default the call's |
 | `lines[].speed` | number |  | This line's speed, kept as given; default the call's, or chosen to land on its words a second (0.5..2) |
 | `lines[].words_per_second` | number[] |  | This line's [lowest, highest] words a second; default the call's |

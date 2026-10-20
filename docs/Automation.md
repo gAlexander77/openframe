@@ -173,7 +173,8 @@ Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
 and its measurements, below),
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
-length), `move_track` (up or down the stack, so a grade sits under the
+length), `roll_edit` (a cut between two touching clips moved in one call,
+nothing else moving: the Roll tool), `move_track` (up or down the stack, so a grade sits under the
 titles), `save_project_copy` (a variant to work by hand, the original
 kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,

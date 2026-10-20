@@ -150,6 +150,22 @@ export function layoutLines(lines: { at?: number; seconds: number; gap?: number;
 }
 
 /**
+ * A note for each line given an `at` that starts later, pushed there by
+ * the line before running past it. The answer gave the real starts, but
+ * nothing said "line 4 asked for 12.6, landed 14.36", and a film test's
+ * script overran by 3 s unnoticed (ADR-113).
+ */
+export function lateLineNotes(asked: (number | undefined)[], times: { start: number; end: number }[]): string[] {
+  const out: string[] = [];
+  asked.forEach((at, i) => {
+    const late = at === undefined || i === 0 ? 0 : times[i].start - at;
+    if (late < 0.0005) return;
+    out.push(`Line ${i + 1} starts at ${times[i].start} s, ${+late.toFixed(3)} s after its at (${at} s): line ${i} runs until then. Shorten line ${i} (retake_voiceover with fewer words or a faster words_per_second) or give line ${i + 1} a later at.`);
+  });
+  return out;
+}
+
+/**
  * The places a voice pauses on its own: after each comma, colon,
  * semicolon, dash and sentence end inside `spoken` (not its last), with
  * the share of letters before each and whether it ends a sentence.

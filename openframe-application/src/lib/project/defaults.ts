@@ -183,7 +183,10 @@ export function clipForAsset(asset: Asset, start: number, fps: Rational): Clip {
       type: "audio",
       assetId: asset.id,
       start,
-      duration: full,
+      // A sound's last fraction of a frame is its tail (a shutter's ring,
+      // a pop's decay): its clip runs to the frame that holds its end. The
+      // nearest frame cut 0.25 s to 0.233 at 30 fps (ADR-113).
+      duration: Math.max(1, Math.ceil((asset.duration * fps.num) / fps.den - 1e-6)),
       in: 0,
       speed: 1,
       ...DEFAULT_SOUND,

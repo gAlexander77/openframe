@@ -17,7 +17,7 @@ import type { Asset, Id, Project, SpeechInfo, TextStyle } from "../lib/project/t
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { checkVoice, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
 import { retakeLine } from "../lib/voiceLines";
-import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, layoutLines, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
+import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
 import { bandSource, landSpeed, readWps, speedBounds, targetBand, type ReadAs, type ReadSpan } from "../lib/voicePace";
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
@@ -390,7 +390,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     const end = Math.max(...times.map((t) => t.end));
     toast(`Added the voiceover, ${end.toFixed(1)} s`);
     // New lines over music ducked for others: it does not dip under them yet.
-    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...staleDucks(before, store.document()).map(staleDuckNote)];
+    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...lateLineNotes(lines.map((l) => l.at), times), ...staleDucks(before, store.document()).map(staleDuckNote)];
     return { lines: placed, end, finish, engine: { quality: opts.quality ?? "best", ...takes[0].engine }, ...(notes.length ? { notes } : {}) };
   } catch (e) {
     if (signal.aborted) toast("Canceled");

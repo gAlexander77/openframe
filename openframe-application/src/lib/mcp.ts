@@ -12,7 +12,7 @@ import { PACE_BANDS, READ_AS, readBand } from "./voicePace";
 import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
 import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
-import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
+import { coerceNumbers, COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { filterDescription, type DescribeFilter } from "./describeFilter";
 import { musicSummary } from "./musicSummary";
@@ -905,7 +905,7 @@ APP_TOOLS.push(
             {
               text: { type: "string", description: 'Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/>' },
               caption: { type: "string", description: "What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL)" },
-              at: { type: "number", minimum: 0, description: "Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before" },
+              at: { type: "number", minimum: 0, description: "Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before. A line the one before runs past starts where that one ends, and a note says so" },
               voice: { ...VOICE, description: "This line's voice (another speaker); default the call's" },
               speed: { ...SPEED, description: "This line's speed, kept as given; default the call's, or chosen to land on its words a second" },
               words_per_second: { ...WPS, description: "This line's [lowest, highest] words a second; default the call's" },
@@ -1074,7 +1074,7 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
-The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip, and not across two whole shots: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a music bed or a grade across several shots stays. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
+The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
@@ -1172,10 +1172,11 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
       return ok(req.id, { tools: listTools() });
     case "tools/call": {
       const name = String(p.name ?? "");
-      const args = (p.arguments ?? {}) as Record<string, unknown>;
+      let args = (p.arguments ?? {}) as Record<string, unknown>;
       try {
         const app = APP_INDEX.get(name);
         if (app) {
+          args = coerceNumbers(args, app.inputSchema) as Record<string, unknown>;
           const errs = validate(args, app.inputSchema);
           if (errs.length) throw new Error(errs.join("; "));
           // Whatever a tool that edits moved is in its answer (ADR-102);

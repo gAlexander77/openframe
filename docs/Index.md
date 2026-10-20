@@ -413,3 +413,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-113 A freeze fills the pause it was given, a run of lines follows its pictures, and a cut rolls in one call]] —
+  a clip across several shots follows them when they all moved by one
+  amount (a run of voice lines through a freeze), never a music track's;
+  freeze_frame overwrite fills a pause and moves nothing, and a still at a
+  shot's last frame leaves no one-frame piece; add_voiceover names each
+  line its at could not hold; numbers sent as strings are read; roll_edit;
+  set_param hold steps instead of ramping; a sound's length rounds up.
