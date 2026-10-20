@@ -48,6 +48,25 @@ describe("cut_music", () => {
     expect(r.join).toMatchObject({ clips: [a.id, b.id], crossfade: MUSIC_CROSSFADE });
   });
 
+  it("stops before the bar line and starts before the downbeat when the bar falls between frames", () => {
+    // 128 BPM from 0.004 s: the bar at 3.754 s is frame 112.6, which rounds
+    // late. The first piece played 13 ms of the next downbeat as it fell, and
+    // the second came in 13 ms into its own: the cut's downbeat lost its attack.
+    const { p, id, track } = withSong(song(128, 0.004));
+    const r = cutMusic(p, { clip_id: id, from: 3.754, to: 9.379 });
+    const [a, b] = clipsOf(r.project, track);
+    const stop = a.in + a.duration / 30;
+    expect(stop).toBeLessThanOrEqual(3.754 + 1e-9);
+    expect(stop).toBeGreaterThan(3.754 - 1 / 30);
+    expect(b.in).toBeLessThanOrEqual(9.379 + 1e-9);
+    expect(b.in - stop).toBeCloseTo(3 * 1.875, 6);
+    // A cut at the head leaves the song starting on its bar line, not a frame after.
+    const head = cutMusic(p, { clip_id: id, from: 0, to: 3.754 });
+    const [first] = clipsOf(head.project, track);
+    expect(first.start).toBe(0);
+    expect(first.in).toBeCloseTo(3.754, 6);
+  });
+
   it("snaps to beats, or not at all, and needs a grid to snap", () => {
     expect(nearestLine({ bpm: 120, firstDownbeat: 0 }, 14.3, "beat")).toBe(14.5);
     expect(nearestLine({ bpm: 120, firstDownbeat: 0 }, 14.3, "bar")).toBe(14);
@@ -103,6 +122,17 @@ describe("set_crossfade", () => {
     // Nor more than half of either clip.
     expect(() => setCrossfade(cut, a.id, 1.5)).not.toThrow();
     expect(() => setCrossfade(runCommand(cut, "trim_clip", { clip_id: a.id, edge: "start", to: 13.9, ripple: false }), a.id, 0.2)).toThrow(/half of either clip/);
+  });
+
+  it("stays with the clip's end when the clip is split", () => {
+    // The left half's join is a split: a crossfade kept there showed in
+    // describe_project where none plays, and came back if the right half went.
+    const { p, id, track } = withSong();
+    const q = runCommand(runCommand(p, "cut_music", { clip_id: id, from: 14, to: 30 }), "split", { clip_ids: [id], at: 7 });
+    const [left, right, after] = clipsOf(q, track);
+    expect(left.crossfade).toBeUndefined();
+    expect(right.crossfade).toBe(MUSIC_CROSSFADE);
+    expect(audioCrossfade(right, after, q.fps)).toBe(MUSIC_CROSSFADE);
   });
 
   it("plays no crossfade where the clips no longer meet", () => {

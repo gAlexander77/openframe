@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { createProject, createTrack } from "../project/defaults";
-import { activeSpan, combinedLoudness, duckDepth, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
+import { activeSpan, aimDepths, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
 
 /** 100 ms steps (mean squares) at a steady LUFS. */
 const steps = (lufs: number, n: number) => Array(n).fill(10 ** ((lufs + 0.691) / 10));
@@ -48,6 +48,28 @@ it("holds every line under a ceiling: a line over a quiet passage dips less, nev
   expect(lineCeiling(12, 10)).toBe(15);
   expect(lineCeiling(14)).toBe(17);
   expect(lineCeiling(undefined, 13)).toBe(16);
+  // A ceiling under the speech target cannot be met by any dip: refused
+  // before rendering, not answered met false after four measures.
+  expect(duckTargetsError(12, undefined, 8)).toMatch(/max_line_lu \(8\) is under voice_above_music_lu \(12\)/);
+  expect(duckTargetsError(12, 10, 15)).toBeUndefined();
+  expect(duckTargetsError(12, undefined, 12)).toBeUndefined();
+  expect(duckTargetsError(undefined, 10, 10.5)).toMatch(/at least 1 LU over min_line_lu/);
+  expect(duckTargetsError(31)).toMatch(/between 0 and 30/);
+});
+it("keeps the lines together on their target while the ceiling holds one back", () => {
+  // voice_above_music_lu 12, min_line_lu 10, the default 15 LU ceiling:
+  // one dip for the target left the line over the quiet intro 20.1 LU over.
+  const first = aimDepths([11, 11, 11, 11, 11], [20.1, 11.9, 11.6, 12.2, 12], { target: 12, speech: 12, min: 10, max: 15, floor: 11 });
+  expect(first).toEqual([5.6, 11, 11, 11, 11]);
+  // Measured so, the intro's line at 14.7 lifted the lines together to
+  // 12.9 and the call answered met false: every line moves by what the
+  // speech window is off, still between the minimum and the ceiling.
+  expect(aimDepths(first, [14.7, 11.9, 11.6, 12.2, 12], { target: 12, speech: 12.9, min: 10, max: 15, floor: 11 })).toEqual([4.7, 10.1, 10.1, 10.1, 10.1]);
+  // A line the move would take under the minimum dips back to it.
+  expect(aimDepths([5.6, 11], [14.7, 10.4], { target: 12, speech: 12.9, min: 10, max: 15, floor: 11 })).toEqual([4.7, 10.9]);
+  // On target (within 0.5), or with no target: the bounds alone, as before.
+  expect(aimDepths([11, 11], [20.1, 11.9], { target: 12, speech: 12.3, min: 10, max: 15, floor: 11 })).toEqual(lineDepths([11, 11], [20.1, 11.9], 10, 11, 15));
+  expect(aimDepths([11, 11], [20.1, 11.9], { min: 10, max: 15, floor: 11 })).toEqual(lineDepths([11, 11], [20.1, 11.9], 10, 11, 15));
 });
 it("computes attenuation in LU and handles silence without inventing a balance", () => {
   expect(duckDepth(-16, -12, 10)).toBe(14);

@@ -3,7 +3,7 @@
 // moments between hits are not taken for a hole.
 
 import { describe, expect, it } from "vitest";
-import { edgeReport, type AudioEdge } from "./edges";
+import { edgeReport, ownOnset, type AudioEdge } from "./edges";
 
 const RATE = 48000;
 
@@ -84,6 +84,52 @@ describe("a join of two pieces of a song", () => {
     const r = report(step, edge());
     expect(r.click_db).toBeGreaterThanOrEqual(6);
     expect(r.verdict).toMatch(/click/);
+    // The file coming in has no such step: still a click.
+    expect(report(step, edge({ onset: ownOnset(b, RATE, N) })).verdict).toMatch(/click/);
+  });
+
+  it("does not call the downbeat a cut lands on a click when the file has that attack itself", () => {
+    // A quiet intro cut to a drop whose kick starts at its peak (a
+    // synthesized kick), the way cut_music lands a join on the downbeat: the
+    // kick's first sample step is steeper than anything in the intro or in
+    // the kick's own body, so it read as a 7.7 dB click on a clean join.
+    const intro = music(2, 5).map((v) => v * 0.15);
+    const drop = new Float32Array(2 * RATE);
+    for (let i = 0; i < drop.length; i++) {
+      const t = (i - N) / RATE;
+      // The build's tone, then the kick on top of it.
+      drop[i] = 0.3 * Math.sin(2 * Math.PI * 200 * t) + (t >= 0 ? 0.9 * Math.cos(2 * Math.PI * 60 * t) * Math.exp(-t / 0.12) : 0);
+    }
+    const x = 0.03;
+    const faded = join(intro, drop, N, (t) => (t < -x ? [1, 0] : t < 0 ? [Math.sin((Math.PI / 2) * (-t / x)), Math.sin((Math.PI / 2) * ((t + x) / x))] : [0, 1]));
+    expect(report(faded, edge({ faded: x })).verdict).toMatch(/click/);
+    const r = report(faded, edge({ faded: x, onset: ownOnset(drop, RATE, N) }));
+    expect(r.click_db ?? 0).toBeLessThan(6);
+    expect(r.verdict).not.toMatch(/click/);
+  });
+});
+
+describe("a join's level", () => {
+  // A song cut on its bars lands just before a downbeat: the 300 ms after
+  // the cut hold the kick, those before the bar's end, so every such join
+  // read "the level jumps up 15 dB" though the file does the same there.
+  const quiet = music(2, 6).map((v) => v * 0.15), loud = music(2, 7);
+  const onBeat = new Float32Array(2 * RATE);
+  for (let i = 0; i < onBeat.length; i++) onBeat[i] = i < N ? quiet[i] : loud[i];
+  const x = 0.03;
+  const faded = (a: Float32Array, b: Float32Array) => join(a, b, N, (t) => (t < -x ? [1, 0] : t < 0 ? [Math.sin((Math.PI / 2) * (-t / x)), Math.sin((Math.PI / 2) * ((t + x) / x))] : [0, 1]));
+  it("is told when it moves more than the incoming file does there", () => {
+    // The second piece's file is as loud before its in-point as after: the cut made the jump.
+    const r = report(faded(quiet, loud), edge({ faded: x, cameIn: 0 }));
+    expect(r.step_db).toBeGreaterThan(12);
+    expect(r.verdict).toMatch(/jumps up/);
+  });
+  it("is the music's own when the incoming file jumps as much there", () => {
+    const r = report(faded(quiet, onBeat), edge({ faded: x, cameIn: -16 }));
+    expect(r.step_db).toBeGreaterThan(12);
+    expect(r.verdict).not.toMatch(/jumps|drops/);
+    // Unknown (the file's start too near), as before.
+    expect(report(faded(quiet, onBeat), edge({ faded: x })).verdict).toMatch(/jumps up/);
   });
 });
 

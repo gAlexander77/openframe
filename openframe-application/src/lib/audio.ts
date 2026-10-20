@@ -113,8 +113,30 @@ export interface Overlap {
    * incoming one (`rise`) rises over the `pre` seconds before its start. */
   fall?: number;
   rise?: boolean;
+  /** The next clip goes on with the same sound (a split, `continues`):
+   * no click guard at the end, which moves to this gain (the next clip's
+   * at its start) instead of to silence. */
+  joinsNext?: number;
+  /** This clip goes on from the one before: no click guard at its start. */
+  joinsPrev?: boolean;
 }
 export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
+
+/**
+ * Does `b` go on with `a`'s sound: the same file from where `a` stops, at
+ * its own speed, on the same track, with no fade or anything retimed at
+ * the cut between them? A split of one sound is no splice: ramping each
+ * half to nothing over the click guard put an 8 ms, 18 dB hole in a song
+ * split on its drop (found by preview_audio's edges).
+ */
+export function continues(a: Clip, b: Clip, fps: Rational): boolean {
+  if (a.type !== b.type || (a.type !== "audio" && a.type !== "video") || a.start + a.duration !== b.start) return false;
+  const x = a as VideoClip | AudioClip, y = b as VideoClip | AudioClip;
+  const plain = (c: VideoClip | AudioClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze && !c.tapeStop && !c.disabled && !c.muted;
+  if (!plain(x) || !plain(y) || x.assetId !== y.assetId || x.fadeOut > 0 || y.fadeIn > 0) return false;
+  if (x.type === "video" && x.transitionOut) return false;
+  return Math.abs(x.in + framesToSeconds(x.duration, fps) - y.in) < 1e-3;
+}
 
 /**
  * Sound under video transitions: the two clips' own sound overlaps across
@@ -137,15 +159,21 @@ export function soundOverlaps(p: Project): Map<Id, Overlap> {
         if (x > 0) {
           out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), fall: x });
           out.set(b.id, { pre: x, post: out.get(b.id)?.post ?? 0, rise: true });
+          continue;
         }
+      }
+      if (continues(a, b, p.fps)) {
+        out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), joinsNext: paramAt(b, "volume", 0) * t.volume });
+        out.set(b.id, { pre: 0, post: out.get(b.id)?.post ?? 0, joinsPrev: true });
         continue;
       }
+      if (a.type === "audio" && b.type === "audio" && a.crossfade) continue;
       if (a.type !== "video" || b.type !== "video" || !a.transitionOut || a.start + a.duration !== b.start || !plain(a) || !plain(b)) continue;
       const src = p.assets.find((x) => x.id === a.assetId)?.duration ?? 0;
       const tail = src > 0 ? src - (a.in + framesToSeconds(a.duration, p.fps)) : 0;
       const h = Math.min(framesToSeconds(a.transitionOut.duration, p.fps) / 2, tail, b.in);
       if (h < 0.001) continue;
-      out.set(a.id, { pre: out.get(a.id)?.pre ?? 0, post: h });
+      out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), post: h });
       out.set(b.id, { pre: h, post: out.get(b.id)?.post ?? 0 });
     }
   }
@@ -193,7 +221,7 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
     if (t < start) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / o.pre));
   } else if (o.pre > 0) {
     if (t < start + o.pre) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / (2 * o.pre)));
-  } else {
+  } else if (!o.joinsPrev) {
     const fadeIn = Math.max(framesToSeconds(c.fadeIn, fps), EDGE_RAMP);
     if (rel < fadeIn) g *= rel / fadeIn;
   }
@@ -202,6 +230,9 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
     if (t > end - o.fall) g *= Math.sin((Math.PI / 2) * ((end - t) / o.fall));
   } else if (o.post > 0) {
     if (t > end - o.post) g *= Math.sin((Math.PI / 2) * ((end + o.post - t) / (2 * o.post)));
+  } else if (o.joinsNext !== undefined) {
+    // The same sound goes on in the next clip: meet its level, not silence.
+    if (end - t < EDGE_RAMP) g += (o.joinsNext - g) * (1 - (end - t) / EDGE_RAMP);
   } else {
     const fadeOut = Math.max(framesToSeconds(c.fadeOut, fps), EDGE_RAMP);
     if (end - t < fadeOut) g *= (end - t) / fadeOut;

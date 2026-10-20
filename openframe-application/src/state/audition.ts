@@ -8,7 +8,8 @@ import { ensureMp3 } from "../engine/export";
 import { hasSound, measureMix, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "../engine/mixdown";
 import { decodeMono } from "../engine/analyze";
 import { auditionSummary, type AuditionSummary } from "../lib/analysis/audition";
-import { edgeReport, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
+import { audioCrossfade } from "../lib/audio";
+import { edgeReport, ownOnset, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
 import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
 import { stemsOf } from "../lib/audioRoles";
@@ -78,6 +79,15 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
   };
   const plain = (c: AudioClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze;
   const diff = (x?: number, y?: number) => (x === undefined || y === undefined ? undefined : Math.max(-60, Math.min(60, x - y)));
+  // The incoming file's own attack at its in-point, at the render's rate:
+  // a cut on a downbeat plays the kick's first step, which is no click.
+  const onset = async (c: AudioClip) => {
+    const asset = p.assets.find((x) => x.id === c.assetId);
+    if (!asset?.hasAudio || !plain(c) || c.in + 0.064 > asset.duration) return {};
+    const from = Math.max(0, c.in - 0.004);
+    const x = await decodeMono(asset, from, c.in + 0.064, RATE, undefined, signal);
+    return { onset: ownOnset(x, RATE, Math.round((c.in - from) * RATE)) };
+  };
   for (const t of heard.tracks) {
     if (t.kind !== "audio" || t.muted) continue;
     const clips = t.clips.filter((c): c is AudioClip => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
@@ -87,10 +97,12 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
       const at0 = sec(c.start), at1 = sec(c.start + c.duration);
       const out1 = c.in + sec(c.duration);
       if (!prev && at0 > start + 0.16 && at0 < end - 0.16)
-        out.push({ at: +at0.toFixed(3), kind: "start", clips: [c.id], faded: sec(c.fadeIn), ...(plain(c) && c.in >= SIDE ? { cameIn: diff(await level(c, c.in - SIDE, c.in), await level(c, c.in, c.in + SIDE)) } : {}) });
+        out.push({ at: +at0.toFixed(3), kind: "start", clips: [c.id], faded: sec(c.fadeIn), ...(plain(c) && c.in >= SIDE ? { cameIn: diff(await level(c, c.in - SIDE, c.in), await level(c, c.in, c.in + SIDE)) } : {}), ...(await onset(c)) });
       if (at1 > start + 0.16 && at1 < end - 0.16) {
         const goesOn = plain(c) ? diff(await level(c, out1, out1 + SIDE), await level(c, out1 - SIDE, out1)) : undefined;
-        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? (c.crossfade ?? 0) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}) });
+        // The next clip's own step at its in-point: the music's, not the cut's.
+        const cameIn = next && plain(next) && next.in >= SIDE ? diff(await level(next, next.in - SIDE, next.in), await level(next, next.in, next.in + SIDE)) : undefined;
+        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? audioCrossfade(c, next, p.fps) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}), ...(cameIn !== undefined ? { cameIn } : {}), ...(next ? await onset(next) : {}) });
       }
     }
   }

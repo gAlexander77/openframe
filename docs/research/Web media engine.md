@@ -693,6 +693,12 @@ function audibleMediaTime(): number {
 > [!warning] Measured 2026-10-20: start decoding before the first sample you need
 > `AudioBufferSink.buffers(t)` and `AudioSampleSink.samples(t)` start a fresh decoder at the packet holding `t`. An MP3 frame leans on the frames before it (the bit reservoir), so that first frame came out as silence: rendering the 30 s MP3 fixture in the editor's 10 s windows left 12-22 ms of digital silence at every window start, and a clip starting mid-file (a song spliced at 12 s) began with 26 ms of silence: in every export, preview and measurement. Decoding from 0.1 s earlier and dropping what falls before `t` (`DECODE_PREROLL`, [[ADR-104 Voice and sound an agent can trust without ears]]) removed both; `preview_audio` now lists any 3-100 ms dropout inside sound.
 
+> [!note] Measured 2026-10-20: a file's head, and an MP3's encoder delay
+> The pre-roll stops at container time 0, so an AAC file's priming packet (-23.2 ms, 1024 samples) is never decoded; the head still decodes right: a 44.1 kHz AAC song from its in-point 0 renders identical in shape to ffmpeg's decode (correlation 1.000 from 5 ms on, lag 0). An MP3 is another matter: mediabunny presents LAME's encoder delay (1105 samples, 23.02 ms at 48 kHz, ffprobe's `start_time`), which ffmpeg and gapless players trim, so the app hears every MP3 23.02 ms later than they do (cross-correlation at 0.3 s and 5 s in). Its own analyses read the same timeline, so cuts on analyze_music's grid agree with what plays; a grid taken from a cue sheet sits 23 ms early in the file ([[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
+
+> [!warning] Measured 2026-10-20: a split is not a splice
+> Two clips that play one file on from each other (a split) are scheduled as two sources, each through its own gain. Ramping each to nothing over a 4 ms click guard, as a splice needs, left an 18 dB hole of a few milliseconds at every split of a sounding clip. Without the guard the two sources meet sample for sample (the render matches the unsplit clip exactly but for one sample's interpolation), and a compressor on each half is filled by the first half's 6 ms delay tail; the second half's compressor still starts with no gain reduction, 24-40 dB under the signal for ~10 ms ([[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
+
 ### 4.7 Waveform peaks
 
 - Compute in a worker, from `AudioSampleSink.samples()` in one linear pass. `copyTo(f32, { planeIndex: c, format: 'f32-planar' })`.

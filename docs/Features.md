@@ -216,9 +216,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Audio crossfades and music cuts** (agents: `set_crossfade`,
   `cut_music`): an audio clip crossfades into the next on its track at
   equal power over the seconds before the cut; `cut_music` takes bars out
-  of a song on its grid and joins the pieces so the beat runs on.
+  of a song on its grid and joins the pieces so the beat runs on. A split
+  of one sound plays on with no click guard at the cut.
   `preview_audio` measures every join, click and dropout
-  ([[ADR-104 Voice and sound an agent can trust without ears]]).
+  ([[ADR-104 Voice and sound an agent can trust without ears]],
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's

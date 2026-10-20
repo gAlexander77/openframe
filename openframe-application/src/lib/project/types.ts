@@ -729,9 +729,13 @@ export interface DuckRecord {
   depth?: number;
   /** Ducked with every clip of its track in one call (track_id). */
   track?: boolean;
-  /** A signature of the volume keys it wrote (duckSignature): keys changed
-   * since, by hand, are not dipped again over them. */
+  /** A signature of the volume keys it wrote (duckSignature: their shape,
+   * which a move, split or trim keeps): keys changed since, by hand, are
+   * not dipped again over them. */
   keys: number;
+  /** The timeline frame its first key was written at: keys elsewhere since
+   * moved with their clip, away from the voice (staleDucks). */
+  at?: number;
 }
 
 /** One point of a speed curve. */

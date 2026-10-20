@@ -335,19 +335,24 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   as deep as it needs (`depth`, or the depth the speech target chose, is
   the usual dip); `max_line_lu` (default 15, or 3 over a higher target or
   minimum, whenever the call measures) to at most, a line over a quiet
-  passage dipping less; all are met by rendering the stems and measuring
-  again. `balance` answers the speech window's numbers, `target_lu` and
+  passage dipping less, the others moving so the lines together stay on
+  the target (a ceiling under the target is refused); all are met by
+  rendering the stems and measuring again. Voices inside compound clips
+  count. `balance` answers the speech window's numbers, `target_lu` and
   `met`, and `per_line` (`min_target_lu`, `max_target_lu`, `each` line's
   margin and dip). The music keeps how it was ducked: `retake_voiceover`
   dips it again under the new take (`ducking` in its answer), and an edit
-  that moves a line under it answers a note
-  ([[ADR-104 Voice and sound an agent can trust without ears]]).
+  that moves a line under it, or moves the music and its dips, answers a
+  note ([[ADR-104 Voice and sound an agent can trust without ears]],
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
 - `cut_music` `{clip_id, from, to, snap?, crossfade?}` takes bars out of a
-  song (the file's seconds, on its grid's bar lines) and joins the pieces
-  with a 30 ms crossfade ending on the downbeat; `set_crossfade`
+  song (the file's seconds, on its grid's bar lines, each piece meeting
+  the cut on the frame before its bar so both downbeats play whole) and
+  joins the pieces with a 30 ms crossfade ending on the downbeat; `set_crossfade`
   `{clip_id, seconds}` crossfades any audio clip into the next on its
   track. `preview_audio`'s `edges` measure each join (`dip_db`,
-  `click_db`, `step_db`, `tail_cut_db`) and `dropouts` any few
+  `click_db`, `step_db`, `tail_cut_db`; a click or a jump only where the
+  incoming file has none of its own there) and `dropouts` any few
   milliseconds of silence inside sound.
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
