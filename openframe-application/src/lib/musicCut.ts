@@ -94,16 +94,24 @@ export function cutMusic(p: Project, o: MusicCut): { project: Project; from: num
   const crossfade = o.crossfade ?? MUSIC_CROSSFADE;
   if (!(crossfade >= 0 && crossfade <= MAX_CROSSFADE)) throw new MusicCutError(`crossfade is 0 to ${MAX_CROSSFADE} seconds`);
   const ids = new Set(loc.track.clips.map((x) => x.id));
-  let q = cutRanges(p, c.id, [{ start: from, end: to }], true).project;
+  // The first piece stops on the frame at or before the bar line (rounded
+  // to the nearer frame it could stop after it, and play the next
+  // downbeat's attack as it falls), and the piece after starts as far
+  // before its own downbeat (below), so that downbeat plays whole.
+  const rate = p.fps.num / p.fps.den;
+  const stopAt = c.in + Math.floor((from - c.in) * rate + 1e-6) / rate;
+  let q = cutRanges(p, c.id, [{ start: stopAt, end: to }], true).project;
   const track = q.tracks.find((t) => t.id === loc.track.id)!;
   const pieces = track.clips.filter((x): x is AudioClip => x.type === "audio" && x.assetId === c.assetId && (x.id === c.id || !ids.has(x.id)));
-  const a = pieces.find((x) => x.in < from - 1e-6), b = pieces.find((x) => x.in >= from - 1e-6 && x.start === (a ? clipEnd(a) : -1));
+  const a = pieces.find((x) => x.in < stopAt - 1e-6), b = pieces.find((x) => x.in >= stopAt - 1e-6 && x.start === (a ? clipEnd(a) : c.start));
+  const fit = (x: AudioClip, inB: number): Clip => ({ ...x, in: +inB.toFixed(6), ...(framesToSeconds(x.duration, p.fps) > (asset?.duration ?? Infinity) - inB ? { duration: Math.max(1, x.duration - 1) } : {}) }) as Clip;
+  // Cut at the head: the song now starts on the bar line, not the frame after it.
+  if (!a && b) return { project: updateClip(q, b.id, (x) => fit(x as AudioClip, to)), from, to };
   if (!a || !b) return { project: q, from, to };
   // The jump is exactly to - from: the piece after plays on from there.
   const stop = a.in + framesToSeconds(a.duration, p.fps);
   const inB = stop + (to - from);
-  const room = (asset?.duration ?? Infinity) - inB;
-  q = updateClip(q, b.id, (x) => ({ ...x, in: +inB.toFixed(6), ...(framesToSeconds(x.duration, p.fps) > room ? { duration: Math.max(1, x.duration - 1) } : {}) }) as Clip);
+  q = updateClip(q, b.id, (x) => fit(x as AudioClip, inB));
   if (crossfade > 0) q = setCrossfade(q, a.id, Math.min(crossfade, inB, framesToSeconds(a.duration, p.fps) / 2, framesToSeconds(b.duration, p.fps) / 2));
   const x = (findClip(q, a.id)!.clip as AudioClip).crossfade ?? 0;
   return { project: q, from, to, join: { at: framesToSeconds(clipEnd(a), p.fps), clips: [a.id, b.id], crossfade: x } };

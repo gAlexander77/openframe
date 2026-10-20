@@ -398,3 +398,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   compounds, finds compound tracks, reads [] as all and start = end as a
   moment; a colorize color's alpha scales it; a tracked range's gradient
   ends on its letters.
+- [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]] —
+  a split of one sound plays on with no click guard; cut_music stops
+  before the bar line so both downbeats play whole; preview_audio's edges
+  judge a join's click and level against the incoming file's own; a duck
+  keeps its keys' shape and place, so moved music says its dips moved and
+  splits are not hand edits; the lines stay on the speech target under the
+  ceiling; voices in compound clips duck music.

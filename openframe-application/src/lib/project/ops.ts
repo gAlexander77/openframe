@@ -207,8 +207,9 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
  * on both halves (shifted on the right) so the animation curve is unchanged. */
 export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   const r = at - c.start;
-  // A tape stop belongs to the clip's end, so only the right part keeps it.
-  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop"]);
+  // A tape stop and a crossfade into the next clip belong to the clip's
+  // end, so only the right part keeps them.
+  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop", "crossfade"]);
   const right = omit(moveLeftEdge({ ...c, id: uid("c") } as Clip, r, fps), ["animIn"]);
   if ("fadeOut" in left) (left as AudioClip).fadeOut = 0;
   if ("fadeIn" in right) (right as AudioClip).fadeIn = 0;

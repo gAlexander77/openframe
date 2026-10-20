@@ -2105,7 +2105,9 @@ export const COMMANDS: Command[] = [
         const r = cutMusic(p, a as unknown as MusicCut);
         const bars = (() => {
           const g = p.assets.find((x) => x.id === (ops.findClip(p, String(a.clip_id))?.clip as { assetId?: string } | undefined)?.assetId)?.musicGrid;
-          return g ? `, ${+((r.to - r.from) / (240 / g.bpm)).toFixed(2)} bars at ${g.bpm} BPM` : "";
+          if (!g) return "";
+          const n = +((r.to - r.from) / (240 / g.bpm)).toFixed(2);
+          return `, ${n} ${n === 1 ? "bar" : "bars"} at ${g.bpm} BPM`;
         })();
         if (report) (report.notes ??= []).push(`Cut ${+r.from.toFixed(3)}-${+r.to.toFixed(3)} s of the song's file${bars}${r.join ? `; the pieces meet at ${+r.join.at.toFixed(3)} s on the timeline${r.join.crossfade ? ` with a ${r.join.crossfade} s crossfade` : ", a butt cut"}` : ""}.`);
         return r.project;

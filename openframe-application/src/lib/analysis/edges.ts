@@ -17,9 +17,28 @@ export interface AudioEdge {
    * against its last 300 ms, dB (decoded from the file; absent when the
    * file ends there). */
   goesOn?: number;
-  /** The clip that starts here: how loud its file was before its
-   * in-point, against its first 300 ms, dB (absent at the file's start). */
+  /** The clip that starts here (or comes in at a join): how loud its file
+   * was before its in-point, against its first 300 ms, dB (absent at the
+   * file's start). At a join, the step the music itself makes there. */
   cameIn?: number;
+  /** The file that comes in here as it is at its in-point, unedited
+   * (ownOnset): a sample step that steep is the music's own attack. */
+  onset?: Onset;
+}
+
+/** A file's own attack at a point: its steepest sample step within 2 ms
+ * and its level (RMS) 10-60 ms after. */
+export interface Onset {
+  step: number;
+  level: number;
+}
+
+/** The onset of mono samples `x` (at `rate`) at sample `at`, as the file
+ * has it: a cut that lands on a downbeat plays the kick's first steep step
+ * there, which is the music, not a click. */
+export function ownOnset(x: Float32Array, rate: number, at: number): Onset {
+  const ms = (v: number) => Math.round((v * rate) / 1000);
+  return { step: steepest(x, at - ms(2), at + ms(2)), level: rms(x, at + ms(10), at + ms(60)) };
 }
 
 export interface EdgeReport {
@@ -122,7 +141,12 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
         else if (r.dip_db <= DIP_DB) problems.push(`a ${-r.dip_db} dB hole for a few milliseconds at the cut (a butt cut's click guard), heard as a tick`);
       }
     }
-    const click = db(steepest(m, n - ms(2), n + ms(2))) - db(Math.max(steepest(m, n - ms(60), n - ms(10)), steepest(m, n + ms(10), n + ms(60))));
+    // Against the steepest step around, and the incoming file's own attack
+    // at the cut (scaled to the level it plays at): a cut on a downbeat
+    // after a quiet bar played the kick's first step, steeper than anything
+    // near it, and read as a click on a clean join.
+    const own = e.onset && e.onset.level > 0 ? e.onset.step * (rms(m, n + ms(10), n + ms(60)) / e.onset.level) : 0;
+    const click = db(steepest(m, n - ms(2), n + ms(2))) - db(Math.max(steepest(m, n - ms(60), n - ms(10)), steepest(m, n + ms(10), n + ms(60)), own));
     if (Number.isFinite(click) && click > 0) {
       r.click_db = r1(click);
       if (click >= CLICK_DB) problems.push(`a click: a sample step ${r.click_db} dB steeper than any around it`);
@@ -141,7 +165,10 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
       r.cut_in_db = r1(e.cameIn);
       if (e.cameIn > -12 && r.step_db >= TAIL_DB) problems.push(`${e.clips[0]} comes in mid-sound (its file ${r.cut_in_db} dB before its in-point against after), with no fade`);
     }
-    if (e.kind === "join" && Math.abs(r.step_db) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut (fine if the music changes there)`);
+    // Against the step the incoming file makes there itself: a cut just
+    // before a downbeat has the hit after it and the bar's end before it.
+    const moved = e.kind === "join" && e.cameIn !== undefined ? r.step_db + e.cameIn : r.step_db;
+    if (e.kind === "join" && Math.abs(moved) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut${moved !== r.step_db ? `, ${r1(Math.abs(moved))} dB more than the music does there` : ""} (fine if the music changes there)`);
     if (problems.length) {
       r.verdict = problems.join("; ");
       const real = problems.some((x) => !/fine if/.test(x));

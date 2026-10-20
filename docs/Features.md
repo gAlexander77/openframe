@@ -218,10 +218,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Audio crossfades and music cuts** (agents: `set_crossfade`,
   `cut_music`): an audio clip crossfades into the next on its track at
   equal power over the seconds before the cut; `cut_music` takes bars out
-  of a song on its grid and joins the pieces so the beat runs on.
+  of a song on its grid and joins the pieces so the beat runs on. A split
+  of one sound plays on with no click guard at the cut.
   `preview_audio` measures every join, click and dropout
-  ([[ADR-104 Voice and sound an agent can trust without ears]]). A person
-  makes one with the audio clip menu's **Crossfade into next clip** (the
+  ([[ADR-104 Voice and sound an agent can trust without ears]],
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
+  A person makes a crossfade with the audio clip menu's **Crossfade into next clip** (the
   transitions' default length, as far as the join allows, or why none
   fits), sees it drawn at the cut like a transition, and sets its length
   in the Audio tab's **Crossfade** row

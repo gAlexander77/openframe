@@ -1,6 +1,6 @@
 # ADR-104: Voice and sound an agent can trust without ears
 
-**Date:** 2026-10-20. **Status:** accepted. Amends how [[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]] measures a line's pace and holds a line's margin over its music.
+**Date:** 2026-10-20. **Status:** accepted; cut_music stops before the bar line, edges judge a join against the files it plays, and a duck follows moved music and keeps the lines on their target under the ceiling, by [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]. Amends how [[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]] measures a line's pace and holds a line's margin over its music.
 
 ## Context
 

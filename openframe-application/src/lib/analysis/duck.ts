@@ -2,9 +2,41 @@
 // volume keyframes rather than a hidden sidechain (Premiere's Auto-Duck
 // works this way; CapCut's ducking is a black box you cannot touch up).
 
+import { soundingClips, soundSpan } from "../audio";
 import { clipEnd } from "../project/ops";
-import type { AudioClip, DuckRecord, Id, Keyframe, Project, VideoClip } from "../project/types";
+import type { AudioClip, Clip, DuckRecord, Id, Keyframe, Project, VideoClip } from "../project/types";
+import { secondsToFrames } from "../time";
 import { voiceClips } from "../voiceLines";
+
+/** A sound that plays under ducked music: the clip as it plays on the
+ * timeline (moved out through any compound clips it is in), the top-level
+ * clip that plays it (a stem keeps that one) and the frames it is heard. */
+export interface VoiceUnder {
+  clip: VideoClip | AudioClip;
+  top: Id;
+  /** Timeline frames it sounds in (inside a compound clip, its span). */
+  span: [number, number];
+}
+
+/**
+ * The clips with sound under any of `music` that are not one of them,
+ * as the mixer hears them (soundingClips: muted, disabled and frozen ones
+ * left out; a track soloed to listen is no reason to leave the rest out),
+ * through compound clips too: an interview kept in a compound clip (a
+ * template, ADR-100's bus) is a voice like any other, where
+ * duck_under_speech said nothing played under the music.
+ */
+export function voicesUnder(p: Project, music: (VideoClip | AudioClip)[], hasAudio: (assetId: string) => boolean): VoiceUnder[] {
+  const ids = new Set(music.map((m) => m.id));
+  return soundingClips({ ...p, tracks: p.tracks.map((t) => (t.solo ? { ...t, solo: false } : t)) }, hasAudio).flatMap((s) => {
+    const top = s.via?.at(-1)?.clip.id ?? s.clip.id;
+    if (ids.has(top) || !(s.clip.volume > 0)) return [];
+    const [lo, hi] = soundSpan(s, p.fps);
+    const span: [number, number] = [secondsToFrames(lo, p.fps), secondsToFrames(hi, p.fps)];
+    if (!(span[1] > span[0]) || !music.some((m) => span[0] < m.start + m.duration && span[1] > m.start)) return [];
+    return [{ clip: s.clip, top, span }];
+  });
+}
 
 export interface DuckOptions {
   /** How far the music dips under speech, dB. */
@@ -75,12 +107,29 @@ export function trackDuckKeys(speech: [number, number][], clips: { id: string; s
 // The film test retook its end-card line (34.30 -> 34.57 s) and the music
 // rose under its last word: the dip stayed where the old take ended.
 
-/** A signature of a clip's volume keys: the duck keeps the one it wrote. */
+/** A signature of a clip's volume keys: their shape (each key's value and
+ * where it sits from the first), so keys moved with their clip, or split
+ * or trimmed with it (the keys shift, the shape stays), are still the ones
+ * the duck wrote; a key added, moved or changed by hand is not. */
 export function duckSignature(keys: Keyframe[] | undefined): number {
-  const s = JSON.stringify((keys ?? []).map((k) => [Math.round(k.f * 1000), Math.round(k.v * 1e4)]));
+  const f0 = keys?.[0]?.f ?? 0;
+  const s = JSON.stringify((keys ?? []).map((k) => [Math.round((k.f - f0) * 1000), Math.round(k.v * 1e4)]));
   let h = 7;
   for (let i = 0; i < s.length; i++) h = (Math.imul(h, 31) + s.charCodeAt(i)) | 0;
   return h;
+}
+
+/** The timeline frame of a clip's first volume key: where its dips sit. */
+const firstKeyAt = (c: { start: number; keyframes?: Clip["keyframes"] }) => {
+  const k = c.keyframes?.volume?.[0];
+  return k ? c.start + k.f : undefined;
+};
+
+/** What a duck keeps of the keys it wrote on a clip: their signature and
+ * where the first sits on the timeline (DuckRecord's keys and at). */
+export function duckMark(c: { start: number; keyframes?: Clip["keyframes"] }): Pick<DuckRecord, "keys" | "at"> {
+  const at = firstKeyAt(c);
+  return { keys: duckSignature(c.keyframes?.volume), ...(at !== undefined ? { at } : {}) };
 }
 
 /** Ducked music whose voice lines moved or changed length since. */
@@ -93,6 +142,9 @@ export interface StaleDuck {
   lineIds: Id[];
   /** Clips whose volume keys were changed since the duck (by hand): left alone. */
   edited: Id[];
+  /** Clips the edit moved on the timeline, their dips with them, away
+   * from the lines they were dipped for (a move, bars cut out before them). */
+  moved: Id[];
 }
 
 type Span = [number, number];
@@ -103,7 +155,9 @@ const meets = (a: Span, b: Span) => a[0] < b[1] && a[1] > b[0];
  * The ducks an edit left behind: music clips duck_under_speech dipped
  * (their `duck`) under a voice line that the edit added, removed, moved
  * or changed the length of, judged from the line's old place and its new
- * one. A track ducked whole is one duck.
+ * one; and music the edit moved, its dips with it, away from where the
+ * duck put them (cut_music on a ducked song moved the piece after the cut
+ * and its dips under no line). A track ducked whole is one duck.
  */
 export function staleDucks(before: Project, after: Project): StaleDuck[] {
   const was = spansOf(before), now = spansOf(after);
@@ -113,7 +167,14 @@ export function staleDucks(before: Project, after: Project): StaleDuck[] {
     if (a && b && a[0] === b[0] && a[1] === b[1]) continue;
     changed.push({ id, spans: [a, b].filter((s): s is Span => !!s) });
   }
-  if (!changed.length) return [];
+  const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  const off = (x: number | undefined, y: number | undefined) => x !== undefined && y !== undefined && Math.abs(x - y) >= 0.5;
+  // Moved by this edit: its first key is not where the duck put it, and was
+  // somewhere else before the edit (or the clip is a new piece of one).
+  const movedNow = (c: VideoClip | AudioClip) => {
+    const at = firstKeyAt(c), prev = old.get(c.id);
+    return off(at, c.duck!.at) && duckSignature(c.keyframes?.volume) === c.duck!.keys && (!prev || off(firstKeyAt(prev), at));
+  };
   const out: StaleDuck[] = [];
   for (const t of after.tracks) {
     const ducked = t.clips.filter((c): c is VideoClip | AudioClip => (c.type === "audio" || c.type === "video") && !!c.duck);
@@ -121,8 +182,9 @@ export function staleDucks(before: Project, after: Project): StaleDuck[] {
     const groups = [...(whole.length ? [whole] : []), ...ducked.filter((c) => !c.duck!.track).map((c) => [c])];
     for (const g of groups) {
       const lines = changed.filter((l) => g.some((c) => l.spans.some((s) => meets(s, [c.start, clipEnd(c)])))).map((l) => l.id);
-      if (!lines.length) continue;
-      out.push({ clipIds: g.map((c) => c.id), trackId: t.id, record: g[0].duck!, lineIds: lines, edited: g.filter((c) => duckSignature(c.keyframes?.volume) !== c.duck!.keys).map((c) => c.id) });
+      const moved = g.filter(movedNow).map((c) => c.id);
+      if (!lines.length && !moved.length) continue;
+      out.push({ clipIds: g.map((c) => c.id), trackId: t.id, record: g[0].duck!, lineIds: lines, edited: g.filter((c) => duckSignature(c.keyframes?.volume) !== c.duck!.keys).map((c) => c.id), moved });
     }
   }
   return out;
@@ -144,8 +206,8 @@ export function duckArgs(d: Pick<StaleDuck, "clipIds" | "trackId" | "record">): 
  * dips where the lines were, and the call that dips it again. */
 export function staleDuckNote(d: StaleDuck): string {
   const what = d.record.track ? `The music on track ${d.trackId}` : `The music clip ${d.clipIds[0]}`;
-  const lines = d.lineIds.join(", ");
+  const why = [d.lineIds.length ? `${d.lineIds.join(", ")} added, moved or changed length` : "", d.moved.length ? `${d.moved.join(", ")} moved, its dips with it` : ""].filter(Boolean).join("; ");
   return d.edited.length
-    ? `${what} was ducked under the voice before ${lines} changed, and its volume keys were edited since (${d.edited.join(", ")}), so it was not dipped again: duck_under_speech ${JSON.stringify(duckArgs(d))} would replace those keys.`
-    : `${what} still dips for the voice as it was before this edit (${lines} added, moved or changed length): duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now.`;
+    ? `${what} was ducked under the voice before this edit (${why}), and its volume keys were edited since (${d.edited.join(", ")}), so it was not dipped again: duck_under_speech ${JSON.stringify(duckArgs(d))} would replace those keys.`
+    : `${what} still dips for the voice as it was before this edit (${why}): duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now.`;
 }
