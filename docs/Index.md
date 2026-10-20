@@ -375,3 +375,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   asked for detail full; the design rules and a title's style are listed
   once; lines are laid out without the spacing after the last letter;
   set_colorize makes white a color; the glow starts at luma 85.
+- [[ADR-106 What sits on a shot or marks a song follows it through every edit]] —
+  linkage moves a run of titles into each other's old spots, follows a
+  shot ripple-deleted with its title, and applies inside edit_compound
+  and between a batch's steps; a new main-track clip keeps the pause
+  before it; cut_ranges keeps the clip's id on its first piece left; a
+  song's markers follow it into compound clips and unique copies, never
+  double another use's, and round ties as secondsToFrames does; cut_music
+  of an intro starts on the bar; reversed trims and frozen slips say why.

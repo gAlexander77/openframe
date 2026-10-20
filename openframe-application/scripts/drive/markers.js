@@ -47,7 +47,8 @@ async (page) => {
   await panel.getByRole("button", { name: "Save marker" }).click();
   details.edit = { ok: await page.evaluate(id => {
     const m = window.videoEditor.project().markers.find(m => m.id === id);
-    return m.label === "Opening card" && m.frame === 38 && m.color === "#bf8cff" && window.videoEditor.state().playhead === 38;
+    // 1.25 s is frame 37.5 at 30 fps: a tie takes the earlier frame (ADR-102).
+    return m.label === "Opening card" && m.frame === 37 && m.color === "#bf8cff" && window.videoEditor.state().playhead === 37;
   }, ids.intro) };
   await page.evaluate(() => window.videoEditor.action("undo"));
   details.undoTogether = { ok: await page.evaluate(id => {
@@ -58,7 +59,7 @@ async (page) => {
   await panel.getByRole("button", { name: "Next marker", exact: true }).click();
   details.next = { ok: await page.evaluate(() => window.videoEditor.state().playhead === 90) };
   await panel.getByRole("button", { name: "Previous marker", exact: true }).click();
-  details.previous = { ok: await page.evaluate(() => window.videoEditor.state().playhead === 38) };
+  details.previous = { ok: await page.evaluate(() => window.videoEditor.state().playhead === 37) };
   await page.getByRole("tab", { name: "Media", exact: true }).click();
   await page.locator('.tl-marker[aria-label="Fix audio"]').dblclick();
   details.rulerEditor = { ok: await panel.isVisible() && await panel.getByRole("textbox", { name: "Marker note" }).inputValue() === "Fix audio" };

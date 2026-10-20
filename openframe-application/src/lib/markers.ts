@@ -1,7 +1,7 @@
 import { sourceToTimeline } from "./analysis/musicMap";
 import { createMarker } from "./project/defaults";
-import type { AudioClip, Clip, Id, Marker, Project, Track, VideoClip } from "./project/types";
-import { formatTimecode, type Rational } from "./time";
+import type { AudioClip, Clip, Compound, CompoundClip, Id, Marker, Project, Track, VideoClip } from "./project/types";
+import { formatTimecode, framesToSeconds, type Rational } from "./time";
 
 /** Markers are absolute timeline notes; moving one never moves a clip. A
  * marker that followed a clip's media (a beat) and is moved by hand is the
@@ -19,44 +19,71 @@ export function updateMarker(p: Project, id: Id, patch: Partial<Pick<Marker, "fr
 type Media = VideoClip | AudioClip;
 const isMedia = (c: Clip): c is Media => c.type === "video" || c.type === "audio";
 
-/** One timeline's following markers placed again, or null when none moved. */
-function follow(tracks: Track[], markers: Marker[], fps: Rational): Marker[] | null {
+/** One timeline's following markers placed again, or null when none moved.
+ * `compounds` are the project's nested timelines, for a clip that went
+ * into a compound clip on this timeline. */
+function follow(tracks: Track[], markers: Marker[], fps: Rational, compounds: Compound[] = []): Marker[] | null {
   if (!markers.some((m) => m.follows)) return null;
   const media = tracks.flatMap((t) => t.clips.filter(isMedia));
+  const nests = tracks.flatMap((t) => t.clips.filter((c): c is CompoundClip => c.type === "compound"));
   const byId = new Map(media.map((c) => [c.id, c]));
   const maps = new Map<Id, ReturnType<typeof sourceToTimeline>>();
-  const frameIn = (c: Media, at: number) => {
+  const frameIn = (c: Media | CompoundClip, at: number) => {
     if (!maps.has(c.id)) maps.set(c.id, sourceToTimeline(c, fps));
     return maps.get(c.id)!.frame(at);
   };
-  let changed = false;
-  const out: Marker[] = [];
-  for (const m of markers) {
-    if (!m.follows) {
-      out.push(m);
-      continue;
+  /** Where a compound clip here plays `at` of clip `id` inside its
+   * compound, nearest `near` (the song went into a compound clip:
+   * create_compound_clip, a bus for its sound). */
+  const throughNests = (id: Id, at: number, near: number): number | null => {
+    let best: number | null = null;
+    for (const k of nests) {
+      const inner = compounds.find((x) => x.id === k.compoundId)?.tracks.flatMap((t) => t.clips).find((c) => c.id === id);
+      const f = inner && isMedia(inner) ? sourceToTimeline(inner, fps).frame(at) : null;
+      const outer = f === null ? null : frameIn(k, framesToSeconds(f, fps));
+      if (outer !== null && (best === null || Math.abs(outer - near) < Math.abs(best - near))) best = outer;
     }
+    return best;
+  };
+  const placed = markers.map((m) => {
+    if (!m.follows) return { m, frame: m.frame, clip: undefined as Id | undefined, jumped: false };
     const own = byId.get(m.follows.clip);
-    let clip = own, frame = own ? frameIn(own, m.follows.at) : null;
-    if (own && frame === null) {
+    if (!own) return { m, frame: throughNests(m.follows.clip, m.follows.at, m.frame), clip: m.follows.clip, jumped: false };
+    let clip: Media = own, frame = frameIn(own, m.follows.at), jumped = false;
+    if (frame === null) {
       // Another clip of the same file that plays this second (the other
       // half of a split): the one nearest where the marker is.
       let best = Infinity;
       for (const c of media) {
         if (c === own || c.assetId !== own.assetId) continue;
         const f = frameIn(c, m.follows.at);
-        if (f !== null && Math.abs(f - m.frame) < best) [best, clip, frame] = [Math.abs(f - m.frame), c, f];
+        if (f !== null && Math.abs(f - m.frame) < best) [best, clip, frame, jumped] = [Math.abs(f - m.frame), c, f, true];
       }
     }
+    return { m, frame, clip: clip.id, jumped };
+  });
+  // A marker that would move onto a clip already marked at that second
+  // with that label (another use of the song, read on its own) goes
+  // instead: trimming one use's tail doubled the other's beats (ADR-106).
+  const key = (label: string, clip: Id | undefined, at: number) => `${label}|${clip}|${at}`;
+  const taken = new Set(placed.filter((x) => x.m.follows && !x.jumped && x.frame !== null).map((x) => key(x.m.label, x.clip, x.m.follows!.at)));
+  let changed = false;
+  const out: Marker[] = [];
+  for (const { m, frame, clip, jumped } of placed) {
+    if (!m.follows) {
+      out.push(m);
+      continue;
+    }
     // Nothing plays that second any more (trimmed off, or the clip deleted).
-    if (frame === null || !clip) {
+    if (frame === null || clip === undefined || (jumped && taken.has(key(m.label, clip, m.follows.at)))) {
       changed = true;
       continue;
     }
-    if (frame === m.frame && clip.id === m.follows.clip) out.push(m);
+    if (jumped) taken.add(key(m.label, clip, m.follows.at));
+    if (frame === m.frame && clip === m.follows.clip) out.push(m);
     else {
       changed = true;
-      out.push({ ...m, frame, follows: { clip: clip.id, at: m.follows.at } });
+      out.push({ ...m, frame, follows: { clip, at: m.follows.at } });
     }
   }
   return changed ? out.sort((a, b) => a.frame - b.frame) : null;
@@ -70,11 +97,11 @@ function follow(tracks: Track[], markers: Marker[], fps: Rational): Marker[] | n
  * longer plays loses its marker. The same object when nothing moved.
  */
 export function followClips(p: Project): Project {
-  const root = follow(p.tracks, p.markers, p.fps);
+  const root = follow(p.tracks, p.markers, p.fps, p.compounds);
   let compounds = p.compounds;
   if (compounds?.some((k) => k.markers.some((m) => m.follows))) {
     const next = compounds.map((k) => {
-      const ms = follow(k.tracks, k.markers, p.fps);
+      const ms = follow(k.tracks, k.markers, p.fps, p.compounds);
       return ms ? { ...k, markers: ms } : k;
     });
     if (next.some((k, i) => k !== compounds![i])) compounds = next;

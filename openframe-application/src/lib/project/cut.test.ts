@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cutRanges, framesOfRanges, splitAtSourceTimes } from "./cut";
 import { clipForAsset, createProject, createTextClip, createTrack } from "./defaults";
-import { addClip, addTrack, detachAudio, findClip, mainTrack, setSpeed, updateTrack } from "./ops";
+import { addClip, addTrack, detachAudio, findClip, mainTrack, setSpeed, settle, updateTrack } from "./ops";
 import type { Project, VideoClip } from "./types";
 
 const FPS = { num: 25, den: 1 };
@@ -53,16 +53,16 @@ describe("cutRanges", () => {
       { start: 10, end: 12.5 },
     ]);
     expect(res.removed).toBe(2);
-    expect(res.frames).toBe(25 + 63); // 10 s = frame 250, 12.5 s rounds to frame 313
+    expect(res.frames).toBe(25 + 62); // 10 s = frame 250, 12.5 s (frame 312.5) takes the earlier frame, 312 (ADR-106)
     // Pieces: 0-2 s, 3-10 s, 12.5-20 s of the source, end to end.
     expect(spans(res.project)).toEqual([
       [0, 50, 0],
       [50, 225, 3],
-      [225, 412, 12.52], // the piece starts at frame 313's source time
-      [412, 512, 0],
+      [225, 413, 12.48], // the piece starts at frame 312's source time
+      [413, 513, 0],
     ]);
     expect(findClip(res.project, id)!.clip.start).toBe(0); // the original id keeps the first piece
-    expect(findClip(res.project, nextId)!.clip.start).toBe(412);
+    expect(findClip(res.project, nextId)!.clip.start).toBe(413);
   });
 
   it("without ripple leaves holes", () => {
@@ -84,6 +84,21 @@ describe("cutRanges", () => {
       [0, 425, 1],
       [425, 525, 0],
     ]);
+  });
+
+  it("keeps the clip's id on its first piece left when the cut takes its head (ADR-106)", () => {
+    // The original id held the head piece, which the cut deleted: the
+    // clip_id an agent held named nothing, and the piece left was new to
+    // the magnet, which pulled it over the pause before the clip.
+    const { p: p0, id, nextId } = setup();
+    // A 0.28 s pause before the talk: the b-roll first, then the talk at 32.
+    const main = mainTrack(p0).id;
+    let p = updateTrack(p0, main, { clips: [{ ...findClip(p0, nextId)!.clip, start: 0, duration: 25 }, { ...findClip(p0, id)!.clip, start: 32 }] });
+    const res = cutRanges(p, id, [{ start: 0, end: 2 }, { start: 5, end: 6 }]);
+    expect(findClip(res.project, id)!.clip).toMatchObject({ start: 32, duration: 75, in: 2 });
+    expect(spans(res.project)).toEqual([[0, 25, 0], [32, 107, 2], [107, 457, 6]]);
+    p = settle(p, res.project, { magnet: true, linkage: true });
+    expect(spans(p).map((s) => s[0])).toEqual([0, 32, 107]);
   });
 
   it("removing the whole clip removes the clip", () => {

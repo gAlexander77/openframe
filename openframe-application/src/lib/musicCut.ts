@@ -98,7 +98,16 @@ export function cutMusic(p: Project, o: MusicCut): { project: Project; from: num
   const track = q.tracks.find((t) => t.id === loc.track.id)!;
   const pieces = track.clips.filter((x): x is AudioClip => x.type === "audio" && x.assetId === c.assetId && (x.id === c.id || !ids.has(x.id)));
   const a = pieces.find((x) => x.in < from - 1e-6), b = pieces.find((x) => x.in >= from - 1e-6 && x.start === (a ? clipEnd(a) : -1));
-  if (!a || !b) return { project: q, from, to };
+  if (!a) {
+    // The song's head cut: what is left starts on the bar line itself, not
+    // on the frame nearest it, so its beats fall on the grid from the
+    // clip's start (it began half a frame early at 3.75 s, ADR-106).
+    const left = pieces.find((x) => Math.abs(x.in - to) < framesToSeconds(1, p.fps));
+    const room = (asset?.duration ?? Infinity) - to;
+    if (left) q = updateClip(q, left.id, (x) => ({ ...x, in: +to.toFixed(6), ...(framesToSeconds(x.duration, p.fps) > room ? { duration: Math.max(1, x.duration - 1) } : {}) }) as Clip);
+    return { project: q, from, to };
+  }
+  if (!b) return { project: q, from, to };
   // The jump is exactly to - from: the piece after plays on from there.
   const stop = a.in + framesToSeconds(a.duration, p.fps);
   const inB = stop + (to - from);
