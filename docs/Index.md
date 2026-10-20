@@ -435,3 +435,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   timing and sound, jumping to its clip, time and inspector tab; Space
   presses a button, switch or menu item the keyboard reached (a click's
   focus still plays); a transition dropped on an audio join crossfades.
+- [[ADR-113 A freeze fills the pause it was given, a run of lines follows its pictures, and a cut rolls in one call]] —
+  a clip across several shots follows them when they all moved by one
+  amount (a run of voice lines through a freeze), never a music track's;
+  freeze_frame overwrite fills a pause and moves nothing, and a still at a
+  shot's last frame leaves no one-frame piece; add_voiceover names each
+  line its at could not hold; numbers sent as strings are read; roll_edit;
+  set_param hold steps instead of ramping; a sound's length rounds up.

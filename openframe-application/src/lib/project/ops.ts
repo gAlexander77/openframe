@@ -4,9 +4,12 @@
 // definitions in docs/research/Professional NLE features.md.
 //
 // Every op leaves the invariants normalizeProject checks: clips sorted, no
-// overlaps on a track, durations >= 1, source ranges inside the asset.
+// overlaps on a track, durations >= 1, source ranges inside the asset (a
+// sound's up to the frame its last sample plays in, ADR-113).
 
-import { setPath, upsertKey } from "../keyframes";
+// audioRoles imports ops too; settle calls it only at run time, so the cycle is harmless.
+import { assetsOf, trackRole } from "../audioRoles";
+import { paramAt, setPath, upsertKey } from "../keyframes";
 import { areaTo, frameForArea, meanSpeed, toFrames, type NormPoint } from "../speed";
 import { framesToSeconds, type Rational } from "../time";
 import { createTrack, uid } from "./defaults";
@@ -129,14 +132,17 @@ export function sourceRange(c: TimedClip, fps: Rational): [number, number] {
 }
 
 /** How many frames the clip's end could still grow before running out of
- * source. Stills, text and freezes are unlimited. */
+ * source. Stills, text and freezes are unlimited. A sound reaches the frame
+ * its last sample plays in, so its tail is never cut (ADR-113); a picture
+ * only the frames it fills. */
 export function roomRight(p: Project, c: Clip): number {
   if (!isTimed(c) || c.freeze) return Infinity;
   // Reading forward, the end eats into what is after `in`; reversed, into
   // what is before it.
   const avail = c.reverse ? c.in : sourceSeconds(p, c) - c.in;
   if (avail === Infinity) return Infinity;
-  const total = Math.floor(framesForSource(c, avail, p.fps) + 1e-6);
+  const frames = framesForSource(c, avail, p.fps);
+  const total = c.type === "audio" ? Math.ceil(frames - 1e-6) : Math.floor(frames + 1e-6);
   return Math.max(0, total - c.duration);
 }
 
@@ -574,17 +580,28 @@ export function trimStop(p: Project, clipId: Id, edge: Edge, frame: number, ripp
 /** Roll edit: move the cut between two adjacent clips; the sequence length
  * does not change. Limited by both clips' source handles. */
 export function rollEdit(p: Project, leftId: Id, rightId: Id, frame: number): Project {
-  const L = findClip(p, leftId);
-  const R = findClip(p, rightId);
-  if (!L || !R || L.track.id !== R.track.id || clipEnd(L.clip) !== R.clip.start) return p;
-  const lo = Math.max(L.clip.start + 1, R.clip.start - roomLeft(p, R.clip));
-  const hi = Math.min(clipEnd(R.clip) - 1, clipEnd(L.clip) + roomRight(p, L.clip));
-  const cut = Math.min(Math.max(Math.round(frame), lo), hi);
-  const d = cut - R.clip.start;
+  const b = rollBounds(p, leftId, rightId);
+  if (!b) return p;
+  const cut = Math.min(Math.max(Math.round(frame), b.lo), b.hi);
+  const d = cut - b.cut;
   if (d === 0) return p;
   let q = updateClip(p, leftId, (c) => ({ ...c, duration: c.duration + d }) as Clip);
   q = updateClip(q, rightId, (c) => moveLeftEdge(c, d, p.fps));
   return q;
+}
+
+/** The frames a roll can move the cut between two touching clips to, and
+ * which clip and limit sets each end: the right clip's source (nothing
+ * earlier) or the left clip keeping a frame; the left clip's source
+ * (nothing later) or the right clip keeping a frame. Null when the clips
+ * do not touch on one track. */
+export function rollBounds(p: Project, leftId: Id, rightId: Id): { cut: number; lo: number; hi: number; loBy: [Clip, TrimStop]; hiBy: [Clip, TrimStop] } | null {
+  const L = findClip(p, leftId);
+  const R = findClip(p, rightId);
+  if (!L || !R || L.track.id !== R.track.id || clipEnd(L.clip) !== R.clip.start) return null;
+  const [lo, loBy]: [number, [Clip, TrimStop]] = L.clip.start + 1 >= R.clip.start - roomLeft(p, R.clip) ? [L.clip.start + 1, [L.clip, "length"]] : [R.clip.start - roomLeft(p, R.clip), [R.clip, "source"]];
+  const [hi, hiBy]: [number, [Clip, TrimStop]] = clipEnd(R.clip) - 1 <= clipEnd(L.clip) + roomRight(p, L.clip) ? [clipEnd(R.clip) - 1, [R.clip, "length"]] : [clipEnd(L.clip) + roomRight(p, L.clip), [L.clip, "source"]];
+  return { cut: R.clip.start, lo, hi, loBy, hiBy };
 }
 
 /** Slip: change which part of the source plays, keeping position and length.
@@ -719,9 +736,13 @@ export function setChangePitch(p: Project, clipIds: Id[], on: boolean): Project 
   return p;
 }
 
-/** Insert a held frame at `at`, rippling the rest of the track (CapCut's
- * Freeze). Returns the project unchanged when `at` is outside a video clip. */
-export function freezeFrame(p: Project, clipId: Id, at: number, frames: number): Project {
+/** A held frame at `at` (CapCut's Freeze). Insert splits the clip there
+ * and ripples the rest of the track; at the clip's last frame the still
+ * takes that frame's place, since the one frame left after it showed the
+ * same picture (ADR-113). Overwrite lays the still over what is there (the
+ * rest of the shot, a gap left for it) and moves nothing. Returns the
+ * project unchanged when `at` is outside a video clip. */
+export function freezeFrame(p: Project, clipId: Id, at: number, frames: number, mode: PlaceMode = "insert"): Project {
   const loc = findClip(p, clipId);
   if (!loc || loc.clip.type !== "video" || at < loc.clip.start || at >= clipEnd(loc.clip)) {
     return p;
@@ -736,8 +757,14 @@ export function freezeFrame(p: Project, clipId: Id, at: number, frames: number):
     freeze: true,
     muted: true,
   };
+  if (mode === "overwrite") return addClip(p, loc.track.id, freeze, "overwrite");
+  const last = at > c.start && at === clipEnd(c) - 1;
+  // The last frame's own transition and out animation end the still now.
+  const still = last ? ({ ...freeze, ...(c.transitionOut ? { transitionOut: c.transitionOut } : {}), ...(c.animOut ? { animOut: c.animOut } : {}) } as VideoClip) : freeze;
   let q = at > c.start ? splitClip(p, clipId, at) : p;
-  return addClip(q, loc.track.id, freeze, "insert");
+  q = addClip(q, loc.track.id, still, "insert");
+  const tail = last ? findTrack(q, loc.track.id)!.clips.find((x) => x.start === at + frames) : undefined;
+  return tail ? deleteClips(q, [tail.id], true) : q;
 }
 
 /** Move a video clip's sound onto an audio track (CapCut's Extract audio),
@@ -780,13 +807,19 @@ export function detachAudio(p: Project, clipId: Id): Project {
 // ---- parameters and keyframes ----------------------------------------------
 
 /** Set a parameter. If the path is keyframed, the value becomes a keyframe at
- * clip-relative frame `f` instead (pro editors' "auto-key" behavior). */
-export function setParam(p: Project, clipIds: Id[], path: string, value: number, f?: number): Project {
+ * clip-relative frame `f` instead (pro editors' "auto-key" behavior).
+ * `hold`: what plays before `f` stays as it was, a key on the frame before
+ * keeping it, so the value changes over that one frame instead of ramping
+ * from the key before (a 4 s swell under a voice, ADR-113); a path with
+ * no keys gets those two keys. */
+export function setParam(p: Project, clipIds: Id[], path: string, value: number, f?: number, hold = false): Project {
   for (const id of clipIds) {
     p = updateClip(p, id, (c) => {
-      const keys = c.keyframes?.[path];
-      if (keys?.length && f !== undefined) {
-        return { ...c, keyframes: { ...c.keyframes, [path]: upsertKey(keys, { ...keys.find((k) => k.f === f), f, v: value }) } };
+      const keys = c.keyframes?.[path] ?? [];
+      if ((keys.length || hold) && f !== undefined) {
+        const before = hold && f > 0 && !keys.some((k) => k.f === f - 1) ? upsertKey(keys, { f: f - 1, v: paramAt(c, path, f - 1) }) : keys;
+        if (!before.length) return setPath(c, path, value);
+        return { ...c, keyframes: { ...c.keyframes, [path]: upsertKey(before, { ...keys.find((k) => k.f === f), f, v: value }) } };
       }
       return setPath(c, path, value);
     });
@@ -998,7 +1031,13 @@ function pieceMoves(oldMain: Track, newMain: Track, fps: Rational): { start: num
  * carries its clips: one whose head was trimmed changed its start but not
  * where its pictures play (ADR-102). A piece cut off a shot counts as a
  * shot of its own there: the second half of a shot split by a freeze
- * frame carries its title past the freeze (ADR-110).
+ * frame carries its title past the freeze (ADR-110). A clip over several
+ * shots follows them when everything under it (the shots, and the gaps between shots
+ * that moved together) moved by one amount, as an editor's sync lock
+ * carries a track through an insert: a voice line across three shots
+ * stayed behind a freeze and kept every line before it from moving
+ * (ADR-113). A music track's clips never do: the song is the grid the
+ * picture is cut to.
  */
 export function settle(before: Project, after: Project, o: SettleOptions): Project {
   let p = o.magnet ? closeOpenedGaps(before, after, mainTrack(after).id) : after;
@@ -1006,9 +1045,19 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
   const oldMain = mainTrack(before);
   const newMain = mainTrack(p);
   const moves: { start: number; duration: number; delta: number }[] = [];
+  // Every stretch of the old main track, shots and gaps, with how far it
+  // moved: 0 when it stayed, null when it changed (trimmed, deleted, or a
+  // gap whose two shots moved apart). After the last shot, nothing.
+  const stretches: { start: number; end: number; delta: number | null }[] = [];
+  let edge = 0, prevDelta: number | null = 0;
   for (const c of oldMain.clips) {
     const now = newMain.clips.find((x) => x.id === c.id);
-    if (now && now.start !== c.start && now.duration === c.duration) moves.push({ start: c.start, duration: c.duration, delta: now.start - c.start });
+    const delta = now && now.duration === c.duration ? now.start - c.start : null;
+    if (delta) moves.push({ start: c.start, duration: c.duration, delta });
+    if (c.start > edge) stretches.push({ start: edge, end: c.start, delta: prevDelta === delta ? delta : null });
+    stretches.push({ start: c.start, end: clipEnd(c), delta });
+    edge = Math.max(edge, clipEnd(c));
+    prevDelta = delta;
   }
   // A piece cut off a shot that moved whole carries what sat on that part
   // of the shot: the second half of a shot split by a freeze frame or an
@@ -1016,6 +1065,14 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
   // (ADR-110).
   moves.push(...pieceMoves(oldMain, newMain, before.fps));
   if (!moves.length) return p;
+  /** The one amount everything under [start, end) moved by, or null. */
+  const movedAs = (start: number, end: number): number | null => {
+    if (end > edge) return null;
+    const under = stretches.filter((s) => s.start < end && s.end > start);
+    const d = under[0]?.delta ?? null;
+    return d && under.every((s) => s.delta === d) ? d : null;
+  };
+  const roleOf = assetsOf(before);
   const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   const kept = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
   /** Did only its own track's ripple move it: a ripple delete that took a
@@ -1028,10 +1085,16 @@ export function settle(before: Project, after: Project, o: SettleOptions): Proje
   };
   for (const t of p.tracks) {
     if (t.main || t.locked) continue;
+    const music = trackRole(t, roleOf) === "music";
     const wants: { c: Clip; to: number }[] = [];
     for (const c of t.clips) {
       const was = old.get(c.id);
       if (!was || (was.start !== c.start && !rippled(t, was, c))) continue; // new or moved by the edit itself
+      const whole = music ? null : movedAs(was.start, clipEnd(was));
+      if (whole !== null) {
+        if (was.start + whole !== c.start) wants.push({ c, to: was.start + whole });
+        continue;
+      }
       // A bed covering a whole cut belongs to the sequence, even when one
       // of its shots supplies a majority of the duration. Short titles
       // that merely straddle a cut still follow their dominant shot.

@@ -660,3 +660,19 @@ describe("what the Claude film test found (2026-10-20)", () => {
     expect(r.notes).toBeUndefined();
   });
 });
+
+describe("what the second Claude film found (ADR-113)", () => {
+  it("reads a number a client sent as a string, for commands and app tools, and refuses anything else", async () => {
+    // set_speed_ramp hold "1.0" (the client's way of sending 1.0) was
+    // refused as "args.hold must be a number".
+    const h = host();
+    const ok = await call(h, "tools/call", { name: "add_media_clip", arguments: { asset_id: "a1", start: "0", duration: " 4.0 " } });
+    expect(JSON.parse(text(ok)).duration).toBe(4);
+    const frame = await call(h, "tools/call", { name: "preview_frame", arguments: { at: "1.0" } });
+    expect(frame!.result).not.toMatchObject({ isError: true });
+    for (const at of ["1.0s", "", "Infinity", "0x10", "soon", "1,5"]) {
+      expect(text(await call(h, "tools/call", { name: "split", arguments: { at } }))).toContain("args.at must be a number");
+    }
+    expect(text(await call(h, "tools/call", { name: "preview_frame", arguments: { at: "later" } }))).toContain("args.at must be a number");
+  });
+});

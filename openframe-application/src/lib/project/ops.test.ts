@@ -184,6 +184,20 @@ describe("speed, freeze, detach", () => {
     const [a, f, b] = p.tracks[0].clips as VideoClip[];
     expect([a.duration, f.start, f.duration, f.freeze, f.in, b.start]).toEqual([30, 30, 90, true, 1, 120]);
   });
+  it("at a clip's last frame, the still takes that frame's place: no one-frame piece after it (ADR-113)", () => {
+    // The Claude film: a freeze at 6.267 s of a shot ending at 6.3 s left
+    // a one-frame clip of the same picture after the still.
+    const p = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 52);
+    expect(clips(p).map((c) => c.slice(0, 2))).toEqual([[0, 188], [188, 52], [291, 30]]);
+    expect((p.tracks[0].clips[1] as VideoClip).freeze).toBe(true);
+  });
+  it("overwrite lays the still over a gap left for it and moves nothing (ADR-113)", () => {
+    const p = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 52, "overwrite");
+    expect(clips(p).map((c) => c.slice(0, 2))).toEqual([[0, 188], [188, 52], [240, 30]]);
+    // Longer than the gap, it covers the next shot's head, which keeps its pictures in place.
+    const q = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 62, "overwrite");
+    expect(clips(q)).toEqual([[0, 188, 0], [188, 62, 6.2667], [250, 20, 0.3333]]);
+  });
   it("detach moves sound to an audio track and mutes the video", () => {
     const p = detachAudio(project([0, 60, 0]), "c1");
     const v = findClip(p, "c1")!.clip as VideoClip;
@@ -362,6 +376,34 @@ describe("settle", () => {
     // shot lost: which piece is which is unclear, so nothing follows it.
     const replay = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 45, p.fps), id: "replay", duration: 30, in: 2 } as Clip, "insert");
     expect(at(settle(p, replay, linked))).toEqual([10, 50, 125]);
+  });
+
+  it("carries a voice line across several shots, and the lines before it, through a freeze (ADR-113)", () => {
+    // The Claude film's freeze: shots after a pause all moved 52 frames.
+    // A voice line over three of them had no shot under most of it and
+    // stayed; the line before it found that spot taken and stayed too, and
+    // only the last line, on one shot, followed its picture.
+    let p = project([0, 189, 0], [240, 78, 0], [318, 51, 0], [369, 51, 0], [420, 60, 0], [480, 57, 0], [537, 51, 0], [588, 57, 0]);
+    const audio = (id: string, start: number, duration: number) => ({ ...clipForAsset(asset, start, p.fps), id, type: "audio", duration }) as Clip;
+    const lines = [audio("l2", 87, 135), audio("l3", 258, 102), audio("l4", 369, 46), audio("l5", 420, 48), audio("l6", 489, 121)];
+    const bed = audio("song", 240, 345);
+    p = { ...p, tracks: [...p.tracks, { ...createTrack("audio", "Voiceover"), role: "dialog", clips: lines }, { ...createTrack("audio", "Music"), role: "music", clips: [bed] }] };
+    const s = settle(p, freezeFrame(p, "c1", 188, 52), { magnet: false, linkage: true });
+    // Every shot after the freeze moved 51 frames (the hold less the frame it replaced).
+    expect(clips(s).map((c) => c[0])).toEqual([0, 188, 291, 369, 420, 471, 531, 588, 639]);
+    const at = (id: string) => findClip(s, id)!.clip.start;
+    expect(["l2", "l3", "l4", "l5", "l6"].map(at)).toEqual([87, 309, 420, 471, 540]);
+    // The song stays: it is the grid the picture is cut to.
+    expect(at("song")).toBe(240);
+  });
+
+  it("carries a title over a pause between two shots that moved together", () => {
+    // A black breath [30, 37) with a title over it; a shot inserted at 0
+    // moves both shots and the breath 10 frames.
+    const p0 = project([0, 30, 0], [37, 30, 0]);
+    const p = { ...p0, tracks: [{ ...createTrack("video", "Titles"), clips: [{ ...createTextClip("breath", 31, 5), id: "t" }] }, ...p0.tracks] };
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 0, p.fps), id: "new", duration: 10 } as Clip, "insert");
+    expect(findClip(settle(p, ins, { magnet: false, linkage: true }), "t")!.clip.start).toBe(41);
   });
 
   it("carries clips with a shot that moved whole, not with one whose head was trimmed", () => {

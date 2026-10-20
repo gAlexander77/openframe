@@ -38,7 +38,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "roll_edit", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
@@ -129,6 +129,8 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
+  roll_edit: { clip_id: "c_7", to: 8 },
+  freeze_frame: { clip_id: "c_7", at: 6.267, duration: 1.733, mode: "overwrite" },
   fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
   cut_music: { clip_id: "c_3", from: 14, to: 30 },
   set_crossfade: { clip_id: "c_3", seconds: 0.03 },

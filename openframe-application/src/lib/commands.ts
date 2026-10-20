@@ -179,6 +179,24 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
   return errs;
 }
 
+/** A decimal number written out: 1, -2.5, .5, 1e3. Not "", "1.0s", "0x10" or "Infinity". */
+const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
+ * `value` with every string the schema wants a number for, and that spells
+ * one, read as that number. Some clients send a model's 1.0 as the string
+ * "1.0", and set_speed_ramp answered "hold must be a number" (ADR-113).
+ * Anything else is left as sent, for validate to refuse.
+ */
+export function coerceNumbers(value: unknown, schema: JsonSchema): unknown {
+  if ((schema.type === "number" || schema.type === "integer") && typeof value === "string" && NUMERIC.test(value.trim())) return Number(value.trim());
+  if (schema.type === "array" && Array.isArray(value) && schema.items) return value.map((v) => coerceNumbers(v, schema.items!));
+  if (schema.type === "object" && schema.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, schema.properties![k] ? coerceNumbers(v, schema.properties![k]) : v]));
+  }
+  return value;
+}
+
 // ---- helpers for runners ---------------------------------------------------------
 
 const f = (p: Project, seconds: unknown) => secondsToFrames(Number(seconds), p.fps);
@@ -657,6 +675,28 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "roll_edit",
+    description: "Roll edit (the timeline's Roll tool): move the cut between a clip and the clip touching it to `to` (timeline seconds), the cut at its end by default (with the next clip) or at its start with edge start (with the clip before). One clip grows by what the other loses, so nothing else on the timeline moves: one call puts a cut on a beat, where two trim_clip calls had to come in the right order. Each clip keeps the pictures it shows at every other time; limited by both clips' source and by each keeping a frame (the answer says where it stopped and why). A cut with a gap at it has nothing to roll: trim_clip moves one edge.",
+    input: S.obj({ clip_id: S.str("A clip on one side of the cut"), to: S.num("Timeline seconds the cut moves to", { minimum: 0 }), edge: S.str("Which of the clip's cuts: end (default, with the next clip) or start (with the clip before)", { enum: ["start", "end"] }) }, ["clip_id", "to"]),
+    run: (p, a, report) => {
+      const loc = clipOrThrow(p, a.clip_id);
+      if (loc.track.locked) throw new CommandError(`track ${loc.track.id} is locked`);
+      const start = a.edge === "start";
+      const nb = loc.track.clips[loc.clipIndex + (start ? -1 : 1)];
+      const s = (frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
+      const cut = start ? loc.clip.start : ops.clipEnd(loc.clip);
+      if (!nb || (start ? ops.clipEnd(nb) : nb.start) !== cut) {
+        throw new CommandError(`no clip touches ${loc.clip.id}'s ${start ? "start" : "end"} at ${s(cut)} s (${nb ? `the ${start ? "one before ends" : "next starts"} at ${s(start ? ops.clipEnd(nb) : nb.start)} s` : `nothing is ${start ? "before" : "after"} it on its track`}): a roll moves a cut between two touching clips; trim_clip moves one edge`);
+      }
+      const [left, right] = start ? [nb, loc.clip] : [loc.clip, nb];
+      const b = ops.rollBounds(p, left.id, right.id)!;
+      const to = f(p, a.to);
+      const [at, [clip, why]] = to < b.lo ? [b.lo, b.loBy] : to > b.hi ? [b.hi, b.hiBy] : [to, [left, "length" as ops.TrimStop]];
+      if (at !== to && report) (report.notes ??= []).push(`Stopped at ${s(at)} s, not ${a.to} s: ${clip.id}: ${trimStopReason(p, clip, clip.id === left.id ? "end" : "start", why)}.`);
+      return ops.rollEdit(p, left.id, right.id, to);
+    },
+  },
+  {
     name: "set_speed",
     description: "Constant speed for a video or audio clip (2 = twice as fast, 0.5 = slow motion). The clip's length changes; later clips on its track move with it.",
     input: S.obj({ clip_id: S.str("Clip id"), speed: S.num("Multiplier", { minimum: 0.05, maximum: 100 }) }, ["clip_id", "speed"]),
@@ -834,13 +874,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead (without at it is refused: remove_keyframes first to set one value). An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
-    input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead (without at it is refused: remove_keyframes first to set one value), which ramps from the key before; hold true keeps what plays before `at` as it was (a key on the frame before holds it) and changes the value there, as a step (on a path without keys it makes those two keys). An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
+    input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths"), hold: S.bool("With at: hold the value before at until the frame before it, so the change is a step there and not a ramp from the key before") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
+      const hold = a.hold === true;
+      if (hold && rel === undefined) throw new CommandError("hold needs at: the time the value changes");
       return ids.reduce((q, id) => {
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
@@ -848,9 +890,10 @@ export const COMMANDS: Command[] = [
         // it, and the answer told it as set (ADR-110, as ADR-108's commands).
         keyedNeedsAt(clip, path, a.at);
         // A keyed path takes a key here: refuse one nothing would read (ADR-066).
-        const keyed = !!clip.keyframes?.[path]?.length && rel !== undefined;
+        const keyed = (!!clip.keyframes?.[path]?.length || hold) && rel !== undefined;
+        if (hold && COLOR_PATHS.has(path)) throw new CommandError("hold is for numbers: a color steps with add_keyframe, its ease hold on the key before");
         const problem = keyed ? keyframeProblem(clip, path) : null;
-        if (problem) throw new CommandError(`${problem}; remove_keyframes path ${a.path} clears the dead keys`);
+        if (problem) throw new CommandError(clip.keyframes?.[path]?.length ? `${problem}; remove_keyframes path ${a.path} clears the dead keys` : problem);
         // A color's key holds 0xRRGGBB, but the color itself stays CSS: a
         // number there broke every reader of style.color (ADR-099).
         if (COLOR_PATHS.has(path) && clip.type !== "text") throw new CommandError(`${path} is a title's color; clip ${clip.id} is a ${clip.type} clip`);
@@ -862,7 +905,7 @@ export const COMMANDS: Command[] = [
         // with one number every describe_project and undo; ADR-108).
         const lacking = now === undefined ? missingPart(clip, path) : null;
         if (lacking) throw new CommandError(`${a.path} is not on clip ${clip.id}: ${partNeeds(clip, path) ?? `it has no ${lacking}`}`);
-        return ops.setParam(q, [id], path, Number(a.value), rel);
+        return ops.setParam(q, [id], path, Number(a.value), rel, hold);
       }, p);
     },
   },
@@ -1874,9 +1917,9 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "freeze_frame",
-    description: "Insert a still of the frame at a time inside a video clip, pushing the rest of the track right.",
-    input: S.obj({ clip_id: S.str("Video clip id"), at: S.num("Timeline seconds"), duration: S.num("Seconds to hold", { minimum: 0.04 }) }, ["clip_id", "at"]),
-    run: (p, a) => ops.freezeFrame(p, clipOrThrow(p, a.clip_id).clip.id, f(p, a.at), Math.max(1, f(p, a.duration ?? 3))),
+    description: "Hold the frame at a time inside a video clip as a still for `duration` seconds (default 3). mode insert (the default, CapCut's Freeze) splits the clip there and pushes the rest of its track right by the hold, the clips sitting on those shots (titles, captions, voice lines, effects) with them; at the clip's last frame the still takes that frame's place, so no one-frame piece is left after it. mode overwrite lays the still over what is there instead (the rest of the shot, a gap left on the main track for it, the next shot's head) and moves nothing: the freeze for a pause already cut to the music.",
+    input: S.obj({ clip_id: S.str("Video clip id"), at: S.num("Timeline seconds"), duration: S.num("Seconds to hold", { minimum: 0.04 }), mode: S.str("insert pushes the rest of the track right; overwrite covers what is there and moves nothing", { enum: ["insert", "overwrite"] }) }, ["clip_id", "at"]),
+    run: (p, a) => ops.freezeFrame(p, clipOrThrow(p, a.clip_id).clip.id, f(p, a.at), Math.max(1, f(p, a.duration ?? 3)), a.mode === "overwrite" ? "overwrite" : "insert"),
   },
   {
     name: "add_marker",
@@ -2787,6 +2830,7 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
     const meant = didYouMean(name, COMMANDS.map((c) => c.name));
     throw new CommandError(`unknown command ${name}${meant ? `; did you mean ${meant}?` : ""}`);
   }
+  args = coerceNumbers(args, cmd.input);
   const errs = validate(args, cmd.input);
   if (errs.length) throw new CommandError(errs.join("; "));
   const next = cmd.run(p, args as Record<string, unknown>, report);
