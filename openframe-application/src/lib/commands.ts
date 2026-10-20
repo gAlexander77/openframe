@@ -2662,10 +2662,10 @@ function rawValueAt(clip: Clip, path: string): unknown {
 
 /** The part of `path` a clip lacks ("border", "adjust.colorize"), or null
  * when everything above the value is there. A grade's HSL bands and wheels
- * start from nothing (the grade reads what is missing as 0), so set_param
- * may make them. */
+ * and a sound's EQ bands start from nothing (what is missing reads as 0),
+ * so set_param may make them. */
 function missingPart(clip: Clip, path: string): string | null {
-  if (/^adjust\.(hsl|wheels)\./.test(path)) return null;
+  if (/^(adjust\.(hsl|wheels)|eq)\./.test(path)) return null;
   const segs = path.split(".");
   let cur: unknown = clip;
   for (let i = 0; i < segs.length - 1; i++) {

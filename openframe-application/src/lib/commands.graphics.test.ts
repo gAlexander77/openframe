@@ -422,6 +422,9 @@ describe("set_param sets what a clip has, and only that (ADR-108)", () => {
     // reads what is not there as 0.
     p = runCommand(p, "set_param", { clip_ids: [v], path: "adjust.hsl.red.saturation", value: 20 });
     p = runCommand(p, "set_param", { clip_ids: [v], path: "adjust.wheels.gain.y", value: 10 });
+    // So do a sound's EQ bands: a band not there plays flat.
+    p = runCommand(p, "set_param", { clip_ids: [v], path: "eq.low", value: -12 });
+    expect(clips(p).find((c) => c.id === v)).toMatchObject({ eq: { low: -12 } });
     expect(() => describeProject(p)).not.toThrow();
     expect(() => checkProject(p)).not.toThrow();
   });
