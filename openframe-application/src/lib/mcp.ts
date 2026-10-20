@@ -163,7 +163,8 @@ function markerSummary(items: unknown[]): unknown {
 export function describeChanges(before: unknown, after: unknown): unknown {
   const b = before as Desc, a = after as Desc;
   if (!a?.tracks || !b?.tracks) return after;
-  const out: Record<string, unknown> = { duration: a.duration, ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(a.notes ? { notes: a.notes } : {}) };
+  const notes = [...((a.notes as string[] | undefined) ?? []), ...closedGapNotes(b, a)];
+  const out: Record<string, unknown> = { duration: a.duration, ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(notes.length ? { notes } : {}) };
   const diff = <T extends { id: string }>(was: Map<string, T>, now: Map<string, T>, key: string) => {
     const added = [...now.values()].filter((x) => !was.has(x.id));
     const changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
@@ -208,6 +209,83 @@ export function describeChanges(before: unknown, after: unknown): unknown {
     if (!["duration", "tracks", "assets", "markers", "compounds"].includes(k) && !same(a[k], b[k])) out[k] = a[k] ?? null;
   }
   return Object.keys(out).length === 1 ? { unchanged: true, duration: a.duration } : out;
+}
+
+type ClipDesc = { id: string; start: number; end: number; track: string };
+
+/** Every clip by id, with its track, from a describe_project answer. */
+const clipsOf = (d: Desc) => new Map(d.tracks!.flatMap((t) => (t.clips as unknown as ClipDesc[]).map((c) => [c.id, { ...c, track: t.id }] as const)));
+
+const s3 = (v: number) => +v.toFixed(3);
+
+/**
+ * One plain sentence for each gap on the main track that closed between
+ * two describe_project answers: where it was, how much of it closed, and
+ * how many clips moved earlier for it. A gap that closes without being
+ * asked for moves every cut after it off its beat (ADR-102).
+ */
+export function closedGapNotes(before: unknown, after: unknown): string[] {
+  const main = (d: Desc) => d.tracks?.find((t) => t.main) as ({ clips: ClipDesc[] } | undefined);
+  const b = main(before as Desc), a = main(after as Desc);
+  if (!b || !a) return [];
+  const gaps = (clips: ClipDesc[]) => {
+    const out = new Map<string, { from: number; gap: number }>();
+    let end = 0;
+    for (const c of [...clips].sort((x, y) => x.start - y.start)) {
+      out.set(c.id, { from: end, gap: c.start - end });
+      end = Math.max(end, c.end);
+    }
+    return out;
+  };
+  const was = gaps(b.clips), now = gaps(a.clips);
+  const startWas = new Map(b.clips.map((c) => [c.id, c.start]));
+  const startNow = new Map(a.clips.map((c) => [c.id, c.start]));
+  const notes: string[] = [];
+  for (const [id, g] of was) {
+    const n = now.get(id);
+    // Closed, and by moving the clip after it (not by a clip grown into it).
+    if (g.gap < 0.0005 || !n || g.gap - n.gap < 0.0005 || startWas.get(id)! - startNow.get(id)! < 0.0005) continue;
+    const closed = s3(g.gap - n.gap);
+    const at = startWas.get(id)!;
+    const moved = a.clips.filter((c) => startWas.has(c.id) && startWas.get(c.id)! >= at && startWas.get(c.id)! - c.start > 0.0005).length;
+    notes.push(`The main track closed ${n.gap < 0.0005 ? "the" : `${closed} s of the`} ${s3(g.gap)} s gap at ${s3(g.from)} s: ${moved === 1 ? "the clip" : `the ${moved} clips`} after it moved ${closed} s earlier.`);
+  }
+  return notes;
+}
+
+/**
+ * An app tool's answer with every clip it moved (a start, end or track
+ * that changed) in changed_clips, and a sentence for any gap it closed on
+ * the main track. Tools such as add_voiceover or duck_under_speech answer
+ * in their own words, and their edits used to move main-track shots with
+ * no mention (ADR-102). A tool whose answer is not one JSON object gets a
+ * second text part.
+ */
+export function withMoves(r: ToolResult, before: unknown, after: unknown): ToolResult {
+  const b = before as Desc, a = after as Desc;
+  if (r.isError || !b?.tracks || !a?.tracks) return r;
+  const was = clipsOf(b);
+  const moved = [...clipsOf(a).values()].filter((c) => {
+    const w = was.get(c.id);
+    return w && (w.start !== c.start || w.end !== c.end || w.track !== c.track);
+  });
+  const gapNotes = closedGapNotes(b, a);
+  if (!moved.length && !gapNotes.length) return r;
+  const i = r.content.findIndex((c) => c.type === "text");
+  let body: Record<string, unknown> | undefined;
+  try {
+    const parsed = i >= 0 ? JSON.parse((r.content[i] as { text: string }).text) : undefined;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) body = parsed;
+  } catch {
+    // Not JSON: the moves go in a part of their own.
+  }
+  const listed = new Set(((body?.changed_clips ?? []) as { id: string }[]).map((c) => c.id));
+  const extra = moved.filter((c) => !listed.has(c.id));
+  const notes = gapNotes.filter((n) => !((body?.notes ?? []) as string[]).includes(n));
+  if (!extra.length && !notes.length) return r;
+  const add = { ...(extra.length ? { changed_clips: [...((body?.changed_clips ?? []) as unknown[]), ...extra] } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
+  if (!body) return { ...r, content: [...r.content, { type: "text", text: JSON.stringify(add) }] };
+  return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...body, ...add }) } : c)) };
 }
 
 /** A project in a few words, for open_project and new_project: the whole
@@ -976,6 +1054,7 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
+The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip, and not across two whole shots: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a music bed or a grade across several shots stays. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
@@ -1079,7 +1158,18 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
         if (app) {
           const errs = validate(args, app.inputSchema);
           if (errs.length) throw new Error(errs.join("; "));
-          return ok(req.id, await app.call(host, args));
+          // Whatever a tool that edits moved is in its answer (ADR-102);
+          // a host that cannot describe the timeline answers as it would.
+          const look = () => {
+            try {
+              return host.describe();
+            } catch {
+              return undefined;
+            }
+          };
+          const before = annotations(name).readOnlyHint ? undefined : look();
+          const r = await app.call(host, args);
+          return ok(req.id, before ? withMoves(r, before, look()) : r);
         }
         if (!COMMANDS.some((c) => c.name === name)) {
           const meant = didYouMean(name, listTools().map((t) => t.name));

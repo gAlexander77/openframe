@@ -5,7 +5,7 @@
 
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
-import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runCommand, type CommandReport } from "./lib/commands";
+import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runAgentCommand, type CommandReport } from "./lib/commands";
 import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
@@ -67,7 +67,8 @@ const automation = {
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
-    store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args, report));
+    // The timeline's linkage applies, its magnet never does (ADR-102).
+    store.editDocument(commandLabel(name, args), (p) => runAgentCommand(p, name, args, report, store.get().linkage));
     return { ...describe(), ...report };
   },
   /** The sticker library, for add_sticker's name. */

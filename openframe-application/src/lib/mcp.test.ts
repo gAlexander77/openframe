@@ -349,7 +349,8 @@ describe("what a blind test of the tools found", () => {
     const next = await run(h, "add_color_clip", { color: "#fff", start: 8.95, duration: 1, track_id: h.project.tracks.find((t) => t.clips.length)!.id });
     const [a, b] = h.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
     expect(a.start + a.duration).toBe(b.start);
-    expect(next.added_clips[0].start).toBe(8.967);
+    // 8.95 s is frame 268.5: a tie lands on the frame on screen then (ADR-102).
+    expect(next.added_clips[0].start).toBe(8.933);
   });
 
   it("slips a shot's source without moving it", async () => {
@@ -617,5 +618,45 @@ describe("what the Codex film test found (2026-10-19)", () => {
     const opened = await run(h, "open_project_file", { path: "D:/films/cut.json" });
     expect(opened).toEqual({ opened: true, project: expect.objectContaining({ counts: expect.objectContaining({ compounds: 3 }), note: expect.stringContaining("describe_project") }) });
     expect(opened.project.tracks).toBeUndefined();
+  });
+});
+
+describe("what the Claude film test found (2026-10-20)", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  /** Two shots with a 7-frame breath between them, [2, 2.233), and a PiP on the second. */
+  const breath = async () => {
+    const h = host();
+    await run(h, "add_media_clip", { asset_id: "a1", start: 0, duration: 2 });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2.233, duration: 2, in: 3 });
+    await run(h, "add_track", { kind: "video", name: "PiP" });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2.5, duration: 1, track_id: h.project.tracks[0].id });
+    return h;
+  };
+
+  it("lists every clip an app tool moved, and says in a sentence when a gap on the main track closed", async () => {
+    // An AI tool whose edit packed the main track (as the magnet did after
+    // add_voiceover) and answered in its own words.
+    const h = await breath();
+    h.ai = (async () => {
+      h.project = runCommand(h.project, "close_gaps", { track_id: h.project.tracks.find((t) => t.main)!.id });
+      h.project = runCommand(h.project, "move_clip", { clip_id: h.project.tracks[0].clips[0].id, start: 2.267 });
+      return [{ clipId: "c_music", gain: 0.7 }];
+    }) as unknown as typeof h.ai;
+    const r = await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c_music"] } });
+    const parts = (r!.result as { content: { text: string }[] }).content;
+    expect(JSON.parse(parts[0].text)).toEqual([{ clipId: "c_music", gain: 0.7 }]);
+    const moved = JSON.parse(parts[1].text);
+    expect(moved.changed_clips.map((c: { start: number }) => c.start)).toEqual([2.267, 2]);
+    expect(moved.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
+  });
+
+  it("says so when an edit closes a gap, and lists nothing extra when the tool's answer already has it", async () => {
+    const h = await breath();
+    const closed = await run(h, "close_gaps", { track_id: h.project.tracks.find((t) => t.main)!.id });
+    expect(closed.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
+    expect(closed.changed_clips).toHaveLength(1);
+    const h2 = await breath();
+    const r = await run(h2, "trim_clip", { clip_id: h2.project.tracks.find((t) => t.main)!.clips[0].id, edge: "end", to: 2.1 });
+    expect(r.notes).toBeUndefined();
   });
 });

@@ -31,7 +31,7 @@ import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, ef
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
 import { upsertKey } from "./keyframes";
 import { keyframeProblem } from "./animatable";
-import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
+import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, presetOf, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
@@ -188,6 +188,18 @@ function clipOrThrow(p: Project, id: unknown) {
   const loc = ops.findClip(p, String(id));
   if (!loc) throw new CommandError(`no clip with id ${id}`);
   return loc;
+}
+
+/** Why a trim stopped short, in words (ops.trimStop says which limit). */
+function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop): string {
+  if (why === "length") return "a clip keeps at least one frame";
+  if (why === "zero") return "the timeline starts at 0";
+  if (why === "neighbor") return edge === "end" ? "the next clip on its track starts there (ripple: true pushes it later)" : "the clip before it on its track ends there (ripple: true keeps this clip's start and moves the clips after it)";
+  if (!ops.isTimed(c)) return "the source ends there";
+  const file = c.type === "compound" ? "its compound's timeline" : (ops.getAsset(p, c.assetId)?.name ?? "the file");
+  if (edge === "start") return `the source starts there (${file} has nothing earlier)`;
+  const rate = c.speedCurve ? speedAt(c.speedCurve.points, c.duration) : c.speed;
+  return `the source ends there (${file} is ${+ops.sourceSeconds(p, c).toFixed(3)} s long${Math.abs(rate - 1) > 1e-3 ? `, and the clip reads it at ${+rate.toFixed(2)}x at its end` : ""})`;
 }
 
 function trackOrThrow(p: Project, id: unknown): Track {
@@ -627,9 +639,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "trim_clip",
-    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors; ripple=true shifts later clips instead of stopping at them.",
+    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.",
     input: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Which edge", { enum: ["start", "end"] }), to: S.num("Seconds", { minimum: 0 }), ripple: S.bool("Shift later clips") }, ["clip_id", "edge", "to"]),
-    run: (p, a) => ops.trimClip(p, clipOrThrow(p, a.clip_id).clip.id, a.edge === "start" ? "start" : "end", f(p, a.to), a.ripple === true),
+    run: (p, a, report) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      const edge = a.edge === "start" ? "start" : "end", ripple = a.ripple === true;
+      const stop = ops.trimStop(p, clip.id, edge, f(p, a.to), ripple);
+      if (stop && report) (report.notes ??= []).push(`Stopped at ${+framesToSeconds(stop.at, p.fps).toFixed(3)} s, not ${a.to} s: ${trimStopReason(p, clip, edge, stop.why)}.`);
+      return ops.trimClip(p, clip.id, edge, f(p, a.to), ripple);
+    },
   },
   {
     name: "set_speed",
@@ -1075,12 +1093,15 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "slip_clip",
-    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.",
-    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by: positive shows later material") }, ["clip_id", "by"]),
-    run: (p, a) => {
+    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. by is seconds of the source file, like in and cut_ranges, at any speed or ramp: in moves by exactly that much. Stops at the ends of the source, and says so.",
+    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by (the in-point moves this much, whatever the clip's speed): positive shows later material") }, ["clip_id", "by"]),
+    run: (p, a, report) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!("in" in clip)) throw new CommandError(`${clip.type} clips have no source to slip`);
-      return ops.slipClip(p, clip.id, f(p, a.by));
+      const by = Number(a.by);
+      const { project, moved } = ops.slipBySource(p, clip.id, by);
+      if (report && Math.abs(moved - by) > 5e-4) (report.notes ??= []).push(`Slipped ${+moved.toFixed(3)} s, not ${by} s: the source ${by > 0 ? "ends" : "starts"} there.`);
+      return project;
     },
   },
   {
@@ -2654,6 +2675,22 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
   return followClips(next);
 }
 
+/**
+ * A command as an agent runs it (MCP, window.videoEditor.exec): then the
+ * timeline's linkage, as the user's own edits get it, so a clip sitting on
+ * a main-track shot (a title, a picture-in-picture, a sound effect) moves
+ * with that shot through a ripple trim, an insert, a ripple delete, a
+ * closed gap, a speed change or a move (ADR-035). Commands used to ripple
+ * the main track alone, while an AI tool's edit carried the clips on it:
+ * the same shot moved its PiP one call and left it the next. Never the
+ * magnet: a gap on the main track closes only when the call asks (ripple,
+ * close_gaps, lift_range), so a pause left on purpose stays (ADR-102).
+ */
+export function runAgentCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport, linkage = true): Project {
+  const next = runCommand(p, name, args, report);
+  return next === p ? p : ops.settle(p, next, { magnet: false, linkage });
+}
+
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
 export function describeProject(p: Project) {
   const s = (frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
@@ -2740,11 +2777,15 @@ export function describeProject(p: Project) {
 
 /** A speed curve for describeProject: its preset's name (or custom) and its
  * points as [t, speed], t from 0 (the clip's start) to 1 (its end) as
- * set_speed_curve takes them, so a custom ramp can be checked (ADR-095). */
+ * set_speed_curve takes them, so a custom ramp can be checked (ADR-095).
+ * The curve as it plays over the clip: a trimmed clip keeps its points
+ * where they were (ADR-027), so after a trim they could end at 0.983 or
+ * run past 1; the window pins t 0 and 1 at the speeds playing there
+ * (ADR-102). */
 function speedCurveSummary(c: Clip): { speed_curve?: string; speed_points?: number[][] } {
   if (!("speedCurve" in c) || !c.speedCurve) return {};
   const r = (v: number) => +v.toFixed(3);
-  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: c.speedCurve.points.map((pt) => [r(pt.f / c.duration), r(pt.speed)]) };
+  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: normalizeWindow(c.speedCurve.points, c.duration).map((pt) => [r(pt.t), r(pt.speed)]) };
 }
 
 /** A title's type where it departs from the default look, named as

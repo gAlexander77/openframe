@@ -289,3 +289,20 @@ it("names small captions once, with how many", () => {
   expect(small).toHaveLength(1);
   expect(small[0].message).toMatch(/^2 captions are 3.3% of the frame's height/);
 });
+
+it("counts a cut only where it shows: not under a full-frame card above it (ADR-102)", () => {
+  // The Claude film: a black breath on a track above, over a filler shot
+  // whose cut at 3.833 s (off the beat) nobody sees.
+  let p = createProject();
+  p = { ...p, assets: [{ id: "v", kind: "video", name: "v.mp4", src: "v.mp4", duration: 12, hasVideo: true, hasAudio: false, width: 1920, height: 1080 }] };
+  for (const [start, duration, at] of [[0, 2, 0], [2, 1.833, 4], [3.833, 4.167, 8]]) p = runCommand(p, "add_media_clip", { asset_id: "v", start, duration, in: at });
+  p = runCommand(p, "add_markers", { times: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5], label: "Beat" });
+  expect(rules(p, "epic_edit")).toContain("cuts_off_beat");
+  const black = runCommand(p, "add_color_clip", { color: "#000000", start: 3.767, duration: 0.233 });
+  expect(rules(black, "epic_edit")).not.toContain("cuts_off_beat");
+  expect(checkProject(black, "epic_edit").summary.shots).toBe(2);
+  // A card that does not hide the frame (half its size) leaves the cut in sight.
+  const id = black.tracks[0].clips[0].id;
+  expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "transform.scale", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
+  expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
+});

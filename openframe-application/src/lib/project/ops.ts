@@ -350,7 +350,8 @@ export function deleteClips(p: Project, ids: Id[], ripple = false): Project {
   };
 }
 
-/** Pack a track's clips end to end from frame 0 — the magnetic main track. */
+/** Pack a track's clips end to end from frame 0: turning the magnet on,
+ * close_gaps. An edit's own magnet is closeOpenedGaps. */
 export function compactTrack(p: Project, trackId: Id): Project {
   return withTrack(p, trackId, (t) => {
     let at = 0;
@@ -361,6 +362,49 @@ export function compactTrack(p: Project, trackId: Id): Project {
     });
     return { ...t, clips };
   });
+}
+
+/**
+ * The magnet after an edit: the track's clips pulled left over the gaps
+ * the edit opened (a clip deleted or dragged away, a tail or head
+ * trimmed), never over a gap that was there before it. A clip keeps at
+ * most the empty time that lay, before the edit, between it and the clip
+ * now before it (a new clip keeps none). A pause left on the main track on
+ * purpose (an agent's breath before a drop) survives every later edit, an
+ * AI tool's included, which used to pack the track and move every later
+ * shot without a word (ADR-102).
+ */
+export function closeOpenedGaps(before: Project, after: Project, trackId: Id): Project {
+  const t = findTrack(after, trackId);
+  if (!t) return after;
+  const old = new Map((findTrack(before, trackId)?.clips ?? []).map((c) => [c.id, c] as const));
+  // The empty stretches before the edit, from frame 0, and the one right
+  // before each clip.
+  const holes: [number, number][] = [];
+  const gapBefore = new Map<Id, number>();
+  let end = 0;
+  for (const c of old.values()) {
+    if (c.start > end) holes.push([end, c.start]);
+    gapBefore.set(c.id, Math.max(0, c.start - end));
+    end = Math.max(end, clipEnd(c));
+  }
+  const emptyIn = (a: number, b: number) => holes.reduce((n, [x, y]) => n + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0);
+  let at = 0, prevEnd = 0, moved = false;
+  let prev: Clip | undefined;
+  const clips = t.clips.map((c) => {
+    const was = old.get(c.id), prevWas = prev && old.get(prev.id);
+    // After a new clip, the gap it had; after an old one (or the start),
+    // all the empty time that lay between them.
+    const keep = !was ? 0 : prev && !prevWas ? gapBefore.get(c.id)! : emptyIn(prevWas ? clipEnd(prevWas) : 0, was.start);
+    const start = at + Math.max(0, Math.min(c.start - prevEnd, keep));
+    prevEnd = Math.max(prevEnd, clipEnd(c));
+    at = start + c.duration;
+    prev = c;
+    if (start === c.start) return c;
+    moved = true;
+    return { ...c, start } as Clip;
+  });
+  return moved ? withTrack(after, trackId, (x) => ({ ...x, clips })) : after;
 }
 
 /** Is [start, start+duration) free on the track, ignoring `ignore`? */
@@ -445,15 +489,11 @@ export type Edge = "start" | "end";
 export function trimClip(p: Project, clipId: Id, edge: Edge, frame: number, ripple = false): Project {
   const loc = findClip(p, clipId);
   if (!loc || loc.track.locked) return p;
-  const { clip: c, track, clipIndex } = loc;
-  const prev = track.clips[clipIndex - 1];
-  const next = track.clips[clipIndex + 1];
+  const { clip: c, track } = loc;
+  const { lo, hi } = trimBounds(p, loc, edge, ripple);
   frame = Math.round(frame);
   if (edge === "start") {
-    let lo = c.start - roomLeft(p, c);
-    if (!ripple && prev) lo = Math.max(lo, clipEnd(prev));
-    lo = Math.max(lo, 0);
-    const to = Math.min(Math.max(frame, lo), clipEnd(c) - 1);
+    const to = Math.min(Math.max(frame, lo), hi);
     const d = to - c.start;
     if (d === 0) return p;
     if (!ripple) return updateClip(p, clipId, (x) => moveLeftEdge(x, d, p.fps));
@@ -474,9 +514,7 @@ export function trimClip(p: Project, clipId: Id, edge: Edge, frame: number, ripp
       ),
     );
   }
-  let hi = clipEnd(c) + roomRight(p, c);
-  if (!ripple && next) hi = Math.min(hi, next.start);
-  const to = Math.max(Math.min(frame, hi), c.start + 1);
+  const to = Math.max(Math.min(frame, hi), lo);
   const d = to - clipEnd(c);
   if (d === 0) return p;
   return withTrack(p, track.id, (t) =>
@@ -491,6 +529,40 @@ export function trimClip(p: Project, clipId: Id, edge: Edge, frame: number, ripp
       ),
     ),
   );
+}
+
+/** What stops a trim: the source running out, the neighbor on the track
+ * (a trim without ripple stops at it), the timeline's start, or the
+ * clip's own last frame. */
+export type TrimStop = "source" | "neighbor" | "zero" | "length";
+
+/** The frames an edge can reach in a trim, lo..hi, and what sets each. */
+function trimBounds(p: Project, loc: ClipLoc, edge: Edge, ripple: boolean): { lo: number; hi: number; loBy: TrimStop; hiBy: TrimStop } {
+  const { clip: c, track, clipIndex } = loc;
+  if (edge === "start") {
+    const prev = track.clips[clipIndex - 1];
+    const bounds: [number, TrimStop][] = [[c.start - roomLeft(p, c), "source"], [0, "zero"]];
+    if (!ripple && prev) bounds.push([clipEnd(prev), "neighbor"]);
+    const [lo, loBy] = bounds.reduce((a, b) => (b[0] > a[0] ? b : a));
+    return { lo, loBy, hi: clipEnd(c) - 1, hiBy: "length" };
+  }
+  const next = track.clips[clipIndex + 1];
+  let hi = clipEnd(c) + roomRight(p, c), hiBy: TrimStop = "source";
+  if (!ripple && next && next.start < hi) [hi, hiBy] = [next.start, "neighbor"];
+  return { lo: c.start + 1, loBy: "length", hi, hiBy };
+}
+
+/**
+ * Where a trim of `edge` to `frame` stops short of it, and why; null when
+ * it gets there. trim_clip answers with this, so an agent that asked for
+ * 8 s and got 7.833 learns the source ran out (ADR-102).
+ */
+export function trimStop(p: Project, clipId: Id, edge: Edge, frame: number, ripple = false): { at: number; why: TrimStop } | null {
+  const loc = findClip(p, clipId);
+  if (!loc || loc.track.locked) return null;
+  const b = trimBounds(p, loc, edge, ripple);
+  const f = Math.round(frame);
+  return f < b.lo ? { at: b.lo, why: b.loBy } : f > b.hi ? { at: b.hi, why: b.hiBy } : null;
 }
 
 /** Roll edit: move the cut between two adjacent clips; the sequence length
@@ -523,6 +595,24 @@ export function slipClip(p: Project, clipId: Id, deltaFrames: number): Project {
   const d = Math.min(Math.max(Math.round(deltaFrames), -earlier), later);
   if (d === 0) return p;
   return updateClip(p, clipId, (x) => ({ ...x, in: (x as VideoClip).in + d * per }) as Clip);
+}
+
+/**
+ * Slip by seconds of source, as slip_clip's `by` says: the window of
+ * source the clip reads moves by exactly that much (less where the file
+ * ends), whatever the clip's speed or ramp. slipClip, the timeline drag,
+ * moves it by timeline frames at the clip's mean rate, which multiplied an
+ * agent's 0.75 s by a ramp's mean 1.48 (ADR-102). Returns the project and
+ * the seconds actually moved.
+ */
+export function slipBySource(p: Project, clipId: Id, seconds: number): { project: Project; moved: number } {
+  const loc = findClip(p, clipId);
+  if (!loc || !isTimed(loc.clip) || loc.clip.freeze) return { project: p, moved: 0 };
+  const c = loc.clip;
+  const [lo, hi] = sourceRange(c, p.fps);
+  const moved = Math.min(Math.max(seconds, -lo), sourceSeconds(p, c) - hi);
+  if (!(Math.abs(moved) > 1e-9)) return { project: p, moved: 0 };
+  return { project: updateClip(p, clipId, (x) => ({ ...x, in: (x as TimedClip).in + moved }) as Clip), moved };
 }
 
 /** Slide: move a clip between its neighbors; the previous clip's end and the
@@ -811,7 +901,8 @@ export function editPoints(p: Project, exclude: Set<Id> = new Set()): number[] {
 // ---- magnet and linkage -------------------------------------------------------
 
 export interface SettleOptions {
-  /** Pack the main track end to end (CapCut's main track magnet). */
+  /** Close the gaps the edit opened on the main track (CapCut's main
+   * track magnet); gaps that were already there stay (closeOpenedGaps). */
   magnet: boolean;
   /** Clips that sit on a main-track clip move with it when it moves
    * (CapCut's linkage), so titles stay on their shots through ripples. */
@@ -828,17 +919,19 @@ const overlap = (a: number, da: number, b: number, db: number) => Math.max(0, Ma
  * that clip itself or the new spot is occupied. A clip sits on the main
  * clip under more than half of it: a title or a sound effect on one shot
  * follows that shot, a music bed or a logo spanning several shots belongs
- * to none of them and stays put (ADR-035).
+ * to none of them and stays put (ADR-035). Only a shot that moved whole
+ * carries its clips: one whose head was trimmed changed its start but not
+ * where its pictures play (ADR-102).
  */
 export function settle(before: Project, after: Project, o: SettleOptions): Project {
-  let p = o.magnet ? compactTrack(after, mainTrack(after).id) : after;
+  let p = o.magnet ? closeOpenedGaps(before, after, mainTrack(after).id) : after;
   if (!o.linkage) return p;
   const oldMain = mainTrack(before);
   const newMain = mainTrack(p);
   const moves: { start: number; duration: number; delta: number }[] = [];
   for (const c of oldMain.clips) {
     const now = newMain.clips.find((x) => x.id === c.id);
-    if (now && now.start !== c.start) moves.push({ start: c.start, duration: c.duration, delta: now.start - c.start });
+    if (now && now.start !== c.start && now.duration === c.duration) moves.push({ start: c.start, duration: c.duration, delta: now.start - c.start });
   }
   if (!moves.length) return p;
   const old = new Map(before.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
