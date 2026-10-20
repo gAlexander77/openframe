@@ -7,6 +7,7 @@
 import { applyCurves, cleanCurve, CURVE_CHANNELS, isIdentityCurves, type Curves } from "./curves";
 import { paramAt } from "./keyframes";
 import { applyLut, type Lut } from "./lut";
+import { cleanColorize, colorizeTint } from "./colorize";
 import type { Clip, Grade, HslBand, HslShift, Project, Wheel, WheelName } from "./project/types";
 
 export const HSL_BANDS: HslBand[] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta"];
@@ -158,6 +159,8 @@ export interface GradeParams {
   wheels?: WheelParams;
   curves?: Curves;
   lut?: { src: string; intensity: number };
+  /** Colorize (ADR-105): the color as straight RGB, the amount 0..1. */
+  colorize?: { rgb: [number, number, number]; amount: number };
 }
 
 type Graded = Clip & { adjust: Grade };
@@ -189,7 +192,12 @@ export function resolveGrade(p: Project, clip: Graded, r: number): GradeParams |
     const intensity = Math.max(0, Math.min(1, paramAt(clip, "adjust.lut.intensity", r)));
     if (file && intensity > 0) out.lut = { src: file.src, intensity };
   }
-  return out.hsl || out.wheels || out.curves || out.lut ? out : undefined;
+  if (g.colorize) {
+    const tint = colorizeTint(g.colorize);
+    const amount = Math.max(0, Math.min(1, paramAt(clip, "adjust.colorize.amount", r))) * (tint?.alpha ?? 0);
+    if (tint && amount > 0) out.colorize = { rgb: tint.rgb, amount };
+  }
+  return out.hsl || out.wheels || out.curves || out.lut || out.colorize ? out : undefined;
 }
 
 /** CPU reference of the shader's grade stage: LUT, curves, wheels, HSL. */
@@ -219,6 +227,9 @@ export function cleanGrade<T extends Record<string, unknown>>(a: T): T {
   delete out.curves;
   delete out.wheels;
   delete out.lut;
+  delete out.colorize;
+  const colorize = cleanColorize(a.colorize);
+  if (colorize) out.colorize = colorize;
   if (isObj(a.hsl)) {
     const hsl: Partial<Record<HslBand, HslShift>> = {};
     for (const band of HSL_BANDS) {

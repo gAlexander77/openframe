@@ -50,6 +50,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   WebP, GIF, AVIF. On desktop, what the webview cannot decode (ProRes,
   DNxHR, MPEG-2...) gets an FFmpeg proxy when FFmpeg is installed; the web
   build refuses it with the codec named.
+- **Gapless MP3:** an MP3's encoder delay and padding (its LAME tag) are
+  left out of its playback, export, waveform, analysis and length, so it
+  lines up with other material sample for sample, as ffmpeg plays it; an
+  AAC file's priming was already left out by its edit list
+  ([[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]).
 - Background filmstrips and waveforms, two files at a time.
 - **Hover scrub** on video cards, as in CapCut: moving across a card shows
   the frame under the pointer, with a line, from the timeline's
@@ -73,7 +78,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   files on disk are never touched; one undo step each.
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
-  Replacements require compatible streams and full source duration.
+  Replacements require compatible streams and full source duration; a
+  clip of a whole file relinks to that file (ADR-117).
 - **Rename media** (right-click a media card > Rename, or in the grid
   view double-click its name; `rename_media`): the project's name for the
   file, which stays as it is on disk; clips without a name of their own
@@ -98,10 +104,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Undo history**: right-click the toolbar's Undo or Redo for the last 20
   steps by name, nearest first; choosing one goes back (or forward) to it
   (VEGAS's undo list, Premiere's History panel). Agent edits use readable
-  labels too, such as "Add clip" and "Change opacity".
+  labels too, such as "Add clip", "Change opacity", "Change border width"
+  and "Deactivate clip" ([[ADR-109 What an agent can set, a person can see and change]]).
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
-  deactivate clip; markers; in/out range (a cyan band on the ruler,
+  deactivate clip (one switch for the whole selection: a mixed one goes
+  off, an all-off one comes back on); markers; in/out range (a cyan band on the ruler,
   which stays in view as the tracks scroll).
 - **Linked picture and sound** (Premiere's linked clips, for J and L
   cuts): Extract audio keeps the video and its sound linked as a group,
@@ -195,19 +203,41 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   side; a mono file is upmixed first, so either choice keeps it whole.
   Paste Attributes copies it with the sound.
 - **Equalizer** (Audio tab): low shelf (120 Hz), mid bell (1 kHz) and
-  high shelf (8 kHz), -12 to +12 dB, on audio clips and a video's own
-  sound; the same biquads in preview and export; copied by Paste
-  Attributes with the rest of the sound.
+  high shelf (8 kHz), -12 to +12 dB, on audio clips, a video's own
+  sound and a compound clip (over the mix of everything in it); the same
+  biquads in preview and export; copied by Paste Attributes with the
+  rest of the sound.
 - **Compressor** (Audio tab; CapCut's Enhance voice, Premiere's Dynamics):
   Off, Enhance voice, Gentle or Strong, then threshold, ratio and makeup;
   after the EQ, before volume, the same node in preview and export, and
   Normalize loudness measures through it. Evens out speech so export
   loudness reaches its target without heavy limiting
-  ([[ADR-053 One compressor everywhere, measured as it plays]]).
+  ([[ADR-053 One compressor everywhere, measured as it plays]]). On a
+  compound clip it compresses the mix of everything inside as one bus,
+  after its EQ and before its volume and fades; export's windows start a
+  second early so a compressor never starts cold
+  ([[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]]).
 - **Sound crossfades under transitions**: a video transition between two
   clips with sound overlaps their audio across the cut by half the
   transition each way (as far as both have handles) at constant power,
   Premiere's default audio transition, in preview and export alike.
+- **Audio crossfades and music cuts** (agents: `set_crossfade`,
+  `cut_music`): an audio clip crossfades into the next on its track at
+  equal power over the seconds before the cut; `cut_music` takes bars out
+  of a song on its grid and joins the pieces so the beat runs on. A split
+  of one sound plays on with no click guard at the cut, its halves through
+  one EQ and compressor (ADR-117).
+  `preview_audio` measures every join, click and dropout
+  ([[ADR-104 Voice and sound an agent can trust without ears]],
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
+  A person makes a crossfade with the audio clip menu's **Crossfade into next clip** (the
+  transitions' default length, as far as the join allows, or why none
+  fits), sees it drawn at the cut like a transition, and sets its length
+  in the Audio tab's **Crossfade** row
+  ([[ADR-109 What an agent can set, a person can see and change]]);
+  a transition dropped on the join of two audio clips makes the same
+  crossfade
+  ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -264,7 +294,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   [[ADR-069 Large blurs run on a downsampled pyramid]]; CapCut's Reduce image noise, Motion blur, Sketch
   and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
-  screen recording, and **Zoom** and **Letterbox** for epic edits),
+  screen recording, and **Zoom** and **Letterbox** for epic edits; every
+  pixel size is pixels at 1080p, so the viewer and the export draw an
+  effect alike, and Glow, Reduce image noise and Sketch take a radius or
+  line width, [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]),
   24 transitions, 17 looks, adjustment layers. The **Strobe flash**
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.
@@ -376,8 +409,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `set_shape`).
 - **Soft light** (ADR-069): a shape's **radial gradient** (from the
   center to its rim, an ellipse fitting the box, with a center and
-  radius that keyframe) and **feather** (the edge fades over that many
-  pixels with a Gaussian's falloff) make soft background glows without
+  radius that keyframe) and **feather** (the shape blurred: the edge fades
+  over that many pixels with a Gaussian's falloff, and a long ellipse
+  feathered wider than it is tall stays one smooth glow, ADR-099) make
+  soft background glows without
   image files; with the Blur effect at 300 to 500 they are as soft as
   any launch film's. Kind (Linear, Radial), Fade out, Radius, Center and
   Feather in the Shape section.
@@ -388,6 +423,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   track matte, so a rounded window casts a rounded shadow and a compound
   clip (footage, a border and a bar) casts one shadow for the whole
   floating window. Shadow section of the Video tab (`set_shadow`).
+- **Border on pictures** (After Effects' Stroke layer style, outside,
+  ADR-099): any video, image, title, shape or compound clip gets a border
+  around its finished picture (color, width up to 200 px at 1080p,
+  opacity; width and opacity keyframe). It follows the picture's edge
+  after its mask, so a rounded picture-in-picture gets a rounded frame
+  and a circle mask a ring; it keeps its width however the clip is
+  scaled, fades with the clip, and the drop shadow is cast by the picture
+  and its border together. Border section of the Video tab
+  (`set_border`); a title shows its drop shadow, border and colorize in
+  its Text tab while it has them.
 - **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
   Tilt Y in the Transform section turn a picture in depth, seen from a
   camera 2000 pixels (at 1080p) in front of the canvas center, the
@@ -467,7 +512,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Reusable effect presets:** local named stacks with animation, rename/delete,
   cross-project reuse and undoable application to unlocked visual clips.
-- **Paste Attributes:** choose transform, color, audio and/or effects, with
+- **Paste Attributes:** choose transform (with crop, opacity, drop shadow and
+  border), color, audio (with EQ and compressor) and/or effects, with
   animation retiming and optional effect replacement. Clip timing stays intact.
 
 ## Keyframes
@@ -500,7 +546,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-020 The grade lives in adjust, in Lumetri's order]]):
   - **Basic**: filter looks and the temperature, tint, saturation,
     vibrance, hue, exposure, contrast, highlights, shadows, whites, blacks,
-    sharpen, grain, fade and vignette sliders.
+    sharpen, grain, fade and vignette sliders, and **Colorize**: the
+    picture's brightness in one color (white becomes it, black stays),
+    with a keyframable amount, so a white glow or logo can be made amber,
+    which warming cannot do (`set_colorize`,
+    [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]).
   - **HSL**: eight color ranges, hue, saturation and lightness each; only
     that color changes, grays never.
   - **Curves**: luma, red, green and blue; click to add a point, drag to
@@ -666,7 +716,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   keep the words ([[ADR-083 Voiceover lines are directed in the script and keep it]]).
   Each line lands on a pace: a narrator's 2.3-2.8 words a second (or an
   ad's, a social video's, or as asked), its speed chosen by reading and
-  measuring it, never by stretching the audio. A word cannot be marked
+  measuring it, never by stretching the audio; its pause marks are out of
+  the pace, a band asked is held over a slow or fast pace, and a slow
+  line reads no faster than the voice's own speed
+  ([[ADR-104 Voice and sound an agent can trust without ears]]). A word cannot be marked
   for emphasis: the voice model has no such control, measured
   ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]).
 - **Listen back** (agents: `review_voiceover`): Whisper hears each line
@@ -764,7 +817,15 @@ makes a 13 s one). Times are timeline seconds.
   bars), sections named intro, verse, build, drop, breakdown or outro with
   their energy, each beat's loudness, strong hits on or off the beat, and
   the drop, as data in timeline seconds, and as Beat, Bar, Phrase,
-  section and Drop markers when asked ([[AI tools]]).
+  section and Drop markers when asked ([[AI tools]]). The markers follow
+  the music clip: trimmed, moved, split or sped up, they stay on the
+  song's beats, and reading again replaces them; the tempo answered is the
+  one heard.
+- **Give the song's grid** (`set_music_grid`): when the reading is wrong
+  (bars between the kicks, a drop missed), its tempo, a bar's first beat
+  and its parts, kept with the file; every later reading, `mark_beats` and
+  `check_project` use it, and its markers are placed at once
+  ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]).
 - **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
@@ -941,7 +1002,10 @@ makes a 13 s one). Times are timeline seconds.
   the person or product in a video or a photo. The background is removed
   on this computer (a video's Remove background matte; a photo cut out once
   into a new picture with transparency) for a copy on a track above the
-  title, silent and grouped with the original; one undo step.
+  title, silent and grouped with the original; one undo step. The copy
+  takes the grade of an adjustment layer it sits above, and a version
+  whose shape lets the subject hide the title shows the title in front
+  ([[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]).
 - **Deliverables** (`export_versions`): a campaign's versions in one call
   (a group, such as an ad element, moves and scales as one unit, anchored
   where it sat; [[ADR-063 Versions fit a group as one unit]]),
@@ -963,6 +1027,10 @@ makes a 13 s one). Times are timeline seconds.
   from a hidden caption track), sized by the short side and kept clear of
   the stacks; `captions` says `burn`, `none` or `as_project`
   ([[ADR-091 Tall versions stack what stood side by side]]).
+  A title card built as a compound refits as one picture, a split screen
+  whose halves filled the frame fills the new one, text never ends under
+  the frame's readable size, and `overrides` move, resize or hide a clip
+  in one version by hand, kept in a saved version project (ADR-101).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
@@ -1038,7 +1106,19 @@ makes a 13 s one). Times are timeline seconds.
   white layer on a new top track at the playhead, its color set in the
   inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
-  Captions, Filters, Adjustment, with category sub-navigation.
+  Captions, Filters, Adjustment, with category sub-navigation; then AI
+  tools, Markers and Check.
+- **Check** (also File > Check project, and the Export dialog's Check
+  row): the agent's `check_project`, run for a person on request, with
+  the same measuring (each title's contrast on the rendered picture, the
+  sound's last seconds), progress and Cancel. What is made (General
+  video, Ad, Social short, Cut to music) picks the rules. Findings are
+  grouped as text, timing and sound with counts, each in plain words
+  with the control that fixes it; clicking one moves the playhead to it,
+  selects its clip and opens the inspector tab with the fix. An edit
+  marks the check out of date; Export shows the last check's counts and
+  leads to it, without blocking the export
+  ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
 - **Previews drawn by the engine**: filter, effect, transition and text
   cards show the real shaders and text rasterizer on a generated sample
   shot, or on the selected clip's own frame; effects, transitions and
@@ -1068,6 +1148,9 @@ makes a 13 s one). Times are timeline seconds.
 - CapCut's in-app shortcut list, Premiere's where CapCut has none
   (`src/lib/keymap.ts`); a searchable shortcuts panel; tooltips show each
   button's chord, read from the keymap.
+- Space presses a button, switch, checkbox, tab or menu item reached
+  with the keyboard, as on the web; from the page, the timeline, the
+  viewer, a slider, or a button a click left focused, it plays (ADR-111).
 - **Custom shortcuts**, as in Premiere's Keyboard Shortcuts: Change on any
   row and press the new keys; a chord another action uses is named and
   moves only on Replace. Remove, per-row reset and Reset all; changes are
@@ -1111,7 +1194,9 @@ Three doors, one engine ([[Automation]]):
 - `check_project` measures what it judges: each title's WCAG contrast
   with the rendered picture behind it, a music clip's last second, and the
   shots on the busiest picture track
-  ([[ADR-068 check_project measures the picture and the sound it judges]]).
+  ([[ADR-068 check_project measures the picture and the sound it judges]]);
+  an audio clip cut off before the end while it still sounds, with no
+  fade, is a warning (`sound_cut_off`, ADR-100).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width
@@ -1139,8 +1224,8 @@ results include an icon, title and next-step hint. See [[Icons]] for the mapping
 
 ### Compact layouts and keyboard controls
 
-Library tabs lay out in balanced rows (all eleven in one row at 2560 px, six
-and five below), keeping every destination visible; where labels would need a
+Library tabs lay out in balanced rows (all twelve in one row at 2560 px, six
+and six below), keeping every destination visible; where labels would need a
 third row or a quarter of a short panel, the tabs show icons alone, named by
 tooltips (`src/lib/libraryLayout.ts`). Below 300 px the catalog categories
 move above the cards as wrapping chips, so cards keep two columns. The media

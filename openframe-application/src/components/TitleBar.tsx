@@ -11,6 +11,7 @@ import { closeProject, collectProject, openProjectFile } from "../state/project"
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { openMarkers } from "../state/markers";
+import { openCheck } from "../state/check";
 import { LAYOUT_PRESETS, type LayoutPreset } from "../lib/layout";
 import { applyLayoutPreset, currentLayout } from "../state/layout";
 import { MenuBar, type MenuItem } from "./Menu";
@@ -67,6 +68,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { label: "Save a copy…", onSelect: () => setCopyDialog(true) },
         "-",
         { action: "importMedia" },
+        { label: "Check project…", onSelect: () => openCheck(true) },
         { action: "export" },
         { action: "saveFrame" },
         {

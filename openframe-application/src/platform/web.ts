@@ -129,11 +129,15 @@ export const web: Platform = {
     return fileFor(src);
   },
 
-  async head(src, bytes) {
-    if (!/^https?:/.test(src)) return new Uint8Array(await (await fileFor(src)).slice(0, bytes).arrayBuffer());
+  async head(src, bytes, at = 0) {
+    if (!/^https?:/.test(src)) return new Uint8Array(await (await fileFor(src)).slice(at, at + bytes).arrayBuffer());
     // A server that ignores Range sends it all: read only what is needed.
-    const res = await fetch(src, { headers: { Range: `bytes=0-${bytes - 1}` } });
+    const res = await fetch(src, { headers: { Range: `bytes=${at}-${at + bytes - 1}` } });
     if (!res.ok || !res.body) throw new Error(`the address answered ${res.status} ${res.statusText}`.trim());
+    if (at && res.status !== 206) {
+      await res.body.cancel().catch(() => undefined);
+      throw new Error("the address does not serve byte ranges");
+    }
     const reader = res.body.getReader();
     const out = new Uint8Array(bytes);
     let n = 0;

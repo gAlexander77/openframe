@@ -1,6 +1,6 @@
 # ADR-096: A voice's pace, a song's grid and a mix's balance are measured where they apply
 
-**Date:** 2026-10-19. **Status:** accepted.
+**Date:** 2026-10-19. **Status:** accepted; a line's pace leaves its pause marks out, a band asked is held over its pace, and ducking holds lines under a ceiling, by [[ADR-104 Voice and sound an agent can trust without ears]].
 
 ## Context
 

@@ -44,8 +44,8 @@ export type FxKey = keyof Fx;
 /** Every number's range, as the commands, the loader and the inspector
  * accept it. */
 export const FX_RANGES: { [K in FxKey]: Record<keyof Fx[K], [number, number]> } = {
-  lowpass: { cutoff: [20, 20000], resonance: [0, 24] },
-  highpass: { cutoff: [20, 20000], resonance: [0, 24] },
+  lowpass: { cutoff: [20, 20000], resonance: [0, 24], makeup: [-24, 24] },
+  highpass: { cutoff: [20, 20000], resonance: [0, 24], makeup: [-24, 24] },
   reverb: { size: [0, 1], decay: [0.1, 10], mix: [0, 1] },
   echo: { time: [0.01, 2], feedback: [0, 0.9], mix: [0, 1] },
   tapeStop: { duration: [0.05, 10] },

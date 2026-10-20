@@ -10,7 +10,7 @@ import { imageFor } from "./media";
 // responsive. A worker is the upgrade if long files show jank.
 
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
-import { mediaOrigin } from "./media";
+import { DECODE_PREROLL, mediaOrigin, soundOrigin } from "./media";
 import { LoudnessMeter } from "../lib/analysis/loudness";
 import { TruePeakMeter } from "../lib/analysis/truePeak";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
@@ -51,15 +51,16 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
     // list hides; mediabunny honors it by giving that packet a negative
     // timestamp. Real time 0 is timestamp 0 then, not the first timestamp,
     // or every result lands 21 ms late (measured on the fixtures). A stream
-    // that starts late (MPEG-TS) still maps its first timestamp to 0.
-    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    // that starts late (MPEG-TS) still maps its first timestamp to 0, and
+    // an MP3's encoder delay is skipped as ffmpeg skips it (ADR-112).
+    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
     const n = Math.max(0, Math.ceil((to - from) * rate));
     const sum = new Float32Array(n);
     const count = new Uint16Array(n);
     const report = throttle(onProgress);
     let mono = new Float32Array(0);
     let plane = new Float32Array(0);
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const frames = sample.numberOfFrames;
@@ -107,13 +108,13 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
     const rate = track.sampleRate;
     const n = Math.max(0, Math.round((to - from) * rate));
     const channels = Array.from({ length: Math.min(2, track.numberOfChannels) }, () => new Float32Array(n));
     const report = throttle(onProgress);
     let plane = new Float32Array(0);
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const frames = sample.numberOfFrames;
@@ -144,7 +145,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await mediaOrigin(await input.getPrimaryVideoTrack(), track);
+    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
     let meter: LoudnessMeter | null = null;
     // And the 4x-oversampled true peak, which broadcast ceilings are in.
     let tp: TruePeakMeter | null = null;
@@ -186,7 +187,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
         if (block.n === block.planes[0].length) await flush();
       }
     };
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const rate = sample.sampleRate;

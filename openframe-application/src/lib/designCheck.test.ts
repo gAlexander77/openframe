@@ -37,6 +37,38 @@ it("flags captions read faster than 20 characters a second", () => {
   expect(rules(p)).toContain("caption_too_fast");
 });
 
+it("judges captions shown a few words at a time over the spoken line they make (ADR-115)", () => {
+  // The film test's word-by-word captions: each chunk is up well under
+  // 0.83 s, but the line they make reads at 9-11 characters a second.
+  const chunks = [
+    { start: 3.133, end: 4.267, text: "Day one.", words: [3.133, 3.44] },
+    { start: 4.267, end: 4.867, text: "They strap", words: [4.267, 4.54] },
+    { start: 4.867, end: 5.467, text: "you to a", words: [4.867, 4.98, 5.1] },
+    { start: 5.467, end: 6.333, text: "fire...", words: [5.467] },
+    { start: 6.333, end: 7.4, text: "and let go.", words: [6.333, 6.52, 6.9] },
+  ];
+  let p = base();
+  p = runCommand(p, "add_color_clip", { color: "#203040", start: 6, duration: 4, track_id: p.tracks[0].id });
+  p = runCommand(p, "add_captions", { captions: chunks });
+  expect(rules(p, "social_short")).not.toContain("caption_too_fast");
+  // The same chunks crammed into a second and a half read too fast as a line: one finding for the run.
+  let fast = base();
+  fast = runCommand(fast, "add_captions", { captions: chunks.map((c, i) => ({ text: c.text, start: 1 + i * 0.3, end: 1.3 + i * 0.3 })) });
+  const found = checkProject(fast, "social_short").findings.filter((f) => f.rule === "caption_too_fast");
+  expect(found).toHaveLength(1);
+  expect(found[0].message).toMatch(/^5 captions shown a few words at a time read \d+ characters a second over 1.50 s/);
+  // A chunk that flashes by is still named, however the line reads.
+  let flash = base();
+  flash = runCommand(flash, "add_captions", { captions: [{ start: 1, end: 2, text: "Three." }, { start: 2, end: 2.1, text: "Two." }, { start: 2.1, end: 3, text: "One." }] });
+  const flashed = checkProject(flash, "social_short").findings.filter((f) => f.rule === "caption_too_fast");
+  expect(flashed).toHaveLength(1);
+  expect(flashed[0].message).toMatch(/for 0.10 s/);
+  // A full caption on its own is judged as before.
+  let one = base();
+  one = runCommand(one, "add_captions", { captions: [{ start: 1, end: 1.5, text: "Hi there" }] });
+  expect(rules(one)).toContain("caption_too_fast");
+});
+
 it("errs on strobes over three a second and on black holes in the main track", () => {
   let p = base();
   const id = p.tracks[0].clips[0].id;
@@ -195,6 +227,48 @@ it("lets music that fades out in its own audio end, judged by its last second, a
   expect(rules(k)).not.toContain("music_ends_abruptly");
 });
 
+it("finds a sound cut off before the end with no fade: a song trimmed mid-phrase, a line cut mid-word", () => {
+  // A 20 s video; music 0-12 s of a 30 s song, a voice line cut 2.5 s
+  // into its 6.4 s, neither faded: the check found neither (it only
+  // looked at long clips that end with the video).
+  let p = createProject();
+  p = {
+    ...p,
+    assets: [
+      { id: "song", kind: "audio", name: "song.mp3", src: "song.mp3", duration: 30, hasVideo: false, hasAudio: true },
+      { id: "line", kind: "audio", name: "line.wav", src: "line.wav", duration: 6.4, hasVideo: false, hasAudio: true },
+      { id: "hit", kind: "audio", name: "hit.wav", src: "hit.wav", duration: 1.2, hasVideo: false, hasAudio: true },
+    ],
+  };
+  p = runCommand(p, "add_color_clip", { color: "#203040", start: 0, duration: 20, track_id: p.tracks[0].id });
+  p = runCommand(p, "add_media_clip", { asset_id: "song", start: 0, duration: 12 });
+  p = runCommand(p, "add_track", { kind: "audio", name: "Voiceover", role: "dialog" });
+  p = runCommand(p, "add_media_clip", { asset_id: "line", start: 14, duration: 2.5, track_id: p.tracks.find((t) => t.role === "dialog")!.id });
+  p = runCommand(p, "add_media_clip", { asset_id: "hit", start: 4 });
+  const clip = (asset: string) => p.tracks.flatMap((t) => t.clips).find((c) => "assetId" in c && c.assetId === asset)!.id;
+  const [song, line] = [clip("song"), clip("line")];
+  // The hit plays its whole file: it ends as it was made, not cut off.
+  expect(tailTargets(p)).toEqual([
+    { clipId: song, assetId: "song", from: 8, to: 12 },
+    { clipId: line, assetId: "line", from: 0, to: 2.5 },
+  ]);
+  const holds = { endDb: -15, bodyDb: -14, lastSecond: [-14, -15, -14, -15] };
+  const cut = checkProject(p, "any", { tails: { [song]: holds, [line]: holds } }).findings.filter((f) => f.rule === "sound_cut_off");
+  expect(cut.map((f) => [f.clip_id, f.at, f.level])).toEqual([[song, 12, "warning"], [line, 16.5, "warning"]]);
+  expect(cut[1].message).toMatch(/cut off at 16.5 s while still sounding, with no fade, and the video goes on: its last second runs -14, -15, -14, -15 dBFS/);
+  // A line cut in a pause, or a song whose own audio falls away, is fine.
+  const ends = checkProject(p, "any", { tails: { [song]: { endDb: -55, bodyDb: -14 }, [line]: { endDb: -60, bodyDb: -20 } } });
+  expect(ends.findings.map((f) => f.rule)).not.toContain("sound_cut_off");
+  // Unmeasured, only the long clip is suspect.
+  expect(checkProject(p).findings.filter((f) => f.rule === "sound_cut_off").map((f) => f.clip_id)).toEqual([song]);
+  // A fade, or the song carrying on in the next clip of its track, ends it.
+  const faded = runCommand(p, "set_fades", { clip_ids: [song, line], fade_out: 0.3 });
+  expect(tailTargets(faded)).toEqual([]);
+  const track = p.tracks.find((t) => t.clips.some((c) => c.id === song))!.id;
+  const carried = runCommand(p, "add_media_clip", { asset_id: "song", start: 12, in: 12, duration: 8, track_id: track });
+  expect(tailTargets(carried).map((t) => t.clipId)).not.toContain(song);
+});
+
 it("counts the shots on the busiest picture track, not the one-clip background", () => {
   const r = checkProject(designed());
   expect(r.summary).toMatchObject({ shots: 4, shots_on: "Windows", average_shot: 1.5 });
@@ -246,4 +320,21 @@ it("names small captions once, with how many", () => {
   const small = checkProject(p).findings.filter((x) => x.rule === "text_too_small");
   expect(small).toHaveLength(1);
   expect(small[0].message).toMatch(/^2 captions are 3.3% of the frame's height/);
+});
+
+it("counts a cut only where it shows: not under a full-frame card above it (ADR-102)", () => {
+  // The Claude film: a black breath on a track above, over a filler shot
+  // whose cut at 3.833 s (off the beat) nobody sees.
+  let p = createProject();
+  p = { ...p, assets: [{ id: "v", kind: "video", name: "v.mp4", src: "v.mp4", duration: 12, hasVideo: true, hasAudio: false, width: 1920, height: 1080 }] };
+  for (const [start, duration, at] of [[0, 2, 0], [2, 1.833, 4], [3.833, 4.167, 8]]) p = runCommand(p, "add_media_clip", { asset_id: "v", start, duration, in: at });
+  p = runCommand(p, "add_markers", { times: [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5], label: "Beat" });
+  expect(rules(p, "epic_edit")).toContain("cuts_off_beat");
+  const black = runCommand(p, "add_color_clip", { color: "#000000", start: 3.767, duration: 0.233 });
+  expect(rules(black, "epic_edit")).not.toContain("cuts_off_beat");
+  expect(checkProject(black, "epic_edit").summary.shots).toBe(2);
+  // A card that does not hide the frame (half its size) leaves the cut in sight.
+  const id = black.tracks[0].clips[0].id;
+  expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "transform.scale", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
+  expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
 });

@@ -178,8 +178,12 @@ export function newProject(init: ProjectInit = {}) {
 export function openProject(id: string) {
   return navigate(async () => {
     try {
-      const p = normalizeProject(await platform.loadProject(id));
+      // Save first: the project asked for may be the open one, never saved
+      // yet (an agent's open_project of its own new project, mid-edit),
+      // and then it is already open.
       if (!await saveNow()) return false;
+      if (session.screen === "editor" && store.document().id === id) return true;
+      const p = normalizeProject(await platform.loadProject(id));
       enter(p);
       return true;
     } catch (e) {

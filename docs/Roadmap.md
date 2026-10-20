@@ -26,11 +26,10 @@ None.
   desktop priority on 2026-10-14. Retain ADR-003 and the existing shared core;
   log browser import/persistence/export/codec/model capability checks with
   revision and platform evidence before promising web parity.
-- **Still open from the survey** ([[Feature gaps 2026-10-16]]): border and
-  shadow on pictures (layer shader), a subject detector for auto reframe
-  (a box picks it today),
-  proxies on demand, translated captions (waits on a non-English speech
-  fixture), a compressor on compound clips.
+- **Still open from the survey** ([[Feature gaps 2026-10-16]]): a subject
+  detector for auto reframe (a box picks it today), proxies on demand,
+  translated captions (waits on a non-English speech fixture). Borders
+  and shadows on pictures shipped (ADR-070, ADR-099).
 - **Proxies on the web** via mediabunny `Conversion` (short-GOP 720p).
 
 ## Later

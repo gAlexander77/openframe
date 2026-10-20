@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { createProject, createTrack } from "../project/defaults";
-import { activeSpan, combinedLoudness, duckDepth, isolateTracks, isDialog, isMusic, lineBalances, lineDepths, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
+import { activeSpan, aimDepths, combinedLoudness, duckDepth, duckTargetsError, isolateTracks, isDialog, isMusic, lineBalances, lineCeiling, lineDepths, LINE_CEILING_LU, loudnessDifference, marginSummary, speechWindows, windowLoudness } from "./balance";
 
 /** 100 ms steps (mean squares) at a steady LUFS. */
 const steps = (lufs: number, n: number) => Array(n).fill(10 ** ((lufs + 0.691) / 10));
@@ -31,6 +31,45 @@ it("gives each line its margin, sums them up, and deepens only the lines short o
   expect(lineDepths([6, 6], [16, 7.5], 8, 6)).toEqual([6, 6.8]);
   expect(lineDepths([30, 30], [2, null], 8)).toEqual([36.3, 30]);
   expect(lineDepths([38], [2], 8)).toEqual([40]);
+});
+it("holds every line under a ceiling: a line over a quiet passage dips less, never under none (film test 3.14)", () => {
+  // The film's first music clip, one 13.3 dB dip for the speech target:
+  // the hook line sat 16.7 LU over the quiet intro, the next 15.1.
+  expect(lineDepths([13.3, 13.3, 13.9], [16.7, 15.1, 10.3], 10, 13.3, 15)).toEqual([11.3, 12.9, 13.9]);
+  // Its second clip: the last hit's line 19 LU over a 14.9 dB dip.
+  expect(lineDepths([14.9, 14.9, 14.9], [15.2, 10.1, 19], 10, 14.9, 15)).toEqual([14.4, 14.9, 10.6]);
+  // A line far over it loses its whole dip, and the music is never raised.
+  expect(lineDepths([4], [30], 10, 0, 15)).toEqual([0]);
+  // The minimum still wins under the ceiling; no ceiling, as before.
+  expect(lineDepths([6, 6], [16, 7.5], 8, 6, 15)).toEqual([4.7, 6.8]);
+  expect(lineDepths([6, 6], [16, 7.5], 8, 6)).toEqual([6, 6.8]);
+  // The default ceiling: 15 LU, or 3 over a higher target or minimum.
+  expect(LINE_CEILING_LU).toBe(15);
+  expect(lineCeiling(12, 10)).toBe(15);
+  expect(lineCeiling(14)).toBe(17);
+  expect(lineCeiling(undefined, 13)).toBe(16);
+  // A ceiling under the speech target cannot be met by any dip: refused
+  // before rendering, not answered met false after four measures.
+  expect(duckTargetsError(12, undefined, 8)).toMatch(/max_line_lu \(8\) is under voice_above_music_lu \(12\)/);
+  expect(duckTargetsError(12, 10, 15)).toBeUndefined();
+  expect(duckTargetsError(12, undefined, 12)).toBeUndefined();
+  expect(duckTargetsError(undefined, 10, 10.5)).toMatch(/at least 1 LU over min_line_lu/);
+  expect(duckTargetsError(31)).toMatch(/between 0 and 30/);
+});
+it("keeps the lines together on their target while the ceiling holds one back", () => {
+  // voice_above_music_lu 12, min_line_lu 10, the default 15 LU ceiling:
+  // one dip for the target left the line over the quiet intro 20.1 LU over.
+  const first = aimDepths([11, 11, 11, 11, 11], [20.1, 11.9, 11.6, 12.2, 12], { target: 12, speech: 12, min: 10, max: 15, floor: 11 });
+  expect(first).toEqual([5.6, 11, 11, 11, 11]);
+  // Measured so, the intro's line at 14.7 lifted the lines together to
+  // 12.9 and the call answered met false: every line moves by what the
+  // speech window is off, still between the minimum and the ceiling.
+  expect(aimDepths(first, [14.7, 11.9, 11.6, 12.2, 12], { target: 12, speech: 12.9, min: 10, max: 15, floor: 11 })).toEqual([4.7, 10.1, 10.1, 10.1, 10.1]);
+  // A line the move would take under the minimum dips back to it.
+  expect(aimDepths([5.6, 11], [14.7, 10.4], { target: 12, speech: 12.9, min: 10, max: 15, floor: 11 })).toEqual([4.7, 10.9]);
+  // On target (within 0.5), or with no target: the bounds alone, as before.
+  expect(aimDepths([11, 11], [20.1, 11.9], { target: 12, speech: 12.3, min: 10, max: 15, floor: 11 })).toEqual(lineDepths([11, 11], [20.1, 11.9], 10, 11, 15));
+  expect(aimDepths([11, 11], [20.1, 11.9], { min: 10, max: 15, floor: 11 })).toEqual(lineDepths([11, 11], [20.1, 11.9], 10, 11, 15));
 });
 it("computes attenuation in LU and handles silence without inventing a balance", () => {
   expect(duckDepth(-16, -12, 10)).toBe(14);

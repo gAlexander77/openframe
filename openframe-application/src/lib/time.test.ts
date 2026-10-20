@@ -19,6 +19,17 @@ describe("frame/second conversion", () => {
       expect(secondsToFrames(framesToSeconds(f, f2997), f2997)).toBe(f);
     }
   });
+  it("takes a time exactly between two frames to the earlier, the frame on screen then (ADR-102)", () => {
+    const f30 = { num: 30, den: 1 };
+    // 3.75 s and 7.75 s at 30 fps are frames 112.5 and 232.5.
+    expect(secondsToFrames(3.75, f30)).toBe(112);
+    expect(secondsToFrames(7.75, f30)).toBe(frameAt(7.75, f30));
+    expect(secondsToFrames(7.76, f30)).toBe(233);
+    expect(secondsToFrames(7.74, f30)).toBe(232);
+    expect(Object.is(secondsToFrames(0.01, f30), 0)).toBe(true);
+    // A whole-frame span between two ties keeps its length.
+    expect(secondsToFrames(0.75, f30) - secondsToFrames(0.25, f30)).toBe(15);
+  });
   it("frameAt lands on the boundary frame despite float error", () => {
     expect(frameAt(framesToSeconds(3, f2997), f2997)).toBe(3);
     expect(frameAt(0.1 + 0.2, { num: 10, den: 1 })).toBe(3);

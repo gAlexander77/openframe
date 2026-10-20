@@ -22,6 +22,7 @@ import {
   trimClip,
   settle,
   setFps,
+  setLevel,
 } from "./ops";
 import type { Asset, Clip, Project, VideoClip } from "./types";
 
@@ -183,6 +184,20 @@ describe("speed, freeze, detach", () => {
     const [a, f, b] = p.tracks[0].clips as VideoClip[];
     expect([a.duration, f.start, f.duration, f.freeze, f.in, b.start]).toEqual([30, 30, 90, true, 1, 120]);
   });
+  it("at a clip's last frame, the still takes that frame's place: no one-frame piece after it (ADR-113)", () => {
+    // The Claude film: a freeze at 6.267 s of a shot ending at 6.3 s left
+    // a one-frame clip of the same picture after the still.
+    const p = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 52);
+    expect(clips(p).map((c) => c.slice(0, 2))).toEqual([[0, 188], [188, 52], [291, 30]]);
+    expect((p.tracks[0].clips[1] as VideoClip).freeze).toBe(true);
+  });
+  it("overwrite lays the still over a gap left for it and moves nothing (ADR-113)", () => {
+    const p = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 52, "overwrite");
+    expect(clips(p).map((c) => c.slice(0, 2))).toEqual([[0, 188], [188, 52], [240, 30]]);
+    // Longer than the gap, it covers the next shot's head, which keeps its pictures in place.
+    const q = freezeFrame(project([0, 189, 0], [240, 30, 0]), "c1", 188, 62, "overwrite");
+    expect(clips(q)).toEqual([[0, 188, 0], [188, 62, 6.2667], [250, 20, 0.3333]]);
+  });
   it("detach moves sound to an audio track and mutes the video", () => {
     const p = detachAudio(project([0, 60, 0]), "c1");
     const v = findClip(p, "c1")!.clip as VideoClip;
@@ -271,6 +286,149 @@ describe("settle", () => {
     expect(findClip(s, "t3")!.clip.start).toBe(45);
     expect(findClip(s, "t1")!.clip.start).toBe(5);
     expect(findClip(s, "music")!.clip.start).toBe(0);
+  });
+
+  /** The Claude film (2026-10-20): a 7-frame breath on the main track,
+   * [30, 37), before the drop; a picture-in-picture mostly over c2. */
+  const breath = () => {
+    const p = project([0, 30, 0], [37, 30, 0], [67, 30, 0]);
+    const pip = { ...clipForAsset(asset, 40, p.fps), id: "pip", duration: 20 } as Clip;
+    return { ...p, tracks: [{ ...createTrack("video", "PiP"), clips: [pip] }, ...p.tracks, { ...createTrack("audio", "Voice"), clips: [] }] };
+  };
+
+  it("keeps a gap that was there before the edit: an edit elsewhere moves nothing (ADR-102)", () => {
+    // A voiceover added under the pictures (an audio track only) packed the
+    // main track and moved the drop and everything after it 7 frames early.
+    const p = breath();
+    const voice = { ...clipForAsset(asset, 0, p.fps), id: "vo", type: "audio", duration: 40 } as Clip;
+    const after = { ...p, tracks: p.tracks.map((t) => (t.kind === "audio" ? { ...t, clips: [voice] } : t)) };
+    const s = settle(p, after, linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37, 67]);
+    expect(findClip(s, "pip")!.clip.start).toBe(40);
+  });
+
+  it("closes only the gap an edit opens, keeping the one before it", () => {
+    // Deleting c2 without ripple opens [37, 67); the magnet closes that and
+    // c3 keeps the breath before it.
+    const p = breath();
+    const s = settle(p, deleteClips(p, ["c2"]), linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37]);
+    // Trimming c1's tail by 5 frames opens 5 more: those close, the 7 stay.
+    const t = settle(p, trimClip(p, "c1", "end", 25), linked);
+    expect(clips(t, 1).map((c) => c[0])).toEqual([0, 32, 62]);
+    expect(findClip(t, "pip")!.clip.start).toBe(35);
+  });
+
+  /** Shots c1 [0,30), c2 [30,60), c3 [60,90) with a caption on each, end
+   * to end on one track. */
+  const captioned = () => {
+    const p = project([0, 30, 0], [30, 30, 0], [60, 30, 0]);
+    const caps = [0, 30, 60].map((s, i) => ({ ...createTextClip(`cap${i}`, s, 28), id: `cap${i}` }));
+    return { ...p, tracks: [{ ...createTrack("video", "Captions"), clips: caps }, ...p.tracks] };
+  };
+  const capStarts = (p: Project) => ["cap0", "cap1", "cap2"].map((id) => findClip(p, id)!.clip.start);
+
+  it("carries a run of captions on one track with their shots through an insert (ADR-106)", () => {
+    // A shot inserted at 0 moves every shot 30 frames later. Each caption,
+    // moved in track order, found the next one's old spot taken: only the
+    // last one followed its shot.
+    const p = captioned();
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 0, p.fps), id: "new", duration: 30 } as Clip, "insert");
+    const s = settle(p, ins, { magnet: false, linkage: true });
+    expect(capStarts(s)).toEqual([30, 60, 90]);
+    expect(capStarts(settle(s, deleteClips(s, ["new"], true), { magnet: false, linkage: true }))).toEqual([0, 30, 60]);
+  });
+
+  it("keeps the captions after a shot deleted with its own caption on their shots (ADR-106)", () => {
+    // Ripple-deleting c2 and its caption: the caption track rippled by the
+    // caption's 28 frames, c3 by its 30, so c3's caption landed 2 frames
+    // off its shot.
+    const p = captioned();
+    const s = settle(p, deleteClips(p, ["c2", "cap1"], true), { magnet: true, linkage: true });
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 30]);
+    expect(findClip(s, "cap2")!.clip.start).toBe(30);
+  });
+
+  it("keeps the pause before a shot when a clip is inserted at its start (ADR-106)", () => {
+    // The magnet took the inserted clip for one that keeps no gap, pulled it
+    // onto c1 and the breath was gone; c2 and the PiP moved 7 frames early.
+    const p = breath();
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 37, p.fps), id: "new", duration: 10 } as Clip, "insert");
+    const s = settle(p, ins, linked);
+    expect(clips(s, 1).map((c) => c[0])).toEqual([0, 37, 47, 77]);
+    expect(findClip(s, "pip")!.clip.start).toBe(50);
+  });
+
+  it("carries what sat on a piece cut off a shot when the piece moves (ADR-110)", () => {
+    // c1 [0,90) and c2 [90,120): a title on each half of c1 and one on c2.
+    // A freeze at 45 holds 30 frames: c1's second half is a new clip at 75,
+    // which no id named, so its title stayed over the freeze.
+    let p = project([0, 90, 0], [90, 30, 0]);
+    const text = (id: string, start: number, duration: number) => ({ ...createTextClip(id, start, duration), id });
+    p = { ...p, tracks: [{ ...createTrack("video", "Titles"), clips: [text("tA", 10, 20), text("tB", 50, 30), text("tC", 95, 20)] }, ...p.tracks] };
+    const at = (s: Project) => ["tA", "tB", "tC"].map((id) => findClip(s, id)!.clip.start);
+    expect(at(settle(p, freezeFrame(p, "c1", 45, 30), linked))).toEqual([10, 80, 125]);
+    // An insert into the shot does the same; a split alone moves nothing.
+    const ins = addClip(p, p.tracks[1].id, { ...createColorClip("#000", 45, 15), id: "black" } as Clip, "insert");
+    expect(at(settle(p, ins, linked))).toEqual([10, 65, 110]);
+    expect(at(settle(p, splitClip(p, "c1", 45), linked))).toEqual([10, 50, 95]);
+    // A replay of the shot's own tail inserted into it claims more than the
+    // shot lost: which piece is which is unclear, so nothing follows it.
+    const replay = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 45, p.fps), id: "replay", duration: 30, in: 2 } as Clip, "insert");
+    expect(at(settle(p, replay, linked))).toEqual([10, 50, 125]);
+  });
+
+  it("carries a voice line across several shots, and the lines before it, through a freeze (ADR-113)", () => {
+    // The Claude film's freeze: shots after a pause all moved 52 frames.
+    // A voice line over three of them had no shot under most of it and
+    // stayed; the line before it found that spot taken and stayed too, and
+    // only the last line, on one shot, followed its picture.
+    let p = project([0, 189, 0], [240, 78, 0], [318, 51, 0], [369, 51, 0], [420, 60, 0], [480, 57, 0], [537, 51, 0], [588, 57, 0]);
+    const audio = (id: string, start: number, duration: number) => ({ ...clipForAsset(asset, start, p.fps), id, type: "audio", duration }) as Clip;
+    const lines = [audio("l2", 87, 135), audio("l3", 258, 102), audio("l4", 369, 46), audio("l5", 420, 48), audio("l6", 489, 121)];
+    const bed = audio("song", 240, 345);
+    p = { ...p, tracks: [...p.tracks, { ...createTrack("audio", "Voiceover"), role: "dialog", clips: lines }, { ...createTrack("audio", "Music"), role: "music", clips: [bed] }] };
+    const s = settle(p, freezeFrame(p, "c1", 188, 52), { magnet: false, linkage: true });
+    // Every shot after the freeze moved 51 frames (the hold less the frame it replaced).
+    expect(clips(s).map((c) => c[0])).toEqual([0, 188, 291, 369, 420, 471, 531, 588, 639]);
+    const at = (id: string) => findClip(s, id)!.clip.start;
+    expect(["l2", "l3", "l4", "l5", "l6"].map(at)).toEqual([87, 309, 420, 471, 540]);
+    // The song stays: it is the grid the picture is cut to.
+    expect(at("song")).toBe(240);
+  });
+
+  it("carries a title over a pause between two shots that moved together", () => {
+    // A black breath [30, 37) with a title over it; a shot inserted at 0
+    // moves both shots and the breath 10 frames.
+    const p0 = project([0, 30, 0], [37, 30, 0]);
+    const p = { ...p0, tracks: [{ ...createTrack("video", "Titles"), clips: [{ ...createTextClip("breath", 31, 5), id: "t" }] }, ...p0.tracks] };
+    const ins = addClip(p, p.tracks[1].id, { ...clipForAsset(asset, 0, p.fps), id: "new", duration: 10 } as Clip, "insert");
+    expect(findClip(settle(p, ins, { magnet: false, linkage: true }), "t")!.clip.start).toBe(41);
+  });
+
+  it("carries clips with a shot that moved whole, not with one whose head was trimmed", () => {
+    // An agent's trim (no magnet) of c1's head moves c1's start to 10 but
+    // not where its pictures play: the title on it stays.
+    const p = scene();
+    const s = settle(p, trimClip(p, "c1", "start", 10), { magnet: false, linkage: true });
+    expect(findClip(s, "c1")!.clip.start).toBe(10);
+    expect(findClip(s, "t1")!.clip.start).toBe(5);
+    expect(findClip(s, "whoosh")!.clip.start).toBe(5);
+  });
+});
+
+describe("setLevel (ADR-110)", () => {
+  it("sets a sound's level, scaling its volume keys so the loudest is it", () => {
+    // normalize_loudness set the volume under a ducked song's keys, where
+    // nothing reads it: the song kept its old level.
+    let p = project([0, 90, 0]);
+    p = setParam(p, ["c1"], "volume", 1);
+    p = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => ({ ...c, keyframes: { volume: [{ f: 0, v: 0.8 }, { f: 30, v: 0.2 }, { f: 60, v: 0.8 }] } }) as Clip) })) };
+    const c = findClip(setLevel(p, "c1", 0.5), "c1")!.clip as VideoClip;
+    expect(c.volume).toBe(0.5);
+    expect(c.keyframes!.volume.map((k) => k.v)).toEqual([0.5, 0.125, 0.5]);
+    const plain = findClip(setLevel(project([0, 90, 0]), "c1", 0.5), "c1")!.clip as VideoClip;
+    expect([plain.volume, plain.keyframes?.volume]).toEqual([0.5, undefined]);
   });
 });
 

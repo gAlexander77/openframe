@@ -1573,3 +1573,88 @@ as many agents as needed.
 - **Editing source under a running dev server reloads every page on it**:
   the app an agent is driving and every drive on that server. Edit between
   test runs, or try a change in a copy outside the app's module graph.
+
+## 2026-10-20 — The fifth improvements branch: Claude Code films through its own MCP (Claude Code)
+
+The owner asked for more improvements, tested with Claude Code over MCP,
+then for bugs, missing features and edge cases to be found and fixed,
+round after round, with as many agents as needed and every decision
+taken without asking. The rounds ran on branch `improvements-5`, each
+lane in its own worktree, merged and gated before the next.
+
+- **Round 1, features never rendered and looked at** (three lanes):
+  - **Graphics** ([[ADR-099 Feathers blur the shape, title runs share a baseline, pictures take a border]]):
+    a feather as wide as its shape pinched to a bow tie (now a true
+    blur); a range's gradient spanned the whole title; a scaled word sat
+    16 px low; a color on a size key was stored as 16,711,680; a group
+    move keyed paths it did not change. New: `set_border`.
+  - **Sound** ([[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]]):
+    the city bed went digitally silent for 23 s; wind lulled for 7 s;
+    every compressor restarted at each 10 s export window (a 6 ms hole
+    and a 7 dB jump in every voiceover); a compound's EQ was saved and
+    never heard. New: a compound clip mixed as a bus, `sound_cut_off`.
+  - **Structure** ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]):
+    86 beat markers drifted off the beat after one move; unique copies
+    shared a nested compound; versions broke title cards and split
+    screens. New: `set_music_grid`, per-version `overrides`,
+    `set_clip_enabled`.
+- **The first Claude Code film.** This session's own `openframe` server
+  had failed to connect (the app was closed at startup), so a fresh
+  headless `claude -p`, run from outside the repository with only the
+  OpenFrame tools, made "Northbound", a 38 s travel ad in four shapes, and
+  reported 22 problems. Four lanes fixed them:
+  [[ADR-102 An edit moves only what its answer names, and the main track keeps the gaps it was given]]
+  (an audio-only AI tool packed the main track and moved every later cut
+  7 frames, unreported),
+  [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]],
+  [[ADR-104 Voice and sound an agent can trust without ears]] (pace as
+  asked, ducks that follow retakes, `cut_music`, `set_crossfade`, clicks
+  measured at joins) and
+  [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]].
+- **Round 3, hunters** on everything just merged:
+  [[ADR-106 What sits on a shot or marks a song follows it through every edit]]
+  (11 bugs: captions left behind by inserts; a cut from a clip's first
+  frame dropped its id and 88 markers),
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]
+  (8: every split ticked, and the click check sent agents to a fix that
+  refused splits),
+  [[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]]
+  (7: a `set_param` on a missing mask left a project no answer or undo
+  could read) and
+  [[ADR-109 What an agent can set, a person can see and change]] (8 UI
+  bugs, and a crossfade a person can make).
+- **The second Claude Code film**, "Field notes from orbit", a 46.5 s
+  vertical short with two voices, word captions and a 16:9 cut, reported
+  24 problems. With the hunters' leftovers they made seven lanes:
+  - [[ADR-110 Outlines take their color, solids their alpha, borders blur with their picture, and a shot's pieces carry their titles]];
+  - [[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]:
+    the Check tab, the agent's check in a person's words;
+  - [[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]:
+    every MP3 had played 23 ms late;
+  - [[ADR-113 A freeze fills the pause it was given, a run of lines follows its pictures, and a cut rolls in one call]];
+  - [[ADR-114 A duck opens where it is asked and keeps the hand's keys, long words set the pace, a filtered voice keeps its loudness]];
+  - [[ADR-115 A voiceover captions itself a few words at a time, and answers give what they share once]]:
+    the tester's caption restyle went from 12,436 to 3,779 characters;
+  - [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]].
+- **Checked:** every merge passed tsc and the full unit suite (1,516 tests
+  at the end); a full drive sweep after each round; each film's exports
+  looked at frame by frame.
+
+### Lessons paid for in this round
+
+- **A blind tester is one command away.** `claude -p` from a folder
+  outside the repository, allowed only the app's MCP tools and its own
+  folder, is a real user's Claude: it found 46 problems in two films that
+  every unit test and drive had passed.
+- **One app, one tester.** The tools act on the app's one open project,
+  so testers run one at a time; fix lanes run beside them on web builds.
+- **A global rounding change surfaces in drives, not unit tests.** Ties
+  to the earlier frame broke two drives that computed frames with
+  `Math.round`, and one module that kept its own rounding put song
+  markers a frame from the cuts made on them.
+- **A refusal is a contract change.** Refusing `set_param` on a missing
+  part also refused the only way to set a sound's EQ; the full sweep
+  caught it, the lane's own drives did not.
+- **Merge rewritten descriptions word by word.** When two lanes rewrite
+  one tool description, merge it against the common base token by token
+  (`git merge-file` on one word per line) rather than picking a side.

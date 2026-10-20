@@ -16,6 +16,8 @@ import type { AdjustmentClip, AudioClip, Clip, Effect, Id, Keyframe, Project, Sp
 import { CURVE_MAX, CURVE_MIN, PRESETS, type NormPoint } from "./speed";
 import { framesToSeconds, secondsToFrames } from "./time";
 import type { SectionLabel } from "./analysis/beats";
+import { markClip } from "./markers";
+import { isFootage } from "./overlays";
 
 export class EpicError extends Error {}
 
@@ -31,6 +33,36 @@ export const MUSIC_MARKERS = {
 } as const;
 
 export type MusicMarkerKind = keyof typeof MUSIC_MARKERS;
+
+/** A song's structure in its file's own seconds, as markers are made from it. */
+export interface MusicMarks {
+  beats: number[];
+  downbeats: number[];
+  phrases: number[];
+  sections: { start: number; label: SectionLabel }[];
+  drops: number[];
+}
+
+/**
+ * The markers of `kinds` on a music clip, from its song's structure (file
+ * seconds), each following the clip (lib/markers.ts): Beat (every `every`th
+ * beat), Bar, Phrase, each part by name, and Drop. The clip's own earlier
+ * markers of those kinds are replaced, so a second reading (a corrected
+ * grid) never doubles the first.
+ */
+export function markMusicClip(p: Project, clipId: Id, s: MusicMarks, kinds: MusicMarkerKind[], every = 1): Project {
+  const marks = new Map<string, { label: string; color: string; at: number[] }>();
+  const put = (label: string, color: string, at: number[]) => {
+    const was = marks.get(label);
+    marks.set(label, { label, color: was?.color ?? color, at: [...(was?.at ?? []), ...at] });
+  };
+  for (const k of new Set(kinds)) {
+    const { label, color } = MUSIC_MARKERS[k];
+    if (k === "sections") for (const [part, name] of Object.entries(SECTION_NAMES)) put(name, color, s.sections.filter((x) => x.label === part).map((x) => x.start));
+    else put(label, color, k === "beats" ? s.beats.filter((_, i) => i % Math.max(1, every) === 0) : k === "bars" ? s.downbeats : k === "phrases" ? s.phrases : s.drops);
+  }
+  return marks.size ? markClip(p, clipId, [...marks.values()]) : p;
+}
 
 export const SECTION_NAMES: Record<SectionLabel, string> = { intro: "Intro", verse: "Verse", build: "Build", drop: "Drop", breakdown: "Breakdown", outro: "Outro" };
 
@@ -57,7 +89,11 @@ export function gridFrames(p: Project, o: { beats?: number[]; grid?: Grid; marke
 
 // ---- tracks for effects -------------------------------------------------------------
 
-const isSticker = (p: Project, c: Clip) => c.type === "image" && !!ops.getAsset(p, c.assetId)?.sticker;
+/** What a hit or the bars act on: footage (a title card built as a
+ * compound is a graphic, not footage) and solid colors; never a title, a
+ * shape or a sticker, so a hit goes under the titles track that holds a
+ * title card or a button (Claude film test 2, ADR-116). */
+const isPicture = (p: Project, c: Clip) => isFootage(p, c) || (c.type === "color" && !c.shape);
 
 /** A track of adjustment layers only (hits, bars, grades): new titles and
  * media do not land on one (commands.ts landingTrack). */
@@ -278,7 +314,7 @@ export function addBeatHits(p: Project, o: BeatHits): Project {
     const next = frames[i + 1] ?? Infinity;
     hits.push({ start: f, len: Math.max(1, Math.min(dur, next - f)), kinds: these });
   }
-  const covers = (c: Clip) => c.type === "video" || c.type === "compound" || c.type === "color" || (c.type === "image" && !isSticker(p, c));
+  const covers = (c: Clip) => isPicture(p, c);
   const [q, trackId] = effectTrack(p, "Hits", hits.map((h) => [h.start, h.start + h.len]), () => effectTrackIndex(p, covers));
   return hits.reduce((r, h) => ops.addClip(r, trackId, hitLayer(h.kinds, h.start, h.len, k)), q);
 }
@@ -316,7 +352,7 @@ export function addCinematicBars(p: Project, o: CinematicBars): Project {
   if (nOut > 0) keys.push({ f: len - nOut, v: 100, ease: "easeInOut" }, { f: len, v: 0 });
   else if (keys.length) keys.push({ f: len, v: 100 });
   const clip: AdjustmentClip = { ...createAdjustmentClip(start, len), name: "Cinematic bars", effects: [fx], ...(keys.length ? { keyframes: { [path]: keys } } : {}) };
-  const covers = (c: Clip) => c.type !== "text" && !isSticker(p, c);
+  const covers = (c: Clip) => c.type === "adjustment" || isPicture(p, c);
   const bars = p.tracks.find((t) => t.kind === "video" && !t.locked && t.name.startsWith("Bars") && t.clips.every((c) => c.type === "adjustment"));
   if (bars) return ops.addClip(p, bars.id, clip, "overwrite");
   const [q, trackId] = effectTrack(p, "Bars", [[start, end]], () => effectTrackIndex(p, covers));

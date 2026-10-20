@@ -138,6 +138,7 @@ async function probeEach(files: ImportedFile[], signal: AbortSignal): Promise<Pr
         src: f.src,
         proxy,
         duration: info.duration,
+        ...(info.gapless ? { gapless: info.gapless } : {}),
         width: info.width,
         height: info.height,
         fps: info.fps,

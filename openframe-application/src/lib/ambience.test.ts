@@ -165,6 +165,42 @@ describe("ambience beds", { timeout: 60_000 }, () => {
     expect(Math.min(...perSecond)).toBeGreaterThan(-10);
   });
 
+  it("hold their balance and loudness in every take: no street gone silent, no long lull in the wind, a rocket at its loudness", () => {
+    const mono = (L: Float32Array, R: Float32Array) => L.map((v, i) => (v + R[i]) / 2);
+    const perSecond = (x: Float32Array) => {
+      let all = 0;
+      for (const v of x) all += v * v;
+      return Array.from({ length: Math.floor(x.length / RATE) }, (_, s) => {
+        let e = 0;
+        for (let i = s * RATE; i < (s + 1) * RATE; i++) e += x[i] * x[i];
+        return 10 * Math.log10((e + 1e-20) / (all + 1e-20) * (x.length / RATE));
+      });
+    };
+    // A city take with no car in its first 20 s had its cars raised without
+    // bound against the street, which then sat at digital silence for 23 s.
+    const city = mono(...makeBed("city", 30, RATE, 3));
+    expect(Math.min(...perSecond(city))).toBeGreaterThan(-12);
+    // Every short city take carries traffic, not only its hum.
+    for (const seed of [2, 3]) expect(std(envelope(mono(...makeBed("city", 12, RATE, seed)))), `city seed ${seed}`).toBeGreaterThan(1.5);
+    // Wind lulls and gusts, but never falls away for long: lulls ran
+    // together, 10 dB under the average for up to 7 s and 17 dB down.
+    for (const seed of [1, 2, 3, 4]) {
+      const w = seed === 1 ? bed("wind").mono : mono(...makeBed("wind", SECONDS, RATE, seed));
+      const env = envelope(w), avg = 10 * Math.log10(w.reduce((s, v) => s + v * v, 0) / w.length);
+      let run = 0, lull = 0;
+      for (const v of env) lull = Math.max(lull, (run = v < avg - 10 ? run + 1 : 0));
+      expect(lull / 10, `wind seed ${seed}: seconds 10 dB under`).toBeLessThanOrEqual(2);
+      expect(Math.min(...perSecond(w)), `wind seed ${seed}`).toBeGreaterThan(-14);
+    }
+    // A rocket's rare shock peaks are held by a limiter; turning the whole
+    // bed down for them left it 2.5 LU under its loudness.
+    const [rl, rr] = makeBed("rocket", 30, RATE, 3);
+    const m = new LoudnessMeter(RATE, 2);
+    m.push([rl, rr], rl.length);
+    expect(Math.abs(m.integrated() - AMBIENCE.rocket.lufs)).toBeLessThan(0.5);
+    expect(m.peak).toBeLessThanOrEqual(0.9);
+  });
+
   it("loop without a seam and have no clicks", () => {
     for (const id of Object.keys(AMBIENCE)) {
       const { mono } = bed(id);

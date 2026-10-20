@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clipGainAt, fromDb, gainEnvelope, panEnvelope, soundingClips, soundOverlaps, soundPanAt, toDb } from "./audio";
+import { clipGainAt, COMPRESSOR_SETTLE, fromDb, gainEnvelope, panEnvelope, soundingClips, soundOverlaps, soundPanAt, soundPreroll, toDb } from "./audio";
+import { COMPRESSOR_PRESETS } from "./compressor";
 import { clipForAsset, createProject, createTrack } from "./project/defaults";
-import type { AudioClip, Project, VideoClip } from "./project/types";
+import type { AudioClip, CompoundClip, Project, VideoClip } from "./project/types";
 
 const fps = { num: 30, den: 1 };
 const track = { ...createTrack("audio", "A"), volume: 0.5 };
@@ -119,5 +120,58 @@ describe("soundOverlaps", () => {
     }
     expect(clipGainAt(a, t, p.fps, 2.34, o.get(a.id))).toBe(0);
     expect(clipGainAt(b, t, p.fps, 1.6, o.get(b.id))).toBe(0);
+  });
+});
+
+describe("soundPreroll", () => {
+  it("starts a render early for a compressor, the clip's own or a compound clip's it plays through", () => {
+    const voice = { ...clip, compressor: COMPRESSOR_PRESETS.voice };
+    expect(soundPreroll({ clip, track })).toBe(0);
+    // Each 10 s export window began with the compressor's 6 ms lookahead
+    // empty: a gap in the sound, then its gain out of step.
+    expect(soundPreroll({ clip: voice, track })).toBe(COMPRESSOR_SETTLE);
+    const k = { id: "k", type: "compound", compoundId: "kk", start: 0, duration: 300, in: 0, speed: 1, volume: 1, pan: 0, fadeIn: 0, fadeOut: 0, muted: false, compressor: COMPRESSOR_PRESETS.gentle } as unknown as CompoundClip;
+    expect(soundPreroll({ clip, track, via: [{ clip: k, track }] })).toBe(COMPRESSOR_SETTLE);
+    // An echo's tail longer than that wins.
+    expect(soundPreroll({ clip: { ...voice, echo: { time: 1, feedback: 0.8, mix: 0.5 } }, track })).toBeGreaterThan(COMPRESSOR_SETTLE);
+  });
+});
+
+describe("a split", () => {
+  // A split of one sound (the same file going on at the same speed) is no
+  // splice: each half ramping to nothing over the click guard put an 8 ms,
+  // 18 dB hole in a song split on its drop, heard as a tick (preview_audio's
+  // edges found it; set_crossfade refuses a split, so nothing could fix it).
+  const song = { id: "s", src: "s.wav", name: "s", kind: "audio" as const, duration: 20, hasAudio: true, hasVideo: false };
+  const split = (edit: (a: AudioClip, b: AudioClip) => [AudioClip, AudioClip] = (a, b) => [a, b]) => {
+    const p = createProject();
+    p.assets = [song];
+    const a: AudioClip = { ...(clipForAsset(song, 0, p.fps) as AudioClip), id: "a", duration: 45, fadeIn: 0, fadeOut: 0 };
+    const b: AudioClip = { ...a, id: "b", start: 45, in: 1.5 };
+    const t = { ...createTrack("audio", "Music"), clips: edit(a, b) };
+    p.tracks = [t];
+    const o = soundOverlaps(p);
+    return (id: string, at: number) => clipGainAt(t.clips.find((c) => c.id === id)!, t, p.fps, at, o.get(id));
+  };
+  it("plays on at full gain across the cut", () => {
+    const g = split();
+    for (const at of [1.4995, 1.498, 1.497]) expect(g("a", at)).toBe(1);
+    for (const at of [1.5, 1.5005, 1.502]) expect(g("b", at)).toBe(1);
+    // The halves' own outer edges keep their guard.
+    expect(g("a", 0)).toBe(0);
+    expect(g("b", 2.9999)).toBeLessThan(0.1);
+  });
+  it("moves to the second half's level at the cut when the halves differ", () => {
+    const g = split((a, b) => [a, { ...b, volume: 0.5 }]);
+    expect(g("a", 1.49)).toBe(1);
+    expect(g("a", 1.5 - 1e-6)).toBeCloseTo(0.5, 3);
+    expect(g("b", 1.5)).toBe(0.5);
+  });
+  it("keeps the guard where the sound does not go on: another place in the file, a fade, another speed, a muted half", () => {
+    expect(split((a, b) => [a, { ...b, in: 4 }])("a", 1.4999)).toBeLessThan(0.1);
+    expect(split((a, b) => [{ ...a, fadeOut: 3 }, b])("a", 1.4999)).toBeLessThan(0.1);
+    expect(split((a, b) => [a, { ...b, fadeIn: 3 }])("b", 1.5001)).toBeLessThan(0.1);
+    expect(split((a, b) => [a, { ...b, speed: 2 }])("a", 1.4999)).toBeLessThan(0.1);
+    expect(split((a, b) => [a, { ...b, muted: true }])("a", 1.4999)).toBeLessThan(0.1);
   });
 });

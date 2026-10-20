@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMMANDS, CommandError, describeProject, runCommand, validate } from "./commands";
+import { COMMANDS, CommandError, describeProject, runAgentCommand, runCommand, validate, type CommandReport } from "./commands";
 import { createProject } from "./project/defaults";
 import * as ops from "./project/ops";
 import type { Project } from "./project/types";
@@ -20,6 +20,18 @@ describe("command registry", () => {
     }
   });
 
+  it("describes a clip's mask and crop, so a framed picture can be checked", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    const id = p.tracks[0].clips[0].id;
+    const seen = () => describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === id)!;
+    expect(seen()).not.toHaveProperty("mask");
+    expect(seen()).not.toHaveProperty("crop");
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle", width: 0.56, height: 1, feather: 0.02 });
+    p = runCommand(p, "set_crop", { clip_ids: [id], left: 0.25, right: 0.25 });
+    expect(seen()).toMatchObject({ mask: { shape: "circle", x: 0, y: 0, width: 0.56, height: 1, feather: 0.02 }, crop: { left: 0.25, top: 0, right: 0.25, bottom: 0 } });
+  });
+
   it("sets what the inspector could and agents could not: blend, key, canvas fill, copies", () => {
     let p = withAsset();
     p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
@@ -36,9 +48,10 @@ describe("command registry", () => {
     expect("canvas" in all().find((c) => c.id === v.id)!).toBe(false);
     expect(() => runCommand(p, "set_chroma_key", { clip_ids: [t.id] })).toThrow("Only video and image");
     p = runCommand(p, "set_fades", { clip_ids: [v.id], fade_in: 0.5, fade_out: 9 });
-    // 25 fps: half a second is 12.5, rounded to 13 frames; 9 s is capped at half the 4 s clip.
-    expect(all().find((c) => c.id === v.id)).toMatchObject({ fadeIn: 13, fadeOut: 50 });
-    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ fade_in: 0.52, fade_out: 2 });
+    // 25 fps: half a second is 12.5 frames, a tie, taken to 12 (the frame
+    // on screen then, ADR-102); 9 s is capped at half the 4 s clip.
+    expect(all().find((c) => c.id === v.id)).toMatchObject({ fadeIn: 12, fadeOut: 50 });
+    expect(describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === v.id)).toMatchObject({ fade_in: 0.48, fade_out: 2 });
     expect(() => runCommand(p, "set_fades", { clip_ids: [t.id], fade_in: 1 })).toThrow("set_animation");
     p = runCommand(p, "duplicate_clips", { clip_ids: [t.id], at: 5 });
     const copy = all().find((c) => c.type === "text" && c.id !== t.id)!;
@@ -340,6 +353,35 @@ describe("set_mask", () => {
     expect(mask(runCommand(box, "set_mask", { clip_ids: [id], shape: "none" }))).toBeUndefined();
   });
 
+  it("makes a round circle on a 16:9 picture with aspect 1, and says when a mask leaves the picture", () => {
+    // Claude film test 2's porthole: 16:9 footage on a 9:16 frame, its
+    // circle sized by hand (0.44 by 0.782) and moved past the bottom edge.
+    let p: Project = { ...createProject({ fps: { num: 30, den: 1 }, width: 1080, height: 1920 }), assets: [{ id: "st", kind: "video", name: "station.mp4", src: "station.mp4", duration: 10, width: 1920, height: 1080, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "st", start: 0, duration: 2 });
+    const id = p.tracks[0].clips[0].id;
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "transform.scale", value: 1.6 });
+    const mask = (q: Project) => (ops.findClip(q, id)!.clip as { mask?: Record<string, number> }).mask!;
+    const report: CommandReport = {};
+    const round = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle", width: 0.44, aspect: 1, feather: 0 }, report);
+    expect(mask(round).width).toBe(0.44);
+    expect(mask(round).height).toBeCloseTo(0.44 * (1920 / 1080), 4);
+    expect(report.notes).toBeUndefined();
+    // A height alone sets the width; a square on a tall picture likewise.
+    expect(mask(runCommand(round, "set_mask", { clip_ids: [id], height: 0.5, aspect: 1 })).width).toBeCloseTo(0.5 * (1080 / 1920), 4);
+    expect(() => runCommand(round, "set_mask", { clip_ids: [id], width: 0.3, height: 0.3, aspect: 1 })).toThrow(/not both/);
+    // Past the bottom edge: cut flat there, and the answer says so, with the y that keeps it whole.
+    const low: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.2 }, low);
+    expect(low.notes?.join(" ")).toMatch(/circle mask on c_\w+ runs past the picture's bottom edge \(to 0\.591 of its height from the center; the edge is at 0\.5\), so it is cut flat there: y 0\.109 keeps it whole/);
+    const inside: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.08 }, inside);
+    expect(inside.notes).toBeUndefined();
+    // Inverted, or a band: nothing to say.
+    const inv: CommandReport = {};
+    runCommand(round, "set_mask", { clip_ids: [id], y: 0.3, invert: true }, inv);
+    expect(inv.notes).toBeUndefined();
+  });
+
   it("needs a shape for a clip with no mask and refuses clips without a picture", () => {
     const { p, id } = masked();
     expect(() => runCommand(p, "set_mask", { clip_ids: [id], feather: 0.2 })).toThrow(/give a shape/);
@@ -347,5 +389,139 @@ describe("set_mask", () => {
     const q = runCommand(p, "add_adjustment_clip", { start: 0, duration: 2 });
     const adj = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
     expect(() => runCommand(q, "set_mask", { clip_ids: [adj.id], shape: "circle" })).toThrow(/no picture/);
+  });
+});
+
+describe("what the Claude film test found (2026-10-20, ADR-102)", () => {
+  /** 30 fps; a 12 s file. Main: a [0, 2), b [2, 4), c [4, 8); a PiP mostly
+   * over c, a music bed over all of them. */
+  const film = () => {
+    let p: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "launch.mp4", src: "launch.mp4", duration: 12, hasVideo: true, hasAudio: false }, { id: "m", kind: "audio", name: "song.wav", src: "song.wav", duration: 30, hasVideo: false, hasAudio: true }] };
+    for (const [start, duration, at] of [[0, 2, 0], [2, 2, 3], [4, 4, 6]]) p = runCommand(p, "add_media_clip", { asset_id: "a1", start, duration, in: at });
+    p = runCommand(p, "add_track", { kind: "video", name: "PiP" });
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 4.5, duration: 3, in: 0, track_id: p.tracks[0].id });
+    return runCommand(p, "add_media_clip", { asset_id: "m", start: 0, duration: 8 });
+  };
+  const at = (p: Project, id: string) => ops.findClip(p, id)!.clip.start / 30;
+  const ids = (p: Project) => ({ a: p.tracks.find((t) => t.main)!.clips[0].id, c: p.tracks.find((t) => t.main)!.clips[2].id, pip: p.tracks[0].clips[0].id, bed: p.tracks.find((t) => t.kind === "audio")!.clips[0].id });
+
+  it("carries clips on a main-track shot through a ripple trim and an insert, as the user's edits do", () => {
+    const p = film(), { a, c, pip, bed } = ids(p);
+    const trimmed = runAgentCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 2.5, ripple: true });
+    expect([at(trimmed, c), at(trimmed, pip), at(trimmed, bed)]).toEqual([4.5, 5, 0]);
+    const inserted = runAgentCommand(trimmed, "add_media_clip", { asset_id: "a1", start: 2.5, duration: 1, in: 10, mode: "insert", track_id: p.tracks.find((t) => t.main)!.id });
+    expect([at(inserted, c), at(inserted, pip), at(inserted, bed)]).toEqual([5.5, 6, 0]);
+    // A command alone ripples its own track: that was the PiP left behind.
+    expect(at(runCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 2.5, ripple: true }), pip)).toBe(4.5);
+  });
+
+  it("never closes a gap on the main track unless the call asks", () => {
+    const p = film(), b = p.tracks.find((t) => t.main)!.clips[1].id;
+    const lifted = runAgentCommand(p, "delete_clips", { clip_ids: [b] });
+    expect(lifted.tracks.find((t) => t.main)!.clips.map((x) => x.start / 30)).toEqual([0, 4]);
+    expect(runAgentCommand(p, "delete_clips", { clip_ids: [b], ripple: true }).tracks.find((t) => t.main)!.clips.map((x) => x.start / 30)).toEqual([0, 2]);
+  });
+
+  it("says where a trim stopped and why, and describes a trimmed ramp from 0 to 1", () => {
+    let p = film();
+    const { c } = ids(p);
+    // c reads 6 s of the 12 s file at 1x and ramps to 4x by its end.
+    p = runCommand(p, "set_speed_curve", { clip_id: c, points: [{ t: 0, speed: 1 }, { t: 0.5, speed: 1 }, { t: 0.95, speed: 4 }, { t: 1, speed: 4 }] });
+    const report: CommandReport = {};
+    const end = (ops.findClip(p, c)!.clip.start + ops.findClip(p, c)!.clip.duration) / 30;
+    const q = runCommand(p, "trim_clip", { clip_id: c, edge: "end", to: end + 2, ripple: true }, report);
+    const got = (ops.findClip(q, c)!.clip.start + ops.findClip(q, c)!.clip.duration) / 30;
+    expect(got).toBeLessThan(end + 2);
+    expect(report.notes).toEqual([`Stopped at ${+got.toFixed(3)} s, not ${end + 2} s: the source ends there (launch.mp4 is 12 s long, and the clip reads it at 4x at its end).`]);
+    const points = describeProject(q).tracks.flatMap((t) => t.clips).find((x) => x.id === c)!.speed_points as number[][];
+    expect(points[0]).toEqual([0, 1]);
+    expect(points.at(-1)).toEqual([1, 4]);
+    // A trim without ripple stops at the next clip, and says so.
+    const r2: CommandReport = {};
+    const a = ids(p).a;
+    runCommand(p, "trim_clip", { clip_id: a, edge: "end", to: 3 }, r2);
+    expect(r2.notes?.[0]).toMatch(/^Stopped at 2 s, not 3 s: the next clip on its track starts there/);
+  });
+
+  it("slips by seconds of source on a ramped clip, and says where the file stopped it", () => {
+    let p = film();
+    const { c } = ids(p);
+    p = runCommand(p, "set_speed_curve", { clip_id: c, points: [{ t: 0, speed: 2 }, { t: 0.5, speed: 0.5 }, { t: 1, speed: 2 }] });
+    const inOf = (q: Project) => (ops.findClip(q, c)!.clip as { in: number }).in;
+    const slipped = runCommand(p, "slip_clip", { clip_id: c, by: -0.75 });
+    expect(inOf(slipped) - inOf(p)).toBeCloseTo(-0.75, 9);
+    const report: CommandReport = {};
+    const stopped = runCommand(p, "slip_clip", { clip_id: c, by: -20 }, report);
+    expect(inOf(stopped)).toBe(0);
+    expect(report.notes).toEqual([`Slipped ${+(-inOf(p)).toFixed(3)} s, not -20 s: the source starts there.`]);
+  });
+});
+
+describe("what the edits hunt found (ADR-106)", () => {
+  /** 30 fps; three 2 s shots of a 12 s file, a caption on each. */
+  const captioned = () => {
+    let p: Project = { ...createProject(), assets: [{ id: "a1", kind: "video", name: "launch.mp4", src: "launch.mp4", duration: 12, hasVideo: true, hasAudio: false }] };
+    for (const start of [0, 2, 4]) p = runCommand(p, "add_media_clip", { asset_id: "a1", start, duration: 2, in: start });
+    return runCommand(p, "add_captions", { captions: [{ start: 0, end: 1.8, text: "One" }, { start: 2, end: 3.8, text: "Two" }, { start: 4, end: 5.5, text: "Three" }] });
+  };
+  const starts = (p: Project, kind: "video" | "text") => p.tracks.flatMap((t) => t.clips).filter((c) => c.type === kind).map((c) => c.start / 30).sort((a, b) => a - b);
+
+  it("an agent's insert carries every caption with its shot, not only the last", () => {
+    const p = captioned();
+    const q = runAgentCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 1, in: 8, mode: "insert", track_id: p.tracks.find((t) => t.main)!.id });
+    expect(starts(q, "video")).toEqual([0, 1, 3, 5]);
+    expect(starts(q, "text")).toEqual([1, 3, 5]);
+  });
+
+  it("an agent's ripple delete of a shot and its caption keeps the later captions on their shots", () => {
+    const p = captioned();
+    const two = (kind: string) => p.tracks.flatMap((t) => t.clips).find((c) => c.type === kind && c.start === 60)!.id;
+    const q = runAgentCommand(p, "delete_clips", { clip_ids: [two("video"), two("text")], ripple: true });
+    expect(starts(q, "video")).toEqual([0, 2]);
+    expect(starts(q, "text")).toEqual([0, 2]);
+  });
+
+  it("an agent's edits inside a compound and a batch's steps carry captions as its single edits do", () => {
+    const p = captioned();
+    // Inside a compound: the ripple trim moved the shots and left the captions.
+    const q = runAgentCommand(p, "create_compound_clip", { clip_ids: p.tracks.flatMap((t) => t.clips.map((c) => c.id)) });
+    const k = q.compounds![0];
+    const r = runAgentCommand(q, "edit_compound", { compound_id: k.id, command: "trim_clip", args: { clip_id: k.tracks.find((t) => t.main)!.clips[0].id, edge: "end", to: 1.9, ripple: true } });
+    const inner = { ...r, tracks: r.compounds![0].tracks };
+    expect(starts(inner, "video")).toEqual([0, 1.9, 3.9]);
+    expect(starts(inner, "text")).toEqual([0, 1.9, 3.9]);
+    // A batch: its second step saw the first caption where the insert had
+    // left it, and wrote the hook over it.
+    const main = p.tracks.find((t) => t.main)!.id, captions = p.tracks.find((t) => t.name === "Captions")!.id;
+    const b = runAgentCommand(p, "batch", { commands: [{ command: "add_media_clip", args: { asset_id: "a1", start: 0, duration: 1, in: 8, mode: "insert", track_id: main } }, { command: "add_text", args: { text: "Hook", start: 0, duration: 1, track_id: captions } }] });
+    expect(b.tracks.find((t) => t.id === captions)!.clips.map((c) => [c.start / 30, c.duration / 30])).toEqual([[0, 1], [1, 1.8], [3, 1.8], [5, 1.5]]);
+  });
+
+  it("a reversed clip's end stops at the file's start, and says so", () => {
+    let p = captioned();
+    const c = p.tracks.find((t) => t.main)!.clips[2].id;
+    p = runCommand(p, "set_reverse", { clip_id: c, reverse: true });
+    const report: CommandReport = {};
+    runCommand(p, "trim_clip", { clip_id: c, edge: "end", to: 20, ripple: true }, report);
+    // Read backward from 6 s, its end reaches the file's first frame 6 s in.
+    expect(report.notes).toEqual(["Stopped at 10 s, not 20 s: the source starts there (launch.mp4 has nothing earlier, played reversed)."]);
+  });
+
+  it("an agent's freeze frame carries the caption on the shot's second half past it (ADR-110)", () => {
+    // Shots [0,2) [2,4) [4,6) s; captions "Two" at 2-3.8 and a new one on
+    // the second shot's second half, 3.1-3.8. A 1 s freeze at 3: that half
+    // is a new clip at 4, and its caption stayed over the freeze.
+    let p = captioned();
+    p = runCommand(p, "add_text", { text: "Late", start: 3.1, duration: 0.7 });
+    const q = runAgentCommand(p, "freeze_frame", { clip_id: p.tracks.find((t) => t.main)!.clips[1].id, at: 3, duration: 1 });
+    const at = (text: string) => q.tracks.flatMap((t) => t.clips).find((c) => c.type === "text" && c.text === text)!.start / 30;
+    expect([at("One"), at("Two"), at("Late"), at("Three")]).toEqual([0, 2, 4.1, 5]);
+  });
+
+  it("a freeze frame has nothing to slip, and says so instead of naming the source's end", () => {
+    let p = captioned();
+    p = runCommand(p, "freeze_frame", { clip_id: p.tracks.find((t) => t.main)!.clips[0].id, at: 1, duration: 1 });
+    const freeze = p.tracks.find((t) => t.main)!.clips.find((c) => c.type === "video" && c.freeze)!.id;
+    expect(() => runCommand(p, "slip_clip", { clip_id: freeze, by: 1 })).toThrow(/freeze frame holds one frame/);
   });
 });

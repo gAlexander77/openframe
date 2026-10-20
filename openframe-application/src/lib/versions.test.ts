@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addAdElement, safeArea } from "./ads";
+import { VERTICAL_SAFE } from "./align";
 import { runCommand } from "./commands";
 import { paramAt } from "./keyframes";
 import { createProject } from "./project/defaults";
@@ -15,7 +16,7 @@ setTextMeasure((c, w, h) => {
   const lines = c.text.split("\n").length * Math.max(1, Math.ceil(widest / (c.style.maxWidth * w)));
   return { width: Math.min(widest, c.style.maxWidth * w) + 4, height: size * c.style.lineHeight * lines + 4 };
 });
-import { cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject } from "./versions";
+import { cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject, versionSound } from "./versions";
 
 /** A 15 s 16:9 master: a wide shot pushing in, a title low on the left,
  * a logo-sized picture, music, and a 3 s end card. */
@@ -90,7 +91,10 @@ describe("versions", () => {
     const room = (1 - 0.11 - 0.19) * 1080;
     expect(short.style.size).toBeLessThan(120 * (1080 / 1920));
     expect(fittedSize({ ...p, width: 1080, height: 1920 }, { ...short, style: { ...short.style, maxWidth: 1 } }).w).toBeLessThanOrEqual(room + 1);
-    expect(long.style.size).toBeCloseTo(120 * (1080 / 1920) * 0.75, 1);
+    // Three quarters, then a few percent more: room for the outline
+    // check_project would suggest, so it stays clear of the buttons (ADR-103).
+    expect(long.style.size).toBeLessThanOrEqual(120 * (1080 / 1920) * 0.75 + 0.01);
+    expect(long.style.size).toBeGreaterThan(120 * (1080 / 1920) * 0.75 * 0.95);
   });
 
   it("fits the footage over a blurred copy when asked", () => {
@@ -187,8 +191,10 @@ describe("a 9:16 ad in other shapes", () => {
     return { left: cx - hw, right: cx + hw, top: cy - hh, bottom: cy + hh, h };
   }
   const card = (p: Project) => clips(p).filter((c) => c.name === "End card" && c.type !== "color");
+  // The safe area as check_project judges it: on any tall frame (4:5 too)
+  // the column the apps' buttons leave (ADR-101).
   const area = (p: Project) => {
-    const s = safeArea(p);
+    const s = p.height > p.width ? VERTICAL_SAFE : safeArea(p);
     return { left: s.left * p.width, right: p.width * (1 - s.right), top: s.top * p.height, bottom: p.height * (1 - s.bottom) };
   };
 
@@ -211,7 +217,9 @@ describe("a 9:16 ad in other shapes", () => {
       expect(Math.max(...boxes.map((b) => b.bottom)), ratio).toBeLessThanOrEqual(r.bottom + 0.5);
       expect((Math.min(...boxes.map((b) => b.left)) + Math.max(...boxes.map((b) => b.right))) / 2, ratio).toBeCloseTo(q.width / 2, 0);
       // The same rhythm as the master's: the stack grew as its type did.
-      rhythm(boxes).forEach((g, i) => expect(g, ratio).toBeCloseTo(rhythm(before)[i], 2));
+      // (4:5's column is too short for it: the card shrinks, its type held
+      // at the readable size, so its gaps close a little.)
+      if (ratio !== "4:5") rhythm(boxes).forEach((g, i) => expect(g, ratio).toBeCloseTo(rhythm(before)[i], 2));
     }
   });
 
@@ -238,8 +246,11 @@ describe("a 9:16 ad in other shapes", () => {
       const q = reshape(p, ratio, "fill");
       const badge = clips(q).filter((c) => c.name === "Offer badge").map((c) => boxOn(q, c));
       const r = area(q);
-      expect(Math.max(...badge.map((b) => b.right)), ratio).toBeCloseTo(r.right, 0);
-      expect(Math.min(...badge.map((b) => b.top)), ratio).toBeCloseTo(r.top, 0);
+      // In its corner, a few pixels in: room for the outline check_project
+      // would suggest on its text (ADR-103).
+      const near = (v: number, edge: number, inward: number) => expect(Math.abs(v - (edge + inward * 1.5)), ratio).toBeLessThanOrEqual(2);
+      near(Math.max(...badge.map((b) => b.right)), r.right, -1);
+      near(Math.min(...badge.map((b) => b.top)), r.top, 1);
       // The photo reached past 9:16's safe area into the captions' band; it
       // stays on the center line rather than against an edge.
       const photo = byType(q, "image").find((c) => c.assetId === "photo")!;
@@ -255,5 +266,108 @@ describe("a 9:16 ad in other shapes", () => {
     expect(b.shape.height * 1920).toBeCloseTo(a.shape.height * 1080, 1);
     // Stroke pixels at a 1080-tall frame: the same 6 px on a 1920-tall one.
     expect((b.shape.stroke.width * 1920) / 1080).toBeCloseTo(6, 1);
+  });
+});
+
+describe("a version's file", () => {
+  it("answers the loudness its mix reached, as export_video does (ADR-103)", () => {
+    const exported = { bytes: 1, loudness: { integrated: -14.15, truePeak: -1.1 }, info: "Loudness -14.8 LUFS, normalized to -14.1 LUFS." };
+    expect(versionSound(exported, "Saved as Roast 9x16 (2).mp4: the name was taken.")).toEqual({
+      loudness: { integrated: -14.15, truePeak: -1.1 },
+      info: "Loudness -14.8 LUFS, normalized to -14.1 LUFS.",
+      note: "Saved as Roast 9x16 (2).mp4: the name was taken.",
+    });
+    expect(versionSound({ note: "AAC encoded in software." })).toEqual({ note: "AAC encoded in software." });
+    expect(versionSound({})).toEqual({});
+  });
+});
+
+describe("pixel sizes in versions (ADR-108)", () => {
+  /** A framed, shadowed picture-in-picture (its border keyed) and a
+   * feathered glow (its feather keyed), on a 16:9 master. */
+  function framed(): Project {
+    let p: Project = { ...createProject(), assets: [{ id: "shot", kind: "video", name: "shot.mp4", src: "shot.mp4", duration: 20, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const pip = clips(p).find((c) => c.type === "video" && !p.tracks.find((t) => t.clips.includes(c))!.main)!.id;
+    p = runCommand(p, "set_param", { clip_ids: [pip], path: "transform.scale", value: 0.4 });
+    p = runCommand(p, "set_border", { clip_ids: [pip], width: 12 });
+    p = runCommand(p, "add_keyframe", { clip_id: pip, path: "border.width", at: 1, value: 24 });
+    p = runCommand(p, "set_shadow", { clip_ids: [pip], blur: 60, x: 9, y: 30 });
+    p = runCommand(p, "add_shape", { kind: "ellipse", start: 0, duration: 4, width: 0.2, feather: 120 });
+    const glow = byType(p, "color")[0].id;
+    return runCommand(p, "add_keyframe", { clip_id: glow, path: "shape.feather", at: 1, value: 60 });
+  }
+  const pip = (p: Project) => clips(p).find((c) => c.type === "video" && "border" in c && c.border) as VideoClip;
+  const glow = (p: Project) => byType(p, "color")[0];
+
+  it("keeps a border's, a drop shadow's and a feather's pixels against the short side, keys too", () => {
+    const p = framed();
+    const q = reshape(p, "9:16", "fill");
+    // Pixels at a 1080-tall frame drawn on a 1920-tall one: the same pixels
+    // there take 1080/1920 of the number. Before, a 12 px frame drew 21 px
+    // and a 120 px feather 213 px around shapes that kept their size.
+    const k = 1080 / 1920;
+    expect(pip(q).border).toEqual({ ...pip(p).border!, width: +(12 * k).toFixed(2) });
+    expect(pip(q).keyframes!["border.width"][0].v).toBeCloseTo(24 * k, 2);
+    expect(pip(q).shadow).toMatchObject({ blur: +(60 * k).toFixed(2), x: +(9 * k).toFixed(2), y: +(30 * k).toFixed(2), opacity: 0.5 });
+    expect(glow(q).shape!.feather! * (1920 / 1080)).toBeCloseTo(120, 1);
+    expect(glow(q).keyframes!["shape.feather"][0].v * (1920 / 1080)).toBeCloseTo(60, 1);
+    // A square version keeps the height, so the numbers stay.
+    const s = reshape(p, "1:1", "fill");
+    expect([pip(s).border!.width, pip(s).shadow!.blur, glow(s).shape!.feather]).toEqual([12, 60, 120]);
+  });
+});
+
+describe("what rides on a picture in versions (ADR-110)", () => {
+  /** On a 16:9 master: a full-frame shot blurred, a picture-in-picture
+   * pixelated and blurred (its blur keyed), a title blurred and shaken. */
+  function looks(): { p: Project; shot: string; pip: string; title: string } {
+    let p: Project = { ...createProject(), assets: [{ id: "shot", kind: "video", name: "shot.mp4", src: "shot.mp4", duration: 20, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const shot = clips(p)[0].id;
+    p = runCommand(p, "add_effect", { clip_id: shot, type: "blur", params: { amount: 30 } });
+    p = runCommand(p, "add_effect", { clip_id: shot, type: "glow" });
+    p = runCommand(p, "add_media_clip", { asset_id: "shot", start: 0, duration: 4 });
+    const pip = clips(p).find((c) => c.type === "video" && c.id !== shot)!.id;
+    p = runCommand(p, "set_param", { clip_ids: [pip], path: "transform.scale", value: 0.4 });
+    p = runCommand(p, "add_effect", { clip_id: pip, type: "pixelate", params: { size: 24 } });
+    p = runCommand(p, "add_effect", { clip_id: pip, type: "blur", params: { amount: 20 } });
+    p = runCommand(p, "add_keyframe", { clip_id: pip, path: "effects.blur.amount", at: 1, value: 40 });
+    p = runCommand(p, "add_text", { text: "Hot", start: 0, duration: 4, style: { size: 120 } });
+    const title = byType(p, "text")[0].id;
+    p = runCommand(p, "add_effect", { clip_id: title, type: "blur", params: { amount: 10 } });
+    p = runCommand(p, "set_wiggle", { clip_ids: [title], target: "position", amplitude: 12 });
+    return { p, shot, pip, title };
+  }
+  const by = (p: Project, id: string) => clips(p).find((c) => c.id === id) as VideoClip | TextClip;
+  const param = (c: Clip, type: string, k: string) => ("effects" in c ? c.effects.find((e) => e.type === type)!.params[k] : NaN);
+
+  it("scales effects' pixels and a position wiggle with the picture they are on, keys too", () => {
+    const { p, shot, pip, title } = looks();
+    const q = reshape(p, "9:16", "fill");
+    // The picture-in-picture keeps its pixels against the short side, so
+    // its blocks and blur do: the same pixels on a 1920-tall frame take
+    // 1080/1920 of the number. Before, they drew 1.78 times as large.
+    const k = 1080 / 1920;
+    expect(param(by(q, pip), "pixelate", "size")).toBeCloseTo(24 * k, 4);
+    expect(param(by(q, pip), "blur", "amount")).toBeCloseTo(20 * k, 4);
+    const blurId = (by(q, pip) as VideoClip).effects.find((e) => e.type === "blur")!.id;
+    expect(by(q, pip).keyframes![`effects.${blurId}.amount`][0].v).toBeCloseTo(40 * k, 4);
+    // The full-frame shot is drawn 1.78 times larger to cover the tall
+    // frame: its blur grows with it, as it did, against what it shows.
+    expect(param(by(q, shot), "blur", "amount")).toBe(30);
+    // So does its glow's reach (ADR-117): it stays.
+    expect((by(q, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params).toEqual((by(p, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params);
+    // The title's blur and shake keep their size against its letters: the
+    // shake was 1.78 times as far up and down, 0.56 across.
+    const [a, b] = [by(p, title) as TextClip, by(q, title) as TextClip];
+    const px = (c: TextClip, f: Project) => (c.style.size * f.height) / 1080;
+    expect((param(b, "blur", "amount") * q.height) / px(b, q)).toBeCloseTo((param(a, "blur", "amount") * p.height) / px(a, p), 3);
+    expect((b.wiggle!.x!.amplitude * q.width) / px(b, q)).toBeCloseTo((a.wiggle!.x!.amplitude * p.width) / px(a, p), 3);
+    expect((b.wiggle!.y!.amplitude * q.height) / px(b, q)).toBeCloseTo((a.wiggle!.y!.amplitude * p.height) / px(a, p), 3);
+    // A square version keeps the height and the picture's pixels: nothing changes.
+    const s = reshape(p, "1:1", "fill");
+    expect([param(by(s, pip), "pixelate", "size"), param(by(s, pip), "blur", "amount")]).toEqual([24, 20]);
   });
 });

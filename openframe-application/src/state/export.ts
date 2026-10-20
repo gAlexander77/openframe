@@ -12,7 +12,9 @@ import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
-import { versionProject, type VersionSpec } from "../lib/versions";
+import { captionCollisions, versionProject, versionSound, type CaptionCollision, type VersionSpec } from "../lib/versions";
+import { hiddenNote, titlesInFront, type Hidden } from "../lib/behind";
+import { measureBehind } from "./behind";
 import { copyProject } from "../lib/project/copy";
 import { projectSummary } from "../lib/project/summary";
 import { findClip } from "../lib/project/ops";
@@ -21,7 +23,8 @@ import { layerAt } from "../lib/render/plan";
 import type { SubjectNote } from "../lib/reframe";
 import type { VisualClip } from "../lib/project/types";
 import { lookAtShots } from "./subjects";
-import { seenShots } from "../lib/designCheck";
+import { seenLetters, seenShots, seenTexts } from "../lib/designCheck";
+import { sheetGrid, tileSize } from "../lib/sheetGrid";
 import { platform } from "../platform";
 import { provide } from "./actions";
 import { rootInPoint, rootOutPoint, store } from "./store";
@@ -310,10 +313,37 @@ export interface VersionFile {
   seconds: number;
   bytes: number;
   textless?: true;
-  /** Set when the file took a numbered name (renamedNote). */
+  /** What did not go as asked (a codec, a loudness the peaks held short),
+   * and the numbered name the file took (renamedNote). */
   note?: string;
+  /** With a loudness target: what the mix reached (LUFS, dBTP), as
+   * export_video answers it. */
+  loudness?: { integrated: number; truePeak: number };
+  /** Good news: the mix normalized to its target, and how. */
+  info?: string;
   /** Where its framing cuts a shot's subject, if anywhere. */
   subjects?: SubjectReport[];
+  /** Titles behind their subject that the subject hides in this shape. */
+  titles?: TitleReport[];
+  /** Pictures and graphics drawn across the burned captions in this shape. */
+  caption_overlaps?: CaptionCollision[];
+}
+
+/** A title behind its subject (text_behind_subject) that a version's
+ * shape lets the subject hide (lib/behind.ts). */
+export interface TitleReport {
+  clip_id: string;
+  subject_clip_id: string;
+  /** Version seconds. */
+  at: number;
+  /** The share of its letters the subject covers there, and in the master. */
+  hidden: number;
+  master?: number;
+  note: string;
+  /** What to do about it, or what the version did (the title shown in
+   * front: its subject's copy off in that version). */
+  fix?: string;
+  done?: string;
 }
 
 /** A subject a version's framing cuts, as an agent reads it. */
@@ -354,16 +384,55 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
   const keep = o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps);
   const reshaped = o.versions.some((v) => v.ratio !== "original");
   const looks = reshaped ? await lookAtShots(master) : undefined;
-  return o.versions.map((v) => {
+  const made = o.versions.map((v) => {
     const notes: SubjectNote[] = [];
-    const project = versionProject(master, v, keep, looks, notes);
+    return { spec: v, project: versionProject(master, v, keep, looks, notes), notes };
+  });
+  // Titles behind their subject: how much the subject hides in each shape,
+  // against the master (ADR-103); one hidden past the limit shows in front
+  // instead (its subject's copy off in that version), unless the version's
+  // overrides place the title or the copy by hand.
+  const before = reshaped ? await safely(() => measureBehind(master)) : [];
+  const out = [];
+  for (const m of made) {
+    let project = m.project, titles: TitleReport[] = [];
+    if (before.length) {
+      const hidden = await safely(() => measureBehind(project));
+      const front = titlesInFront(project, hidden, new Set((m.spec.overrides ?? []).map((x) => x.clip_id)));
+      titles = titleReports(project, hidden, before, front.off);
+      project = front.project;
+    }
     // Only where the shot is seen: not under an end card or another shot.
-    const runs = notes.length ? seenShots(project, true) : [];
+    const runs = m.notes.length ? seenShots(project, true) : [];
     const seen = (n: SubjectNote) => {
       const f = secondsToFrames(n.at, project.fps);
       return runs.some((r) => r.clipId === n.clipId && f >= r.start && f < r.start + r.duration);
     };
-    return { spec: v, project, notes: notes.filter(seen) };
+    // A picture or graphic across the burned captions (ADR-116).
+    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: captionCollisions(project) });
+  }
+  return out;
+}
+
+/** A measurement that cannot render here is left out, not a failure. */
+async function safely(f: () => Promise<Hidden[]>): Promise<Hidden[]> {
+  try {
+    return await f();
+  } catch {
+    return [];
+  }
+}
+
+/** The titles a version's subject hides past the limit, as an agent reads
+ * them; `off`: the subject copies turned off for them (titlesInFront). */
+function titleReports(q: Project, hidden: Hidden[], master: Hidden[], off: string[]): TitleReport[] {
+  const text = new Map(q.tracks.flatMap((t) => t.clips).flatMap((c) => (c.type === "text" ? [[c.id, c.text] as const] : [])));
+  return hidden.flatMap((h) => {
+    const was = master.find((x) => x.titleId === h.titleId)?.share;
+    const say = hiddenNote(q, h, text.get(h.titleId) ?? "", was);
+    if (!say) return [];
+    const done = off.includes(h.subjectId) ? `its subject's copy ${h.subjectId} is off in this version, so the title reads whole in front of it (an override {clip_id: "${h.subjectId}", hidden: false} keeps it behind, with the title moved: {clip_id: "${h.titleId}", y})` : undefined;
+    return [{ clip_id: h.titleId, subject_clip_id: h.subjectId, at: +framesToSeconds(h.frame, q.fps).toFixed(2), hidden: h.share, ...(was !== undefined ? { master: was } : {}), note: say.message, ...(done ? { done } : { fix: say.fix }) }];
   });
 }
 
@@ -382,7 +451,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   job = new AbortController();
   const tid = toast(`Exporting ${items.length} versions`, "progress");
   try {
-    for (const [i, { spec, project: q, notes }] of items.entries()) {
+    for (const [i, { spec, project: q, notes, titles, overlaps }] of items.entries()) {
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
@@ -403,7 +472,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
       const renamed = platform.createAgentExportTarget ? renamedNote(`${name}.${plan.extension}`, path) : undefined;
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...(renamed ? { note: renamed } : {}), ...(notes.length ? { subjects: reportOf(notes) } : {}) });
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);
@@ -422,25 +491,38 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
  * cut before rendering any. A tile where the framing cuts a shot's
  * subject outlines the subject in orange and says so; the reports list
  * every such shot with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileHeight?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[] }> {
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[] }> {
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
-  const th = o.tileHeight ?? 220, gap = 6, label = 22;
-  const rows = items.map(({ project: q, notes }) => ({ q, notes, tw: Math.round((th * q.width) / q.height) }));
-  const width = Math.max(...rows.map((r) => gap + at.length * (r.tw + gap)), 480);
-  const out = new OffscreenCanvas(width, gap + rows.length * (label + th + gap));
+  const gap = 6, label = 22;
+  // Each version's moments wrap into rows inside the sheet's width (ADR-115).
+  const blocks = items.map(({ project: q, notes, titles, overlaps }) => {
+    const { tw, th } = tileSize(q.width, q.height, o.tileWidth);
+    return { q, notes, titles, overlaps, tw, th, ...sheetGrid(tw, at.length, gap) };
+  });
+  const tops: number[] = [];
+  let height = gap;
+  for (const b of blocks) {
+    tops.push(height);
+    height += label + b.rows * (b.th + gap);
+  }
+  const width = Math.max(...blocks.map((b) => gap + b.columns * (b.tw + gap)), 480);
+  const out = new OffscreenCanvas(width, height);
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw, notes }] of rows.entries()) {
-    const y = gap + ri * (label + th + gap);
+  for (const [ri, { q, tw, th, columns, notes, titles, overlaps }] of blocks.entries()) {
+    const top = tops[ri];
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
     g.font = "bold 14px sans-serif";
-    g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, y + 16);
-    for (const [ci, share] of at.entries()) {
+    g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, top + 16);
+    for (const [i, share] of at.entries()) {
       const frame = Math.min(length - 1, Math.max(0, Math.round(share * length)));
       const bmp = await createImageBitmap(await exportStill(q, frame, tw * 2, th * 2));
+      const ci = i % columns;
+      // y + label is the tile's top, as before: a wrapped row sits one tile lower.
+      const y = top + Math.floor(i / columns) * (th + gap);
       const x = gap + ci * (tw + gap);
       g.drawImage(bmp, x, y + label, tw, th);
       bmp.close();
@@ -488,12 +570,56 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
         g.fillStyle = "#ff9f1a";
         g.fillText(say, x + 9, y + label + th - 11);
       }
+      // A title its subject hides in this shape, showing now: outlined.
+      for (const t of titles) {
+        const s = seenTexts(q).find((x) => x.c.id === t.clip_id && frame >= x.start && frame < x.start + x.duration);
+        const b = s && seenLetters(q, s, frame)?.box;
+        if (!b) continue;
+        const k = tw / q.width;
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
+        g.restore();
+        const say = t.done ? "title in front" : "title " + Math.round(t.hidden * 100) + "% hidden";
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 46, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 33);
+      }
+      // A picture or graphic across the captions showing now: outlined
+      // where it shows (a porthole's circle, not its whole frame).
+      for (const c of overlaps) {
+        const clip = findClip(q, c.clip_id)?.clip;
+        if (!clip || frame < clip.start || frame >= clip.start + clip.duration) continue;
+        const k = tw / q.width, b = c.box;
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
+        g.restore();
+        const say = `${c.layer} the captions`;
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 68, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 55);
+      }
     }
   }
   // JPEG like the other contact sheets: a PNG sheet of footage can pass the
   // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
   const blob = await out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
-  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length) };
+  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length), titles: items.map((it) => ({ version: it.project.name, reports: it.titles })).filter((x) => x.reports.length), overlaps: items.map((it) => ({ version: it.project.name, reports: it.overlaps })).filter((x) => x.reports.length) };
 }
 
 /**
@@ -502,13 +628,13 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
  * fine-tune by hand or with tools and export from there; nothing is
  * exported and the master stays open and as it was.
  */
-export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[] }[]> {
+export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[] }[]> {
   const items = await versionProjects(o);
   const saved = [];
-  for (const { project: q, notes } of items) {
+  for (const { project: q, notes, titles, overlaps } of items) {
     const copy = copyProject(q, q.name);
     await platform.saveProject(copy, projectSummary(copy));
-    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}) });
+    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
   }
   toast(`Saved ${saved.length} version${saved.length === 1 ? "" : "s"} as projects`);
   return saved;

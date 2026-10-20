@@ -18,7 +18,9 @@ it("makes every effect at its length, in range, audible and the same each time",
     expect(Math.sqrt(energy / l.length), id).toBeGreaterThan(0.01);
     expect(s.make(48000)[0]).toEqual(l);
   }
-});
+  // Every effect synthesized twice: 2 s alone, past vitest's 5 s with the
+  // machine busy (it flaked in full runs beside agents' builds).
+}, 30000);
 
 it("sweeps a whoosh's band up and back down", () => {
   // Zero crossings per window track the band's center: more in the middle.

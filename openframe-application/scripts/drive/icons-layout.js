@@ -20,7 +20,7 @@ async (page) => {
       return r.left < p.left - 1 || r.right > p.right + 1 || r.top < p.top - 1 || r.bottom > p.bottom + 1;
     }).map((e) => e.textContent));
     for (const tab of await tabs.all()) { await tab.click(); }
-    check(`${width}-all-library-tabs`, clipped.length === 0 && await tabs.count() === 11, clipped);
+    check(`${width}-all-library-tabs`, clipped.length === 0 && await tabs.count() === 12, clipped); // 12 with Check (ADR-111)
     for (const kind of ['details', 'text']) {
       await page.evaluate((kind) => {
         const v = window.videoEditor;

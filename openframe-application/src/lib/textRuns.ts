@@ -88,6 +88,42 @@ export function measureRuns(text: string, start: number, style: TextStyle, measu
   return runSegments(text, start, style).reduce((width, r) => width + measure(r.text, r.style), 0);
 }
 
+/** A piece of a title as the rasterizer draws it: where its text starts,
+ * its left edge and width, and its line's middle (raster pixels). */
+export interface RunPiece { start?: number; text?: string; x: number; width: number; y: number }
+
+/** The box each run's letters cover in the raster, across every line it
+ * wraps onto (ADR-099): a run's own gradient runs from its first letter to
+ * its last, as a word styled in a layout tool does, not across the whole
+ * title. A piece's width is its advance, which counts `letterSpacing`
+ * after its last letter too: the box ends on the letter (ADR-108). Keyed
+ * by the run. */
+export function runBoxes(runs: TextRun[], pieces: RunPiece[], lineHeight: number, letterSpacing = 0): Map<TextRun, { left: number; top: number; right: number; bottom: number }> {
+  const boxes = new Map<TextRun, { left: number; top: number; right: number; bottom: number }>();
+  for (const p of pieces) {
+    const at = p.start ?? 0;
+    const run = runs.find((r) => r.start <= at && at < r.end);
+    if (!run) continue;
+    const b = boxes.get(run);
+    const top = p.y - lineHeight / 2, bottom = p.y + lineHeight / 2;
+    const right = p.x + p.width - (p.text === "" ? 0 : letterSpacing);
+    boxes.set(run, b ? { left: Math.min(b.left, p.x), top: Math.min(b.top, top), right: Math.max(b.right, right), bottom: Math.max(b.bottom, bottom) } : { left: p.x, top, right, bottom });
+  }
+  return boxes;
+}
+
+/** How far to move each piece down so a line's pieces share one baseline
+ * (ADR-099). `above` is how far below the line's middle a piece's own font
+ * puts its baseline when drawn centered there (it grows with the size):
+ * the line takes its tallest piece's baseline, so a scaled word sits on
+ * the line with its neighbors instead of hanging below them, and the line's
+ * content stays inside its height. Pieces are grouped into lines by `y`. */
+export function baselineShifts(pieces: { y: number; above: number }[]): number[] {
+  const deepest = new Map<number, number>();
+  for (const p of pieces) deepest.set(p.y, Math.max(deepest.get(p.y) ?? -Infinity, p.above));
+  return pieces.map((p) => deepest.get(p.y)! - p.above);
+}
+
 export function styleRange(text: string, runs: TextRun[] | undefined, start: number, end: number, style: Partial<TextRun>, clear = false): TextRun[] {
   if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > text.length || start >= end) throw new Error("Text range must be within the text, with start before end");
   if (!clear) return cleanRuns([...(runs ?? []), { ...style, start, end }], text.length);

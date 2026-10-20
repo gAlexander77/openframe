@@ -26,12 +26,12 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { upsertKey } from "./keyframes";
-import { keyframeProblem } from "./animatable";
-import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints } from "./speed";
+import { paramAt, upsertKey } from "./keyframes";
+import { keyframeProblem, partNeeds } from "./animatable";
+import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, presetOf, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
@@ -40,7 +40,7 @@ import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { breakCompound, breakProblem, compoundProblem, compoundView, copyCompound, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
 import { addTemplate, findTemplate, TEXT_TEMPLATES, wordArtStyle } from "./templates";
-import { deleteMarkers, updateMarker } from "./markers";
+import { deleteMarkers, followClips, updateMarker } from "./markers";
 import { relinkAsset } from "./project/relink";
 import { closeAllGaps, closeGap, nudgeClips } from "./project/gaps";
 import { replaceClip } from "./project/replace";
@@ -53,16 +53,21 @@ import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup 
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
 import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
-import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
+import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
-import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
+import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
+import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
+import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
+import { isDialog } from "./analysis/balance";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
-import { placeOnTop } from "./overlays";
+import { isFootage, placeOnTop, underAdjustmentNote } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
 import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW_PARAMS } from "./shadow";
-import { COLOR_PATHS, colorKey } from "./textAnim";
+import { BORDER_DEFAULT, BORDER_PARAMS, BORDER_WIDTH_MAX, cleanBorder } from "./border";
+import { cleanColorize, COLORIZE_DEFAULT } from "./colorize";
+import { COLOR_PATHS, colorKey, keyColor } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
 import { didYouMean } from "./didYouMean";
@@ -175,6 +180,24 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
   return errs;
 }
 
+/** A decimal number written out: 1, -2.5, .5, 1e3. Not "", "1.0s", "0x10" or "Infinity". */
+const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
+
+/**
+ * `value` with every string the schema wants a number for, and that spells
+ * one, read as that number. Some clients send a model's 1.0 as the string
+ * "1.0", and set_speed_ramp answered "hold must be a number" (ADR-113).
+ * Anything else is left as sent, for validate to refuse.
+ */
+export function coerceNumbers(value: unknown, schema: JsonSchema): unknown {
+  if ((schema.type === "number" || schema.type === "integer") && typeof value === "string" && NUMERIC.test(value.trim())) return Number(value.trim());
+  if (schema.type === "array" && Array.isArray(value) && schema.items) return value.map((v) => coerceNumbers(v, schema.items!));
+  if (schema.type === "object" && schema.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, schema.properties![k] ? coerceNumbers(v, schema.properties![k]) : v]));
+  }
+  return value;
+}
+
 // ---- helpers for runners ---------------------------------------------------------
 
 const f = (p: Project, seconds: unknown) => secondsToFrames(Number(seconds), p.fps);
@@ -186,6 +209,53 @@ function clipOrThrow(p: Project, id: unknown) {
   const loc = ops.findClip(p, String(id));
   if (!loc) throw new CommandError(`no clip with id ${id}`);
   return loc;
+}
+
+/** Why a trim stopped short, in words (ops.trimStop says which limit). */
+function trimStopReason(p: Project, c: Clip, edge: ops.Edge, why: ops.TrimStop): string {
+  if (why === "length") return "a clip keeps at least one frame";
+  if (why === "zero") return "the timeline starts at 0";
+  if (why === "neighbor") return edge === "end" ? "the next clip on its track starts there (ripple: true pushes it later)" : "the clip before it on its track ends there (ripple: true keeps this clip's start and moves the clips after it)";
+  if (!ops.isTimed(c)) return "the source ends there";
+  const file = c.type === "compound" ? "its compound's timeline" : (ops.getAsset(p, c.assetId)?.name ?? "the file");
+  // A reversed clip reads its file backward: its end reaches toward the
+  // file's start and its start toward the file's end. Its end edge said
+  // "the source ends there" when it had reached the file's first frame
+  // (ADR-106).
+  const rev = "reverse" in c && c.reverse ? ", played reversed" : "";
+  if ((edge === "start") !== !!rev) return `the source starts there (${file} has nothing earlier${rev})`;
+  const rate = c.speedCurve ? speedAt(c.speedCurve.points, edge === "end" ? c.duration : 0) : c.speed;
+  return `the source ends there (${file} is ${+ops.sourceSeconds(p, c).toFixed(3)} s long${rev}${Math.abs(rate - 1) > 1e-3 ? `, and the clip reads it at ${+rate.toFixed(2)}x at its ${edge}` : ""})`;
+}
+
+/** Where a closed mask leaves its picture at clip frame `rel` (and is cut
+ * flat there), with the place or size that keeps it whole; nothing when it
+ * stays inside, is inverted, or is a line or a band (Claude film test 2: a
+ * porthole's circle ran past the picture's bottom edge in silence). */
+function maskEdgeNote(p: Project, id: Id, rel: number, at: number): string | undefined {
+  const c = ops.findClip(p, id)?.clip as VisualClip | undefined;
+  const m = c && "mask" in c ? c.mask : undefined;
+  if (!c || !m || m.invert) return undefined;
+  const v = (k: string) => paramAt(c, `mask.${k}`, rel);
+  const now = { ...m, x: v("x"), y: v("y"), width: v("width"), height: v("height"), rotation: v("rotation") };
+  const r = maskReach(now, pictureAspect(p, c, at));
+  if (!r) return undefined;
+  const past = (["left", "right", "top", "bottom"] as const).filter((e) => (e === "left" || e === "top" ? -r[e] : r[e]) > 0.502);
+  if (!past.length) return undefined;
+  const n = (x: number) => +x.toFixed(3);
+  const hx = (r.right - r.left) / 2, hy = (r.bottom - r.top) / 2;
+  const fix: string[] = [];
+  if (past.some((e) => e === "left" || e === "right")) fix.push(hx <= 0.5 ? `x ${n(Math.max(hx - 0.5, Math.min(0.5 - hx, now.x)))}` : `width ${n(now.width / (2 * hx))}`);
+  if (past.some((e) => e === "top" || e === "bottom")) fix.push(hy <= 0.5 ? `y ${n(Math.max(hy - 0.5, Math.min(0.5 - hy, now.y)))}` : `height ${n(now.height / (2 * hy))}`);
+  const edges = past.map((e) => `${e} edge (to ${n(Math.abs(r[e]))} of its ${e === "left" || e === "right" ? "width" : "height"} from the center; the edge is at 0.5)`).join(" and its ");
+  return `The ${m.shape} mask on ${id} runs past the picture's ${edges}, so it is cut flat there: ${fix.join(" and ")} keeps it whole.`;
+}
+
+/** Say so when a title or graphic placed on a track the caller chose sits
+ * under an adjustment layer (ADR-116). */
+function noteUnderAdjustment(p: Project, id: Id, what: string, report?: CommandReport) {
+  const note = report && underAdjustmentNote(p, id, what);
+  if (note) (report!.notes ??= []).push(note);
 }
 
 function trackOrThrow(p: Project, id: unknown): Track {
@@ -454,7 +524,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_text",
-    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
+    description: "Add a text (title) clip. Position x/y are offsets from the canvas center as fractions of its width/height (y=0.35 is near the bottom). It lands above everything at that time (titles, shapes, a grade or beat hits), sharing a free titles track when one is there; on track_id it goes where asked, and the answer notes an adjustment layer above it (its grade or zoom applies to the title too). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips. Lines wrap inside the title-safe area by default (style.maxWidth): a centered title within 90% of the width, on 9:16 within the column the apps' buttons leave, one off center within twice the room on its nearer side; \n breaks a line where you choose.",
     input: S.obj(
       {
         text: S.str("The words to show; \\n for line breaks"),
@@ -464,11 +534,11 @@ export const COMMANDS: Command[] = [
         y: S.num("Vertical offset, -0.5..0.5"),
         style: TEXT_STYLE_SCHEMA,
         role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
-        track_id: S.str("Track id"),
+        track_id: S.str("Track id; default above everything at that time"),
       },
       ["text", "start", "duration"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
@@ -476,8 +546,13 @@ export const COMMANDS: Command[] = [
       style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
       let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
       clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
-      const [q, trackId] = landingTrack(p, clip, a.track_id);
-      return ops.addClip(q, trackId, clip);
+      // Above everything showing then, as add_shape and stickers land: a
+      // text added after its button went under it, on a free track below
+      // the grade (Claude film test 2, ADR-116).
+      if (a.track_id === undefined) return placeOnTop(p, clip, "Titles");
+      const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      noteUnderAdjustment(q, clip.id, "a title", report);
+      return q;
     },
   },
   // ---- ads: the brand kit and ad elements (lib/brandKit.ts, lib/ads.ts) ----
@@ -585,9 +660,9 @@ export const COMMANDS: Command[] = [
   {
     name: "add_color_clip",
     description: "Add a solid color layer (backgrounds, flashes, title cards). Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
-    input: S.obj({ color: S.str("CSS color"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
+    input: S.obj({ color: S.str("CSS color: '#ff3366', '#00000080' (with alpha, see-through), 'rgba(0,0,0,0.5)', 'white'"), start: S.num("Seconds", { minimum: 0 }), duration: S.num("Seconds", { minimum: 0.001 }), track_id: S.str("Track id") }, ["color", "start", "duration"]),
     run: (p, a) => {
-      const clip = createColorClip(String(a.color), f(p, a.start), span(p, a.start, a.duration));
+      const clip = createColorClip(colorArg(a.color, "color")!, f(p, a.start), span(p, a.start, a.duration));
       const [q, trackId] = landingTrack(p, clip, a.track_id);
       return ops.addClip(q, trackId, clip);
     },
@@ -618,16 +693,48 @@ export const COMMANDS: Command[] = [
     name: "move_clip",
     description: "Move a clip to a time and (optionally) another track of the same kind. Overwrites whatever is under its new position.",
     input: S.obj({ clip_id: S.str("Clip id"), start: S.num("Seconds", { minimum: 0 }), track_id: S.str("Destination track id") }, ["clip_id", "start"]),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const loc = clipOrThrow(p, a.clip_id);
-      return ops.moveClip(p, loc.clip.id, String(a.track_id ?? loc.track.id), f(p, a.start));
+      const q = ops.moveClip(p, loc.clip.id, String(a.track_id ?? loc.track.id), f(p, a.start));
+      // A title or graphic moved under a grade or a beat hit (ADR-116).
+      const c = loc.clip;
+      if (a.track_id !== undefined && (c.type === "text" || (c.type === "color" && c.shape) || (c.type === "compound" && !isFootage(q, c)))) noteUnderAdjustment(q, c.id, c.type === "text" ? "a title" : c.type === "compound" ? "a title card" : "a shape", report);
+      return q;
     },
   },
   {
     name: "trim_clip",
-    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors; ripple=true shifts later clips instead of stopping at them.",
+    description: "Move a clip's start or end edge to a time. Limited by the source media and neighbors (the answer says where it stopped and why); ripple=true shifts later clips instead of stopping at them.",
     input: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Which edge", { enum: ["start", "end"] }), to: S.num("Seconds", { minimum: 0 }), ripple: S.bool("Shift later clips") }, ["clip_id", "edge", "to"]),
-    run: (p, a) => ops.trimClip(p, clipOrThrow(p, a.clip_id).clip.id, a.edge === "start" ? "start" : "end", f(p, a.to), a.ripple === true),
+    run: (p, a, report) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      const edge = a.edge === "start" ? "start" : "end", ripple = a.ripple === true;
+      const stop = ops.trimStop(p, clip.id, edge, f(p, a.to), ripple);
+      if (stop && report) (report.notes ??= []).push(`Stopped at ${+framesToSeconds(stop.at, p.fps).toFixed(3)} s, not ${a.to} s: ${trimStopReason(p, clip, edge, stop.why)}.`);
+      return ops.trimClip(p, clip.id, edge, f(p, a.to), ripple);
+    },
+  },
+  {
+    name: "roll_edit",
+    description: "Roll edit (the timeline's Roll tool): move the cut between a clip and the clip touching it to `to` (timeline seconds), the cut at its end by default (with the next clip) or at its start with edge start (with the clip before). One clip grows by what the other loses, so nothing else on the timeline moves: one call puts a cut on a beat, where two trim_clip calls had to come in the right order. Each clip keeps the pictures it shows at every other time; limited by both clips' source and by each keeping a frame (the answer says where it stopped and why). A cut with a gap at it has nothing to roll: trim_clip moves one edge.",
+    input: S.obj({ clip_id: S.str("A clip on one side of the cut"), to: S.num("Timeline seconds the cut moves to", { minimum: 0 }), edge: S.str("Which of the clip's cuts: end (default, with the next clip) or start (with the clip before)", { enum: ["start", "end"] }) }, ["clip_id", "to"]),
+    run: (p, a, report) => {
+      const loc = clipOrThrow(p, a.clip_id);
+      if (loc.track.locked) throw new CommandError(`track ${loc.track.id} is locked`);
+      const start = a.edge === "start";
+      const nb = loc.track.clips[loc.clipIndex + (start ? -1 : 1)];
+      const s = (frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
+      const cut = start ? loc.clip.start : ops.clipEnd(loc.clip);
+      if (!nb || (start ? ops.clipEnd(nb) : nb.start) !== cut) {
+        throw new CommandError(`no clip touches ${loc.clip.id}'s ${start ? "start" : "end"} at ${s(cut)} s (${nb ? `the ${start ? "one before ends" : "next starts"} at ${s(start ? ops.clipEnd(nb) : nb.start)} s` : `nothing is ${start ? "before" : "after"} it on its track`}): a roll moves a cut between two touching clips; trim_clip moves one edge`);
+      }
+      const [left, right] = start ? [nb, loc.clip] : [loc.clip, nb];
+      const b = ops.rollBounds(p, left.id, right.id)!;
+      const to = f(p, a.to);
+      const [at, [clip, why]] = to < b.lo ? [b.lo, b.loBy] : to > b.hi ? [b.hi, b.hiBy] : [to, [left, "length" as ops.TrimStop]];
+      if (at !== to && report) (report.notes ??= []).push(`Stopped at ${s(at)} s, not ${a.to} s: ${clip.id}: ${trimStopReason(p, clip, clip.id === left.id ? "end" : "start", why)}.`);
+      return ops.rollEdit(p, left.id, right.id, to);
+    },
   },
   {
     name: "set_speed",
@@ -638,10 +745,10 @@ export const COMMANDS: Command[] = [
   {
     name: "set_compressor",
     description:
-      "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
+      "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. On a compound clip it acts on the mix of everything inside, as a bus does: one compressor over a voice and its music, after the compound clip's EQ and before its volume and fades. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
     input: S.obj(
       {
-        clip_ids: S.ids("Video or audio clips"),
+        clip_ids: S.ids("Video, audio or compound clips"),
         preset: S.str("Starting point", { enum: ["voice", "gentle", "strong", "off"] }),
         threshold: S.num("dBFS where compression starts", { minimum: -60, maximum: 0 }),
         ratio: S.num("dB in over the threshold per dB out", { minimum: 1, maximum: 20 }),
@@ -659,7 +766,7 @@ export const COMMANDS: Command[] = [
       return ids.reduce(
         (q, id) =>
           ops.updateClip(q, id, (c) => {
-            if (c.type !== "video" && c.type !== "audio") throw new CommandError(`${c.type} clips have no sound to compress`);
+            if (c.type !== "video" && c.type !== "audio" && c.type !== "compound") throw new CommandError(`${c.type} clips have no sound to compress`);
             if (a.preset === "off") {
               const { compressor: _, ...rest } = c;
               return rest as Clip;
@@ -675,7 +782,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_audio_filter",
     description:
-      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes.',
+      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes. A filter takes loudness out with what it cuts: a radio band-pass (highpass 380, lowpass 3400) took 3-3.6 LU off a voice. keep_loudness: true measures the clip before and after and makes up the difference after the filter (its makeup, dB), so a filtered voice line stays as loud as the others; it measures on this computer, so it runs on its own, not in a batch. makeup sets that gain by hand. Filtering a voice line without either answers a note.',
     input: S.obj(
       {
         clip_ids: S.ids("Video or audio clips"),
@@ -693,17 +800,27 @@ export const COMMANDS: Command[] = [
           "Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export",
         ),
         off: S.bool("Remove this filter"),
+        makeup: S.num("Gain after the filter, dB, to make up what it takes out (absent: 0)", { minimum: -24, maximum: 24 }),
+        keep_loudness: S.bool("Measure the clip before and after and set makeup so it stays as loud (a fixed filter only; not in a batch)"),
       },
       ["clip_ids", "type"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const kind = a.type as FilterKind;
       const path = `${kind}.cutoff`;
+      if (a.keep_loudness === true) throw new CommandError("keep_loudness measures the clip's sound on this computer: call set_audio_filter on its own, not in a batch, or give makeup in dB");
+      // A voice line filtered with nothing made up plays quieter than the rest (film test 2).
+      if (a.off !== true && a.makeup === undefined && report) {
+        const voices = (a.clip_ids as Id[]).filter((id) => { const l = ops.findClip(p, id); return l && (isDialog(l.track, p) || (l.clip.type === "audio" && !!ops.getAsset(p, l.clip.assetId)?.speech)); });
+        const note = `A filter takes loudness out of a voice (a radio band-pass, 380-3400 Hz, took 3-3.6 LU): set_audio_filter with keep_loudness: true on ${voices.join(", ")} makes it up, so the line stays as loud as the others.`;
+        // Once, though a batch filters it twice (a band-pass is two filters).
+        if (voices.length && !report.notes?.includes(note)) (report.notes ??= []).push(note);
+      }
       const sweep = a.sweep as { to: number; start: number; end: number; ease?: string } | undefined;
       const sweepEase = sweep?.ease === undefined ? undefined : easeById(sweep.ease);
       return fxEdit(p, a, "filter", (c) => {
         if (a.off === true) return withoutFx(c, kind, [path]);
-        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
+        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance, makeup: a.makeup }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
         const out = { ...c, [kind]: filter } as Clip;
         if (!sweep) return a.cutoff === undefined ? out : withoutKeys(out, [path]);
         const k0 = f(p, sweep.start) - c.start;
@@ -807,21 +924,54 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_param",
-    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead. An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
-    input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths") }, ["clip_ids", "path", "value"]),
+    description: "Set a numeric clip parameter by path, e.g. opacity (0..1), volume (1 = 0 dB), transform.x / transform.y (canvas fractions from center), transform.scale (1 = fit; the horizontal scale when not uniform), transform.scaleY (vertical scale; setting it makes the scale non-uniform), transform.rotation (degrees), adjust.exposure / adjust.contrast / adjust.saturation / adjust.temperature (-100..100), grade values such as adjust.hsl.red.saturation, adjust.wheels.gain.y (-100..100) and adjust.lut.intensity (0..1). If the path has keyframes, sets a keyframe at `at` instead (without at it is refused: remove_keyframes first to set one value), which ramps from the key before; hold true keeps what plays before `at` as it was (a key on the frame before holds it) and changes the value there, as a step (on a path without keys it makes those two keys). An effect's parameter: effects.<index>.<param> (its place in the stack, from 0), effects.<id>.<param> or effects.<type>.<param>, e.g. effects.0.amount; list_catalog section effects has each one's parameters. Sound fades are frames here; set_fades takes seconds.",
+    input: S.obj({ clip_ids: S.ids("Clips"), path: S.str("Parameter path"), value: S.num("New value"), at: S.num("Timeline seconds, for keyframed paths"), hold: S.bool("With at: hold the value before at until the frame before it, so the change is a step there and not a ramp from the key before") }, ["clip_ids", "path", "value"]),
     run: (p, a) => {
       const ids = a.clip_ids as Id[];
       ids.forEach((id) => clipOrThrow(p, id));
       const loc = ops.findClip(p, ids[0])!;
       const rel = a.at !== undefined ? f(p, a.at) - loc.clip.start : undefined;
+      const hold = a.hold === true;
+      if (hold && rel === undefined) throw new CommandError("hold needs at: the time the value changes");
       return ids.reduce((q, id) => {
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
+        // Without at, a keyed value went under its keys, where nothing reads
+        // it, and the answer told it as set (ADR-110, as ADR-108's commands).
+        keyedNeedsAt(clip, path, a.at);
         // A keyed path takes a key here: refuse one nothing would read (ADR-066).
-        const problem = clip.keyframes?.[path]?.length && rel !== undefined ? keyframeProblem(clip, path) : null;
-        if (problem) throw new CommandError(`${problem}; remove_keyframes path ${a.path} clears the dead keys`);
-        return ops.setParam(q, [id], path, Number(a.value), rel);
+        const keyed = (!!clip.keyframes?.[path]?.length || hold) && rel !== undefined;
+        if (hold && COLOR_PATHS.has(path)) throw new CommandError("hold is for numbers: a color steps with add_keyframe, its ease hold on the key before");
+        const problem = keyed ? keyframeProblem(clip, path) : null;
+        if (problem) throw new CommandError(clip.keyframes?.[path]?.length ? `${problem}; remove_keyframes path ${a.path} clears the dead keys` : problem);
+        // A color's key holds 0xRRGGBB, but the color itself stays CSS: a
+        // number there broke every reader of style.color (ADR-099).
+        if (COLOR_PATHS.has(path) && clip.type !== "text") throw new CommandError(`${path} is a title's color; clip ${clip.id} is a ${clip.type} clip`);
+        if (COLOR_PATHS.has(path) && !keyed) return ops.updateClip(q, id, (c) => (c.type === "text" ? { ...c, style: { ...c.style, color: keyColor(Number(a.value)) } } : c));
+        const now = COLOR_PATHS.has(path) ? undefined : rawValueAt(clip, path);
+        if (now !== undefined && typeof now !== "number") throw new CommandError(`${a.path} holds ${typeof now === "string" ? `"${now}"` : `a ${typeof now}`}, not a number: set_param sets numbers (a title's look is set_text, a shape's set_shape)`);
+        // A part the clip lacks is added by its own command: set_param stored
+        // half of one (a colorize with no color crashed every frame, a mask
+        // with one number every describe_project and undo; ADR-108).
+        const lacking = now === undefined ? missingPart(clip, path) : null;
+        if (lacking) throw new CommandError(`${a.path} is not on clip ${clip.id}: ${partNeeds(clip, path) ?? `it has no ${lacking}`}`);
+        return ops.setParam(q, [id], path, Number(a.value), rel, hold);
       }, p);
+    },
+  },
+  {
+    name: "set_clip_enabled",
+    description: "Turn clips off or on (Premiere's Enable): an off clip stays on the timeline, in place, but preview and export skip it (describe_project marks it disabled). A textless version's titles, or a clip an export_versions override hid, come back on with enabled true.",
+    input: S.obj({ clip_ids: S.ids("Clips"), enabled: S.bool("false: off, skipped by preview and export; true: on") }, ["clip_ids", "enabled"]),
+    run: (p, a) => {
+      const ids = a.clip_ids as Id[];
+      ids.forEach((id) => clipOrThrow(p, id));
+      return ids.reduce((q, id) => ops.updateClip(q, id, (c) => {
+        if (a.enabled === false) return c.disabled ? c : ({ ...c, disabled: true } as Clip);
+        if (!c.disabled) return c;
+        const { disabled: _, ...rest } = c;
+        return rest as Clip;
+      }), p);
     },
   },
   {
@@ -1051,18 +1201,23 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "slip_clip",
-    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. Stops at the ends of the source.",
-    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by: positive shows later material") }, ["clip_id", "by"]),
-    run: (p, a) => {
+    description: "Slip a video or audio clip: play a later (by > 0) or earlier (by < 0) part of its source, keeping its place and length on the timeline, as when a shot's cut lands right but its moment is wrong. by is seconds of the source file, like in and cut_ranges, at any speed or ramp: in moves by exactly that much. Stops at the ends of the source, and says so.",
+    input: S.obj({ clip_id: S.str("Video or audio clip"), by: S.num("Seconds of source to move by (the in-point moves this much, whatever the clip's speed): positive shows later material") }, ["clip_id", "by"]),
+    run: (p, a, report) => {
       const { clip } = clipOrThrow(p, a.clip_id);
       if (!("in" in clip)) throw new CommandError(`${clip.type} clips have no source to slip`);
-      return ops.slipClip(p, clip.id, f(p, a.by));
+      // It answered "the source ends there" for a freeze (ADR-106).
+      if ("freeze" in clip && clip.freeze) throw new CommandError("a freeze frame holds one frame of its source, so there is nothing to slip: freeze_frame the shot again at the moment wanted");
+      const by = Number(a.by);
+      const { project, moved } = ops.slipBySource(p, clip.id, by);
+      if (report && Math.abs(moved - by) > 5e-4) (report.notes ??= []).push(`Slipped ${+moved.toFixed(3)} s, not ${by} s: the source ${by > 0 ? "ends" : "starts"} there.`);
+      return project;
     },
   },
   {
     name: "duplicate_clips",
-    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.",
-    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }), unique: S.bool("Compound clips: copy their nested timelines too, so each copy can change on its own (default false: shared)") }, ["clip_ids"]),
+    description: "Copy clips with everything on them (effects, keyframes, animations, style), the earliest copy starting at `at` seconds (default: right after the last of them ends), each on its own clip's track or a new track above where that is taken. Answers with the copies. The way to repeat a styled title or a lower third. A compound clip's copy plays the same nested timeline (an edit inside shows in both) unless unique is true: then it gets its own copy of the timeline, and of every compound nested in it (answered under added_compounds), a template to change with edit_compound, e.g. replace_clip to put other footage in a styled window.",
+    input: S.obj({ clip_ids: S.ids("Clips to copy"), at: S.num("Seconds where the earliest copy starts", { minimum: 0 }), unique: S.bool("Compound clips: copy their nested timelines too (and the compounds nested in them), so each copy can change on its own (default false: shared)") }, ["clip_ids"]),
     run: (p, a) => {
       const found = (a.clip_ids as Id[]).map((id) => clipOrThrow(p, id));
       const origin = Math.min(...found.map((x) => x.clip.start));
@@ -1110,7 +1265,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height; rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). Values left out keep theirs; animated values get a keyframe at `at`.",
+    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.",
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1123,21 +1278,22 @@ export const COMMANDS: Command[] = [
         feather: S.num("Edge softness", { minimum: 0, maximum: 1 }),
         radius: S.num("Rectangle corner roundness", { minimum: 0, maximum: 1 }),
         invert: S.bool("Keep the outside instead"),
+        aspect: S.num("The mask's width over its height in pixels (1: a round circle, a square); its height follows from width, or its width from a height given alone", { minimum: 0.05, maximum: 20 }),
         at: S.num("Timeline seconds, for animated values"),
       },
       ["clip_ids"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
+      if (a.aspect !== undefined && a.width !== undefined && a.height !== undefined) throw new CommandError("give width or height with aspect, not both: aspect sets the other");
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (clip.type === "audio" || clip.type === "adjustment") throw new CommandError(`${clip.type} clips have no picture to mask`);
+        // The mask and its keys: kept, they animated the next mask (ADR-108).
         if (a.shape === "none") {
-          p = ops.updateClip(p, clip.id, (c) => {
-            const { mask: _, ...rest } = c as Clip & { mask?: unknown };
-            return rest as Clip;
-          });
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { mask?: unknown }, "mask") as Clip, MASK_PARAMS.map((k) => `mask.${k}`)));
           continue;
         }
+        for (const k of MASK_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `mask.${k}`, a.at);
         const now = (clip as { mask?: Mask }).mask;
         if (!now && a.shape === undefined) throw new CommandError(`clip ${id} has no mask yet: give a shape`);
         const shape = (a.shape as MaskShape | undefined) ?? now!.shape;
@@ -1145,9 +1301,23 @@ export const COMMANDS: Command[] = [
         if (a.invert !== undefined) mask = { ...mask, invert: a.invert === true };
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, mask }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
-        for (const k of ["x", "y", "width", "height", "rotation", "feather", "radius"] as const) {
-          if (a[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(a[k]), rel);
+        const at = clip.start + (rel ?? 0);
+        // aspect: the size the caller left out, so the mask is that many
+        // pixels wide for each tall on this picture (ADR-116).
+        const sizes: Record<string, unknown> = { ...a };
+        if (a.aspect !== undefined) {
+          const now = ops.findClip(p, clip.id)!.clip as VisualClip;
+          const width = a.width !== undefined ? Number(a.width) : a.height !== undefined ? undefined : paramAt(now, "mask.width", rel ?? 0);
+          const s = sizeForAspect({ width, height: a.height !== undefined ? Number(a.height) : undefined }, Number(a.aspect), pictureAspect(p, now, at));
+          sizes.width = +s.width.toFixed(5);
+          sizes.height = +s.height.toFixed(5);
+          for (const k of ["width", "height"] as const) keyedNeedsAt(clip, `mask.${k}`, a.at);
         }
+        for (const k of MASK_PARAMS) {
+          if (sizes[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
+        }
+        const note = maskEdgeNote(p, clip.id, rel ?? 0, at);
+        if (note && report) (report.notes ??= []).push(note);
       }
       return p;
     },
@@ -1213,18 +1383,18 @@ export const COMMANDS: Command[] = [
           "A two-color fill instead of color: linear (default) or radial",
         ),
         fill: S.bool("false draws only the outline (give stroke_width); default true"),
-        stroke_color: S.str("Outline color, CSS; default white"),
+        stroke_color: S.str("Outline color, CSS; default white, or color when fill is false"),
         stroke_width: S.num("Outline width in pixels at a 1080-pixel-tall canvas, centered on the edge; a line's thickness (default 8). Default no outline", { minimum: 0, maximum: 400 }),
         radius: S.num("Rectangle corner roundness: 0 square, 1 a pill (radius half the shorter side); rounded_rectangle defaults to 0.35", { minimum: 0, maximum: 1 }),
         draw: S.num("Share of the outline or line drawn, 0..1, from the top center clockwise (a line: from its left end), as After Effects' Trim Paths End; fills are not trimmed. Default 1", { minimum: 0, maximum: 1 }),
-        feather: S.num(`Soft edge: the edge fades over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default). An ellipse feathered by half its size or more is a soft glow`, { minimum: 0, maximum: FEATHER_MAX }),
+        feather: S.num(`Soft edge: the shape blurred, its edge fading over this many pixels at 1080p, centered on it, with a Gaussian falloff (0 crisp, default); a feather wider than the shape also dims its middle, as a blur would. An ellipse feathered by half its size or more is a soft glow`, { minimum: 0, maximum: FEATHER_MAX }),
         rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
         opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
         track_id: S.str("Track id; default above everything at that time"),
       },
       ["kind", "start", "duration"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
       const color = colorArg(a.color, "color") ?? "#ffffff";
       const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
@@ -1238,7 +1408,9 @@ export const COMMANDS: Command[] = [
         ...(kind === "rectangle" && (a.radius !== undefined || a.kind === "rounded_rectangle") ? { radius: Number(a.radius ?? 0.35) } : {}),
         ...(a.fill === false && kind !== "line" ? { fill: false } : {}),
         ...(a.gradient ? { gradient: gradientArg(a.gradient as Record<string, unknown>) } : {}),
-        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" ? color : "#ffffff"), width: strokeWidth } } : {}),
+        // A line's color, or an outline-only shape's, is its outline's
+        // (ADR-110: fill false with a color drew a white outline).
+        ...(strokeWidth > 0 ? { stroke: { color: strokeColor ?? (kind === "line" || (a.fill === false && a.color !== undefined) ? color : "#ffffff"), width: strokeWidth } } : {}),
         ...(a.draw !== undefined && Number(a.draw) < 1 ? { draw: Number(a.draw) } : {}),
         ...(Number(a.feather ?? 0) > 0 ? { feather: Number(a.feather) } : {}),
       };
@@ -1251,8 +1423,10 @@ export const COMMANDS: Command[] = [
         opacity: Number(a.opacity ?? 1),
         transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
       } as Clip;
-      if (a.track_id !== undefined) return ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
-      return placeOnTop(p, clip, "Graphics");
+      if (a.track_id === undefined) return placeOnTop(p, clip, "Graphics");
+      const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
+      noteUnderAdjustment(q, clip.id, "a shape", report);
+      return q;
     },
   },
   {
@@ -1281,6 +1455,8 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (clip.type !== "color" || !clip.shape) throw new CommandError(`clip ${id} is not a shape (add one with add_shape)`);
+        for (const k of ["width", "height", "radius", "draw", "feather"]) if (a[k] !== undefined) keyedNeedsAt(clip, `shape.${k}`, a.at);
+        if (a.stroke_width !== undefined && Number(a.stroke_width) > 0) keyedNeedsAt(clip, "shape.stroke.width", a.at);
         const color = colorArg(a.color, "color");
         const strokeColor = colorArg(a.stroke_color, "stroke_color");
         let s: Shape = { ...clip.shape };
@@ -1291,10 +1467,13 @@ export const COMMANDS: Command[] = [
         if (a.fill !== undefined) s = a.fill === false ? { ...s, fill: false } : omit(s, "fill");
         const g = a.gradient as Record<string, unknown> | undefined;
         if (g) s = g.from === "" ? omit(s, "gradient") : { ...s, gradient: gradientArg({ ...s.gradient, ...g }) };
-        if (strokeColor || a.stroke_width !== undefined) {
+        // An outline-only shape's color is its outline's, as add_shape's (ADR-110).
+        const outline = strokeColor ?? (s.fill === false && s.kind !== "line" ? color : undefined);
+        if (outline || a.stroke_width !== undefined) {
           const w = a.stroke_width !== undefined ? Number(a.stroke_width) : (s.stroke?.width ?? (s.kind === "line" ? LINE_WIDTH : 4));
-          s = w > 0 ? { ...s, stroke: { color: strokeColor ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
+          s = w > 0 ? { ...s, stroke: { color: outline ?? s.stroke?.color ?? "#ffffff", width: s.stroke?.width ?? w } } : omit(s, "stroke");
         }
+        if (s.fill === false && !s.stroke && s.kind !== "line") throw new CommandError("an outline-only shape needs stroke_width");
         // A feather is set as given (0 makes the edge crisp), or keyed when animated.
         if (a.feather !== undefined && !clip.keyframes?.["shape.feather"]?.length) s = Number(a.feather) > 0 ? { ...s, feather: Number(a.feather) } : omit(s, "feather");
         // A name that is still the shape's own label follows the shape.
@@ -1367,6 +1546,7 @@ export const COMMANDS: Command[] = [
       for (const id of a.clip_ids as Id[]) {
         const { clip } = clipOrThrow(p, id);
         if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to cast a shadow`);
+        if (a.off !== true) for (const k of SHADOW_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `shadow.${k}`, a.at);
         if (a.off === true) {
           p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { shadow?: unknown }, "shadow") as Clip, SHADOW_PARAMS.map((k) => `shadow.${k}`)));
           continue;
@@ -1381,6 +1561,44 @@ export const COMMANDS: Command[] = [
         p = ops.updateClip(p, clip.id, (c) => ({ ...c, shadow: next }) as Clip);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
         for (const k of SHADOW_PARAMS) if (a[k] !== undefined && keyed(k)) p = ops.setParam(p, [clip.id], `shadow.${k}`, Number(a[k]), rel);
+      }
+      return p;
+    },
+  },
+  {
+    name: "set_border",
+    description:
+      "A border (stroke) around a picture: a video, image, title, shape or compound clip, as picture-in-picture shots and social layouts frame theirs. It follows the finished picture's edge, after its mask, crop, effects and track matte, outside it: a rounded mask gets a rounded border, a circle mask a ring, a compound clip one border around the whole window; set_shadow's shadow is cast by the picture and its border together. color (CSS, default white), width: pixels at 1080p outside the edge, 0..200 (default 8; it stays that wide however the clip is scaled), opacity 0..1 (default 1; the clip's opacity fades it too). A framed inset: {width: 10, color: '#ffffff'}; a thin dark keyline: {width: 2, color: '#000000', opacity: 0.6}. Values left out keep theirs (or the defaults for a new border). Animate with add_keyframe on border.width, border.opacity; values that are keyframed get a key at `at` instead. off: true removes it and its keyframes. Titles and shapes also have their own outline (style.stroke, stroke_width), drawn with the letters or the shape; this one goes around the whole finished picture, a title's box included.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual clips"),
+        color: S.str("CSS color; its alpha multiplies opacity"),
+        width: S.num("Pixels at 1080p outside the picture's edge (0 shows none)", { minimum: 0, maximum: BORDER_WIDTH_MAX }),
+        opacity: S.num("0..1", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the border and its keyframes"),
+        at: S.num("Timeline seconds, for keyframed values"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const color = colorArg(a.color, "color");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to border`);
+        if (a.off !== true) for (const k of BORDER_PARAMS) if (a[k] !== undefined) keyedNeedsAt(clip, `border.${k}`, a.at);
+        if (a.off === true) {
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(omit(c as Clip & { border?: unknown }, "border") as Clip, BORDER_PARAMS.map((k) => `border.${k}`)));
+          continue;
+        }
+        const keyed = (k: string) => !!clip.keyframes?.[`border.${k}`]?.length;
+        const next = cleanBorder({
+          ...(clip.border ?? BORDER_DEFAULT),
+          ...(color ? { color } : {}),
+          ...Object.fromEntries(BORDER_PARAMS.filter((k) => a[k] !== undefined && !keyed(k)).map((k) => [k, Number(a[k])])),
+        })!;
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, border: next }) as Clip);
+        const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of BORDER_PARAMS) if (a[k] !== undefined && keyed(k)) p = ops.setParam(p, [clip.id], `border.${k}`, Number(a[k]), rel);
       }
       return p;
     },
@@ -1405,6 +1623,7 @@ export const COMMANDS: Command[] = [
         const { clip } = clipOrThrow(p, id);
         if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to tilt`);
         const rel = a.at !== undefined ? f(p, a.at) - clip.start : undefined;
+        for (const k of TILT_PARAMS) if (given[k] !== undefined) keyedNeedsAt(clip, `transform.${k}`, a.at);
         for (const k of TILT_PARAMS) {
           if (given[k] === undefined) continue;
           if (clip.keyframes?.[`transform.${k}`]?.length) p = ops.setParam(p, [clip.id], `transform.${k}`, Number(given[k]), rel);
@@ -1594,6 +1813,9 @@ export const COMMANDS: Command[] = [
       const problem = keyframeProblem(clip, path);
       if (problem) throw new CommandError(problem);
       const e = easeArg(a.ease, a.bezier);
+      // A color on a number's path would key its 0xRRGGBB as the number (a
+      // 16-million-pixel title, ADR-099): refuse it.
+      if (a.color !== undefined && !COLOR_PATHS.has(path)) throw new CommandError(`color is for a color path (style.color); ${path} takes value`);
       // Colors key as 0xRRGGBB numbers (lib/textAnim.ts); a model gives CSS.
       const v = a.color !== undefined ? colorKey(String(a.color)) : a.value !== undefined ? Number(a.value) : undefined;
       if (v === undefined) throw new CommandError(COLOR_PATHS.has(path) ? `give color (a CSS color) for ${path}` : a.color !== undefined ? `${a.color} is not a color` : "give value");
@@ -1763,9 +1985,9 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "freeze_frame",
-    description: "Insert a still of the frame at a time inside a video clip, pushing the rest of the track right.",
-    input: S.obj({ clip_id: S.str("Video clip id"), at: S.num("Timeline seconds"), duration: S.num("Seconds to hold", { minimum: 0.04 }) }, ["clip_id", "at"]),
-    run: (p, a) => ops.freezeFrame(p, clipOrThrow(p, a.clip_id).clip.id, f(p, a.at), Math.max(1, f(p, a.duration ?? 3))),
+    description: "Hold the frame at a time inside a video clip as a still for `duration` seconds (default 3). mode insert (the default, CapCut's Freeze) splits the clip there and pushes the rest of its track right by the hold, the clips sitting on those shots (titles, captions, voice lines, effects) with them; at the clip's last frame the still takes that frame's place, so no one-frame piece is left after it. mode overwrite lays the still over what is there instead (the rest of the shot, a gap left on the main track for it, the next shot's head) and moves nothing: the freeze for a pause already cut to the music.",
+    input: S.obj({ clip_id: S.str("Video clip id"), at: S.num("Timeline seconds"), duration: S.num("Seconds to hold", { minimum: 0.04 }), mode: S.str("insert pushes the rest of the track right; overwrite covers what is there and moves nothing", { enum: ["insert", "overwrite"] }) }, ["clip_id", "at"]),
+    run: (p, a) => ops.freezeFrame(p, clipOrThrow(p, a.clip_id).clip.id, f(p, a.at), Math.max(1, f(p, a.duration ?? 3)), a.mode === "overwrite" ? "overwrite" : "insert"),
   },
   {
     name: "add_marker",
@@ -1838,7 +2060,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_ranges",
     description:
-      "Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The primitive behind silence and filler removal.",
+      "Remove parts of a video or audio clip. Ranges are SOURCE seconds (seconds into the clip's media file, the way silence detection and transcripts report them; describeProject lists each media clip's in/out), so one list stays valid however the clip is cut. ripple (default true) closes the gaps; a detached audio clip lined up with it is cut too. The clip keeps its id on the first piece left, its head cut or not; the other pieces get new ids. The primitive behind silence and filler removal.",
     input: S.obj(
       {
         clip_id: S.str("Video or audio clip id"),
@@ -1992,6 +2214,105 @@ export const COMMANDS: Command[] = [
       ["clip_id"],
     ),
     run: (p, a) => epic(() => fitMusic(p, a as unknown as FitMusic)),
+  },
+  {
+    name: "cut_music",
+    description:
+      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The song's audio clip"),
+        from: S.num("File seconds to cut from (moved to the nearest bar line)", { minimum: 0 }),
+        to: S.num("File seconds to cut to (moved to the nearest bar line)", { minimum: 0 }),
+        snap: S.str("Where from and to land: bar (default), beat, or none (as given)", { enum: ["bar", "beat", "none"] }),
+        crossfade: S.num(`Seconds the pieces crossfade over, ending at the cut (default ${MUSIC_CROSSFADE}; 0 a butt cut)`, { minimum: 0, maximum: MAX_CROSSFADE }),
+      },
+      ["clip_id", "from", "to"],
+    ),
+    run: (p, a, report) => {
+      try {
+        const r = cutMusic(p, a as unknown as MusicCut);
+        const bars = (() => {
+          const g = p.assets.find((x) => x.id === (ops.findClip(p, String(a.clip_id))?.clip as { assetId?: string } | undefined)?.assetId)?.musicGrid;
+          if (!g) return "";
+          const n = +((r.to - r.from) / (240 / g.bpm)).toFixed(2);
+          return `, ${n} ${n === 1 ? "bar" : "bars"} at ${g.bpm} BPM`;
+        })();
+        if (report) (report.notes ??= []).push(`Cut ${+r.from.toFixed(3)}-${+r.to.toFixed(3)} s of the song's file${bars}${r.join ? `; the pieces meet at ${+r.join.at.toFixed(3)} s on the timeline${r.join.crossfade ? ` with a ${r.join.crossfade} s crossfade` : ", a butt cut"}` : ""}.`);
+        return r.project;
+      } catch (e) {
+        throw e instanceof MusicCutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
+    name: "set_crossfade",
+    description:
+      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
+    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }) }, ["clip_id", "seconds"]),
+    run: (p, a) => {
+      try {
+        return setCrossfade(p, String(a.clip_id), Number(a.seconds));
+      } catch (e) {
+        throw e instanceof MusicCutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
+    name: "set_music_grid",
+    description:
+      "Give a song's grid yourself, when analyze_music reads it wrong (its confidence is low, the bars fall between the kicks, the drop is missed or early) or when it is known (a cue sheet, the composer's notes): the tempo, a bar's first beat and, if known, its parts (a drop after another part is a drop), all in the music file's own seconds, four beats a bar. The grid is kept with the file: analyze_music, mark_beats and check_project read the song through it instead of guessing, on every clip of it, through trims, moves and speed changes. markers places the grid's markers on this clip now (Beat, Bar, Phrase, each part by name, Drop), following the clip as analyze_music's do and replacing the clip's own earlier ones of those kinds; by default the kinds it is marked with already (parts and the drop only when sections are given). The answer's note says where the grid plays on the timeline. clear: true forgets the grid. Example: {clip_id: 'c_3', bpm: 128, first_downbeat: 0, sections: [{at: 0, label: 'intro'}, {at: 7.5, label: 'build'}, {at: 15, label: 'drop'}, {at: 33.75, label: 'outro'}], markers: ['beats', 'bars', 'drop']}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The music clip (audio, or a video with sound); the grid is kept with its file"),
+        bpm: S.num("Beats a minute, in the file's own time (a clip sped up plays it faster)", { minimum: 40, maximum: 240 }),
+        first_downbeat: S.num("A bar's first beat, in the music file's own seconds (0 for a song that starts on a bar)", { minimum: 0 }),
+        sections: {
+          type: "array",
+          description: "The parts, if known, in the music file's own seconds: each starts at its at and runs to the next",
+          items: S.obj({ at: S.num("File seconds the part starts", { minimum: 0 }), label: S.str("What the part is", { enum: ["intro", "verse", "build", "drop", "breakdown", "outro"] }) }, ["at", "label"]),
+        },
+        markers: { type: "array", items: S.str("Kind", { enum: Object.keys(MUSIC_MARKERS) }), description: "Markers to place on this clip from the grid: beats, bars, phrases, sections, drop (default: the kinds the clip is marked with already; [] none)" },
+        clear: S.bool("Forget the grid: analysis guesses again"),
+      },
+      ["clip_id"],
+    ),
+    run: (p, a, report) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (clip.type !== "audio" && clip.type !== "video") throw new CommandError(`${clip.type} clips have no song; give the music clip`);
+      const asset = ops.getAsset(p, clip.assetId);
+      if (!asset?.hasAudio) throw new CommandError(`clip ${clip.id} has no sound`);
+      const withGrid = (g: typeof asset.musicGrid) => ({ ...p, assets: p.assets.map((x) => (x.id !== asset.id ? x : g ? { ...x, musicGrid: g } : omit(x, "musicGrid"))) });
+      if (a.clear === true) {
+        if (a.bpm !== undefined || a.first_downbeat !== undefined || a.sections !== undefined || a.markers !== undefined) throw new CommandError("clear forgets the grid: give it alone");
+        return asset.musicGrid ? withGrid(undefined) : p;
+      }
+      let grid;
+      try {
+        grid = readMusicGrid(a);
+      } catch (e) {
+        throw new CommandError((e as Error).message);
+      }
+      // By default, the kinds this clip is marked with already, read again.
+      const kindOf = (label: string): MusicMarkerKind | undefined =>
+        label === MUSIC_MARKERS.drop.label ? "drop" : (Object.entries(MUSIC_MARKERS).find(([, m]) => m.label === label)?.[0] as MusicMarkerKind | undefined) ?? (Object.values(SECTION_NAMES).includes(label) ? "sections" : undefined);
+      const parts = !!grid.sections?.length;
+      const asked = a.markers as MusicMarkerKind[] | undefined;
+      if (asked && !parts && asked.some((k) => k === "sections" || k === "drop")) throw new CommandError("markers sections and drop need the grid's sections (or analyze_music with markers drop, which reads the parts through this grid)");
+      const had = [...new Set(p.markers.filter((m) => m.follows?.clip === clip.id).map((m) => kindOf(m.label)))].filter((k): k is MusicMarkerKind => !!k);
+      const kinds = asked ?? had.filter((k) => parts || (k !== "sections" && k !== "drop"));
+      const q = markMusicClip(withGrid(grid), clip.id, gridStructure(grid, asset.duration), kinds);
+      if (report) {
+        // Where it plays: the tempo heard, the first bar and the drop, timeline seconds.
+        const s = gridStructure(grid, asset.duration);
+        const map = sourceToTimeline(clip, p.fps);
+        const bar = s.downbeats.map((t) => map.at(t)).find((t) => t !== null);
+        const drops = s.drops.map((t) => map.at(t)).filter((t) => t !== null);
+        const speed = clip.speedCurve ? 1 : clip.speed;
+        (report.notes ??= []).push(`The grid on ${clip.id}: ${+(grid.bpm * speed).toFixed(2)} BPM as it plays${speed !== 1 ? ` (${grid.bpm} in the file)` : ""}${bar != null ? `, a bar every ${+((240 / grid.bpm) / speed).toFixed(3)} s from ${bar} s` : ""}${drops.length ? `, drop at ${drops.join(", ")} s` : ""}${kinds.length ? `; markers placed: ${kinds.join(", ")}` : "; no markers placed (markers: ['beats', 'bars'] places them)"}.`);
+      }
+      return q;
+    },
   },
   {
     name: "move_keyframe",
@@ -2163,6 +2484,39 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "set_colorize",
+    description:
+      "Colorize a picture (Premiere's Tint): its brightness drawn in one color, so white becomes the color, black stays black and grays become darker shades of it, mixed over the picture by amount 0..1. This is how a white sprite, glow, light leak or logo becomes amber or a brand color: temperature cannot warm pure white, which is already at the top of every channel. On video, image, title, shape and compound clips, and on an adjustment clip (everything under it). color: CSS (default '#ffb347', amber); amount default 1 (0.3-0.5 tints footage and keeps some of its own color). It runs first in the clip's color, so its exposure, temperature, filter and LUT act on the colorized picture. Values left out keep theirs. Animate with add_keyframe on adjust.colorize.amount (a white flash warming to amber); a keyframed amount gets a key at `at` instead. off: true removes it and its keyframes. Example: {\"clip_ids\": [\"c_7\"], \"color\": \"#ffb347\"}.",
+    input: S.obj(
+      {
+        clip_ids: S.ids("Visual or adjustment clips"),
+        color: S.str("CSS color white becomes, e.g. #ffb347 amber; its alpha multiplies amount"),
+        amount: S.num("0..1, how much of the colorized picture shows over the original (default 1)", { minimum: 0, maximum: 1 }),
+        off: S.bool("Remove the colorize and its keyframes"),
+        at: S.num("Timeline seconds, for a keyframed amount"),
+      },
+      ["clip_ids"],
+    ),
+    run: (p, a) => {
+      const color = colorArg(a.color, "color");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("adjust" in clip)) throw new CommandError(`${clip.type} clips have no picture to colorize`);
+        if (a.off !== true && a.amount !== undefined) keyedNeedsAt(clip, "adjust.colorize.amount", a.at);
+        if (a.off === true) {
+          p = ops.updateClip(p, clip.id, (c) => withoutKeys(c, ["adjust.colorize.amount"]));
+          p = editGrade(p, clip.id, (adj) => withPart(adj, "colorize", undefined));
+          continue;
+        }
+        const keyed = !!clip.keyframes?.["adjust.colorize.amount"]?.length;
+        const now = clip.adjust.colorize ?? COLORIZE_DEFAULT;
+        p = editGrade(p, clip.id, (adj) => withPart(adj, "colorize", cleanColorize({ ...now, ...(color ? { color } : {}), ...(a.amount !== undefined && !keyed ? { amount: Number(a.amount) } : {}) })));
+        if (a.amount !== undefined && keyed) p = ops.setParam(p, [clip.id], "adjust.colorize.amount", Number(a.amount), a.at !== undefined ? f(p, a.at) - clip.start : undefined);
+      }
+      return p;
+    },
+  },
+  {
     name: "add_sticker",
     description:
       "Add a sticker from the built-in library (emoji, or drawn arrows, circles, underlines, bubbles, badges) as an image overlay above everything at that time. name is a sticker id, label or the emoji itself: 'fire', 'thumbs-up', 'curved-arrow-red', 'circle-yellow', 'subscribe', '🎉'. window.videoEditor.stickers() lists them; window.videoEditor.exec draws the sticker's image before placing it. Overwrite reports overwritten: [{id, kind, what: removed or trimmed}]. Use another track to preserve existing clips.",
@@ -2325,7 +2679,7 @@ export const COMMANDS: Command[] = [
       const id = String(a.compound_id);
       if (!ops.findCompound(p, id)) throw new CommandError(`no compound with id ${id}`);
       const view = compoundView(p, id);
-      const inside = runCommand(view, String(a.command), a.args ?? {}, report);
+      const inside = runNested(view, String(a.command), a.args ?? {}, report);
       if (inside === view) return p;
       const out = withCompoundView(p, id, inside);
       if (out === p) throw new CommandError("a compound clip cannot contain itself");
@@ -2402,7 +2756,7 @@ export const COMMANDS: Command[] = [
         if (!COMMANDS.some((c) => c.name === step.command)) throw new CommandError(`step ${i + 1}: ${step.command} is not an editing command; tools that run on this computer or look (add_sound_effect, add_voiceover, the AI tools, previews, export) are called on their own`);
         try {
           const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
-          const next = runCommand(q, step.command, ref(step.args ?? {}), report);
+          const next = runNested(q, step.command, ref(step.args ?? {}), report);
           added.push(ids(next).filter((id) => !before.has(id)));
           addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
@@ -2413,6 +2767,46 @@ export const COMMANDS: Command[] = [
     },
   },
 ];
+
+/** What a clip holds at a parameter path, whatever its kind (an effect's
+ * parameter by the effect's id); undefined where nothing is. */
+function rawValueAt(clip: Clip, path: string): unknown {
+  let cur: unknown = clip;
+  for (const seg of path.split(".")) {
+    if (Array.isArray(cur)) {
+      const el = cur.find((e) => (e as { id?: string }).id === seg) as { params?: unknown } | undefined;
+      cur = el && "params" in el ? el.params : el;
+    } else if (cur && typeof cur === "object") cur = (cur as Record<string, unknown>)[seg];
+    else return undefined;
+  }
+  return cur;
+}
+
+/** The part of `path` a clip lacks ("border", "adjust.colorize"), or null
+ * when everything above the value is there. A grade's HSL bands and wheels
+ * start from nothing (the grade reads what is missing as 0), so set_param
+ * may make them; so may a sound's EQ, whose bands are each flat when
+ * missing and which no other command sets (ADR-110: refused, an agent
+ * could not set an EQ at all). */
+function missingPart(clip: Clip, path: string): string | null {
+  if (/^adjust\.(hsl|wheels)\./.test(path) || (/^eq\.(low|mid|high)$/.test(path) && "volume" in clip)) return null;
+  const segs = path.split(".");
+  let cur: unknown = clip;
+  for (let i = 0; i < segs.length - 1; i++) {
+    if (Array.isArray(cur)) {
+      const el = cur.find((e) => (e as { id?: string }).id === segs[i]) as { params?: unknown } | undefined;
+      cur = el && "params" in el ? el.params : el;
+    } else cur = cur && typeof cur === "object" ? (cur as Record<string, unknown>)[segs[i]] : undefined;
+    if (cur === undefined || cur === null) return segs.slice(0, i + 1).join(".");
+  }
+  return null;
+}
+
+/** A keyed value given without `at` would go under its keys, where nothing
+ * shows it, and the answer would tell it as set (ADR-108). */
+function keyedNeedsAt(clip: Clip, path: string, at: unknown) {
+  if (at === undefined && clip.keyframes?.[path]?.length) throw new CommandError(`${path} is keyframed on clip ${clip.id}: give at (timeline seconds) to key it there, or remove_keyframes path ${path} first`);
+}
 
 /**
  * A parameter path as stored. An effect's parameter can be named by the
@@ -2504,6 +2898,7 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
     const meant = didYouMean(name, COMMANDS.map((c) => c.name));
     throw new CommandError(`unknown command ${name}${meant ? `; did you mean ${meant}?` : ""}`);
   }
+  args = coerceNumbers(args, cmd.input);
   const errs = validate(args, cmd.input);
   if (errs.length) throw new CommandError(errs.join("; "));
   const next = cmd.run(p, args as Record<string, unknown>, report);
@@ -2515,8 +2910,44 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
       }
     }
   }
-  return next;
+  // A song's markers follow its clip, so the next step (a batch's, a
+  // cut_to_beats after a move) sees them where the beats now play.
+  return followClips(next);
 }
+
+/**
+ * A command as an agent runs it (MCP, window.videoEditor.exec): then the
+ * timeline's linkage, as the user's own edits get it, so a clip sitting on
+ * a main-track shot (a title, a picture-in-picture, a sound effect) moves
+ * with that shot through a ripple trim, an insert, a ripple delete, a
+ * closed gap, a speed change or a move (ADR-035). Commands used to ripple
+ * the main track alone, while an AI tool's edit carried the clips on it:
+ * the same shot moved its PiP one call and left it the next. Never the
+ * magnet: a gap on the main track closes only when the call asks (ripple,
+ * close_gaps, lift_range), so a pause left on purpose stays (ADR-102).
+ */
+export function runAgentCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport, linkage = true): Project {
+  const outer = agentLinkage;
+  agentLinkage = linkage;
+  try {
+    const next = runCommand(p, name, args, report);
+    return next === p ? p : ops.settle(p, next, { magnet: false, linkage });
+  } finally {
+    agentLinkage = outer;
+  }
+}
+
+/** The linkage an agent's command runs with, while one runs (null for the
+ * app's own calls of runCommand). */
+let agentLinkage: boolean | null = null;
+
+/** A command inside another (edit_compound's, a batch's step): as an agent
+ * runs it when an agent's command called it. edit_compound's ripple left
+ * the titles inside the compound behind, as a person's edit with the
+ * compound open never does, and a batch's step saw the captions where the
+ * insert before it had left them, writing over them (ADR-106). */
+const runNested = (p: Project, name: string, args: unknown, report?: CommandReport) =>
+  agentLinkage === null ? runCommand(p, name, args, report) : runAgentCommand(p, name, args, report, agentLinkage);
 
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
 export function describeProject(p: Project) {
@@ -2528,9 +2959,10 @@ export function describeProject(p: Project) {
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
     ...(p.masterVolume !== undefined ? { master_volume: p.masterVolume } : {}),
-    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}) })),
+    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
     tracks: p.tracks.map(track),
-    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color })),
+    // A marker that follows a clip (a song's beat) names it.
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.follows ? { clip: m.follows.clip } : {}) })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
     ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).
@@ -2574,6 +3006,7 @@ export function describeProject(p: Project) {
         ...("adjust" in c ? gradeSummary(c.adjust) : {}),
         ...(c.type === "video" && c.cutout ? { removeBackground: c.cutout.enabled } : {}),
         // What else departs from the defaults, so an agent can check its work.
+        ...(c.disabled ? { disabled: true } : {}),
         ...(c.name ? { name: c.name } : {}),
         ...(c.group ? { group: c.group } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
@@ -2581,6 +3014,9 @@ export function describeProject(p: Project) {
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
+        // How duck_under_speech dipped it: a voice line that changes dips it again so.
+        ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.openAt?.length ? { open_at: c.duck.openAt } : {}), ...(c.duck.minGap !== undefined ? { min_gap: c.duck.minGap } : {}), ...(c.duck.release !== undefined ? { release: c.duck.release } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
+        ...(c.type === "audio" && c.crossfade ? { crossfade: c.crossfade } : {}),
         ...soundFxSummary(c),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
@@ -2602,11 +3038,15 @@ export function describeProject(p: Project) {
 
 /** A speed curve for describeProject: its preset's name (or custom) and its
  * points as [t, speed], t from 0 (the clip's start) to 1 (its end) as
- * set_speed_curve takes them, so a custom ramp can be checked (ADR-095). */
+ * set_speed_curve takes them, so a custom ramp can be checked (ADR-095).
+ * The curve as it plays over the clip: a trimmed clip keeps its points
+ * where they were (ADR-027), so after a trim they could end at 0.983 or
+ * run past 1; the window pins t 0 and 1 at the speeds playing there
+ * (ADR-102). */
 function speedCurveSummary(c: Clip): { speed_curve?: string; speed_points?: number[][] } {
   if (!("speedCurve" in c) || !c.speedCurve) return {};
   const r = (v: number) => +v.toFixed(3);
-  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: c.speedCurve.points.map((pt) => [r(pt.f / c.duration), r(pt.speed)]) };
+  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: normalizeWindow(c.speedCurve.points, c.duration).map((pt) => [r(pt.t), r(pt.speed)]) };
 }
 
 /** A title's type where it departs from the default look, named as
@@ -2699,10 +3139,18 @@ function graphicsSummary(c: Clip) {
           },
         }
       : {}),
+    // A mask and a crop, as set_mask and set_crop take them, so a framed
+    // picture (a round picture-in-picture, a split screen's half) can be checked.
+    ...("mask" in c && c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
+    ...("crop" in c && c.crop && c.crop.left + c.crop.right + c.crop.top + c.crop.bottom > 0 ? { crop: { left: r(c.crop.left), top: r(c.crop.top), right: r(c.crop.right), bottom: r(c.crop.bottom) } } : {}),
     ...(c.trackMatte ? { track_matte: { mode: c.trackMatte.mode, matte: c.trackMatte.clipId ?? "above" } } : {}),
     ...(c.motionBlur ? { motion_blur: { shutter_angle: c.motionBlur.shutter } } : {}),
     ...(c.edge ? { edge: c.edge } : {}),
+    // The mask as set_mask takes it: describe_project left it out, so a
+    // model could not see the masks it had set (ADR-099).
+    ...(c.mask ? { mask: { shape: c.mask.shape, x: r(c.mask.x), y: r(c.mask.y), width: r(c.mask.width), height: r(c.mask.height), ...(c.mask.rotation ? { rotation: r(c.mask.rotation) } : {}), ...(c.mask.feather ? { feather: r(c.mask.feather) } : {}), ...(c.mask.radius ? { radius: r(c.mask.radius) } : {}), ...(c.mask.invert ? { invert: true } : {}) } } : {}),
     ...(c.shadow ? { shadow: c.shadow } : {}),
+    ...(c.border ? { border: c.border } : {}),
     ...(c.wiggle ? { wiggle: Object.fromEntries(Object.entries(c.wiggle).map(([k, w]) => [k, { frequency: w.frequency, amplitude: r(w.amplitude), ...(w.strength !== undefined ? { strength: w.strength } : {}), seed: w.seed }])) } : {}),
   };
 }
@@ -2716,6 +3164,7 @@ function gradeSummary(a: Graded) {
     ...(Object.keys(basic).length ? { adjust: basic } : {}),
     ...(parts.length ? { grade: parts } : {}),
     ...(a.lut ? { lut: { id: a.lut.id, intensity: a.lut.intensity } } : {}),
+    ...(a.colorize ? { colorize: a.colorize } : {}),
   };
 }
 
@@ -2773,6 +3222,9 @@ function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Cl
     p,
   );
 }
+
+/** A mask's numbers, each keyable as mask.<name>. */
+const MASK_PARAMS = ["x", "y", "width", "height", "rotation", "feather", "radius"] as const;
 
 /** A clip without the keyframes of `paths`. */
 function withoutKeys(c: Clip, paths: string[]): Clip {

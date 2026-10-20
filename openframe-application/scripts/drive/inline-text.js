@@ -222,6 +222,16 @@ async (page) => {
   await settle();
   await aligned("two lines, right");
   await page.keyboard.press("Escape");
+  // Tracked, each way (ADR-105 moved the area by the spacing CSS adds
+  // after a line's last letter, which the raster leaves out), and tight.
+  for (const [align, spacing] of [["center", 40], ["left", 40], ["right", 40], ["center", -8]]) {
+    await ve(([i, align, letterSpacing]) => window.videoEditor.exec("set_text", { clip_id: i, style: { align, letterSpacing } }), [id, align, spacing]);
+    await page.keyboard.press("Enter");
+    await settle();
+    await aligned(`${align}, tracked ${spacing}`);
+    await page.keyboard.press("Escape");
+  }
+  await ve((i) => window.videoEditor.exec("set_text", { clip_id: i, style: { letterSpacing: 0 } }), id);
   await ve((i) => {
     const v = window.videoEditor;
     v.exec("set_text", { clip_id: i, text: "Turned title", style: { align: "center" } });

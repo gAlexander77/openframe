@@ -5,12 +5,14 @@ import { cleanRuns } from "../textRuns";
 // as a complete, valid Project or as an error naming what is wrong.
 
 import { normalizeBrand } from "../brandKit";
+import { effectDefaults } from "../catalog";
 import { cleanCompressor } from "../compressor";
 import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { cleanShape } from "../shapes";
 import { cleanShadow } from "../shadow";
+import { cleanBorder } from "../border";
 import { cleanWeight } from "../textLook";
 import { keyColor } from "../textAnim";
 import { cleanTrackMatte, dropDanglingMattes } from "../trackMatte";
@@ -29,6 +31,8 @@ import type {
   ImageClip,
   LutFile,
   Marker,
+  MusicGrid,
+  MusicPart,
   Project,
   Sound,
   TextClip,
@@ -180,7 +184,10 @@ export function clipForAsset(asset: Asset, start: number, fps: Rational): Clip {
       type: "audio",
       assetId: asset.id,
       start,
-      duration: full,
+      // A sound's last fraction of a frame is its tail (a shutter's ring,
+      // a pop's decay): its clip runs to the frame that holds its end. The
+      // nearest frame cut 0.25 s to 0.233 at 30 fps (ADR-113).
+      duration: Math.max(1, Math.ceil((asset.duration * fps.num) / fps.den - 1e-6)),
       in: 0,
       speed: 1,
       ...DEFAULT_SOUND,
@@ -263,6 +270,11 @@ function optional(c: Record<string, unknown>, key: string, value: unknown) {
 }
 const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment", "compound"]);
 
+/** Effects as saved, each parameter it was saved without at its default:
+ * one added later (a glow's radius, ADR-117) keeps the look it had. */
+const cleanEffects = (raw: unknown) =>
+  Array.isArray(raw) ? raw.map((e) => (isObj(e) && typeof e.type === "string" && isObj(e.params) ? { ...e, params: { ...effectDefaults(e.type), ...e.params } } : e)) : [];
+
 /** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
 function normalizeAdjust(raw: unknown, where: string, lutIds: Set<string>) {
   const a = cleanGrade({ ...DEFAULT_ADJUST, ...(isObj(raw) ? raw : {}) }) as unknown as Visual["adjust"];
@@ -287,7 +299,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
-    c.effects = Array.isArray(c.effects) ? c.effects : [];
+    c.effects = cleanEffects(c.effects);
     // Graphics (ADR-056 to ADR-059, ADR-062): optional, and a malformed one is
     // dropped rather than refused, so the clip still plays.
     optional(c, "trackMatte", cleanTrackMatte(c.trackMatte));
@@ -296,11 +308,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     optional(c, "edge", c.edge === "mirror" || c.edge === "repeat" ? c.edge : undefined);
     optional(c, "wiggle", cleanWiggle(c.wiggle));
     optional(c, "shadow", cleanShadow(c.shadow));
+    optional(c, "border", cleanBorder(c.border));
   }
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
-    c.effects = Array.isArray(c.effects) ? c.effects : [];
+    c.effects = cleanEffects(c.effects);
   }
   if (type === "video" || type === "audio" || type === "compound") {
     for (const [k, v] of Object.entries(DEFAULT_SOUND)) {
@@ -373,8 +386,10 @@ export function normalizeProject(raw: unknown): Project {
       throw new ProjectError(`assets[${i}]: needs at least a "src"`);
     }
     const kind = a.kind === "audio" || a.kind === "image" ? a.kind : "video";
+    const { musicGrid: rawGrid, ...rest } = a;
+    const musicGrid = normalizeMusicGrid(rawGrid);
     return {
-      ...a,
+      ...rest,
       id: typeof a.id === "string" ? a.id : uid("a"),
       kind,
       name: typeof a.name === "string" ? a.name : a.src.split(/[\\/]/).pop()!,
@@ -383,6 +398,7 @@ export function normalizeProject(raw: unknown): Project {
       ...(a.animated === true ? { animated: true } : {}),
       hasVideo: typeof a.hasVideo === "boolean" ? a.hasVideo : kind !== "audio",
       hasAudio: typeof a.hasAudio === "boolean" ? a.hasAudio : kind !== "image",
+      ...(musicGrid ? { musicGrid } : {}),
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));
@@ -506,5 +522,18 @@ function normalizeMarkers(raw: unknown): Marker[] {
     frame: Math.max(0, Math.round(num(m.frame, 0))),
     label: typeof m.label === "string" ? m.label : "",
     color: typeof m.color === "string" ? m.color : "#3be0f0",
+    ...(isObj(m.follows) && typeof m.follows.clip === "string" && Number.isFinite(m.follows.at) && (m.follows.at as number) >= 0 ? { follows: { clip: m.follows.clip, at: m.follows.at as number } } : {}),
   }));
+}
+
+const MUSIC_PARTS: MusicPart[] = ["intro", "verse", "build", "drop", "breakdown", "outro"];
+
+/** A song's grid as saved, or nothing when it does not hold up. */
+function normalizeMusicGrid(raw: unknown): MusicGrid | undefined {
+  if (!isObj(raw) || !(num(raw.bpm, 0) >= 40 && num(raw.bpm, 0) <= 240) || !(num(raw.firstDownbeat, -1) >= 0)) return undefined;
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .filter((x): x is Record<string, unknown> => isObj(x) && num(x.at, -1) >= 0 && MUSIC_PARTS.includes(x.label as MusicPart))
+    .map((x) => ({ at: num(x.at, 0), label: x.label as MusicPart }))
+    .sort((a, b) => a.at - b.at);
+  return { bpm: num(raw.bpm, 120), firstDownbeat: num(raw.firstDownbeat, 0), ...(sections.length ? { sections } : {}) };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPronounce, asksEmphasis, breaksOf, chunkSentences, EMPHASIS_NOTE, layoutLines, matchPauses, numberWords, parseLine, pauseAfter, syllables, writtenWords } from "./voiceScript";
+import { applyPronounce, asksEmphasis, breaksOf, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, matchPauses, numberWords, parseLine, pauseAfter, syllables, writtenWords } from "./voiceScript";
 
 describe("pause marks", () => {
   it("takes marks out of the caption and puts the pause where the mark was", () => {
@@ -107,6 +107,18 @@ describe("timing between lines", () => {
     ]);
     // The second line's own gap (0.1) sets where the third would start.
     expect(layoutLines([{ seconds: 1, gap: 0.1 }, { seconds: 1 }], 0)[1].start).toBe(1.1);
+  });
+  it("names each line pushed past its at by the line before (ADR-113)", () => {
+    // The second Claude film's first script: line 3 ran to 14.36 s, so
+    // line 4, asked for 12.6 s, started there, and nothing said so.
+    const asked = [8.4, 12.6, 14, undefined];
+    const times = layoutLines([{ at: 8.4, seconds: 5.96 }, { at: 12.6, seconds: 1.903 }, { at: 14, seconds: 1.604 }, { seconds: 2 }]);
+    const notes = lateLineNotes(asked, times);
+    expect(notes).toHaveLength(2);
+    expect(notes[0]).toContain("Line 2 starts at 14.36 s, 1.76 s after its at (12.6 s): line 1 runs until then");
+    expect(notes[1]).toContain("Line 3 starts at 16.263 s, 2.263 s after its at (14 s)");
+    // A line on its mark, or one with no at, says nothing.
+    expect(lateLineNotes([0, 5], layoutLines([{ at: 0, seconds: 2 }, { at: 5, seconds: 1 }]))).toEqual([]);
   });
 });
 

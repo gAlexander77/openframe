@@ -37,7 +37,11 @@ export function transformGroup(p: Project, ids: string[], move: GroupMove, frame
     if (clip.transform.scaleY !== undefined) values.scaleY = value("scaleY") * (move.scale ?? 1);
     for (const [name, v] of Object.entries(values)) {
       const path = `transform.${name}`;
-      if (key || clip.keyframes?.[path]?.length) p = updateClip(p, clip.id, c => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path] ?? [], { ...c.keyframes?.[path]?.find(k => k.f === rel), f: rel, v }) } }));
+      const animated = !!clip.keyframes?.[path]?.length;
+      // A key on an animated path the move leaves as it is would only split
+      // its curve and reshape its ease (an x move bent a keyed scale, ADR-099).
+      if (animated && Math.abs(v - value(name)) < 1e-9) continue;
+      if (key || animated) p = updateClip(p, clip.id, c => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path] ?? [], { ...c.keyframes?.[path]?.find(k => k.f === rel), f: rel, v }) } }));
       else p = setParam(p, [clip.id], path, v);
     }
   }

@@ -23,9 +23,19 @@ export const fpsValue = (fps: Rational) => fps.num / fps.den;
 export const framesToSeconds = (frames: number, fps: Rational) =>
   (frames * fps.den) / fps.num;
 
-/** Nearest frame. Use `floor` when asking "which frame is showing at t". */
-export const secondsToFrames = (seconds: number, fps: Rational) =>
-  Math.round((seconds * fps.num) / fps.den);
+/** Nearest frame; a time exactly between two frames (3.75 s at 30 fps,
+ * frame 112.5) takes the earlier one, the frame on screen at that instant,
+ * as frameAt says. Math.round took the later one, so every cut an agent
+ * put on such a time came half a frame late, and the sound under it with
+ * it (ADR-102). The epsilon keeps 112.5000000001 a tie. Use `frameAt`
+ * when asking "which frame is showing at t". */
+export const secondsToFrames = (seconds: number, fps: Rational) => nearestFrame((seconds * fps.num) / fps.den);
+
+/** A frame count rounded as secondsToFrames rounds: a tie to the earlier
+ * frame. For a time already in frames (a song's beat placed through a
+ * clip's speed, a word of its source), so a beat a marker stands on and
+ * the same second given to a command land on one frame (ADR-106). */
+export const nearestFrame = (frames: number) => Math.ceil(frames - 0.5 - 1e-9) + 0;
 
 /** The frame on screen at time t. The epsilon absorbs float error so that
  * exactly-on-boundary times (2.0000000001 frames) land on the right frame. */

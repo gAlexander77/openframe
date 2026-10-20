@@ -9,10 +9,11 @@
 import { DEFAULT_ADJUST } from "./project/defaults";
 import { HSL_BANDS, WHEELS } from "./grade";
 import { SHADOW_PARAMS } from "./shadow";
+import { BORDER_PARAMS } from "./border";
 import { SHAPE_PARAMS } from "./shapes";
 import { TILT_PARAMS } from "./tilt";
 import { WIGGLE_TARGETS } from "./wiggle";
-import type { Clip } from "./project/types";
+import type { Clip, WiggleTarget } from "./project/types";
 
 interface Row {
   /** The path as a model reads it: `<a|b>` is one of the choices. */
@@ -20,7 +21,7 @@ interface Row {
   /** Which clips it animates on. */
   on: (c: Clip) => boolean;
   /** Why this clip's key would not show yet, and what turns it on. */
-  needs?: (c: Clip) => string | null;
+  needs?: (c: Clip, path: string) => string | null;
 }
 
 const any = (xs: readonly string[]) => `<${xs.join("|")}>`;
@@ -40,17 +41,27 @@ const ROWS: Row[] = [
   // Perspective tilt (ADR-069 to ADR-071's render work).
   { path: `transform.${any(TILT_PARAMS)}`, on: visual },
   { path: `shadow.${any(SHADOW_PARAMS)}`, on: visual, needs: (c) => ("shadow" in c && c.shadow ? null : "it has no drop shadow: set_shadow first") },
+  { path: `border.${any(BORDER_PARAMS)}`, on: visual, needs: (c) => ("border" in c && c.border ? null : "it has no border: set_border first") },
   { path: "opacity", on: (c) => "opacity" in c },
   { path: "volume", on: sound },
   { path: "pan", on: sound },
   { path: `adjust.${any(Object.keys(DEFAULT_ADJUST))}`, on: graded },
   { path: `adjust.hsl.${any(HSL_BANDS)}.<hue|saturation|lightness>`, on: graded },
   { path: `adjust.wheels.${any(WHEELS)}.<r|g|b|y>`, on: graded },
-  { path: "adjust.lut.intensity", on: graded },
+  { path: "adjust.lut.intensity", on: graded, needs: (c) => ("adjust" in c && c.adjust.lut ? null : "it has no LUT: apply_lut first") },
+  { path: "adjust.colorize.amount", on: graded, needs: (c) => ("adjust" in c && c.adjust.colorize ? null : "it is not colorized: set_colorize first") },
   { path: "effects.<index|id|type>.<param>", on: (c) => "effects" in c },
   { path: "mask.<x|y|width|height|rotation|feather|radius>", on: visual, needs: (c) => ("mask" in c && c.mask ? null : "it has no mask: set_mask first") },
   { path: `shape.${any(SHAPE_PARAMS)}`, on: (c) => c.type === "color" && !!c.shape },
-  { path: `wiggle.${any(WIGGLE_TARGETS)}.<amplitude|strength>`, on: visual },
+  // A wiggle's keys shake only a target it wiggles (set_wiggle makes one).
+  {
+    path: `wiggle.${any(WIGGLE_TARGETS)}.<amplitude|strength>`,
+    on: visual,
+    needs: (c, path) => {
+      const target = path.split(".")[1] as WiggleTarget;
+      return "wiggle" in c && c.wiggle?.[target] ? null : `it has no ${target} wiggle: set_wiggle target ${target} first`;
+    },
+  },
   { path: "lowpass.cutoff", on: sound, needs: (c) => ("lowpass" in c && c.lowpass ? null : "it has no low-pass filter: set_audio_filter type lowpass first") },
   { path: "highpass.cutoff", on: sound, needs: (c) => ("highpass" in c && c.highpass ? null : "it has no high-pass filter: set_audio_filter type highpass first") },
   { path: "reverb.mix", on: sound, needs: (c) => ("reverb" in c && c.reverb ? null : "it has no reverb: set_reverb first") },
@@ -83,6 +94,14 @@ export function animatablePaths(c: Clip): string[] {
 /** Every path that animates on some clip, for the guide. */
 export const ANIMATABLE_PATHS = ROWS.map((r) => r.path);
 
+/** What this clip lacks before `path` shows on it ("it has no border:
+ * set_border first"), or null: set_param refuses a part a clip lacks with
+ * it (ADR-108). */
+export function partNeeds(c: Clip, path: string): string | null {
+  const i = patterns.findIndex((re, j) => ROWS[j].on(c) && re.test(path));
+  return i < 0 ? null : (ROWS[i].needs?.(c, path) ?? shapeNeeds(c, path));
+}
+
 /**
  * Why a keyframe on `path` would not move anything on this clip, or null
  * when it animates. `path` is as stored (an effect's by its id; the
@@ -94,6 +113,6 @@ export function keyframeProblem(c: Clip, path: string): string | null {
     const known = patterns.some((re) => re.test(path));
     return `${path} does not animate on ${c.type} clips${known ? "" : " (nothing draws or plays a keyframe there)"}. Animatable on this clip: ${animatablePaths(c).join(", ") || "nothing"}`;
   }
-  const why = ROWS[i].needs?.(c) ?? shapeNeeds(c, path);
+  const why = ROWS[i].needs?.(c, path) ?? shapeNeeds(c, path);
   return why ? `${path} would not show on clip ${c.id} yet: ${why}` : null;
 }

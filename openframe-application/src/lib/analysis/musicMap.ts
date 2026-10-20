@@ -6,11 +6,15 @@
 // read its downbeats a beat pair late and its drop a bar early.
 
 import { framesForSource, sourceRange, type TimedClip } from "../project/ops";
-import { framesToSeconds, type Rational } from "../time";
-import type { MusicStructure, SectionLabel, StructureHints } from "./beats";
+import type { MusicGrid } from "../project/types";
+import { framesToSeconds, nearestFrame, type Rational } from "../time";
+import { BARS_PER_PHRASE, BEATS_PER_BAR, type MusicStructure, type SectionLabel, type StructureHints } from "./beats";
 
 export interface MappedMusic {
+  /** Beats a minute as the clip plays it (the file's tempo times its speed). */
   bpm: number;
+  /** The file's own tempo, when the clip plays it at another speed. */
+  file_bpm?: number;
   /** Timeline seconds, inside the clip. */
   beats: number[];
   downbeats: number[];
@@ -27,7 +31,7 @@ export interface MappedMusic {
  * outside the stretch the clip plays). Through the clip's own source-time
  * map, so a speed curve or a reversed clip maps too.
  */
-export function sourceToTimeline(c: TimedClip, fps: Rational): { at: (t: number) => number | null; edge: (t: number) => number; lo: number; hi: number } {
+export function sourceToTimeline(c: TimedClip, fps: Rational): { at: (t: number) => number | null; frame: (t: number) => number | null; edge: (t: number) => number; lo: number; hi: number } {
   const [lo, hi] = sourceRange(c, fps);
   // The clip frame where its source reaches t (a speed curve's frames are
   // only defined inside the clip, so t is held to its stretch first).
@@ -40,15 +44,23 @@ export function sourceToTimeline(c: TimedClip, fps: Rational): { at: (t: number)
     return f + (c.reverse ? -1 : 1) * (t - u) / (sps || 1);
   };
   const toSec = (f: number) => +framesToSeconds(c.start + f, fps).toFixed(3);
+  // Rounded as secondsToFrames rounds, a tie to the earlier frame: a beat
+  // at 3.75 s at 30 fps is frame 112, for its marker and for a command
+  // given 3.75 alike (ADR-102, ADR-106).
   return {
     lo,
     hi,
     at: (t) => {
-      const f = Math.round(frameOf(t));
+      const f = nearestFrame(frameOf(t));
       return f >= 0 && f < c.duration ? toSec(f) : null;
     },
+    // The timeline frame instead (markers that follow the clip).
+    frame: (t) => {
+      const f = nearestFrame(frameOf(t));
+      return f >= 0 && f < c.duration ? c.start + f : null;
+    },
     // A section's edge: held inside the clip.
-    edge: (t) => toSec(Math.min(c.duration, Math.max(0, Math.round(frameOf(Math.min(hi, Math.max(lo, t))))))),
+    edge: (t) => toSec(Math.min(c.duration, Math.max(0, nearestFrame(frameOf(Math.min(hi, Math.max(lo, t))))))),
   };
 }
 
@@ -71,8 +83,11 @@ export function mapMusic(m: MusicStructure, c: TimedClip, fps: Rational, from = 
   // The biggest drop the clip plays (the song's own may be outside it).
   const biggest = drops.reduce<readonly [number, number] | null>((b, d) => (!b || d[1] > b[1] ? d : b), null);
   const own = m.drop === null ? null : at(m.drop);
+  // The tempo heard: a clip at 1.25x plays a 128 BPM song at 160.
+  const speed = c.speedCurve || c.freeze ? 1 : c.speed;
   return {
-    bpm: m.bpm,
+    bpm: +(m.bpm * speed).toFixed(1),
+    ...(speed !== 1 || c.speedCurve ? { file_bpm: m.bpm } : {}),
     beats: kept.map(([t]) => t),
     downbeats: all(m.downbeats),
     phrases: all(m.phrases),
@@ -118,4 +133,49 @@ export function confidenceNote(c: MusicStructure["confidence"], hints: Structure
   if (c.tempo < 0.5 && hints.bpm === undefined) notes.push("few beats land on a clear attack, so the tempo is uncertain: give bpm if it is known");
   if (c.sections < 0.6 && !hints.cues) notes.push("the section boundaries are faint: give cues (the parts' start times) if they are known");
   return notes.length ? `${notes.join("; ")}.` : undefined;
+}
+
+/** A song's grid as given (set_music_grid), in its file's seconds: every
+ * beat from the first downbeat both ways, bars every four beats, phrases
+ * every four bars (starting where most parts start, else on the first
+ * bar), the parts from their times and the drops (a drop after another
+ * part). What analysis reads with the same hints, nothing guessed. */
+export function gridStructure(g: MusicGrid, duration: number): { bpm: number; beats: number[]; downbeats: number[]; phrases: number[]; sections: { start: number; end: number; label: SectionLabel }[]; drops: number[]; drop: number | null } {
+  const step = 60 / g.bpm;
+  const first = g.firstDownbeat - Math.floor(g.firstDownbeat / step + 1e-9) * step;
+  const r4 = (t: number) => Math.round(t * 1e4) / 1e4;
+  const beats: number[] = [];
+  for (let k = 0; first + k * step < duration; k++) beats.push(r4(first + k * step));
+  const nearest = (t: number) => beats.reduce((b, x, i) => (Math.abs(x - t) < Math.abs(beats[b] - t) ? i : b), 0);
+  const phase = beats.length ? nearest(g.firstDownbeat) % BEATS_PER_BAR : 0;
+  const bars = beats.map((_, i) => i).filter((i) => i % BEATS_PER_BAR === phase);
+  const cues = (g.sections ?? []).filter((x) => x.at > 0.05 && x.at < duration - 0.05).sort((a, b) => a.at - b.at);
+  // Phrases start where most parts start (on a bar line), else on the first bar.
+  const mod = (x: number, n: number) => ((x % n) + n) % n;
+  const votes = [0, 0, 0, 0];
+  for (const x of cues) votes[mod(Math.round((nearest(x.at) - phase) / BEATS_PER_BAR), BARS_PER_PHRASE)]++;
+  const pp = votes.indexOf(Math.max(...votes));
+  const phrases = bars.filter((i) => mod((i - phase) / BEATS_PER_BAR - pp, BARS_PER_PHRASE) === 0).map((i) => beats[i]);
+  const sections: { start: number; end: number; label: SectionLabel }[] = [];
+  if (g.sections?.length) {
+    const head = g.sections.find((x) => x.at <= 0.05)?.label ?? "intro";
+    const starts = [{ at: 0, label: head }, ...cues];
+    starts.forEach((x, k) => sections.push({ start: r4(x.at), end: r4(k + 1 < starts.length ? starts[k + 1].at : duration), label: x.label }));
+  }
+  const drops = sections.filter((x, k) => k > 0 && x.label === "drop" && sections[k - 1].label !== "drop").map((x) => x.start);
+  return { bpm: g.bpm, beats, downbeats: bars.map((i) => beats[i]), phrases, sections, drops, drop: drops[0] ?? null };
+}
+
+/** set_music_grid's arguments (the file's seconds), checked, as stored. */
+export function readMusicGrid(a: { bpm?: unknown; first_downbeat?: unknown; sections?: unknown }): MusicGrid {
+  const h = readMusicHints({ bpm: a.bpm, first_downbeat: a.first_downbeat, cues: a.sections });
+  if (h.bpm === undefined || h.firstDownbeat === undefined) throw new Error("a grid needs bpm and first_downbeat (a bar's first beat, in the music file's own seconds)");
+  const sections = (h.cues ?? []).slice().sort((x, y) => x.at - y.at);
+  return { bpm: h.bpm, firstDownbeat: h.firstDownbeat, ...(sections.length ? { sections } : {}) };
+}
+
+/** analyze_music's hints: a stored grid, the call's own hints winning. */
+export function gridHints(g: MusicGrid | undefined, given: StructureHints): StructureHints {
+  if (!g) return given;
+  return { bpm: g.bpm, firstDownbeat: g.firstDownbeat, ...(g.sections?.length ? { cues: g.sections } : {}), ...given };
 }

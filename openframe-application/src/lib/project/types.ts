@@ -92,6 +92,12 @@ export interface Asset {
   animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */
   duration: number;
+  /** An MP3's encoder delay and padding in seconds, as its LAME tag names
+   * them, which `duration` leaves out. The engine reads the tag from the
+   * file and plays, draws and measures every MP3 without them, as ffmpeg
+   * does (ADR-112). Absent for other files, and on an MP3 imported
+   * before, whose duration still counts them. */
+  gapless?: { start: number; end: number };
   width?: number;
   height?: number;
   /** Average source frame rate; absent for audio and images. */
@@ -120,6 +126,10 @@ export interface Asset {
   /** The built-in sound this file was made from (lib/sfx.ts, an effect;
    * lib/ambience.ts, a bed with its seed): adding it again reuses it. */
   sound?: { id: string; seed?: number };
+  /** The song's grid, given (set_music_grid) or known from making it
+   * (generate_music): analyze_music, mark_beats and check_project read
+   * the song through it. */
+  musicGrid?: MusicGrid;
 }
 
 export interface SpeechInfo {
@@ -137,12 +147,20 @@ export interface SpeechInfo {
   /** The pace the line is meant to have: slow (an end card's tagline) or
    * fast, so review_voiceover does not flag it for being so. */
   pace?: "slow" | "normal" | "fast";
-  /** The words a second it was read to, [lowest, highest], before its
-   * pace moves them (lib/voicePace.ts); none: narration's 2.3-2.8. */
+  /** The words a second it was read to, [lowest, highest], as asked: a
+   * band asked wins over the pace (lib/voicePace.ts, ADR-104). Takes
+   * saved before readAs kept a kind's band here (bandSource reads them). */
   wps?: [number, number];
+  /** The kind of read (narration, ad, social) whose band, moved for the
+   * pace, it was read to when no band was asked; none: narration's. */
+  readAs?: "narration" | "ad" | "social";
   /** The speed was chosen to land on that, not asked for: a retake with
    * new words chooses again. */
   speedChosen?: boolean;
+  /** Its captions show this many words at a time (1-3), each word timed
+   * to the voice (add_voiceover caption_words, ADR-115): a retake captions
+   * the new take the same way. */
+  captionWords?: number;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */
@@ -208,6 +226,28 @@ export interface Marker {
   frame: number;
   label: string;
   color: string;
+  /** A mark of a clip's media (a beat, a bar, a part or the drop of a
+   * song: analyze_music, mark_beats, set_music_grid, generate_music): the
+   * clip and the second of its file the marker stands on. It follows the
+   * clip when the clip is moved, trimmed, split or sped up, or put in a
+   * compound clip (through the compound clip that plays it), and goes when
+   * nothing plays that second any more (lib/markers.ts followClips). */
+  follows?: { clip: Id; at: number };
+}
+
+/** The parts a song's grid names. */
+export type MusicPart = "intro" | "verse" | "build" | "drop" | "breakdown" | "outro";
+
+/** A song's grid as someone who knows it gives it (a cue sheet, the
+ * composer's notes), in its file's own seconds, 4/4: analysis reads the
+ * song through it instead of guessing (set_music_grid, ADR-101). */
+export interface MusicGrid {
+  /** Beats a minute. */
+  bpm: number;
+  /** A bar's first beat. */
+  firstDownbeat: number;
+  /** The parts, each from its `at` to the next one's; a drop after another part is a drop. */
+  sections?: { at: number; label: MusicPart }[];
 }
 
 // ---- Clips ---------------------------------------------------------------
@@ -351,6 +391,18 @@ export interface Grade {
   wheels?: Partial<Record<WheelName, Wheel>>;
   /** A LUT from Project.luts, mixed in at intensity 0..1. */
   lut?: { id: Id; intensity: number };
+  /** Colorize (ADR-105): the picture's brightness in one color, before
+   * the rest of its color settings. */
+  colorize?: Colorize;
+}
+
+/** Premiere's Tint: white becomes `color`, black stays black, grays
+ * become darker shades of it; mixed over the picture by `amount`, 0..1.
+ * Keyframe adjust.colorize.amount. */
+export interface Colorize {
+  /** CSS color; its alpha multiplies `amount`. */
+  color: string;
+  amount: number;
 }
 
 export type BlendMode =
@@ -472,6 +524,21 @@ export interface Visual {
    * mask, matte and effects, so a rounded or compound window casts its own
    * shape. Absent = none. */
   shadow?: DropShadow;
+  /** A border (stroke) around the finished picture (ADR-099): outside its
+   * shape after its mask, matte and effects, so a rounded mask gets a
+   * rounded border; drawn before the shadow, which it casts too. Absent =
+   * none. */
+  border?: Border;
+}
+
+/** A border around a picture. Keyframe border.width, border.opacity. */
+export interface Border {
+  /** CSS color; its alpha multiplies `opacity`. */
+  color: string;
+  /** Pixels at 1080p, outside the picture's edge, 0..200. */
+  width: number;
+  /** 0..1 */
+  opacity: number;
 }
 
 /** A drop shadow. Keyframe shadow.blur, shadow.x, shadow.y, shadow.opacity. */
@@ -605,6 +672,9 @@ export interface AudioFilter {
   cutoff: number;
   /** Peak at the cutoff, dB, 0..24; 0 is a smooth slope. */
   resonance: number;
+  /** Gain after the filter, dB (-24..24; absent 0): what a band-passed
+   * voice lost, made up (set_audio_filter keep_loudness, ADR-114). */
+  makeup?: number;
 }
 
 /** A room around a clip's sound: a convolution reverb whose impulse
@@ -658,6 +728,39 @@ export interface Sound {
   echo?: Echo;
   reverb?: Reverb;
   tapeStop?: TapeStop;
+  /** How duck_under_speech dipped this clip (music under a voice), kept
+   * so a voice line that changes length dips it again the same way
+   * (lib/analysis/duck.ts staleDucks, ADR-104). */
+  duck?: DuckRecord;
+}
+
+/** What duck_under_speech was asked for a music clip, and the volume keys
+ * it wrote. */
+export interface DuckRecord {
+  voiceAboveMusicLu?: number;
+  minLineLu?: number;
+  maxLineLu?: number;
+  depth?: number;
+  /** Moments the music stays up at (open_at): timeline seconds, or the
+   * labels of markers ("Drop"). */
+  openAt?: (number | string)[];
+  /** Seconds a pause must last for the music to come up (min_gap). */
+  minGap?: number;
+  /** Seconds the music takes to come back up after a line (release). */
+  release?: number;
+  /** Ducked with every clip of its track in one call (track_id). */
+  track?: boolean;
+  /** The keys it wrote, each as its place in the clip's file (ms) and its
+   * value (x 1e4): a later duck replaces these and keeps the rest, made by
+   * hand, outside the lines (lib/analysis/duck.ts mergeKeys, ADR-114). */
+  written?: [number, number][];
+  /** A signature of the volume keys it wrote (duckSignature: their shape,
+   * which a move, split or trim keeps): keys changed since, by hand, are
+   * not dipped again over them. */
+  keys: number;
+  /** The timeline frame its first key was written at: keys elsewhere since
+   * moved with their clip, away from the voice (staleDucks). */
+  at?: number;
 }
 
 /** One point of a speed curve. */
@@ -782,7 +885,17 @@ export type VideoClip = ClipBase &
      * falls instead of repeating one. */
     frameBlend?: boolean;
   };
-export type AudioClip = ClipBase & Sound & Timed & { type: "audio" };
+export type AudioClip = ClipBase &
+  Sound &
+  Timed & {
+    type: "audio";
+    /** Seconds its sound crossfades into the next clip on its track, which
+     * starts where it ends (set_crossfade, cut_music): at equal power,
+     * ending at the cut, the next clip's sound rising over the seconds
+     * before its start (lib/audio.ts soundOverlaps, ADR-104). Absent: a
+     * butt cut, each side ramped over the 4 ms click guard. */
+    crossfade?: number;
+  };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &
   Visual & {

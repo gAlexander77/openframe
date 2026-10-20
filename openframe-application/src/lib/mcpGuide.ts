@@ -9,7 +9,7 @@ import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from ".
 import { KINETIC_ANIMATIONS } from "./kinetic";
 import { CAPTION_LOOKS } from "./captionLooks";
 import { RATIOS } from "./canvas";
-import type { JsonSchema } from "./commands";
+import { TEXT_STYLE_SCHEMA, type JsonSchema } from "./commands";
 import { ANIMATABLE_PATHS } from "./animatable";
 import { EXPORT_PRESETS } from "./export";
 import { MASK_SHAPES } from "./mask";
@@ -20,7 +20,9 @@ import { searchStickers, STICKER_CATEGORIES, STICKER_MOTIONS, STICKERS } from ".
 import { TEXT_TEMPLATES } from "./templates";
 import { DEFAULT_VOICE, VOICES } from "./tts";
 import { REVIEW } from "./voiceReview";
-import { PACE_BANDS } from "./voicePace";
+import { CHOSEN_MAX_SPS, PACE_BANDS } from "./voicePace";
+import { LINE_CEILING_LU } from "./analysis/balance";
+import { DUCK_MIN_GAP } from "./analysis/duck";
 
 export interface ToolInfo {
   name: string;
@@ -37,12 +39,12 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "roll_edit", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
     blurb: "Compose an original score that fits the edit, or read an imported track's structure; cut and hit on it, fit it to the picture; mark moments.",
-    tools: ["generate_music", "plan_music", "analyze_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
+    tools: ["generate_music", "plan_music", "analyze_music", "set_music_grid", "cut_music", "cut_to_beats", "add_beat_hits", "fit_music", "mark_beats", "add_marker", "add_markers", "update_marker", "delete_markers"],
   },
   {
     name: "Picture and motion",
@@ -51,8 +53,8 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   },
   {
     name: "Graphics and compositing",
-    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), drop shadows and perspective tilt for floating windows, track mattes, motion blur, mirrored edges and camera shake.",
-    tools: ["add_shape", "set_shape", "set_shadow", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
+    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.",
+    tools: ["add_shape", "set_shape", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
   { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
@@ -61,11 +63,11 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
     tools: ["set_brand", "apply_brand", "add_ad_element", "text_behind_subject"],
   },
-  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut"] },
+  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
-    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
+    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "set_crossfade", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
   { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "preview_audio", "check_project", "measure_loudness", "export_video", "export_versions", "export_status"] },
 ];
@@ -76,7 +78,7 @@ export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.include
 /** Tools that only read: clients may run them without asking. */
 const READ_ONLY = new Set(["plan_music", "help", "describe_project", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
-const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
+const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
 const OPEN_WORLD = new Set(["import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
@@ -114,7 +116,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   add_keyframe: { clip_id: "c_123", path: "transform.x", at: 1, value: 0.75, ease: "fastIn" },
   frame_region: { clip_id: "c_123", region: { x: 0.25, y: 0.2, w: 0.5, h: 0.5 }, to_region: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 }, from: 0, to: 3 },
   set_transition: { clip_id: "c_123", type: "dissolve", duration: 0.5 },
-  add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 55 } },
+  add_effect: { clip_id: "c_123", type: "glow", params: { amount: 60, threshold: 88 } },
   set_filter: { clip_id: "c_123", type: "teal", intensity: 0.8 },
   set_speed_curve: { clip_id: "c_123", preset: "hero" },
   set_blend: { clip_ids: ["c_123"], mode: "screen" },
@@ -124,10 +126,15 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   generate_music: { style: "launch", key: "Am", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", at: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }], seed: 7, stems: true, markers: ["bars", "drop"] },
   plan_music: { style: "cinematic", length: 45, ending: "stop" },
   analyze_music: { clip_id: "c_3", markers: ["beats", "bars", "drop"] },
+  set_music_grid: { clip_id: "c_3", bpm: 128, first_downbeat: 0.12, sections: [{ at: 0, label: "intro" }, { at: 7.62, label: "build" }, { at: 15.12, label: "drop" }], markers: ["beats", "bars", "drop"] },
   cut_to_beats: { media: [{ asset_id: "a_1", in: 2 }, { asset_id: "a_2" }, { asset_id: "a_1", in: 9, beats: 4 }], grid: "beats", pattern: [4, 4, 2, 2, 1, 1] },
   add_beat_hits: { effects: ["flash", "zoom"], marker_label: "Drop" },
   set_speed_ramp: { clip_id: "c_7", at: 8.4, moment: "slow" },
+  roll_edit: { clip_id: "c_7", to: 8 },
+  freeze_frame: { clip_id: "c_7", at: 6.267, duration: 1.733, mode: "overwrite" },
   fit_music: { clip_id: "c_3", drop_at: 8.4, end: "bar", fade_out: 1.5 },
+  cut_music: { clip_id: "c_3", from: 14, to: 30 },
+  set_crossfade: { clip_id: "c_3", seconds: 0.03 },
   add_cinematic_bars: { ratio: 2.39, animate_in: 0.6 },
   add_shape: { kind: "rounded_rectangle", start: 2, duration: 3, x: -0.25, y: 0.32, width: 0.4, height: 0.1, color: "#14101fcc", radius: 0.3 },
   set_shape: { clip_ids: ["c_8"], draw: 1, at: 2.6 },
@@ -135,6 +142,8 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_motion_blur: { clip_ids: ["c_4", "c_5"], on: true, shutter_angle: 180 },
   set_edge_mode: { clip_ids: ["c_4"], edge: "mirror" },
   set_shadow: { clip_ids: ["c_6"], blur: 80, y: 30, opacity: 0.55 },
+  set_border: { clip_ids: ["c_6"], width: 10, color: "#ffffff" },
+  set_colorize: { clip_ids: ["c_7"], color: "#ffb347", amount: 1 },
   set_tilt: { clip_ids: ["c_6"], y: -18, x: 6 },
   animate_text_style: { clip_id: "c_5", keys: [{ at: 1, letter_spacing: 0, ease: "easeOut" }, { at: 2.5, letter_spacing: 24 }] },
   set_wiggle: { clip_ids: ["c_4"], target: "position", frequency: 4, amplitude: 12 },
@@ -164,7 +173,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   review_voiceover: {},
   remove_keyframes: { clip_ids: ["c_title"], path: "opacity" },
   retake_voiceover: { clip_id: "c_vo2", pronounce: { MCP: "M C P" }, words_per_second: [2.3, 2.8], ripple: true },
-  duck_under_speech: { clip_id: "c_music", voice_above_music_lu: 12, min_line_lu: 10 },
+  duck_under_speech: { track_id: "t_music", voice_above_music_lu: 12, min_line_lu: 10 },
   set_caption_look: { look: "pop" },
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
   preview_frames: { times: [0.5, 2, 4, 6, 8, 10, 12, 14] },
@@ -192,8 +201,10 @@ export const PARAM_PATHS: { path: string; range: string; meaning: string }[] = [
   { path: "opacity", range: "0..1", meaning: "0 invisible" },
   { path: "volume", range: "0..4", meaning: "Gain: 1 is 0 dB, 0.5 about -6 dB, 0 silent" },
   { path: "pan", range: "-1..1", meaning: "Left to right" },
-  { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100" },
+  { path: "eq.low / eq.mid / eq.high", range: "-12..12", meaning: "A sound's three-band EQ, dB; 0 is flat" },
+  { path: "adjust.exposure", range: "-100..100", meaning: "Also brightness, contrast, saturation, vibrance, temperature, tint, hue, highlights, shadows, whites, blacks; fade, sharpen, vignette and grain run 0..100. Temperature cannot warm pure white (a white sprite or logo): set_colorize can" },
   { path: "adjust.lut.intensity", range: "0..1", meaning: "Strength of an applied LUT" },
+  { path: "adjust.colorize.amount", range: "0..1", meaning: "Strength of set_colorize's color (white becomes it)" },
   { path: "mask.x / mask.y / mask.width / mask.height / mask.feather", range: "fractions", meaning: "Animate a mask set with set_mask" },
   { path: "effects.<index|id|type>.<param>", range: "per effect", meaning: "An effect's parameter: its place in the stack from 0 (effects.0.amount), its id, or its type (effects.glow.threshold); list_catalog section effects has each one's parameters and range" },
 ];
@@ -251,13 +262,18 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - Words: one idea per title, 2-6 words for a headline, on screen long enough to read twice (about 0.4 s per word, 1.5 s at least); lower thirds 3-6 s; captions at most 20 characters a second, two lines.
 - Type: at most two font families (a bold display face for headlines, a clean sans for the rest); style.size counts pixels at a 1080-tall canvas and scales with the height, so on 16:9 headlines are size 90-160 (8-12% of the frame height; an epic edit's one- or two-word slams up to 240), and on 9:16, where the frame is narrow, size 50-90 with 2-4 words a line; nothing smaller than 4.5% of the frame's short side, 5% on a tall frame or a short for the apps, since a phone shows every shape at its width (size 49 on 16:9 and 1:1, 43 on 4:5, 31 on 9:16, 54 for a 16:9 short; check_project names a smaller title with its share of the frame's height); inside the 90% title-safe area (align_clips margin 0.05); on 9:16 clear of the bottom 35% and the right 19%, where the apps' buttons sit (the viewer's TikTok, Reels, Shorts guide).
 - Contrast: text over footage gets an outline, a shadow or a box (style.stroke, style.shadow, style.background); aim for 4.5:1 against what is behind it. A soft shadow (blur 16 on small type) barely helps over a bright sky; a box or a 2-3 px outline does. check_project measures every title on the rendered picture.
-- Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film.
+- Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film. Titles and shapes added without track_id land above it and above the beat hits, so the grade and the punches leave them alone; one put under it by track_id is named in the answer's notes.
 - Motion: titles get an in and an out animation; push slowly into stills (frame_region); do not move everything at once; whip transitions follow the direction of motion.
 - Flashes: never more than three flashes in any one second (WCAG 2.3.1; UK ad rules test for it).
-- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades). Silent footage gets its place's own sound under it (add_ambience: wind, water, rain, a city, a rocket's rumble, room tone), well under the voice. Listen before export: preview_audio plays a stretch of the mix or one stem (and measures it).
+- Sound: voice first, music ducked 10-15 dB under it (duck_under_speech; open_at ["Drop"] lets a drop between lines play), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades). Silent footage gets its place's own sound under it (add_ambience: wind, water, rain, a city, a rocket's rumble, room tone), well under the voice. Listen before export: preview_audio plays a stretch of the mix or one stem (and measures it).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.`;
+
+/** What a playbook says in place of the design rules: they were repeated in
+ * full in three playbooks (1.2k tokens each time a model read one, the
+ * Claude film test found, ADR-105), so a model reads them once. */
+export const DESIGN_POINTER = "Design rules: help topic design (hook, pacing, words, type sizes, contrast, color, motion, flashes, sound, loudness, end card), read once for every playbook; check_project measures the result against them.";
 
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
   ad: {
@@ -269,19 +285,19 @@ export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
 4. add_voiceover with the script, directed (help topic voiceover: casting, pace, pauses, pronunciations; a line's caption can show other words than it says: "20% off" for "twenty percent off"): the voice and captions are placed at their real lengths, and it answers where each line landed. review_voiceover hears it back and names what to fix; retake_voiceover fixes a line; then cut the picture to the voice.
 5. Picture: add_media_clip a shot under each line; frame_region for slow push-ins on stills and product details; set_canvas_fill blur when footage does not fill the frame; set_speed for slow motion on hero shots.
 6. Words: a headline per idea with add_text and a role (headline, subhead, label...: sized and styled from the brand), animated per word or letter (set_animation wordPop, letterRise or typewriter; unit and stagger for any other) with an out; add_ad_element lower_third for a name, offer_badge for the offer, cta_button for the ask; text_behind_subject puts the hero title behind the person or product; set_caption_look for the captions (pop or boxed read well on social).
-7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
+7. Look: one grade for all shots (an adjustment layer with set_filter or apply_lut over everything), set_transition dissolve or a fast cut between shots. Graphics: add_shape for bars, boxes and lines that draw on (keyframe shape.draw), set_track_matte to show footage inside big title letters, set_border to frame a picture-in-picture shot (a rounded mask gets a rounded border), set_motion_blur on fast moves. A styled layer stack used again (a floating window: footage, mask, border) is a template: create_compound_clip it once, then duplicate_clips with unique true for each use and edit_compound replace_clip to put that use's footage in.
 8. Sound: music with add_media_clip on an audio track (or an original score with generate_music, its sections fitted to the cut and its final hit on the end card), duck_under_speech under the voice, set_fades out at the end, add_sound_effect on reveals, normalize_loudness on the voice.
 9. End card: add_ad_element end_card (logo, headline, the call-to-action button and the url, in the brand), held 2-3 s; or logo_reveal for a brand spot.
 10. preview_frames across the whole ad and check_project with kind ad; fix what they find (text cut off, too small, low in contrast, no end card); measure_loudness with spec online (or the broadcast spec) and loudness -14; then export_video (loudness -14). The other deliverables in one call: export_versions with check true first (a sheet of every shape and length), then without check: ratios 16:9, 9:16, 1:1, durations 30, 15, 6 and a textless master. Each version's crops follow the shots' subjects; the check sheet outlines in orange a subject a framing still cuts (focus [{clip_id, x, y}] on that version places it by hand). Where a version needs more work by hand (an end card to lay out), export_versions with save_projects true saves it as a project in that shape: open_project it, fix it, export_video.
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
   epic_edit: {
     title: "An epic edit",
     text: `Making an epic edit (a hype video, montage or music-synced velocity edit):
 1. new_project; import_media the clips and one strong track (a clear beat and a drop), or compose one: generate_music (style launch or cinematic) with sections that fit the edit (a drop at the climax, the outro ending with the video; plan_music tries them without rendering) places the music and answers its cue sheet: tempo, bars, beats, sections, drops and the final hit.
-2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, beats, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds. Cut on downbeats and at phrase starts.
-3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
+2. Put the music on an audio track first and analyze_music it with markers beats, bars and drop (generate_music's markers option does this for its own score): it answers the tempo, the beat grid, bars, phrases, named sections (intro, build, drop, breakdown, outro) and the drop, in timeline seconds (detail full adds every beat and hit); the markers follow the music clip through later trims, moves and speed changes. When the reading is wrong (the bars fall between the kicks in preview_motion, the drop is missed or early, a confidence is low), give the song's grid with set_music_grid (its tempo, a bar's first beat and the parts, in the file's seconds): the markers move onto it, and analyze_music, mark_beats and check_project use it from then on. Cut on downbeats and at phrase starts.
+3. fit_music drop_at to slide the music so its drop lands where the edit's climax should be (often 25-40% in for a short edit). A song too long for the cut loses whole bars with cut_music (the file's seconds, kept on its bar lines, the join crossfaded so it does not click); preview_audio's edges then measure the join. A flat loop has no drop (analyze_music answers drop null): make one at a bar about a third in by lifting the beat before it for a moment of silence (lift_range on the music), then add_marker label Drop at the bar; add_beat_hits marker_label Drop and the riser's end_at use it.
 4. preview_media each clip to find its best moments, then cut_to_beats with the shots in order (each with its in point): one call lays them end to end on the main track, every cut on the grid. Shape it to the music: intro (wide shots, bars, the title; pattern 4s), build (cuts every 2 beats), drop (every beat), breakdown (slow motion, a freeze with the title), final drop, logo. Run cut_to_beats per section with start and end, or one pattern for all.
 5. Speed: velocity edits run fast between beats and slow on the hit: set_speed_ramp lands a clip's slow (or fast) moment on a beat without moving its cuts.
 6. Hits: add_beat_hits flash, zoom, shake, rgbSplit, glow or zoomBlur on the drop (marker_label Drop), on bars, or at_cuts; it keeps flashes to 3 a second. Transitions whipLeft, whipRight, zoomPunch or spinBlur at a few cuts, in the direction of the motion.
@@ -290,17 +306,17 @@ ${DESIGN}`,
 9. Sound design: add_sound_effect rise or reverseCymbal with end_at on the drop (it peaks there), impact, braam or subDrop on the drop's beat, whoosh on whip transitions; a set_audio_filter lowpass sweep that opens onto the drop, set_tape_stop for a stop before it; then fit_music end bar (or video) with fade_out to end the music cleanly.
 10. preview_motion around the drop and other key cuts (the beats are listed beside the frames), check_project with kind epic_edit (cuts on the beat, no more than 3 flashes a second, no black), measure_loudness, then export_video (loudness -14).
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
   voiceover: {
     title: "A directed voiceover",
     text: `Voicing a video so it sounds read by a person (add_voiceover, review_voiceover, retake_voiceover):
 1. Cast: list_catalog section voices describes every voice (accent, gender, the model author's grade, character, what it suits). ${DEFAULT_VOICE} (grade A) is the most natural and the default; am_michael is the US man to cast first, bf_emma and bm_george the British pair. Two speakers in one call are lines with different voices: a question and its answer, a host and a product. A blend ("af_heart:70,af_bella:30") mixes two voices' styles.
 2. Write for the ear: one breath per line (8-16 words, a sentence or two); short words; no parentheses or symbols the voice cannot say; numbers as they are said, with caption for how they are written ("twenty percent off" shown as "20% off"). pronounce respells names and acronyms the voice gets wrong ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the written words. Emphasis cannot be directed: the voice takes no mark that stresses a word (raising a word's stress was measured and changed nothing a listener would hear, so *word* stars are dropped with a note). To make a word stand out, write it last in its phrase, where English puts the main stress and the voice lengthens it ("The one I meant was her."), or [pause 0.2] before it.
-3. Pace: each line lands on its words a second over its speech (first word to last, its own pauses in): read_as narration ${PACE_BANDS.narration.join("-")} (the default, a natural narrator), ad ${PACE_BANDS.ad.join("-")} or social ${PACE_BANDS.social.join("-")}, or words_per_second [lowest, highest]; pace slow (an end-card tagline) or fast moves a line's band half a word a second. Leave speed out: each line is read, measured and read again at the speed that lands it (up to three reads, never time-stretched), and its answer gives the speed, the words a second and the band. With Heart, narration lands at speeds 0.6-0.9 (short words need the slowest); the old fixed 0.9 read the same lines at 3.7-4.2 words a second. A speed given is kept as given. review_voiceover reports each line's words and syllables a second over its speech and over its clip, and the script's words a second with the gaps between lines in (lower: 2.3-2.8 inside lines reads about 1.8-2.4 across a script).
+3. Pace: each line lands on its words a second over its speech (first word to last, the reader's own pauses at commas and sentence ends in, its pause marks out: a [pause] is the script's beat, so a line given one is not read faster to make up for it): read_as narration ${PACE_BANDS.narration.join("-")} (the default, a natural narrator), ad ${PACE_BANDS.ad.join("-")} or social ${PACE_BANDS.social.join("-")}; pace slow (an end-card tagline) or fast moves that band half a word a second, and a slow line is never read faster than the voice's own speed 1. words_per_second [lowest, highest] is held as given, whatever the pace; read_as and words_per_second go per call or per line (mission control's radio calls read as social among a narrator's lines). A band never rushes long words: one whose top would say a line's words faster than ${CHOSEN_MAX_SPS} syllables a second moves down until it does not ("Honestly? Mostly water.", seven syllables in three words, reads 1.64-2.14 words a second, not 2.3-2.8), and the line's answer says so in pace_note; a speed given reads it faster. Leave speed out: each line is read, measured and read again at the speed that lands it (up to three reads, never time-stretched), and its answer gives the speed, the words a second and the band. With Heart, narration lands at speeds 0.6-0.9 (short words need the slowest); the old fixed 0.9 read the same lines at 3.7-4.2 words a second. A speed given is kept as given. review_voiceover reports each line's words and syllables a second over its speech and over its clip, and the script's words a second with the gaps between lines in (lower: 2.3-2.8 inside lines reads about 1.8-2.4 across a script).
 4. Breathe: a comma rests 0.25-0.35 s, a sentence 0.5-0.8 s, a paragraph or section 1-1.5 s; each line's ending sets the gap after it (pause_after or paragraph: true for more). Inside a line, [pause 0.4] before a reveal or the product's name and [beat] before a punchline; not more than one every four to six words. at puts a line on a beat or a cut; the lines after it follow.
-5. Finish: natural (the default) gives every line a reader's pauses, a low cut and a little presence, one loudness, room tone under the pauses, the voice compressor and a touch of room; clean or raw when the voice is processed elsewhere.
-6. Mix: the voice ${REVIEW.overMusicAim} LU over the music (10-15 for a promo, never under ${REVIEW.overMusicMin}). How far over depends on the window, and every answer names it: program (the whole stretch, the music between lines counted: it reads lowest), speech (while the voice speaks, its lines together) and line (each line alone). duck_under_speech voice_above_music_lu aims the speech window; min_line_lu holds every line to a minimum, each dipping only as deep as it needs (both together: the speech target with no line under the minimum). review_voiceover measures each line; measure_loudness by_track gives all three windows, and kind film, ad or social judges the mix's loudness range (a film that measures 2 LU is very flat). The voice at one loudness across lines (review_voiceover flags any line ${REVIEW.levelSpread} LU off); export at loudness -14 for online.
+5. Finish: natural (the default) gives every line a reader's pauses, a low cut and a little presence, one loudness, room tone under the pauses, the voice compressor and a touch of room; clean or raw when the voice is processed elsewhere. Captions: one a line by default; caption_words 1-3 shows a few words at a time, each word timed to the voice (a short's pop captions), and a retake captions its line the same way.
+6. Mix: the voice ${REVIEW.overMusicAim} LU over the music (10-15 for a promo, never under ${REVIEW.overMusicMin}). How far over depends on the window, and every answer names it: program (the whole stretch, the music between lines counted: it reads lowest), speech (while the voice speaks, its lines together) and line (each line alone). duck_under_speech (track_id ducks every clip of a music track in one call, a song cut into pieces included) voice_above_music_lu aims the speech window; min_line_lu holds every line to a minimum, each dipping only as deep as it needs, and max_line_lu to a ceiling (${LINE_CEILING_LU} LU unless given), so a line over a quiet intro or a last hit dips less instead of emptying it. Pauses between lines under min_gap (${DUCK_MIN_GAP} s) stay down so the music does not pump, and the answer lists them (held); open_at ["Drop"] brings the music up on a song's drops (or any marker or second) between lines. Volume keys made by hand outside the lines (a lift on a drop, a hold before the last hit) survive ducking again. A voice band-passed for a radio or a phone (set_audio_filter) loses 2-4 LU: keep_loudness true makes it up. The music keeps how it was ducked: retake_voiceover dips it again under the new take, and an edit that moves a line under it says so. review_voiceover measures each line; measure_loudness by_track gives all three windows, and kind film, ad or social judges the mix's loudness range (a film that measures 2 LU is very flat). The voice at one loudness across lines (review_voiceover flags any line ${REVIEW.levelSpread} LU off); export at loudness -14 for online.
 7. Listen back: review_voiceover after every voiceover and retake. Each line answers what was heard against the script, its pace against its band, silences, pitch range (under ${REVIEW.flatSt} semitones sounds flat), loudness and margin over the music, and a verdict: ok when nothing fails, otherwise fixes, the tool and arguments to call; advice is a note that does not fail the line (a pace a tenth off its band, short words drawn out). retake_voiceover fixes one line in place (new text, voice, words_per_second, speed or pronounce; ripple true when it grows); the voice reads the same input the same way, so change something. A difference heard again by the larger model and called likely recognizer needs no retake; one called likely voice comes with a respelling to try, and when a respelling did not help, reword the line. Review again until every line is ok, then cut the picture to the lines' final times (describe_project).`,
   },
   social_short: {
@@ -309,12 +325,12 @@ ${DESIGN}`,
 1. new_project; set_project 1080x1920; import_media.
 2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
 3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
-4. Captions: get_transcript on the speech (it answers words with times), then add_captions with a few words per caption and their word times, then set_caption_look pop; on a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons.
+4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, get_transcript (words with times) and add_captions with a few words per caption and their word times; then set_caption_look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons.
 5. Hook title in the first second (add_text, size 120-160, with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect).
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p).
 
-${DESIGN}`,
+${DESIGN_POINTER}`,
   },
 };
 
@@ -324,16 +340,26 @@ export const HELP_TOPICS = ["overview", "design", ...Object.keys(PLAYBOOKS), "ca
 const typeOf = (s: JsonSchema): string =>
   s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
 
+/** Object parameters several tools share, by their fields, with the tool
+ * and parameter whose help lists them: a title's style is 24 rows (about
+ * 3 KB), which help add_voiceover's caption_style, set_text and
+ * add_captions repeated whole (ADR-105). */
+const SHARED_FIELDS = new Map<object, { tool: string; param: string }>([[TEXT_STYLE_SCHEMA.properties!, { tool: "add_text", param: "style" }]]);
+
 /** A tool's parameters as a markdown table; the fields of object
  * parameters (style, region) and of array items (files[], lines[]) get
- * rows of their own, since that is where models guess wrong. */
-export function paramTable(schema: JsonSchema): string {
+ * rows of their own, since that is where models guess wrong. Fields
+ * another tool's help lists (SHARED_FIELDS) are named there instead. */
+export function paramTable(schema: JsonSchema, tool?: string): string {
   const rows: string[] = [];
   const cell = (v: string) => v.replace(/\|/g, "\\|").replace(/\n/g, " ");
   const walk = (s: JsonSchema, prefix: string, depth: number) => {
     for (const [k, p] of Object.entries(s.properties ?? {})) {
       const range = p.minimum !== undefined || p.maximum !== undefined ? ` (${p.minimum ?? ""}..${p.maximum ?? ""})` : "";
-      rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range} |`);
+      const shared = p.properties && SHARED_FIELDS.get(p.properties);
+      const elsewhere = shared && shared.tool !== tool ? `; its fields are ${shared.tool}'s ${shared.param} (help ${shared.tool})` : "";
+      rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range}${elsewhere} |`);
+      if (elsewhere) continue;
       if (depth < 2 && p.type === "object" && p.properties) walk(p, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "array" && p.items?.type === "object" && p.items.properties) walk(p.items, `${prefix}${k}[].`, depth + 1);
     }
@@ -345,7 +371,7 @@ export function paramTable(schema: JsonSchema): string {
 /** One tool, fully: what it does, its parameters and an example call. */
 export function toolHelp(t: ToolInfo): string {
   const ex = EXAMPLES[t.name];
-  return [`## ${t.name} (${groupOf(t.name)})`, "", t.description, "", paramTable(t.inputSchema), ...(ex ? ["", "Example:", "", "```json", JSON.stringify({ name: t.name, arguments: ex }), "```"] : [])].join("\n");
+  return [`## ${t.name} (${groupOf(t.name)})`, "", t.description, "", paramTable(t.inputSchema, t.name), ...(ex ? ["", "Example:", "", "```json", JSON.stringify({ name: t.name, arguments: ex }), "```"] : [])].join("\n");
 }
 
 /** The help tool's answer for a topic or a tool's name. */
@@ -410,7 +436,8 @@ export function promptMessages(name: string, args: Record<string, string>) {
   if (missing.length) throw new Error(`prompt ${name} needs ${missing.join(", ")}`);
   const book = PLAYBOOKS[name === "make_ad" ? "ad" : name];
   const given = p.arguments.filter((a) => args[a.name]).map((a) => `- ${a.name}: ${args[a.name]}`);
-  const text = [`${p.description}`, "", "Details:", ...(given.length ? given : ["- (none given: ask for what is missing, or choose sensibly)"]), "", book.text].join("\n");
+  // A prompt starts a task once, so it carries the design rules whole.
+  const text = [`${p.description}`, "", "Details:", ...(given.length ? given : ["- (none given: ask for what is missing, or choose sensibly)"]), "", book.text.replace(DESIGN_POINTER, DESIGN)].join("\n");
   return { description: p.description, messages: [{ role: "user", content: { type: "text", text } }] };
 }
 
@@ -467,7 +494,7 @@ export function agentPlaybook(): string {
     "",
     DESIGN.replace(/^Design rules[^\n]*\n/, ""),
     "",
-    ...Object.values(PLAYBOOKS).flatMap((b) => [`## ${b.title}`, "", b.text.split("\n\nDesign rules")[0], ""]),
+    ...Object.values(PLAYBOOKS).flatMap((b) => [`## ${b.title}`, "", b.text.replace(`\n\n${DESIGN_POINTER}`, ""), ""]),
     "## Prompts",
     "",
     ...PROMPTS.flatMap((p) => [`- \`${p.name}\`: ${p.description} Arguments: ${p.arguments.map((a) => `${a.name}${a.required ? " (required)" : ""}`).join(", ")}.`]),

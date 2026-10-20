@@ -6,7 +6,7 @@ import { player } from "../engine/player";
 import { scrubEnd, scrubTo } from "../engine/scrub";
 import { Blend, ChevronLeft, ChevronRight, Eye, EyeOff, Film, Image, Sticker, SlidersHorizontal, Square, Captions, Headphones, Layers, Lock, LockOpen, Music, Type, Upload, Volume2, VolumeX } from "../icons";
 import { fromDb, toDb } from "../lib/audio";
-import { landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
+import { audioJoin, landing, placeAsset, transitionCut, visualDrop, type Landing } from "../lib/drop";
 import { placeOnTop } from "../lib/overlays";
 import { createAdjustmentClip, createTrack, uid } from "../lib/project/defaults";
 import { closeAllGaps, closeGap, gapAt } from "../lib/project/gaps";
@@ -15,6 +15,9 @@ import { expandGroups, syncOffsets } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
 import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
 import { CLIP_LABELS } from "../lib/catalog";
+import { enableToggle } from "../lib/clipEnable";
+import { crossfadeJoin, newCrossfade } from "../lib/crossfadeJoin";
+import { audioCrossfade } from "../lib/audio";
 import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
 import { addTemplate, TEXT_TEMPLATES } from "../lib/templates";
@@ -177,12 +180,60 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       // Made on first use, from the drop to the end of the timeline.
       return { view: null, run: () => void addAmbience({ name: payload.id, start: framesToSeconds(frame, p.fps) }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };
     case "transition": {
+      // On the join of two audio clips it is a crossfade (ADR-111), drawn
+      // where the timeline draws one: the seconds before the cut.
+      const join = audioJoin(tracks, row, frame);
+      if (join) {
+        const j = crossfadeJoin(p, join.clipId);
+        const d = Math.max(1, secondsToFrames(j && !j.why ? newCrossfade(j, transitionSeconds()) : transitionSeconds(), p.fps));
+        const view = { row: join.row, newTrack: false, frame: join.frame - d, duration: d, shifts: none, label: "Crossfade", insert: false, attach: true };
+        return {
+          view,
+          run: () => {
+            if (!crossfadeInto(join.clipId, false)) return;
+            store.select([join.clipId]);
+            showInspectorTab("audio");
+          },
+        };
+      }
       const cut = transitionCut(tracks, row, frame);
       const d = secondsToFrames(transitionSeconds(), p.fps);
       const view = cut && { row: cut.row, newTrack: false, frame: cut.frame - Math.round(d / 2), duration: d, shifts: none, label, insert: false, attach: true };
       return { view, run: () => applyTransition(payload.type, cut?.clipId, true) };
     }
   }
+}
+
+/**
+ * Crossfade audio clip `clipId` into the next one (ADR-109): the
+ * transitions' default length, as far as the join allows; where none
+ * fits, say what to change. The clip menu's item toggles it off again; a
+ * transition dropped on the join (ADR-111) always sets it. True when the
+ * crossfade was set or removed.
+ */
+function crossfadeInto(clipId: Id, toggle: boolean): boolean {
+  const join = crossfadeJoin(store.get().project, clipId);
+  if (!join) return false;
+  const off = toggle && join.plays > 0;
+  if (!off && join.why) {
+    toast(join.why, "error");
+    return false;
+  }
+  const seconds = off ? 0 : newCrossfade(join, transitionSeconds());
+  try {
+    edit(seconds ? "Crossfade" : "Remove crossfade", (p) => runCommand(p, "set_crossfade", { clip_id: clipId, seconds }));
+    return true;
+  } catch (err) {
+    toast((err as Error).message, "error");
+    return false;
+  }
+}
+
+// A list outside the timeline (the Check tab) moved the playhead: the
+// timeline scrolls it into view, as it does for a marker.
+const revealers = new Set<() => void>();
+export function revealPlayhead() {
+  revealers.forEach((r) => r());
 }
 
 /** Equal previews draw the same; skip the re-render on every pointer move. */
@@ -234,15 +285,23 @@ export function Timeline() {
   const assets = useMemo(() => new Map(project.assets.map((a) => [a.id, a])), [project.assets]);
   const compounds = useMemo(() => new Map((project.compounds ?? []).map((k) => [k.id, k])), [project.compounds]);
   // Into or out of a compound clip: bring the playhead into view, since
-  // the frame it lands on can be anywhere on the other timeline.
+  // the frame it lands on can be anywhere on the other timeline. And when
+  // a list elsewhere asks (revealPlayhead).
   const depth = useEditor((s) => s.nest.length);
-  useLayoutEffect(() => {
+  const showPlayhead = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     const s = store.get();
     const x = HEADER_W + s.playhead * s.zoom;
     if (x > el.scrollLeft + el.clientWidth - 40 || x < el.scrollLeft + HEADER_W) el.scrollLeft = Math.max(0, x - HEADER_W - 80);
-  }, [depth]);
+  }, []);
+  useLayoutEffect(showPlayhead, [depth]);
+  useEffect(() => {
+    // After the seek renders: leaving a compound clip changes the width.
+    const reveal = () => requestAnimationFrame(showPlayhead);
+    revealers.add(reveal);
+    return () => void revealers.delete(reveal);
+  }, [showPlayhead]);
   const empty = duration === 0;
 
   // ---- coordinates -----------------------------------------------------------------
@@ -746,6 +805,11 @@ export function Timeline() {
         toast((err as Error).message, "error");
       }
     };
+    // An audio clip crossfades into the next one where they meet (ADR-109):
+    // on with the transitions' default length, as far as the join allows;
+    // where none fits, choosing it says what to change.
+    const join = clip.type === "audio" ? crossfadeJoin(p0, clip.id) : null;
+    const crossfade = () => void crossfadeInto(clip.id, true);
     // Effects go to unlocked clips that carry them, as the inspector's
     // Paste effects does.
     const effectTargets = sel.filter((l) => "effects" in l.clip && !l.track.locked).map((l) => l.clip.id);
@@ -775,6 +839,7 @@ export function Timeline() {
         disabled: clip.type !== "video" && clip.type !== "image" && clip.type !== "audio",
         onSelect: () => void replaceFromPicker(clip.id),
       },
+      ...(clip.type === "audio" ? ([{ label: "Crossfade into next clip", checked: !!join?.plays, disabled: !join || lockedTrack, onSelect: crossfade }] as MenuItem[]) : []),
       ...(syncVideo && syncSound
         ? ([
             { label: "Sync audio by waveform", onSelect: () => sync(false) },
@@ -788,7 +853,8 @@ export function Timeline() {
       { label: "Rename…", disabled: lockedTrack, onSelect: () => setRenaming(clip.id) },
       { action: "groupClips", disabled: store.get().selection.length < 2 },
       { action: "ungroupClips", disabled: !sel.some((l) => l.clip.group) },
-      { action: "toggleClipEnabled", label: clip.disabled ? "Activate clip" : "Deactivate clip" },
+      // Named by what it does to the whole selection (ADR-109).
+      { action: "toggleClipEnabled", label: enableToggle(sel.map((l) => l.clip)).label },
       { action: "createCompound" },
       ...(clip.type === "compound"
         ? ([{ label: "Open compound clip", onSelect: () => openCompound(clip.id) }, { action: "breakCompound", label: "Break apart" }] as MenuItem[])
@@ -907,6 +973,34 @@ export function Timeline() {
                           e.stopPropagation();
                           store.select([c.id]);
                           store.set({ transitionEdit: c.id });
+                        }}
+                      >
+                        <Blend size={12} />
+                      </button>
+                    );
+                  })}
+                  {/* An audio crossfade (ADR-104) where the mix plays one:
+                      over the seconds before the cut, so it ends there. */}
+                  {row.track.clips.map((c, i) => {
+                    const next = row.track.clips[i + 1];
+                    if (c.type !== "audio" || !c.crossfade || next?.type !== "audio") return null;
+                    const x = audioCrossfade(c, next, project.fps);
+                    if (!x) return null;
+                    const cut = (c.start + c.duration + (drop?.shifts.get(c.id) ?? 0)) * zoom;
+                    const w = Math.max(16, x * (project.fps.num / project.fps.den) * zoom);
+                    const h = Math.min(22, row.height - 8);
+                    return (
+                      <button
+                        key={`xf-${c.id}`}
+                        className="tl-transition tl-crossfade"
+                        style={{ left: cut - w, width: w, height: h, top: (row.height - h) / 2 }}
+                        data-tip={`Crossfade ${x < 0.1 ? x.toFixed(3) : x.toFixed(2)} s`}
+                        aria-label={`Edit crossfade, ${+x.toFixed(3)} seconds`}
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          store.select([c.id]);
+                          store.set({ transitionEdit: null });
+                          showInspectorTab("audio");
                         }}
                       >
                         <Blend size={12} />

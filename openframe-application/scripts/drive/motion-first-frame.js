@@ -53,9 +53,10 @@ async (page) => {
       bmp.close();
       return out;
     };
-    /** What the viewer shows at `t` seconds. */
+    /** What the viewer shows at `t` seconds: a tile at 7.55 s (frame 226.5)
+     * shows the earlier frame, the one on screen then (ADR-102). */
     const viewer = async (t) => {
-      ve.seek(Math.round(t * 30));
+      ve.seek(Math.ceil(t * 30 - 0.5 - 1e-9));
       await new Promise((r) => setTimeout(r, 20));
       await ve.rendered();
       const { width: w, height: h, data } = ve.pixels();

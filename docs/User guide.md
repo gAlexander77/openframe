@@ -41,7 +41,8 @@ resizing does not submit an unfinished project rename.
 4. Select a clip to adjust its visual or audio properties in the inspector.
    Add text or captions as needed. Double-click a title or caption in the
    viewer to edit its text on the canvas. Undo is available for edits.
-5. Play the timeline and review the picture and sound, then open Export.
+5. Play the timeline and review the picture and sound, check it (the
+   library's **Check** tab, below), then open Export.
    Choose from the formats and codecs the current platform can encode.
    Select the output destination when offered, or use Download when the
    browser's export workflow provides it. Play the exported file to check it.
@@ -51,7 +52,9 @@ one Undo step, and so is dragging in a color picker. A typed value applies
 when you press Enter or leave the field, including by clicking another
 clip; Escape puts the old value back. An empty or non-numeric entry
 changes nothing, and a decimal comma works ("1,5" is 1.5). Sections stay
-open or closed as you left them, across clips and reloads.
+open or closed as you left them, across clips and reloads. A section with
+a switch in its header (Border, Shadow, Colorize, a title's Glow) opens
+when you switch it on, so its settings show.
 
 The inspector fits any width its splitter gives it. Narrower than about
 340 px, each slider takes a line of its own, with its keyframe buttons,
@@ -191,13 +194,23 @@ Split, **Speed…** (opens the Speed tab), **Reverse** (shows a check while
 the clip plays backward), **Copy effects** and **Paste effects** (onto
 every selected clip), Rename, Ungroup and Duplicate, among others.
 
+**Deactivate clip** in the same menu (or its shortcut, V by default) turns
+the selected clips off: they stay in place, hatched, and preview and
+export skip them. With some clips off and some on, it turns them all off;
+when every selected clip is off, the menu reads **Activate clip** and
+turns them all back on. Undo names which it did.
+
 Name a clip with right-click > **Rename…**, or double-click the name on
 its strip (a title's double-click edits its words, so use the menu for
 titles). Clear the name to show the file's name again.
 
 Add a transition between touching clips, or click its timeline marker, to
 open **Transition** settings. Undo history gives agent edits readable names
-such as **Add clip** and **Change opacity**.
+such as **Add clip**, **Change opacity** and **Change border width**.
+
+A title an AI agent gave a drop shadow, a border or a colorize shows them
+in its **Text** tab (as **Drop shadow**, **Border** and **Colorize**), where
+you can change them or switch them off.
 
 ## Compose with viewer guides
 
@@ -248,6 +261,37 @@ Times refer to the full timeline, even if an export In/Out range is set;
 chapter timestamps round down to whole seconds. This saves a text file for
 your video description; chapter display also depends on the destination's
 requirements. [YouTube's chapter guidance](https://support.google.com/youtube/answer/9884579?hl=en).
+
+## Check the edit before you export
+
+The library's **Check** tab reviews the edit against the rules
+professional editors keep, the same check an AI agent runs: text that
+runs past the title-safe area or under TikTok, Reels and Shorts buttons,
+text too small for a phone, on screen too briefly to read, or hard to
+read against the picture behind it (measured on the rendered frames),
+captions too fast, more than two fonts, a title hidden behind its
+subject, strobes that flash too fast, black gaps on the main track,
+music that stops dead at the end and sound cut off mid-sound. Choose
+what you are making under **Made as**: an **Ad** also asks for an end
+card, a **Social short** sizes text for a phone, **Cut to music** checks
+that the cuts land on the beat. **File → Check project…** opens the tab
+and checks.
+
+**Check project** measures the picture and the sound, so it runs only
+when you ask, with its progress shown; Cancel stops it. The findings are
+grouped as **Text**, **Timing** and **Sound**, with a count for each and
+a summary that says whether anything must be fixed before you export.
+Each says what is wrong, what was measured, and what to change in the
+app ("Raise Size in the Text tab to 49 or more"). Click one to go to it:
+the playhead moves to its time, its clip is selected and the inspector
+opens on the tab with the fix. After you change something the tab says
+the check is out of date; **Check again** checks once more.
+
+The Export dialog's **Check** row shows what the last check found;
+**Review** opens the tab, and **Check project** (or **Check again**, after
+changes) checks first. The check never stops an export. It does not
+measure loudness: choose a **Loudness** target in Export, or run
+**Normalize loudness** in AI tools.
 
 ## Manage effects
 
@@ -428,7 +472,8 @@ projects on this device. Rename/delete them in the same dialog. Applying is
 undoable; deleting a saved preset does not remove already applied effects.
 
 Use **Copy attributes** in a clip inspector, select the destination clip(s),
-then **Paste attributes…**. Choose transform, color, audio or effects. Checked
+then **Paste attributes…**. Choose transform (with crop, opacity, the drop
+shadow and the border), color, audio (with the EQ and compressor) or effects. Checked
 groups replace those settings and their animation; effects append unless
 **Replace existing effects** is selected. Timing and source offsets stay put.
 Unavailable groups need compatible targets on unlocked tracks. Undo restores
@@ -513,6 +558,23 @@ A multi-selection has one viewer box: drag it to move, use a corner to scale the
 ## Motion path points
 
 Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
+
+## Crossfade audio clips
+
+Where one audio clip ends and another starts on the same track, right-click
+the first and choose **Crossfade into next clip**: the first fades out as
+the second fades in, at constant power, over the seconds before the cut, so
+the cut itself still lands where you put it. It takes the default
+transition length from **Preferences** (0.5 s), or as much as the clips
+allow when that is less.
+The timeline draws it as a small marker at the end of the first clip;
+click it to open the clip's **Audio** tab, where **Crossfade** sets its
+length (0 removes it). The second clip rises from the part of its file
+before its start, so it needs some: when it starts at the very beginning
+of its file, the menu says to trim its start first. Choose the menu item
+again to remove the crossfade. Dragging any transition from the
+**Transitions** tab onto the cut between two audio clips makes the same
+crossfade.
 
 ## Mix tracks
 

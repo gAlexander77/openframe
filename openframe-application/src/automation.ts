@@ -5,12 +5,12 @@
 
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
-import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runCommand, type CommandReport } from "./lib/commands";
+import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runAgentCommand, type CommandReport } from "./lib/commands";
 import { commandLabel } from "./lib/commandLabels";
 import { paramAt } from "./lib/keyframes";
 import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
-import { findClip, getAsset, projectDuration } from "./lib/project/ops";
+import { findClip, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
 import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
@@ -24,7 +24,7 @@ import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
-import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
+import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
 import { importEach, importFiles } from "./state/media";
 import { sourceName } from "./lib/mediaKind";
@@ -38,11 +38,13 @@ import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
 import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } from "./lib/mcp";
-import { secondsToFrames } from "./lib/time";
-import { decodeMono, sourceFrames } from "./engine/analyze";
-import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
-import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
-import type { Project } from "./lib/project/types";
+import { framesToSeconds, secondsToFrames } from "./lib/time";
+import { sourceFrames } from "./engine/analyze";
+import { checkProject, type CheckKind } from "./lib/designCheck";
+import { measureForCheck } from "./state/check";
+import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
+import { probe } from "./engine/media";
+import type { Asset } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
  * an empty result would read as "none of the files worked". */
@@ -65,9 +67,20 @@ const automation = {
     }
     const report: CommandReport = {};
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
+    // keep_loudness measures the clip with and without the filter first (ADR-114).
+    if (name === "set_audio_filter" && (args as { keep_loudness?: unknown } | null)?.keep_loudness === true) {
+      const problems = validate(args, COMMANDS.find((c) => c.name === name)!.input);
+      if (problems.length) throw new Error(problems.join("; "));
+      return keepFilterLoudness(args as Record<string, unknown>).then((notes) => ({ ...describe(), notes }));
+    }
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
-    store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args, report));
+    // The timeline's linkage applies, its magnet never does (ADR-102).
+    const before = store.document();
+    store.editDocument(commandLabel(name, args), (p) => runAgentCommand(p, name, args, report, store.get().linkage));
+    // A voice line moved or resized under music ducked for it: the dip
+    // stays where the line was, and the answer says so (ADR-104).
+    for (const d of staleDucks(before, store.document())) (report.notes ??= []).push(staleDuckNote(d));
     return { ...describe(), ...report };
   },
   /** The sticker library, for add_sticker's name. */
@@ -193,69 +206,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
-/**
- * What check_project measures before it judges (ADR-068, ADR-097): every
- * title's contrast with the picture behind it at a few moments of its life
- * (designCheck.titleMoments), rendered as export draws it with every title
- * off, its box, shadow and outline counted, and the fixes it names tried
- * on the same pixels; and each long music clip's last seconds, decoded. A
- * failure to measure falls back to the check's own guess and the answer
- * says why; it never fails the check.
- */
-async function measureForCheck(p: Project): Promise<Measured> {
-  const out: Measured = {};
-  const { targets, skipped } = contrastTargets(p);
-  if (targets.length) {
-    try {
-      // Without its titles, at a width that is plenty for a luminance.
-      const bare: Project = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.type === "text" ? { ...c, disabled: true } : c)) })) };
-      const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
-      const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
-      const contrast: NonNullable<Measured["contrast"]> = {};
-      const canvas = new OffscreenCanvas(w, h);
-      const g = canvas.getContext("2d", { willReadFrequently: true })!;
-      // A few frames a render, so a long film's titles do not hold every
-      // picture in memory at once.
-      for (let i = 0; i < frames.length; i += 8) {
-        const batch = frames.slice(i, i + 8);
-        const pics = await exportStills(bare, batch, w, h);
-        for (const [j, frame] of batch.entries()) {
-          const bmp = await createImageBitmap(pics[j]);
-          g.drawImage(bmp, 0, 0, w, h);
-          bmp.close();
-          const rgba = g.getImageData(0, 0, w, h).data;
-          for (const t of targets) {
-            const s = t.samples.find((x) => x.frame === frame);
-            if (!s) continue;
-            const px = boxPixels(rgba, w, { left: s.box.left * k, right: s.box.right * k, top: s.box.top * k, bottom: s.box.bottom * k });
-            const m = measureLook(t.look, px);
-            if (!m || (contrast[t.clipId] && contrast[t.clipId].ratio <= m.ratio)) continue;
-            contrast[t.clipId] = { ...m, frame, fixes: t.fixes.map((x) => ({ say: x.say, ratio: measureLook(x.look, px)?.ratio ?? 0 })) };
-          }
-        }
-      }
-      out.contrast = contrast;
-      out.moments = frames.length;
-      const missed = [skipped && `${skipped} titles past the first 40 were not measured`, p.compounds?.some((k) => k.tracks.some((t) => t.clips.some((c) => c.type === "text"))) && "titles inside compound clips are part of their picture and were not measured"].filter(Boolean);
-      if (missed.length) out.contrastNote = missed.join("; ");
-    } catch (e) {
-      // Say why, so an agent knows the contrast findings are guesses.
-      out.contrastNote = `not measured, the picture could not be rendered here (${e instanceof Error ? e.message : String(e)}); titles over footage without an outline, shadow or box are tips instead`;
-    }
-  } else if (p.tracks.some((t) => t.clips.some((c) => c.type === "text" && !c.disabled))) out.contrastNote = "no title is on screen long enough to measure";
-  for (const t of tailTargets(p)) {
-    const a = getAsset(p, t.assetId);
-    if (!a?.hasAudio) continue;
-    try {
-      const rate = 8000;
-      (out.tails ??= {})[t.clipId] = tailLevels(await decodeMono(a, t.from, t.to, rate), rate);
-    } catch {
-      // Unreadable sound: the check keeps its plain rule.
-    }
-  }
-  return out;
-}
-
 /** describeProject of the whole document, plus the compound clips the user
  * has open, outermost first. */
 function describe() {
@@ -340,6 +290,22 @@ const mcpHost: McpHost = {
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
+  fileSheet: async (src, given, count, tileWidth, columns) => {
+    // A file read where it is, never imported: an export looked at as delivered.
+    const name = sourceName(src);
+    let info: Awaited<ReturnType<typeof probe>>;
+    try {
+      info = await probe(src, name);
+    } catch (e) {
+      throw new Error(`${src} could not be read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (!info.hasVideo) throw new Error(`${name} is sound only; preview_media shows pictures and videos`);
+    const asset = { id: "file", kind: info.kind, name, src, duration: info.duration, width: info.width, height: info.height, hasVideo: info.hasVideo, hasAudio: info.hasAudio } as Asset;
+    const times = info.kind === "image" ? [0] : given ?? Array.from({ length: count }, (_, i) => +((info.duration * (i + 0.5)) / count).toFixed(2));
+    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth);
+    const image = await tiles(times.map((t, i) => ({ src: pics[i], label: info.kind === "image" ? `${info.width}x${info.height}` : `${+t.toFixed(2)} s`, w: info.width || 16, h: info.height || 9 })), tileWidth, info.kind === "image" ? 1 : columns);
+    return { image, file: { file: src, kind: info.kind, seconds: +info.duration.toFixed(3), width: info.width, height: info.height, ...(info.fps ? { fps: info.fps } : {}), audio: info.hasAudio, frames: times } };
+  },
   audition: async (options) => {
     const r = await previewAudio(options as AuditionRequest);
     return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
@@ -366,7 +332,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
@@ -385,7 +351,7 @@ const mcpHost: McpHost = {
     // A new project is saved once it is touched (state/project.ts); until
     // then it is listed as the open one all the same.
     const doc = store.document();
-    const listed = open && !saved.some((x) => x.id === open) ? [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt, duration: 0, width: doc.width, height: doc.height }, ...saved] : saved;
+    const listed = open && !saved.some((x) => x.id === open) ? [{ id: doc.id, name: doc.name, updatedAt: doc.updatedAt, duration: framesToSeconds(projectDuration(doc), doc.fps), width: doc.width, height: doc.height }, ...saved] : saved;
     return listed.map(({ id, name, updatedAt, duration, width, height }) => ({ id, name, updatedAt, duration, width, height, ...(id === open ? { open: true } : {}) }));
   },
   openProject: async (id) => {

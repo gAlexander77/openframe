@@ -1,4 +1,4 @@
-import { measureRuns, runSegments } from "../lib/textRuns";
+import { baselineShifts, measureRuns, runBoxes, runSegments } from "../lib/textRuns";
 // Text clips rasterized with Canvas2D at render resolution, then drawn by
 // the compositor as a "native" source (already canvas-scale pixels). The
 // raster is cached by content: transform animation moves the quad, so only
@@ -12,7 +12,7 @@ import { ANIMATIONS } from "../lib/catalog";
 import { casedText } from "../lib/captions";
 import { caretAfter, finestUnit, hasSweep, isMoving, KINETIC_PAD, kineticKey, layoutAtoms, lineSweeps, SWEEP_PAD, sweepAt, unitStates, type KineticFrame, type UnitState } from "../lib/kinetic";
 import type { TextClip, TextStyle } from "../lib/project/types";
-import type { TextLayout } from "../lib/textBox";
+import { letterWidth, lineStart, type TextLayout } from "../lib/textBox";
 import { styleKeyed } from "../lib/textAnim";
 import { fontWeight, gradientLine, lookReach, stroke2Width } from "../lib/textLook";
 import type { SourceImage } from "./compositor";
@@ -54,9 +54,9 @@ const cache = new Map<string, TextRaster>();
 /** The marker sweep's warm yellow when the style names no accent. */
 const MARKER = "#ffd84d";
 
-/** One run of text to draw: a whole line (aligned as the style says) or a
- * unit of a kinetic title (left-aligned at x, moved by its state about its
- * center). `spoken` marks the karaoke word. */
+/** One run of text to draw, left-aligned at x: a whole line (x its left
+ * edge as the style aligns it) or a unit of a kinetic title (moved by its
+ * state about its center). `spoken` marks the karaoke word. */
 interface Piece {
   text: string;
   start?: number;
@@ -107,7 +107,11 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   let cursor = 0;
   const starts = lines.map(line => { const at = shownText.indexOf(line, cursor); cursor = Math.max(cursor, at) + line.length; return Math.max(0, at); });
   const lineH = size * s.lineHeight * Math.max(1, ...(s.runs ?? []).map(r => r.scale ?? 1));
-  const textW = Math.max(1, ...lines.map((l, i) => measure(l, starts[i])));
+  // Lines are as wide as their letters: the spacing the canvas adds after
+  // the last one is left out, so tracked titles center on their letters.
+  const ls = s.letterSpacing * k;
+  const letters = (text: string, start: number) => letterWidth(measure(text, start), ls, text);
+  const textW = Math.max(1, ...lines.map((l, i) => letters(l, starts[i])));
   ctx.font = font;
   const reach = lookReach(s, k);
   // Moving units need room to rise, pop and slide without being cut off;
@@ -129,13 +133,13 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   ctx.font = font;
   ctx.letterSpacing = `${s.letterSpacing * k}px`;
   ctx.textBaseline = "middle";
-  ctx.textAlign = s.align;
-  const x = s.align === "left" ? pad : s.align === "right" ? w - pad : w / 2;
 
-  // Each line's left edge and width, whichever way it is aligned.
+  // Each line's left edge and width, whichever way it is aligned; lines
+  // are drawn from their left edge, so the canvas never aligns the
+  // trailing spacing.
   const geo = lines.map((line, i) => {
-    const lw = measure(line, starts[i]);
-    return { line, y: pad + lineH * (i + 0.5), lw, left: s.align === "left" ? x : s.align === "right" ? x - lw : x - lw / 2 };
+    const lw = letters(line, starts[i]);
+    return { line, y: pad + lineH * (i + 0.5), lw, left: lineStart(s.align, lw, w, pad) };
   });
 
   const fine = (kin && finestUnit(kin)) || (s.runs?.length && word !== undefined && s.highlight ? "word" : undefined);
@@ -147,7 +151,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
     pieces = laid.atoms.map((a, i) => {
       const g = geo[a.line];
       const ax = g.left + measure(g.line.slice(0, a.start), starts[a.line]);
-      const aw = measure(g.line.slice(a.start, a.end), starts[a.line] + a.start);
+      const aw = letters(g.line.slice(a.start, a.end), starts[a.line] + a.start);
       return { start: starts[a.line] + a.start, text: g.line.slice(a.start, a.end), x: ax, y: g.y, align: "left", cx: ax + aw / 2, width: aw, state: states[i], spoken: word !== undefined && !!s.highlight && a.word === word };
     });
     const shown = kin && caretAfter(kin, laid.letters, ANIMATIONS);
@@ -163,7 +167,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
       const j = word !== undefined && s.highlight ? word - firstWord : -1;
       firstWord += lineWords.length;
       const m = j >= 0 && j < lineWords.length ? lineWords[j] : undefined;
-      return { start: starts[i], text: g.line, x, y: g.y, align: s.align, width: g.lw, ...(m ? { word: { text: m[0], x: g.left + measure(g.line.slice(0, m.index), starts[i]) } } : {}) };
+      return { start: starts[i], text: g.line, x: g.left, y: g.y, align: "left", width: g.lw, ...(m ? { word: { text: m[0], x: g.left + measure(g.line.slice(0, m.index), starts[i]) } } : {}) };
     });
   }
 
@@ -177,6 +181,18 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
         return piece;
       });
     });
+    // Mixed sizes share a baseline (ADR-099): each piece is drawn centered
+    // on its line, so a bigger one would hang below its neighbors; the
+    // line takes its tallest piece's baseline instead.
+    const above = (st: TextStyle) => {
+      ctx.font = textFont(st, st.size * k);
+      ctx.textBaseline = "alphabetic";
+      const a = ctx.measureText("").fontBoundingBoxAscent;
+      ctx.textBaseline = "middle";
+      return a - ctx.measureText("").fontBoundingBoxAscent;
+    };
+    const dy = baselineShifts(pieces.map((p) => ({ y: p.y, above: above(p.style ?? s) })));
+    pieces = pieces.map((p, i) => (dy[i] ? { ...p, y: p.y + dy[i] } : p));
   }
   ctx.font = font;
 
@@ -213,11 +229,15 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // The gradient runs across the whole text block, in raster pixels; a unit
   // drawn moved maps its ends into its own coordinates, so the colors stay
   // put while the letters travel through them.
+  // A run's own gradient runs across its own letters (ADR-099).
+  const boxes = s.runs?.length ? runBoxes(s.runs, pieces, lineH, ls) : undefined;
   const fillStyle = (p: Piece): string | CanvasGradient => {
     const style = p.style ?? s;
     if (p.spoken && !s.runs?.some(r => r.start <= (p.start ?? 0) && r.end > (p.start ?? 0) && (r.color || r.gradient))) return s.highlight!;
     const gradient = style.gradient;
-    const grad = gradient && gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle);
+    const run = boxes && s.runs!.find((r) => r.start <= (p.start ?? 0) && (p.start ?? 0) < r.end);
+    const box = run?.gradient ? boxes!.get(run) : undefined;
+    const grad = gradient && (box ? gradientLine((box.left + box.right) / 2, (box.top + box.bottom) / 2, box.right - box.left, box.bottom - box.top, gradient.angle) : gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle));
     if (!grad || !gradient) return style.color;
     const m = ctx.getTransform().invertSelf();
     const a = m.transformPoint({ x: grad[0], y: grad[1] }), b = m.transformPoint({ x: grad[2], y: grad[3] });

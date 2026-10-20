@@ -1,6 +1,6 @@
 # ADR-098: Sound is mixed by role, beds are synthesized, an agent can listen
 
-**Date:** 2026-10-19. **Status:** accepted.
+**Date:** 2026-10-19. **Status:** accepted; how a bed's layers are levelled, its peaks held, and the wind's and the traffic's movement are amended by [[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]].
 
 ## Context
 

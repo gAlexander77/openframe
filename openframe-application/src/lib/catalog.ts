@@ -18,6 +18,10 @@ export interface ParamDef {
   unit?: string;
   /** Names for the whole values min..max: a choice, not a slider. */
   options?: string[];
+  /** Pixels at a 1080-tall frame (drawn larger on a taller one, as a
+   * title's size): export_versions scales it with the picture it is on
+   * (ADR-110). */
+  pixels?: boolean;
 }
 
 // ---- animations --------------------------------------------------------------
@@ -110,13 +114,14 @@ export const EFFECTS: Record<string, EffectDef> = {
   // Radius 0.6 px at 1080p per unit: 100 (60 px) was the old maximum and
   // draws as it always has; past it, up to 300 px, the blur runs on a
   // downsampled pyramid for big, soft glows (ADR-069).
-  blur: { label: "Blur", category: "Blur", params: { amount: { ...amount(30), max: BLUR_MAX } } },
+  blur: { label: "Blur", category: "Blur", params: { amount: { ...amount(30), max: BLUR_MAX, pixels: true } } },
   zoomBlur: { label: "Zoom blur", category: "Blur", params: { amount: amount(40) } },
-  pixelate: { label: "Pixelate", category: "Stylize", params: { size: { label: "Block size", min: 2, max: 120, default: 24 } } },
-  rgbSplit: { label: "RGB split", category: "Distort", params: { amount: amount(30), angle: { label: "Angle", min: 0, max: 360, default: 0 } } },
+  pixelate: { label: "Pixelate", category: "Stylize", params: { size: { label: "Block size", min: 2, max: 120, default: 24, pixels: true } } },
+  // Amount 1 splits the channels 0.768 px at 1080p (ADR-117).
+  rgbSplit: { label: "RGB split", category: "Distort", params: { amount: { ...amount(30), pixels: true }, angle: { label: "Angle", min: 0, max: 360, default: 0 } } },
   glitch: { label: "Glitch", category: "Distort", params: { amount: amount(50), speed: { label: "Speed", min: 0, max: 100, default: 50 } } },
   vhs: { label: "VHS", category: "Stylize", params: { amount: amount(60) } },
-  grain: { label: "Film grain", category: "Stylize", params: { amount: amount(35), size: { label: "Size", min: 1, max: 4, default: 1.5, step: 0.1 } } },
+  grain: { label: "Film grain", category: "Stylize", params: { amount: amount(35), size: { label: "Size", min: 1, max: 4, default: 1.5, step: 0.1, pixels: true } } },
   scanlines: { label: "Scanlines", category: "Stylize", params: { amount: amount(40), density: { label: "Density", min: 50, max: 800, default: 300 } } },
   invert: { label: "Invert", category: "Color", params: { amount: amount(100) } },
   posterize: { label: "Posterize", category: "Color", params: { levels: { label: "Levels", min: 2, max: 16, default: 5 } } },
@@ -133,14 +138,21 @@ export const EFFECTS: Record<string, EffectDef> = {
   // 2.3.1), so the default stays under it; the range is kept for slow
   // pulses' sake and the docs say why.
   flash: { label: "Strobe flash", category: "Light", params: { amount: amount(70), rate: { label: "Rate", unit: "/s", min: 0.5, max: 12, default: 2, step: 0.5 } } },
-  glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 60 } } },
+  // Threshold: the brightness (luma, 0..100) where the glow starts, fully
+  // on 20 above it. 60 bloomed a launch's sky, towers and smoke into white
+  // smears in the Claude film test (it set 88); at 80 the towers still
+  // streaked, at 85 only the exhaust glows (ADR-105). A stored effect keeps
+  // the threshold it was added with.
+  // Radius: how far the glow reaches, 18 px at 1080p as it always did
+  // before it could be set (a stored glow without one loads with it).
+  glow: { label: "Glow", category: "Light", params: { amount: amount(50), threshold: { label: "Threshold", min: 0, max: 100, default: 85 }, radius: { label: "Radius", min: 2, max: 48, default: 18, pixels: true } } },
   lightLeak: { label: "Light leak", category: "Light", params: { amount: amount(55), speed: { label: "Speed", min: 0, max: 100, default: 30 } } },
   // CapCut's Reduce image noise: smooths grain and sensor noise but not
   // edges (a bilateral filter), so detail survives.
-  denoise: { label: "Reduce image noise", category: "Blur", params: { amount: amount(50) } },
-  motionBlur: { label: "Motion blur", category: "Blur", params: { amount: amount(30), angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
-  sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 } } },
-  halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10 } } },
+  denoise: { label: "Reduce image noise", category: "Blur", params: { amount: amount(50), radius: { label: "Radius", min: 1, max: 12, default: 4.5, step: 0.5, pixels: true } } },
+  motionBlur: { label: "Motion blur", category: "Blur", params: { amount: { ...amount(30), pixels: true }, angle: { label: "Angle", unit: "°", min: 0, max: 180, default: 0 } } },
+  sketch: { label: "Sketch", category: "Stylize", params: { amount: amount(50), mix: { label: "Mix", unit: "%", min: 0, max: 100, default: 100 }, width: { label: "Line width", min: 0.5, max: 6, default: 1, step: 0.5, pixels: true } } },
+  halftone: { label: "Halftone", category: "Stylize", params: { size: { label: "Dot size", min: 3, max: 40, default: 10, pixels: true } } },
   // Cinematic bars: black bands that letterbox the picture to a ratio
   // (pillarbox on a wider canvas); amount slides them in, 0 to 100.
   letterbox: { label: "Letterbox", category: "Stylize", params: { ratio: { label: "Ratio", unit: ":1", min: 1, max: 4, default: 2.39, step: 0.01 }, amount: amount(100) } },

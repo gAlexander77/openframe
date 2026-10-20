@@ -129,13 +129,23 @@ export function createCompound(p: Project, ids: Id[], name?: string): { project:
  * tracks and clips under fresh ids, so a styled precomp (a floating
  * window: footage, mask, border, shadow) is a template, and the copy can
  * take other footage (replace_clip inside edit_compound) without touching
- * the original. Track mattes and groups inside follow the new ids.
- * ponytail: compound clips inside the copy still play their compounds,
- * shared; copy those too when a nested precomp must differ.
+ * the original. Track mattes and groups inside follow the new ids. A
+ * compound played inside it is copied too, and so on down, so a window
+ * nested in a labeled card is the copy's own as well: a unique copy shares
+ * nothing with the original (shared, editing the copy's window changed
+ * every card's).
  */
 export function copyCompound(p: Project, id: Id): { project: Project; compoundId: Id } {
   const k = findCompound(p, id);
   if (!k) return { project: p, compoundId: id };
+  // The compounds inside first, each once however often it is played here.
+  const nested = new Map<Id, Id>();
+  for (const c of compoundClips(k.tracks)) {
+    if (nested.has(c.compoundId)) continue;
+    const made = copyCompound(p, c.compoundId);
+    p = made.project;
+    nested.set(c.compoundId, made.compoundId);
+  }
   const ids = new Map(k.tracks.flatMap((t) => t.clips.map((c) => [c.id, uid("c")] as const)));
   const groups = new Map<Id, Id>();
   const tracks = k.tracks.map((t) => ({
@@ -148,13 +158,17 @@ export function copyCompound(p: Project, id: Id): { project: Project; compoundId
         out.group = groups.get(c.group);
       }
       if ("trackMatte" in out && out.trackMatte?.clipId) out.trackMatte = { ...out.trackMatte, clipId: ids.get(out.trackMatte.clipId) ?? out.trackMatte.clipId };
+      if (out.type === "compound") out.compoundId = nested.get(out.compoundId) ?? out.compoundId;
       return out;
     }),
   }));
   const names = new Set((p.compounds ?? []).map((x) => x.name));
   let name = `${k.name} copy`;
   for (let n = 2; names.has(name); n++) name = `${k.name} copy ${n}`;
-  const copy: Compound = { id: uid("k"), name, tracks, markers: k.markers.map((m) => ({ ...m, id: uid("m") })) };
+  // A marker following a clip inside (a song's beats) follows its copy:
+  // naming the original's clip, the copy's markers all went (ADR-106).
+  const markers = k.markers.map((m) => ({ ...m, id: uid("m"), ...(m.follows ? { follows: { ...m.follows, clip: ids.get(m.follows.clip) ?? m.follows.clip } } : {}) }));
+  const copy: Compound = { id: uid("k"), name, tracks, markers };
   return { project: { ...p, compounds: [...(p.compounds ?? []), copy] }, compoundId: copy.id };
 }
 

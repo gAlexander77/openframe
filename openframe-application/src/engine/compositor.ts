@@ -30,7 +30,8 @@ import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
 import { lutFor } from "./luts";
 import type { Placement } from "../lib/motionBlur";
-import type { BlendMode, DropShadow, MatteMode } from "../lib/project/types";
+import type { BlendMode, Border, DropShadow, MatteMode } from "../lib/project/types";
+import { floodSteps } from "../lib/border";
 import type { Layer, PlanItem, ResolvedEffect, Tone } from "../lib/render/plan";
 import { featherReach, parseColor, shapeExtent, strokePx } from "../lib/shapes";
 import { tiltMatrix } from "../lib/tilt";
@@ -38,9 +39,12 @@ import {
   ADJUST_FS,
   BLEND_FS,
   BLEND_IDS,
+  BORDER_FS,
   COPY_FS,
   DOWN_FS,
   EFFECT_SHADERS,
+  FLOOD_SEED_FS,
+  FLOOD_STEP_FS,
   FULLSCREEN_VS,
   GAUSS_FS,
   LAYER_FS,
@@ -184,6 +188,8 @@ export class Compositor {
    * size; level 0 is full size, each next one half the last. One set for
    * every nesting level: a blur finishes before anything else draws. */
   private pyramid: { w: number; h: number; a: Target; b: Target }[] = [];
+  /** The border's jump flood ping-pongs between these (ADR-099), made on first use. */
+  private flood: [Target, Target] | null = null;
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
@@ -286,6 +292,9 @@ export class Compositor {
       ["blur:gauss", FULLSCREEN_VS, GAUSS_FS],
       ["blur:up", FULLSCREEN_VS, UP_FS],
       ["shadow", FULLSCREEN_VS, SHADOW_FS],
+      ["border:seed", FULLSCREEN_VS, FLOOD_SEED_FS],
+      ["border:step", FULLSCREEN_VS, FLOOD_STEP_FS],
+      ["border", FULLSCREEN_VS, BORDER_FS],
       ...Object.entries(EFFECT_SHADERS).map(([k, fs]): [string, string, string] => [`fx:${k}`, FULLSCREEN_VS, fs]),
     ];
     const pending = all.filter(([k]) => !this.programs.has(k)).map(([key, vs, fs]) => ({ key, ...this.startProgram(vs, fs) }));
@@ -357,7 +366,7 @@ export class Compositor {
   private freeTargets() {
     const gl = this.gl;
     const pyramid = this.pyramid.flatMap((l) => [l.a, l.b]);
-    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...pyramid, ...(this.accum ? [this.accum] : [])]) {
+    for (const t of [...this.levels.flat(), ...this.baked.flat(), ...this.matteTargets.flat(), ...pyramid, ...(this.accum ? [this.accum] : []), ...(this.flood ?? [])]) {
       gl.deleteFramebuffer(t.fb);
       gl.deleteTexture(t.tex);
     }
@@ -365,6 +374,7 @@ export class Compositor {
     this.baked = [];
     this.matteTargets = [];
     this.pyramid = [];
+    this.flood = null;
     this.accum = undefined;
   }
 
@@ -455,6 +465,40 @@ export class Compositor {
     gl.uniform2f(u("u_offset"), (sh.x * k) / this.width, (-sh.y * k) / this.height);
     const [cr, cg, cb, ca] = rgba(sh.color);
     const a = ca * sh.opacity;
+    gl.uniform4f(u("u_color"), cr * a, cg * a, cb * a, a);
+    this.draw();
+  }
+
+  /** A border (ADR-099) around the finished layer `src`, into `out`: the
+   * picture's edge flooded out on two scratch targets, then the border drawn
+   * outside the picture. `level` is the layer's opacity. */
+  private castBorder(src: Target, b: Border, level: number, out: Target) {
+    const gl = this.gl;
+    const width = (b.width * this.height) / 1080;
+    const lv = Math.max(level, 0.01);
+    const [A, B] = (this.flood ??= [this.makeTarget(), this.makeTarget()]);
+    this.bindTarget(A);
+    let u = this.use(this.program("border:seed", FULLSCREEN_VS, FLOOD_SEED_FS));
+    this.bindTex(0, src.tex, u("u_layer"));
+    gl.uniform1f(u("u_level"), lv);
+    this.draw();
+    let [from, to] = [A, B];
+    u = this.use(this.program("border:step", FULLSCREEN_VS, FLOOD_STEP_FS));
+    for (const k of floodSteps(width)) {
+      this.bindTarget(to);
+      this.bindTex(0, from.tex, u("u_seeds"));
+      gl.uniform1i(u("u_step"), k);
+      this.draw();
+      [from, to] = [to, from];
+    }
+    this.bindTarget(out);
+    u = this.use(this.program("border", FULLSCREEN_VS, BORDER_FS));
+    this.bindTex(0, src.tex, u("u_layer"));
+    this.bindTex(1, from.tex, u("u_seeds"));
+    gl.uniform1f(u("u_level"), lv);
+    gl.uniform1f(u("u_width"), width);
+    const [cr, cg, cb, ca] = rgba(b.color);
+    const a = ca * b.opacity * Math.min(1, level);
     gl.uniform4f(u("u_color"), cr * a, cg * a, cb * a, a);
     this.draw();
   }
@@ -564,6 +608,8 @@ export class Compositor {
     }
     gl.uniform1i(u("u_hslOn"), g?.hsl ? 1 : 0);
     if (g?.hsl) gl.uniform3fv(u("u_hsl"), g.hsl);
+    gl.uniform1f(u("u_colorizeAmount"), g?.colorize?.amount ?? 0);
+    if (g?.colorize) gl.uniform3fv(u("u_colorize"), g.colorize.rgb);
     // LUT: 1D on unit 2, 3D on unit 3. A sampler3D must never share a unit
     // with a sampler2D, so both always point at their own units.
     const lut = g?.lut ? this.lutTexture(g.lut.src) : null;
@@ -653,13 +699,15 @@ export class Compositor {
 
   // ---- passes -------------------------------------------------------------------
 
-  /** Upload a source and return its texture. Keyed sources upload once. */
-  private sourceTexture(src: SourceImage, slot: number): WebGLTexture {
+  /** Upload a source and return its texture. Keyed sources upload once;
+   * `fresh` false reuses what the slot already holds (the same frame drawn
+   * again at another shutter placement). */
+  private sourceTexture(src: SourceImage, slot: number, fresh = true): WebGLTexture {
     const gl = this.gl;
     if (src.key) {
       const hit = this.sourceTextures.get(src.key);
       if (hit) return hit;
-    }
+    } else if (!fresh && this.slotTextures[slot]) return this.slotTextures[slot];
     const tex = src.key ? this.makeTexture() : (this.slotTextures[slot] ??= this.makeTexture());
     gl.bindTexture(gl.TEXTURE_2D, tex);
     // Full texImage2D re-spec (not texSubImage2D) keeps Chrome's zero-copy
@@ -679,7 +727,7 @@ export class Compositor {
   /** Draw one layer's source into `out` (cleared first). With motion
    * blur, it is drawn at each shutter placement into the half-float target
    * at its share of the opacity, and the sum copied into `out` (ADR-058). */
-  private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number) {
+  private drawLayer(layer: Layer, src: DrawSource | null, out: Target, slot: number, fresh = true) {
     const gl = this.gl;
     const W = this.width;
     const H = this.height;
@@ -690,7 +738,7 @@ export class Compositor {
     // Frame blending's next frame uploads first, while unit 0 is free.
     const next = src && !isRendered(src) ? src.next : undefined;
     gl.activeTexture(gl.TEXTURE0);
-    const nextTex = next && src && !isRendered(src) ? this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS) : null;
+    const nextTex = next && src && !isRendered(src) ? this.sourceTexture({ ...src, image: next.image, key: undefined, next: undefined } as SourceImage, slot + NEXT_SLOTS, fresh) : null;
     const shape = layer.source.kind === "shape" ? layer.source.shape : undefined;
     const p = shape ? this.program("layer:shape", LAYER_VS, LAYER_SHAPE_FS) : this.program("layer", LAYER_VS, LAYER_FS);
     const u = this.use(p);
@@ -774,8 +822,9 @@ export class Compositor {
     gl.uniform1i(u("u_solid"), solid || shape || !src ? 1 : 0);
     gl.uniform1i(u("u_edge"), layer.edge === "mirror" ? 1 : layer.edge === "repeat" ? 2 : 0);
     if (layer.source.kind === "color") {
-      const [r, g, b] = hexToRgb(layer.source.color);
-      gl.uniform4f(u("u_color"), r, g, b, 1);
+      // Any CSS color, its alpha too (ADR-110): read as hex only, a solid
+      // at #ff000080 drew opaque red, and "red" or rgba() drew black.
+      gl.uniform4fv(u("u_color"), rgba(layer.source.color));
     } else gl.uniform4f(u("u_color"), 0, 0, 0, 0);
     this.setShapeUniforms(u, layer, sw, sh);
     let mainTex: WebGLTexture | null = null;
@@ -787,7 +836,7 @@ export class Compositor {
       this.bindTex(0, mainTex, u("u_tex"));
       gl.uniform2f(u("u_texel"), 1 / W, 1 / H);
     } else if (src && !solid && !shape) {
-      mainTex = this.sourceTexture(src, slot);
+      mainTex = this.sourceTexture(src, slot, fresh);
       this.bindTex(0, mainTex, u("u_tex"));
       const tw = src.rotation % 2 ? src.height : src.width;
       const th = src.rotation % 2 ? src.width : src.height;
@@ -1014,25 +1063,69 @@ export class Compositor {
      * holding it is returned): source, effects, then its track matte, which
      * draws into the level's own matte targets. */
     const layerToTarget = (layer: Layer, src: DrawSource | null, target: Target, temps: [Target, Target]): Target => {
-      this.drawLayer(layer, src, target, slot.n++);
-      // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
-      const fx = layer.blur > 0.5 ? [...layer.effects, { type: "blur", params: { amount: layer.blur / 0.6 } }] : layer.effects;
-      const done = fx.length ? this.applyEffects(fx, target, layer.time, temps) : target;
+      const all = [target, ...temps];
+      // The track matte first, into the level's own matte targets. The
+      // matte layer is planned without a matte of its own, so this never
+      // recurses further.
       const tm = layer.trackMatte;
-      let cut = done;
-      if (tm) {
+      let matte: Target | null = null;
+      if (tm?.layer) {
         const [M1, M2, M3] = this.matteLevel(depth);
-        const ml = tm.layer;
-        const msrc = ml && sourceOf(ml);
-        // The matte layer is planned without a matte of its own, so this
-        // never recurses further.
-        const matte = ml && drawable(ml, msrc) ? layerToTarget(ml, msrc, M1, [M2, M3]) : null;
-        cut = [target, ...temps].find((t) => t !== done)!;
-        this.applyMatte(done, matte, tm.mode, cut);
+        const msrc = sourceOf(tm.layer);
+        if (drawable(tm.layer, msrc)) matte = layerToTarget(tm.layer, msrc, M1, [M2, M3]);
       }
+      /** The picture at one placement (or blurred over its shutter):
+       * source, effects, matte, then its border (ADR-099), outside the
+       * picture as it is now, before the shadow, which it casts too. */
+      const picture = (one: Layer, at: number, fresh: boolean): Target => {
+        this.drawLayer(one, src, target, at, fresh);
+        // An animation's blur (px at 1080p) rides on the blur effect: radius = amount * 0.6.
+        const fx = one.blur > 0.5 ? [...one.effects, { type: "blur", params: { amount: one.blur / 0.6 } }] : one.effects;
+        const done = fx.length ? this.applyEffects(fx, target, one.time, temps) : target;
+        let cut = done;
+        if (tm) {
+          cut = all.find((t) => t !== done)!;
+          this.applyMatte(done, matte, tm.mode, cut);
+        }
+        if (one.border) {
+          const framed = all.find((t) => t !== cut)!;
+          this.castBorder(cut, one.border, one.opacity, framed);
+          cut = framed;
+        }
+        return cut;
+      };
+      // A framed picture with motion blur is framed at each placement and
+      // the framed pictures averaged, so its border blurs with it, as After
+      // Effects blurs a layer's stroke (ADR-110). Framed once, the blurred
+      // picture got a crisp border around its half-covered contour.
+      // ponytail: its effects and border run once per sample (up to 32 on
+      // export, 6 playing); only a framed picture that moves pays that.
+      const samples = layer.border && layer.motion && layer.motion.length > 1 ? layer.motion : null;
+      const acc = samples ? this.accumTarget() : null;
+      let cut: Target;
+      if (samples && acc) {
+        const at = slot.n++;
+        this.clear(acc);
+        samples.forEach((t, i) => {
+          const one = picture({ ...layer, ...t, motion: undefined }, at, i === 0);
+          this.bindTarget(acc);
+          const c = this.use(this.program("copy", FULLSCREEN_VS, COPY_FS));
+          this.bindTex(0, one.tex, c("u_tex"));
+          gl.enable(gl.BLEND);
+          gl.blendColor(0, 0, 0, 1 / samples.length);
+          gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+          this.draw();
+          gl.disable(gl.BLEND);
+        });
+        cut = target;
+        this.bindTarget(cut);
+        const c = this.use(this.program("copy", FULLSCREEN_VS, COPY_FS));
+        this.bindTex(0, acc.tex, c("u_tex"));
+        this.draw();
+      } else cut = picture(layer, slot.n++, true);
       // The drop shadow last (ADR-070): cast by the picture as it is now.
       if (!layer.shadow) return cut;
-      const out = [target, ...temps].find((t) => t !== cut)!;
+      const out = all.find((t) => t !== cut)!;
       this.castShadow(cut, layer.shadow, out);
       return out;
     };

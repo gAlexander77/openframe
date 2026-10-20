@@ -173,7 +173,8 @@ Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
 and its measurements, below),
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
-length), `move_track` (up or down the stack, so a grade sits under the
+length), `roll_edit` (a cut between two touching clips moved in one call,
+nothing else moving: the Roll tool), `move_track` (up or down the stack, so a grade sits under the
 titles), `save_project_copy` (a variant to work by hand, the original
 kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
@@ -213,7 +214,14 @@ only when they changed, summed up (`added_compounds`, `changed_compounds`:
 `edit_compound` changes them; `removed_compounds`), never with their whole
 nested timelines (3 KB an edit on the launch film's six windows). `undo`
 and `redo` answer the same way. `describe_project` is still the whole
-picture, keyframes included: each keyed path's keys as `[at, value]` or
+picture by default; `clip_ids`, `track_ids` or a stretch (`start`, `end`)
+narrow it to those clips with the media and markers they use, `assets` and
+`markers` false leave those lists out, and `shown` says how much of each
+list the answer holds ([[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]).
+The compounds a clip shown plays come whole, nested ones too; a track or
+clip inside a compound is found by its id; an empty id list is no filter,
+and `start` equal to `end` is a moment ([[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]]).
+Keyframes are included: each keyed path's keys as `[at, value]` or
 `[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
 "fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,
 first, last, range}`), so an edit to a key shows in its answer. A title
@@ -283,8 +291,9 @@ Sound by role ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent 
   "fade_out" (1.5), "volume", "seed", "track_id"}` lays a bed made on this
   computer: `wind`, `stream`, `waterfall`, `surf`, `rain`, `rocket`,
   `city`, `roomTone` (`list_catalog` section `ambience`). Each moves as a
-  recording does (gusts, waves every 6.5 to 13 s, cars passing near and
-  far), is made at a level that sits under a voice at volume 1 (about -27
+  recording does (gusts with no lull running into the next, waves every
+  6.5 to 13 s, cars passing near and far, the first wave or car within
+  1.5 s), is made at a level that sits under a voice at volume 1 (about -27
   LUFS; waterfall -24, rocket -21, room tone -46) and loops without a seam;
   past 300 s the file repeats. It answers `clip_ids`, `asset_id`,
   `track_id`, `start`, `end`, `file_seconds` and `reused` (the same name
@@ -322,14 +331,33 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   lowest), `speech` (while the voice speaks, its lines from first word to
   last, together) and `per_line` (each line alone: `min_lu`, `median_lu`,
   `max_lu` and where the lowest is).
-- `duck_under_speech` `{clip_id, voice_above_music_lu?, min_line_lu?,
-  depth?}` keys the music down under speech. `voice_above_music_lu` aims
-  the speech window; `min_line_lu` holds every line to at least that many
-  LU, each line's dip as deep as it needs (`depth`, or the depth the
-  speech target chose, is the least); both are met by rendering the stems
-  and measuring again. `balance` answers the speech window's numbers,
-  `target_lu` and `met`, and `per_line` (with `min_line_lu`, `each` line's
-  margin and dip).
+- `duck_under_speech` `{clip_id | track_id, voice_above_music_lu?,
+  min_line_lu?, max_line_lu?, depth?}` keys the music down under speech:
+  one clip, or every clip of a track as one bed (`track_id`, a song cut
+  into pieces in one call). `voice_above_music_lu` aims the speech window;
+  `min_line_lu` holds every line to at least that many LU, each line's dip
+  as deep as it needs (`depth`, or the depth the speech target chose, is
+  the usual dip); `max_line_lu` (default 15, or 3 over a higher target or
+  minimum, whenever the call measures) to at most, a line over a quiet
+  passage dipping less, the others moving so the lines together stay on
+  the target (a ceiling under the target is refused); all are met by
+  rendering the stems and measuring again. Voices inside compound clips
+  count. `balance` answers the speech window's numbers, `target_lu` and
+  `met`, and `per_line` (`min_target_lu`, `max_target_lu`, `each` line's
+  margin and dip). The music keeps how it was ducked: `retake_voiceover`
+  dips it again under the new take (`ducking` in its answer), and an edit
+  that moves a line under it, or moves the music and its dips, answers a
+  note ([[ADR-104 Voice and sound an agent can trust without ears]],
+  [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
+- `cut_music` `{clip_id, from, to, snap?, crossfade?}` takes bars out of a
+  song (the file's seconds, on its grid's bar lines, each piece meeting
+  the cut on the frame before its bar so both downbeats play whole) and
+  joins the pieces with a 30 ms crossfade ending on the downbeat; `set_crossfade`
+  `{clip_id, seconds}` crossfades any audio clip into the next on its
+  track. `preview_audio`'s `edges` measure each join (`dip_db`,
+  `click_db`, `step_db`, `tail_cut_db`; a click or a jump only where the
+  incoming file has none of its own there) and `dropouts` any few
+  milliseconds of silence inside sound.
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.
@@ -392,9 +420,10 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
 `review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
-timeline; a short word a letter off is `minor`), `pace`
-(`target_words_per_second`, `over_speech` and `over_clip` words and
-syllables a second, `on_target`), `lead_silence`, `tail_silence`,
+timeline; a short word a letter off is `minor`; `match` counts a word
+heard that is not in the script, which is heard again too), `pace`
+(`target_words_per_second`, `over_speech` with its pause marks out and
+`over_clip` words and syllables a second, `on_target`), `lead_silence`, `tail_silence`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
 `range_st`), `voice_above_music_lu` (the line window: this line, first
 word to last), a `verdict` (`ok` when nothing fails, or the problems),
@@ -466,10 +495,11 @@ Original music ([[Features]], Generated music;
 
 Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 
-- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?}`:
-  tempo, beats, downbeats, phrases, sections (intro, verse, build, drop,
-  breakdown, outro, with energy), per-beat energy, hits and the drops, in
-  timeline seconds; `markers` (`beats`, `bars`, `phrases`, `sections`,
+- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?, detail?}`:
+  tempo, the beat grid (`first_beat`, `beat_seconds`, `bar_seconds` and the
+  beats `off_grid`), downbeats, phrases, sections (intro, verse, build,
+  drop, breakdown, outro, with energy), counts and the drops, in timeline
+  seconds; `detail: "full"` adds every beat, its energy and the hits; `markers` (`beats`, `bars`, `phrases`, `sections`,
   `drop`) also drops markers. The whole music file is read (once per file
   and hints; files over ten minutes, the clip's stretch and a minute either
   side) and its grid mapped through the clip's in-point, speed or speed

@@ -60,6 +60,7 @@ export function SoundFxSection({ clip }: { clip: AudioClip | VideoClip }) {
               <>
                 <CutoffRow clip={clip} kind={kind} />
                 <SliderRow clip={clip} path={`${kind}.resonance`} label="Resonance" min={0} max={24} step={0.5} digits={1} unit="dB" reset={0} keyframes={false} />
+                <SliderRow clip={clip} path={`${kind}.makeup`} label="Makeup" min={-24} max={24} step={0.5} digits={1} unit="dB" reset={0} keyframes={false} />
               </>
             )}
           </div>

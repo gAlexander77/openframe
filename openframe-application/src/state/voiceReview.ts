@@ -18,8 +18,8 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { advise, bandOf, compareScript, judgeHearings, verdict, type LineMeasure } from "../lib/voiceReview";
-import { paceOf } from "../lib/voicePace";
+import { advise, bandOf, compareScript, judgeHearings, matchShare, verdict, type LineMeasure } from "../lib/voiceReview";
+import { bandSource, paceOf } from "../lib/voicePace";
 import { parseLine } from "../lib/voiceScript";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
@@ -49,7 +49,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
   const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress");
   const fps = p.fps;
   try {
-    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; clipRate: ReturnType<typeof paceOf>["clip"]; recheck?: { heard: string; match: number | null } })[] = [];
+    const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; clipRate: ReturnType<typeof paceOf>["clip"]; marksOut: number; recheck?: { heard: string; match: number | null } })[] = [];
     const heardPcm: Float32Array[] = [];
     for (const [k, c] of lines.entries()) {
       const asset = getAsset(p, c.assetId);
@@ -87,8 +87,14 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         }
       }
       // Pace in two windows: over the speech (first word to last, its own
-      // pauses in) and over the clip (its lead-in and tail too).
-      const pace = paceOf(sp ? sp.text : heardWords.map((w) => w.text).join(" "), act ? (act.last - act.first) / speed : 0, end - start);
+      // pauses in, its pause marks out: the script's beats, not the
+      // reader's pace, as the read was landed, ADR-104) and over the clip
+      // (its lead-in and tail too).
+      const said = act ? (act.last - act.first) / speed : 0;
+      const marks = sp ? parseLine(sp.text).pauses.reduce((n, x) => n + x.seconds, 0) : 0;
+      const marksOut = said - marks > 0.3 ? marks : 0;
+      const pace = paceOf(sp ? sp.text : heardWords.map((w) => w.text).join(" "), said - marksOut, end - start);
+      const band = bandSource(sp);
       measured.push({
         clipId: c.id,
         start,
@@ -98,13 +104,15 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         speed: sp?.speed,
         pronounce: sp?.pronounce,
         pace: sp?.pace,
-        asked: sp?.wps,
+        asked: band.wps,
+        readAs: band.readAs,
         speedChosen: sp?.speedChosen,
         volume: c.volume,
         compressed: !!c.compressor,
         wps: pace.speech?.words_per_second ?? null,
         sps: pace.speech?.syllables_per_second ?? null,
         clipRate: pace.clip,
+        marksOut: +marksOut.toFixed(2),
         lead: round(act ? act.first / speed : end - start)!,
         tail: round(act ? (pcm.length / RATE - act.last) / speed : 0)!,
         longestPause: round(Math.max(0, ...(act?.pauses ?? []).map((x) => (x.end - x.start) / speed)))!,
@@ -136,7 +144,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
           const again = (await transcribePcm(heardPcm[i], 0, { model: RECHECK_MODEL, language: null }, () => undefined, signal)).map((w) => w.text.trim()).join(" ");
           const second = compareScript(sp!.text, again, sp!.pronounce);
           m.differences = judgeHearings(m.differences, second.differences);
-          m.recheck = { heard: again, match: second.words ? round(second.matched / second.words) : null };
+          m.recheck = { heard: again, match: second.words ? matchShare(second.matched, second.differences) : null };
         }
       } catch (e) {
         if (signal.aborted) throw e;
@@ -156,15 +164,17 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         ...(m.voice ? { voice: m.voice } : {}),
         ...(m.text ? { script: parseLine(m.text).written } : {}),
         heard: m.heard,
-        match: m.words ? round(m.matched / m.words) : null,
-        differences: m.differences.map((d, i) => ({ kind: d.kind, ...(d.script ? { script: d.script } : {}), ...(d.heard ? { heard: d.heard } : {}), at: m.diffAt[i], ...(d.likely ? { likely: d.likely } : {}) })),
+        // Never 1 while a difference is reported: a word heard that is not
+        // in the script counts against it too.
+        match: m.words ? matchShare(m.matched, m.differences) : null,
+        differences: m.differences.map((d, i) => ({ kind: d.kind, ...(d.script ? { script: d.script } : {}), ...(d.heard ? { heard: d.heard } : {}), at: m.diffAt[i], ...(d.minor ? { minor: true } : {}), ...(d.likely ? { likely: d.likely } : {}) })),
         ...(m.recheck ? { heard_again: m.recheck.heard, match_again: m.recheck.match } : {}),
         ...(m.differences.some((d) => d.likely === "recognizer") ? { notes: m.differences.filter((d) => d.likely === "recognizer").map((d) => `"${d.script ?? d.heard}": misheard by the first recognizer, heard right by a larger model; the voice is fine`) } : {}),
         // Over the speech (what the band is held to) and over the clip.
         pace: {
           ...(m.pace && m.pace !== "normal" ? { meant: m.pace } : {}),
           target_words_per_second: band,
-          over_speech: m.wps === null ? null : { words_per_second: m.wps, syllables_per_second: m.sps },
+          over_speech: m.wps === null ? null : { words_per_second: m.wps, syllables_per_second: m.sps, ...(m.marksOut ? { pause_marks_out: m.marksOut } : {}) },
           over_clip: m.clipRate ? { words_per_second: m.clipRate.words_per_second, syllables_per_second: m.clipRate.syllables_per_second } : null,
           on_target: m.wps !== null && m.wps >= band[0] && m.wps <= band[1],
         },

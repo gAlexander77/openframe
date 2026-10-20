@@ -334,3 +334,146 @@ Every non-obvious choice gets a short Architecture Decision Record in
   new sounds and splits stems; eight ambience beds are synthesized
   locally; preview_audio returns the mix or a stem as MP3 with numbers;
   previews draw text at the canvas's size.
+- [[ADR-099 Feathers blur the shape, title runs share a baseline, pictures take a border]] —
+  a feather is the shape blurred (no creases on wide feathers); a run's
+  gradient spans its own letters and mixed sizes share a baseline; keys
+  and set_param take only what a path holds; a group move keys only what
+  it changes; set_border frames any picture around its finished edge.
+- [[ADR-100 A compound clip's sound is a bus, and a bed keeps its balance in every take]] —
+  a compound clip with an EQ or compressor mixes its clips as a bus
+  (EQ, compressor, then its volume and fades); renders pre-roll a second
+  for any compressor; beds levelled by a seed-free reference take, peaks
+  limited, wind lulls bounded; check_project finds a sound cut off
+  mid-video; preview_audio names the picture's stem.
+- [[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]] —
+  music markers follow their clip through trims, moves, speed and splits
+  and a second reading replaces them; set_music_grid keeps a song's tempo,
+  downbeat and parts for analysis, mark_beats and check_project; a steady
+  song's beats keep one phase; versions refit a title card compound as one
+  picture, fill the frame with a full-bleed split screen, hold text at the
+  readable size, judge 4:5 by the apps' zones and take overrides by hand;
+  unique copies copy nested compounds.
+- [[ADR-102 An edit moves only what its answer names, and the main track keeps the gaps it was given]] —
+  the magnet closes only the gaps an edit opens, so an agent's pause on
+  the main track survives AI tools; agents' commands get linkage, never
+  the magnet; every clip a tool moves is in its answer, a closed gap in a
+  sentence; trims say why they stop; slip_clip moves the source by its
+  seconds; hidden cuts are not counted; half-frame times take the earlier
+  frame.
+- [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]] —
+  check_project judges titles inside compound clips where they show; a
+  title card grows as one picture and is restacked rather than overlapping;
+  one title zone for the check and versions, with room for the suggested
+  outline; a subject's copy takes the grade it sits above and says where
+  it went; a title its subject hides is flagged and shown in front in a
+  version; frame-spanning shapes stretch; versions answer their loudness.
+- [[ADR-104 Voice and sound an agent can trust without ears]] —
+  a words_per_second band asked is held over any pace; pause marks stay
+  out of a line's pace and a slow line reads no faster than speed 1; a
+  word heard that is not in the script is heard again and counts against
+  match; duck_under_speech ducks a whole track under a 15 LU ceiling,
+  keeps how it ducked and dips again under a retake; cut_music cuts a
+  song on its bars with a crossfade, set_crossfade joins any two audio
+  clips, preview_audio measures every join and dropout; decoding starts
+  0.1 s early so an MP3 loses no packet.
+- [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]] —
+  describe_project narrows to clips, tracks or a stretch with the media
+  and markers they use; analyze_music answers a grid and counts unless
+  asked for detail full; the design rules and a title's style are listed
+  once; lines are laid out without the spacing after the last letter;
+  set_colorize makes white a color; the glow starts at luma 85.
+- [[ADR-106 What sits on a shot or marks a song follows it through every edit]] —
+  linkage moves a run of titles into each other's old spots, follows a
+  shot ripple-deleted with its title, and applies inside edit_compound
+  and between a batch's steps; a new main-track clip keeps the pause
+  before it; cut_ranges keeps the clip's id on its first piece left; a
+  song's markers follow it into compound clips and unique copies, never
+  double another use's, and round ties as secondsToFrames does; cut_music
+  of an intro starts on the bar; reversed trims and frozen slips say why.
+- [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]] —
+  a split of one sound plays on with no click guard; cut_music stops
+  before the bar line so both downbeats play whole; preview_audio's edges
+  judge a join's click and level against the incoming file's own; a duck
+  keeps its keys' shape and place, so moved music says its dips moved and
+  splits are not hand edits; the lines stay on the speech target under the
+  ceiling; voices in compound clips duck music.
+- [[ADR-108 set_param sets what a clip has, borders stay outside see-through pictures, versions keep a frame's pixels]] —
+  set_param refuses a part the clip lacks, naming what adds it (a half
+  colorize crashed renders, a half mask wedged describe_project); a keyed
+  border, shadow, colorize or mask value needs at; a border no longer
+  tints a see-through picture; versions keep borders, drop shadows and
+  feathers against the short side; describe_project lists nested
+  compounds, finds compound tracks, reads [] as all and start = end as a
+  moment; a colorize color's alpha scales it; a tracked range's gradient
+  ends on its letters.
+- [[ADR-109 What an agent can set, a person can see and change]] —
+  a section opens when its header switch turns on and keeps the focus;
+  activate and deactivate act on the selection as one, named for what
+  they do; agents' notices name the new commands and parameters; a
+  title shows the drop shadow, border and colorize it carries; paste
+  attributes carries shadow, border and compressor; audio crossfades are
+  offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]] —
+  the LAME tag's delay and padding are read as ffmpeg reads them and left
+  out of every MP3's playback, export, waveform, analysis and duration
+  (23 ms earlier at 48 kHz, sample for sample with ffmpeg); markers and
+  cuts saved from an old reading stay as measured; AAC was already exact.
+- [[ADR-110 Outlines take their color, solids their alpha, borders blur with their picture, and a shot's pieces carry their titles]] —
+  a hollow shape's outline takes its color; solids draw any CSS color,
+  alpha too (names and rgba() drew black); a motion-blurred picture is
+  framed per shutter sample; versions scale effects' pixel sizes and a
+  position wiggle with their picture; set_param, set_shape and set_tilt
+  need at for a keyed value, set_param starts an EQ again, and
+  normalize_loudness scales a duck's keys;
+  markers follow a song any compounds deep; a piece cut off a shot (a
+  freeze's second half) carries its titles; per-letter border fades stay
+  open.
+- [[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]] —
+  the library's Check tab (and File > Check project, and Export's Check
+  row) runs the agent's check_project with the same measuring, on
+  request, and says each finding in a person's words, grouped as text,
+  timing and sound, jumping to its clip, time and inspector tab; Space
+  presses a button, switch or menu item the keyboard reached (a click's
+  focus still plays); a transition dropped on an audio join crossfades.
+- [[ADR-113 A freeze fills the pause it was given, a run of lines follows its pictures, and a cut rolls in one call]] —
+  a clip across several shots follows them when they all moved by one
+  amount (a run of voice lines through a freeze), never a music track's;
+  freeze_frame overwrite fills a pause and moves nothing, and a still at a
+  shot's last frame leaves no one-frame piece; add_voiceover names each
+  line its at could not hold; numbers sent as strings are read; roll_edit;
+  set_param hold steps instead of ramping; a sound's length rounds up.
+- [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]] —
+  add_text without a track lands above everything showing then, never on
+  a free row under a grade, the hits or its own button; hits and bars act
+  on footage, so a title card stays above them; a title placed under an
+  adjustment layer is named; set_mask takes aspect (1 is round on any
+  picture) and names an edge it runs past; a version wider than its
+  master keeps all the master showed, centered, at the caller's focus;
+  pushes relax or hold eases a tall master's push-ins; versions list a
+  picture drawn across their captions; preview_media looks inside an
+  exported file.
+- [[ADR-114 A duck opens where it is asked and keeps the hand's keys, long words set the pace, a filtered voice keeps its loudness]] —
+  duck_under_speech plans a whole bed at once (no blip before a first
+  line or at a song's cut), holds pauses under min_gap and lists them,
+  opens on open_at moments such as the Drop markers, and keeps volume
+  keys made by hand outside the lines; a band moves down so long words
+  are read at most 5 syllables a second; add_voiceover takes read_as per
+  line; set_audio_filter keep_loudness measures a filter's loss and makes
+  it up; edges explain a step the music makes itself and flag one in a
+  ring-out.
+- [[ADR-115 A voiceover captions itself a few words at a time, and answers give what they share once]] —
+  add_voiceover and retake_voiceover caption_words time each word by
+  Whisper fitted to the voice's own start and pauses (measured against
+  Kokoro's durations); check_project reads chunked captions as their
+  line; a lone word is never lit; long clip lists share their common
+  fields, moved markers are counted, alike findings grouped, a review is
+  compact with one duck for the music track; new_project and clips false
+  give track ids; check sheets wrap and take tile_width.
+- [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]] —
+  a file covers a clip when the clip's last frame starts inside it, so a
+  whole-file clip relinks to its own file and slips no further than it;
+  the RGB split, VHS's scan lines and the pixelate transition are sized
+  at 1080p, so the viewer, stills and the export match; glow, denoise and
+  sketch take a reach that versions scale (old ones load at the old
+  reach); a split's halves share one EQ and compressor and render as the
+  whole clip.

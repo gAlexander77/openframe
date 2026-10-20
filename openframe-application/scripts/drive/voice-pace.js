@@ -24,14 +24,14 @@ async (page) => {
   ];
   const narration = await call("add_voiceover", { lines: lines.map((text) => ({ text })), captions: false });
   const inBand = (l, [lo, hi], slack = 0) => l.words_per_second >= lo * (1 - slack) && l.words_per_second <= hi * (1 + slack);
-  const review = await call("review_voiceover", { music: false, recheck: false });
+  const review = await call("review_voiceover", { music: false, recheck: false, detail: "full" });
   const ad = await call("add_voiceover", { lines: [{ text: "Every edit is a tool an agent can call, so a whole film can be made by asking." }], read_as: "ad", start: 30, captions: false });
   const fixed = await call("add_voiceover", { lines: [{ text: lines[1] }], speed: 0.9, start: 40, captions: false });
   const retake = await call("retake_voiceover", { clip_id: fixed.lines[0].voice_clip, words_per_second: [2.3, 2.8], ripple: false });
-  const again = await call("review_voiceover", { clip_ids: [fixed.lines[0].voice_clip], music: false, recheck: false });
+  const again = await call("review_voiceover", { clip_ids: [fixed.lines[0].voice_clip], music: false, recheck: false, detail: "full" });
   const stressed = await call("add_voiceover", { lines: [{ text: "I never said *she* took it." }], start: 50 });
   const caption = await page.evaluate((id) => window.videoEditor.project().tracks.flatMap((t) => t.clips).find((c) => c.id === id)?.text, stressed.lines[0].caption_clip);
-  const heard = await call("review_voiceover", { clip_ids: [stressed.lines[0].voice_clip], music: false, recheck: false });
+  const heard = await call("review_voiceover", { clip_ids: [stressed.lines[0].voice_clip], music: false, recheck: false, detail: "full" });
   const details = {
     // Every line on narration's band (a line the slowest natural speed cannot bring down may sit a tenth over).
     landed: { ok: narration.lines.every((l) => l.speed_chosen && l.reads <= 3 && l.speed >= 0.6 && l.speed <= 1.3 && inBand(l, [2.3, 2.8], l.speed === 0.6 ? 0.1 : 0)), lines: narration.lines.map((l) => ({ text: l.text, speed: l.speed, words_per_second: l.words_per_second, reads: l.reads })) },

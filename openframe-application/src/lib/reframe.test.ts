@@ -98,6 +98,56 @@ describe("versions keep the subject", () => {
     expect(paramAt(c, "transform.scale", rel) / paramAt(c, "transform.scale", 0)).toBeCloseTo(1.5, 1);
   });
 
+  it("keeps a wider version's frame around what a tall master showed, at the caller's focus", () => {
+    // Claude film test 2: a 9:16 master pushes into the launch's middle
+    // column (frame_region), its 16:9 version asks focus x 0.5. The frame,
+    // wider than that column, was put with its left edge on the column's
+    // (center 0.78, held at 0.59 by the picture's edge): the rocket sat left
+    // of center, under the label's S.
+    let { p, id } = film();
+    p = { ...p, width: 1080, height: 1920 };
+    p = runCommand(p, "frame_region", { clip_id: id, region: { x: 0.342, y: 0, w: 0.316, h: 1 }, to_region: { x: 0.37, y: 0.05, w: 0.259, h: 0.82 } });
+    const end = 179;
+    const focused = reshape(p, "16:9", "fill", { looks: looking(id, () => 0.5), focus: [{ clip_id: id, x: 0.5 }] });
+    expect(landing(focused, id, 0.5, end).x).toBeCloseTo(960, -1);
+    expect(landing(focused, id, 0.5, 0).x).toBeCloseTo(960, -1);
+    // The subject framing centers it too, and the frame holds all the master showed.
+    const q = reshape(p, "16:9", "fill", { looks: looking(id, () => 0.5) });
+    expect(landing(q, id, 0.5, end).x).toBeCloseTo(960, -1);
+    const c = findClip(q, id)!.clip as VideoClip;
+    const l = { x: paramAt(c, "transform.x", end), y: paramAt(c, "transform.y", end), scale: paramAt(c, "transform.scale", end), rotation: 0, flipX: false, flipY: false } as Layer;
+    expect(inSource(q, c, l, 0, 0).u).toBeLessThanOrEqual(0.37 + 1e-3);
+    expect(inSource(q, c, l, 1920, 0).u).toBeGreaterThanOrEqual(0.629 - 1e-3);
+  });
+
+  it("relaxes or holds a tall master's keyed push on a version that asks, framing around what the master showed", () => {
+    let { p, id } = film();
+    p = { ...p, width: 1080, height: 1920 };
+    p = runCommand(p, "frame_region", { clip_id: id, region: { x: 0.342, y: 0, w: 0.316, h: 1 }, to_region: { x: 0.37, y: 0.05, w: 0.259, h: 0.82 } });
+    const end = 179;
+    const zoom = (q: Project) => {
+      const c = findClip(q, id)!.clip as VideoClip;
+      return paramAt(c, "transform.scale", end) / paramAt(c, "transform.scale", 0);
+    };
+    const shownTop = (q: Project) => {
+      const c = findClip(q, id)!.clip as VideoClip;
+      const l = { x: paramAt(c, "transform.x", end), y: paramAt(c, "transform.y", end), scale: paramAt(c, "transform.scale", end), rotation: 0, flipX: false, flipY: false } as Layer;
+      return inSource(q, c, l, 960, 0).v;
+    };
+    const looks = looking(id, () => 0.5);
+    const kept = versionProject(p, { ratio: "16:9" }, undefined, looks);
+    expect(zoom(kept)).toBeCloseTo(0.316 / 0.259, 2);
+    // The master's push cut the top 5% of the picture: kept, so does the version.
+    expect(shownTop(kept)).toBeCloseTo(0.05, 2);
+    const relaxed = versionProject(p, { ratio: "16:9", pushes: "relax" }, undefined, looks);
+    expect(zoom(relaxed)).toBeCloseTo(Math.sqrt(0.316 / 0.259), 2);
+    expect(shownTop(relaxed)).toBeLessThan(0.05);
+    const held = versionProject(p, { ratio: "16:9", pushes: "hold" }, undefined, looks);
+    expect(zoom(held)).toBeCloseTo(1, 3);
+    expect(shownTop(held)).toBeCloseTo(0, 2);
+    expect(landing(held, id, 0.5, end).x).toBeCloseTo(960, -1);
+  });
+
   it("notes a subject the framing cuts, and one wider than the frame", () => {
     const { p, id } = film();
     const notes: SubjectNote[] = [];

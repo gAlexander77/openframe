@@ -33,6 +33,8 @@ uniform bool u_curvesOn, u_wheelsOn, u_hslOn;
 uniform sampler2D u_curves;              // 256x1: R, G, B curves, luma in A
 uniform vec3 u_lift, u_gamma, u_gain, u_offset;
 uniform vec3 u_hsl[8];                   // hue, saturation, lightness per band, -1..1
+uniform vec3 u_colorize;                 // colorize (ADR-105): white becomes this
+uniform float u_colorizeAmount;          // 0 off .. 1, mirrored from src/lib/colorize.ts
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
 
@@ -116,6 +118,9 @@ vec3 grade(vec3 c) {
 }
 
 vec3 adjustColor(vec3 c, vec2 local) {
+  // Colorize first: the brightness in one color, which the sliders, the
+  // filter and the grade then act on (a white sprite made amber, then warmed).
+  if (u_colorizeAmount > 0.0) c = mix(c, luma(c) * u_colorize, u_colorizeAmount);
   c *= exp2(u_exposure * 2.0);
   c += u_brightness * 0.25;
   // white balance: warm adds red/removes blue, tint adds magenta/removes green
@@ -315,13 +320,47 @@ float erfApprox(float x) {
   return sign(x) * sqrt(1.0 - exp(-x2 * (1.2732395 + 0.147 * x2) / (1.0 + 0.147 * x2)));
 }
 
-// How much of a point d pixels outside an edge (negative: inside) is
-// covered: one screen pixel's ramp, or with a feather (ADR-069) a
-// Gaussian's falloff, the edge centered in it and sigma a quarter of it.
+// How much of a point d pixels outside a crisp edge (negative: inside) is
+// covered: one screen pixel's ramp.
 float edgeCover(float d, float aa) {
-  if (u_shapeFeather <= 0.0) return clamp(0.5 - d / aa, 0.0, 1.0);
-  float s = max(u_shapeFeather * 0.25, aa * 0.4);
-  return 0.5 - 0.5 * erfApprox(d / (s * 1.4142136));
+  return clamp(0.5 - d / aa, 0.0, 1.0);
+}
+
+// A feather (ADR-099) is the shape blurred by a Gaussian of sigma a quarter
+// of it: exact across, in slices along y over each rounded end.
+// src/lib/shapes.ts blurredCover is this, line for line.
+const int FEATHER_SLICES = 12;
+float phi(float z) { return 0.5 + 0.5 * erfApprox(z * 0.70710678); }
+float spanCover(float x, float w, float s) { return w > 0.0 ? phi((w - x) / s) - phi((-w - x) / s) : 0.0; }
+float capCover(vec2 q, vec2 b, vec2 c, float s) {
+  if (c.y < 1e-3) return 0.0;
+  float h = b.y - c.y;
+  float lo = max(h, q.y - 4.0 * s), hi = min(b.y, q.y + 4.0 * s);
+  if (hi <= lo) return 0.0;
+  float a0 = asin(clamp((lo - h) / c.y, 0.0, 1.0)), a1 = asin(clamp((hi - h) / c.y, 0.0, 1.0));
+  float d = (a1 - a0) / float(FEATHER_SLICES);
+  float sum = 0.0;
+  for (int i = 0; i < FEATHER_SLICES; i++) {
+    float a = a0 + (float(i) + 0.5) * d;
+    float y = (q.y - (h + c.y * sin(a))) / s;
+    sum += exp(-0.5 * y * y) * spanCover(q.x, b.x - c.x + c.x * cos(a), s) * c.y * cos(a);
+  }
+  return sum * d * 0.39894228 / s;
+}
+// A feathered outline's drawn stretch (0..draw round a perimeter per),
+// blurred along it; the gap is split at its middle. shapes.ts trimCover.
+float trimCover(float at, float draw, float per, float s) {
+  float u = (at > 0.5 + 0.5 * draw ? at - 1.0 : at) * per;
+  return phi(u / s) - phi((u - draw * per) / s);
+}
+// A box of half sizes b with elliptical corners of radii c (a rounded
+// rectangle: its radius both ways; an ellipse: c = b), blurred, at q.
+float blurredCover(vec2 q, vec2 b, vec2 c, float s) {
+  if (b.x <= 0.0 || b.y <= 0.0) return 0.0;
+  c = min(c, b);
+  float h = b.y - c.y;
+  float mid = h > 0.0 ? (phi((h - q.y) / s) - phi((-h - q.y) / s)) * spanCover(q.x, b.x, s) : 0.0;
+  return clamp(mid + capCover(q, b, c, s) + capCover(vec2(q.x, -q.y), b, c, s), 0.0, 1.0);
 }
 
 // The shape's straight color at display uv d. aa: pixels of the shape per
@@ -337,11 +376,14 @@ vec4 shapeColor(vec2 d, float aa) {
   if (u_gradient && u_gradKind == 1) t = clamp(length((q - u_gradCenter) / max(u_gradRadius, vec2(1e-3))), 0.0, 1.0);
   vec4 p1 = vec4(u_fill.rgb * u_fill.a, u_fill.a), p2 = vec4(u_fill2.rgb * u_fill2.a, u_fill2.a);
   vec4 paint = mix(p1, p2, t);
+  // A feather blurs the shape (ADR-099); sigma a quarter of it.
+  bool soft = u_shapeFeather > 0.0;
+  float sig = max(u_shapeFeather * 0.25, aa * 0.4);
   if (u_shape == 3) {
     // A line: a butt-capped bar from the left end, draw of the way along.
     float len = 2.0 * b.x * u_shapeDraw;
-    float dist = sdRoundBox(q - vec2(-b.x + len * 0.5, 0.0), vec2(len * 0.5, b.y), 0.0);
-    float cov = u_shapeDraw > 0.0 ? edgeCover(dist, aa) : 0.0;
+    vec2 lq = q - vec2(-b.x + len * 0.5, 0.0);
+    float cov = u_shapeDraw <= 0.0 ? 0.0 : soft ? spanCover(lq.x, len * 0.5, sig) * spanCover(lq.y, b.y, sig) : edgeCover(sdRoundBox(lq, vec2(len * 0.5, b.y), 0.0), aa);
     vec4 o = paint * cov;
     return o.a > 0.0 ? vec4(o.rgb / o.a, o.a) : vec4(0.0);
   }
@@ -360,11 +402,16 @@ vec4 shapeColor(vec2 d, float aa) {
     per = 3.1415927 * (3.0 * (bb.x + bb.y) - sqrt((3.0 * bb.x + bb.y) * (bb.x + 3.0 * bb.y)));
     s = u_shapeDraw < 1.0 ? fract(atan(q.x / bb.x, -q.y / bb.y) / 6.2831853 + 1.0) : 0.0;
   }
-  vec4 o = u_shapeFill ? paint * edgeCover(dist, aa) : vec4(0.0);
+  // The corners' radii: a rectangle's radius both ways; an ellipse is all corner.
+  vec2 c = u_shape == 1 ? vec2(min(u_shapeRadius, min(b.x, b.y))) : b;
+  vec4 o = u_shapeFill ? paint * (soft ? blurredCover(q, b, c, sig) : edgeCover(dist, aa)) : vec4(0.0);
   if (sw > 0.0) {
-    float cov = edgeCover(abs(dist) - sw * 0.5, aa);
-    // Trim paths: the outline drawn up to draw of the way round.
-    if (u_shapeDraw < 1.0) cov *= u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
+    // The outline is the shape grown by half its width less the shape shrunk by it.
+    float hw = sw * 0.5;
+    float cov = soft ? blurredCover(q, b + hw, c + hw, sig) - blurredCover(q, b - hw, max(c - hw, 0.0), sig) : edgeCover(abs(dist) - hw, aa);
+    // Trim paths: the outline drawn up to draw of the way round; feathered,
+    // its ends blurred along it as its sides are across.
+    if (u_shapeDraw < 1.0) cov *= soft ? trimCover(s, u_shapeDraw, per, sig) : u_shapeDraw > 0.0 ? clamp((u_shapeDraw - s) * per / aa + 0.5, 0.0, 1.0) : 0.0;
     vec4 st = vec4(u_strokeColor.rgb * u_strokeColor.a, u_strokeColor.a) * cov;
     o = st + o * (1.0 - st.a);
   }
@@ -549,6 +596,100 @@ void main() {
   outColor = l + u_color * a * (1.0 - l.a);
 }`;
 
+// ---- borders (ADR-099) ------------------------------------------------------
+// The picture's edge, found by a jump flood: each pixel holds the nearest
+// pixel inside the picture found so far (at least half covered), its x and
+// y in two bytes each; all 255 is none yet. Steps of 2^k, then 1, carry
+// every inside pixel out as far as the border reaches (src/lib/border.ts
+// floodSteps). Read with texelFetch: the coordinates must not be filtered.
+const FLOOD_CODE = `
+const vec4 NONE = vec4(1.0);
+vec4 enc(vec2 s) { return vec4(floor(s.x / 256.0), mod(s.x, 256.0), floor(s.y / 256.0), mod(s.y, 256.0)) / 255.0; }
+vec2 dec(vec4 v) { v = floor(v * 255.0 + 0.5); return vec2(v.r * 256.0 + v.g, v.b * 256.0 + v.a); }
+bool none(vec4 v) { return all(equal(v, NONE)); }`;
+
+/** The flood's start: inside pixels hold themselves. The layer's opacity
+ * scales what counts as inside, so a faded picture keeps its border. */
+export const FLOOD_SEED_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_layer;
+uniform float u_level;
+out vec4 outColor;
+${FLOOD_CODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy);
+  outColor = texelFetch(u_layer, p, 0).a >= 0.5 * u_level ? enc(vec2(p)) : NONE;
+}`;
+
+/** One flood step: the nearest of the nine pixels u_step apart. */
+export const FLOOD_STEP_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_seeds;
+uniform int u_step;
+out vec4 outColor;
+${FLOOD_CODE}
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy), size = textureSize(u_seeds, 0);
+  vec4 best = NONE;
+  float bd = 1e20;
+  for (int j = -1; j <= 1; j++)
+    for (int i = -1; i <= 1; i++) {
+      ivec2 q = p + ivec2(i, j) * u_step;
+      if (q.x < 0 || q.y < 0 || q.x >= size.x || q.y >= size.y) continue;
+      vec4 v = texelFetch(u_seeds, q, 0);
+      if (none(v)) continue;
+      vec2 d = dec(v) - vec2(p);
+      float dd = dot(d, d);
+      if (dd < bd) { bd = dd; best = v; }
+    }
+  outColor = best;
+}`;
+
+/** The border around the picture, out to u_width pixels past its edge. The
+ * edge lies past the nearest inside pixel's center by as much of that
+ * pixel as is covered beyond half, so a curve's border stays smooth. */
+export const BORDER_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_layer;
+uniform sampler2D u_seeds;
+uniform float u_level;     // the layer's opacity
+uniform float u_width;     // render pixels
+uniform vec4 u_color;      // premultiplied, its opacity and the layer's included
+out vec4 outColor;
+${FLOOD_CODE}
+float alphaAt(ivec2 q, ivec2 size) { return texelFetch(u_layer, clamp(q, ivec2(0), size - 1), 0).a; }
+void main() {
+  ivec2 p = ivec2(gl_FragCoord.xy), size = textureSize(u_layer, 0);
+  vec4 l = texelFetch(u_layer, p, 0);
+  vec4 v = texelFetch(u_seeds, p, 0);
+  float cov = 0.0;
+  if (!none(v)) {
+    vec2 s = dec(v);
+    float a = min(texelFetch(u_layer, ivec2(s), 0).a / u_level, 1.0);
+    cov = clamp(u_width - (length(s - vec2(p)) - (a - 0.5)) + 0.5, 0.0, 1.0);
+  }
+  // Only outside the picture: what it covers at full opacity stays its own,
+  // so a faded picture does not show its border through itself.
+  float behind = 1.0 - min(l.a / u_level, 1.0);
+  // Inside it (at least half covered), only what its edge's anti-aliasing
+  // leaves of the pixels beside it: a see-through picture (a half-clear box
+  // behind a title, a letter fading in) shows what is under it, not the
+  // border's color, while an opaque picture's soft edge pixel still meets
+  // the border without a seam (ADR-108).
+  if (cov > 0.0 && behind > 0.0 && l.a >= 0.5 * u_level) {
+    float most = 0.0;
+    bool edge = false;
+    for (int j = -1; j <= 1; j++)
+      for (int i = -1; i <= 1; i++) {
+        float a = alphaAt(p + ivec2(i, j), size);
+        most = max(most, a);
+        edge = edge || a < 0.5 * u_level;
+      }
+    behind = edge ? clamp((most - l.a) / u_level, 0.0, 1.0) : 0.0;
+  }
+  outColor = l + u_color * cov * behind;
+}`;
+
 /** Blend a premultiplied layer over the premultiplied accumulator using the
  * W3C compositing formulas for separable blend modes. */
 export const BLEND_FS = `#version 300 es
@@ -663,8 +804,11 @@ export const EFFECT_SHADERS: Record<string, string> = {
   pixelate: effect(["size"], `
     vec2 b = vec2(max(u_size * u_scale, 1.0)) / u_res;
     outColor = texture(u_tex, (floor(v_uv / b) + 0.5) * b);`),
+  // The offset: 0.768 px at 1080p per unit of amount, the same both ways.
+  // It was 0.768 render pixels whatever the render's size, so a small
+  // viewer drew it larger than the export (ADR-117).
   rgbSplit: effect(["amount", "angle"], `
-    float a = radians(u_angle); vec2 o = vec2(cos(a), sin(a)) * u_amount * 0.0004 * 30.0 / max(u_res.x / 1920.0, 0.25) / 30.0;
+    float a = radians(u_angle); vec2 o = vec2(cos(a), sin(a)) * u_amount * 0.768 * u_scale / u_res;
     vec4 c = texture(u_tex, v_uv);
     float r = texture(u_tex, v_uv + o).r; float b = texture(u_tex, v_uv - o).b;
     outColor = vec4(r, c.g, b, c.a);`),
@@ -686,7 +830,13 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec4 c = texture(u_tex, uv);
     c.r = texture(u_tex, uv + vec2(0.004 * k, 0.0)).r;
     c.b = texture(u_tex, uv - vec2(0.004 * k, 0.0)).b;
-    float scan = 0.92 + 0.08 * sin(uv.y * u_res.y * 1.5);
+    // A line every 4.2 px at 1080p (258 to the frame), not every 4.2 render
+    // pixels: a small viewer drew half as many as the export. Under 4 render
+    // pixels a line, the lines are averaged over each pixel (sinc), as the
+    // export scaled down shows them, so the preview does not moire (ADR-117).
+    float w = 1.5 / u_scale;
+    float aa = u_scale >= 1.0 ? 1.0 : sin(w * 0.5) / (w * 0.5) / (sin(0.75) / 0.75);
+    float scan = 0.92 + 0.08 * sin(uv.y * (u_res.y / u_scale) * 1.5) * aa;
     c.rgb *= mix(1.0, scan, k);
     c.rgb = mix(c.rgb, c.rgb * vec3(1.05, 0.95, 1.1) + 0.03 * c.a, k);
     outColor = c;`),
@@ -774,10 +924,15 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec4 c = texture(u_tex, v_uv);
     float f = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 16.0) * u_amount * 0.01;
     outColor = vec4(c.rgb + f * c.a, c.a);`),
-  glow: effect(["amount", "threshold"], `
+  // radius: pixels at 1080p the glow reaches (7 x 7 taps a third of it
+  // apart); a stored glow without one reached 18, its default (ADR-117).
+  // ponytail: at its 48 px maximum the taps are 16 px apart and a small
+  // highlight glows as a grid of copies; the big blur's pyramid (ADR-069)
+  // is the upgrade if wider glows are wanted.
+  glow: effect(["amount", "threshold", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     vec4 acc = vec4(0.0);
-    vec2 px = 6.0 * u_scale / u_res;
+    vec2 px = u_radius / 3.0 * u_scale / u_res;
     for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(x), float(y)) * px);
       float l = s.a > 0.0 ? luma(s.rgb / s.a) : 0.0;
@@ -787,10 +942,12 @@ export const EFFECT_SHADERS: Record<string, string> = {
     outColor = vec4(c.rgb + acc.rgb * u_amount * 0.04, max(c.a, acc.a));`),
   // An edge-preserving blur: neighbors count by distance and by how alike
   // their colors are, so noise averages out and edges do not.
-  denoise: effect(["amount"], `
+  // radius: how far it looks, pixels at 1080p (4.5 before it was a
+  // parameter).
+  denoise: effect(["amount", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     float sr = 0.015 + u_amount * 0.0015;
-    vec2 px = 1.5 * u_scale / u_res;
+    vec2 px = u_radius / 3.0 * u_scale / u_res;
     vec4 acc = vec4(0.0); float ws = 0.0;
     for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(x), float(y)) * px);
@@ -806,8 +963,10 @@ export const EFFECT_SHADERS: Record<string, string> = {
     for (int i = -12; i <= 12; i++) acc += texture(u_tex, v_uv + dir * float(i) / 12.0);
     outColor = acc / 25.0;`),
   // Pencil lines on paper from the picture's edges (Sobel on luma).
-  sketch: effect(["amount", "mix"], `
-    vec2 px = u_scale / u_res;
+  // width: the edge filter's step, pixels at 1080p (1 before it was a
+  // parameter), so the lines keep their weight against the picture.
+  sketch: effect(["amount", "mix", "width"], `
+    vec2 px = u_width * u_scale / u_res;
     float l[9];
     for (int i = 0; i < 9; i++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(i % 3 - 1), float(i / 3 - 1)) * px);
@@ -924,7 +1083,9 @@ vec4 transitionAt(float p) {
     return acc / 65.0;
   }
   if (u_type == 17) {                                                                    // pixelate
-    float s = max(1.0, sin(p * 3.14159) * 60.0);
+    // Blocks up to 60 px at 1080p (they were 60 render pixels: twice as
+    // large against the picture in a half-size viewer as in the export).
+    float s = max(1.0, sin(p * 3.14159) * 60.0 * u_res.y / 1080.0);
     vec2 b = vec2(s) / u_res;
     vec2 q = (floor(uv / b) + 0.5) * b;
     return mix(A(q), B(q), step(0.5, p));

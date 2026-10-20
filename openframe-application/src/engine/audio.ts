@@ -13,14 +13,14 @@
 
 import { meterLevels } from "../lib/mixer";
 import type { AudioBufferSink } from "mediabunny";
-import { EQ_BANDS, panEnvelope, soundEnvelope, soundingClips, soundPanAt, soundSpan } from "../lib/audio";
+import { busEnvelope, EQ_BANDS, panEnvelope, sharedChains, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
-import type { AudioClip, Compressor, Project, VideoClip } from "../lib/project/types";
+import type { AudioClip, Compressor, Project, Sound, VideoClip } from "../lib/project/types";
 import { fxCurve, switchAt, tapeStopMap, type TapeStopMap } from "../lib/soundFx";
 import { varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
-import { mediaFor } from "./media";
+import { DECODE_PREROLL, mediaFor } from "./media";
 import { postFaderFx, preFaderFx } from "./soundFx";
 
 export interface Schedule {
@@ -49,7 +49,8 @@ interface Pcm {
  * source 0), as planar channels. Null when nothing decodes there. */
 async function decodeRange(sink: AudioBufferSink, a: number, b: number, off: number, stopped: () => boolean): Promise<Pcm | null> {
   const chunks: { buffer: AudioBuffer; t: number }[] = [];
-  for await (const { buffer, timestamp } of sink.buffers(a + off, b + off)) {
+  // Decoded from a little earlier: a cold decoder's first packet can be silence.
+  for await (const { buffer, timestamp } of sink.buffers(Math.max(0, a + off - DECODE_PREROLL), b + off)) {
     if (stopped()) break;
     chunks.push({ buffer, t: timestamp - off });
   }
@@ -123,7 +124,63 @@ export function scheduleAudio(
   const toCtx = (timelineSec: number) => at + (timelineSec - from);
   const hasAudio = (id: string) => getAsset(p, id)?.hasAudio ?? false;
 
-  const pumps = soundingClips(p, hasAudio).map(async (sounding) => {
+  /** Compound clips mixed as a bus (ADR-100): their clips' sound summed,
+   * then the compound clip's EQ and compressor, then its volume and fades,
+   * by key (soundBuses), each feeding the next bus out or its track. */
+  const compoundBuses = new Map<string, AudioNode>();
+  const busInput = (hops: BusHop[], track: AudioNode): AudioNode => {
+    let next = track;
+    for (const hop of [...hops].reverse()) {
+      let node = compoundBuses.get(hop.key);
+      if (!node) {
+        const sum = new GainNode(ctx, { channelCount: 2, channelCountMode: "explicit" });
+        let tail: AudioNode = sum;
+        const eq = eqChain(ctx, hop.clip.eq);
+        if (eq) {
+          tail.connect(eq.input);
+          tail = eq.output;
+        }
+        if (hop.clip.compressor) {
+          const comp = compressorNodes(ctx, hop.clip.compressor);
+          tail.connect(comp.input);
+          tail = comp.output;
+        }
+        const gain = ctx.createGain();
+        tail.connect(gain);
+        gain.connect(next);
+        outs.push(gain);
+        const lo = Math.max(from, framesToSeconds(hop.clip.start, p.fps)), hi = Math.min(to, framesToSeconds(hop.clip.start + hop.clip.duration, p.fps));
+        gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
+        const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0);
+        if (toCtx(hi) - envAt > 0.01) {
+          const env = busEnvelope(hop, p.fps, lo, hi);
+          gain.gain.setValueCurveAtTime(env.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length), env.length - 2)), envAt, toCtx(hi) - envAt);
+        }
+        compoundBuses.set(hop.key, (node = sum));
+      }
+      next = node;
+    }
+    return next;
+  };
+
+  /** A split's halves share one EQ and compressor (ADR-117), so the second
+   * goes on from the first's state: each run's chain, by its first clip. */
+  const all = soundingClips(p, hasAudio);
+  const runs = sharedChains(all);
+  const heads = new Map<string, { input: AudioNode; output: AudioNode }>();
+  const headFor = (key: string, c: Sound) => {
+    let head = heads.get(key);
+    if (!head) {
+      // A run has an EQ or a compressor (sharedChains), so one is here.
+      const eq = eqChain(ctx, c.eq);
+      const comp = c.compressor ? compressorNodes(ctx, c.compressor) : null;
+      if (eq && comp) eq.output.connect(comp.input);
+      heads.set(key, (head = { input: (eq ?? comp)!.input, output: (comp ?? eq)!.output }));
+    }
+    return head;
+  };
+
+  const pumps = all.map(async (sounding) => {
     const { clip } = sounding;
     const clipStart = framesToSeconds(clip.start, p.fps);
     // Under a transition the sound runs into its handles to crossfade;
@@ -132,6 +189,10 @@ export function scheduleAudio(
     const lo = Math.max(from, spanLo);
     const hi = Math.min(to, spanHi);
     if (hi <= lo) return;
+    // Its way out, built now (before any wait) so a bus's envelope starts
+    // on time: its track, through the compound clips that are buses.
+    const route = soundBuses(sounding);
+    const out = busInput(route.buses, output(sounding.via?.at(-1)?.track.id ?? sounding.track.id));
     // Wait until the clip is near before opening its decoder.
     if (realtime) {
       while (!stopped && toCtx(lo) - ctx.currentTime > 2) await sleep(150);
@@ -142,10 +203,12 @@ export function scheduleAudio(
     const media = await mediaFor(asset);
     if (stopped || !media.audioSink) return;
 
-    const gain = ctx.createGain();
+    // Closed until its span: a shared chain (a split's) carries the other
+    // half's sound before it (ADR-117).
+    const gain = new GainNode(ctx, { gain: 0 });
     const pan = ctx.createStereoPanner();
     pan.pan.value = soundPanAt(sounding, p.fps, lo);
-    pan.connect(output(sounding.via?.at(-1)?.track.id ?? sounding.track.id));
+    pan.connect(out);
     outs.push(pan);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
     // Keyframed curves ride the clip's span; started late (realtime), the
@@ -173,21 +236,25 @@ export function scheduleAudio(
       pre.output.connect(input);
       input = pre.input;
     }
-    if (clip.compressor) {
-      const comp = compressorNodes(ctx, clip.compressor);
-      comp.output.connect(input);
-      input = comp.input;
-    }
-    for (const b of [...EQ_BANDS].reverse()) {
-      const db = clip.eq?.[b.key] ?? 0;
-      if (!db) continue;
-      const f = ctx.createBiquadFilter();
-      f.type = b.type;
-      f.frequency.value = b.frequency;
-      if ("q" in b) f.Q.value = b.q;
-      f.gain.value = Math.max(-12, Math.min(12, db));
-      f.connect(input);
-      input = f;
+    const run = runs.get(sounding);
+    if (run) {
+      // Its EQ and compressor are the run's: every half's sound goes
+      // through them and on to each half's own filters and gain, which
+      // pass only while that half plays.
+      const head = headFor(run.key, clip);
+      head.output.connect(input);
+      input = head.input;
+    } else {
+      if (clip.compressor) {
+        const comp = compressorNodes(ctx, clip.compressor);
+        comp.output.connect(input);
+        input = comp.input;
+      }
+      const eq = eqChain(ctx, clip.eq);
+      if (eq) {
+        eq.output.connect(input);
+        input = eq.input;
+      }
     }
     // Fill: one channel to both sides, ahead of the EQ. A splitter is
     // always "discrete", so a stereo gain in front upmixes a mono file to
@@ -203,11 +270,19 @@ export function scheduleAudio(
       merge.connect(input);
       input = up;
     }
-    const env = soundEnvelope(sounding, p.fps, lo, hi);
+    const env = soundEnvelope(sounding, p.fps, lo, hi, 200, route.through);
     if (envDur > 0.01) {
       // Trim the envelope's head if we start late (realtime only).
       const skip = Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length);
       gain.gain.setValueCurveAtTime(env.subarray(Math.min(skip, env.length - 2)), envAt, envDur);
+      // The chain it shares carries the next half's sound from here on.
+      if (run?.next) {
+        try {
+          gain.gain.setValueAtTime(0, envAt + envDur);
+        } catch {
+          gain.gain.setValueAtTime(0, envAt + envDur + 1 / sr);
+        }
+      }
       // Keyframed pan rides the same span.
       const panCurve = panEnvelope(sounding, p.fps, lo, hi);
       if (panCurve) pan.pan.setValueCurveAtTime(panCurve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * panCurve.length), panCurve.length - 2)), envAt, envDur);
@@ -227,7 +302,9 @@ export function scheduleAudio(
     const srcHi = clip.in + (playHi - clipStart) * perSec;
 
     const off = media.audioStart;
-    for await (const { buffer, timestamp } of playHi > lo ? media.audioSink.buffers(srcLo + off, srcHi + off) : []) {
+    // Decoded from a little earlier (DECODE_PREROLL): a cold decoder's first
+    // packet can be silence, a hole at every window and every mid-file start.
+    for await (const { buffer, timestamp } of playHi > lo ? media.audioSink.buffers(Math.max(0, srcLo + off - DECODE_PREROLL), srcHi + off) : []) {
       if (stopped) break;
       const srcT = timestamp - off;
       // Timeline second where this chunk's first sample would play.
@@ -466,6 +543,15 @@ export function peakDb(a: AnalyserNode): number {
   let peak = 0;
   for (let i = 0; i < scratch.length; i++) peak = Math.max(peak, Math.abs(scratch[i]));
   return peak > 0 ? 20 * Math.log10(peak) : -Infinity;
+}
+
+/** The equalizer's bands in a row, low first, the same in preview and
+ * export; null when every band is flat. */
+function eqChain(ctx: BaseAudioContext, eq: Sound["eq"]): { input: AudioNode; output: AudioNode } | null {
+  const bands = EQ_BANDS.filter((b) => eq?.[b.key]).map((b) => new BiquadFilterNode(ctx, { type: b.type, frequency: b.frequency, ...("q" in b ? { Q: b.q } : {}), gain: Math.max(-12, Math.min(12, eq![b.key]!)) }));
+  if (!bands.length) return null;
+  bands.slice(1).forEach((f, i) => bands[i].connect(f));
+  return { input: bands[0], output: bands[bands.length - 1] };
 }
 
 /**

@@ -31,6 +31,10 @@ function host() {
       h.sheets.push([assetId, times, width, columns]);
       return "iVBOR";
     },
+    async fileSheet(src: string, times: number[] | undefined, count: number, width: number, columns: number) {
+      h.sheets.push([src, times, count, width, columns]);
+      return { image: "/9j/", file: { file: src, kind: "video", seconds: 46.5, width: 1920, height: 1080, frames: [1, 2] } };
+    },
     checkProject: (kind: string) => ({ ok: true, kind }),
     auditions: [] as unknown[],
     async audition(o: { audio?: boolean }) {
@@ -349,7 +353,8 @@ describe("what a blind test of the tools found", () => {
     const next = await run(h, "add_color_clip", { color: "#fff", start: 8.95, duration: 1, track_id: h.project.tracks.find((t) => t.clips.length)!.id });
     const [a, b] = h.project.tracks.flatMap((t) => t.clips).sort((x, y) => x.start - y.start);
     expect(a.start + a.duration).toBe(b.start);
-    expect(next.added_clips[0].start).toBe(8.967);
+    // 8.95 s is frame 268.5: a tie lands on the frame on screen then (ADR-102).
+    expect(next.added_clips[0].start).toBe(8.933);
   });
 
   it("slips a shot's source without moving it", async () => {
@@ -444,7 +449,9 @@ describe("what the launch film found (2026-10-18)", () => {
     const h = windows();
     h.openProject = async () => describeProject(h.project);
     const r = await run(h, "open_project", { project: "p1" });
-    expect(r).toEqual({ name: h.project.name, canvas: { width: 1920, height: 1080 }, fps: 30, duration: 5, counts: { tracks: 1, clips: 2, assets: 1, markers: 0, compounds: 2 }, note: expect.stringContaining("describe_project") });
+    const main = h.project.tracks[0];
+    // The tracks' ids: the film test added a clip to learn the main track's (ADR-115).
+    expect(r).toEqual({ name: h.project.name, canvas: { width: 1920, height: 1080 }, fps: 30, duration: 5, counts: { tracks: 1, clips: 2, assets: 1, markers: 0, compounds: 2 }, tracks: [{ id: main.id, kind: "video", name: main.name, main: true, clips: 2 }], note: expect.stringContaining("describe_project") });
   });
 
   it("places a list of sound effects in one call, with their volumes, as one host call", async () => {
@@ -590,6 +597,18 @@ describe("what the Codex film test found (2026-10-19)", () => {
     for (const n of ["preview_frames", "preview_motion", "preview_media"]) expect(listTools().find((t) => t.name === n)!.inputSchema.properties!.columns.maximum, n).toBe(8);
   });
 
+  it("looks inside an exported file with preview_media file, importing nothing", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "preview_media", arguments: { file: "D:/Out/film-16x9.mp4", count: 8, columns: 4 } });
+    const content = (r!.result as { content: { type: string; text?: string; data?: string }[] }).content;
+    expect(content[0]).toMatchObject({ type: "image", data: "/9j/", mimeType: "image/jpeg" });
+    expect(JSON.parse(content[1].text!)).toMatchObject({ file: "D:/Out/film-16x9.mp4", seconds: 46.5, width: 1920 });
+    expect(h.sheets.at(-1)).toEqual(["D:/Out/film-16x9.mp4", undefined, 8, 320, 4]);
+    expect(h.project.assets).toHaveLength(1);
+    expect(await err(h, "preview_media", { file: "x.mp4", asset_id: "a1" })).toMatch(/asset_id or file, not both/);
+    expect(await err(h, "preview_media", {})).toMatch(/give asset_id .* or file/);
+  });
+
   it("describes a title's type and a custom speed curve, compactly", async () => {
     const h = host();
     const t = (await run(h, "add_text", { text: "Home", start: 0, duration: 2, style: { font: "Georgia", weight: 300, size: 72, maxWidth: 0.5, letterSpacing: 12, lineHeight: 0.95 } })).added_clips[0];
@@ -616,6 +635,63 @@ describe("what the Codex film test found (2026-10-19)", () => {
     h.exec = ((name: string) => (name === "open_project_file" ? { opened: true, project: describeProject(h.project) } : null)) as unknown as typeof h.exec;
     const opened = await run(h, "open_project_file", { path: "D:/films/cut.json" });
     expect(opened).toEqual({ opened: true, project: expect.objectContaining({ counts: expect.objectContaining({ compounds: 3 }), note: expect.stringContaining("describe_project") }) });
-    expect(opened.project.tracks).toBeUndefined();
+    // The tracks' ids and clip counts, never their clips (ADR-115).
+    expect(opened.project.tracks.every((t: { clips: unknown }) => typeof t.clips === "number")).toBe(true);
+  });
+});
+
+describe("what the Claude film test found (2026-10-20)", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  /** Two shots with a 7-frame breath between them, [2, 2.233), and a PiP on the second. */
+  const breath = async () => {
+    const h = host();
+    await run(h, "add_media_clip", { asset_id: "a1", start: 0, duration: 2 });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2.233, duration: 2, in: 3 });
+    await run(h, "add_track", { kind: "video", name: "PiP" });
+    await run(h, "add_media_clip", { asset_id: "a1", start: 2.5, duration: 1, track_id: h.project.tracks[0].id });
+    return h;
+  };
+
+  it("lists every clip an app tool moved, and says in a sentence when a gap on the main track closed", async () => {
+    // An AI tool whose edit packed the main track (as the magnet did after
+    // add_voiceover) and answered in its own words.
+    const h = await breath();
+    h.ai = (async () => {
+      h.project = runCommand(h.project, "close_gaps", { track_id: h.project.tracks.find((t) => t.main)!.id });
+      h.project = runCommand(h.project, "move_clip", { clip_id: h.project.tracks[0].clips[0].id, start: 2.267 });
+      return [{ clipId: "c_music", gain: 0.7 }];
+    }) as unknown as typeof h.ai;
+    const r = await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c_music"] } });
+    const parts = (r!.result as { content: { text: string }[] }).content;
+    expect(JSON.parse(parts[0].text)).toEqual([{ clipId: "c_music", gain: 0.7 }]);
+    const moved = JSON.parse(parts[1].text);
+    expect(moved.changed_clips.map((c: { start: number }) => c.start)).toEqual([2.267, 2]);
+    expect(moved.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
+  });
+
+  it("says so when an edit closes a gap, and lists nothing extra when the tool's answer already has it", async () => {
+    const h = await breath();
+    const closed = await run(h, "close_gaps", { track_id: h.project.tracks.find((t) => t.main)!.id });
+    expect(closed.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
+    expect(closed.changed_clips).toHaveLength(1);
+    const h2 = await breath();
+    const r = await run(h2, "trim_clip", { clip_id: h2.project.tracks.find((t) => t.main)!.clips[0].id, edge: "end", to: 2.1 });
+    expect(r.notes).toBeUndefined();
+  });
+});
+
+describe("what the second Claude film found (ADR-113)", () => {
+  it("reads a number a client sent as a string, for commands and app tools, and refuses anything else", async () => {
+    // set_speed_ramp hold "1.0" (the client's way of sending 1.0) was
+    // refused as "args.hold must be a number".
+    const h = host();
+    const ok = await call(h, "tools/call", { name: "add_media_clip", arguments: { asset_id: "a1", start: "0", duration: " 4.0 " } });
+    expect(JSON.parse(text(ok)).duration).toBe(4);
+    const frame = await call(h, "tools/call", { name: "preview_frame", arguments: { at: "1.0" } });
+    expect(frame!.result).not.toMatchObject({ isError: true });
+    for (const at of ["1.0s", "", "Infinity", "0x10", "soon", "1,5"]) {
+      expect(text(await call(h, "tools/call", { name: "split", arguments: { at } }))).toContain("args.at must be a number");
+    }
+    expect(text(await call(h, "tools/call", { name: "preview_frame", arguments: { at: "later" } }))).toContain("args.at must be a number");
   });
 });

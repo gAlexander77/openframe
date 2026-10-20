@@ -1,6 +1,8 @@
 // The graphics commands (ADR-056 to ADR-059, ADR-062) and their project format.
 import { describe, expect, it } from "vitest";
+import { ANIMATABLE_PATHS, keyframeProblem } from "./animatable";
 import { describeProject, runCommand } from "./commands";
+import { checkProject } from "./designCheck";
 import { createProject, normalizeProject } from "./project/defaults";
 import type { Clip, ColorClip, Project } from "./project/types";
 
@@ -268,5 +270,265 @@ describe("set_tilt (ADR-070)", () => {
     p = runCommand(p, "set_tilt", { clip_ids: [id], x: 0, y: 0 });
     expect(["rotateX", "rotateY", "perspective"].filter((k) => k in (clips(p)[0] as ColorClip).transform)).toEqual([]);
     expect(() => runCommand(p, "set_tilt", { clip_ids: [id], y: 120 })).toThrow(/<= 89/);
+  });
+});
+
+describe("style keys take only what they animate (ADR-099)", () => {
+  it("add_keyframe refuses a color on a number's path instead of keying it as the number", () => {
+    let p = runCommand(fresh(), "add_text", { text: "Grow", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    // #ff0000 as a size was a 16,711,680-pixel title.
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "style.size", at: 1, color: "#ff0000" })).toThrow(/color is for a color path/);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "transform.x", at: 1, color: "red" })).toThrow(/takes value/);
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "style.color", at: 1, color: "#ff3366" });
+    expect(clips(p)[0].keyframes!["style.color"]).toEqual([{ f: 30, v: 0xff3366 }]);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "style.weight", at: 1, value: 300 })).toThrow(/does not animate/);
+  });
+
+  it("set_param keeps a title's color CSS, keys it when it is keyed, and sets only numbers", () => {
+    let p = runCommand(fresh(), "add_text", { text: "Hue", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.color", value: 0x0000ff });
+    expect((clips(p)[0] as Clip & { style: { color: unknown } }).style.color).toBe("#0000ff");
+    // The number used to stay, and the design check crashed on it.
+    expect(() => checkProject(p)).not.toThrow();
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "style.color", at: 0, color: "#ffffff" });
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.color", value: 0xff0000, at: 1 });
+    expect(clips(p)[0].keyframes!["style.color"].map((k) => [k.f, k.v])).toEqual([[0, 0xffffff], [30, 0xff0000]]);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "style.font", value: 3 })).toThrow(/holds "Inter", not a number/);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "style.bold", value: 0 })).toThrow(/a boolean, not a number/);
+    const q = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_param", { clip_ids: [clips(q)[0].id], path: "color", value: 5 })).toThrow(/not a number/);
+    expect(() => runCommand(q, "set_param", { clip_ids: [clips(q)[0].id], path: "style.color", value: 5 })).toThrow(/a title's color/);
+    // Numbers still set as before.
+    p = runCommand(p, "set_param", { clip_ids: [id], path: "style.size", value: 120 });
+    expect((clips(p)[0] as Clip & { style: { size: number } }).style.size).toBe(120);
+  });
+});
+
+describe("set_border (ADR-099)", () => {
+  it("frames a picture, changes and keys the frame, and takes it off", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_border", { clip_ids: [id] });
+    expect((clips(p)[0] as ColorClip).border).toEqual({ color: "#ffffff", width: 8, opacity: 1 });
+    p = runCommand(p, "set_border", { clip_ids: [id], color: "#102030", width: 14, opacity: 0.7 });
+    expect((clips(p)[0] as ColorClip).border).toEqual({ color: "#102030", width: 14, opacity: 0.7 });
+    expect(described(p, id).border).toEqual({ color: "#102030", width: 14, opacity: 0.7 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "border.width", at: 0, value: 0 });
+    p = runCommand(p, "set_border", { clip_ids: [id], width: 20, at: 1 });
+    expect(clips(p)[0].keyframes!["border.width"].map((k) => [k.f, k.v])).toEqual([[0, 0], [30, 20]]);
+    expect((clips(p)[0] as ColorClip).border!.width).toBe(14);
+    // It survives a save and load.
+    expect(clips(normalizeProject(JSON.parse(JSON.stringify(p))))).toEqual(clips(p));
+    p = runCommand(p, "set_border", { clip_ids: [id], off: true });
+    expect("border" in clips(p)[0]).toBe(false);
+    expect(clips(p)[0].keyframes).toBeUndefined();
+    expect(() => runCommand(p, "set_border", { clip_ids: [id], color: "chalk" })).toThrow(/not a color/);
+    expect(() => runCommand(p, "add_keyframe", { clip_id: id, path: "border.width", at: 0, value: 4 })).toThrow(/set_border first/);
+    const q = runCommand(fresh(), "add_adjustment_clip", { start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_border", { clip_ids: [clips(q)[0].id] })).toThrow(/no picture/);
+  });
+
+  it("describe_project shows a picture's mask as set_mask takes it", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 2 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "rectangle", width: 1, height: 1, radius: 0.25, feather: 0 });
+    expect(described(p, id).mask).toEqual({ shape: "rectangle", x: 0, y: 0, width: 1, height: 1, radius: 0.25 });
+  });
+});
+
+describe("set_param sets what a clip has, and only that (ADR-108)", () => {
+  /** A video with every optional picture part, a title, an outlined
+   * gradient shape and a sound with every effect, each animatable. */
+  function everything(): { p: Project; ids: string[] } {
+    let p: Project = {
+      ...fresh(),
+      assets: [
+        { id: "v", kind: "video", name: "v.mp4", src: "v.mp4", duration: 10, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: true },
+        { id: "s", kind: "audio", name: "s.wav", src: "s.wav", duration: 10, hasVideo: false, hasAudio: true },
+      ],
+      luts: [{ id: "l1", name: "Teal.cube", src: "teal.cube", kind: "3d", size: 33 }],
+    };
+    p = runCommand(p, "add_media_clip", { asset_id: "v", start: 0, duration: 4 });
+    const v = clips(p)[0].id;
+    p = runCommand(p, "set_shadow", { clip_ids: [v] });
+    p = runCommand(p, "set_border", { clip_ids: [v] });
+    p = runCommand(p, "set_mask", { clip_ids: [v], shape: "rectangle" });
+    p = runCommand(p, "set_colorize", { clip_ids: [v] });
+    p = runCommand(p, "apply_lut", { clip_id: v, lut_id: "l1" });
+    p = runCommand(p, "add_effect", { clip_id: v, type: "blur" });
+    for (const target of ["position", "x", "y", "rotation", "scale"]) p = runCommand(p, "set_wiggle", { clip_ids: [v], target, amplitude: 4 });
+    p = runCommand(p, "add_text", { text: "Title", start: 0, duration: 4 });
+    p = runCommand(p, "add_shape", { kind: "rounded_rectangle", start: 0, duration: 4, stroke_width: 6, gradient: { from: "#000000", to: "#ffffff", angle: 0, kind: "radial" } });
+    p = runCommand(p, "add_media_clip", { asset_id: "s", start: 0, duration: 4 });
+    const s = clips(p).find((c) => c.type === "audio")!.id;
+    for (const type of ["lowpass", "highpass"]) p = runCommand(p, "set_audio_filter", { clip_ids: [s], type, cutoff: 800 });
+    p = runCommand(p, "set_reverb", { clip_ids: [s], mix: 0.2 });
+    p = runCommand(p, "set_echo", { clip_ids: [s], mix: 0.2 });
+    return { p, ids: clips(p).map((c) => c.id) };
+  }
+
+  it("still sets every animatable number on a clip that has its part", () => {
+    const { p, ids } = everything();
+    // Every path the keyframe table lists, its choices spelled out.
+    const expand = (path: string): string[] => {
+      const m = /<([^>]+)>/.exec(path);
+      if (!m) return [path];
+      const choices = m[1] === "index|id|type" ? ["0"] : m[1] === "param" ? ["amount"] : m[1].split("|");
+      return choices.flatMap((c) => expand(path.replace(m[0], c)));
+    };
+    const stored = (id: string, path: string) => {
+      const c = clips(p).find((x) => x.id === id) as Clip & { effects?: { id: string }[] };
+      return path.startsWith("effects.") ? (c.effects?.length ? `effects.${c.effects[0].id}.amount` : "effects") : path;
+    };
+    const unset: string[] = [];
+    for (const path of ANIMATABLE_PATHS.flatMap(expand)) {
+      // The clips this path animates on (a key on it would show there).
+      const on = ids.filter((id) => !keyframeProblem(clips(p).find((c) => c.id === id)!, stored(id, path)));
+      if (!on.length) unset.push(path);
+      for (const id of on) {
+        // style.color takes 0xRRGGBB, the rest a plain number.
+        const value = path === "style.color" ? 0x336699 : path.endsWith("cutoff") ? 900 : 0.5;
+        expect(() => runCommand(p, "set_param", { clip_ids: [id], path, value }), `${path} on ${id}`).not.toThrow();
+      }
+    }
+    // Every row was tried on some clip but the vertical scale, which keys
+    // only once the scale is not uniform...
+    expect(unset).toEqual(["transform.scaleY"]);
+    // ...and which set_param sets on a uniform picture, making it non-uniform.
+    const q = runCommand(p, "set_param", { clip_ids: [ids[0]], path: "transform.scaleY", value: 0.5 });
+    expect((clips(q)[0] as Clip & { transform: { scaleY?: number } }).transform.scaleY).toBe(0.5);
+  });
+
+  it("refuses a part the clip lacks, naming what adds it, instead of storing half of one", () => {
+    let p: Project = { ...fresh(), assets: [{ id: "v", kind: "video", name: "v.mp4", src: "v.mp4", duration: 10, width: 1920, height: 1080, fps: 30, hasVideo: true, hasAudio: false }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "v", start: 0, duration: 4 });
+    p = runCommand(p, "add_shape", { kind: "rectangle", start: 0, duration: 4 });
+    const [v, shape] = [clips(p).find((c) => c.type === "video")!.id, clips(p).find((c) => c.type === "color")!.id];
+    // A half border, shadow, colorize or mask: the colorize crashed every
+    // frame (a missing color), the mask every describe_project and undo.
+    for (const [path, adds] of [
+      ["border.width", "set_border first"],
+      ["shadow.blur", "set_shadow first"],
+      ["adjust.colorize.amount", "set_colorize first"],
+      ["mask.width", "set_mask first"],
+      ["adjust.lut.intensity", "apply_lut first"],
+      ["chromaKey.similarity", "it has no chromaKey"],
+    ]) expect(() => runCommand(p, "set_param", { clip_ids: [v], path, value: 0.5 }), path).toThrow(adds);
+    expect(() => runCommand(p, "set_param", { clip_ids: [shape], path: "shape.stroke.width", value: 6 })).toThrow("set_shape stroke_width first");
+    expect(() => runCommand(p, "set_param", { clip_ids: [shape], path: "shape.gradient.angle", value: 6 })).toThrow("set_shape gradient first");
+    // A grade's own values start their part, as set_param says: the grade
+    // reads what is not there as 0.
+    p = runCommand(p, "set_param", { clip_ids: [v], path: "adjust.hsl.red.saturation", value: 20 });
+    p = runCommand(p, "set_param", { clip_ids: [v], path: "adjust.wheels.gain.y", value: 10 });
+    // So do a sound's EQ bands: a band not there plays flat.
+    p = runCommand(p, "set_param", { clip_ids: [v], path: "eq.low", value: -12 });
+    expect(clips(p).find((c) => c.id === v)).toMatchObject({ eq: { low: -12 } });
+    expect(() => describeProject(p)).not.toThrow();
+    expect(() => checkProject(p)).not.toThrow();
+  });
+
+  it("set_border, set_shadow, set_colorize and set_mask refuse a keyed value without at", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 4 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_border", { clip_ids: [id], width: 10 });
+    p = runCommand(p, "set_shadow", { clip_ids: [id] });
+    p = runCommand(p, "set_colorize", { clip_ids: [id] });
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle" });
+    for (const path of ["border.width", "shadow.blur", "adjust.colorize.amount", "mask.width"]) {
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 0, value: 0.2 });
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 2, value: 0.4 });
+    }
+    // Without at the value went under the keys, where nothing shows it,
+    // and the answer told it as set.
+    expect(() => runCommand(p, "set_border", { clip_ids: [id], width: 30 })).toThrow(/border.width is keyframed.*give at/);
+    expect(() => runCommand(p, "set_shadow", { clip_ids: [id], blur: 30 })).toThrow(/shadow.blur is keyframed/);
+    expect(() => runCommand(p, "set_colorize", { clip_ids: [id], amount: 0.3 })).toThrow(/adjust.colorize.amount is keyframed/);
+    expect(() => runCommand(p, "set_mask", { clip_ids: [id], width: 0.3 })).toThrow(/mask.width is keyframed/);
+    // What is not keyed still changes without at, and at keys what is.
+    const q = runCommand(p, "set_border", { clip_ids: [id], color: "#ff0000", opacity: 0.5 });
+    expect((clips(q)[0] as ColorClip).border).toMatchObject({ color: "#ff0000", opacity: 0.5 });
+    const r = runCommand(p, "set_border", { clip_ids: [id], width: 30, at: 1 });
+    expect(clips(r)[0].keyframes!["border.width"].map((k) => [k.f, k.v])).toEqual([[0, 0.2], [30, 30], [60, 0.4]]);
+  });
+
+  it("set_mask none takes the mask's keys with it", () => {
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 4 });
+    const id = clips(p)[0].id;
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle" });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "mask.width", at: 0, value: 0.2 });
+    p = runCommand(p, "add_keyframe", { clip_id: id, path: "opacity", at: 0, value: 1 });
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "none" });
+    expect(Object.keys(clips(p)[0].keyframes ?? {})).toEqual(["opacity"]);
+    // A new mask starts as set_mask makes it, not on the old one's keys.
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "rectangle", width: 0.9 });
+    expect(described(p, id).mask).toMatchObject({ shape: "rectangle", width: 0.9 });
+    expect(clips(p)[0].keyframes!["mask.width"]).toBeUndefined();
+  });
+});
+
+describe("left over from the graphics hunt (ADR-110)", () => {
+  it("an outline-only shape takes its color for the outline, in add_shape and set_shape", () => {
+    // The outline was white, whatever color was given.
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 1, fill: false, color: "#ffcc00", stroke_width: 12 });
+    const id = clips(p)[0].id;
+    expect((clips(p)[0] as ColorClip).shape!.stroke).toEqual({ color: "#ffcc00", width: 12 });
+    // stroke_color still wins, and a filled shape's outline stays white by default.
+    p = runCommand(p, "add_shape", { kind: "rectangle", start: 1, duration: 1, fill: false, color: "#ffcc00", stroke_color: "#00ff00", stroke_width: 12 });
+    expect((byStart(p, 1) as ColorClip).shape!.stroke!.color).toBe("#00ff00");
+    p = runCommand(p, "add_shape", { kind: "rectangle", start: 2, duration: 1, color: "#ffcc00", stroke_width: 12 });
+    expect((byStart(p, 2) as ColorClip).shape!.stroke!.color).toBe("#ffffff");
+    // set_shape: a new color on a hollow shape colors its outline; a filled
+    // shape made hollow takes it too, and one with no outline is refused.
+    p = runCommand(p, "set_shape", { clip_ids: [id], color: "#3366ff" });
+    expect((clips(p).find((c) => c.id === id) as ColorClip).shape!.stroke).toEqual({ color: "#3366ff", width: 12 });
+    const filled = byStart(p, 2).id;
+    p = runCommand(p, "set_shape", { clip_ids: [filled], fill: false, color: "#ff0000" });
+    expect((clips(p).find((c) => c.id === filled) as ColorClip).shape!.stroke!.color).toBe("#ff0000");
+    let q = runCommand(fresh(), "add_shape", { kind: "ellipse", start: 0, duration: 1 });
+    expect(() => runCommand(q, "set_shape", { clip_ids: [clips(q)[0].id], fill: false })).toThrow(/stroke_width/);
+    q = runCommand(q, "set_shape", { clip_ids: [clips(q)[0].id], fill: false, color: "#ff0000" });
+    expect((clips(q)[0] as ColorClip).shape).toMatchObject({ fill: false, stroke: { color: "#ff0000", width: 4 } });
+  });
+
+  it("add_color_clip takes any CSS color the compositor reads, alpha too, and refuses others", () => {
+    // The compositor read only hex, and dropped its alpha: #ff000080 drew
+    // opaque red, and red or rgba() drew black (scripts/drive/shapes.js measures it).
+    for (const color of ["#ff000080", "red", "rgba(0, 255, 0, 0.5)"]) {
+      const p = runCommand(fresh(), "add_color_clip", { color, start: 0, duration: 1 });
+      expect((clips(p)[0] as ColorClip).color).toBe(color);
+    }
+    expect(() => runCommand(fresh(), "add_color_clip", { color: "blurple", start: 0, duration: 1 })).toThrow(/not a color/);
+  });
+
+  it("set_param, set_shape and set_tilt refuse a keyed value without at", () => {
+    // set_param wrote the value under the keys, where nothing reads it, and
+    // answered as if it had taken.
+    let p = runCommand(fresh(), "add_shape", { kind: "rectangle", start: 0, duration: 4, stroke_width: 4 });
+    const id = clips(p)[0].id;
+    for (const path of ["opacity", "transform.x", "shape.width", "shape.stroke.width", "transform.rotateY"]) {
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 0, value: 0.2 });
+      p = runCommand(p, "add_keyframe", { clip_id: id, path, at: 2, value: 0.4 });
+    }
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 })).toThrow(/opacity is keyframed on clip .*give at/);
+    expect(() => runCommand(p, "set_param", { clip_ids: [id], path: "transform.x", value: 0.1 })).toThrow(/transform.x is keyframed/);
+    expect(() => runCommand(p, "set_shape", { clip_ids: [id], width: 0.5 })).toThrow(/shape.width is keyframed/);
+    expect(() => runCommand(p, "set_shape", { clip_ids: [id], stroke_width: 9 })).toThrow(/shape.stroke.width is keyframed/);
+    expect(() => runCommand(p, "set_tilt", { clip_ids: [id], y: 20 })).toThrow(/transform.rotateY is keyframed/);
+    // With at they key; unkeyed paths and clips still set without it.
+    const q = runCommand(p, "set_param", { clip_ids: [id], path: "opacity", value: 0.9, at: 1 });
+    expect(clips(q)[0].keyframes!.opacity.map((k) => [k.f, k.v])).toEqual([[0, 0.2], [30, 0.9], [60, 0.4]]);
+    expect((clips(runCommand(p, "set_param", { clip_ids: [id], path: "transform.y", value: 0.1 }))[0] as ColorClip).transform.y).toBe(0.1);
+    expect((clips(runCommand(p, "set_shape", { clip_ids: [id], height: 0.3 }))[0] as ColorClip).shape!.height).toBe(0.3);
+  });
+
+  it("set_param starts a sound's EQ, which no other command sets", () => {
+    // ADR-108's refusal of a part the clip lacks took it for a half part:
+    // "eq.low is not on clip: it has no eq", and an agent could not EQ at all.
+    let p: Project = { ...fresh(), assets: [{ id: "s", kind: "audio", name: "s.wav", src: "s.wav", duration: 10, hasVideo: false, hasAudio: true }] };
+    p = runCommand(p, "add_media_clip", { asset_id: "s", start: 0, duration: 4 });
+    p = runCommand(p, "set_param", { clip_ids: [clips(p)[0].id], path: "eq.low", value: -12 });
+    expect((clips(p)[0] as Clip & { eq?: object }).eq).toEqual({ low: -12 });
   });
 });

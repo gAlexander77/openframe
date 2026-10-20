@@ -64,6 +64,10 @@ const FIXED: Record<string, Omit<ParamInfo, "show" | "store"> & { scale?: number
   "shadow.x": { label: "Shadow X", unit: "px", digits: 0 },
   "shadow.y": { label: "Shadow Y", unit: "px", digits: 0 },
   "shadow.opacity": { label: "Shadow opacity", unit: "%", digits: 0, scale: 100 },
+  // Borders (ADR-099).
+  "border.width": { label: "Border width", unit: "px", digits: 0 },
+  "border.opacity": { label: "Border opacity", unit: "%", digits: 0, scale: 100 },
+  "adjust.colorize.amount": { label: "Colorize amount", unit: "%", digits: 0, scale: 100 },
   "style.size": { label: "Text size", unit: "px", digits: 1 },
   "transform.rotateX": { label: "Tilt X", unit: "°", digits: 1 },
   "transform.rotateY": { label: "Tilt Y", unit: "°", digits: 1 },
@@ -111,4 +115,12 @@ export function formatParam(info: ParamInfo, stored: number): string {
   const v = info.show(stored);
   const text = Number.isFinite(v) ? v.toFixed(info.digits) : "-∞";
   return info.unit === "%" || info.unit === "°" || !info.unit ? `${text}${info.unit}` : `${text} ${info.unit}`;
+}
+
+/** A parameter's name where its path alone tells it (an effect's own label
+ * needs its clip), else undefined: an agent's set_param reads in its undo
+ * step and notice as the keyframe panel names the lane (ADR-109). */
+export function paramLabel(path: string): string | undefined {
+  const { label } = paramInfo(path, {} as Clip, { width: 1, height: 1 });
+  return label === path ? undefined : label;
 }
