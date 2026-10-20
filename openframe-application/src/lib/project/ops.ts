@@ -633,7 +633,9 @@ export function slipBySource(p: Project, clipId: Id, seconds: number): { project
   if (!loc || !isTimed(loc.clip) || loc.clip.freeze) return { project: p, moved: 0 };
   const c = loc.clip;
   const [lo, hi] = sourceRange(c, p.fps);
-  const moved = Math.min(Math.max(seconds, -lo), sourceSeconds(p, c) - hi);
+  // A sound's clip of a whole file reads up to a frame past its end
+  // (ADR-113): no room either way then, not a slip back past source 0.
+  const moved = Math.min(Math.max(seconds, -lo), Math.max(0, sourceSeconds(p, c) - hi));
   if (!(Math.abs(moved) > 1e-9)) return { project: p, moved: 0 };
   return { project: updateClip(p, clipId, (x) => ({ ...x, in: (x as TimedClip).in + moved }) as Clip), moved };
 }

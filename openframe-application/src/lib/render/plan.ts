@@ -4,7 +4,7 @@
 // a GPU; the compositor only draws what this returns. Preview and export use
 // the same plan, which is what makes export look like the preview.
 
-import { ANIMATIONS, FILTERS, IDENTITY_ANIM, type AnimState } from "../catalog";
+import { ANIMATIONS, effectDefaults, FILTERS, IDENTITY_ANIM, type AnimState } from "../catalog";
 import { resolveGrade, type GradeParams } from "../grade";
 import { ease, paramAt } from "../keyframes";
 import { findCompound, getAsset, sourceTimeAt, timelineEnd } from "../project/ops";
@@ -178,7 +178,10 @@ function resolveEffects(clip: Clip & { effects: { id: Id; type: string; enabled:
     .filter((e) => e.enabled)
     .map((e) => ({
       type: e.type,
-      params: Object.fromEntries(Object.keys(e.params).map((k) => [k, paramAt(clip, `effects.${e.id}.${k}`, r)])),
+      // A parameter the effect was made without (a glow's radius, added
+      // later: ADR-117) draws at its default, not at whatever the shader
+      // was last given.
+      params: { ...effectDefaults(e.type), ...Object.fromEntries(Object.keys(e.params).map((k) => [k, paramAt(clip, `effects.${e.id}.${k}`, r)])) },
     }));
 }
 

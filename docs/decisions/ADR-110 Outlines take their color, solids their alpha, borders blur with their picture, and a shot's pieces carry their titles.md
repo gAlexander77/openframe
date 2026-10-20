@@ -191,14 +191,18 @@ the same: the title's box drawn at rest into that raster.
   - A glow's reach (18 px at 1080p), denoise's and sketch's are fixed in
     the shader, not parameters, so a version draws them as before
     (larger against a title on 9:16; right against full-frame footage).
-    So is an animation's blur (blurIn).
+    So is an animation's blur (blurIn). The three are parameters versions
+    scale since [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]; blurIn is not.
   - An adjustment clip's effects act on everything under it and are not
     scaled: on a fill version that is mostly footage drawn larger, which
     they match.
   - Glitch, VHS and camera shake effects move by fractions of the frame,
     and rgbSplit's offset is constant in render pixels by its formula
     (it divides by the render's width / 1920), so it reads larger in a
-    smaller preview than in export; neither is touched here.
+    smaller preview than in export; neither is touched here. The split
+    is pixels at 1080p (scaled by versions) since ADR-117, which also
+    found VHS's scan lines and the pixelate transition's blocks sized in
+    render pixels and fixed them.
 - Tests, each failing on the code before: `commands.graphics.test.ts`
   (an outline-only shape's color in `add_shape` and `set_shape`;
   `add_color_clip`'s colors; `set_param`, `set_shape` and `set_tilt`

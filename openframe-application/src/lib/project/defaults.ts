@@ -5,6 +5,7 @@ import { cleanRuns } from "../textRuns";
 // as a complete, valid Project or as an error naming what is wrong.
 
 import { normalizeBrand } from "../brandKit";
+import { effectDefaults } from "../catalog";
 import { cleanCompressor } from "../compressor";
 import { cleanSoundFx, FX_KEYS } from "../soundFx";
 import { cleanGrade } from "../grade";
@@ -269,6 +270,11 @@ function optional(c: Record<string, unknown>, key: string, value: unknown) {
 }
 const CLIP_TYPES = new Set(["video", "audio", "image", "text", "color", "adjustment", "compound"]);
 
+/** Effects as saved, each parameter it was saved without at its default:
+ * one added later (a glow's radius, ADR-117) keeps the look it had. */
+const cleanEffects = (raw: unknown) =>
+  Array.isArray(raw) ? raw.map((e) => (isObj(e) && typeof e.type === "string" && isObj(e.params) ? { ...e, params: { ...effectDefaults(e.type), ...e.params } } : e)) : [];
+
 /** Basic sliders defaulted, grade parts cleaned, the LUT reference checked. */
 function normalizeAdjust(raw: unknown, where: string, lutIds: Set<string>) {
   const a = cleanGrade({ ...DEFAULT_ADJUST, ...(isObj(raw) ? raw : {}) }) as unknown as Visual["adjust"];
@@ -293,7 +299,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
     c.blend = typeof c.blend === "string" ? c.blend : "normal";
-    c.effects = Array.isArray(c.effects) ? c.effects : [];
+    c.effects = cleanEffects(c.effects);
     // Graphics (ADR-056 to ADR-059, ADR-062): optional, and a malformed one is
     // dropped rather than refused, so the clip still plays.
     optional(c, "trackMatte", cleanTrackMatte(c.trackMatte));
@@ -307,7 +313,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
   if (type === "adjustment") {
     c.adjust = normalizeAdjust(c.adjust, where, lutIds);
     c.opacity = num(c.opacity, 1);
-    c.effects = Array.isArray(c.effects) ? c.effects : [];
+    c.effects = cleanEffects(c.effects);
   }
   if (type === "video" || type === "audio" || type === "compound") {
     for (const [k, v] of Object.entries(DEFAULT_SOUND)) {

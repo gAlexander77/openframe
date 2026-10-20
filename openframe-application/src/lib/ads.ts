@@ -19,7 +19,7 @@ import { placeOnTop } from "./overlays";
 import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
 import type { Adjust, Animation, Asset, Clip, ColorClip, Cutout, Grade, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
-import { FILTERS } from "./catalog";
+import { effectDefaults, FILTERS } from "./catalog";
 import { fittedSize } from "./render/size";
 import { secondsToFrames } from "./time";
 
@@ -305,7 +305,7 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
   const logo = logoId && logoPart(p, logoId, 0.26 * fit, 0.6 * fit);
   if (logo) {
     const glow = o.glow
-      ? { effects: [{ id: uid("fx"), type: "glow", enabled: true, params: { amount: 0, threshold: 45 } }] }
+      ? { effects: [{ id: uid("fx"), type: "glow", enabled: true, params: { ...effectDefaults("glow"), amount: 0, threshold: 45 } }] }
       : {};
     const clip = { ...logo, ...glow, animIn: anim(p, "pop", 0.6), animOut: anim(p, "fade", 0.4) } as ImageClip;
     // The glow flares as the logo lands, then fades out: a glow left on

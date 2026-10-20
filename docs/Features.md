@@ -78,7 +78,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   files on disk are never touched; one undo step each.
 - **Media recovery:** Manage media checks editing-source availability; Locate
   and Relink repair every clip reference while preserving edits, with Undo.
-  Replacements require compatible streams and full source duration.
+  Replacements require compatible streams and full source duration; a
+  clip of a whole file relinks to that file (ADR-117).
 - **Rename media** (right-click a media card > Rename, or in the grid
   view double-click its name; `rename_media`): the project's name for the
   file, which stays as it is on disk; clips without a name of their own
@@ -224,7 +225,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   `cut_music`): an audio clip crossfades into the next on its track at
   equal power over the seconds before the cut; `cut_music` takes bars out
   of a song on its grid and joins the pieces so the beat runs on. A split
-  of one sound plays on with no click guard at the cut.
+  of one sound plays on with no click guard at the cut, its halves through
+  one EQ and compressor (ADR-117).
   `preview_audio` measures every join, click and dropout
   ([[ADR-104 Voice and sound an agent can trust without ears]],
   [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
@@ -292,7 +294,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   [[ADR-069 Large blurs run on a downsampled pyramid]]; CapCut's Reduce image noise, Motion blur, Sketch
   and Halftone, Premiere 26.3's **Magnify**: a round lens with its
   center, size, zoom and feather, keyframable to follow a pointer in a
-  screen recording, and **Zoom** and **Letterbox** for epic edits),
+  screen recording, and **Zoom** and **Letterbox** for epic edits; every
+  pixel size is pixels at 1080p, so the viewer and the export draw an
+  effect alike, and Glow, Reduce image noise and Sketch take a radius or
+  line width, [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]),
   24 transitions, 17 looks, adjustment layers. The **Strobe flash**
   starts at 2 flashes a second: more than 3 can trigger seizures (WCAG
   2.3.1), so keep it there.

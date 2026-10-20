@@ -1,5 +1,6 @@
-import { allTracks, isTimed, sourceRange } from "./ops";
+import { allTracks, isTimed, sourceOffset, type TimedClip } from "./ops";
 import type { Asset, Project } from "./types";
+import type { Rational } from "../time";
 
 /** Seconds a file's duration may fall short of what it replaces: an MP3's
  * encoder delay and padding, which an MP3 imported before ADR-112 counted
@@ -16,6 +17,17 @@ export function relinkProblem(original: Asset, replacement: Asset): string | nul
   return null;
 }
 
+/** The source second a clip's last frame starts at (a reversed clip's
+ * first, which reads the highest): a file covers the clip when it runs
+ * past it. A sound's clip runs to the frame its last sample plays in
+ * (ADR-113) and a picture's to the nearer frame (clipForAsset), so a clip
+ * of a whole file reads up to a frame past its end; measured to its end,
+ * relinking a file to itself was refused (ADR-117). */
+function lastRead(c: TimedClip, fps: Rational): number {
+  if (c.freeze) return c.in;
+  return c.reverse ? c.in - sourceOffset(c, 1, fps) : c.in + sourceOffset(c, c.duration - 1, fps);
+}
+
 export function relinkAsset(p: Project, id: string, replacement: Asset): Project {
   const original = p.assets.find((a) => a.id === id);
   if (!original) throw new Error("The original media is no longer in this project.");
@@ -24,8 +36,8 @@ export function relinkAsset(p: Project, id: string, replacement: Asset): Project
   // A hand-written project may omit the duration (0): the clips still say
   // how much source they need.
   // Clips inside compound clips use the file too.
-  const used = Math.max(0, ...allTracks(p).flatMap((t) => t.clips).filter(isTimed).filter((c) => "assetId" in c && c.assetId === id).map((c) => Math.max(...sourceRange(c, p.fps))));
-  if (replacement.kind !== "image" && replacement.duration + slack(replacement) < used) throw new Error(`The replacement must be at least ${used.toFixed(3)} seconds long to cover the clips that use it.`);
+  const used = Math.max(0, ...allTracks(p).flatMap((t) => t.clips).filter(isTimed).filter((c) => "assetId" in c && c.assetId === id).map((c) => lastRead(c, p.fps)));
+  if (replacement.kind !== "image" && replacement.duration + slack(replacement) <= used) throw new Error(`The replacement must be longer than ${used.toFixed(3)} seconds to cover the clips that use it.`);
   // Identity, label and library annotations belong to the original asset.
   const { src, proxy, animated, duration, gapless, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } = replacement;
   return { ...p, assets: p.assets.map((a) => a.id === id ? { ...a, src, proxy, animated, duration, gapless, width, height, fps, hasVideo, hasAudio, size, videoCodec, audioCodec, rotation } : a) };

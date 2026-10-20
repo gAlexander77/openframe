@@ -469,3 +469,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   fields, moved markers are counted, alike findings grouped, a review is
   compact with one duck for the music track; new_project and clips false
   give track ids; check sheets wrap and take tile_width.
+- [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]] —
+  a file covers a clip when the clip's last frame starts inside it, so a
+  whole-file clip relinks to its own file and slips no further than it;
+  the RGB split, VHS's scan lines and the pixelate transition are sized
+  at 1080p, so the viewer, stills and the export match; glow, denoise and
+  sketch take a reach that versions scale (old ones load at the old
+  reach); a split's halves share one EQ and compressor and render as the
+  whole clip.

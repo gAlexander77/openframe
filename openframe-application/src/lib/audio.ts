@@ -299,6 +299,42 @@ export function soundPreroll(s: SoundingClip): number {
   return Math.max(fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0);
 }
 
+/** A clip's EQ and compressor, as the mixer builds them: equal keys play
+ * the same; "" when it has neither (nothing to carry across a split). */
+function headKey(c: Sound): string {
+  const eq = EQ_BANDS.map((b) => Math.max(-12, Math.min(12, c.eq?.[b.key] ?? 0)));
+  if (!c.compressor && eq.every((g) => !g)) return "";
+  const k = c.compressor;
+  return JSON.stringify([eq, k ? [k.threshold, k.ratio, k.knee, k.attack, k.release, k.makeup] : null]);
+}
+
+/**
+ * The splits whose halves run through one EQ and compressor (ADR-117): a
+ * clip that goes on with the one before it (`continues`: the same file
+ * from where it stops) with the same EQ and compressor shares that
+ * clip's, so its compressor goes on from the gain reduction the first
+ * half left and its EQ's filters from their state. Each started fresh,
+ * the second half's compressor let 10 ms through uncompressed (ADR-107).
+ * Maps each clip of such a run to the run's first clip's id, and says
+ * whether another of the run follows it (whose sound the shared chain
+ * then carries, so this clip's own gain must close at its end).
+ */
+export function sharedChains(sounding: SoundingClip[]): Map<SoundingClip, { key: string; next: boolean }> {
+  const out = new Map<SoundingClip, { key: string; next: boolean }>();
+  const path = (s: SoundingClip) => (s.via ?? []).map((v) => v.clip.id).join("/");
+  const ordered = [...sounding].sort((a, b) => a.clip.start - b.clip.start);
+  for (const s of ordered) {
+    if (!s.overlap?.joinsPrev) continue;
+    const key = headKey(s.clip);
+    const prev = ordered.find((o) => o !== s && o.track === s.track && path(o) === path(s) && o.overlap?.joinsNext !== undefined && Math.abs(o.clip.start + o.clip.duration - s.clip.start) < 1e-6);
+    if (!key || !prev || headKey(prev.clip) !== key) continue;
+    const run = out.get(prev)?.key ?? prev.clip.id;
+    out.set(prev, { key: run, next: true });
+    out.set(s, { key: run, next: false });
+  }
+  return out;
+}
+
 /** A bus's gain (its compound clips' volume and fades) over [from, to),
  * sampled as soundEnvelope samples a clip's. */
 export function busEnvelope(hop: BusHop, fps: Rational, from: number, to: number, rate = 200): Float32Array {

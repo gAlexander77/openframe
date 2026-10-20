@@ -140,7 +140,10 @@ clip now ducks as it did on the main track (4 dips; measured, met at
 - ponytail: the second half of a split clip with a compressor starts its
   compressor with no gain reduction (the first half's delay tail fills its
   6 ms lookahead): 24-40 dB under the signal for about 10 ms. Sharing one
-  chain across a split is the upgrade if it is ever heard.
+  chain across a split is the upgrade if it is ever heard. Done in
+  [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]:
+  a split's halves with the same EQ and compressor run through one, and
+  render identical to the unsplit clip.
 - An MP3 played 23.02 ms (LAME's 1105-sample encoder delay) later than a
   gapless decoder (ffmpeg) plays it: mediabunny presents the delay. The
   app's analyses read the same timeline, so its own grids agreed; a grid

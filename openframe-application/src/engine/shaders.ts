@@ -804,8 +804,11 @@ export const EFFECT_SHADERS: Record<string, string> = {
   pixelate: effect(["size"], `
     vec2 b = vec2(max(u_size * u_scale, 1.0)) / u_res;
     outColor = texture(u_tex, (floor(v_uv / b) + 0.5) * b);`),
+  // The offset: 0.768 px at 1080p per unit of amount, the same both ways.
+  // It was 0.768 render pixels whatever the render's size, so a small
+  // viewer drew it larger than the export (ADR-117).
   rgbSplit: effect(["amount", "angle"], `
-    float a = radians(u_angle); vec2 o = vec2(cos(a), sin(a)) * u_amount * 0.0004 * 30.0 / max(u_res.x / 1920.0, 0.25) / 30.0;
+    float a = radians(u_angle); vec2 o = vec2(cos(a), sin(a)) * u_amount * 0.768 * u_scale / u_res;
     vec4 c = texture(u_tex, v_uv);
     float r = texture(u_tex, v_uv + o).r; float b = texture(u_tex, v_uv - o).b;
     outColor = vec4(r, c.g, b, c.a);`),
@@ -827,7 +830,13 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec4 c = texture(u_tex, uv);
     c.r = texture(u_tex, uv + vec2(0.004 * k, 0.0)).r;
     c.b = texture(u_tex, uv - vec2(0.004 * k, 0.0)).b;
-    float scan = 0.92 + 0.08 * sin(uv.y * u_res.y * 1.5);
+    // A line every 4.2 px at 1080p (258 to the frame), not every 4.2 render
+    // pixels: a small viewer drew half as many as the export. Under 4 render
+    // pixels a line, the lines are averaged over each pixel (sinc), as the
+    // export scaled down shows them, so the preview does not moire (ADR-117).
+    float w = 1.5 / u_scale;
+    float aa = u_scale >= 1.0 ? 1.0 : sin(w * 0.5) / (w * 0.5) / (sin(0.75) / 0.75);
+    float scan = 0.92 + 0.08 * sin(uv.y * (u_res.y / u_scale) * 1.5) * aa;
     c.rgb *= mix(1.0, scan, k);
     c.rgb = mix(c.rgb, c.rgb * vec3(1.05, 0.95, 1.1) + 0.03 * c.a, k);
     outColor = c;`),
@@ -915,10 +924,15 @@ export const EFFECT_SHADERS: Record<string, string> = {
     vec4 c = texture(u_tex, v_uv);
     float f = pow(max(0.0, sin(u_time * u_rate * 3.14159)), 16.0) * u_amount * 0.01;
     outColor = vec4(c.rgb + f * c.a, c.a);`),
-  glow: effect(["amount", "threshold"], `
+  // radius: pixels at 1080p the glow reaches (7 x 7 taps a third of it
+  // apart); a stored glow without one reached 18, its default (ADR-117).
+  // ponytail: at its 48 px maximum the taps are 16 px apart and a small
+  // highlight glows as a grid of copies; the big blur's pyramid (ADR-069)
+  // is the upgrade if wider glows are wanted.
+  glow: effect(["amount", "threshold", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     vec4 acc = vec4(0.0);
-    vec2 px = 6.0 * u_scale / u_res;
+    vec2 px = u_radius / 3.0 * u_scale / u_res;
     for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(x), float(y)) * px);
       float l = s.a > 0.0 ? luma(s.rgb / s.a) : 0.0;
@@ -928,10 +942,12 @@ export const EFFECT_SHADERS: Record<string, string> = {
     outColor = vec4(c.rgb + acc.rgb * u_amount * 0.04, max(c.a, acc.a));`),
   // An edge-preserving blur: neighbors count by distance and by how alike
   // their colors are, so noise averages out and edges do not.
-  denoise: effect(["amount"], `
+  // radius: how far it looks, pixels at 1080p (4.5 before it was a
+  // parameter).
+  denoise: effect(["amount", "radius"], `
     vec4 c = texture(u_tex, v_uv);
     float sr = 0.015 + u_amount * 0.0015;
-    vec2 px = 1.5 * u_scale / u_res;
+    vec2 px = u_radius / 3.0 * u_scale / u_res;
     vec4 acc = vec4(0.0); float ws = 0.0;
     for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(x), float(y)) * px);
@@ -947,8 +963,10 @@ export const EFFECT_SHADERS: Record<string, string> = {
     for (int i = -12; i <= 12; i++) acc += texture(u_tex, v_uv + dir * float(i) / 12.0);
     outColor = acc / 25.0;`),
   // Pencil lines on paper from the picture's edges (Sobel on luma).
-  sketch: effect(["amount", "mix"], `
-    vec2 px = u_scale / u_res;
+  // width: the edge filter's step, pixels at 1080p (1 before it was a
+  // parameter), so the lines keep their weight against the picture.
+  sketch: effect(["amount", "mix", "width"], `
+    vec2 px = u_width * u_scale / u_res;
     float l[9];
     for (int i = 0; i < 9; i++) {
       vec4 s = texture(u_tex, v_uv + vec2(float(i % 3 - 1), float(i / 3 - 1)) * px);
@@ -1065,7 +1083,9 @@ vec4 transitionAt(float p) {
     return acc / 65.0;
   }
   if (u_type == 17) {                                                                    // pixelate
-    float s = max(1.0, sin(p * 3.14159) * 60.0);
+    // Blocks up to 60 px at 1080p (they were 60 render pixels: twice as
+    // large against the picture in a half-size viewer as in the export).
+    float s = max(1.0, sin(p * 3.14159) * 60.0 * u_res.y / 1080.0);
     vec2 b = vec2(s) / u_res;
     vec2 q = (floor(uv / b) + 0.5) * b;
     return mix(A(q), B(q), step(0.5, p));
