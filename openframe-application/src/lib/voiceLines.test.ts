@@ -77,3 +77,37 @@ describe("a retake", () => {
     expect(r.project.assets.some((a) => a.id === "a2")).toBe(true);
   });
 });
+
+describe("a retake of a line captioned a few words at a time (ADR-115)", () => {
+  /** Line two's caption cut into three chunks, styled and animated by hand. */
+  function chunked(): Project {
+    let p = fixture();
+    const two = caps(p)[1];
+    p = runCommand(p, "delete_clips", { clip_ids: [two.id] });
+    p = runCommand(p, "add_captions", { captions: [{ text: "Two", start: 2.5, end: 3 }, { text: "and two", start: 3, end: 3.8, words: [3, 3.4] }, { text: "more.", start: 3.8, end: 4.5 }], style: { color: "#8fe9ff", highlight: "#ffffff" } });
+    const ids = caps(p).filter((c) => c.start >= 75 && c.start < 135).map((c) => c.id);
+    for (const id of ids) p = runCommand(p, "set_animation", { clip_id: id, slot: "in", type: "pop" });
+    return p;
+  }
+
+  it("puts the new take's chunks where the line's were, each like its first, the rest untouched", () => {
+    const p = chunked();
+    const id = voices(p)[1].id;
+    expect(caps(p).map((c) => (c as { text: string }).text)).toEqual(["One.", "Two", "and two", "more.", "Three."]);
+    const r = retakeLine(p, { clipId: id, asset: take2(2.2), frames: 66, ripple: true, chunks: [{ start: 0.1, end: 0.9, text: "Two,", words: [0.1] }, { start: 0.9, end: 2.2, text: "once more.", words: [0.9, 1.5] }] });
+    const after = caps(r.project) as unknown as { id: string; text: string; start: number; duration: number; wordTimes?: number[]; style: { color: string; highlight?: string }; animIn?: { type: string } }[];
+    expect(after.map((c) => c.text)).toEqual(["One.", "Two,", "once more.", "Three."]);
+    expect(r.captionIds).toEqual([after[1].id, after[2].id]);
+    // At the line's start (75) plus each chunk's time, its words from its own start.
+    expect(after.slice(1, 3).map((c) => [c.start, c.duration, c.wordTimes])).toEqual([[78, 24, [0]], [102, 39, [0, 18]]]);
+    // Styled and animated as the line's first chunk was.
+    expect(after[2]).toMatchObject({ style: { color: "#8fe9ff", highlight: "#ffffff" }, animIn: { type: "pop" } });
+    // The take grew 0.2 s: the next line and its caption moved with it.
+    expect(r.shift).toBe(6);
+    expect(after[3].start).toBe(156);
+  });
+
+  function take2(seconds: number): Asset {
+    return speech("new2", seconds, "Two, once more.");
+  }
+});

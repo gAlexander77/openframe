@@ -18,6 +18,9 @@ export interface DescribeFilter {
   assets?: boolean;
   markers?: boolean;
   compounds?: boolean;
+  /** false: the tracks alone, each with how many clips it holds instead of
+   * its clips (the cheap way to learn track ids, ADR-115). */
+  clips?: boolean;
 }
 
 interface ClipDesc {
@@ -39,7 +42,7 @@ interface Desc {
   [k: string]: unknown;
 }
 
-export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds"] as const;
+export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds", "clips"] as const;
 
 /** The description narrowed as `f` asks, with `shown` saying how much of
  * each list is in it ("5 of 43") wherever something was left out, and
@@ -53,7 +56,8 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
   if (f.start !== undefined && f.end !== undefined && f.end < f.start) throw new Error("end must not be before start");
   const lo = f.start ?? -Infinity, hi = f.end ?? Infinity;
   const ranged = f.start !== undefined || f.end !== undefined;
-  const narrow = ranged || !!f.track_ids || !!f.clip_ids;
+  const bare = f.clips === false;
+  const narrow = ranged || !!f.track_ids || !!f.clip_ids || bare;
   const ids = f.clip_ids && new Set(f.clip_ids);
   const trackIds = f.track_ids && new Set(f.track_ids);
   // start = end is a moment: what plays at it.
@@ -64,9 +68,11 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
   const tracks = d.tracks
     .filter((t) => !trackIds || trackIds.has(t.id))
     .map((t) => ({ ...t, clips: t.clips.filter(wanted) }))
-    // A track asked for by id stays, empty or not; others only with a clip.
-    .filter((t) => t.clips.length || trackIds?.has(t.id));
-  const shownClips = tracks.flatMap((t) => t.clips);
+    // A track asked for by id stays, empty or not; over a stretch every
+    // track does (its id is what the next call needs, ADR-115); others
+    // only with a clip.
+    .filter((t) => t.clips.length || trackIds?.has(t.id) || (ranged && !ids && !trackIds) || bare);
+  const shownClips = bare ? [] : tracks.flatMap((t) => t.clips);
 
   // Nested timelines: one holding a track or a clip asked for by id, with
   // only those (their times are its own, so a stretch does not apply
@@ -98,17 +104,18 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
   const shownIds = new Set(shownClips.map((c) => c.id));
   const markers = !narrow || f.markers === true ? d.markers : d.markers?.filter((m) => (ranged ? m.at >= lo && (m.at < hi || (moment && m.at === hi)) : !!m.clip && shownIds.has(m.clip)));
 
-  const out: Desc = { ...d, tracks };
+  // clips false: each track with a count of its clips in their place.
+  const out: Desc = { ...d, tracks: bare ? (tracks.map((t) => ({ ...t, clips: t.clips.length })) as unknown as TrackDesc[]) : tracks };
   const shown: Record<string, string> = {};
   const tell = (key: string, now: number, all: number) => {
     if (now !== all) shown[key] = `${now} of ${all}`;
   };
   tell("tracks", tracks.length, d.tracks.length);
-  tell("clips", shownClips.length, d.tracks.reduce((n, t) => n + t.clips.length, 0));
+  if (!bare) tell("clips", shownClips.length, d.tracks.reduce((n, t) => n + t.clips.length, 0));
   const lists: [key: "assets" | "markers" | "compounds", list: unknown[] | undefined, all: unknown[] | undefined][] = [
-    ["assets", f.assets === false ? undefined : assets, d.assets],
-    ["markers", f.markers === false ? undefined : markers, d.markers],
-    ["compounds", f.compounds === false ? undefined : compounds, d.compounds],
+    ["assets", f.assets === false || (bare && f.assets !== true) ? undefined : assets, d.assets],
+    ["markers", f.markers === false || (bare && f.markers !== true) ? undefined : markers, d.markers],
+    ["compounds", f.compounds === false || (bare && f.compounds !== true) ? undefined : compounds, d.compounds],
   ];
   for (const [key, list, all] of lists) {
     // A project without compounds has no compounds key; keep it that way.

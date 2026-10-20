@@ -22,9 +22,12 @@ export interface Caption {
 
 /** The word of a caption showing at clip-relative frame `r`: the last one
  * already started, or -1. Undefined when the times no longer fit the text
- * (it was edited) or there are none. */
+ * (it was edited) or there are none, and for a caption of one word: the
+ * highlight says which word of a caption is being spoken, so a lone word
+ * keeps the caption's color (ADR-115; it used to show the highlight color
+ * the whole time it was up). */
 export function spokenWord(text: string, times: number[] | undefined, r: number): number | undefined {
-  if (!times?.length || text.trim().split(/\s+/).length !== times.length) return undefined;
+  if (!times || times.length < 2 || text.trim().split(/\s+/).length !== times.length) return undefined;
   let i = -1;
   while (i + 1 < times.length && times[i + 1] <= r) i++;
   return i;
@@ -47,7 +50,7 @@ export const DEFAULT_LINES: LineOptions = { maxChars: 32, maxDuration: 3.5, paus
 const SENTENCE_END = /[.!?…]["')\]]?$/;
 
 /** Words a caption line should not end on. */
-const WEAK = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "by", "in", "on", "at", "for", "with", "from", "as", "is", "my", "your", "our", "their", "this", "that", "i", "we", "you"]);
+export const WEAK = new Set(["a", "an", "the", "of", "to", "and", "or", "but", "by", "in", "on", "at", "for", "with", "from", "as", "is", "my", "your", "our", "their", "this", "that", "i", "we", "you"]);
 
 /**
  * Group words into captions: break at sentence ends, at pauses, and before a

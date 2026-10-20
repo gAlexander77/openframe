@@ -22,6 +22,7 @@ import { LINE_CEILING_LU } from "./analysis/balance";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
+import { groupFindings, markerMoves, oneDuck, reviewSummary, shareCommon, withShared } from "./answerSize";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -79,7 +80,7 @@ export interface McpHost {
   exportVersions(options: VersionsRequest): Promise<unknown>;
   /** One JPEG (base64) of every version at a few moments, nothing
    * exported, and where each version's framing cuts a shot's subject. */
-  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<{ image: string; subjects?: unknown; titles?: unknown }>;
+  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown }>;
   /** Each version saved as a project of its own, nothing exported. */
   saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
@@ -171,11 +172,24 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   const out: Record<string, unknown> = { duration: a.duration, ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(notes.length ? { notes } : {}) };
   const diff = <T extends { id: string }>(was: Map<string, T>, now: Map<string, T>, key: string) => {
     const added = [...now.values()].filter((x) => !was.has(x.id));
-    const changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
+    let changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
     const removed = [...was.keys()].filter((id) => !now.has(id));
-    const many = key === "markers" ? markerSummary : (x: unknown[]) => x;
-    if (added.length) out[`added_${key}`] = many(added);
-    if (changed.length) out[`changed_${key}`] = many(changed);
+    // Markers that moved together with their clip are counted (ADR-115).
+    if (key === "markers" && changed.length) {
+      const m = markerMoves(was as Map<string, { id: string }>, changed);
+      changed = m.listed as unknown as T[];
+      if (m.moved.length) out.moved_markers = m.moved;
+    }
+    // What a long list of clips shares is given once (ADR-115).
+    const many = (x: unknown[], what: string) => {
+      if (key === "markers") return markerSummary(x);
+      if (key !== "clips") return x;
+      const s = shareCommon(x);
+      if (s.common) out[`${what}_clips_common`] = s.common;
+      return s.items;
+    };
+    if (added.length) out[`added_${key}`] = many(added, "added");
+    if (changed.length) out[`changed_${key}`] = many(changed, "changed");
     if (removed.length) out[`removed_${key}`] = key === "markers" && removed.length > MANY_MARKERS ? { count: removed.length } : removed;
   };
   const clips = (d: Desc) => new Map(d.tracks!.flatMap((t) => t.clips.map((c) => [c.id, { ...c, track: t.id }] as const)));
@@ -287,7 +301,9 @@ export function withMoves(r: ToolResult, before: unknown, after: unknown): ToolR
   const extra = moved.filter((c) => !listed.has(c.id));
   const notes = gapNotes.filter((n) => !((body?.notes ?? []) as string[]).includes(n));
   if (!extra.length && !notes.length) return r;
-  const add = { ...(extra.length ? { changed_clips: [...((body?.changed_clips ?? []) as unknown[]), ...extra] } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
+  // The clips the answer lists, whole again, then shared out with the moved ones.
+  const all = shareCommon([...((body?.changed_clips ?? []) as unknown[]).map((c) => withShared(c, body?.changed_clips_common)), ...extra]);
+  const add = { ...(extra.length ? { changed_clips: all.items, changed_clips_common: all.common } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
   if (!body) return { ...r, content: [...r.content, { type: "text", text: JSON.stringify(add) }] };
   return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...body, ...add }) } : c)) };
 }
@@ -303,6 +319,9 @@ export function projectSummary(d: unknown): unknown {
     fps: x.fps,
     duration: x.duration,
     counts: { tracks: x.tracks.length, clips: x.tracks.reduce((n, t) => n + t.clips.length, 0), assets: x.assets?.length ?? 0, markers: x.markers?.length ?? 0, compounds: x.compounds?.length ?? 0 },
+    // Each track's id, a few bytes each: the film test added a clip to
+    // learn the main track's (ADR-115).
+    tracks: x.tracks.map(({ id, kind, name, main, role, clips }) => ({ id, kind, name, ...(main ? { main } : {}), ...(role ? { role } : {}), clips: clips.length })),
     note: "describe_project has the timeline: every track and clip with ids, times and settings.",
   };
 }
@@ -417,7 +436,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "describe_project",
     description:
-      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips, and the media and markers listed follow them; shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
+      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Only these clips, each under its track (or its compound)" },
       track_ids: { type: "array", items: { type: "string" }, description: "Only these tracks, each listed empty or not" },
@@ -426,6 +445,7 @@ export const APP_TOOLS: AppTool[] = [
       assets: { type: "boolean", description: "false: no media list; true: all of it (default: all, or the clips' own when narrowed)" },
       markers: { type: "boolean", description: "false: no markers; true: all (default: all, or those in the stretch or on the clips shown)" },
       compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },
+      clips: { type: "boolean", description: "false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true" },
     }),
     call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
   },
@@ -485,13 +505,13 @@ export const APP_TOOLS: AppTool[] = [
   })),
   {
     name: "open_project",
-    description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.",
+    description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts, and each track's id, name, kind and clip count); describe_project has the timeline.",
     inputSchema: obj({ project: { type: "string", description: "Project id or name" } }, ["project"]),
     call: async (h, a) => json(projectSummary(await h.openProject(findProject(await h.listProjects(), String(a.project)).id))),
   },
   {
     name: "new_project",
-    description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched. Answers a summary; describe_project has the timeline.",
+    description: "Save the project in the editor and start a new, empty one (1920x1080, 30 fps; set_project changes them). Work in one to leave the user's projects untouched. Answers a summary with its tracks' ids (the main track's among them); describe_project has the timeline.",
     inputSchema: obj({ name: { type: "string", description: "Project name; default: the date and time" } }),
     call: async (h, a) => json(projectSummary(await h.newProject(a.name === undefined ? undefined : String(a.name)))),
   },
@@ -599,9 +619,15 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
-    inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
-    call: async (h, a) => json(await h.checkProject(String(a.kind ?? "any"))),
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.",
+    inputSchema: obj({
+      kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" },
+      detail: { type: "string", enum: ["summary", "full"], description: "summary (default): alike findings given once with every clip; full: every finding on its own" },
+    }),
+    call: async (h, a) => {
+      const r = await h.checkProject(String(a.kind ?? "any"));
+      return json(a.detail === "full" ? r : groupFindings(r as { findings?: [] }));
+    },
   },
   {
     name: "export_video",
@@ -895,7 +921,7 @@ APP_TOOLS.push(
   },
   {
     name: "add_voiceover",
-    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last; the reader's pauses at commas and sentence ends in, its pause marks out, so a beat written into a line never makes its words faster): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), moved half a word down by pace slow (and then never read faster than speed 1) or up by fast, or words_per_second [lowest, highest], per call or per line, held as given whatever the pace; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.`,
+    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice (or, with caption_words 1-3, captions a few words at a time, each word timed to the voice for the spoken-word highlight: caption_clips per line), as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last; the reader's pauses at commas and sentence ends in, its pause marks out, so a beat written into a line never makes its words faster): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), moved half a word down by pace slow (and then never read faster than speed 1) or up by fast, or words_per_second [lowest, highest], per call or per line, held as given whatever the pace; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.`,
     inputSchema: obj(
       {
         lines: {
@@ -926,6 +952,7 @@ APP_TOOLS.push(
         quality: QUALITY,
         finish: FINISH,
         captions: { type: "boolean", description: "A caption per line (default true)" },
+        caption_words: { type: "integer", minimum: 1, maximum: 3, description: "Caption each line this many words at a time (1-3; 2 or 3 for a short's pop captions) instead of one caption a line: each word timed to the voice (heard by Whisper, its start fitted to the voice's own start and pauses), its times kept for the spoken-word highlight (caption_style.highlight); a retake captions its line the same way" },
         enhance: { type: "boolean", description: "Even out each voice with the Enhance voice compressor (default true; finish raw has none)" },
         caption_style: { ...TEXT_STYLE_SCHEMA, description: "The captions' look, as a title's style takes it" },
         caption_y: { type: "number", description: "Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons)" },
@@ -940,24 +967,33 @@ APP_TOOLS.push(
           throw new Error(`lines[${i}]: ${(e as Error).message}`);
         }
       });
-      return json(await h.voiceover(lines, given({ voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
+      return json(await h.voiceover(lines, given({ voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionWords: a.caption_words, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
     },
   },
   {
     name: "review_voiceover",
     description:
-      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears \"you\" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
+      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears \"you\" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Lines short of their margin over a music track get one fix in summary.fixes: duck_under_speech on that track (track_id, every piece of the song as one bed), each line pointing at it. detail summary (the default) gives each line its verdict (ok, or to fix: the problems are in its fixes), fixes, advice, words a second against its band, loudness and margin over the music, and what was heard only where it differs from the script; detail full adds every measure (syllables, the clip window, silences, true peak, pitch). Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line" },
       music: { type: "boolean", description: "Measure each line's margin over the music tracks under it (default true)" },
       recheck: { type: "boolean", description: "Hear a line with a difference again with a larger Whisper model (small, 249 MB downloaded once), to say whether the recognizer or the voice is wrong (default true)" },
+      detail: { type: "string", enum: ["summary", "full"], description: "summary (default): each line's verdict and what decides it; full: every measure of every line" },
     }),
-    call: async (h, a) => json(await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music, recheck: a.recheck }))),
+    call: async (h, a) => {
+      const r = (await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music, recheck: a.recheck }))) as Parameters<typeof oneDuck>[0];
+      if (!Array.isArray(r?.lines)) return json(r);
+      // A music clip's track, from the timeline: one duck for the whole song.
+      const d = h.describe() as Desc;
+      const tracks = new Map(d.tracks?.flatMap((t) => t.clips.map((c) => [c.id, t.id] as const)) ?? []);
+      const ducked = oneDuck(r, (id) => tracks.get(id));
+      return json(a.detail === "full" ? ducked : reviewSummary(ducked));
+    },
   },
   {
     name: "retake_voiceover",
     description:
-      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, words_per_second (held exactly as given, over any pace the line keeps) or read_as (the speed is then chosen by reading and measuring, as add_voiceover does, pause marks out of the pace), a speed (kept as given) or pronunciations (the pronounce fix review_voiceover suggests). With none of these, a line whose speed was chosen is landed on its words a second again, and a line read at a speed given keeps it. The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second; when the speed was chosen, speed_chosen is true and a note says how many reads it took. Music that duck_under_speech dipped under the line (or under the lines a ripple moved) is dipped again under the new take as it was asked, in the same undo step: ducking lists each, with the voice's margin over it now; music whose volume keys were edited by hand since is left alone and a note says so.",
+      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, words_per_second (held exactly as given, over any pace the line keeps) or read_as (the speed is then chosen by reading and measuring, as add_voiceover does, pause marks out of the pace), a speed (kept as given) or pronunciations (the pronounce fix review_voiceover suggests). With none of these, a line whose speed was chosen is landed on its words a second again, and a line read at a speed given keeps it. The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length (a line captioned a few words at a time, caption_words, is captioned so again, timed to the new take: caption_clips); the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second; when the speed was chosen, speed_chosen is true and a note says how many reads it took. Music that duck_under_speech dipped under the line (or under the lines a ripple moved) is dipped again under the new take as it was asked, in the same undo step: ducking lists each, with the voice's margin over it now; music whose volume keys were edited by hand since is left alone and a note says so.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The voice clip (add_voiceover's voice_clip)" },
@@ -972,10 +1008,11 @@ APP_TOOLS.push(
         finish: FINISH,
         pace: { ...PACE, description: "The pace the line is meant to have; default the line's own" },
         ripple: { type: "boolean", description: "Move the lines and captions after it by the change in length (default false)" },
+        caption_words: { type: "integer", minimum: 0, maximum: 3, description: "Caption the line this many words at a time (1-3), each word timed to the new take, or 0 for one caption for the line; default as the line was captioned" },
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple }))),
+    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple, captionWords: a.caption_words }))),
   },
   {
     name: "auto_adjust",
@@ -1031,7 +1068,8 @@ APP_TOOLS.push(
       save_projects: { type: "boolean", description: "true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
-      check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
+      check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length, up to 8; default [0.15, 0.5, 0.92]. A version's moments wrap into rows at 1600 px" },
+      tile_width: { type: "integer", minimum: 120, maximum: 800, description: "Width of each frame on the check sheet, its height following the version's shape; default frames 220 px tall (a 16:9 frame 391 px wide)" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv"], description: "Default mp4 (H.264 + AAC)" },
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
@@ -1046,10 +1084,10 @@ APP_TOOLS.push(
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
-        const sheet = await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) });
+        const sheet = await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}), ...(a.tile_width !== undefined ? { tileWidth: Number(a.tile_width) } : {}) });
         const subjects = Array.isArray(sheet.subjects) && sheet.subjects.length ? { subjects: sheet.subjects } : {};
         const titles = Array.isArray(sheet.titles) && sheet.titles.length ? { titles: sheet.titles } : {};
-        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), or a title behind its subject that the subject hides (listed in titles).`, ...subjects, ...titles }) }] };
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), or a title behind its subject that the subject hides (listed in titles).`, ...subjects, ...titles }) }] };
       }
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       const done = h.exportVersions(req);
@@ -1073,7 +1111,7 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
-Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they all share once, in added_clips_common or changed_clips_common, and markers that moved with their clip are counted in moved_markers; describe_project has the whole timeline.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip, and not across two whole shots: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a music bed or a grade across several shots stays. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:

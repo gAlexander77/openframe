@@ -4,7 +4,10 @@
 // lines and captions after it moving by the difference (ADR-083).
 
 import { usedAssets } from "./project/mediaOrganization";
-import { clipEnd, findClip } from "./project/ops";
+import { addClip, clipEnd, findClip } from "./project/ops";
+import { uid } from "./project/defaults";
+import { secondsToFrames } from "./time";
+import type { Caption } from "./captions";
 import type { Asset, Clip, Id, Project, TextClip } from "./project/types";
 import { isDialog } from "./analysis/balance";
 
@@ -45,6 +48,18 @@ export interface Retake {
   /** Move what follows on the voice's track and the caption tracks by the
    * difference in length. */
   ripple?: boolean;
+  /** The new take's captions a few words at a time (seconds from its
+   * start, ADR-115): every caption of the line gives way to these, styled,
+   * placed and animated as its first one was. */
+  chunks?: Caption[];
+}
+
+/** Every caption shown with a voice line: the caption clips at least half
+ * inside it (a line captioned a few words at a time has several). */
+export function captionsOf(p: Project, voice: Clip): TextClip[] {
+  return p.tracks
+    .flatMap((t) => t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && Math.min(clipEnd(c), clipEnd(voice)) - Math.max(c.start, voice.start) >= c.duration / 2))
+    .sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -54,7 +69,8 @@ export interface Retake {
  * plays it. Without ripple a longer take must fit before the next clip on
  * its track (an error says by how much it does not).
  */
-export function retakeLine(p: Project, r: Retake): { project: Project; shift: number; captionId?: Id } {
+export function retakeLine(p: Project, r: Retake): { project: Project; shift: number; captionId?: Id; captionIds?: Id[] } {
+  if (r.chunks) return retakeChunked(p, r);
   const loc = findClip(p, r.clipId);
   if (!loc || loc.clip.type !== "audio") throw new Error(`No voice line ${r.clipId}: describe_project lists the Voiceover track's clips`);
   const clip = loc.clip;
@@ -90,4 +106,35 @@ export function retakeLine(p: Project, r: Retake): { project: Project; shift: nu
   // The old take goes with the edit; undo brings it back.
   if (!usedAssets(project).has(clip.assetId)) project = { ...project, assets: project.assets.filter((a) => a.id !== clip.assetId) };
   return { project, shift, captionId: caption?.id };
+}
+
+/**
+ * retakeLine for a line captioned a few words at a time (ADR-115): its
+ * captions are taken out, the take goes in as any retake's does (ripple
+ * included), and the new take's chunks go where the old ones were, each a
+ * copy of the line's first caption (its style, place, animations) with its
+ * own words and their times.
+ */
+function retakeChunked(p: Project, r: Retake): { project: Project; shift: number; captionIds: Id[] } {
+  const voice = findClip(p, r.clipId)?.clip;
+  const old = voice ? captionsOf(p, voice) : [];
+  const gone = new Set(old.map((c) => c.id));
+  const bare: Project = { ...p, tracks: p.tracks.map((t) => (t.clips.some((c) => gone.has(c.id)) ? { ...t, clips: t.clips.filter((c) => !gone.has(c.id)) } : t)) };
+  const done = retakeLine(bare, { ...r, chunks: undefined, caption: undefined });
+  const template = old[0];
+  const track = template && p.tracks.find((t) => t.clips.some((c) => c.id === template.id));
+  const start = findClip(done.project, r.clipId)?.clip.start;
+  if (!template || !track || start === undefined) return { project: done.project, shift: done.shift, captionIds: [] };
+  const fps = p.fps;
+  let project = done.project;
+  const captionIds: Id[] = [];
+  for (const c of r.chunks!) {
+    const from = start + secondsToFrames(c.start, fps);
+    const to = Math.max(from + 1, start + secondsToFrames(c.end, fps));
+    const clip: TextClip = { ...template, id: uid("c"), start: from, duration: to - from, text: c.text, wordTimes: c.words?.map((s) => Math.max(0, start + secondsToFrames(s, fps) - from)) };
+    if (!clip.wordTimes) delete clip.wordTimes;
+    project = addClip(project, track.id, clip);
+    captionIds.push(clip.id);
+  }
+  return { project, shift: done.shift, captionIds };
 }

@@ -22,8 +22,10 @@ import { bandSource, landSpeed, readWps, speedBounds, targetBand, type ReadAs, t
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
 import { duckArgs, staleDuckNote, staleDucks, type StaleDuck } from "../lib/analysis/duck";
+import type { Caption } from "../lib/captions";
 import { edit } from "./actions";
 import { duckUnderSpeech } from "./ai";
+import { chunkNote, takeChunks } from "./voiceWords";
 import { adoptAndProbe, prepare } from "./media";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -310,6 +312,9 @@ export interface VoiceoverOptions extends ReadOptions {
   gap?: number;
   /** A caption for each line, timed to its voice (default true). */
   captions?: boolean;
+  /** Captions this many words at a time (1-3), each word timed to the
+   * voice, instead of one a line (ADR-115). */
+  captionWords?: number;
   captionStyle?: Partial<TextStyle>;
   captionY?: number;
   /** The Enhance voice compressor on each voice (default true): synthetic
@@ -342,13 +347,21 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed, pace: l.pace, wps: l.wps ?? opts.wps, readAs: opts.readAs }, signal));
       updateToast(tid, { progress: (i + 1) / (lines.length + 1) });
     }
+    // Captions a few words at a time: kept with each take, so a retake does the same.
+    const chunked = opts.captions !== false && opts.captionWords ? opts.captionWords : 0;
+    if (chunked) for (const t of takes) t.info.captionWords = chunked;
     const assets = await takeAssets(takes, signal);
+    const chunks: { chunks: Caption[]; heard: boolean }[] = [];
+    if (chunked) {
+      updateToast(tid, { text: "Timing the captions to the voice" });
+      for (const [i, l] of lines.entries()) chunks.push(await takeChunks(assets[i], l.caption ?? takes[i].written, l.text, chunked, signal));
+    }
     const times = layoutLines(
       lines.map((l, i) => ({ at: l.at, seconds: takes[i].seconds, before: takes[i].before, gap: (l.pauseAfter ?? opts.gap ?? pauseAfter(l.text, l.paragraph)) + takes[i].after })),
       opts.start ?? 0,
     );
     const finish = opts.finish ?? "natural";
-    type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; voice_clip: string; caption_clip?: string; pauses?: Take["pauses"] };
+    type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; voice_clip: string; caption_clip?: string; caption_clips?: string[]; pauses?: Take["pauses"] };
     const placed: Placed[] = [];
     const before = store.document();
     edit("Voiceover", (q) => {
@@ -376,13 +389,21 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       q = finishClips(q, placed.map((l) => l.voice_clip), finish, opts.enhance);
       if (opts.captions !== false) {
         const before = ids(q);
+        const at = (i: number, s: number) => +(times[i].start + s).toFixed(3);
         q = runCommand(q, "add_captions", {
-          captions: lines.map((l, i) => ({ text: l.caption ?? takes[i].written, start: times[i].start, end: times[i].end })),
+          captions: chunked
+            ? lines.flatMap((_, i) => chunks[i].chunks.map((c) => ({ text: c.text, start: at(i, c.start), end: at(i, c.end), ...(c.words ? { words: c.words.map((s) => at(i, s)) } : {}) })))
+            : lines.map((l, i) => ({ text: l.caption ?? takes[i].written, start: times[i].start, end: times[i].end })),
           ...(opts.captionStyle ? { style: opts.captionStyle } : {}),
           ...(opts.captionY !== undefined ? { y: opts.captionY } : {}),
         });
         const caps = added(before, q);
-        placed.forEach((line) => (line.caption_clip = caps.find((c) => c.start === secondsToFrames(line.start, q.fps))?.id));
+        if (chunked)
+          placed.forEach((line) => {
+            const from = secondsToFrames(line.start, q.fps), to = secondsToFrames(line.end, q.fps);
+            line.caption_clips = caps.filter((c) => c.start >= from && c.start < to).sort((a, b) => a.start - b.start).map((c) => c.id);
+          });
+        else placed.forEach((line) => (line.caption_clip = caps.find((c) => c.start === secondsToFrames(line.start, q.fps))?.id));
       }
       return q;
     });
@@ -390,7 +411,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     const end = Math.max(...times.map((t) => t.end));
     toast(`Added the voiceover, ${end.toFixed(1)} s`);
     // New lines over music ducked for others: it does not dip under them yet.
-    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...staleDucks(before, store.document()).map(staleDuckNote)];
+    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...(chunked ? [chunkNote(chunked, chunks.every((c) => c.heard))] : []), ...staleDucks(before, store.document()).map(staleDuckNote)];
     return { lines: placed, end, finish, engine: { quality: opts.quality ?? "best", ...takes[0].engine }, ...(notes.length ? { notes } : {}) };
   } catch (e) {
     if (signal.aborted) toast("Canceled");
@@ -411,6 +432,9 @@ export interface RetakeOptions extends ReadOptions {
   caption?: string;
   /** Move the lines and captions after it by the change in length. */
   ripple?: boolean;
+  /** Its captions this many words at a time (1-3), or 0 for one caption
+   * for the line; default as the line was captioned (ADR-115). */
+  captionWords?: number;
 }
 
 /**
@@ -445,15 +469,21 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     const caption = o.caption ?? (o.text !== undefined ? take.written : undefined);
     if (caption !== undefined) take.info.caption = o.caption;
     else if (was?.caption) take.info.caption = was.caption;
+    // A line captioned a few words at a time is captioned so again (ADR-115).
+    const chunked = o.captionWords ?? was?.captionWords ?? 0;
+    if (chunked) take.info.captionWords = chunked;
     const [asset] = await takeAssets([take], signal);
-    let answer: { shift: number; captionId?: Id } = { shift: 0 };
+    // caption_words 0 on a chunked line: one caption for the line again.
+    const shown = take.info.caption ?? take.written;
+    const words = chunked ? await takeChunks(asset, shown, text, chunked, signal) : was?.captionWords ? { chunks: [{ start: 0, end: take.seconds, text: shown }], heard: true } : undefined;
+    let answer: { shift: number; captionId?: Id; captionIds?: Id[] } = { shift: 0 };
     let start = 0;
     // The take and the music dipped again under it undo as one step.
     store.beginRun();
     ran = true;
     const before = store.document();
     store.editDocument("Retake voiceover line", (q) => {
-      const r = retakeLine(q, { clipId, asset, frames: secondsToFrames(take.seconds, q.fps), caption, ripple: o.ripple });
+      const r = retakeLine(q, { clipId, asset, frames: secondsToFrames(take.seconds, q.fps), caption, ripple: o.ripple, ...(words ? { chunks: words.chunks } : {}) });
       answer = r;
       start = framesToSeconds(findClip(r.project, clipId)!.clip.start, q.fps);
       const finish = take.info.finish ?? "natural";
@@ -467,10 +497,10 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     const ducking = await duckAgain(staleDucks(before, store.document()));
     toast(`Read the line again, ${take.seconds.toFixed(1)} s`);
     const fps = store.document().fps;
-    const notes = [...(asksEmphasis(text) ? [EMPHASIS_NOTE] : []), ...ducking.notes];
+    const notes = [...(asksEmphasis(text) ? [EMPHASIS_NOTE] : []), ...(words && chunked ? [chunkNote(chunked, words.heard)] : []), ...ducking.notes];
     return {
       voice_clip: clipId,
-      caption_clip: answer.captionId,
+      ...(answer.captionIds ? { caption_clips: answer.captionIds } : { caption_clip: answer.captionId }),
       text: take.written,
       start,
       end: +(start + take.seconds).toFixed(3),

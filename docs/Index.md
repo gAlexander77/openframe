@@ -413,3 +413,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-115 A voiceover captions itself a few words at a time, and answers give what they share once]] —
+  add_voiceover and retake_voiceover caption_words time each word by
+  Whisper fitted to the voice's own start and pauses (measured against
+  Kokoro's durations); check_project reads chunked captions as their
+  line; a lone word is never lit; long clip lists share their common
+  fields, moved markers are counted, alike findings grouped, a review is
+  compact with one duck for the music track; new_project and clips false
+  give track ids; check sheets wrap and take tile_width.
