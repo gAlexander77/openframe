@@ -98,10 +98,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Undo history**: right-click the toolbar's Undo or Redo for the last 20
   steps by name, nearest first; choosing one goes back (or forward) to it
   (VEGAS's undo list, Premiere's History panel). Agent edits use readable
-  labels too, such as "Add clip" and "Change opacity".
+  labels too, such as "Add clip", "Change opacity", "Change border width"
+  and "Deactivate clip" ([[ADR-109 What an agent can set, a person can see and change]]).
 - Select and blade tools; split, split all, delete left/right (Q/W),
   delete, ripple delete; freeze frame; mirror; rotate 90°; extract audio;
-  deactivate clip; markers; in/out range (a cyan band on the ruler,
+  deactivate clip (one switch for the whole selection: a mixed one goes
+  off, an all-off one comes back on); markers; in/out range (a cyan band on the ruler,
   which stays in view as the tracks scroll).
 - **Linked picture and sound** (Premiere's linked clips, for J and L
   cuts): Extract audio keeps the video and its sound linked as a group,
@@ -218,7 +220,12 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   equal power over the seconds before the cut; `cut_music` takes bars out
   of a song on its grid and joins the pieces so the beat runs on.
   `preview_audio` measures every join, click and dropout
-  ([[ADR-104 Voice and sound an agent can trust without ears]]).
+  ([[ADR-104 Voice and sound an agent can trust without ears]]). A person
+  makes one with the audio clip menu's **Crossfade into next clip** (the
+  transitions' default length, as far as the join allows, or why none
+  fits), sees it drawn at the cut like a transition, and sets its length
+  in the Audio tab's **Crossfade** row
+  ([[ADR-109 What an agent can set, a person can see and change]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -409,7 +416,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and a circle mask a ring; it keeps its width however the clip is
   scaled, fades with the clip, and the drop shadow is cast by the picture
   and its border together. Border section of the Video tab
-  (`set_border`).
+  (`set_border`); a title shows its drop shadow, border and colorize in
+  its Text tab while it has them.
 - **Perspective tilt** (CSS rotateX and rotateY, ADR-070): Tilt X and
   Tilt Y in the Transform section turn a picture in depth, seen from a
   camera 2000 pixels (at 1080p) in front of the canvas center, the
@@ -489,7 +497,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Reusable effect presets:** local named stacks with animation, rename/delete,
   cross-project reuse and undoable application to unlocked visual clips.
-- **Paste Attributes:** choose transform, color, audio and/or effects, with
+- **Paste Attributes:** choose transform (with crop, opacity, drop shadow and
+  border), color, audio (with EQ and compressor) and/or effects, with
   animation retiming and optional effect replacement. Clip timing stays intact.
 
 ## Keyframes

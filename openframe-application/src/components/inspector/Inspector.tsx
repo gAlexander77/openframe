@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
+import { crossfadeJoin } from "../../lib/crossfadeJoin";
 import { MATTE_MODELS } from "../../engine/cutout";
 import { clipWindow, covers } from "../../lib/matte";
 import { ANIMATIONS, BLEND_MODES, EFFECTS, FILTERS, FONTS, TRANSITIONS } from "../../lib/catalog";
@@ -305,7 +306,7 @@ function AutoRemovalSection({ clip }: { clip: Clip }) {
   const toggle = (v: boolean) => (job ? aiStore.cancel("cutout") : void setBackgroundRemoval(clip.id, v).catch(() => {}));
   const stage = job?.stage ?? "Removing the background";
   return (
-    <Section title="Auto removal" extra={video && <Toggle label="Remove background" on={on || !!job} onChange={toggle} disabled={busy} />}>
+    <Section title="Auto removal" on={on || !!job} extra={video && <Toggle label="Remove background" on={on || !!job} onChange={toggle} disabled={busy} />}>
       {job ? (
         <>
           <p className="insp-hint cutout-stage">{stage}</p>
@@ -360,7 +361,7 @@ function StabilizeSection({ clip }: { clip: VideoClip }) {
   const toggle = <Toggle on={!!clip.stabilize || !!job} label="Stabilize" onChange={(on) => (on ? run(level) : job ? aiStore.cancel("stabilize") : void stabilizeClip(clip.id, { level: "off" }))} />;
   return (
     // Turning it on opens the section, to show the progress and the zoom.
-    <Section key={String(!!clip.stabilize || !!job)} title="Stabilize" defaultOpen={!!clip.stabilize || !!job} extra={toggle}>
+    <Section title="Stabilize" defaultOpen={!!clip.stabilize || !!job} on={!!clip.stabilize || !!job} extra={toggle}>
       <Row label="Level">
         <select className="field" aria-label="Stabilize level" value={level} disabled={!!job} onChange={(e) => (clip.stabilize ? run(e.target.value as StabilizeLevel) : aiStore.setSettings("stabilize", { level: e.target.value as StabilizeLevel }))}>
           {(Object.keys(LEVELS) as StabilizeLevel[]).map((k) => (
@@ -512,7 +513,7 @@ function ChromaSection({ clip }: { clip: Clip }) {
   const set = (patch: Partial<NonNullable<typeof k>>, label: string) =>
     patchClip(clip.id, label, (c) => ({ ...c, chromaKey: { enabled: true, color: "#00b140", similarity: 0.4, smoothness: 0.1, spill: 0.3, ...k, ...patch } }) as Clip);
   return (
-    <Section title="Chroma key" extra={<Toggle label="Chroma key" on={!!k?.enabled} onChange={(v) => set({ enabled: v }, v ? "Chroma key on" : "Chroma key off")} />}>
+    <Section title="Chroma key" on={!!k?.enabled} extra={<Toggle label="Chroma key" on={!!k?.enabled} onChange={(v) => set({ enabled: v }, v ? "Chroma key on" : "Chroma key off")} />}>
       {k?.enabled ? (
         <>
           <Row label="Key color">
@@ -542,8 +543,11 @@ function AudioTab({ clip }: { clip: Clip }) {
         <SliderRow clip={clip} path="volume" label="Volume" min={-60} max={12} step={0.1} digits={1} unit="dB" reset={1} show={(v) => Math.max(-60, toDb(v))} store={(db) => (db <= -60 ? 0 : fromDb(db))} />
         <SliderRow clip={clip} path="fadeIn" label="Fade in" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
         <SliderRow clip={clip} path="fadeOut" label="Fade out" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
+        {clip.type === "audio" && <CrossfadeRow clip={clip} />}
         <SliderRow clip={clip} path="pan" label="Pan" min={-100} max={100} reset={0} {...pct} />
-        <Row label="Channels">
+        {/* Not on a compound clip: its channel fill is not mixed (ADR-100),
+            and set_channel_fill leaves it as it is. */}
+        {clip.type !== "compound" && <Row label="Channels">
           <Segmented
             value={clip.fill ?? "both"}
             onChange={(v) => edit(v === "both" ? "Channels as recorded" : `Fill from ${v}`, (p) => runCommand(p, "set_channel_fill", { clip_ids: [clip.id], fill: v }))}
@@ -553,7 +557,7 @@ function AudioTab({ clip }: { clip: Clip }) {
               { value: "right", label: "Right to both" },
             ]}
           />
-        </Row>
+        </Row>}
       </Section>
       <Section
         title="Equalizer"
@@ -583,6 +587,17 @@ function AudioTab({ clip }: { clip: Clip }) {
   );
 }
 
+/** The join into the next audio clip on the track, crossfaded at equal
+ * power over the seconds before the cut (ADR-104), through set_crossfade
+ * (ADR-109). Shown where a crossfade fits; the clip menu says why not. */
+function CrossfadeRow({ clip }: { clip: AudioClip }) {
+  const project = useEditor((s) => s.project);
+  const join = crossfadeJoin(project, clip.id);
+  if (!join || !join.most) return null;
+  const apply = (s: number) => (p: Project) => runCommand(p, "set_crossfade", { clip_id: clip.id, seconds: +Math.min(join.most, Math.max(0, s)).toFixed(4) });
+  return <SliderRow clip={clip} path="crossfade" label="Crossfade" min={0} max={+join.most.toFixed(4)} step={0.01} unit="s" reset={0} keyframes={false} value={join.plays} apply={apply} />;
+}
+
 /** CapCut's Enhance voice and Premiere's Dynamics: presets first, the
  * three settings that matter most once one is on. */
 function CompressorSection({ clip }: { clip: AudioClip | VideoClip | CompoundClip }) {
@@ -602,7 +617,7 @@ function CompressorSection({ clip }: { clip: AudioClip | VideoClip | CompoundCli
           <SliderRow clip={clip} path="compressor.makeup" label="Makeup" min={0} max={24} step={0.5} digits={1} unit="dB" reset={voice.makeup} keyframes={false} />
         </>
       ) : (
-        <p className="insp-hint">Evens out loud and quiet words. Enhance voice suits speech and voiceovers.</p>
+        <p className="insp-hint">{clip.type === "compound" ? "Evens out the mix of everything inside, as one sound: a voice and its music together." : "Evens out loud and quiet words. Enhance voice suits speech and voiceovers."}</p>
       )}
     </Section>
   );
@@ -1435,7 +1450,7 @@ function TextTab({ clip }: { clip: TextClip }) {
         <SliderRow clip={clip} path="style.letterSpacing" label="Spacing" min={-20} max={100} reset={0} />
         <SliderRow clip={clip} path="style.lineHeight" label="Line height" min={0.6} max={3} step={0.05} digits={2} reset={1.2} keyframes={false} />
       </Section>
-      <Section title="Stroke" extra={<Toggle label="Stroke" on={!!s.stroke && s.stroke.width > 0} onChange={(v) => style({ stroke: { color: s.stroke?.color ?? "#000000", width: v ? Math.max(4, s.stroke?.width ?? 0) : 0 } }, v ? "Add stroke" : "Remove stroke")} />}>
+      <Section title="Stroke" on={!!s.stroke && s.stroke.width > 0} extra={<Toggle label="Stroke" on={!!s.stroke && s.stroke.width > 0} onChange={(v) => style({ stroke: { color: s.stroke?.color ?? "#000000", width: v ? Math.max(4, s.stroke?.width ?? 0) : 0 } }, v ? "Add stroke" : "Remove stroke")} />}>
         {s.stroke && s.stroke.width > 0 && (
           <>
             <Row label="Color">
@@ -1452,7 +1467,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
-      <Section title="Glow" defaultOpen={!!s.glow} extra={<Toggle label="Glow" on={!!s.glow} onChange={(v) => style({ glow: v ? { color: s.glow?.color ?? "#00e5ff", blur: 24 } : undefined }, v ? "Add glow" : "Remove glow")} />}>
+      <Section title="Glow" defaultOpen={!!s.glow} on={!!s.glow} extra={<Toggle label="Glow" on={!!s.glow} onChange={(v) => style({ glow: v ? { color: s.glow?.color ?? "#00e5ff", blur: 24 } : undefined }, v ? "Add glow" : "Remove glow")} />}>
         {s.glow && (
           <>
             <Row label="Color">
@@ -1465,7 +1480,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
-      <Section title="Gradient" defaultOpen={!!s.gradient} extra={<Toggle label="Gradient fill" on={!!s.gradient} onChange={(v) => style({ gradient: v ? { from: s.color, to: "#ff3d7f", angle: 0 } : undefined }, v ? "Gradient fill" : "Solid fill")} />}>
+      <Section title="Gradient" defaultOpen={!!s.gradient} on={!!s.gradient} extra={<Toggle label="Gradient fill" on={!!s.gradient} onChange={(v) => style({ gradient: v ? { from: s.color, to: "#ff3d7f", angle: 0 } : undefined }, v ? "Gradient fill" : "Solid fill")} />}>
         {s.gradient && (
           <>
             <Row label="From">
@@ -1478,7 +1493,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
-      <Section title="Shadow" extra={<Toggle label="Shadow" on={!!s.shadow} onChange={(v) => style({ shadow: v ? { color: "#000000aa", blur: 12, x: 4, y: 6 } : undefined }, v ? "Add shadow" : "Remove shadow")} />}>
+      <Section title="Shadow" on={!!s.shadow} extra={<Toggle label="Shadow" on={!!s.shadow} onChange={(v) => style({ shadow: v ? { color: "#000000aa", blur: 12, x: 4, y: 6 } : undefined }, v ? "Add shadow" : "Remove shadow")} />}>
         {s.shadow && (
           <>
             <Row label="Color">
@@ -1490,7 +1505,7 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
-      <Section title="Background" extra={<Toggle label="Background" on={!!s.background} onChange={(v) => style({ background: v ? { color: "#000000cc", padding: 16, radius: 8 } : undefined }, v ? "Add background" : "Remove background")} />}>
+      <Section title="Background" on={!!s.background} extra={<Toggle label="Background" on={!!s.background} onChange={(v) => style({ background: v ? { color: "#000000cc", padding: 16, radius: 8 } : undefined }, v ? "Add background" : "Remove background")} />}>
         {s.background && (
           <>
             <Row label="Color">
@@ -1501,6 +1516,13 @@ function TextTab({ clip }: { clip: TextClip }) {
           </>
         )}
       </Section>
+      {/* What a title carries as a picture (an agent's set_shadow,
+          set_border or set_colorize) shows here while it has it, so it can
+          be seen, changed and removed: a title has no Video or Adjust tab
+          (ADR-109). */}
+      {clip.shadow && <ShadowSection clip={clip} title="Drop shadow" />}
+      {clip.border && <BorderSection clip={clip} />}
+      {clip.adjust.colorize && <ColorizeSection clip={clip} />}
       <SavedStylesSection clip={clip} />
       <TransformSection clip={clip} />
       <Section title="Opacity" defaultOpen={false}>

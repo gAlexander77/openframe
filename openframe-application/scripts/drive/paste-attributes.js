@@ -17,9 +17,9 @@ async page => {
   await page.getByRole("button", { name: "Copy attributes", exact: true }).click();
   await page.evaluate(() => window.videoEditor.select([window.__attributeIds.b]));
   await page.getByRole("button", { name: "Paste attributes…", exact: true }).click();
-  await page.getByRole("checkbox", { name: "Transform, crop and opacity", exact: true }).uncheck();
+  await page.getByRole("checkbox", { name: "Transform, crop, opacity, shadow and border", exact: true }).uncheck();
   await page.getByRole("checkbox", { name: "Effects and effect animation", exact: true }).uncheck();
-  details.audioUnavailable = { ok: await page.getByRole("checkbox", { name: "Volume, pan, mute, fades and EQ", exact: true }).isDisabled() };
+  details.audioUnavailable = { ok: await page.getByRole("checkbox", { name: "Volume, pan, mute, fades, EQ and compressor", exact: true }).isDisabled() };
   await page.screenshot({ path: "scratch/paste-attributes-desktop.png", animations: "disabled" });
   await page.getByRole("button", { name: "Paste selected attributes", exact: true }).click();
   details.onlyColorAndNoCompaction = { ok: await page.evaluate(() => { const c = window.videoEditor.project().tracks[0].clips[1]; return c.adjust.exposure === 20 && c.transform.scale === 1 && c.effects.length === 0 && c.start === 120; }) };

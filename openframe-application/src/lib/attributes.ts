@@ -6,8 +6,11 @@ import { framesToSeconds, secondsToFrames, type Rational } from "./time";
 
 export const ATTRIBUTE_GROUPS = ["transform", "color", "audio", "effects"] as const;
 export type AttributeGroup = typeof ATTRIBUTE_GROUPS[number];
-export const ATTRIBUTE_LABELS: Record<AttributeGroup, string> = { transform: "Transform, crop and opacity", color: "Color adjustments and filter", audio: "Volume, pan, mute, fades and EQ", effects: "Effects and effect animation" };
-const fields = { transform: ["transform", "crop", "opacity", "blend"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "eq", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"], effects: ["effects"] } as const;
+export const ATTRIBUTE_LABELS: Record<AttributeGroup, string> = { transform: "Transform, crop, opacity, shadow and border", color: "Color adjustments and filter", audio: "Volume, pan, mute, fades, EQ and compressor", effects: "Effects and effect animation" };
+// A picture-in-picture's frame (its shadow and border) goes with where it
+// sits, and a voice's compressor with its EQ (ADR-109): a look made once
+// pastes onto the other insets or lines.
+const fields = { transform: ["transform", "crop", "opacity", "blend", "shadow", "border"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"], effects: ["effects"] } as const;
 export const supportsAttributes = (c: Clip, group: AttributeGroup) => fields[group][0] in c;
 export interface AttributeClipboard { clip: Clip; fps: Rational; luts: LutFile[] }
 export function copyAttributes(p: Project, id: string): AttributeClipboard {

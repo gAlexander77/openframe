@@ -24,8 +24,8 @@ export function ColorizeSection({ clip }: { clip: Clip }) {
   const c = clip.adjust.colorize;
   const ids = [clip.id];
   return (
-    // Keyed by on/off: switching it on opens the section on its color.
-    <Section key={c ? "on" : "off"} title="Colorize" defaultOpen={!!c} extra={<Toggle label="Colorize" on={!!c} onChange={(on) => run(on ? "Colorize" : "No colorize", on ? { clip_ids: ids, ...COLORIZE_DEFAULT } : { clip_ids: ids, off: true })} />}>
+    // Switching it on opens the section on its color.
+    <Section title="Colorize" defaultOpen={!!c} on={!!c} extra={<Toggle label="Colorize" on={!!c} onChange={(on) => run(on ? "Colorize" : "No colorize", on ? { clip_ids: ids, ...COLORIZE_DEFAULT } : { clip_ids: ids, off: true })} />}>
       {c && (
         <>
           <Row label="Color">

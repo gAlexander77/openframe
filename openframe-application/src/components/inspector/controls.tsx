@@ -3,7 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Pipette, RotateCcw } f
 import { getPath, paramAt } from "../../lib/keyframes";
 import { parseTyped, stepDigits } from "../../lib/numberInput";
 import { findClip, setParam, toggleKeyframe } from "../../lib/project/ops";
-import type { Clip, Id } from "../../lib/project/types";
+import type { Clip, Id, Project } from "../../lib/project/types";
 import { sectionOpen, setSectionOpen } from "../../state/sections";
 import { store, useEditor } from "../../state/store";
 import { EaseButton } from "./KeyTools";
@@ -21,10 +21,20 @@ export function useRel(c: Clip): number {
 
 /** A collapsible inspector section. Opening or closing it is remembered
  * per viewer by its title (or `id`), across clips and reloads; until the
- * viewer chooses, `defaultOpen` decides. */
-export function Section(props: { title: string; id?: string; children: ReactNode; onReset?: () => void; defaultOpen?: boolean; extra?: ReactNode }) {
+ * viewer chooses, `defaultOpen` decides. `on` is the state of the switch
+ * in its header, if it has one. */
+export function Section(props: { title: string; id?: string; children: ReactNode; onReset?: () => void; defaultOpen?: boolean; extra?: ReactNode; on?: boolean }) {
   const id = props.id ?? props.title;
   const [open, setOpen] = useState(() => sectionOpen(id) ?? props.defaultOpen ?? true);
+  // A section whose switch sits in its header (`on`) opens when the switch
+  // turns on, so the settings it just made appear (ADR-109). Opening in
+  // place, not remounting under a new key: a remount took the keyboard
+  // focus off the switch. Not remembered: the viewer did not choose it.
+  const [wasOn, setWasOn] = useState(props.on);
+  if (props.on !== wasOn) {
+    setWasOn(props.on);
+    if (props.on && !open) setOpen(true);
+  }
   const toggle = () => {
     setOpen(!open);
     setSectionOpen(id, !open);
@@ -71,6 +81,10 @@ export interface SliderProps {
   /** More clips the row sets too (a multi-selection, as Premiere's
    * Properties panel edits several): each keys at its own frame. */
   also?: Clip[];
+  /** A value a command keeps rather than a parameter at `path` (a
+   * crossfade): the row shows `value` and edits through `apply`. */
+  value?: number;
+  apply?: (v: number) => (p: Project) => Project;
 }
 
 /**
@@ -133,7 +147,7 @@ export function SliderRow(p: SliderProps) {
   const show = p.show ?? ((v: number) => v);
   const toStore = p.store ?? ((v: number) => v);
   const keys = p.clip.keyframes?.[p.path];
-  const value = keys?.length ? paramAt(p.clip, p.path, rel) : (getPath(p.clip, p.path) ?? p.reset ?? 0);
+  const value = p.value ?? (keys?.length ? paramAt(p.clip, p.path, rel) : (getPath(p.clip, p.path) ?? p.reset ?? 0));
   const shown = show(value);
   const [text, setText] = useState<string | null>(null);
   const digits = p.digits ?? stepDigits(p.step);
@@ -141,8 +155,8 @@ export function SliderRow(p: SliderProps) {
   const relOf = (c: Clip) => Math.min(Math.max(playhead - c.start, 0), c.duration - 1);
   // A dash, as Premiere shows, when the clips disagree.
   const mixed = !!p.also?.some((c) => Math.abs(paramAt(c, p.path, relOf(c)) - value) > 1e-6);
-  const set = (v: number) => (p2: Parameters<typeof setParam>[0]) =>
-    (p.also ?? []).reduce((q, c) => setParam(q, [c.id], p.path, v, relOf(c)), setParam(p2, [p.clip.id], p.path, v, rel));
+  const set = (v: number) => p.apply?.(v) ?? ((p2: Project) =>
+    (p.also ?? []).reduce((q, c) => setParam(q, [c.id], p.path, v, relOf(c)), setParam(p2, [p.clip.id], p.path, v, rel)));
   const commit = (raw: string) => {
     const n = parseTyped(raw);
     setText(null);
