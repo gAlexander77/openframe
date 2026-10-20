@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { contrastRatio, endsByItself, hex, luminance, measureBackdrop, tailLevels } from "./contrast";
+import { boxPixels, contrastFixes, contrastRatio, endsByItself, hex, luminance, measureBackdrop, measureLook, tailLevels, titleLook } from "./contrast";
+import { DEFAULT_TEXT_STYLE } from "./project/defaults";
 
 /** A w x h RGBA picture, each pixel from `at(x, y)` (0..255 channels). */
 function picture(w: number, h: number, at: (x: number, y: number) => [number, number, number]) {
@@ -50,14 +51,67 @@ describe("contrast", () => {
     expect(measureBackdrop([WHITE], px, 10, { left: 20, right: 30, top: 0, bottom: 5 })).toBeNull();
   });
 
-  it("tells a track that fades out by itself from one that stops dead", () => {
+  it("tells a track that fades out by itself from one that stops dead, by its last second", () => {
     const rate = 1000;
-    const tone = (gain: (t: number) => number) => Float32Array.from({ length: 4 * rate }, (_, i) => Math.sin(i * 0.3) * gain(i / rate));
+    const tone = (gain: (t: number) => number, seconds = 4) => Float32Array.from({ length: seconds * rate }, (_, i) => Math.sin(i * 0.3) * gain(i / rate));
     const dead = tailLevels(tone(() => 0.5), rate);
     expect(dead.endDb).toBeCloseTo(dead.bodyDb, 0);
     expect(endsByItself(dead)).toBe(false);
     const fading = tailLevels(tone((t) => (t < 3 ? 0.5 : 0.5 * (4 - t) ** 3)), rate);
     expect(endsByItself(fading)).toBe(true);
     expect(endsByItself(tailLevels(tone((t) => (t < 3.7 ? 0.5 : 0)), rate))).toBe(true);
+    // A one-second linear fade, the most common fade an editor writes: its
+    // last quarter second is only 17 dB down, which was called abrupt.
+    const linear = tailLevels(tone((t) => (t < 3 ? 0.5 : 0.5 * (4 - t))), rate);
+    expect(linear.lastSecond!.every((v, i, a) => i === 0 || v < a[i - 1])).toBe(true);
+    expect(endsByItself(linear)).toBe(true);
+    // A 1.5 s fade the clip ends a quarter second early: still falling away.
+    const early = tailLevels(tone((t) => (t < 2.75 ? 0.5 : 0.5 * Math.max(0, (4.25 - t) / 1.5))), rate);
+    expect(early.endDb).toBeGreaterThan(early.bodyDb - 18);
+    expect(endsByItself(early)).toBe(true);
+    // Music that drops to a quieter bar and is cut there is not a fade.
+    const step = tailLevels(tone((t) => (t < 3.5 ? 0.5 : 0.2)), rate);
+    expect(endsByItself(step)).toBe(false);
+  });
+
+  it("measures what a title draws around its letters: a box, an outline, a shadow", () => {
+    const bright = [[0.92, 0.9, 0.85]];
+    const style = { ...DEFAULT_TEXT_STYLE, size: 40, color: "#ffffff" };
+    const plain = measureLook(titleLook(style), bright)!;
+    expect(plain.ratio).toBeLessThan(1.3);
+    // A dark box behind the letters: its color is their backdrop.
+    const boxed = measureLook(titleLook({ ...style, background: { color: "#000000a6", padding: 10, radius: 4 } }), bright)!;
+    expect(boxed.ratio).toBeGreaterThan(4.5);
+    // An outline 4% of the type size or wider rings every letter in black.
+    const outlined = titleLook({ ...style, stroke: { color: "#000000", width: 2 } });
+    expect(outlined.around).toEqual([{ what: "outline", rgba: [0, 0, 0, 1], cover: 1 }]);
+    expect(measureLook(outlined, bright)!.ratio).toBeCloseTo(21, 0);
+    // A hairline does less.
+    expect(measureLook(titleLook({ ...style, stroke: { color: "#000000", width: 0.5 } }), bright)!.ratio).toBeLessThan(4);
+    // Codex's soft shadow (blur 16 on size 40 type) barely darkens the edge;
+    // a tight one does more.
+    const soft = measureLook(titleLook({ ...style, shadow: { color: "#000000cc", blur: 16, x: 0, y: 0 } }), bright)!;
+    const tight = measureLook(titleLook({ ...style, shadow: { color: "#000000", blur: 3, x: 0, y: 2 } }), bright)!;
+    expect(soft.ratio).toBeGreaterThan(plain.ratio);
+    expect(soft.ratio).toBeLessThan(2.5);
+    expect(tight.ratio).toBeGreaterThan(soft.ratio * 1.5);
+    // The clip's opacity fades the box and the letters alike.
+    expect(measureLook(titleLook({ ...style, background: { color: "#000000", padding: 10, radius: 4 } }, 0.3), bright)!.ratio).toBeLessThan(boxed.ratio);
+  });
+
+  it("offers a box and an outline as fixes, in the colors that read", () => {
+    const light = contrastFixes({ ...DEFAULT_TEXT_STYLE, size: 40, color: "#f4f3ec" });
+    expect(light.map((f) => f.say)).toEqual(['style.background {color: "#000000a6", padding: 10, radius: 5}', 'style.stroke {color: "#000000", width: 2}']);
+    const dark = contrastFixes({ ...DEFAULT_TEXT_STYLE, size: 100, color: "#101010" });
+    expect(dark[0].say).toMatch(/#ffffffd9/);
+    expect(dark[1].style.stroke).toEqual({ color: "#ffffff", width: 5 });
+    // Each fix, measured over a bright backdrop, reads.
+    for (const f of light) expect(measureLook(titleLook(f.style), [[0.95, 0.95, 0.9]])!.ratio).toBeGreaterThan(4.5);
+  });
+
+  it("judges by most of the letters: the 10th percentile, not a stray pixel", () => {
+    const px = [...Array.from({ length: 95 }, () => [0.05, 0.05, 0.05]), ...Array.from({ length: 5 }, () => [1, 1, 1])];
+    expect(measureLook(titleLook({ ...DEFAULT_TEXT_STYLE, color: "#ffffff" }), px)!.ratio).toBeGreaterThan(10);
+    expect(boxPixels(new Uint8ClampedArray(4 * 4 * 4), 4, { left: 1, right: 3, top: 1, bottom: 3 })).toHaveLength(4);
   });
 });

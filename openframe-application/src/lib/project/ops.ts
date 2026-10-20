@@ -425,7 +425,8 @@ export function placeClip(p: Project, trackId: Id, clip: Clip, opts: MoveOptions
   }
   // CapCut: dropping onto an occupied overlay spot makes room on a new track
   // just above it (below it for audio, which stacks downward).
-  const fresh = createTrack(dest.kind, dest.kind === "audio" ? "Audio" : "Video");
+  // A stem's overflow stays that stem (ADR-098): SFX under SFX.
+  const fresh = { ...createTrack(dest.kind, dest.kind === "audio" ? (dest.role ? dest.name : "Audio") : "Video"), ...(dest.role ? { role: dest.role } : {}) };
   const at = p.tracks.findIndex((t) => t.id === trackId) + (dest.kind === "audio" ? 1 : 0);
   const q = { ...p, tracks: [...p.tracks.slice(0, at), fresh, ...p.tracks.slice(at)] };
   return addClip(q, fresh.id, clip, "overwrite");

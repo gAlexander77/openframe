@@ -57,7 +57,9 @@ Brand   { name?, colors: { primary, secondary, accent, background, text },
           url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
 Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
-          sticker?, folder?, favorite?, speech? }   (sticker: the library sticker an image was drawn from)
+          sticker?, folder?, favorite?, speech?, role?, sound? }   (sticker: the library sticker an image was drawn from;
+          role: dialog|music|effects|ambience, what a file the app made is;
+          sound: { id, seed? }, the built-in effect or ambience bed it was made from)
 Speech  { text, caption?, voice, speed, pronounce?: { word: respelling },
           quality?: best|draft, finish?: natural|clean|raw }
           (on a speech file the app read: the line as written, pause marks included;
@@ -65,7 +67,8 @@ Speech  { text, caption?, voice, speed, pronounce?: { word: respelling },
 LutFile { id, name, src, kind: 1d|3d, size }   (the .cube stays in its file)
 Track   { id, kind: video|audio, name, main?, clips: Clip[],
           muted, hidden, locked, volume, pan? (-1..1, added to each clip's),
-          solo?, height?: small|large }
+          solo?, height?: small|large, role? }   (role, audio tracks only: dialog|music|effects|ambience,
+          the stem it is; absent, it is judged by its clips' files: ADR-098)
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
 Clip    = video | audio | image | text | color | adjustment | compound   (see types.ts)
           every clip may carry group?: a shared id that selects and moves together

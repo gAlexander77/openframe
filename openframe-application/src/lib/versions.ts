@@ -13,7 +13,9 @@
 // when it must (ADR-063). A wide frame made tall stacks what stood side by
 // side (a window beside its headline, a split screen) in the safe column,
 // and its captions, burned in by default, take the tall frame's caption
-// place (ADR-091). A shorter cut
+// place (ADR-091). Footage a new shape crops is framed on its subject and
+// follows it (lib/reframe.ts, ADR-097), unless asked to stay centered or
+// given a clip's focus. A shorter cut
 // keeps the opening and the end card, cutting the middle out of the
 // picture tracks; the music runs from the start and fades at the new end.
 
@@ -27,6 +29,7 @@ import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
 import { fittedSize, textPad } from "./render/size";
+import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type SubjectNote } from "./reframe";
 import { secondsToFrames } from "./time";
 
 export type VersionRatio = "16:9" | "9:16" | "1:1" | "4:5" | "original";
@@ -52,6 +55,21 @@ export interface VersionSpec {
   captions?: VersionCaptions;
   /** File name; default the project's name and what the version is. */
   name?: string;
+  /** How footage the new shape crops is framed: on its subject (default)
+   * or at the center. */
+  reframe?: Reframe;
+  /** Clips framed by hand in this version: the point of each one's picture
+   * to keep at the center. */
+  focus?: Focus[];
+}
+
+/** What reshape uses to frame cropped footage, and where it reports the
+ * subjects its framing cuts. */
+export interface ReframeOptions {
+  looks?: Looks;
+  reframe?: Reframe;
+  focus?: Focus[];
+  notes?: SubjectNote[];
 }
 
 /** A file name that says what the version is: "Roast 9x16 6s textless". */
@@ -132,6 +150,13 @@ function fullFrame(p: Project, c: VisualClip, m: Frame): boolean {
   return m.w * fit * s * (1 - c.crop.left - c.crop.right) >= p.width * 0.97 && m.h * fit * sy * (1 - c.crop.top - c.crop.bottom) >= p.height * 0.97;
 }
 
+/** Does a video or picture clip cover its frame (a shot a new shape
+ * crops), where it rests? */
+export function fillsFrame(p: Project, c: Clip): boolean {
+  const m = mediaSize(p, c);
+  return !!m && fullFrame(p, c as VisualClip, m);
+}
+
 /** Text sizes are pixels at a 1080-tall frame: scaling every pixel measure
  * of a style by `k`. */
 function scaleStyle(s: TextStyle, k: number, maxWidth: number): TextStyle {
@@ -201,7 +226,7 @@ function asPicture(p: Project, a: Frame, b: Frame, c: Clip): Clip {
  * clip in `pictures` refits as a picture the master's frame in size.
  * `room`: the width a lone title wraps within, a fraction of q's width
  * (default its safe area's). */
-function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, grouped = false, pictures = new Set<Id>(), room?: number): Clip {
+function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, grouped = false, pictures = new Set<Id>(), room?: number, frame: ReframeOptions = {}): Clip {
   if (c.type === "audio" || c.type === "adjustment") return c;
   if (c.type === "compound" && !pictures.has(c.compoundId)) return c;
   const a: Frame = { w: master.width, h: master.height }, b: Frame = { w: q.width, h: q.height };
@@ -232,6 +257,12 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
       v = mapPath(v, "transform.y", (y, rel) => Math.max(-room(rel, "h"), Math.min(room(rel, "h"), y)));
     }
     if (full && fit === "blur") v = { ...v, canvas: { type: "blur", amount: SHORT_BLUR } };
+    // Cropped footage framed on its subject, or where the caller says.
+    if (full && fit === "fill" && (c.type === "video" || c.type === "image")) {
+      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", frame.focus?.find((x) => x.clip_id === c.id));
+      frame.notes?.push(...r.notes);
+      v = r.clip;
+    }
     return v;
   }
   if (c.type === "text") {
@@ -782,7 +813,7 @@ function placeCaption(master: Project, q: Project, c: TextClip): TextClip {
  * compound clip's box is what its timeline draws: one played as a picture
  * refits as one (asPicture), a whole scene nested at rest as a frame of
  * its own, its overlays placed as the root's are. */
-export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit): Project {
+export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame: ReframeOptions = {}): Project {
   if (ratio === "original") return p;
   const [rw, rh] = ratio.split(":").map(Number);
   const [width, height] = canvasSize(rw, rh, Math.min(p.width, p.height));
@@ -822,7 +853,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit): Proje
       if (stacks.some((comp) => comp.includes(set))) rooms.set(c.id, Math.min(1 - s.left - s.right, 1 - VERTICAL_SAFE.left - VERTICAL_SAFE.right));
       else if (Math.abs((box.left + box.right) / 2 - m.width / 2) < m.width * 0.01) rooms.set(c.id, titleWrap(out, 0));
     }
-    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id)))) })) };
+    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame))) })) };
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
@@ -887,8 +918,9 @@ export function versionCaptions(p: Project, mode: VersionCaptions): Project {
 
 /** One version of the master: cut down, reshaped, textless, as asked.
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
- * card's length when the master has one). */
-export function versionProject(p: Project, v: VersionSpec, keepEnd?: number): Project {
+ * card's length when the master has one). `looks` frame cropped footage on
+ * its subject; `notes` collects where a framing cuts one. */
+export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[]): Project {
   let q = p;
   if (v.duration !== undefined) {
     const frames = Math.max(1, secondsToFrames(v.duration, p.fps));
@@ -897,7 +929,7 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number): Pr
   }
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
-  q = reshape(q, v.ratio, v.fit ?? "fill");
+  q = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes });
   if (v.textless) q = textless(q);
   return { ...q, name: versionName(p.name, v) };
 }
@@ -905,9 +937,9 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number): Pr
 /** What an agent asks export_versions for: explicit versions, or every
  * ratio at every duration (the master's own length when none is given),
  * plus a textless master in the first ratio. At most `limit`. */
-export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRatio[]; durations?: number[]; textless?: boolean; fit?: VersionFit; captions?: VersionCaptions }, masterSeconds: number, limit = 12): VersionSpec[] {
+export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRatio[]; durations?: number[]; textless?: boolean; fit?: VersionFit; captions?: VersionCaptions; reframe?: Reframe; focus?: Focus[] }, masterSeconds: number, limit = 12): VersionSpec[] {
   // What every version shares, unless it says otherwise.
-  const shared = { ...(a.fit ? { fit: a.fit } : {}), ...(a.captions ? { captions: a.captions } : {}) };
+  const shared = { ...(a.fit ? { fit: a.fit } : {}), ...(a.captions ? { captions: a.captions } : {}), ...(a.reframe ? { reframe: a.reframe } : {}), ...(a.focus?.length ? { focus: a.focus } : {}) };
   const out: VersionSpec[] = [...(a.versions ?? [])].map((v) => ({ ...shared, ...v }));
   if (a.ratios?.length || a.durations?.length) {
     const ratios = a.ratios?.length ? a.ratios : (["original"] as VersionRatio[]);

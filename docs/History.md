@@ -1494,3 +1494,82 @@ The owner asked for:
 - **Give each lane a list of files it owns.** Four lanes touching CSS
   merged with one docs conflict; what crossed a boundary came back as a
   note in the report, and the lead fixed it after the merges.
+
+## 2026-10-19 — Codex's film test, and every limit it found (Claude Code)
+
+The owner had Codex make a "studio production level" film through the
+MCP tools alone, as a test: a 72-second documentary, "Earth, from above",
+in 16:9 and 9:16, narrated, scored, graded and titled, with a report of
+every limit met. It delivered both at -14 LUFS and listed twelve
+problems, plus the status of the fifteen limits found on 2026-10-18 (seven
+of them now fixed in use). The owner then asked for all of it fixed, with
+as many agents as needed.
+
+- **Four lanes** (Claude), each in its own worktree:
+  - **The surface**
+    ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):
+    a display name without an extension no longer drops an import; export
+    and collect take a `folder`; Codex's client repeated the 3.5 KB server
+    instructions in all 156 tool descriptions (188,924 tokens), so the
+    instructions now point to `help`; clip details show typography and
+    speed-curve points; a wrong argument gets "did you mean".
+  - **Voice and music**
+    ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+    pace in words a second, each line read again until it lands (Codex
+    had retaken ten of eleven lines by hand); emphasis measured and found
+    beyond Kokoro; a trimmed song keeps the file's bars and drops; balance
+    answers name their window, and every line can be held over the music.
+  - **Checks and versions**
+    ([[ADR-097 Checks and versions judge by the picture]]): contrast is
+    measured behind every title on the rendered frame (Codex's subtitles
+    over the sky: 1.26:1); text under 4.5% of the short side (5% for
+    social) is flagged; export_versions frames each shot on its subject
+    ([[Versions keep the subject 2026-10-19]]) and can save versions as
+    projects to fine-tune.
+  - **Sound and previews**
+    ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]):
+    tracks carry a role, sound effects get an SFX track; eight ambience
+    beds (wind, stream, waterfall, surf, rain, rocket, city, room tone)
+    are synthesized locally; preview_audio lets an agent hear the mix or a
+    stem; previews draw text at the canvas's size, as export does. The
+    stale first motion tile did not reproduce and has a drive.
+
+- **Checked in the desktop app**, built from the merged branch and driven
+  through the stdio bridge Codex used: each of its problems was replayed
+  (an import named "launch", a trimmed song's drop and bars, lines paced
+  on their own, ambience and effects on tracks of their own, a duck that
+  holds every line, contrast measured behind each title, the 9:16 check
+  keeping the rocket and the Eiffel Tower, an export and a collection into
+  a named folder, a second export numbered) and all held. Three things it
+  found were fixed: a collection's folder was named `OpenFrame-<time in
+  nanoseconds>` (now the project's name); preview_motion with no project
+  open answered "Cannot read properties of undefined" (now that none is
+  open); the surf bed opened on a lull of up to 9 s on half its seeds and
+  fell 20 dB between sets, so under a voice the sea went quiet (now the
+  first wave comes within 1.5 s and the roar between sits 6 dB higher).
+- **Every drive** ran against the merged web build, three at a time on one
+  dev server. The two that stub desktop calls (`media-relink`,
+  `desktop-session-jobs`) ran in an isolated desktop instance;
+  `longgop-cut` and `music-structure` need their media copied into the
+  worktree's `scratch/` first.
+
+### Lessons paid for in this round
+
+- **A real production is the best test.** One film found twelve problems
+  that unit tests and drives had passed, because each tool worked alone
+  and failed only in sequence (a trimmed song, a renamed import, a check
+  that skipped every shadowed title).
+- **An MCP client may repeat the server's instructions per tool.** Keep
+  the instructions a pointer and put the guide behind a tool.
+- **Measure over the window the claim is about.** Pace over the clip's
+  length, balance over the whole program and the music's grid over the
+  clip's excerpt each gave a number that was true and misleading.
+- **Moving a Rust target folder breaks it.** Build scripts record absolute
+  paths (Tauri's permission files); `cargo clean -p` the packages whose
+  `output` names the old path.
+- **A synthesized sound is judged over time, not by its average.** The
+  surf bed passed its spectrum, movement and repetition tests and still
+  opened on nine seconds of trough; its level second by second showed it.
+- **Editing source under a running dev server reloads every page on it**:
+  the app an agent is driving and every drive on that server. Edit between
+  test runs, or try a change in a copy outside the app's module graph.

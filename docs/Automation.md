@@ -108,8 +108,34 @@ guidance from the `help` tool (topics `overview`, `ad`, `epic_edit`,
 `social_short`, `design`, `params`, or a tool's name), from the MCP prompts
 `make_ad`, `epic_edit` and `social_short`, and from the resources
 `guide://...` and `catalog://all`. Tools carry MCP titles and behavior
-hints (read-only, destructive, open-world), so clients can run reads
-without asking ([[ADR-055 The MCP guide is generated from the tools]]).
+hints (read-only, destructive, open-world; each only where it differs from
+the spec's default), so clients can run reads without asking
+([[ADR-055 The MCP guide is generated from the tools]]).
+
+The server's instructions are four sentences: call `help` first, and the
+conventions every tool shares. The guide itself (the steps that make a
+video, tool by tool) is `help`'s overview, read once when asked for. Some
+clients copy the instructions into every tool's description: Codex's
+discovery did, and with the old 3.5 KB guide as the instructions it came to
+188,924 tokens for 156 tools; about 63,000 now. `initialize` answers 794
+bytes (was 3,760) and `tools/list` 190,654 (was 193,013)
+([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]).
+
+An argument a tool does not take is refused with the one it most likely
+meant: `seek({"time": 11})` answers `args.at is required; args.time is not
+a known argument; did you mean at? (known: at)`. The same goes for a nested
+field (`style.fontSize`: did you mean `size`?), an unknown tool and a batch
+step's command.
+
+`import_media` (`{"files": [{"src", "name"?}]}`) knows a file by the file:
+its path's or address's extension, else its first bytes (an MP4, PNG, MP3
+and the rest by their signatures), never by `name`, which is only the label
+the library shows; `{"src": "D:/promo/launch.mp4", "name": "launch"}` once
+answered `[]`. It answers one entry per file in the order given: the asset
+(`id`, `name`, `kind`, `duration`, `width`, `height`), a `.cube` as
+`{"lut_id", "name", "kind": "lut"}` for `apply_lut`, or `{"src", "name",
+"error"}` saying why that file failed. When every file fails, the call is
+an error naming each reason.
 
 Tools: every editing command (`add_media_clip`, `add_text`, `split`,
 `trim_clip`, `set_transition`, `add_captions`, `cut_ranges`, ...) with JSON
@@ -118,13 +144,18 @@ Schemas, plus `describe_project`, `list_catalog`, `import_media`, `undo`,
 PNG, drawn as the export draws it and `max_width` pixels wide, at most
 the canvas's width, so an agent can look at its work; it once read the
 viewer's canvas, which is only as big as it is on screen, and a 9:16
-project came back 222 pixels wide whatever was asked), the project tools
+project came back 222 pixels wide whatever was asked; it and the contact
+sheets draw each frame at the canvas's size, its short side at most 1080,
+and bring it down, so a title weighs what it weighs in the exported file:
+drawn at 640 wide, small type came out 3 to 21% heavier,
+[[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]), the project tools
 `list_projects`, `open_project` (by id or name; it saves the open project
 first) and `new_project` (a scratch project, so an agent's experiments
 leave the user's projects alone), both answering a summary (name, canvas,
 fps, duration, counts) rather than the whole timeline (about 20 KB on the
-launch film), `preview_frames` (one contact sheet of
-up to 24 moments, each stamped with its time), `export_video`,
+launch film), as `open_project_file` does too, `preview_frames` (one contact sheet of
+up to 24 moments, each stamped with its time; it, `preview_media` and
+`preview_motion` all take up to 8 `columns`), `export_video`,
 `export_versions` (every shape and cut-down of an ad, one file each) and
 `export_status`, and the local AI tools:
 `remove_silences`, `split_scenes`, `mark_beats`, `normalize_loudness`,
@@ -134,8 +165,12 @@ up to 24 moments, each stamped with its time), `export_video`,
 `track_motion` (pin a layer to a subject in the video under it),
 `auto_reframe` (into another canvas shape, following the subject),
 `add_sound_effect` (a built-in whoosh, pop, ding... at a time; `sounds`
-places a list, `[{name, start | end_at, volume}]`, in one call and one
-undo step, since it cannot go in `batch`),
+places a list, `[{name, start | end_at, volume, track_id}]`, in one call and one
+undo step, since it cannot go in `batch`; they land on the SFX track, made
+the first time, never in a gap on the voiceover or the music, or on
+`track_id`), `add_ambience` (a natural sound bed under the pictures, see
+Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
+and its measurements, below),
 `set_caption_look` (one of six caption looks for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `move_track` (up or down the stack, so a grade sits under the
@@ -143,12 +178,21 @@ titles), `save_project_copy` (a variant to work by hand, the original
 kept), effect parameters by place, id or type in `set_param` and the
 keyframe tools (`effects.0.amount`, `effects.glow.threshold`), `batch` steps that name clips earlier steps added (`"$1"`,
 `"$2.2"`), `check_project` (the design rules measured on the edit: title safe, the
-vertical apps' buttons, text size and reading time, the WCAG contrast of
-each title with the rendered picture behind it, caption speed, fonts,
-flashes over 3 a second, black gaps, music that stops dead (its last
-second decoded, so a track that fades out in its own audio passes), an
-ad's end card, an epic edit's cuts on the beat; shots counted on the
-busiest picture track; each finding names the fixing tool, [[ADR-068 check_project measures the picture and the sound it judges]]),
+vertical apps' buttons, text too small for a phone (named by its share of
+the frame's height; the floor is 4.5% of the short side, 5% on a tall
+frame or `kind: social_short`) and reading time, the WCAG contrast of
+every title with the rendered picture behind it at a few moments of its
+life, its box, shadow and outline counted, each low one named with its
+time and a box or outline measured on the same pixels (`contrast.lowest`
+lists every ratio), caption speed, fonts, flashes over 3 a second, black
+gaps, music that stops dead (its last second decoded, so a track that
+fades out in its own audio passes), an ad's end card, an epic edit's cuts
+on the beat; shots counted where the viewer sees them, across tracks, or
+on the busiest picture track; `ok` is true when there are no errors and
+`verdict` says what is left in words; `not_checked` says what was not
+measured and why; each finding names the fixing tool,
+[[ADR-068 check_project measures the picture and the sound it judges]],
+[[ADR-097 Checks and versions judge by the picture]]),
 `preview_motion` (consecutive frames of a stretch, with the cuts and beats
 in it, tiles up to 640 wide as `preview_frames`'), `preview_media` (an imported video's own frames, to choose
 moments), `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_fades` (sound fades
@@ -172,7 +216,15 @@ and `redo` answer the same way. `describe_project` is still the whole
 picture, keyframes included: each keyed path's keys as `[at, value]` or
 `[at, value, ease]` in timeline seconds (`"transform.x": [[3, 0.75,
 "fastIn"], [3.5, 0.16]]`; a path with more than 24 keys as `{count,
-first, last, range}`), so an edit to a key shows in its answer.
+first, last, range}`), so an edit to a key shows in its answer. A title
+shows the type that departs from the default look under `style`, named as
+`add_text` takes it (`"style": {"font": "Georgia", "maxWidth": 0.5,
+"letterSpacing": 12, "lineHeight": 0.95}`; also `align`, `italic`,
+`underline`, `stroke2`, `gradient`, `glow`, `accent`, `highlight`), beside
+its `size`, `color` and `weight` (shown whenever it is not 700). A speed
+curve shows its name and its points: `"speed_curve": "custom",
+"speed_points": [[0, 2], [0.5, 0.5], [1, 2]]`, each `[t, speed]` with `t`
+from 0 to 1 over the clip, as `set_speed_curve` takes them.
 
 Keyframes go only where something moves ([[ADR-066 Keyframes are refused where nothing moves and shown in answers]]):
 `add_keyframe` refuses a path the renderer or the mixer does not read on
@@ -217,15 +269,67 @@ on video and audio clips:
   `reverb.mix` and `echo.mix`; `describe_project` lists the effects on
   (`lowpass`, `highpass`, `reverb`, `echo`, `tape_stop`).
 
+Sound by role ([[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]]):
+
+- Every audio track is a stem: `role` `dialog`, `music`, `effects` or
+  `ambience`, set by the tool that made it (`add_voiceover`,
+  `generate_music`, `add_sound_effect`, `add_ambience`) or by `add_track`
+  and `update_track` (`role`; `auto` clears it). A track without one is
+  judged by its files (a spoken line is dialog, a made effect effects, a
+  bed ambience, an imported song music), never by its name;
+  `describe_project` names each audio track's `role`. New sounds land on
+  their stem's track; an imported song never in the voiceover's gap.
+- `add_ambience` `{"name", "start", "end" | "length", "fade_in" (default 1),
+  "fade_out" (1.5), "volume", "seed", "track_id"}` lays a bed made on this
+  computer: `wind`, `stream`, `waterfall`, `surf`, `rain`, `rocket`,
+  `city`, `roomTone` (`list_catalog` section `ambience`). Each moves as a
+  recording does (gusts, waves every 6.5 to 13 s, cars passing near and
+  far), is made at a level that sits under a voice at volume 1 (about -27
+  LUFS; waterfall -24, rocket -21, room tone -46) and loops without a seam;
+  past 300 s the file repeats. It answers `clip_ids`, `asset_id`,
+  `track_id`, `start`, `end`, `file_seconds` and `reused` (the same name
+  and seed reuse a long enough file). `{"name": "waterfall", "start": 22,
+  "end": 34, "volume": 0.7}`.
+- `preview_audio` `{"start", "end" (default start + 10, at most 30 s),
+  "solo": "mix" | "voice" | "music" | "effects" | "ambience", "loudness",
+  "audio"}` renders the stretch through the mixer export uses and answers
+  an MCP audio block (`audio/mpeg`, 96 kbps stereo, about 12 KB a second)
+  and, as text, `integrated_lufs`, `short_term_max_lufs`,
+  `momentary_max_lufs`, `true_peak_dbtp`, `per_second_lufs`, `silent`
+  (stretches under -60 LUFS), `spectrum` (`low`, `mid`, `high` shares,
+  `slope_db_per_octave`), `correlation`, `clipped`, and for the mix
+  `stems` (each stem's loudness). `loudness` hears it as `export_video`
+  with that target delivers it; `audio: false` answers the numbers alone.
+  The picture's own sound plays only in the mix.
+
 Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
 
 - `measure_loudness` `{"spec": "online"|"ebu_r128"|"atsc_a85", "loudness",
-  "start", "end"}` renders the mix as export does and answers
-  `integrated_lufs`, `loudness_range_lu`, `short_term_max_lufs`,
-  `momentary_max_lufs`, `true_peak_dbtp`, `sample_peak_dbfs`, `pass` and
-  `problems` (every spec when none is named; `clips` when the mix passes
-  full scale; a `fix` when it fails). With `loudness` it measures what
-  `export_video` at that target delivers.
+  "start", "end", "kind", "by_track", "per_second"}` renders the mix as
+  export does and answers `integrated_lufs`, `loudness_range_lu`, `range`
+  (the LRA against what `kind` usually spans: film 5-15 LU, ad 3-8, social
+  3-10, podcast 3-8, any 3-15, with a `verdict` and a note when it is flat
+  or wide), `short_term_max_lufs`, `momentary_max_lufs`, `true_peak_dbtp`,
+  `sample_peak_dbfs`, `pass` and `problems` (every spec when none is
+  named; `clips` when the mix passes full scale; a `fix` when it fails).
+  With `loudness` it measures what `export_video` at that target delivers.
+- `by_track` measures each audio track alone as mixed, with its `role`
+  (`integrated_lufs`,
+  `short_term_max_lufs`, `loudness_range_lu`; `per_second: true` adds the
+  three-second loudness every second) and the voice (the dialog tracks) over
+  the music (the music tracks, by role) in three named windows ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+  `program` (the whole stretch, the music between lines in: it reads
+  lowest), `speech` (while the voice speaks, its lines from first word to
+  last, together) and `per_line` (each line alone: `min_lu`, `median_lu`,
+  `max_lu` and where the lowest is).
+- `duck_under_speech` `{clip_id, voice_above_music_lu?, min_line_lu?,
+  depth?}` keys the music down under speech. `voice_above_music_lu` aims
+  the speech window; `min_line_lu` holds every line to at least that many
+  LU, each line's dip as deep as it needs (`depth`, or the depth the
+  speech target chose, is the least); both are met by rendering the stems
+  and measuring again. `balance` answers the speech window's numbers,
+  `target_lu` and `met`, and `per_line` (with `min_line_lu`, `each` line's
+  margin and dip).
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.
@@ -238,22 +342,36 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   {"text": "Meet OpenFrame. [pause 0.4] The editor on your own computer."},
   {"text": "Every edit is a tool an agent can call,", "voice": "am_michael"},
   {"text": "so a whole film can be made by asking.", "voice": "am_michael", "pause_after": 0.8},
-  {"text": "Free. [beat] Yours.", "at": 12, "caption": "Free and yours."}],
- "voice": "af_heart", "pronounce": {"OpenFrame": "Open Frame", "MCP": "M C P"}}
+  {"text": "Free. [beat] Yours.", "at": 12, "caption": "Free and yours.", "pace": "slow"}],
+ "voice": "af_heart", "read_as": "ad", "pronounce": {"OpenFrame": "Open Frame", "MCP": "M C P"}}
 ```
 
 - Each line is read on this machine, whole, and placed after the one
   before at its real length (or at its `at`, never overlapping) on a new
   Voiceover track, with a caption per line, as one undo step with its
   speech files.
+- Pace ([[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]]):
+  each line lands on its words a second over its speech (first word to
+  last): `read_as` `narration` (2.3-2.8, the default), `ad` (2.6-3.1) or
+  `social` (2.8-3.4), or `words_per_second` `[lowest, highest]` for the
+  call or a line. With no `speed`, a line is read at a speed guessed from
+  its syllables, measured, and read again at the speed the measure calls
+  for (up to three reads, speeds 0.6-1.3; the audio is never stretched).
+  Heart narrates at 0.6-0.9. A `speed` given is kept as given.
 - Per line: `voice` (another speaker, or a blend `"af_heart:70,af_bella:30"`),
-  `speed`, `at`, `pause_after`, `paragraph`, `caption`, `pace` (`slow`,
-  `normal`, `fast`: the pace the line is meant to have, kept with its
-  script; review then flags a slow line only under 2 syllables a second, a
-  fast one only over 7.5, and a fast line is not read again slower). The gap after a
+  `speed`, `words_per_second`, `at`, `pause_after`, `paragraph`, `caption`,
+  `pace` (`slow`, `normal`, `fast`: the pace the line is meant to have,
+  kept with its script; it moves the line's band half a word a second, for
+  the read and the review). The gap after a
   line follows its ending unless `pause_after` or the call's `gap` says
   otherwise: 0.4 s after a sentence, 0.1 s after a comma, 0.6 s after an
   ellipsis, 0.8 s after a paragraph.
+- Emphasis cannot be directed: Kokoro takes phonemes, punctuation and one
+  speed per input, and raising a word's stress (its author's own emphasis
+  mark) or quoting it measured no emphasis (ADR-096). `*word*` stars are
+  dropped from the voice and the caption, and the answer's `notes` says
+  so and what works instead: the word last in its phrase, or
+  `[pause 0.2]` before it.
 - Pause marks inside a line: `[pause]` (0.5 s), `[pause 0.4]`,
   `[pause 300ms]`, `[beat]` (1 s), `<break time="0.4s"/>`. The voice's own
   pause there is lengthened; where it ran through, the line is read in two
@@ -261,25 +379,32 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   `split`). Captions never show a mark.
 - `pronounce` respells words for the voice only; captions keep them.
 - `quality`: `best` (fp32, the default) or `draft` (8-bit); `finish`:
-  `natural` (the default: a reader's pauses, rushed lines read slower, EQ,
-  one loudness, room tone, fades, the voice compressor and a touch of
-  room), `clean` or `raw`
+  `natural` (the default: a reader's pauses, EQ, one loudness, room tone,
+  fades, the voice compressor and a touch of room), `clean` or `raw`
   ([[ADR-084 Voiceover is read at full precision and finished like a recording]]).
   `enhance: false` drops the compressor.
 - It answers `{"lines": [{"text", "start", "end", "seconds", "voice",
-  "speed", "voice_clip", "caption_clip", "pauses"?}], "end", "finish",
+  "speed", "words_per_second", "target_words_per_second", "speed_chosen"?,
+  "reads"?, "voice_clip", "caption_clip", "pauses"?}], "end", "finish",
   "engine": {"quality", "device", "dtype"}}`: cut the footage to those
   times.
 
 `review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
-timeline; a short word a letter off is `minor`), `words_per_second`,
-`syllables_per_second`, `lead_silence`, `tail_silence`,
+timeline; a short word a letter off is `minor`), `pace`
+(`target_words_per_second`, `over_speech` and `over_clip` words and
+syllables a second, `on_target`), `lead_silence`, `tail_silence`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
-`range_st`), `voice_above_music_lu`, a `verdict` (`ok` or the problems)
-and `fixes` (`{problem, tool, args}`), plus a `summary` (lines ok, the
-script's words a second, the loudness spread). A line that differs from
+`range_st`), `voice_above_music_lu` (the line window: this line, first
+word to last), a `verdict` (`ok` when nothing fails, or the problems),
+`fixes` (`{problem, tool, args}`) and `advice` (`{note, tool?, args?}`:
+notes that do not fail the line, such as a pace within a tenth of its
+band), plus a `summary` (lines ok, to fix and with advice; the lines'
+words a second, the script's words a second with the gaps between lines
+in, the lines' margins over the music, the loudness spread). Pace is
+judged in words a second against the band the line was read to;
+syllables a second only catch long words rushed. A line that differs from
 its script is heard again by Whisper small (`recheck`, default true; about
 250 MB downloaded once): each difference gains `likely`, `recognizer` (heard
 right the second time: no fix, a `notes` entry says so) or `voice`, and the
@@ -289,10 +414,12 @@ line `heard_again` and `match_again` ([[ADR-092 A voice's known script decides i
 a slower read with the advice to reword; never a placeholder.
 Automatic captions and `get_transcript` give a whole voice take with a
 known script its script's words, timed by Whisper. `retake_voiceover`
-(`{"clip_id", "text"?, "caption"?, "voice"?, "speed"?, "pronounce"?,
-"quality"?, "finish"?, "pace"?, "ripple"?}`) reads one line again in its place:
-same clip id, its caption follows, the old take leaves the library,
-`ripple` moves the lines and captions after it. `list_catalog` section
+(`{"clip_id", "text"?, "caption"?, "voice"?, "read_as"?,
+"words_per_second"?, "speed"?, "pronounce"?, "quality"?, "finish"?,
+"pace"?, "ripple"?}`) reads one line again in its place: same clip id,
+its caption follows, the old take leaves the library, `ripple` moves the
+lines and captions after it. A pace asked for (or a line whose speed was
+chosen) is landed again by measuring; a speed given before is kept. `list_catalog` section
 `voices` describes every voice for casting; `help` topic `voiceover` is
 the playbook.
 
@@ -339,10 +466,21 @@ Original music ([[Features]], Generated music;
 
 Epic edits ([[Features]], Epic edits), music-synced montages in a few calls:
 
-- `analyze_music` `{clip_id, markers?}`: tempo, beats, downbeats, phrases,
-  sections (intro, verse, build, drop, breakdown, outro, with energy),
-  per-beat energy, hits and the drop, in timeline seconds; `markers`
-  (`beats`, `bars`, `phrases`, `sections`, `drop`) also drops markers.
+- `analyze_music` `{clip_id, markers?, bpm?, first_downbeat?, cues?}`:
+  tempo, beats, downbeats, phrases, sections (intro, verse, build, drop,
+  breakdown, outro, with energy), per-beat energy, hits and the drops, in
+  timeline seconds; `markers` (`beats`, `bars`, `phrases`, `sections`,
+  `drop`) also drops markers. The whole music file is read (once per file
+  and hints; files over ten minutes, the clip's stretch and a minute either
+  side) and its grid mapped through the clip's in-point, speed or speed
+  curve and position, so a trimmed or moved clip keeps the file's bar phase
+  and drops; `source` says what was read and whether it was cached.
+  `confidence` (0..1: `tempo`, `bars`, `sections`) says how sure each
+  reading is, with a `note` naming the hint to give when one is low. Hints
+  in the file's own seconds replace what is detected: `bpm`,
+  `first_downbeat` (a bar's first beat; with `bpm`, the whole grid) and
+  `cues` (`[{at, label}]`, each part to the next; a drop cue after another
+  part is a drop).
 - `cut_to_beats` `{media: [{asset_id, in?, beats?}], grid?, beats?,
   every?, pattern?, start?, end?}`: shots end to end on the main track,
   every cut on a beat, bar or phrase.
@@ -389,8 +527,20 @@ now"}`), and the app tool `text_behind_subject` (`clip_id`,
 `export_versions` renders the deliverables in one call: `{"ratios":
 ["16:9", "9:16", "1:1"], "durations": [15, 6], "textless": true,
 "loudness": -14}` (or `versions` spelled out, each `ratio`, `duration`,
-`textless`, `fit`, `name`), one file each, the project untouched; with
-`"check": true` it answers a contact sheet of every version instead.
+`textless`, `fit`, `name`, `reframe`, `focus`), one file each, the project
+untouched; with `"check": true` it answers a contact sheet of every
+version instead, and with `"save_projects": true` it saves each version as
+a project of its own (named as its file, sharing the media) to fine-tune
+and export with `export_video`. Footage a new shape crops is framed on its
+subject and follows it ([[ADR-097 Checks and versions judge by the picture]]):
+the app looks at every full-frame shot every half second, finds what
+stands out (minimum barrier distance plus spectral residual), places the
+crop over it inside what the master showed (keyed pushes and pans kept),
+and keys the shot's position; `reframe: "center"` keeps the old centered
+crop and `focus: [{clip_id, x, y}]` puts a point of a clip's picture at
+the frame's center. The check sheet outlines in orange a subject a
+framing still cuts and lists each in `subjects`, with the focus that
+keeps it.
 Cut-downs keep the end card (`keep_end` seconds, default the end card's
 length). `captions` (on the call or a version) is `burn`, `none` or
 `as_project`: a tall version (9:16, 4:5) burns them by default, even from
@@ -427,10 +577,17 @@ animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
 0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
-`start`, `end`) writes to `<Videos>\OpenFrame\` with no dialog and never
-replaces a file, answering with the path, size and a note (what the
-loudness pass did). Past about four minutes it answers `running`; follow
-it with `export_status`. ([[ADR-052 Agents read what changed and export without a dialog]])
+`start`, `end`, `folder`) writes to `<Videos>\OpenFrame\` with no dialog, or
+into `folder` (an absolute path, created if missing), and never replaces a
+file: a name already there gets a number (`Trip (2).mp4`) and the answer's
+note says so. It answers with the path, size and a note (what the loudness
+pass did, and any new name). Past about four minutes it answers `running`;
+follow it with `export_status`. `export_versions` takes the same `folder`
+for every version, and `collect_project` (`{"folder"}`) makes its new
+`OpenFrame-<time>` folder inside the one named instead of asking in a
+dialog. In the browser build `folder` is refused with the reason, not
+ignored. ([[ADR-052 Agents read what changed and export without a dialog]],
+[[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]])
 
 Graphics and compositing, for ads and title sequences
 ([[ADR-056 Track mattes cut a layer with another clip]] to
@@ -521,8 +678,22 @@ headless drive measures gaps and transition coverage using these hooks.
 
 Analysis regression drives: `music-structure` reads the private track and
 cue sheet from `scratch/`, checking every section and drop within one bar.
-`voice-balance` uses `add_voiceover` and the music fixture, checks per-track
-LUFS, a 10 LU target and undo. Its optional `{recorded: true}` argument uses
-`speech-test.wav` when testing the balance path without synthesis; report
-that mode separately. Speech synthesis still requires its initial model
-download. MCP tool reference pages are regenerated from the tool schemas.
+`music-trimmed` generates a score shaped like it and checks that trimmed
+and moved clips keep the file's bar phase and drops, and that hints apply.
+`voice-balance` voices three lines over the music fixture, one turned
+down, and checks the three windows, the speech target, every line held
+to `min_line_lu`, summaries unless `per_second`, and the range for a film.
+`voice-pace` checks that narration lines land on 2.3-2.8 words a second,
+an ad's on 2.6-3.1, a given speed is kept, a retake lands a pace, and
+emphasis stars are dropped from voice and caption with a note. Speech synthesis still requires
+its initial model download. MCP tool reference pages are regenerated from
+the tool schemas.
+
+The `mcp-io-surface` drive checks the edge of the surface as an agent meets
+it in the web build: the short instructions and `help`'s guide, imports by
+a label without an extension, by URLs without one (a video, an animated
+GIF), a `.cube` and a text file, a renamed GIF still moving after a reload,
+`folder` refused in the browser, the "did you mean" hints, 8 columns, a
+title's type and a curve's points in answers, and an edit beside three
+compound clips answering 164 bytes. The desktop half of `folder` (Rust's
+`agent_folder` and `free_name`) is covered by `cargo test`.

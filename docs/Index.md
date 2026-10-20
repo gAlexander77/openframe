@@ -85,7 +85,11 @@ of the documentation and how agents use it as shared working memory.
   met, ranked (re-laying out for 9:16, layouts that crop, runs lost on edit).
 - [[Natural voiceover 2026-10-19]] — what a natural read measures (pace,
   pauses, melody, silence, level), what Kokoro does against it at each
-  precision, speed and voice, and what the natural finish changed
+  precision, speed and voice, what the natural finish changed, pace landed
+  in words a second, and why emphasis is beyond Kokoro
+- [[Versions keep the subject 2026-10-19]] — how export_versions finds a
+  shot's subject without a model (two saliency methods tuned on the launch
+  footage), and the trials that lost
 - [[Music generation 2026-10-19]] — how professional tracks of five
   styles are built (tempo, swing, progressions, drums, builds and drops,
   mix and master, with sources), what generate_music does with it, and
@@ -310,3 +314,23 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-094 Library tabs keep their labels only while they fit]] — balanced
   rows of labeled tabs while two rows fit in a modest share of the panel,
   else icons named by tooltips; category lists become chips below 300 px.
+- [[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]] —
+  an import's kind comes from its source, never its display name, and each
+  failed file says why; export and collect take a `folder` and never
+  replace a file; the server instructions point to `help` instead of
+  carrying the guide; unknown arguments get a "did you mean".
+- [[ADR-096 A voice's pace, a song's grid and a mix's balance are measured where they apply]] —
+  pace in words a second, landed per line by reading again; no emphasis
+  (Kokoro can't); a song's grid read from the whole file and mapped
+  through each clip; voice-over-music balance named by window (program,
+  speech, line) with a per-line floor.
+- [[ADR-097 Checks and versions judge by the picture]] — check_project
+  renders every title's backdrop and measures contrast with tested fixes,
+  floors text size by the frame's short side, judges endings by the last
+  second; export_versions frames each shot on its subject, takes a focus,
+  flags a cut subject and saves versions as projects.
+- [[ADR-098 Sound is mixed by role, beds are synthesized, an agent can listen]] —
+  audio tracks carry a role (dialog, music, effects, ambience) that places
+  new sounds and splits stems; eight ambience beds are synthesized
+  locally; preview_audio returns the mix or a stem as MP3 with numbers;
+  previews draw text at the canvas's size.

@@ -272,11 +272,11 @@ export function openProjectFile(path?: string) {
     return true;
   });
 }
-export async function collectProject(desktopOnly = false) {
-  if (desktopOnly && platform.kind !== "desktop") throw new Error("collect_project is desktop only. File > Collect files downloads project JSON on the web; media stays in the browser.");
+export async function collectProject(desktopOnly = false, folder?: string) {
+  if (desktopOnly && platform.kind !== "desktop") throw new Error(`collect_project${folder !== undefined ? " (and its folder)" : ""} is desktop only: a page cannot write into a folder of your choosing. File > Collect files downloads project JSON on the web; media stays in the browser.`);
   const id = toast("Collecting project files", "progress");
   try {
-    const result = await platform.collectProject(store.document(), progress => updateToast(id, { progress }));
+    const result = await platform.collectProject(store.document(), progress => updateToast(id, { progress }), folder);
     if (result) toast(result);
     return result;
   } finally { dismiss(id); }

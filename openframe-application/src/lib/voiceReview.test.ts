@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compareScript, diffWords, judgeHearings, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
+import { advise, compareScript, diffWords, judgeHearings, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
 
 describe("words to compare", () => {
   it("drops case and punctuation, spells numbers and says symbols", () => {
@@ -46,29 +46,30 @@ describe("script against what was heard", () => {
 });
 
 describe("verdicts", () => {
-  const ok: LineMeasure = { clipId: "c_1", start: 2, end: 6, text: "Meet OpenFrame, the editor.", voice: "af_heart", speed: 0.95, volume: 1, compressed: true, wps: 2.9, sps: 4.5, lead: 0.06, tail: 0.2, longestPause: 0.3, marks: [], lufs: -20, truePeak: -3, rangeSt: 6, overMusic: 12, differences: [] };
+  const ok: LineMeasure = { clipId: "c_1", start: 2, end: 6, text: "Meet OpenFrame, the editor.", voice: "af_heart", speed: 0.95, volume: 1, compressed: true, wps: 2.5, sps: 4.5, lead: 0.06, tail: 0.2, longestPause: 0.3, marks: [], lufs: -20, truePeak: -3, rangeSt: 6, overMusic: 12, differences: [] };
 
   it("passes a good line", () => {
     expect(verdict(ok, -20)).toEqual([]);
+    expect(advise(ok)).toEqual([]);
   });
 
   it("names the tool and the arguments that fix each problem", () => {
     const fixes = verdict({ ...ok, wps: 3.9, sps: 6.2, lead: 0.5, lufs: -23, overMusic: 5, musicClip: "c_m", rangeSt: 2, differences: [{ kind: "misheard", script: "openframe", heard: "open fame", near: 1 }] }, -20);
     expect(fixes.map((f) => f.tool)).toEqual(["retake_voiceover", "retake_voiceover", "trim_clip", "set_param", "duck_under_speech", "retake_voiceover"]);
     expect(fixes[0].args).toEqual({ clip_id: "c_1", pronounce: { OpenFrame: "Open Frame" } });
-    // At most 15% slower at once.
-    expect(fixes[1].args.speed).toBeCloseTo(0.95 * 0.85, 2);
+    // Read again to land on narration's words a second (the retake measures its speed).
+    expect(fixes[1]).toMatchObject({ problem: expect.stringMatching(/^fast: 3.9 words a second/), args: { clip_id: "c_1", words_per_second: [2.3, 2.8] } });
     expect(fixes[2].args).toEqual({ clip_id: "c_1", edge: "start", to: 2.44 });
     expect(fixes[3].args).toEqual({ clip_ids: ["c_1"], path: "volume", value: 1.413 });
-    // Ducked 7 dB lower than now: 12 LU over the music from 5.
-    expect(fixes[4].args).toEqual({ clip_id: "c_m", depth: 7 });
+    // Every line held to a minimum over the music, each dipping as it needs.
+    expect(fixes[4]).toMatchObject({ problem: expect.stringMatching(/this line/), args: { clip_id: "c_m", min_line_lu: 10 } });
   });
 
-  it("ducks deeper by what the line lacks, and less where the music has all but gone", () => {
-    expect(verdict({ ...ok, overMusic: 4, musicClip: "c_m", musicDuckDb: 6 }, -20)[0].args).toEqual({ clip_id: "c_m", depth: 14 });
+  it("holds every line to a minimum over the music, the music's present dip kept as the least", () => {
+    expect(verdict({ ...ok, overMusic: 4, musicClip: "c_m", musicDuckDb: 6 }, -20)[0].args).toEqual({ clip_id: "c_m", min_line_lu: 10, depth: 6 });
     const under = verdict({ ...ok, overMusic: 38, musicClip: "c_m", musicDuckDb: 40 }, -20);
     expect(under[0].problem).toMatch(/nearly nothing/);
-    expect(under[0].args).toEqual({ clip_id: "c_m", depth: 14 });
+    expect(under[0].args).toEqual({ clip_id: "c_m", min_line_lu: 12 });
   });
 
   it("passes minor slips", () => {
@@ -121,12 +122,39 @@ describe("verdicts", () => {
     expect(fixes[0].problem).toMatch(/home.*likely the voice/);
   });
 
+  it("judges pace in words a second against the line's band, not syllables", () => {
+    // The documentary's lines: 2.33-2.76 words a second at 3-3.6 syllables, asked for and passed.
+    for (const [wps, sps] of [[2.33, 3.1], [2.64, 3.4], [2.76, 3.6]]) {
+      expect(verdict({ ...ok, wps, sps }, -20)).toEqual([]);
+      expect(advise({ ...ok, wps, sps })).toEqual([]);
+    }
+    // Read at the help's old narrator speed: 4.17 words a second, a fix.
+    expect(verdict({ ...ok, wps: 4.17, sps: 5.2 }, -20)[0].problem).toMatch(/^fast: 4.17/);
+  });
+
   it("holds a line to the pace it was meant to have", () => {
-    const tagline = { ...ok, sps: 2.6 };
-    expect(verdict(tagline, -20).map((f) => f.problem)).toEqual([expect.stringMatching(/^slow/)]);
+    const tagline = { ...ok, wps: 1.9, sps: 2.6 };
+    expect(verdict(tagline, -20).map((f) => f.problem)).toEqual([expect.stringMatching(/^slow: 1.9 words a second/)]);
     expect(verdict({ ...tagline, pace: "slow" }, -20)).toEqual([]);
-    expect(verdict({ ...tagline, sps: 1.5, pace: "slow" }, -20)).toHaveLength(1);
-    expect(verdict({ ...ok, sps: 6.4, pace: "fast" }, -20)).toEqual([]);
-    expect(verdict({ ...ok, sps: 6.4 }, -20)).toHaveLength(1);
+    expect(verdict({ ...tagline, wps: 1.5, pace: "slow" }, -20)).toHaveLength(1);
+    expect(verdict({ ...ok, wps: 3.3, pace: "fast" }, -20)).toEqual([]);
+    expect(verdict({ ...ok, wps: 3.3 }, -20)).toHaveLength(1);
+    // As asked: an ad's band.
+    expect(verdict({ ...ok, wps: 3.0, asked: [2.6, 3.1] }, -20)).toEqual([]);
+  });
+
+  it("tells advice from a miss", () => {
+    // A tenth outside the band passes, with a retake to try.
+    expect(verdict({ ...ok, wps: 2.2 }, -20)).toEqual([]);
+    expect(advise({ ...ok, wps: 2.2 })[0]).toMatchObject({ note: expect.stringMatching(/passes/), tool: "retake_voiceover", args: { clip_id: "c_1", words_per_second: [2.3, 2.8] } });
+    // A speed already chosen for the band: the voice's limit, advice without a retake.
+    const limit = { ...ok, wps: 3.2, speedChosen: true };
+    expect(verdict(limit, -20)).toEqual([]);
+    expect(advise(limit)[0].note).toMatch(/natural speeds.*\[pause\]/);
+    // Short words read on target sound drawn out: a note.
+    expect(advise({ ...ok, wps: 2.4, sps: 2.4 })[0].note).toMatch(/^short words/);
+    // Long words rushed at on-target words a second: a fix aiming 5 syllables a second.
+    const rushed = verdict({ ...ok, wps: 2.7, sps: 6 }, -20)[0];
+    expect(rushed).toMatchObject({ problem: expect.stringMatching(/^rushed/), args: { clip_id: "c_1", words_per_second: [2, 2.5] } });
   });
 });

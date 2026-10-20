@@ -58,7 +58,7 @@ function placeMusic(p: Project, o: MusicOptions, mix: Asset, stems: Partial<Reco
     for (const s of STEMS) {
       const a = stems[s];
       if (!a) continue;
-      const t = createTrack("audio", STEM_NAMES[s]);
+      const t = { ...createTrack("audio", STEM_NAMES[s]), role: "music" as const };
       p = ops.addTrack(p, t);
       const r = placeAsset(p, a, frame, t.id, false);
       p = r.project;
@@ -87,7 +87,9 @@ export async function generateMusic(args: Record<string, unknown>, onProgress?: 
   const assets = await adoptAndImport(list);
   signal.throwIfAborted();
   if (assets.length !== list.length) throw new Error("The music was made but could not be imported; the app shows why.");
-  const [mix, ...rest] = assets;
+  // A score is music (ADR-098): its track is the music stem, never a gap on the voiceover.
+  const made = new Set(assets.map((a) => a.id));
+  const [mix, ...rest] = assets.map((a) => ({ ...a, role: "music" as const }));
   const stemAssets: Partial<Record<Stem, Asset>> = files.stems ? Object.fromEntries(STEMS.map((s, i) => [s, rest[i]])) : {};
   const placed = o.place !== "none";
   const cue = cueSheet(plan, placed ? o.start : 0);
@@ -96,7 +98,7 @@ export async function generateMusic(args: Record<string, unknown>, onProgress?: 
   let markers = 0;
   if (placed || o.markers.length) {
     edit(`Generate music`, (p0) => {
-      let p = p0;
+      let p = { ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const } : a)) };
       if (placed) ({ project: p, clipId, stemClips } = placeMusic(p, o, mix, stemAssets));
       const before = p.markers.length;
       p = markMusic(p, cue, o.markers);

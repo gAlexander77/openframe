@@ -6,14 +6,18 @@
 // however they connect (ADR-008).
 
 import { SFX } from "./sfx";
-import { DEFAULT_SPEED, DEFAULT_VOICE, VOICES } from "./tts";
+import { AMBIENCE, AMBIENCE_IDS, BED_MAX_SECONDS } from "./ambience";
+import { DEFAULT_VOICE, VOICES } from "./tts";
+import { PACE_BANDS, READ_AS, readBand } from "./voicePace";
 import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
 import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
-import { SPEC_IDS } from "./analysis/delivery";
+import { PROGRAM_KINDS, SPEC_IDS } from "./analysis/delivery";
+import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionRatio, type VersionSpec } from "./versions";
+import { REFRAMES, type Focus, type Reframe } from "./reframe";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -43,6 +47,8 @@ export interface McpHost {
   describe(): unknown;
   projectJson(): unknown;
   catalog(): unknown;
+  /** One entry per file, in order: the asset, a LUT ({lut_id}), or
+   * {src, name, error}; empty when the project closed meanwhile. */
   importMedia(files: { src: string; name?: string }[]): Promise<unknown>;
   undo(): unknown;
   redo(): unknown;
@@ -54,9 +60,12 @@ export interface McpHost {
   sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
+  /** A stretch of the sound rendered as export renders it (preview_audio):
+   * an MP3 (base64; absent when audio is false) and its measurements. */
+  audition(options: { start: number; end?: number; solo?: string; loudness?: number; audio?: boolean }): Promise<{ data?: string; mimeType?: string; summary: unknown }>;
   /** The design check (lib/designCheck.ts) of the open project; the app
-   * measures the picture behind each title and each music clip's last
-   * second first, so it may take a moment. */
+   * renders the picture behind every title at a few moments and decodes
+   * each music clip's last seconds first, so it may take a moment. */
   checkProject(kind: string): unknown | Promise<unknown>;
   /** Export without a dialog (desktop); resolves when the file is done. */
   exportVideo(options: Record<string, unknown>): Promise<unknown>;
@@ -64,8 +73,11 @@ export interface McpHost {
   exportStatus(): unknown;
   /** export_versions: one file per version, the project left as it is. */
   exportVersions(options: VersionsRequest): Promise<unknown>;
-  /** One JPEG (base64) of every version at a few moments, nothing exported. */
-  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<string>;
+  /** One JPEG (base64) of every version at a few moments, nothing
+   * exported, and where each version's framing cuts a shot's subject. */
+  versionsSheet(options: VersionsRequest & { at?: number[] }): Promise<{ image: string; subjects?: unknown }>;
+  /** Each version saved as a project of its own, nothing exported. */
+  saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
   voiceover(lines: Record<string, unknown>[], options: Record<string, unknown>): Promise<unknown>;
   /** Run a local AI tool (src/state/ai.ts) by its automation name. */
@@ -102,7 +114,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
+export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -113,6 +125,8 @@ export interface VersionsRequest {
   resolution?: string;
   quality?: string;
   loudness?: number;
+  /** Desktop: the absolute folder to write into instead of the Videos folder. */
+  folder?: string;
 }
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
@@ -195,6 +209,19 @@ export function projectSummary(d: unknown): unknown {
 /** Options with the unset ones dropped, so the tool's defaults apply. */
 const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined));
 
+/** export_versions' focus: clips framed by hand, each the point of its
+ * picture to keep at the frame's center (lib/reframe.ts). */
+const FOCUS_SCHEMA: JsonSchema = {
+  type: "array",
+  description: "Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say",
+  items: {
+    type: "object",
+    properties: { clip_id: { type: "string", description: "A full-frame video or picture clip" }, x: { type: "number", minimum: 0, maximum: 1, description: "Across its picture, 0 left to 1 right" }, y: { type: "number", minimum: 0, maximum: 1, description: "Down its picture, 0 top to 1 bottom" } },
+    required: ["clip_id"],
+    additionalProperties: false,
+  },
+};
+
 interface AppTool {
   name: string;
   description: string;
@@ -203,7 +230,7 @@ interface AppTool {
 }
 
 interface ToolResult {
-  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string })[];
+  content: ({ type: "text"; text: string } | { type: "image"; data: string; mimeType: string } | { type: "audio"; data: string; mimeType: string })[];
   isError?: boolean;
 }
 
@@ -249,7 +276,14 @@ function musicSchema(files: boolean): JsonSchema {
   return obj(p, ["style"]);
 }
 
-const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = []): JsonSchema => ({ type: "object", properties, required, additionalProperties: false });
+const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = []): JsonSchema => ({ type: "object", properties, ...(required.length ? { required } : {}), additionalProperties: false });
+
+/** Where an agent's export goes instead of the Videos folder (ADR-095). */
+const FOLDER: JsonSchema = { type: "string", description: "An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it)" };
+const FOLDER_DESKTOP_ONLY = "folder is desktop only: this build (the browser) cannot write into a folder of your choosing. Leave folder out and ask the user to export from the app, or use the desktop app.";
+
+/** A contact sheet's tiles a row: one limit for every preview tool. */
+const columns = (dflt: number): JsonSchema => ({ type: "integer", minimum: 1, maximum: 8, description: `Tiles a row, at most 8; default ${dflt}` });
 
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
@@ -257,7 +291,7 @@ export const APP_TOOLS: AppTool[] = [
     name: "help",
     description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks with design rules), design (rules of thumb that make a video look professional), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",
     inputSchema: obj({ topic: { type: "string", description: `overview (default), ${HELP_TOPICS.slice(1).join(", ")}, or a tool's name` } }),
-    call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), instructionsFor(h)) }] }),
+    call: (h, a) => ({ content: [{ type: "text", text: helpText(a.topic === undefined ? undefined : String(a.topic), listTools(), guideFor(h)) }] }),
   },
   {
     name: "describe_project",
@@ -268,18 +302,27 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "list_catalog",
     description:
-      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.",
+      "Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.",
     inputSchema: obj({ section: { type: "string", description: "A section name from the index" }, query: { type: "string", description: "Search words, for section stickers" } }),
     call: (_h, a) => json(fullCatalog(a.section === undefined ? undefined : String(a.section), a.query === undefined ? undefined : String(a.query))),
   },
   {
     name: "import_media",
-    description: "Import media files into the project by absolute path (desktop) or URL. Returns the new assets with their ids, for add_media_clip.",
+    description:
+      "Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.",
     inputSchema: obj(
-      { files: { type: "array", description: "Files to import", items: obj({ src: { type: "string", description: "Absolute path or URL" }, name: { type: "string", description: "Display name" } }, ["src"]) } },
+      { files: { type: "array", description: "Files to import", items: obj({ src: { type: "string", description: "Absolute path or URL" }, name: { type: "string", description: "The name the library shows (default the file's name); any text, it does not decide the format" } }, ["src"]) } },
       ["files"],
     ),
-    call: async (h, a) => json(await h.importMedia(a.files as { src: string; name?: string }[])),
+    call: async (h, a) => {
+      const files = a.files as { src: string; name?: string }[];
+      if (!files.length) throw new Error("files needs at least one file");
+      const got = (await h.importMedia(files)) as { src?: string; error?: string }[];
+      // Every file failed: an error that says why, never an empty answer.
+      if (!got.length) throw new Error("Nothing was imported: the project closed during the import.");
+      if (got.every((x) => x.error)) throw new Error(`Nothing was imported. ${got.map((x) => `${x.src}: ${x.error}`).join("; ")}`);
+      return json(got);
+    },
   },
   { name: "undo", description: "Undo the last edit; returns what that changed back.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.undo())) },
   { name: "redo", description: "Redo the last undone edit; returns what changed.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.redo())) },
@@ -300,7 +343,16 @@ export const APP_TOOLS: AppTool[] = [
           .map((p) => ({ id: p.id, name: p.name, updated: new Date(p.updatedAt).toISOString(), duration: +p.duration.toFixed(2), canvas: `${p.width}x${p.height}`, ...(p.open ? { open: true } : {}) })),
       ),
   },
-  ...PROJECT_FILE_COMMANDS.map(c => ({ name: c.name, description: c.description, inputSchema: c.input, call: async (h: McpHost, a: Record<string, unknown>) => json(await h.exec(c.name, a)) })),
+  ...PROJECT_FILE_COMMANDS.map((c) => ({
+    name: c.name,
+    description: c.description,
+    inputSchema: c.input,
+    call: async (h: McpHost, a: Record<string, unknown>) => {
+      const r = (await h.exec(c.name, a)) as { project?: unknown } | null;
+      // open_project_file answers a summary, as open_project does, not the timeline.
+      return json(r && typeof r === "object" && r.project ? { ...r, project: projectSummary(r.project) } : r);
+    },
+  })),
   {
     name: "open_project",
     description: "Save the project in the editor and open another, by id or by name (any case; the most recently edited wins a tie). Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.",
@@ -315,7 +367,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "save_project_copy",
-    description: "Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.",
+    description: "Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand, or a try that may be thrown away; the original stays as it was. For another shape of the same film, export_versions with save_projects saves it already laid out in that shape, to fine-tune.",
     inputSchema: obj({ name: { type: "string", description: "The copy's name, e.g. 'Ember Roast 16x9'" }, open: { type: "boolean", description: "Open the copy to edit it (default true)" } }, ["name"]),
     call: async (h, a) => json(await h.saveCopy(String(a.name), a.open !== false)),
   },
@@ -331,7 +383,7 @@ export const APP_TOOLS: AppTool[] = [
     inputSchema: obj(
       {
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
-        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Width of each frame, default 320" },
       },
       ["times"],
@@ -350,7 +402,7 @@ export const APP_TOOLS: AppTool[] = [
         start: { type: "number", minimum: 0, description: "Timeline seconds" },
         end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 2" },
         fps: { type: "number", minimum: 1, maximum: 30, description: "Frames a second, default 8" },
-        columns: { type: "integer", minimum: 1, maximum: 8, description: "Default 6" },
+        columns: columns(6),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 240" },
       },
       ["start"],
@@ -360,13 +412,15 @@ export const APP_TOOLS: AppTool[] = [
       if (!(end > start)) throw new Error("end must be after start");
       const n = Math.min(36, Math.max(2, Math.round((end - start) * fps) + 1));
       const times = Array.from({ length: n }, (_, i) => +(start + ((end - start) * i) / (n - 1)).toFixed(3));
+      // The sheet first: with no project open it says so.
+      const image = await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6));
       const d = h.describe() as { tracks: { main?: boolean; clips: { start: number }[] }[]; markers: { at: number; label: string }[] };
       const inside = (t: number) => t >= start && t <= end;
       const cuts = (d.tracks.find((t) => t.main)?.clips ?? []).map((c) => c.start).filter((t) => t > 0 && inside(t));
       const markers = d.markers.filter((m) => inside(m.at)).map((m) => ({ at: m.at, label: m.label }));
       return {
         content: [
-          { type: "image", data: await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6)), mimeType: "image/jpeg" },
+          { type: "image", data: image, mimeType: "image/jpeg" },
           { type: "text", text: JSON.stringify({ frames: times, cuts, markers }) },
         ],
       };
@@ -380,7 +434,7 @@ export const APP_TOOLS: AppTool[] = [
         asset_id: { type: "string", description: "A video or picture asset id from describe_project or import_media" },
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Source seconds, up to 24" },
         count: { type: "integer", minimum: 2, maximum: 24, description: "Frames spread over the file when times is not given; default 12" },
-        columns: { type: "integer", minimum: 1, maximum: 6, description: "Default 4" },
+        columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Default 320" },
       },
       ["asset_id"],
@@ -395,15 +449,34 @@ export const APP_TOOLS: AppTool[] = [
     },
   },
   {
+    name: "preview_audio",
+    description:
+      "Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.",
+    inputSchema: obj(
+      {
+        start: { type: "number", minimum: 0, description: "Timeline seconds" },
+        end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 10, at most start + 30" },
+        solo: { type: "string", enum: ["mix", "voice", "music", "effects", "ambience"], description: "What to hear: the whole mix (default) or one stem by role" },
+        loudness: { type: "number", minimum: -40, maximum: -5, description: "Hear it as export_video with this loudness (LUFS) delivers it; default as mixed" },
+        audio: { type: "boolean", description: "false: the measurements only, no MP3 (default true)" },
+      },
+      ["start"],
+    ),
+    call: async (h, a) => {
+      const r = await h.audition(given({ start: Number(a.start), end: a.end === undefined ? undefined : Number(a.end), solo: a.solo, loudness: a.loudness, audio: a.audio }) as { start: number });
+      return { content: [...(r.data ? [{ type: "audio" as const, data: r.data, mimeType: r.mimeType ?? "audio/mpeg" }] : []), { type: "text", text: JSON.stringify(r.summary) }] };
+    },
+  },
+  {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat (cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.",
     inputSchema: obj({ kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" } }),
     call: async (h, a) => json(await h.checkProject(String(a.kind ?? "any"))),
   },
   {
     name: "export_video",
     description:
-      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
     inputSchema: obj({
       name: { type: "string", description: "File name without extension; default the project's name" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif", "mp3", "m4a", "wav"], description: "Default mp4 (H.264 + AAC); mp3, m4a and wav are sound only" },
@@ -413,9 +486,11 @@ export const APP_TOOLS: AppTool[] = [
       start: { type: "number", minimum: 0, description: "Export from this second" },
       end: { type: "number", minimum: 0, description: "Export to this second" },
       captions: { type: "string", enum: ["burn", "srt", "both", "none"], description: "The captions: burn into the picture (default), srt file beside it, both, or none" },
+      folder: FOLDER,
     }),
     call: async (h, a) => {
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions }));
+      if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, folder: a.folder }));
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
@@ -433,11 +508,13 @@ export const APP_TOOLS: AppTool[] = [
 // Speech: the voice, its pace, precision and finish (state/tts.ts).
 const VOICE_IDS = VOICES.map((v) => v.id).join(", ");
 const VOICE: JsonSchema = { type: "string", description: `Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default ${DEFAULT_VOICE}` };
-const SPEED: JsonSchema = { type: "number", minimum: 0.5, maximum: 2, description: `1 is the model's own pace; default ${DEFAULT_SPEED}` };
+const SPEED: JsonSchema = { type: "number", minimum: 0.5, maximum: 2, description: "1 is the model's own pace; kept as given. Default: chosen per line to land on its words a second (Heart narrates at 0.6-0.9)" };
+const WPS: JsonSchema = { type: "array", items: { type: "number", minimum: 1, maximum: 5 }, description: "[lowest, highest] words a second over each line's speech, first word to last (narration [2.3, 2.8]); the speed is chosen to land on it" };
+const READ_AS_SCHEMA: JsonSchema = { type: "string", enum: READ_AS, description: `The kind of read, whose words a second lines land on: ${READ_AS.map((k) => `${k} ${PACE_BANDS[k].join("-")}`).join(", ")} (default narration)` };
 const PRONOUNCE: JsonSchema = { type: "object", description: 'Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"}' };
 const QUALITY: JsonSchema = { type: "string", enum: ["best", "draft"], description: "best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download" };
 const FINISH: JsonSchema = { type: "string", enum: ["natural", "clean", "raw"], description: "natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed" };
-const PACE: JsonSchema = { type: "string", enum: ["slow", "normal", "fast"], description: "The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast; review_voiceover then flags it only past 2 or 7.5 syllables a second, and a fast line is not read again slower for being rushed (default normal)" };
+const PACE: JsonSchema = { type: "string", enum: ["slow", "normal", "fast"], description: "The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast moves its words a second half a word down or up, for the read and the review (default normal)" };
 
 // The local AI tools: analysis on this machine, then one undoable edit each
 // ([[AI tools]], ADR-019). They take a while on long clips.
@@ -492,21 +569,32 @@ APP_TOOLS.push(
   {
     name: "measure_loudness",
     description:
-      "Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: \"ebu_r128\", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.",
+      "Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA) with range (the LRA against what kind usually spans: film 5-15 LU, ad 3-8, social 3-10, podcast 3-8; a very flat or wide mix gets a note), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: \"ebu_r128\", loudness: -23}. by_track measures each audio track alone as mixed (integrated, loudest three seconds, LRA) and, with a Voiceover track and music, the voice over the music in three named windows that differ by design: program (the whole stretch, music between lines included), speech (while the voice speaks, its lines together) and per_line (each line alone: lowest, median, highest, and where the lowest is). start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.",
     inputSchema: obj({
-      by_track: { type: "boolean", description: "Report each audio track as mixed (integrated and three-second loudness), plus Voiceover minus other audio tracks excluding SFX; ignores master normalization for stems" },
+      by_track: { type: "boolean", description: "Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line" },
+      per_second: { type: "boolean", description: "With by_track, each track's three-second loudness every second too (long; default false: summaries only)" },
+      kind: { type: "string", enum: PROGRAM_KINDS, description: "What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default)" },
       spec: { type: "string", enum: SPEC_IDS, description: "Delivery spec to check; default all three" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Measure as export_video with this loudness (LUFS) delivers it; default as mixed" },
       start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
       end: { type: "number", minimum: 0, description: "Timeline seconds, default the end" },
     }),
-    call: async (h, a) => json(await h.ai("loudnessReport", a.spec === undefined ? "" : String(a.spec), given({ loudness: a.loudness, start: a.start, end: a.end, by_track: a.by_track }))),
+    call: async (h, a) => json(await h.ai("loudnessReport", a.spec === undefined ? "" : String(a.spec), given({ loudness: a.loudness, start: a.start, end: a.end, by_track: a.by_track, per_second: a.per_second, kind: a.kind }))),
   },
   {
     name: "duck_under_speech",
-    description: "Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). voice_above_music_lu measures the rendered voice and bed, selects a depth, and reports the achieved difference.",
-    inputSchema: obj({ clip_id: { type: "string", description: "The music clip" }, voice_above_music_lu: { type: "number", minimum: 0, maximum: 30, description: "Measure and choose attenuation (0-40 dB) to place voice this many LU above music over the detected speech window; overrides depth and reports achieved balance" }, depth: { type: "number", minimum: 1, maximum: 40, description: "dB to lower, default 12" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("duckUnderSpeech", String(a.clip_id), given({ depth: a.depth, voice_above_music_lu: a.voice_above_music_lu }))),
+    description:
+      "Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the least dip). Both are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins (with min_line_lu, each line with its own dip). Plain depth lowers by that many dB without measuring.",
+    inputSchema: obj(
+      {
+        clip_id: { type: "string", description: "The music clip" },
+        voice_above_music_lu: { type: "number", minimum: 0, maximum: 30, description: "LU the voice sits over the music while it speaks (all lines together; 10-15 for a promo); measured and met, overrides depth" },
+        min_line_lu: { type: "number", minimum: 0, maximum: 30, description: "LU every line sits over the music at least (each line alone, its first word to its last); a line short of it dips deeper, measured and met" },
+        depth: { type: "number", minimum: 1, maximum: 40, description: "dB to lower, default 12; with min_line_lu alone, the least dip under every line (default none)" },
+      },
+      ["clip_id"],
+    ),
+    call: async (h, a) => json(await h.ai("duckUnderSpeech", String(a.clip_id), given({ depth: a.depth, voice_above_music_lu: a.voice_above_music_lu, min_line_lu: a.min_line_lu }))),
   },
   {
     name: "reduce_noise",
@@ -551,21 +639,23 @@ APP_TOOLS.push(
   },
   {
     name: "add_sound_effect",
-    description: `Add built-in sound effects, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. One lands on an audio track at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. \`sounds\` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.`,
+    description: `Add built-in sound effects, made on this computer: ${Object.entries(SFX).map(([k, x]) => `${k} (${x.label}, ${x.seconds} s)`).join(", ")}. One lands at \`start\` (default the playhead), or so that it ENDS at \`end_at\`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. They land on the effects stem: an SFX track (made the first time, reused after; overlapping sounds get a second SFX track), never a gap on the voiceover or the music; track_id puts them on a track of your own. \`sounds\` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. add_ambience lays continuous natural sound (wind, water, rain, city, a rocket's rumble, room tone). Answers the new clip ids.`,
     inputSchema: obj({
       name: { type: "string", enum: Object.keys(SFX), description: "Which effect (list_catalog section sound_effects has their lengths)" },
       start: { type: "number", minimum: 0, description: "Timeline seconds the sound starts" },
       end_at: { type: "number", minimum: 0, description: "Timeline seconds the sound ends instead (start = end_at - its length)" },
       volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1" },
+      track_id: { type: "string", description: "An audio track to put them on (default the SFX track); where a sound would overlap one there, a new track of its role just below" },
       sounds: {
         type: "array",
-        description: "Many sounds in one call instead of name: each with its own name, start or end_at, and volume",
+        description: "Many sounds in one call instead of name: each with its own name, start or end_at, volume and track_id",
         items: obj(
           {
             name: { type: "string", enum: Object.keys(SFX), description: "Which effect" },
             start: { type: "number", minimum: 0, description: "Timeline seconds it starts (default the playhead)" },
             end_at: { type: "number", minimum: 0, description: "Timeline seconds it ends instead" },
             volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, default 1" },
+            track_id: { type: "string", description: "Its audio track; default the call's track_id, else the SFX track" },
           },
           ["name"],
         ),
@@ -573,13 +663,37 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       if ((a.name === undefined) === (a.sounds === undefined)) throw new Error("give name (one sound) or sounds (a list), not both");
-      const list = (a.sounds ?? [a]) as { name: string; start?: number; end_at?: number; volume?: number }[];
+      const list = (a.sounds ?? [a]) as { name: string; start?: number; end_at?: number; volume?: number; track_id?: string }[];
       if (!list.length) throw new Error("sounds needs at least one sound");
       const before = h.describe();
-      const cues = list.map((x) => given({ name: x.name, at: x.start, endAt: x.end_at, volume: x.volume }));
+      const cues = list.map((x) => given({ name: x.name, at: x.start, endAt: x.end_at, volume: x.volume, trackId: x.track_id ?? a.track_id }));
       const r = (await h.ai("addSoundEffects", "", { sounds: cues })) as { clipIds: string[] };
       const ids = a.sounds === undefined ? { clip_id: r.clipIds[0] } : { clip_ids: r.clipIds };
       return json({ ...ids, ...(describeChanges(before, h.describe()) as object) });
+    },
+  },
+  {
+    name: "add_ambience",
+    description: `Lay continuous natural sound under the pictures, made on this computer (no recordings, nothing downloaded): ${AMBIENCE_IDS.map((k) => `${k} (${AMBIENCE[k].blurb})`).join("; ")}. It runs from start (default the playhead) to end, or for length seconds (default to the end of the timeline), faded in and out (fade_in 1 s and fade_out 1.5 s by default), on the Ambience track (made the first time, reused after; never the voiceover, the music or the effects). Each bed moves slowly and at random as a recording does (gusts, waves arriving every 7 to 13 s, cars passing near and far) and its file loops without a seam; a bed past ${BED_MAX_SECONDS} s repeats it. Made at a level that sits under a voice with volume 1 (about -27 LUFS; the rocket -21, room tone -46): volume 0.5 is 6 dB quieter. The same name and seed reuse the file; another seed is another take. preview_audio with solo ambience hears it. Answers the clip ids, the file's asset id and the track. It cannot go in batch.`,
+    inputSchema: obj(
+      {
+        name: { type: "string", enum: AMBIENCE_IDS, description: "Which bed (list_catalog section ambience describes each)" },
+        start: { type: "number", minimum: 0, description: "Timeline seconds it starts; default the playhead" },
+        end: { type: "number", minimum: 0, description: "Timeline seconds it ends; default the end of the timeline" },
+        length: { type: "number", minimum: 0.5, description: "Seconds it lasts, instead of end" },
+        fade_in: { type: "number", minimum: 0, description: "Seconds it fades in over; default 1" },
+        fade_out: { type: "number", minimum: 0, description: "Seconds it fades out over; default 1.5" },
+        volume: { type: "number", minimum: 0, maximum: 4, description: "Gain, 1 as made (0.5 is about -6 dB); default 1" },
+        seed: { type: "integer", minimum: 1, description: "Another take of the same bed (default 1)" },
+        track_id: { type: "string", description: "An audio track to put it on; default the Ambience track" },
+      },
+      ["name"],
+    ),
+    call: async (h, a) => {
+      if (a.end !== undefined && a.length !== undefined) throw new Error("give end or length, not both");
+      const before = h.describe();
+      const r = (await h.ai("addAmbience", "", given({ name: a.name, start: a.start, end: a.end, length: a.length, fadeIn: a.fade_in, fadeOut: a.fade_out, volume: a.volume, seed: a.seed, trackId: a.track_id }))) as object;
+      return json({ ...r, ...(describeChanges(before, h.describe()) as object) });
     },
   },
   {
@@ -613,15 +727,22 @@ APP_TOOLS.push(
   {
     name: "analyze_music",
     description:
-      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest, or null). Sections may be as short as two bars and their bounds follow bars or phrases. All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every detected drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
+      "Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {\"clip_id\": \"c_3\", \"markers\": [\"bars\", \"drop\"]}.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The music clip (audio, or a video with sound)" },
         markers: { type: "array", items: { type: "string", enum: ["beats", "bars", "phrases", "sections", "drop"] }, description: "Kinds of markers to add (default none)" },
+        bpm: { type: "number", minimum: 40, maximum: 240, description: "The tempo, when known: beats are tracked at it" },
+        first_downbeat: { type: "number", minimum: 0, description: "A bar's first beat, in the music file's own seconds (0 for a score that starts on a bar): sets where bars start; with bpm, the whole grid" },
+        cues: {
+          type: "array",
+          description: "The parts, when known, in the music file's own seconds: each starts at its at and runs to the next; a drop cue after another part is a drop. [{at: 0, label: 'intro'}, {at: 4, label: 'build'}, {at: 8, label: 'drop'}, {at: 32, label: 'breakdown'}, {at: 36, label: 'drop'}, {at: 48, label: 'outro'}]",
+          items: obj({ at: { type: "number", minimum: 0, description: "Source seconds the part starts" }, label: { type: "string", enum: ["intro", "verse", "build", "drop", "breakdown", "outro"], description: "What the part is" } }, ["at", "label"]),
+        },
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers }))),
+    call: async (h, a) => json(await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers, bpm: a.bpm, first_downbeat: a.first_downbeat, cues: a.cues }))),
   },
   {
     name: "remove_background",
@@ -632,13 +753,13 @@ APP_TOOLS.push(
   },
   {
     name: "text_to_speech",
-    description: `Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. Voices (list_catalog section voices describes each): ${VOICE_IDS}. The first use downloads the speech model.`,
-    inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: VOICE, speed: SPEED, pronounce: PRONOUNCE, quality: QUALITY, finish: FINISH }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish }))),
+    description: `Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. With no speed given it lands on a narrator's words a second (2.3-2.8; pace slow or fast moves it half a word), its speed chosen by reading and measuring. Voices (list_catalog section voices describes each): ${VOICE_IDS}. The first use downloads the speech model.`,
+    inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: VOICE, pace: PACE, speed: SPEED, pronounce: PRONOUNCE, quality: QUALITY, finish: FINISH }, ["clip_id"]),
+    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, pace: a.pace, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish }))),
   },
   {
     name: "add_voiceover",
-    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.`,
+    description: `Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), or words_per_second [lowest, highest], per call or per line; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: ${VOICE_IDS}. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.`,
     inputSchema: obj(
       {
         lines: {
@@ -650,7 +771,8 @@ APP_TOOLS.push(
               caption: { type: "string", description: "What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL)" },
               at: { type: "number", minimum: 0, description: "Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before" },
               voice: { ...VOICE, description: "This line's voice (another speaker); default the call's" },
-              speed: { ...SPEED, description: "This line's speed; default the call's" },
+              speed: { ...SPEED, description: "This line's speed, kept as given; default the call's, or chosen to land on its words a second" },
+              words_per_second: { ...WPS, description: "This line's [lowest, highest] words a second; default the call's" },
               pause_after: { type: "number", minimum: 0, maximum: 10, description: "Seconds of silence before the next line (overrides gap and the line's ending)" },
               paragraph: { type: "boolean", description: "This line ends a paragraph: 0.8 s before the next" },
               pace: PACE,
@@ -659,7 +781,9 @@ APP_TOOLS.push(
           ),
         },
         voice: { ...VOICE, description: `Voice id, or a blend of voices' styles ("af_heart:60,af_bella:40"); default ${DEFAULT_VOICE}, the most natural` },
-        speed: { ...SPEED, description: `1 is the model's own pace (about 3.3 words a second inside a line); default ${DEFAULT_SPEED}, a narrator's` },
+        read_as: READ_AS_SCHEMA,
+        words_per_second: WPS,
+        speed: { ...SPEED, description: "Every line's speed, kept as given (1 is the model's own pace, about 4.6 syllables a second); default: chosen per line to land on its words a second" },
         pronounce: PRONOUNCE,
         start: { type: "number", minimum: 0, description: "Seconds the first line starts, default 0" },
         gap: { type: "number", minimum: 0, description: "Seconds between every pair of lines, instead of each line's ending choosing" },
@@ -673,14 +797,20 @@ APP_TOOLS.push(
       ["lines"],
     ),
     call: async (h, a) => {
-      const lines = (a.lines as Record<string, unknown>[]).map((l) => given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, pauseAfter: l.pause_after, paragraph: l.paragraph, pace: l.pace }));
-      return json(await h.voiceover(lines, given({ voice: a.voice, speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
+      const lines = (a.lines as Record<string, unknown>[]).map((l, i) => {
+        try {
+          return given({ text: l.text, caption: l.caption, at: l.at, voice: l.voice, speed: l.speed, wps: readBand(l.words_per_second), pauseAfter: l.pause_after, paragraph: l.paragraph, pace: l.pace });
+        } catch (e) {
+          throw new Error(`lines[${i}]: ${(e as Error).message}`);
+        }
+      });
+      return json(await h.voiceover(lines, given({ voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
     },
   },
   {
     name: "review_voiceover",
     description:
-      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. A line meant to be slow or fast (add_voiceover's pace) is held to that. The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
+      "Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last, and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves it), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line" },
       music: { type: "boolean", description: "Measure each line's margin over the music tracks under it (default true)" },
@@ -691,14 +821,16 @@ APP_TOOLS.push(
   {
     name: "retake_voiceover",
     description:
-      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice. When the rushed-line rule chooses a speed, speed_chosen is true and a note explains it.",
+      "Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, words_per_second or read_as (the speed is then chosen by reading and measuring, as add_voiceover does), a speed (kept as given) or pronunciations (the pronounce fix review_voiceover suggests). With none of these, a line whose speed was chosen is landed on its words a second again, and a line read at a speed given keeps it. The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second; when the speed was chosen, speed_chosen is true and a note says how many reads it took.",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The voice clip (add_voiceover's voice_clip)" },
         text: { type: "string", description: "New words, with pause marks; default the line's own" },
         caption: { type: "string", description: "What the caption shows, when it should differ from the words; default the new text as written" },
         voice: VOICE,
-        speed: SPEED,
+        read_as: READ_AS_SCHEMA,
+        words_per_second: { ...WPS, description: "[lowest, highest] words a second over the line's speech; default the line's own" },
+        speed: { ...SPEED, description: "Kept as given; default the line's own speed, or chosen again when it was chosen" },
         pronounce: { ...PRONOUNCE, description: "Words respelled for the voice, replacing the line's own map ({} clears it)" },
         quality: QUALITY,
         finish: FINISH,
@@ -707,7 +839,7 @@ APP_TOOLS.push(
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple }))),
+    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple }))),
   },
   {
     name: "auto_adjust",
@@ -732,7 +864,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -745,6 +877,8 @@ APP_TOOLS.push(
             fit: { type: "string", enum: VERSION_FITS, description: "How full-frame footage meets a new shape: fill (default), blur, fit" },
             captions: { type: "string", enum: VERSION_CAPTIONS, description: "burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest)" },
             name: { type: "string", description: "File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s'" },
+            reframe: { type: "string", enum: REFRAMES, description: "Footage the new shape crops: framed on its subject, following it (default), or center" },
+            focus: FOCUS_SCHEMA,
           },
           ["ratio"],
         ),
@@ -754,6 +888,9 @@ APP_TOOLS.push(
       textless: { type: "boolean", description: "Also a textless version, in the first ratio" },
       fit: { type: "string", enum: VERSION_FITS, description: "For every version that does not say: fill (default), blur or fit" },
       captions: { type: "string", enum: VERSION_CAPTIONS, description: "For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest" },
+      reframe: { type: "string", enum: REFRAMES, description: "For every version that does not say: subject (default) or center" },
+      focus: FOCUS_SCHEMA,
+      save_projects: { type: "boolean", description: "true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
       check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92]" },
@@ -761,16 +898,21 @@ APP_TOOLS.push(
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for every version's mix, e.g. -14; default as mixed" },
+      folder: FOLDER,
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
-      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined }, master);
-      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness }) } as VersionsRequest;
+      const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined, reframe: a.reframe as Reframe | undefined, focus: a.focus as Focus[] | undefined }, master);
+      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, folder: a.folder }) } as VersionsRequest;
+      if (a.save_projects === true) return json({ projects: await h.saveVersions(req), note: "Nothing exported. Each version is a project of its own: open_project one to fine-tune it (frame_region, set_param, set_text), then export_video; the master is open and unchanged." });
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
-        return { content: [{ type: "image", data: await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) }), mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length.` }) }] };
+        const sheet = await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}) });
+        const subjects = Array.isArray(sheet.subjects) && sheet.subjects.length ? { subjects: sheet.subjects } : {};
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each row is a version at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on its subject, and an orange outline marks a subject a framing still cuts (listed in subjects).`, ...subjects }) }] };
       }
+      if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
@@ -781,8 +923,17 @@ APP_TOOLS.push(
 
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
-/** What an agent reads first: the moves, in the order a video gets made. */
-const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
+/**
+ * The server's instructions: what a model reads before any tool. Kept to a
+ * few lines on purpose (ADR-095): some clients copy them into every tool's
+ * description (Codex's tool discovery did, 156 times: about 135,000 tokens
+ * for the old 3.5 KB guide), so the guide itself is the help tool's
+ * overview, read once when asked for.
+ */
+const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.`;
+
+/** The guide: the moves, in the order a video gets made (help's overview). */
+const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable. Edits answer with only what they changed; describe_project has the whole timeline.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks with design rules), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
@@ -791,19 +942,21 @@ To make a video:
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
-6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
 
 For an ad: set_brand first (colors, two fonts, logo), then add_text with a role, set_animation per word or letter (wordPop, typewriter, unit), add_ad_element for lower thirds, offers, calls to action and the end card, text_behind_subject for a title behind a person, set_fades on the music, and export_versions for every shape and cut-down (check: true shows them first).`;
 
-/** The instructions, with a word on export where this build cannot. */
-const instructionsFor = (h: McpHost) =>
-  h.canExport?.() === false ? `${INSTRUCTIONS}\nIn this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.` : INSTRUCTIONS;
+const NO_EXPORT = "In this build (the browser) export_video and export_versions cannot write files: finish with check_project, measure_loudness and preview_frames, then tell the user to export with the app's Export button or from the desktop app.";
+
+/** The instructions and the guide, with a word on export where this build cannot. */
+const instructionsFor = (h: McpHost) => (h.canExport?.() === false ? `${INSTRUCTIONS}\n${NO_EXPORT}` : INSTRUCTIONS);
+const guideFor = (h: McpHost) => (h.canExport?.() === false ? `${GUIDE}\n${NO_EXPORT}` : GUIDE);
 
 /** Every tool, as MCP's tools/list returns them. */
 export function listTools() {
@@ -818,13 +971,15 @@ export function listTools() {
 
 /** Guides served as resources, for clients that read them into context. */
 const GUIDES: Record<string, { name: string; text: () => string }> = {
-  "guide://overview": { name: "How to use these tools", text: () => helpText("overview", listTools(), INSTRUCTIONS) },
+  "guide://overview": { name: "How to use these tools", text: () => helpText("overview", listTools(), GUIDE) },
   "guide://design": { name: "Design rules", text: () => DESIGN },
   ...Object.fromEntries(Object.entries(PLAYBOOKS).map(([k, b]) => [`guide://${k}`, { name: `Playbook: ${b.title}`, text: () => b.text }])),
 };
 
-/** The server's first words to a model, for the generated reference. */
+/** The server's first words to a model, and help's overview guide, for the
+ * generated reference. */
 export const instructions = () => INSTRUCTIONS;
+export const guide = () => GUIDE;
 
 /** Where every answer names the tool set it came from (_meta), for the
  * stdio bridge (src-tauri/src/mcp.rs) to watch. */
@@ -885,7 +1040,10 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           if (errs.length) throw new Error(errs.join("; "));
           return ok(req.id, await app.call(host, args));
         }
-        if (!COMMANDS.some((c) => c.name === name)) return fail(req.id, -32602, `unknown tool ${name}`);
+        if (!COMMANDS.some((c) => c.name === name)) {
+          const meant = didYouMean(name, listTools().map((t) => t.name));
+          return fail(req.id, -32602, `unknown tool ${name}${meant ? `; did you mean ${meant}?` : ""}`);
+        }
         const before = host.describe();
         return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
       } catch (e) {

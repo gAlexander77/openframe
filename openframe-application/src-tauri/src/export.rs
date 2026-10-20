@@ -124,15 +124,18 @@ pub async fn export_begin(
     }))
 }
 
-/// Start an export into `<Videos>/<app name>/` without a dialog: an agent
-/// exporting over MCP has no one to answer one. The page names only the
-/// file, never the folder, and an existing file is never replaced (" (2)",
-/// " (3)"...). `display_name` is the whole path, which the agent reports.
+/// Start an export without a dialog: an agent exporting over MCP has no one
+/// to answer one. It goes into `<Videos>/<app name>/`, or into `folder`, an
+/// absolute folder the agent named (ADR-095; created if missing). The page
+/// names the file and at most that folder, and an existing file is never
+/// replaced (" (2)", " (3)"...), so an agent can add files but never write
+/// over one. `display_name` is the whole path, which the agent reports.
 #[tauri::command]
 pub async fn export_begin_auto(
     app: tauri::AppHandle,
     suggested_name: String,
     extension: String,
+    folder: Option<String>,
     exports: tauri::State<'_, Exports>,
 ) -> Result<Begun, String> {
     let plain = |s: &str| {
@@ -143,24 +146,49 @@ pub async fn export_begin_auto(
     if !plain(&suggested_name) || !plain(&extension) {
         return Err("an export needs a plain file name".into());
     }
-    let dir = app
-        .path()
-        .video_dir()
-        .map_err(|e| e.to_string())?
-        .join(&app.package_info().name);
+    let dir = match folder.as_deref() {
+        Some(f) => agent_folder(f)?,
+        None => app
+            .path()
+            .video_dir()
+            .map_err(|e| e.to_string())?
+            .join(&app.package_info().name),
+    };
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let taken = |p: &Path| p.exists() || p.with_extension(format!("{extension}.part")).exists();
-    let dest = (1..)
-        .map(|n| match n {
-            1 => dir.join(format!("{suggested_name}.{extension}")),
-            n => dir.join(format!("{suggested_name} ({n}).{extension}")),
-        })
-        .find(|p| !taken(p))
-        .expect("some numbered name is free");
+    let dest = free_name(&dir, &suggested_name, &extension);
     Ok(Begun {
         id: exports.open(dest.clone())?,
         display_name: dest.display().to_string(),
     })
+}
+
+/// A folder an agent named for its files (export_video's, export_versions'
+/// and collect_project's `folder`): an absolute path, not an existing file.
+/// It may not exist yet; the caller creates it.
+pub fn agent_folder(folder: &str) -> Result<PathBuf, String> {
+    let dir = PathBuf::from(folder.trim());
+    if !dir.is_absolute() {
+        return Err(format!(
+            "folder must be an absolute path, such as C:\\Users\\you\\Videos\\Cuts or /home/you/cuts; got {folder:?}"
+        ));
+    }
+    if dir.exists() && !dir.is_dir() {
+        return Err(format!("{} is a file, not a folder", dir.display()));
+    }
+    Ok(dir)
+}
+
+/// `<name>.<ext>` in `dir`, or the first of `<name> (2).<ext>`, `<name>
+/// (3).<ext>`... that no file (finished or still being written) has taken.
+fn free_name(dir: &Path, name: &str, extension: &str) -> PathBuf {
+    let taken = |p: &Path| p.exists() || p.with_extension(format!("{extension}.part")).exists();
+    (1..)
+        .map(|n| match n {
+            1 => dir.join(format!("{name}.{extension}")),
+            n => dir.join(format!("{name} ({n}).{extension}")),
+        })
+        .find(|p| !taken(p))
+        .expect("some numbered name is free")
 }
 
 #[derive(serde::Serialize)]
@@ -196,7 +224,7 @@ pub async fn adopt_begin(
 }
 
 /// A file name that cannot climb out of its folder or upset any OS.
-fn safe_name(name: &str) -> String {
+pub(crate) fn safe_name(name: &str) -> String {
     let base = Path::new(name)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
@@ -399,6 +427,31 @@ mod tests {
         assert_eq!(sidecar_path(v, "../x"), None);
         assert_eq!(sidecar_path(v, ""), None);
         assert_eq!(sidecar_path(v, "s.rt"), None);
+    }
+
+    #[test]
+    fn agent_exports_never_replace_a_file() {
+        let d = temp_dir("free");
+        assert_eq!(free_name(&d, "Trip", "mp4"), d.join("Trip.mp4"));
+        std::fs::write(d.join("Trip.mp4"), b"x").unwrap();
+        assert_eq!(free_name(&d, "Trip", "mp4"), d.join("Trip (2).mp4"));
+        // A file still being written is taken too.
+        std::fs::write(d.join("Trip (2).mp4.part"), b"x").unwrap();
+        assert_eq!(free_name(&d, "Trip", "mp4"), d.join("Trip (3).mp4"));
+    }
+
+    #[test]
+    fn agent_folders_are_absolute_and_not_files() {
+        let d = temp_dir("folder");
+        assert_eq!(agent_folder(d.to_str().unwrap()).unwrap(), d);
+        let new = d.join("not yet");
+        assert_eq!(agent_folder(new.to_str().unwrap()).unwrap(), new);
+        assert!(agent_folder("cuts").unwrap_err().contains("absolute"));
+        assert!(agent_folder("../cuts").is_err());
+        std::fs::write(d.join("a file"), b"x").unwrap();
+        assert!(agent_folder(d.join("a file").to_str().unwrap())
+            .unwrap_err()
+            .contains("not a folder"));
     }
 
     #[test]

@@ -48,12 +48,15 @@ async (page, { drag, mocks }) => {
   await doubleClick('home double click maximizes', '.home-title');
   details['home double click maximizes'].ok &&= await page.evaluate(() => window.headerMaximized);
   await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
-  details['double click updates restore control'] = { ok: await page.locator('.window-controls .lucide-copy').isVisible() };
+  details['double click updates restore control'] = { ok: await page.locator('.window-controls .lucide-panels-top-left').isVisible() };
   await doubleClick('home double click restores', '.home-title');
   details['home double click restores'].ok &&= await page.evaluate(() => !window.headerMaximized);
   await page.getByRole('button', { name: 'Maximize', exact: true }).waitFor();
   details['restore updates maximize control'] = { ok: await page.locator('.window-controls .lucide-square').isVisible() };
   await page.locator('.create-card').click();
+  // A new project shows no save status until its first edit is saved.
+  await page.waitForFunction(() => !!window.videoEditor);
+  await page.evaluate(() => window.videoEditor.exec('set_project', { name: 'Header check' }));
   await page.locator('.save-state').waitFor();
   await click('editor save status drags', '.save-state');
   await click('editor logo drags', '.app-mark');
@@ -92,7 +95,7 @@ async (page, { drag, mocks }) => {
   await page.evaluate(() => sessionStorage.setItem('header-initial-maximized', 'true'));
   await page.reload();
   await page.getByRole('button', { name: 'Restore', exact: true }).waitFor();
-  details['initial maximized window shows restore'] = { ok: await page.locator('.window-controls .lucide-copy').isVisible() };
+  details['initial maximized window shows restore'] = { ok: await page.locator('.window-controls .lucide-panels-top-left').isVisible() };
   const search = page.getByPlaceholder('Search projects');
   await search.fill('Keep typing');
   await page.getByRole('button', { name: 'Restore', exact: true }).click();

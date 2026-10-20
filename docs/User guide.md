@@ -32,6 +32,8 @@ resizing does not submit an unfinished project rename.
    canvas size and frame rate on an empty timeline.
 2. Import your own video, audio, or images with the media picker or by
    dropping files into the app. Dropping onto the timeline also places them.
+   What a file is comes from the file itself: its extension, or its
+   contents when its name has none. A file that cannot be imported says why.
 3. Arrange clips on the timeline. Drag to move them, drag an edge to trim,
    and use the toolbar or context menu to split. The magnet keeps the main
    track gapless; snapping helps align edits, and linkage makes overlays
@@ -314,12 +316,14 @@ finishes, the person plays over whatever is on the tracks below. Turning it
 off and on again is instant.
 
 **Read a title aloud:** select a title, open Text > Text to speech, pick a
-voice, a speed and a quality, and click **Add voice**. The voice is made on
+voice, a pace and a quality, and click **Add voice**. The voice is made on
 this computer and lands on an audio track where the title starts; one
 Undo removes it and its file. Best quality downloads the full speech model
-(325 MB) the first time; Draft downloads a smaller one (92 MB). Voices are
-read at a narrator's pace with natural pauses, one level, and a quiet room
-under the silences.
+(325 MB) the first time; Draft downloads a smaller one (92 MB). Normal
+pace is a narrator's 2.3-2.8 words a second (Slow and Fast move it half a
+word): the app reads the title, measures it and reads it again at the
+speed that lands it there, so short words are not rushed. Voices come
+with natural pauses, one level, and a quiet room under the silences.
 
 **Caption a voice:** the Captions tab's **Generate captions** hears the
 timeline on this computer. A voice made by the app (Text to speech, or an
@@ -379,6 +383,26 @@ music** card makes an original score on your computer, free to use.
 
 Agents get more control through `generate_music` (sections with fixed
 times, the loudness, the stems on their own tracks); see [[Automation]].
+
+## Add sound effects and natural sound
+
+The **Audio** tab also lists **Sound effects** (whooshes, hits, risers)
+and **Ambience**: wind, a stream, a waterfall, surf, rain, a rocket's
+rumble, city traffic and room tone, made on your computer and free to
+use. Play a card to hear it first.
+
+- A sound effect lands at the playhead on the **SFX** track (made the
+  first time), never in a gap on your voiceover or your music; sounds
+  that overlap get a second SFX track.
+- An ambience bed lands on the **Ambience** track from the playhead (or
+  where you drop it) to the end of the timeline, fading in and out. It
+  moves like a recording (gusts come and go, waves break, cars pass) and
+  can be trimmed like any audio clip; its level sits under a
+  voice as it is.
+
+Each audio track is a stem (dialog, music, effects or ambience), which
+the loudness check and agents use; a track the app made knows which it
+is, and an imported song counts as music.
 
 ## About OpenFrame
 
@@ -507,8 +531,9 @@ Import an animated GIF, WebP or APNG like any image. Supported webviews read
 its frame timing and transparency. A new clip lasts one loop; drag its right
 edge farther to repeat it. Hover across its library card to scrub frames.
 The same animation is drawn during playback and export, including imported
-animated stickers. When ImageDecoder is unavailable the image is treated as
-a still. Loops larger than 256 MiB after decoding are refused; use a smaller
+animated stickers. Renaming it in the library keeps it moving: its format
+comes from the file, not the name it shows. When ImageDecoder is
+unavailable the image is treated as a still. Loops larger than 256 MiB after decoding are refused; use a smaller
 animation in that case.
 
 ## Change the timeline display
@@ -538,4 +563,9 @@ desktop. If media is missing, open **Media > Manage media** and relink it.
 On the web, **Collect files** downloads only the JSON. Media remains in this
 browser profile. Opening that JSON elsewhere does not transfer its media;
 relink the original files there. Automation's `collect_project` is desktop
-only; `open_project_file` accepts a path only on desktop.
+only, and can name the destination folder itself (`folder`) instead of
+asking; `open_project_file` accepts a path only on desktop.
+
+An AI agent exporting over MCP writes into your Videos folder, in a folder
+named OpenFrame, or into a folder it names. It never replaces a file: a
+second export of the same name is saved as "Name (2)", and the agent is told.

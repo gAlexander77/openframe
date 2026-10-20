@@ -20,9 +20,12 @@ import {
   createMarker,
   createTextClip,
   createTrack,
+  DEFAULT_TEXT_STYLE,
   uid,
 } from "./project/defaults";
 import * as ops from "./project/ops";
+import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
+import { TRACK_ROLES } from "./project/defaults";
 import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
@@ -54,7 +57,7 @@ import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, MAX_FLASHES_PER_SECOND, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type SpeedRamp } from "./epic";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
-import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
+import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
 import { placeOnTop } from "./overlays";
 import { FEATHER_MAX, LINE_WIDTH, parseColor } from "./shapes";
@@ -62,6 +65,7 @@ import { cleanShadow, SHADOW_BLUR_MAX, SHADOW_DEFAULT, SHADOW_OFFSET_MAX, SHADOW
 import { COLOR_PATHS, colorKey } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
+import { didYouMean } from "./didYouMean";
 
 export type JsonSchema = {
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
@@ -124,7 +128,7 @@ const S = {
     type: "object",
     ...(description ? { description } : {}),
     properties,
-    required,
+    ...(required.length ? { required } : {}),
     additionalProperties: false,
   }),
 };
@@ -142,7 +146,11 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     for (const [k, v] of Object.entries(o)) {
       const sub = schema.properties?.[k];
       if (!sub) {
-        if (schema.additionalProperties === false) errs.push(`${path}.${k} is not a known argument (known: ${Object.keys(schema.properties ?? {}).join(", ")})`);
+        if (schema.additionalProperties === false) {
+          const known = Object.keys(schema.properties ?? {});
+          const meant = didYouMean(k, known.filter((x) => o[x] === undefined));
+          errs.push(`${path}.${k} is not a known argument${meant ? `; did you mean ${meant}?` : ""} (known: ${known.join(", ")})`);
+        }
         continue;
       }
       if (v !== undefined) errs.push(...validate(v, sub, `${path}.${k}`));
@@ -190,14 +198,19 @@ function trackOrThrow(p: Project, id: unknown): Track {
  * of the right kind with room, else a new track. */
 function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] {
   if (trackId !== undefined) return [p, trackOrThrow(p, trackId).id];
-  const kind = clip.type === "audio" ? "audio" : "video";
+  if (clip.type === "audio") {
+    // By what the sound is (ADR-098): an imported song never lands in a
+    // gap on the voiceover or the effects track.
+    const r = roleTrack(p, assetRole(ops.getAsset(p, clip.assetId)), clip.start, clip.duration);
+    return [r.project, r.trackId];
+  }
   const media = clip.type === "video" || clip.type === "image";
   const main = ops.mainTrack(p);
   if (media && ops.rangeFree(main, clip.start, clip.duration)) return [p, main.id];
   // Tracks of adjustment layers (beat hits, bars, grades) take only more of them.
-  const free = p.tracks.find((t) => t.kind === kind && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
+  const free = p.tracks.find((t) => t.kind === "video" && !t.main && !t.locked && (clip.type === "adjustment" || !isEffectTrack(t)) && ops.rangeFree(t, clip.start, clip.duration));
   if (free) return [p, free.id];
-  const fresh = createTrack(kind, kind === "audio" ? "Audio" : "Overlay");
+  const fresh = createTrack("video", "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
 }
 
@@ -366,13 +379,16 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_track",
-    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom.",
-    input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name") }, ["kind"]),
-    run: (p, a) => ops.addTrack(p, createTrack(a.kind === "audio" ? "audio" : "video", String(a.name ?? (a.kind === "audio" ? "Audio" : "Overlay")))),
+    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
+    input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name"), role: S.str("Audio tracks: the stem it is", { enum: TRACK_ROLES }) }, ["kind"]),
+    run: (p, a) => {
+      if (a.role !== undefined && a.kind !== "audio") throw new CommandError("role is for audio tracks");
+      return ops.addTrack(p, { ...createTrack(a.kind === "audio" ? "audio" : "video", String(a.name ?? (a.kind === "audio" ? "Audio" : "Overlay"))), ...(a.role !== undefined ? { role: a.role as Track["role"] } : {}) });
+    },
   },
   {
     name: "update_track",
-    description: "Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.",
+    description: "Mute, solo, hide, lock, rename, resize, color, or set the volume, pan or role of a track. role (audio tracks: dialog, music, effects, ambience) says which stem it is; a track without one is judged by its files (a spoken line is dialog, a sound effect effects, an imported song music), never by its name.",
     input: S.obj(
       {
         track_id: S.str("Track id"),
@@ -385,12 +401,15 @@ export const COMMANDS: Command[] = [
         solo: S.bool("While any track is soloed, only soloed tracks sound"),
         color: S.str("Track tint; a clip label takes precedence; none clears it", { enum: ["none", ...Object.keys(CLIP_LABELS)] }),
         height: S.str("Row height on the timeline", { enum: ["small", "normal", "large"] }),
+        role: S.str("Audio tracks: the stem it is (auto clears it: judged by its files)", { enum: [...TRACK_ROLES, "auto"] }),
       },
       ["track_id"],
     ),
     run: (p, a) => {
-      const { track_id, height, color, ...patch } = a;
-      trackOrThrow(p, track_id);
+      const { track_id, height, color, role, ...patch } = a;
+      const t = trackOrThrow(p, track_id);
+      if (role !== undefined && t.kind !== "audio") throw new CommandError("role is for audio tracks");
+      if (role !== undefined) p = ops.updateTrack(p, t.id, { role: role === "auto" ? undefined : (role as Track["role"]) });
       // "normal" clears the field (undefined is dropped when saved).
       return ops.updateTrack(p, String(track_id), { ...patch, ...(color !== undefined ? { color: color === "none" ? undefined : color } : {}), ...(height ? { height: height === "normal" ? undefined : height } : {}) } as Partial<Track>);
     },
@@ -450,7 +469,7 @@ export const COMMANDS: Command[] = [
       ["text", "start", "duration"],
     ),
     run: (p, a) => {
-      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height)) : {};
+      const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
       // running off the frame (9:16: off the apps' column).
@@ -515,7 +534,7 @@ export const COMMANDS: Command[] = [
         const role = a.role as string | undefined;
         if (clip.type === "text") {
           if (role && !TEXT_ROLES.includes(role as TextRole)) throw new CommandError(`${role} is a color role; titles take ${TEXT_ROLES.join(", ")}`);
-          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k) }) as Clip);
+          p = ops.updateClip(p, clip.id, (c) => ({ ...c, style: brandedStyle((c as TextClip).style, b, role as TextRole | undefined, k, minTextSize(p.width, p.height)) }) as Clip);
         } else if (clip.type === "color") {
           if (role && !COLOR_ROLES.includes(role as ColorRole)) throw new CommandError(`${role} is a text role; solids take ${COLOR_ROLES.join(", ")}`);
           p = ops.updateClip(p, clip.id, (c) => ({ ...c, color: b.colors[(role as ColorRole | undefined) ?? "primary"] }) as Clip);
@@ -527,7 +546,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under 40 px at a 1080 short side. Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
@@ -2481,7 +2500,10 @@ export const COMMAND_INDEX = new Map(COMMANDS.map((c) => [c.name, c]));
 /** Run one command with validation. Throws CommandError with every problem. */
 export function runCommand(p: Project, name: string, args: unknown = {}, report?: CommandReport): Project {
   const cmd = COMMAND_INDEX.get(name);
-  if (!cmd) throw new CommandError(`unknown command ${name}`);
+  if (!cmd) {
+    const meant = didYouMean(name, COMMANDS.map((c) => c.name));
+    throw new CommandError(`unknown command ${name}${meant ? `; did you mean ${meant}?` : ""}`);
+  }
   const errs = validate(args, cmd.input);
   if (errs.length) throw new CommandError(errs.join("; "));
   const next = cmd.run(p, args as Record<string, unknown>, report);
@@ -2499,6 +2521,7 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
 /** A compact, LLM-readable view of the timeline: seconds, ids, what is where. */
 export function describeProject(p: Project) {
   const s = (frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
+  const assetOf = assetsOf(p);
   return {
     name: p.name,
     canvas: { width: p.width, height: p.height },
@@ -2516,10 +2539,12 @@ export function describeProject(p: Project) {
       : {}),
   };
   function track(t: Track) {
+    const role = trackRole(t, assetOf);
     return {
       id: t.id,
       kind: t.kind,
       name: t.name,
+      ...(role ? { role } : {}),
       ...(t.main ? { main: true } : {}),
       ...(t.muted ? { muted: true } : {}),
       ...(t.hidden ? { hidden: true } : {}),
@@ -2535,7 +2560,7 @@ export function describeProject(p: Project) {
         start: s(c.start),
         end: s(c.start + c.duration),
         ...("assetId" in c ? { asset: c.assetId } : {}),
-        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, speed_curve: c.speedCurve ? (c.speedCurve.preset ?? "custom") : undefined } : {}),
+        ...("in" in c ? { in: +c.in.toFixed(3), out: +ops.sourceTimeAt(c, c.start + c.duration, p.fps).toFixed(3), speed: c.speedCurve ? undefined : c.speed, ...speedCurveSummary(c) } : {}),
         ...("reverse" in c && c.reverse ? { reverse: true } : {}),
         ...("changePitch" in c && c.changePitch ? { change_pitch: true } : {}),
         ...(c.type === "image" && c.imageIn ? { in: c.imageIn } : {}),
@@ -2563,8 +2588,8 @@ export function describeProject(p: Project) {
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...graphicsSummary(c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
-        ...(c.type === "text" && c.style.weight !== undefined ? { weight: c.style.weight } : {}),
-        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}) } : {}),
+        ...(c.type === "text" && (c.style.weight !== undefined || !c.style.bold) ? { weight: c.style.weight ?? 400 } : {}),
+        ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}), ...typeSummary(c.style) } : {}),
         ...("transform" in c ? placement(c.transform) : {}),
         ...("opacity" in c && c.opacity !== 1 ? { opacity: +c.opacity.toFixed(3) } : {}),
         ...("filter" in c && c.filter ? { filter: c.filter.type, ...(c.filter.intensity !== 1 ? { filter_intensity: c.filter.intensity } : {}) } : {}),
@@ -2573,6 +2598,38 @@ export function describeProject(p: Project) {
       })),
     };
   }
+}
+
+/** A speed curve for describeProject: its preset's name (or custom) and its
+ * points as [t, speed], t from 0 (the clip's start) to 1 (its end) as
+ * set_speed_curve takes them, so a custom ramp can be checked (ADR-095). */
+function speedCurveSummary(c: Clip): { speed_curve?: string; speed_points?: number[][] } {
+  if (!("speedCurve" in c) || !c.speedCurve) return {};
+  const r = (v: number) => +v.toFixed(3);
+  return { speed_curve: c.speedCurve.preset ?? "custom", speed_points: c.speedCurve.points.map((pt) => [r(pt.f / c.duration), r(pt.speed)]) };
+}
+
+/** A title's type where it departs from the default look, named as
+ * add_text's style takes it (size, color, weight, case, box, outline and
+ * shadow are told apart already): what the Codex film test could not check
+ * (ADR-095). */
+function typeSummary(st: TextStyle): { style?: Record<string, unknown> } {
+  const d = DEFAULT_TEXT_STYLE;
+  const out = {
+    ...(st.font !== d.font ? { font: st.font } : {}),
+    ...(st.italic ? { italic: true } : {}),
+    ...(st.underline ? { underline: true } : {}),
+    ...(st.align !== d.align ? { align: st.align } : {}),
+    ...(st.maxWidth !== d.maxWidth ? { maxWidth: +st.maxWidth.toFixed(4) } : {}),
+    ...(st.letterSpacing ? { letterSpacing: st.letterSpacing } : {}),
+    ...(st.lineHeight !== d.lineHeight ? { lineHeight: st.lineHeight } : {}),
+    ...(st.stroke2 ? { stroke2: st.stroke2 } : {}),
+    ...(st.gradient ? { gradient: st.gradient } : {}),
+    ...(st.glow ? { glow: st.glow } : {}),
+    ...(st.accent ? { accent: st.accent } : {}),
+    ...(st.highlight ? { highlight: st.highlight } : {}),
+  };
+  return Object.keys(out).length ? { style: out } : {};
 }
 
 /** A clip's keyframes for describeProject, each path's keys as [at, value]
@@ -2736,6 +2793,6 @@ function withoutFx(c: Clip, key: FxKey, paths: string[] = []): Clip {
 
 /** Lifecycle operations use the app host; their schemas live beside edits. */
 export const PROJECT_FILE_COMMANDS = [
-  { name: "collect_project", description: "Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.", input: S.obj({}) },
-  { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
+  { name: "collect_project", description: "Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder named after the project (numbered when the name is taken), so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.", input: S.obj({ folder: S.str("Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog") }) },
+  { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
 ];

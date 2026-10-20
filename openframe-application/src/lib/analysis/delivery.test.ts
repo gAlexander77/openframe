@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkSpec, ceilingFor, LOUDNESS_SPECS, loudnessOutcome, loudnessRange, loudnessStats, planLoudness, specForTarget } from "./delivery";
+import { checkSpec, ceilingFor, LOUDNESS_SPECS, loudnessOutcome, loudnessRange, loudnessStats, planLoudness, rangeVerdict, specForTarget } from "./delivery";
 import { applyLimiter, LIMIT_BLOCK, LoudnessMeter } from "./loudness";
 import { toDbtp, truePeak, TruePeakMeter } from "./truePeak";
 
@@ -154,5 +154,18 @@ describe("loudness outcome (the export-complete card)", () => {
     expect(o.ok).toBe(false);
     expect(o.text).toMatch(/raised as far as 6 dB of limiting allows to -18\.6 LUFS .*4\.6 LU under the -14 LUFS target\.$/);
     expect(loudnessOutcome(-80, -68, -14, { limitedBy: "range", heldDb: 0, ceilingDb: -1 }).ok).toBe(false);
+  });
+});
+
+describe("the loudness range against what a mix is for", () => {
+  it("calls the documentary's 2 LU very flat for a film, and fine for an ad", () => {
+    const film = rangeVerdict(2.0, "film");
+    expect(film).toMatchObject({ kind: "film", typical_lu: [5, 15], verdict: "very flat" });
+    expect(film.note).toMatch(/^Very flat for a film: .* 2\.0 LU.*5-15 LU.*min_line_lu/);
+    expect(rangeVerdict(4, "film").verdict).toBe("flat");
+    expect(rangeVerdict(8, "film")).toEqual({ kind: "film", typical_lu: [5, 15], verdict: "typical" });
+    expect(rangeVerdict(4, "ad").verdict).toBe("typical");
+    expect(rangeVerdict(12, "social")).toMatchObject({ verdict: "wide", note: expect.stringMatching(/phone/) });
+    expect(rangeVerdict(2).kind).toBe("any");
   });
 });

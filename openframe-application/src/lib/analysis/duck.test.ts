@@ -40,4 +40,27 @@ describe("duckKeys", () => {
     expect(keys([[0, 50], [450, 500]])).toEqual([]);
     expect(duckKeys([[150, 200]], 100, 400, 0.5, O)[1].v).toBeCloseTo(0.05, 9);
   });
+
+  it("dips each line to its own depth, moving between them in the pause they share", () => {
+    const k = (depths: number[]) => duckKeys([[150, 200], [220, 260], [330, 360]], 100, 400, 1, O, depths).map((x) => [x.f, +x.v.toFixed(4)]);
+    // The first two share a dip (a 20-frame pause); the level moves from -20 to -26 dB inside it.
+    expect(k([20, 26, 10])).toEqual([
+      [47, 1],
+      [50, 0.1],
+      [100, 0.1],
+      [120, 0.0501],
+      [160, 0.0501],
+      [172, 1],
+      [227, 1],
+      [230, 0.3162],
+      [260, 0.3162],
+      [272, 1],
+    ]);
+    // The same depths everywhere: the same keys as one depth.
+    expect(duckKeys([[150, 200], [220, 260]], 100, 400, 1, O, [20, 20])).toEqual(duckKeys([[150, 200], [220, 260]], 100, 400, 1, O));
+  });
+
+  it("takes the deeper depth where two lines overlap", () => {
+    expect(duckKeys([[150, 200], [190, 230]], 100, 400, 1, O, [10, 20]).map((x) => +x.v.toFixed(2))).toEqual([1, 0.1, 0.1, 1]);
+  });
 });

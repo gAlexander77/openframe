@@ -251,7 +251,7 @@ export function breakCompound(p: Project, clipId: Id): Project {
     if (!clips.length) continue;
     let dest = q.tracks.find((x) => x.kind === "audio" && fits(x, clips));
     if (!dest) {
-      dest = { ...createTrack("audio", t.name), muted: t.muted, volume: t.volume };
+      dest = { ...createTrack("audio", t.name), muted: t.muted, volume: t.volume, ...(t.role ? { role: t.role } : {}) };
       q = { ...q, tracks: [...q.tracks, dest] };
     }
     place(dest.id, clips);

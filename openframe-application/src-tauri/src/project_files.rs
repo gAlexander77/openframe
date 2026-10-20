@@ -1,12 +1,12 @@
-//! Portable project copies: the native dialog owns the destination; each
-//! collection creates a new directory and never overwrites existing files.
+//! Portable project copies: the native dialog, or a folder an agent named
+//! (collect_project's `folder`, ADR-095), chooses where; each collection
+//! creates a new directory and never overwrites existing files.
 use serde_json::Value;
 use std::{
     collections::HashMap,
     fs,
     io::Write,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -78,11 +78,21 @@ fn collect(
         sources.insert(src.into(), relative.clone());
         Ok(relative)
     })?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_nanos();
-    let dest = parent.join(format!("OpenFrame-{stamp}"));
+    // Named after the project, numbered when that name is taken.
+    let name = crate::export::safe_name(
+        value
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or("OpenFrame project"),
+    );
+    let dest = (1..)
+        .map(|n| match n {
+            1 => parent.join(&name),
+            n => parent.join(format!("{name} ({n})")),
+        })
+        .find(|p| !p.exists())
+        .expect("some numbered name is free");
     fs::create_dir(&dest).map_err(|e| e.to_string())?;
     let result = (|| {
         fs::create_dir(dest.join("media")).map_err(|e| e.to_string())?;
@@ -120,6 +130,7 @@ pub async fn project_collect(
     app: tauri::AppHandle,
     project: String,
     progress: tauri::ipc::Channel<f64>,
+    folder: Option<String>,
 ) -> Result<Option<String>, String> {
     if project.len() > 32 * 1024 * 1024 {
         return Err("Project is too large".into());
@@ -128,15 +139,24 @@ pub async fn project_collect(
     if !value.is_object() {
         return Err("Project must be an object".into());
     }
-    let Some(folder) = app
-        .dialog()
-        .file()
-        .set_title("Collect files")
-        .blocking_pick_folder()
-    else {
-        return Ok(None);
+    let parent = match folder {
+        Some(f) => {
+            let dir = crate::export::agent_folder(&f)?;
+            fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            dir
+        }
+        None => {
+            let Some(picked) = app
+                .dialog()
+                .file()
+                .set_title("Collect files")
+                .blocking_pick_folder()
+            else {
+                return Ok(None);
+            };
+            picked.into_path().map_err(|e| e.to_string())?
+        }
     };
-    let parent = folder.into_path().map_err(|e| e.to_string())?;
     tauri::async_runtime::spawn_blocking(move || {
         collect(&parent, value, |v| {
             let _ = progress.send(v);
@@ -176,6 +196,7 @@ pub async fn project_open_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
     #[test]
     fn copies_deduplicates_and_resolves() {
         let root = std::env::temp_dir().join(format!(
@@ -188,9 +209,13 @@ mod tests {
         fs::create_dir(&root).unwrap();
         let src = root.join("source.gif");
         fs::write(&src, b"pixels").unwrap();
-        let value = serde_json::json!({"assets":[{"src":src,"proxy":src}],"luts":[]});
+        let value =
+            serde_json::json!({"name":"Trip: day 1","assets":[{"src":src,"proxy":src}],"luts":[]});
         let mut steps = Vec::new();
-        let path = collect(&root, value, |v| steps.push(v)).unwrap();
+        let path = collect(&root, value.clone(), |v| steps.push(v)).unwrap();
+        assert!(path.parent().unwrap().ends_with("Trip_ day 1"));
+        let again = collect(&root, value, |_| {}).unwrap();
+        assert!(again.parent().unwrap().ends_with("Trip_ day 1 (2)"));
         let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         assert_eq!(saved["assets"][0]["src"], "media/0001.gif");
         assert_eq!(saved["assets"][0]["src"], saved["assets"][0]["proxy"]);

@@ -32,6 +32,11 @@ function host() {
       return "iVBOR";
     },
     checkProject: (kind: string) => ({ ok: true, kind }),
+    auditions: [] as unknown[],
+    async audition(o: { audio?: boolean }) {
+      h.auditions.push(o);
+      return { ...(o.audio === false ? {} : { data: "SUQz", mimeType: "audio/mpeg" }), summary: { integrated_lufs: -16.2, stems: { dialog: -17 } } };
+    },
     exports: [] as unknown[],
     async exportVideo(o: unknown) {
       h.exports.push(o);
@@ -45,7 +50,11 @@ function host() {
     },
     async versionsSheet(o: unknown) {
       h.versionCalls.push(o);
-      return "iVBOR";
+      return { image: "iVBOR", subjects: [{ version: "Roast 9x16", reports: [{ clip_id: "c1", at: 1, kept: 0.4 }] }] };
+    },
+    async saveVersions(o: unknown) {
+      h.versionCalls.push(o);
+      return [{ id: "p_v", name: "Roast 9x16" }];
     },
     voiced: [] as unknown[][],
     async voiceover(lines: unknown, options: unknown) {
@@ -279,6 +288,20 @@ describe("MCP ad tools", () => {
     expect(none!.result).toMatchObject({ isError: true });
   });
 
+  it("frames versions on their subject or by hand, says what a framing cuts, and saves versions as projects", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "9:16", focus: [{ clip_id: "c1", x: 0.7 }] }, { ratio: "1:1" }], reframe: "center", check: true } });
+    expect(h.versionCalls.at(-1)).toEqual({ versions: [{ ratio: "9:16", reframe: "center", focus: [{ clip_id: "c1", x: 0.7 }] }, { ratio: "1:1", reframe: "center" }] });
+    const said = JSON.parse((r!.result as { content: { text: string }[] }).content[1].text);
+    expect(said.subjects).toEqual([{ version: "Roast 9x16", reports: [{ clip_id: "c1", at: 1, kept: 0.4 }] }]);
+    expect(said.note).toMatch(/orange outline marks a subject/);
+    const saved = JSON.parse(text(await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], save_projects: true } })));
+    expect(saved.projects).toEqual([{ id: "p_v", name: "Roast 9x16" }]);
+    expect(saved.note).toMatch(/^Nothing exported\. Each version is a project of its own: open_project/);
+    const bad = await call(h, "tools/call", { name: "export_versions", arguments: { ratios: ["9:16"], reframe: "left" } });
+    expect(bad!.result).toMatchObject({ isError: true });
+  });
+
   it("passes captions to every version that does not say", async () => {
     const h = host();
     await call(h, "tools/call", { name: "export_versions", arguments: { versions: [{ ratio: "9:16" }, { ratio: "1:1", captions: "burn" }], captions: "none", check: true } });
@@ -294,7 +317,7 @@ describe("what a blind test of the tools found", () => {
   it("checks app tools' arguments too, naming the ones it knows", async () => {
     const r = await call(host(), "tools/call", { name: "preview_frame", arguments: { time: 0.7 } });
     expect(r!.result).toMatchObject({ isError: true });
-    expect(text(r)).toBe("args.at is required; args.time is not a known argument (known: at, max_width)");
+    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at, max_width)");
   });
 
   it("says what set_filter and a picture's set_animation changed", async () => {
@@ -438,6 +461,33 @@ describe("what the launch film found (2026-10-18)", () => {
     expect(h.aiCalls[1]).toEqual(["addSoundEffects", "", { sounds: [{ name: "pop", at: 2, volume: 0.25 }] }]);
     const both = await call(h, "tools/call", { name: "add_sound_effect", arguments: { name: "pop", sounds: [{ name: "pop" }] } });
     expect(text(both)).toMatch(/not both/);
+    // A track of the agent's own, for the call or per sound.
+    await run(h, "add_sound_effect", { sounds: [{ name: "pop", start: 1 }, { name: "pop", start: 2, track_id: "t_b" }], track_id: "t_a" });
+    expect(h.aiCalls[2]).toEqual(["addSoundEffects", "", { sounds: [{ name: "pop", at: 1, trackId: "t_a" }, { name: "pop", at: 2, trackId: "t_b" }] }]);
+  });
+
+  it("lays an ambience bed through the host, by name, with its stretch, fades, level and take", async () => {
+    const h = host();
+    await run(h, "add_ambience", { name: "waterfall", start: 22, end: 34, fade_in: 1.5, volume: 0.7, seed: 2, track_id: "t_amb" });
+    expect(h.aiCalls[0]).toEqual(["addAmbience", "", { name: "waterfall", start: 22, end: 34, fadeIn: 1.5, volume: 0.7, seed: 2, trackId: "t_amb" }]);
+    expect(text(await call(h, "tools/call", { name: "add_ambience", arguments: { name: "wind", end: 4, length: 3 } }))).toMatch(/not both/);
+    expect(text(await call(h, "tools/call", { name: "add_ambience", arguments: { name: "kazoo" } }))).toMatch(/name/);
+    const cat = JSON.parse(text(await call(h, "tools/call", { name: "list_catalog", arguments: { section: "ambience" } }))) as { id: string; about: string }[];
+    expect(cat.map((b) => b.id)).toEqual(["wind", "stream", "waterfall", "surf", "rain", "rocket", "city", "roomTone"]);
+  });
+
+  it("answers preview_audio with an MP3 block and the measurements, or the measurements alone", async () => {
+    const h = host();
+    const r = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 6, end: 14, solo: "voice" } });
+    const content = (r!.result as { content: { type: string; data?: string; mimeType?: string; text?: string }[] }).content;
+    expect(content[0]).toEqual({ type: "audio", data: "SUQz", mimeType: "audio/mpeg" });
+    expect(JSON.parse(content[1].text!)).toMatchObject({ integrated_lufs: -16.2 });
+    expect(h.auditions[0]).toEqual({ start: 6, end: 14, solo: "voice" });
+    const quiet = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, audio: false } });
+    expect((quiet!.result as { content: { type: string }[] }).content.map((c) => c.type)).toEqual(["text"]);
+    expect(text(await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, solo: "drums" } }))).toMatch(/solo/);
+    const tool = (await call(h, "tools/list"))!.result as { tools: { name: string; annotations: { readOnlyHint: boolean } }[] };
+    expect(tool.tools.find((t) => t.name === "preview_audio")!.annotations.readOnlyHint).toBe(true);
   });
 
   it("waits for a measured check, takes preview_motion tiles as wide as preview_frames', and checks versions at chosen moments", async () => {
@@ -463,4 +513,109 @@ it("names the tool set in every answer, so the stdio bridge can say when it chan
     const r = (await call(h, method, params)) as { result: { _meta: Record<string, string> } };
     expect(r.result._meta[TOOLS_META], method).toBe(mark);
   }
+});
+
+describe("what the Codex film test found (2026-10-19)", () => {
+  const run = async (h: ReturnType<typeof host>, name: string, args: unknown) => JSON.parse(text(await call(h, "tools/call", { name, arguments: args })));
+  const err = async (h: McpHost, name: string, args: unknown) => {
+    const r = await call(h, "tools/call", { name, arguments: args });
+    expect(r!.result).toMatchObject({ isError: true });
+    return text(r);
+  };
+
+  it("keeps the server's instructions to a few lines, the guide in help, and no tool repeating either", async () => {
+    // Codex's tool discovery prepends the instructions to every tool's
+    // description: 156 copies of a 3.5 KB guide were ~135,000 tokens.
+    const init = (await call(host(), "initialize"))!.result as { instructions: string };
+    expect(init.instructions.length).toBeLessThan(700);
+    expect(init.instructions).toContain("Call help first");
+    const overview = text(await call(host(), "tools/call", { name: "help", arguments: {} }));
+    expect(overview).toContain("To make a video:");
+    expect(overview).toContain("Tools by step:");
+    for (const t of listTools()) {
+      expect(t.description, t.name).not.toContain("To make a video:");
+      expect(t.description, t.name).not.toContain(init.instructions.slice(0, 80));
+    }
+    // The browser's word on export reaches both.
+    const web = { ...host(), canExport: () => false };
+    expect(text(await call(web, "tools/call", { name: "help", arguments: {} }))).toContain("cannot write files");
+  });
+
+  it("answers every imported file in order, and refuses an import where every file failed", async () => {
+    const h = host();
+    const asked: unknown[] = [];
+    h.importMedia = (async (files: unknown) => {
+      asked.push(files);
+      return [
+        { id: "a2", name: "launch", kind: "video", duration: 8, width: 1920, height: 1080 },
+        { src: "C:/x/notes.txt", name: "notes", error: "isn't a video, audio or image file" },
+      ];
+    }) as unknown as typeof h.importMedia;
+    const r = await run(h, "import_media", { files: [{ src: "C:/x/launch.mp4", name: "launch" }, { src: "C:/x/notes.txt", name: "notes" }] });
+    expect(asked[0]).toEqual([{ src: "C:/x/launch.mp4", name: "launch" }, { src: "C:/x/notes.txt", name: "notes" }]);
+    expect(r).toEqual([expect.objectContaining({ id: "a2", name: "launch" }), expect.objectContaining({ error: expect.stringContaining("isn't") })]);
+    h.importMedia = (async () => [
+      { src: "C:/x/a", name: "a", error: "it could not be read" },
+      { src: "C:/x/b.mov", name: "b", error: "this browser can't decode ProRes" },
+    ]) as unknown as typeof h.importMedia;
+    expect(await err(h, "import_media", { files: [{ src: "C:/x/a" }, { src: "C:/x/b.mov" }] })).toBe("Nothing was imported. C:/x/a: it could not be read; C:/x/b.mov: this browser can't decode ProRes");
+    expect(await err(h, "import_media", { files: [] })).toMatch(/at least one/);
+  });
+
+  it("exports into a folder the agent names, and says the folder is desktop only rather than ignore it", async () => {
+    const h = host();
+    await run(h, "export_video", { name: "film", folder: "D:/Deliveries" });
+    expect(h.exports.at(-1)).toEqual({ name: "film", folder: "D:/Deliveries" });
+    await run(h, "export_versions", { ratios: ["9:16"], folder: "D:/Deliveries" });
+    expect(h.versionCalls.at(-1)).toMatchObject({ folder: "D:/Deliveries" });
+    const web = { ...host(), canExport: () => false };
+    expect(await err(web, "export_video", { folder: "D:/Deliveries" })).toMatch(/folder is desktop only/);
+    expect(await err(web, "export_versions", { ratios: ["9:16"], folder: "D:/Deliveries" })).toMatch(/folder is desktop only/);
+    expect(listTools().find((t) => t.name === "collect_project")!.inputSchema.properties).toHaveProperty("folder");
+  });
+
+  it("names the argument a model meant, for every tool", async () => {
+    expect(await err(host(), "seek", { time: 11 })).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at)");
+    expect(await err(host(), "set_text", { clip_id: "c", style: { fontSize: 80 } })).toContain("args.style.fontSize is not a known argument; did you mean size?");
+    const r = await call(host(), "tools/call", { name: "set_fade", arguments: {} });
+    expect(r!.error!.message).toBe("unknown tool set_fade; did you mean set_fades?");
+  });
+
+  it("takes as many columns on preview_frames and preview_media as on preview_motion", async () => {
+    const h = host();
+    await call(h, "tools/call", { name: "preview_frames", arguments: { times: [1, 2], columns: 8 } });
+    expect(h.sheets.at(-1)).toEqual([[1, 2], 320, 8]);
+    await call(h, "tools/call", { name: "preview_media", arguments: { asset_id: "a1", columns: 8, count: 8 } });
+    expect(h.sheets.at(-1)![3]).toBe(8);
+    for (const n of ["preview_frames", "preview_motion", "preview_media"]) expect(listTools().find((t) => t.name === n)!.inputSchema.properties!.columns.maximum, n).toBe(8);
+  });
+
+  it("describes a title's type and a custom speed curve, compactly", async () => {
+    const h = host();
+    const t = (await run(h, "add_text", { text: "Home", start: 0, duration: 2, style: { font: "Georgia", weight: 300, size: 72, maxWidth: 0.5, letterSpacing: 12, lineHeight: 0.95 } })).added_clips[0];
+    expect(t).toMatchObject({ weight: 300, size: 72, style: { font: "Georgia", maxWidth: 0.5, letterSpacing: 12, lineHeight: 0.95 } });
+    const plain = (await run(h, "add_text", { text: "Plain", start: 3, duration: 1, style: { maxWidth: 0.9 } })).added_clips[0];
+    expect(plain.style).toBeUndefined();
+    const v = (await run(h, "add_media_clip", { asset_id: "a1", start: 5, duration: 4 })).added_clips[0];
+    const ramped = (await run(h, "set_speed_curve", { clip_id: v.id, points: [{ t: 0, speed: 2 }, { t: 0.5, speed: 0.5 }, { t: 1, speed: 2 }] })).changed_clips[0];
+    expect(ramped.speed_curve).toBe("custom");
+    expect(ramped.speed_points).toEqual([[0, 2], [0.5, 0.5], [1, 2]]);
+  });
+
+  it("answers edits beside compound clips without their timelines, and open_project_file with a summary", async () => {
+    const h = host();
+    for (const at of [0, 3, 6]) {
+      h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: at, duration: 2 });
+      h.project = runCommand(h.project, "add_text", { text: `Window ${at}`, start: at, duration: 2 });
+      const ids = h.project.tracks.flatMap((t) => t.clips).filter((c) => c.start === at * 30 && c.type !== "compound").map((c) => c.id);
+      h.project = runCommand(h.project, "create_compound_clip", { clip_ids: ids, name: `Window ${at}` });
+    }
+    const r = await call(h, "tools/call", { name: "add_text", arguments: { text: "Title", start: 0, duration: 1 } });
+    expect(text(r)).not.toContain("compounds");
+    expect(text(r).length).toBeLessThan(600);
+    h.exec = ((name: string) => (name === "open_project_file" ? { opened: true, project: describeProject(h.project) } : null)) as unknown as typeof h.exec;
+    const opened = await run(h, "open_project_file", { path: "D:/films/cut.json" });
+    expect(opened).toEqual({ opened: true, project: expect.objectContaining({ counts: expect.objectContaining({ compounds: 3 }), note: expect.stringContaining("describe_project") }) });
+    expect(opened.project.tracks).toBeUndefined();
+  });
 });

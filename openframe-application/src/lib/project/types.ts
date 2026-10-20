@@ -113,6 +113,13 @@ export interface Asset {
    * (add_voiceover, retake_voiceover, text to speech): review_voiceover
    * compares what it hears with `text`, retake_voiceover reads it again. */
   speech?: SpeechInfo;
+  /** What this file's sound is, set by the tool that made it (a sound
+   * effect, an ambience bed, a generated score); a spoken file is dialog
+   * by its `speech`. Stems and placement go by it (lib/audioRoles.ts). */
+  role?: TrackRole;
+  /** The built-in sound this file was made from (lib/sfx.ts, an effect;
+   * lib/ambience.ts, a bed with its seed): adding it again reuses it. */
+  sound?: { id: string; seed?: number };
 }
 
 export interface SpeechInfo {
@@ -130,6 +137,12 @@ export interface SpeechInfo {
   /** The pace the line is meant to have: slow (an end card's tagline) or
    * fast, so review_voiceover does not flag it for being so. */
   pace?: "slow" | "normal" | "fast";
+  /** The words a second it was read to, [lowest, highest], before its
+   * pace moves them (lib/voicePace.ts); none: narration's 2.3-2.8. */
+  wps?: [number, number];
+  /** The speed was chosen to land on that, not asked for: a retake with
+   * new words chooses again. */
+  speedChosen?: boolean;
 }
 
 /** An imported .cube LUT. `src` is a platform location, like Asset.src. */
@@ -143,6 +156,11 @@ export interface LutFile {
 }
 
 export type TrackKind = "video" | "audio";
+
+/** What an audio track's sound is, as a stem (Premiere's and Resolve's
+ * dialog, music and effects): dialog (a voice), music, effects (sound
+ * effects) or ambience (natural sound beds, room tone). */
+export type TrackRole = "dialog" | "music" | "effects" | "ambience";
 
 export interface Track {
   color?: ClipLabel;
@@ -166,6 +184,10 @@ export interface Track {
   solo?: boolean;
   /** Row height on the timeline; absent = the usual height for its kind. */
   height?: "small" | "large";
+  /** Audio tracks: the stem it is (add_voiceover's dialog, add_sound_effect's
+   * effects...), set by the tool that made it or update_track. Absent =
+   * judged from its clips' files (lib/audioRoles.ts trackRole). */
+  role?: TrackRole;
 }
 
 /** A nested timeline (CapCut's compound clip, Premiere's nested sequence):

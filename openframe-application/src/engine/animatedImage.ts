@@ -1,5 +1,6 @@
 import { animatedFrameAt } from "../lib/animatedImage";
 import { platform } from "../platform";
+import { looksLikeMedia, SNIFF_BYTES, sniffFormat } from "../lib/mediaKind";
 interface Decoder {
   tracks: { ready: Promise<void>; selectedTrack: { frameCount: number } | null };
   decode(options: { frameIndex: number }): Promise<{ image: VideoFrame }>;
@@ -17,8 +18,14 @@ export function animationFor(src: string, name: string) {
   }
   return pending;
 }
+/** The decoder's type for a format that can animate, else null. */
+const ANIMATES: Record<string, string> = { gif: "image/gif", webp: "image/webp", png: "image/png", apng: "image/png" };
+
 async function decode(src: string, name: string) {
-  const type = /\.gif$/i.test(name) ? "image/gif" : /\.webp$/i.test(name) ? "image/webp" : /\.(a?png)$/i.test(name) ? "image/png" : null;
+  // A name with a media extension says the format; a source without one
+  // is told by its first bytes (an import by a path with no extension).
+  const ext = looksLikeMedia(name) ? name.split(".").pop()!.toLowerCase() : sniffFormat(await platform.head(src, SNIFF_BYTES));
+  const type = ext ? (ANIMATES[ext] ?? null) : null;
   if (!type) return null;
   const ImageDecoder = (globalThis as unknown as { ImageDecoder?: DecoderClass }).ImageDecoder;
   if (!ImageDecoder || !await ImageDecoder.isTypeSupported(type)) return null;

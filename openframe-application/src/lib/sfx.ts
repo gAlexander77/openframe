@@ -4,9 +4,11 @@
 // every machine and free of anyone's license. Each makes stereo samples at
 // a rate; the library turns them into a WAV asset on first use.
 
-import { placeAsset } from "./drop";
-import { updateClip } from "./project/ops";
+import { assetRole, roleTrack } from "./audioRoles";
+import { clipForAsset } from "./project/defaults";
+import { addClip } from "./project/ops";
 import type { Asset, Clip, Id, Project } from "./project/types";
+import { withSourceRange } from "./sourceMonitor";
 import { secondsToFrames } from "./time";
 
 export interface Sfx {
@@ -239,20 +241,24 @@ export const SFX: Record<string, Sfx> = {
 // ---- placing them ------------------------------------------------------------------
 
 /** One sound effect to place: by name, starting at `at` seconds or ending
- * at `endAt` (a riser then peaks exactly there), at `volume`. */
+ * at `endAt` (a riser then peaks exactly there), at `volume`, on `trackId`
+ * or the effects track. */
 export interface SoundCue {
   name: string;
   at?: number;
   endAt?: number;
   volume?: number;
+  trackId?: Id;
 }
 
 /**
  * Sound effects placed as one edit (add_sound_effect's list: a montage's
- * whooshes in one call and one undo step). Each lands at its frame on the
- * first audio track with room, a new one when none has; one that would
- * start before 0 loses its head instead. `assets` holds each effect's file
- * by name (made once per project); `playhead` is the default start.
+ * whooshes in one call and one undo step). Each lands at its frame on its
+ * `trackId`, else on the effects stem (ADR-098): the first SFX track with
+ * room, another SFX track when sounds overlap, one made when there is
+ * none; never in a gap on the voiceover or the music. One that would start
+ * before 0 loses its head instead. `assets` holds each effect's file by
+ * name (made once per project); `playhead` is the default start.
  */
 export function placeSounds(p: Project, cues: SoundCue[], assets: Map<string, Asset>, playhead: number): { project: Project; clipIds: Id[] } {
   const clipIds: Id[] = [];
@@ -262,9 +268,12 @@ export function placeSounds(p: Project, cues: SoundCue[], assets: Map<string, As
     const head = cue.endAt !== undefined ? Math.max(0, s.seconds - cue.endAt) : 0;
     const frame = cue.endAt !== undefined ? secondsToFrames(Math.max(0, cue.endAt - s.seconds), p.fps) : cue.at !== undefined ? secondsToFrames(cue.at, p.fps) : playhead;
     const range = head > 0 ? { in: Math.min(head, asset.duration - 0.05), out: asset.duration } : undefined;
-    const r = placeAsset(p, asset, frame, undefined, false, range);
-    p = cue.volume !== undefined && cue.volume !== 1 ? updateClip(r.project, r.clipId, (c) => ({ ...c, volume: cue.volume! }) as Clip) : r.project;
-    clipIds.push(r.clipId);
+    let clip = clipForAsset(asset, frame, p.fps);
+    if (range) clip = withSourceRange(clip, asset, range, p.fps);
+    if (cue.volume !== undefined && cue.volume !== 1) clip = { ...clip, volume: cue.volume } as Clip;
+    const r = roleTrack(p, assetRole(asset) ?? "effects", clip.start, clip.duration, cue.trackId);
+    p = addClip(r.project, r.trackId, clip, "overwrite");
+    clipIds.push(clip.id);
   }
   return { project: p, clipIds };
 }

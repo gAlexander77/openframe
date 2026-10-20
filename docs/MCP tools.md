@@ -4,9 +4,17 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 156 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 158 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
+
+The server's instructions, kept short because some clients copy them into every tool's description ([[ADR-095 Media is known by its file, agents choose where files go, the guide is read once]]):
+
+```text
+You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable. Call help first: the steps that make a video, tool by tool; help with topic ad, epic_edit, voiceover or social_short is a playbook, with a tool's name its parameters and an example. Times are seconds; positions are fractions of the canvas from its center (x right, y down); rectangles (box, region) are a top-left corner and a size, fractions of the picture. Work in a new_project: the user's own projects stay untouched.
+```
+
+## The guide (help's overview)
 
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
@@ -18,10 +26,10 @@ To make a video:
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
 4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
-6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals.
+6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
-9. export_video writes the file to the user's Videos folder and returns its path; loudness -14 suits online video.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.
 Sound design: set_audio_filter (a low-pass sweep opening on the drop), set_reverb, set_echo, set_tape_stop; measure_loudness checks the mix against online, ebu_r128 or atsc_a85 before export.
@@ -42,8 +50,8 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`
-- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
+- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
 ## Start here
 
@@ -71,7 +79,7 @@ No parameters.
 
 ### list_catalog
 
-Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
+Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -118,7 +126,7 @@ Example:
 
 ### save_project_copy
 
-Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand: a 16:9 cut of a 9:16 ad that export_versions could not lay out well, or a try that may be thrown away; the original stays as it was.
+Save the open project as a copy under a new name, sharing its media, and open the copy (default) or stay. For a variant worked by hand, or a try that may be thrown away; the original stays as it was. For another shape of the same film, export_versions with save_projects saves it already laid out in that shape, to fine-tune.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -133,7 +141,7 @@ Example:
 
 ### open_project_file
 
-Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker.
+Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -141,9 +149,11 @@ Open a project JSON as a new project identity. Desktop resolves relative media b
 
 ### collect_project
 
-Collect project JSON and local media into a new folder chosen in the native dialog. Desktop only. Includes proxies, LUTs and cutouts; reports copy progress.
+Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder named after the project (numbered when the name is taken), so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.
 
-No parameters.
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `folder` | string |  | Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog |
 
 ### set_project
 
@@ -170,18 +180,18 @@ Bring files in and keep the library tidy.
 
 ### import_media
 
-Import media files into the project by absolute path (desktop) or URL. Returns the new assets with their ids, for add_media_clip.
+Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `files` | { src, name }[] | yes | Files to import |
 | `files[].src` | string | yes | Absolute path or URL |
-| `files[].name` | string |  | Display name |
+| `files[].name` | string |  | The name the library shows (default the file's name); any text, it does not decide the format |
 
 Example:
 
 ```json
-{"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4"},{"src":"C:/Music/track.mp3"}]}}
+{"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4","name":"Product hero"},{"src":"C:/Music/track.mp3"}]}}
 ```
 
 ### remove_media
@@ -287,16 +297,17 @@ Add an adjustment layer: its color settings, filter and effects apply to every l
 
 ### add_track
 
-Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom.
+Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `kind` | "video" \| "audio" | yes | Track kind |
 | `name` | string |  | Track name |
+| `role` | "dialog" \| "music" \| "effects" \| "ambience" |  | Audio tracks: the stem it is |
 
 ### update_track
 
-Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a track.
+Mute, solo, hide, lock, rename, resize, color, or set the volume, pan or role of a track. role (audio tracks: dialog, music, effects, ambience) says which stem it is; a track without one is judged by its files (a spoken line is dialog, a sound effect effects, an imported song music), never by its name.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -310,6 +321,7 @@ Mute, solo, hide, lock, rename, resize, color, or set the volume or pan of a tra
 | `solo` | boolean |  | While any track is soloed, only soloed tracks sound |
 | `color` | "none" \| "red" \| "orange" \| "yellow" \| "green" \| "cyan" \| "blue" \| "purple" \| "pink" |  | Track tint; a clip label takes precedence; none clears it |
 | `height` | "small" \| "normal" \| "large" |  | Row height on the timeline |
+| `role` | "dialog" \| "music" \| "effects" \| "ambience" \| "auto" |  | Audio tracks: the stem it is (auto clears it: judged by its files) |
 
 ### move_track
 
@@ -688,12 +700,17 @@ Example:
 
 ### analyze_music
 
-Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest, or null). Sections may be as short as two bars and their bounds follow bars or phrases. All times are TIMELINE seconds, inside the clip. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every detected drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
+Read a music clip's structure on this computer, as Final Cut's beat grid shows it (song parts, bars, beats), to cut to: bpm; every beat; downbeats (each bar's first beat, 4 beats a bar, from where the accents fall); phrases (every 4 bars); sections, each {start, end, label, energy} with label intro, verse, build, drop, breakdown or outro and energy 0..1 (1 the loudest part); beat_energy (0..1 per beat); hits (strong onsets on or off the beat: drum hits, stabs); drops (every qualifying rise after a dip) and drop (the biggest the clip plays, or null). Sections may be as short as two bars and their bounds follow bars or phrases. The whole music file is read (once; the reading is kept for every clip of it) and placed through the clip's in-point, speed and position, so a trimmed clip keeps the file's bar phase and drops; source says what was read. All times are TIMELINE seconds, inside the clip. confidence (0..1) says how sure the tempo, the bar lines and the sections are, with a note naming the hint to give when one is low. When the music's structure is known (a cue sheet, the composer's notes), give it in the file's own seconds: bpm, first_downbeat (a bar's first beat) and cues (each part's start and label) replace what would be detected. markers also drops markers: beats (label Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (a Drop marker for every drop), one undo step; cut_to_beats then cuts on them (grid bars or phrases), add_beat_hits hits them (marker_label Bar or Drop) and fit_music moves the drop. Example: {"clip_id": "c_3", "markers": ["bars", "drop"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The music clip (audio, or a video with sound) |
 | `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Kinds of markers to add (default none) |
+| `bpm` | number |  | The tempo, when known: beats are tracked at it (40..240) |
+| `first_downbeat` | number |  | A bar's first beat, in the music file's own seconds (0 for a score that starts on a bar): sets where bars start; with bpm, the whole grid (0..) |
+| `cues` | { at, label }[] |  | The parts, when known, in the music file's own seconds: each starts at its at and runs to the next; a drop cue after another part is a drop. [{at: 0, label: 'intro'}, {at: 4, label: 'build'}, {at: 8, label: 'drop'}, {at: 32, label: 'breakdown'}, {at: 36, label: 'drop'}, {at: 48, label: 'outro'}] |
+| `cues[].at` | number | yes | Source seconds the part starts (0..) |
+| `cues[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
 
 Example:
 
@@ -1772,7 +1789,7 @@ Restyle clips with the brand kit, keeping their words, timing and place. Titles:
 
 ### add_ad_element
 
-Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under 40 px at a 1080 short side. Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
+Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1964,21 +1981,24 @@ Voice, music, effects and the mix.
 
 ### add_voiceover
 
-Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Direct each line: a voice and speed of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph). Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a line takes about a second with WebGPU, several on a CPU.
+Narrate a script, directed: every line is read on this computer (Kokoro), whole, and placed after the one before at its real length on a new Voiceover track, with a caption for each timed to its voice, as one undo step with its speech files. Pace: each line lands on its words a second over its speech (first word to last): read_as narration (2.3-2.8, the default), ad (2.6-3.1) or social (2.8-3.4), or words_per_second [lowest, highest], per call or per line; with no speed given, each line is read, measured and read again at the speed that lands it (up to three reads; the audio is never stretched). A speed given is kept as given. Direct each line: a voice of its own (several speakers in one call), at (a timeline time, such as a beat or a cut; later lines follow it), pause_after (seconds before the next line; by default the line's ending sets it: 0.4 after a sentence, 0.1 after a comma, 0.6 after an ellipsis, 0.8 after a paragraph), pace slow or fast. Pauses inside a line are written in it: [pause] (0.5 s), [pause 0.4], [pause 300ms], [beat] (1 s) or <break time="0.4s"/>; the voice's own pause there is lengthened, so the sentence keeps its intonation, and the caption never shows the mark. A word cannot be marked for emphasis (the voice model has no such control; *word* stars are dropped, with a note): write it last in its phrase, where English puts the main stress, or [pause 0.2] before it. pronounce respells words for the voice only ({"MCP": "M C P", "OpenFrame": "Open Frame"}); captions keep the words as written. The natural finish (default) makes it sit like a recorded read: pauses at commas and sentence ends a reader's length, a low cut and a little presence, every line at one loudness, room tone under the pauses, faded edges, the voice compressor and a touch of room. Answers each line's start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second, and clip ids: cut the footage to them, then review_voiceover to hear it back. Voices: af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model (about 325 MB at quality best); a read takes about a second with WebGPU, several on a CPU.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `lines` | { text, caption, at, voice, speed, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
+| `lines` | { text, caption, at, voice, speed, words_per_second, pause_after, paragraph, pace }[] | yes | The script, one sentence or two per line (a breath each) |
 | `lines[].text` | string | yes | Words to say and show, with pause marks: [pause], [pause 0.4], [pause 300ms], [beat], <break time="0.4s"/> |
 | `lines[].caption` | string |  | What the caption shows instead, when it should differ from the words spoken (20% off for 'twenty percent off', a URL) |
 | `lines[].at` | number |  | Timeline seconds this line starts (a beat, a cut); later lines follow it; default after the line before (0..) |
 | `lines[].voice` | string |  | This line's voice (another speaker); default the call's |
-| `lines[].speed` | number |  | This line's speed; default the call's (0.5..2) |
+| `lines[].speed` | number |  | This line's speed, kept as given; default the call's, or chosen to land on its words a second (0.5..2) |
+| `lines[].words_per_second` | number[] |  | This line's [lowest, highest] words a second; default the call's |
 | `lines[].pause_after` | number |  | Seconds of silence before the next line (overrides gap and the line's ending) (0..10) |
 | `lines[].paragraph` | boolean |  | This line ends a paragraph: 0.8 s before the next |
-| `lines[].pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast; review_voiceover then flags it only past 2 or 7.5 syllables a second, and a fast line is not read again slower for being rushed (default normal) |
+| `lines[].pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast moves its words a second half a word down or up, for the read and the review (default normal) |
 | `voice` | string |  | Voice id, or a blend of voices' styles ("af_heart:60,af_bella:40"); default af_heart, the most natural |
-| `speed` | number |  | 1 is the model's own pace (about 3.3 words a second inside a line); default 0.95, a narrator's (0.5..2) |
+| `read_as` | "narration" \| "ad" \| "social" |  | The kind of read, whose words a second lines land on: narration 2.3-2.8, ad 2.6-3.1, social 2.8-3.4 (default narration) |
+| `words_per_second` | number[] |  | [lowest, highest] words a second over each line's speech, first word to last (narration [2.3, 2.8]); the speed is chosen to land on it |
+| `speed` | number |  | Every line's speed, kept as given (1 is the model's own pace, about 4.6 syllables a second); default: chosen per line to land on its words a second (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `start` | number |  | Seconds the first line starts, default 0 (0..) |
 | `gap` | number |  | Seconds between every pair of lines, instead of each line's ending choosing (0..) |
@@ -2028,12 +2048,12 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 Example:
 
 ```json
-{"name":"add_voiceover","arguments":{"lines":[{"text":"Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer."},{"text":"Every edit is a tool an agent can call,","voice":"am_michael"},{"text":"so a whole film can be made by asking.","voice":"am_michael","pause_after":0.8},{"text":"Free. [beat] Open source. Yours.","at":12,"caption":"Free, open source, yours."}],"voice":"af_heart","pronounce":{"OpenFrame":"Open Frame"}}}
+{"name":"add_voiceover","arguments":{"lines":[{"text":"Meet OpenFrame. [pause 0.4] The video editor that runs on your own computer."},{"text":"Every edit is a tool an agent can call,","voice":"am_michael"},{"text":"so a whole film can be made by asking.","voice":"am_michael","pause_after":0.8},{"text":"Free. [beat] Open source. Yours.","at":12,"caption":"Free, open source, yours.","pace":"slow"}],"voice":"af_heart","read_as":"ad","pronounce":{"OpenFrame":"Open Frame"}}}
 ```
 
 ### review_voiceover
 
-Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: words and syllables a second (read speech moves at 4-5.5 syllables a second inside a line), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it (LU; at least 8, 10-15 for a promo). Each line ends with a verdict, ok or what to fix, and fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or a speed, set_param volume, duck_under_speech, trim_clip). A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. A line meant to be slow or fast (add_voiceover's pace) is held to that. The summary gives the script's pace with its pauses (2.3-2.8 words a second for narration) and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
+Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last, and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves it), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed: each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2049,7 +2069,7 @@ Example:
 
 ### retake_voiceover
 
-Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, a speed or pronunciations (the pronounce fix review_voiceover suggests). The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds and voice. When the rushed-line rule chooses a speed, speed_chosen is true and a note explains it.
+Read one voiceover line again and put it in the line's place, as one undo step: new text (with pause marks), a voice, words_per_second or read_as (the speed is then chosen by reading and measuring, as add_voiceover does), a speed (kept as given) or pronunciations (the pronounce fix review_voiceover suggests). With none of these, a line whose speed was chosen is landed on its words a second again, and a line read at a speed given keeps it. The voice model reads the same input the same way every time, so change something. The clip keeps its id, start and settings; its caption takes the new words and length; the old take leaves the media library. A longer take must fit before the next line unless ripple is true, which moves the lines and captions after it by the difference (the picture stays). Answers the line's new start, end, seconds, voice, speed, words_per_second (over its speech) and target_words_per_second; when the speed was chosen, speed_chosen is true and a note says how many reads it took.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2057,7 +2077,9 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 | `text` | string |  | New words, with pause marks; default the line's own |
 | `caption` | string |  | What the caption shows, when it should differ from the words; default the new text as written |
 | `voice` | string |  | Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default af_heart |
-| `speed` | number |  | 1 is the model's own pace; default 0.95 (0.5..2) |
+| `read_as` | "narration" \| "ad" \| "social" |  | The kind of read, whose words a second lines land on: narration 2.3-2.8, ad 2.6-3.1, social 2.8-3.4 (default narration) |
+| `words_per_second` | number[] |  | [lowest, highest] words a second over the line's speech; default the line's own |
+| `speed` | number |  | Kept as given; default the line's own speed, or chosen again when it was chosen (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice, replacing the line's own map ({} clears it) |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
@@ -2067,25 +2089,26 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 Example:
 
 ```json
-{"name":"retake_voiceover","arguments":{"clip_id":"c_vo2","pronounce":{"MCP":"M C P"},"ripple":true}}
+{"name":"retake_voiceover","arguments":{"clip_id":"c_vo2","pronounce":{"MCP":"M C P"},"words_per_second":[2.3,2.8],"ripple":true}}
 ```
 
 ### text_to_speech
 
-Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. Voices (list_catalog section voices describes each): af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model.
+Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. With no speed given it lands on a narrator's words a second (2.3-2.8; pace slow or fast moves it half a word), its speed chosen by reading and measuring. Voices (list_catalog section voices describes each): af_heart, af_bella, af_nicole, bf_emma, am_michael, am_fenrir, am_puck, af_aoede, af_kore, af_sarah, bm_george, bm_fable, bf_isabella. The first use downloads the speech model.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The title (text clip) |
 | `voice` | string |  | Voice id (list_catalog section voices), or a blend ("af_heart:60,af_bella:40"); default af_heart |
-| `speed` | number |  | 1 is the model's own pace; default 0.95 (0.5..2) |
+| `pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have, kept with it: slow (an end-card tagline, a dramatic beat) or fast moves its words a second half a word down or up, for the read and the review (default normal) |
+| `speed` | number |  | 1 is the model's own pace; kept as given. Default: chosen per line to land on its words a second (Heart narrates at 0.6-0.9) (0.5..2) |
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
 
 ### add_sound_effect
 
-Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). One lands on an audio track at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. `sounds` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. Answers the new clip ids.
+Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish (Swish, 0.35 s), pop (Pop, 0.15 s), click (Click, 0.06 s), ding (Ding, 1.4 s), success (Success, 0.5 s), rise (Riser, 2 s), impact (Impact, 1.2 s), subDrop (Sub drop, 1.8 s), braam (Braam, 3 s), reverseCymbal (Reverse cymbal, 2 s), glitch (Glitch, 0.5 s), shutter (Camera shutter, 0.25 s), swooshUp (Swoosh up, 0.9 s), boom (Boom, 1.5 s). One lands at `start` (default the playhead), or so that it ENDS at `end_at`: a riser or reverse cymbal then peaks exactly there (put end_at on the drop or a cut); a hit, boom or sub drop goes at the beat with start. They land on the effects stem: an SFX track (made the first time, reused after; overlapping sounds get a second SFX track), never a gap on the voiceover or the music; track_id puts them on a track of your own. `sounds` places many at once, as one undo step: a whoosh on every cut of a montage in one call (it cannot go in batch). Each file is made once per project and reused. add_ambience lays continuous natural sound (wind, water, rain, city, a rocket's rumble, room tone). Answers the new clip ids.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2093,16 +2116,40 @@ Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish
 | `start` | number |  | Timeline seconds the sound starts (0..) |
 | `end_at` | number |  | Timeline seconds the sound ends instead (start = end_at - its length) (0..) |
 | `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB, 0.25 -12 dB); default 1 (0..4) |
-| `sounds` | { name, start, end_at, volume }[] |  | Many sounds in one call instead of name: each with its own name, start or end_at, and volume |
+| `track_id` | string |  | An audio track to put them on (default the SFX track); where a sound would overlap one there, a new track of its role just below |
+| `sounds` | { name, start, end_at, volume, track_id }[] |  | Many sounds in one call instead of name: each with its own name, start or end_at, volume and track_id |
 | `sounds[].name` | "whoosh" \| "swish" \| "pop" \| "click" \| "ding" \| "success" \| "rise" \| "impact" \| "subDrop" \| "braam" \| "reverseCymbal" \| "glitch" \| "shutter" \| "swooshUp" \| "boom" | yes | Which effect |
 | `sounds[].start` | number |  | Timeline seconds it starts (default the playhead) (0..) |
 | `sounds[].end_at` | number |  | Timeline seconds it ends instead (0..) |
 | `sounds[].volume` | number |  | Gain, default 1 (0..4) |
+| `sounds[].track_id` | string |  | Its audio track; default the call's track_id, else the SFX track |
 
 Example:
 
 ```json
 {"name":"add_sound_effect","arguments":{"sounds":[{"name":"whoosh","start":3.9},{"name":"whoosh","start":7.9,"volume":0.6},{"name":"rise","end_at":12},{"name":"impact","start":12}]}}
+```
+
+### add_ambience
+
+Lay continuous natural sound under the pictures, made on this computer (no recordings, nothing downloaded): wind (open-air wind in gusts, a low buffeting under it); stream (a brook babbling over stones, close); waterfall (a waterfall's steady roar, close enough to feel); surf (waves breaking on a beach and washing back, a distant roar between); rain (steady rain on leaves and ground, drops near and far); rocket (a rocket's launch heard from a distance: a deep roar with its crackle); city (a city street: cars passing near and far over the city's low hum); roomTone (a quiet room's air: ventilation and the room itself, for under and between lines). It runs from start (default the playhead) to end, or for length seconds (default to the end of the timeline), faded in and out (fade_in 1 s and fade_out 1.5 s by default), on the Ambience track (made the first time, reused after; never the voiceover, the music or the effects). Each bed moves slowly and at random as a recording does (gusts, waves arriving every 7 to 13 s, cars passing near and far) and its file loops without a seam; a bed past 300 s repeats it. Made at a level that sits under a voice with volume 1 (about -27 LUFS; the rocket -21, room tone -46): volume 0.5 is 6 dB quieter. The same name and seed reuse the file; another seed is another take. preview_audio with solo ambience hears it. Answers the clip ids, the file's asset id and the track. It cannot go in batch.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `name` | "wind" \| "stream" \| "waterfall" \| "surf" \| "rain" \| "rocket" \| "city" \| "roomTone" | yes | Which bed (list_catalog section ambience describes each) |
+| `start` | number |  | Timeline seconds it starts; default the playhead (0..) |
+| `end` | number |  | Timeline seconds it ends; default the end of the timeline (0..) |
+| `length` | number |  | Seconds it lasts, instead of end (0.5..) |
+| `fade_in` | number |  | Seconds it fades in over; default 1 (0..) |
+| `fade_out` | number |  | Seconds it fades out over; default 1.5 (0..) |
+| `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB); default 1 (0..4) |
+| `seed` | integer |  | Another take of the same bed (default 1) (1..) |
+| `track_id` | string |  | An audio track to put it on; default the Ambience track |
+
+Example:
+
+```json
+{"name":"add_ambience","arguments":{"name":"waterfall","start":22,"end":34,"fade_in":1.5,"fade_out":2,"volume":0.7}}
 ```
 
 ### set_fades
@@ -2233,18 +2280,19 @@ Measure clips' loudness (EBU R128) and set their volume to reach a target withou
 
 ### duck_under_speech
 
-Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). voice_above_music_lu measures the rendered voice and bed, selects a depth, and reports the achieved difference.
+Lower a music clip wherever the other clips with sound under it have speech, as editable volume keyframes (replaces its volume keyframes). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the least dip). Both are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins (with min_line_lu, each line with its own dip). Plain depth lowers by that many dB without measuring.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The music clip |
-| `voice_above_music_lu` | number |  | Measure and choose attenuation (0-40 dB) to place voice this many LU above music over the detected speech window; overrides depth and reports achieved balance (0..30) |
-| `depth` | number |  | dB to lower, default 12 (1..40) |
+| `voice_above_music_lu` | number |  | LU the voice sits over the music while it speaks (all lines together; 10-15 for a promo); measured and met, overrides depth (0..30) |
+| `min_line_lu` | number |  | LU every line sits over the music at least (each line alone, its first word to its last); a line short of it dips deeper, measured and met (0..30) |
+| `depth` | number |  | dB to lower, default 12; with min_line_lu alone, the least dip under every line (default none) (1..40) |
 
 Example:
 
 ```json
-{"name":"duck_under_speech","arguments":{"clip_id":"c_music","depth":12}}
+{"name":"duck_under_speech","arguments":{"clip_id":"c_music","voice_above_music_lu":12,"min_line_lu":10}}
 ```
 
 ### reduce_noise
@@ -2299,7 +2347,7 @@ Look inside imported media before using it: a video's own frames at source secon
 | `asset_id` | string | yes | A video or picture asset id from describe_project or import_media |
 | `times` | number[] |  | Source seconds, up to 24 |
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
-| `columns` | integer |  | Default 4 (1..6) |
+| `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Default 320 (120..640) |
 
 Example:
@@ -2315,7 +2363,7 @@ See several moments at once: one JPEG contact sheet of the frames at the given t
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `times` | number[] | yes | Seconds, up to 24 |
-| `columns` | integer |  | Default 4 (1..6) |
+| `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
 
 Example:
@@ -2333,7 +2381,7 @@ See movement and timing: consecutive frames of a stretch of the timeline (defaul
 | `start` | number | yes | Timeline seconds (0..) |
 | `end` | number |  | Timeline seconds; default start + 2 (0..) |
 | `fps` | number |  | Frames a second, default 8 (1..30) |
-| `columns` | integer |  | Default 6 (1..8) |
+| `columns` | integer |  | Tiles a row, at most 8; default 6 (1..8) |
 | `tile_width` | integer |  | Default 240 (120..640) |
 
 Example:
@@ -2351,9 +2399,27 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (at most the canvas width) (64..1920) |
 
+### preview_audio
+
+Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `start` | number | yes | Timeline seconds (0..) |
+| `end` | number |  | Timeline seconds; default start + 10, at most start + 30 (0..) |
+| `solo` | "mix" \| "voice" \| "music" \| "effects" \| "ambience" |  | What to hear: the whole mix (default) or one stem by role |
+| `loudness` | number |  | Hear it as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
+| `audio` | boolean |  | false: the measurements only, no MP3 (default true) |
+
+Example:
+
+```json
+{"name":"preview_audio","arguments":{"start":6,"end":14,"solo":"mix"}}
+```
+
 ### check_project
 
-Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons, text too small or too short to read, text in low contrast with the picture behind it (measured on the rendered frame, WCAG ratio named), captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
+Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), and by kind: an ad's end card, an epic edit's cuts on the beat (cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Each finding names the clip, the time and the tool that fixes it. Run it, fix, run it again.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2367,11 +2433,13 @@ Example:
 
 ### measure_loudness
 
-Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: "ebu_r128", loudness: -23}. start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.
+Measure the mix the way export renders it (48 kHz stereo, every clip's effects, tails and fades) and check it against a delivery spec before exporting. Answers integrated_lufs (BS.1770), loudness_range_lu (EBU Tech 3342 LRA) with range (the LRA against what kind usually spans: film 5-15 LU, ad 3-8, social 3-10, podcast 3-8; a very flat or wide mix gets a note), short_term_max_lufs (loudest 3 s), momentary_max_lufs (loudest 400 ms), true_peak_dbtp (4x oversampled) and sample_peak_dbfs, then pass and the problems against spec: online (-14 LUFS ±1, at most -1 dBTP: YouTube, Spotify, TikTok), ebu_r128 (-23 LUFS ±0.5, at most -1 dBTP: European broadcast) or atsc_a85 (-24 LKFS ±2, at most -2 dBTP: US TV); all three when spec is left out. loudness measures what export_video with that loudness delivers (the mix raised or lowered, its true peak held by the limiter), so a failing mix can be checked as exported: {spec: "ebu_r128", loudness: -23}. by_track measures each audio track alone as mixed (integrated, loudest three seconds, LRA) and, with a Voiceover track and music, the voice over the music in three named windows that differ by design: program (the whole stretch, music between lines included), speech (while the voice speaks, its lines together) and per_line (each line alone: lowest, median, highest, and where the lowest is). start and end (timeline seconds) measure part of it. It takes about a quarter of the mix's length to run (a 60 s mix, some 15 s), twice that with loudness.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `by_track` | boolean |  | Report each audio track as mixed (integrated and three-second loudness), plus Voiceover minus other audio tracks excluding SFX; ignores master normalization for stems |
+| `by_track` | boolean |  | Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line |
+| `per_second` | boolean |  | With by_track, each track's three-second loudness every second too (long; default false: summaries only) |
+| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |
@@ -2385,7 +2453,7 @@ Example:
 
 ### export_video
 
-Export the open project to a video file in the user's Videos folder (in a folder named after the app), with no dialog; an existing file is never replaced. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2397,31 +2465,43 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `start` | number |  | Export from this second (0..) |
 | `end` | number |  | Export to this second (0..) |
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 
 Example:
 
 ```json
-{"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14}}
+{"name":"export_video","arguments":{"name":"spring-sale-16x9","resolution":"1080p","quality":"higher","loudness":-14,"folder":"D:/Deliveries/Spring sale"}}
 ```
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app; on the web, a save dialog per file), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed, keyed pushes and pans kept (reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `versions` | { ratio, duration, textless, fit, captions, name }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
+| `versions` | { ratio, duration, textless, fit, captions, name, reframe, focus }[] |  | Versions spelled out, e.g. [{ratio: '9:16', duration: 6}] |
 | `versions[].ratio` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original" | yes | Frame shape; original keeps the project's |
 | `versions[].duration` | number |  | Seconds; shorter than the project makes a cut-down (1..) |
 | `versions[].textless` | boolean |  | Titles and captions off |
 | `versions[].fit` | "fill" \| "blur" \| "fit" |  | How full-frame footage meets a new shape: fill (default), blur, fit |
 | `versions[].captions` | "burn" \| "none" \| "as_project" |  | burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest) |
 | `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
+| `versions[].reframe` | "subject" \| "center" |  | Footage the new shape crops: framed on its subject, following it (default), or center |
+| `versions[].focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
+| `versions[].focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `versions[].focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
+| `versions[].focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Every one of these shapes... |
 | `durations` | number[] |  | ...at every one of these lengths in seconds (one as long as the project is the full version); e.g. [30, 15, 6] |
 | `textless` | boolean |  | Also a textless version, in the first ratio |
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
 | `captions` | "burn" \| "none" \| "as_project" |  | For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest |
+| `reframe` | "subject" \| "center" |  | For every version that does not say: subject (default) or center |
+| `focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
+| `focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
+| `focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
+| `save_projects` | boolean |  | true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing |
 | `keep_end` | number |  | Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0 (0..) |
 | `check` | boolean |  | true: answer a contact sheet of every version and export nothing |
 | `check_at` | number[] |  | The moments the check sheet shows, as fractions of each version's length; default [0.15, 0.5, 0.92] |
@@ -2429,6 +2509,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Short side; default from the project |
 | `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
 | `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 
 Example:
 

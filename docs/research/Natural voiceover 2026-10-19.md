@@ -176,7 +176,69 @@ gone. `review_voiceover` measures each line's margin and the music's
 current duck instead, and names a depth: 14.2 dB put the four lines at
 12.0-12.8 LU, every verdict ok. A margin over 25 LU is now flagged too.
 The window target is the mixer's; this note leaves it as it is and
-records the limit.
+records the limit. (The target has since been measured only while the
+voice speaks; ADR-096 names every answer's window and adds `min_line_lu`,
+which holds each line to a minimum.)
+
+## Pace in words, landed by measuring (fourth round)
+
+Codex's documentary (eleven narration lines, Heart, best, natural finish)
+showed the pace rule above in the wrong unit. Read at the narrator speed
+0.9 the help suggested, its lines came out at 3.7-4.2 words a second over
+their speech (11 short words in 2.64 s for the first); retaken by hand,
+they landed at 2.33-2.76 words a second at these speeds:
+
+| Words | Speed | Words/s over the speech |
+|---|---|---|
+| 11 (all one syllable) | 0.61 | 2.64 |
+| 10 | 0.74 | 2.40 |
+| 11 | 0.75 | 2.44 |
+| 11 | 0.82 | 2.66 |
+| 10 | 0.75 | 2.44 |
+| 10 | 0.90 | 2.76 |
+| 15 | 0.68 | 2.52 |
+| 9 | 0.72 | 2.33 |
+| 13 | 0.84 | 2.71 |
+| 12 | 0.65 | 2.36 |
+| 11 (with a 0.3 s mark) | 0.75 | 2.53 |
+
+So a narrator's 2.3-2.8 words a second inside a line takes Heart's speed
+0.6-0.9, lower the shorter the words: a fixed speed cannot serve every
+line. Speed lengthened the first line 1.58 times from 0.9 to 0.61, a
+little more than 0.9 / 0.61 (1.48), since its comma and sentence pauses
+grow past the finish's least lengths. At 0.9 the first line said 4.17
+syllables a second, 4.6 at speed 1, as the table above found: the rate
+the first guess now uses.
+Since ADR-096 each line is read, measured and read again at the speed
+that lands it. Four of the same lines voiced with no speed (the
+`voice-pace` drive, headless Edge with WebGPU) chose 0.60, 0.78, 0.74 and
+0.75 and landed at 2.59, 2.46, 2.74 and 2.53 words a second, three in one
+read and one in two; Codex's hand-picked speeds for them were 0.61, 0.74,
+0.68 and 0.75. Across the script, gaps between lines in, they read 2.35
+words a second. One of them at a fixed 0.9 read 3.26. An ad line of 17
+longer words landed at 2.64 (ad 2.6-3.1) at speed 0.69 in two reads.
+
+## Emphasis, measured
+
+Kokoro's only handle on a word is its stress marks (its author's G2P
+raises a word's stress for emphasis, "only on less stressed, usually short
+words"). Ten sentences, each read plain, with the target word's stress
+raised and with the word in quotes (Heart, speed 0.85); Whisper's word
+times widened 80 ms each side; the word's peak pitch (YIN) and level (10
+ms envelope) against the line's median:
+
+| Ten short words | Length | Peak pitch | Peak level |
+|---|---|---|---|
+| Stress raised | +0.012 s (5 longer, 1 shorter) | -0.08 st (5 up, 5 down) | -0.37 dB (3 up, 7 down) |
+| In quotes | +0.054 s (7 longer, 1 shorter) | -0.48 st (3 up, 7 down) | +0.04 dB (4 up, 6 down) |
+
+An emphasized word is higher, louder and longer by a few semitones, a few
+dB and about a third; neither mark moves a word that way, and an earlier
+run on seven words with Heart and Michael agreed (pitch moved up to 5
+semitones either way). Every variant was heard word for word. Emphasis is
+therefore not offered; the guide says to write the word last in its
+phrase (the words before a pause are drawn out, above) or to pause
+before it.
 
 ## What was not measured
 

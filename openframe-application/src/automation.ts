@@ -12,19 +12,22 @@ import { STICKERS } from "./lib/stickers";
 import type { ActionId } from "./lib/keymap";
 import { findClip, getAsset, projectDuration } from "./lib/project/ops";
 import { run } from "./state/actions";
-import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, stillToUrl, versionsSheet, type RenderOptions, type VersionsOptions } from "./state/export";
+import { agentExportStatus, exportForAgent, exportVersions, renderToUrl, saveVersionProjects, stillToUrl, versionsSheet, type AgentExportOptions, type VersionsOptions } from "./state/export";
 import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type VoiceoverOptions } from "./state/tts";
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
 import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { addAmbience, type AmbienceRequest } from "./state/ambience";
+import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
-import { importFiles } from "./state/media";
+import { importEach, importFiles } from "./state/media";
+import { sourceName } from "./lib/mediaKind";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
@@ -38,7 +41,7 @@ import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } fr
 import { secondsToFrames } from "./lib/time";
 import { decodeMono, sourceFrames } from "./engine/analyze";
 import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
-import { measureBackdrop, tailLevels } from "./lib/contrast";
+import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
 import type { Project } from "./lib/project/types";
 
 export /** Imports belong to the open project (ADR-039). On Home none is open, and
@@ -57,7 +60,7 @@ const automation = {
     if (fileCommand) {
       const problems = validate(args, fileCommand.input);
       if (problems.length) throw new Error(problems.join("; "));
-      if (name === "collect_project") { needProject(); return collectProject(true); }
+      if (name === "collect_project") { needProject(); return collectProject(true, (args as { folder?: string }).folder); }
       return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
     }
     const report: CommandReport = {};
@@ -118,7 +121,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
+  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -130,8 +133,11 @@ const automation = {
 /** The picture at each of `seconds` as PNGs, drawn as the export draws
  * it, `width` pixels wide (never wider than the canvas). The viewer's own
  * canvas is only as big as it is on screen (222 pixels wide for a 9:16
- * project), so reading it capped every preview there. The viewer seeks
- * to the last one, so the user sees where the agent is looking. */
+ * project), so reading it capped every preview there. Each is drawn at the
+ * canvas's size (its short side at most 1080) and brought down, so a
+ * title weighs what it weighs in the exported file (drawn at 640 wide it
+ * looked heavier: ADR-098). The viewer seeks to the last one, so the user
+ * sees where the agent is looking. */
 async function grab(seconds: number[], width: number): Promise<Blob[]> {
   if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
   const p = store.get().project;
@@ -140,7 +146,11 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   const frames = seconds.map((t) => Math.min(secondsToFrames(t, p.fps), Math.max(0, end - 1)));
   store.seek(secondsToFrames(seconds.at(-1) ?? 0, p.fps));
   const w = Math.max(2, Math.round(Math.min(width, p.width)));
-  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)));
+  // ponytail: past 1080 on the short side the type is large enough that
+  // drawing at the full 4K canvas would change nothing but the time taken.
+  const k = Math.min(1, 1080 / Math.min(p.width, p.height));
+  const big = { width: Math.max(w, Math.round(p.width * k)), height: Math.max(2, Math.round(p.height * k)) };
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
 }
 
 /** Frames in a grid, each stamped with its label: the contact sheets. */
@@ -184,38 +194,55 @@ async function blobToBase64(blob: Blob): Promise<string> {
 }
 
 /**
- * What check_project measures before it judges (ADR-068): each title's
- * contrast with the picture behind it, rendered as export draws it with
- * every title off, and each long music clip's last seconds, decoded. A
- * failure to measure falls back to the check's own guess, never fails it.
+ * What check_project measures before it judges (ADR-068, ADR-097): every
+ * title's contrast with the picture behind it at a few moments of its life
+ * (designCheck.titleMoments), rendered as export draws it with every title
+ * off, its box, shadow and outline counted, and the fixes it names tried
+ * on the same pixels; and each long music clip's last seconds, decoded. A
+ * failure to measure falls back to the check's own guess and the answer
+ * says why; it never fails the check.
  */
 async function measureForCheck(p: Project): Promise<Measured> {
   const out: Measured = {};
-  const targets = contrastTargets(p);
+  const { targets, skipped } = contrastTargets(p);
   if (targets.length) {
     try {
       // Without its titles, at a width that is plenty for a luminance.
       const bare: Project = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => (c.type === "text" ? { ...c, disabled: true } : c)) })) };
       const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
-      const frames = [...new Set(targets.map((t) => t.frame))];
-      const pics = await exportStills(bare, frames, w, h);
+      const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
+      const contrast: NonNullable<Measured["contrast"]> = {};
       const canvas = new OffscreenCanvas(w, h);
       const g = canvas.getContext("2d", { willReadFrequently: true })!;
-      out.contrast = {};
-      for (const [i, frame] of frames.entries()) {
-        const bmp = await createImageBitmap(pics[i]);
-        g.drawImage(bmp, 0, 0, w, h);
-        bmp.close();
-        const px = g.getImageData(0, 0, w, h).data;
-        for (const t of targets.filter((x) => x.frame === frame)) {
-          const m = measureBackdrop(t.colors, px, w, { left: t.box.left * k, right: t.box.right * k, top: t.box.top * k, bottom: t.box.bottom * k });
-          if (m) out.contrast[t.clipId] = m;
+      // A few frames a render, so a long film's titles do not hold every
+      // picture in memory at once.
+      for (let i = 0; i < frames.length; i += 8) {
+        const batch = frames.slice(i, i + 8);
+        const pics = await exportStills(bare, batch, w, h);
+        for (const [j, frame] of batch.entries()) {
+          const bmp = await createImageBitmap(pics[j]);
+          g.drawImage(bmp, 0, 0, w, h);
+          bmp.close();
+          const rgba = g.getImageData(0, 0, w, h).data;
+          for (const t of targets) {
+            const s = t.samples.find((x) => x.frame === frame);
+            if (!s) continue;
+            const px = boxPixels(rgba, w, { left: s.box.left * k, right: s.box.right * k, top: s.box.top * k, bottom: s.box.bottom * k });
+            const m = measureLook(t.look, px);
+            if (!m || (contrast[t.clipId] && contrast[t.clipId].ratio <= m.ratio)) continue;
+            contrast[t.clipId] = { ...m, frame, fixes: t.fixes.map((x) => ({ say: x.say, ratio: measureLook(x.look, px)?.ratio ?? 0 })) };
+          }
         }
       }
-    } catch {
-      delete out.contrast;
+      out.contrast = contrast;
+      out.moments = frames.length;
+      const missed = [skipped && `${skipped} titles past the first 40 were not measured`, p.compounds?.some((k) => k.tracks.some((t) => t.clips.some((c) => c.type === "text"))) && "titles inside compound clips are part of their picture and were not measured"].filter(Boolean);
+      if (missed.length) out.contrastNote = missed.join("; ");
+    } catch (e) {
+      // Say why, so an agent knows the contrast findings are guesses.
+      out.contrastNote = `not measured, the picture could not be rendered here (${e instanceof Error ? e.message : String(e)}); titles over footage without an outline, shadow or box are tips instead`;
     }
-  }
+  } else if (p.tracks.some((t) => t.clips.some((c) => c.type === "text" && !c.disabled))) out.contrastNote = "no title is on screen long enough to measure";
   for (const t of tailTargets(p)) {
     const a = getAsset(p, t.assetId);
     if (!a?.hasAudio) continue;
@@ -271,8 +298,14 @@ const mcpHost: McpHost = {
   projectJson: () => store.document(),
   catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
   importMedia: async (files) => {
-    const assets = await automation.import(files.map((f) => ({ name: f.name ?? f.src.split(/[\\/]/).pop()!, src: f.src })));
-    return assets.map((a) => ({ id: a.id, name: a.name, kind: a.kind, duration: a.duration, width: a.width, height: a.height }));
+    needProject();
+    // `name` is only the library's label; the file says what it is (ADR-095).
+    const out = await importEach(files.map((f) => ({ name: f.name ?? sourceName(f.src), src: f.src, size: 0 })));
+    return out.map((o) =>
+      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height }
+      : "lut" in o ? { lut_id: o.lut.id, name: o.lut.name, kind: "lut" }
+      : { src: o.file.src, name: o.file.name, error: o.error },
+    );
   },
   undo: () => {
     store.undo();
@@ -307,6 +340,10 @@ const mcpHost: McpHost = {
     const pics = await sourceFrames(a, times, tileWidth);
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
+  audition: async (options) => {
+    const r = await previewAudio(options as AuditionRequest);
+    return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
+  },
   checkProject: async (kind) => {
     needProject();
     const p = store.document();
@@ -314,7 +351,7 @@ const mcpHost: McpHost = {
   },
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
-    return exportForAgent(options as RenderOptions);
+    return exportForAgent(options as AgentExportOptions);
   },
   exportStatus: () => agentExportStatus(),
   exportVersions: (options) => {
@@ -324,15 +361,21 @@ const mcpHost: McpHost = {
   versionsSheet: async (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     // A sheet of photographs too: sent as JPEG (jpeg above).
-    const bmp = await createImageBitmap(await versionsSheet(options as VersionsOptions & { at?: number[] }));
+    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[] });
+    const bmp = await createImageBitmap(sheet.blob);
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return jpeg(c);
+    return { image: await jpeg(c), subjects: sheet.subjects };
+  },
+  saveVersions: (options) => {
+    if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
+    return saveVersionProjects(options as VersionsOptions);
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>
     tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    : tool === "addAmbience" ? (needProject(), addAmbience(options as unknown as AmbienceRequest))
     : tool === "generateMusic" ? (needProject(), generateMusic(options))
     : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),
   listProjects: async () => {
