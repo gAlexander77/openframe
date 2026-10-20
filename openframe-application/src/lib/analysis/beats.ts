@@ -14,6 +14,8 @@
 // changes; Beat This! (MIT, ONNX) is the upgrade for downbeats and tempo
 // changes.
 
+import type { MusicPart } from "../project/types";
+
 // ---- FFT ---------------------------------------------------------------------
 
 /** In-place radix-2 complex FFT. `re.length` must be a power of two. */
@@ -340,6 +342,77 @@ export function tempoOf(beats: number[], fallback = 0): number {
   return num > 0 ? (60 * den) / num : fallback;
 }
 
+/**
+ * A steady song keeps one beat phase. Where a part has no kick (an intro of
+ * pads and off-beat hats), the tracker follows the hats and its beats run
+ * half a beat off the line the rest of the song keeps: the promo's Liftoff
+ * read its intro's beats and bars on the "and" (233 ms late at 128 BPM).
+ * When most beats sit within a tenth of a beat of one straight line (one
+ * tempo), a run of four or more a quarter beat or further off it is moved
+ * onto the line, with the beats either side still a tenth of a beat off
+ * (the tracker's way back). A song that changes tempo is left as tracked.
+ */
+export function keepPhase(times: number[]): number[] {
+  const n = times.length;
+  if (n < 16) return times;
+  const gaps = times.slice(1).map((t, i) => t - times[i]).sort((a, b) => a - b);
+  const p0 = gaps[gaps.length >> 1];
+  if (!(p0 > 0)) return times;
+  // Beat numbers: a gap of k periods counts k (a missing beat keeps the count).
+  const idx = [0];
+  for (let i = 1; i < n; i++) idx.push(idx[i - 1] + Math.max(1, Math.round((times[i] - times[i - 1]) / p0)));
+  // The line, by consensus: from the beat whose line through its
+  // neighbors (32 beats either way, so a tempo a little off still fits)
+  // holds the most of them, then fitted by least squares to the beats near
+  // it and grown, so a run that went off (the intro's) cannot tilt it.
+  const near = (a: number, b: number, i: number) => Math.abs(times[i] - (a + b * idx[i])) < 0.12 * b;
+  let best = -1, from = 0, a = 0, b = p0;
+  for (let i = 0; i < n; i++) {
+    const ai = times[i] - p0 * idx[i];
+    let support = 0;
+    for (let j = 0; j < n; j++) if (Math.abs(idx[j] - idx[i]) <= 32 && near(ai, p0, j)) support++;
+    if (support > best) [best, from, a] = [support, i, ai];
+  }
+  let use = times.map((_, j) => Math.abs(idx[j] - idx[from]) <= 32 && near(a, p0, j));
+  for (let pass = 0; pass < 5; pass++) {
+    const xs = idx.filter((_, i) => use[i]), ys = times.filter((_, i) => use[i]);
+    if (xs.length < 8) return times;
+    const mx = xs.reduce((sum, x) => sum + x, 0) / xs.length, my = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+    let num = 0, den = 0;
+    xs.forEach((x, i) => {
+      num += (x - mx) * (ys[i] - my);
+      den += (x - mx) ** 2;
+    });
+    if (!(den > 0)) return times;
+    b = num / den;
+    a = my - b * mx;
+    const next = times.map((_, i) => near(a, b, i));
+    if (next.every((x, i) => x === use[i])) break;
+    use = next;
+  }
+  const off = times.map((t, i) => (t - (a + b * idx[i])) / b);
+  if (off.filter((r) => Math.abs(r) < 0.1).length < 0.7 * n) return times;
+  const out = times.slice();
+  for (let i = 0; i < n; ) {
+    if (Math.abs(off[i]) < 0.25) {
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < n && Math.abs(off[j]) >= 0.25) j++;
+    if (j - i >= 4) {
+      // With the beats either side that were still on their way back.
+      let lo = i, hi = j;
+      while (lo > 0 && Math.abs(off[lo - 1]) >= 0.1) lo--;
+      while (hi < n && Math.abs(off[hi]) >= 0.1) hi++;
+      for (let k = lo; k < hi; k++) out[k] = Math.max(0, a + b * idx[k]);
+      j = hi;
+    }
+    i = j;
+  }
+  return out;
+}
+
 // ---- music structure (analyze_music) ---------------------------------------------
 // Final Cut's beat grid is the model: song parts, bars, beats. The beats
 // above are grouped into bars of four by where the accents fall (a louder
@@ -354,7 +427,7 @@ export function tempoOf(beats: number[], fallback = 0): number {
 export const BEATS_PER_BAR = 4;
 export const BARS_PER_PHRASE = 4;
 
-export type SectionLabel = "intro" | "verse" | "build" | "drop" | "breakdown" | "outro";
+export type SectionLabel = MusicPart;
 
 export interface MusicSection {
   /** Seconds. */
@@ -543,14 +616,21 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   // With the tempo and a downbeat given, the grid is given: every beat from
   // the downbeat, both ways. Otherwise the tracker places the beats.
   let times: number[];
+  // Where the tracker heard the beats: the music starts and ends there,
+  // though keepPhase moves a run of them onto the song's line.
+  let heard: number[] | undefined;
   if (o.bpm && o.firstDownbeat !== undefined) {
     const step = 60 / o.bpm;
     const first = o.firstDownbeat - Math.floor(o.firstDownbeat / step) * step;
     times = [];
     for (let k = 0; first + k * step < duration; k++) times.push(first + k * step);
-  } else times = trackBeats(env, period, o.tightness, false).map((f) => f / fps + offset);
-  const allFrames = times.map((t) => Math.max(0, Math.min(env.length - 1, Math.round((t - offset) * fps))));
-  const [ta, tb] = trimSilent(allFrames, peakNear);
+  } else {
+    heard = trackBeats(env, period, o.tightness, false).map((f) => f / fps + offset);
+    times = keepPhase(heard);
+  }
+  const frameOf = (t: number) => Math.max(0, Math.min(env.length - 1, Math.round((t - offset) * fps)));
+  const allFrames = times.map(frameOf);
+  const [ta, tb] = trimSilent((heard ?? times).map(frameOf), peakNear);
   const frames = allFrames.slice(ta, tb);
   const beats = times.slice(ta, tb).map((t) => Math.max(0, round4(t)));
   const n = beats.length;

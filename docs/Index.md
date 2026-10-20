@@ -334,3 +334,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   new sounds and splits stems; eight ambience beds are synthesized
   locally; preview_audio returns the mix or a stem as MP3 with numbers;
   previews draw text at the canvas's size.
+- [[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]] —
+  music markers follow their clip through trims, moves, speed and splits
+  and a second reading replaces them; set_music_grid keeps a song's tempo,
+  downbeat and parts for analysis, mark_beats and check_project; a steady
+  song's beats keep one phase; versions refit a title card compound as one
+  picture, fill the frame with a full-bleed split screen, hold text at the
+  readable size, judge 4:5 by the apps' zones and take overrides by hand;
+  unique copies copy nested compounds.

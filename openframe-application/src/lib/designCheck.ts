@@ -18,7 +18,8 @@ import { paramAt } from "./keyframes";
 import { textPad } from "./render/size";
 import { lookReach } from "./textLook";
 import { framesToSeconds, secondsToFrames } from "./time";
-import { mainTrack, projectDuration, sourceTimeAt } from "./project/ops";
+import { getAsset, mainTrack, projectDuration, sourceTimeAt } from "./project/ops";
+import { gridStructure, sourceToTimeline } from "./analysis/musicMap";
 import type { Clip, Id, Project, TextClip, Track, VisualClip } from "./project/types";
 import { layerAt } from "./render/plan";
 
@@ -329,8 +330,9 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     add({ rule: "no_end_card", level: "warning", message: "No title in the last seconds: an ad ends on the brand and a call to action", fix: "add_ad_element end_card over the last 2-3 s" });
 
   if (kind === "epic_edit") {
-    // Any of analyze_music's grids counts: a cut on a bar or phrase is on a beat.
-    const beats = p.markers.filter((m) => ["Beat", "Bar", "Phrase", "Drop"].includes(m.label ?? "")).map((m) => m.frame);
+    // Any of analyze_music's grids counts: a cut on a bar or phrase is on a
+    // beat. So does a song's given grid (set_music_grid), where its clips play it.
+    const beats = [...p.markers.filter((m) => ["Beat", "Bar", "Phrase", "Drop"].includes(m.label ?? "")).map((m) => m.frame), ...givenBeats(p)];
     if (!beats.length) add({ rule: "no_beat_grid", level: "warning", message: "No beat markers: an epic edit is cut to the music", fix: "analyze_music with markers beats, bars and drop on the music clip" });
     else {
       // Half-beats count: velocity edits cut on the "and" too.
@@ -380,4 +382,25 @@ function verdictOf(errors: number, warnings: number, tips: number): string {
   if (warnings) return `ok means no errors; ${n(warnings, "warning")} still to fix before delivering${tips ? `, and ${n(tips, "tip")} to consider` : ""}.`;
   if (tips) return `ok: no errors or warnings; ${n(tips, "tip")} to consider.`;
   return "ok: nothing found.";
+}
+
+/** The beats of every song given a grid (set_music_grid), as timeline
+ * frames where its clips play them: the grid an epic edit is cut to, with
+ * no markers needed. */
+export function givenBeats(p: Project): number[] {
+  const out: number[] = [];
+  for (const t of p.tracks) {
+    if (t.muted) continue;
+    for (const c of t.clips) {
+      if (c.type !== "audio" && c.type !== "video") continue;
+      const a = getAsset(p, c.assetId);
+      if (!a?.musicGrid) continue;
+      const map = sourceToTimeline(c, p.fps);
+      for (const b of gridStructure(a.musicGrid, a.duration).beats) {
+        const f = map.frame(b);
+        if (f !== null) out.push(f);
+      }
+    }
+  }
+  return out;
 }

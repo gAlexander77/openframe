@@ -20,6 +20,18 @@ describe("command registry", () => {
     }
   });
 
+  it("describes a clip's mask and crop, so a framed picture can be checked", () => {
+    let p = withAsset();
+    p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    const id = p.tracks[0].clips[0].id;
+    const seen = () => describeProject(p).tracks.flatMap((x) => x.clips).find((c) => c.id === id)!;
+    expect(seen()).not.toHaveProperty("mask");
+    expect(seen()).not.toHaveProperty("crop");
+    p = runCommand(p, "set_mask", { clip_ids: [id], shape: "circle", width: 0.56, height: 1, feather: 0.02 });
+    p = runCommand(p, "set_crop", { clip_ids: [id], left: 0.25, right: 0.25 });
+    expect(seen()).toMatchObject({ mask: { shape: "circle", x: 0, y: 0, width: 0.56, height: 1, feather: 0.02 }, crop: { left: 0.25, top: 0, right: 0.25, bottom: 0 } });
+  });
+
   it("sets what the inspector could and agents could not: blend, key, canvas fill, copies", () => {
     let p = withAsset();
     p = runCommand(p, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });

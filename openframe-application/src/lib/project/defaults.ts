@@ -29,6 +29,8 @@ import type {
   ImageClip,
   LutFile,
   Marker,
+  MusicGrid,
+  MusicPart,
   Project,
   Sound,
   TextClip,
@@ -373,8 +375,10 @@ export function normalizeProject(raw: unknown): Project {
       throw new ProjectError(`assets[${i}]: needs at least a "src"`);
     }
     const kind = a.kind === "audio" || a.kind === "image" ? a.kind : "video";
+    const { musicGrid: rawGrid, ...rest } = a;
+    const musicGrid = normalizeMusicGrid(rawGrid);
     return {
-      ...a,
+      ...rest,
       id: typeof a.id === "string" ? a.id : uid("a"),
       kind,
       name: typeof a.name === "string" ? a.name : a.src.split(/[\\/]/).pop()!,
@@ -383,6 +387,7 @@ export function normalizeProject(raw: unknown): Project {
       ...(a.animated === true ? { animated: true } : {}),
       hasVideo: typeof a.hasVideo === "boolean" ? a.hasVideo : kind !== "audio",
       hasAudio: typeof a.hasAudio === "boolean" ? a.hasAudio : kind !== "image",
+      ...(musicGrid ? { musicGrid } : {}),
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));
@@ -506,5 +511,18 @@ function normalizeMarkers(raw: unknown): Marker[] {
     frame: Math.max(0, Math.round(num(m.frame, 0))),
     label: typeof m.label === "string" ? m.label : "",
     color: typeof m.color === "string" ? m.color : "#3be0f0",
+    ...(isObj(m.follows) && typeof m.follows.clip === "string" && Number.isFinite(m.follows.at) && (m.follows.at as number) >= 0 ? { follows: { clip: m.follows.clip, at: m.follows.at as number } } : {}),
   }));
+}
+
+const MUSIC_PARTS: MusicPart[] = ["intro", "verse", "build", "drop", "breakdown", "outro"];
+
+/** A song's grid as saved, or nothing when it does not hold up. */
+function normalizeMusicGrid(raw: unknown): MusicGrid | undefined {
+  if (!isObj(raw) || !(num(raw.bpm, 0) >= 40 && num(raw.bpm, 0) <= 240) || !(num(raw.firstDownbeat, -1) >= 0)) return undefined;
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .filter((x): x is Record<string, unknown> => isObj(x) && num(x.at, -1) >= 0 && MUSIC_PARTS.includes(x.label as MusicPart))
+    .map((x) => ({ at: num(x.at, 0), label: x.label as MusicPart }))
+    .sort((a, b) => a.at - b.at);
+  return { bpm: num(raw.bpm, 120), firstDownbeat: num(raw.firstDownbeat, 0), ...(sections.length ? { sections } : {}) };
 }

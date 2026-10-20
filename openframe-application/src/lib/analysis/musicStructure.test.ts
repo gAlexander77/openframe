@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { musicStructure } from "./beats";
+import { keepPhase, musicStructure } from "./beats";
 
 const RATE = 22050;
 
@@ -145,4 +145,32 @@ describe("musicStructure", () => {
     for (const s of m.sections.slice(1)) expect(m.downbeats).toContain(s.start);
   });
 
+});
+
+describe("one beat phase through a song", () => {
+  it("keeps an intro of off-beat hats with no kick on the song's beats", () => {
+    // 8 s of hats alone (on the "and" of every beat), then the kick comes in.
+    const pcm = song(128, [{ seconds: 7.5, kick: 0, hat: 0.4 }, { seconds: 22.5, kick: 0.8, hat: 0.4, bass: 0.2 }], { start: 0 });
+    const m = musicStructure(pcm, RATE);
+    const beat = 60 / 128;
+    // Every beat within 30 ms of the grid, the intro's included (tracked, they sat on the hats, a half beat late).
+    const off = (t: number) => Math.abs(t / beat - Math.round(t / beat)) * beat;
+    expect(m.beats.filter((t) => t < 7.5).length).toBeGreaterThan(8);
+    expect(Math.max(...m.beats.map(off))).toBeLessThan(0.03);
+    expect(m.bpm).toBeCloseTo(128, 0);
+  });
+
+  it("leaves beats alone when the song is not steady, and a short run that may be a fill", () => {
+    const steady = Array.from({ length: 40 }, (_, i) => i * 0.5);
+    expect(keepPhase(steady)).toEqual(steady);
+    // Three beats a half beat late: a fill or a push, kept.
+    const push = steady.map((t, i) => (i >= 10 && i < 13 ? t + 0.25 : t));
+    expect(keepPhase(push)).toEqual(push);
+    // Eight: an intro tracked on the off-beat, moved onto the line.
+    const late = steady.map((t, i) => (i < 8 ? t + 0.25 : t));
+    keepPhase(late).forEach((t, i) => expect(t).toBeCloseTo(i * 0.5, 6));
+    // A song that speeds up half way has no one line: as tracked.
+    const faster = Array.from({ length: 40 }, (_, i) => (i < 20 ? i * 0.5 : 10 + (i - 20) * 0.4));
+    expect(keepPhase(faster)).toEqual(faster);
+  });
 });

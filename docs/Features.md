@@ -764,7 +764,15 @@ makes a 13 s one). Times are timeline seconds.
   bars), sections named intro, verse, build, drop, breakdown or outro with
   their energy, each beat's loudness, strong hits on or off the beat, and
   the drop, as data in timeline seconds, and as Beat, Bar, Phrase,
-  section and Drop markers when asked ([[AI tools]]).
+  section and Drop markers when asked ([[AI tools]]). The markers follow
+  the music clip: trimmed, moved, split or sped up, they stay on the
+  song's beats, and reading again replaces them; the tempo answered is the
+  one heard.
+- **Give the song's grid** (`set_music_grid`): when the reading is wrong
+  (bars between the kicks, a drop missed), its tempo, a bar's first beat
+  and its parts, kept with the file; every later reading, `mark_beats` and
+  `check_project` use it, and its markers are placed at once
+  ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]).
 - **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
@@ -963,6 +971,10 @@ makes a 13 s one). Times are timeline seconds.
   from a hidden caption track), sized by the short side and kept clear of
   the stacks; `captions` says `burn`, `none` or `as_project`
   ([[ADR-091 Tall versions stack what stood side by side]]).
+  A title card built as a compound refits as one picture, a split screen
+  whose halves filled the frame fills the new one, text never ends under
+  the frame's readable size, and `overrides` move, resize or hide a clip
+  in one version by hand, kept in a saved version project (ADR-101).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of

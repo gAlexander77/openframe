@@ -12,10 +12,10 @@ import { cueSheet, musicName, readMusicArgs, type CueSheet, type MusicOptions } 
 import { STEMS, STYLES, type Stem } from "../lib/music/styles";
 import { placeAsset } from "../lib/drop";
 import { runCommand } from "../lib/commands";
-import { MUSIC_MARKERS, SECTION_NAMES } from "../lib/epic";
+import { markMusicClip, MUSIC_MARKERS, SECTION_NAMES } from "../lib/epic";
 import { createTrack } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
-import type { Asset, Id, Project } from "../lib/project/types";
+import type { Asset, Id, MusicGrid, Project } from "../lib/project/types";
 import { secondsToFrames } from "../lib/time";
 import { edit } from "./actions";
 import { adoptAndImport } from "./media";
@@ -32,8 +32,15 @@ export interface MusicAnswer extends CueSheet {
 
 const STEM_NAMES: Record<Stem, string> = { drums: "Drums", bass: "Bass", harmony: "Harmony", lead: "Lead" };
 
-/** The markers analyze_music would leave, from the cue sheet. */
-function markMusic(p: Project, cue: CueSheet, kinds: MusicOptions["markers"]): Project {
+/** The markers analyze_music would leave, from the cue sheet: on the placed
+ * clip, following it (a song's beats stay on it when it is moved or
+ * trimmed); not placed, at seconds into the music. */
+function markMusic(p: Project, cue: CueSheet, kinds: MusicOptions["markers"], clipId?: Id): Project {
+  if (clipId) {
+    const file = (ts: number[]) => ts.map((t) => t - cue.start);
+    const phrases = cue.cut_points.filter((c) => c.kind !== "bar").map((c) => c.at);
+    return markMusicClip(p, clipId, { beats: file(cue.beats), downbeats: file(cue.bars), phrases: file(phrases), sections: cue.sections.map((x) => ({ start: x.start - cue.start, label: x.role })), drops: file(cue.drops) }, kinds);
+  }
   for (const k of kinds) {
     const { label, color } = MUSIC_MARKERS[k];
     if (k === "sections") {
@@ -96,16 +103,19 @@ export async function generateMusic(args: Record<string, unknown>, onProgress?: 
   let clipId: Id | undefined;
   let stemClips: Partial<Record<Stem, Id>> = {};
   let markers = 0;
+  // The score's grid is known exactly: kept with its files, so analyze_music,
+  // mark_beats and check_project read it instead of guessing (ADR-101).
+  const grid: MusicGrid = { bpm: +(60 / plan.beat).toFixed(4), firstDownbeat: 0, sections: cue.sections.map((x) => ({ at: +(x.start - cue.start).toFixed(4), label: x.role })) };
   if (placed || o.markers.length) {
     edit(`Generate music`, (p0) => {
-      let p = { ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const } : a)) };
+      let p = { ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) };
       if (placed) ({ project: p, clipId, stemClips } = placeMusic(p, o, mix, stemAssets));
       const before = p.markers.length;
-      p = markMusic(p, cue, o.markers);
+      p = markMusic(p, cue, o.markers, clipId ?? Object.values(stemClips)[0]);
       markers = p.markers.length - before;
       return p;
     });
-  }
+  } else edit(`Generate music`, (p0) => ({ ...p0, assets: p0.assets.map((a) => (made.has(a.id) ? { ...a, role: "music" as const, musicGrid: grid } : a)) }));
   const stems = files.stems ? Object.fromEntries(STEMS.map((s) => [s, { asset_id: stemAssets[s]!.id, ...(stemClips[s] ? { clip_id: stemClips[s] } : {}) }])) : undefined;
   const note = [
     placed ? `Placed at ${o.start} s; every time is timeline seconds.` : "Not placed: times are seconds into the music.",
