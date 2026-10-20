@@ -131,3 +131,6 @@ not the cuts would part them; left alone, they stay together.
   a whole file can end up to half a frame past it; relinking that file to
   itself is refused ("must be at least ... to cover the clips"). It was
   so before this change, for any file whose length is not whole frames.
+  Done in [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]:
+  a file covers a clip when the clip's last frame starts inside it, the
+  rule clips are made by.

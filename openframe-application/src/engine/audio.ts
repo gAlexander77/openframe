@@ -13,7 +13,7 @@
 
 import { meterLevels } from "../lib/mixer";
 import type { AudioBufferSink } from "mediabunny";
-import { busEnvelope, EQ_BANDS, panEnvelope, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
+import { busEnvelope, EQ_BANDS, panEnvelope, sharedChains, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Compressor, Project, Sound, VideoClip } from "../lib/project/types";
@@ -163,7 +163,24 @@ export function scheduleAudio(
     return next;
   };
 
-  const pumps = soundingClips(p, hasAudio).map(async (sounding) => {
+  /** A split's halves share one EQ and compressor (ADR-117), so the second
+   * goes on from the first's state: each run's chain, by its first clip. */
+  const all = soundingClips(p, hasAudio);
+  const runs = sharedChains(all);
+  const heads = new Map<string, { input: AudioNode; output: AudioNode }>();
+  const headFor = (key: string, c: Sound) => {
+    let head = heads.get(key);
+    if (!head) {
+      // A run has an EQ or a compressor (sharedChains), so one is here.
+      const eq = eqChain(ctx, c.eq);
+      const comp = c.compressor ? compressorNodes(ctx, c.compressor) : null;
+      if (eq && comp) eq.output.connect(comp.input);
+      heads.set(key, (head = { input: (eq ?? comp)!.input, output: (comp ?? eq)!.output }));
+    }
+    return head;
+  };
+
+  const pumps = all.map(async (sounding) => {
     const { clip } = sounding;
     const clipStart = framesToSeconds(clip.start, p.fps);
     // Under a transition the sound runs into its handles to crossfade;
@@ -186,7 +203,9 @@ export function scheduleAudio(
     const media = await mediaFor(asset);
     if (stopped || !media.audioSink) return;
 
-    const gain = ctx.createGain();
+    // Closed until its span: a shared chain (a split's) carries the other
+    // half's sound before it (ADR-117).
+    const gain = new GainNode(ctx, { gain: 0 });
     const pan = ctx.createStereoPanner();
     pan.pan.value = soundPanAt(sounding, p.fps, lo);
     pan.connect(out);
@@ -217,15 +236,25 @@ export function scheduleAudio(
       pre.output.connect(input);
       input = pre.input;
     }
-    if (clip.compressor) {
-      const comp = compressorNodes(ctx, clip.compressor);
-      comp.output.connect(input);
-      input = comp.input;
-    }
-    const eq = eqChain(ctx, clip.eq);
-    if (eq) {
-      eq.output.connect(input);
-      input = eq.input;
+    const run = runs.get(sounding);
+    if (run) {
+      // Its EQ and compressor are the run's: every half's sound goes
+      // through them and on to each half's own filters and gain, which
+      // pass only while that half plays.
+      const head = headFor(run.key, clip);
+      head.output.connect(input);
+      input = head.input;
+    } else {
+      if (clip.compressor) {
+        const comp = compressorNodes(ctx, clip.compressor);
+        comp.output.connect(input);
+        input = comp.input;
+      }
+      const eq = eqChain(ctx, clip.eq);
+      if (eq) {
+        eq.output.connect(input);
+        input = eq.input;
+      }
     }
     // Fill: one channel to both sides, ahead of the EQ. A splitter is
     // always "discrete", so a stereo gain in front upmixes a mono file to
@@ -246,6 +275,14 @@ export function scheduleAudio(
       // Trim the envelope's head if we start late (realtime only).
       const skip = Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length);
       gain.gain.setValueCurveAtTime(env.subarray(Math.min(skip, env.length - 2)), envAt, envDur);
+      // The chain it shares carries the next half's sound from here on.
+      if (run?.next) {
+        try {
+          gain.gain.setValueAtTime(0, envAt + envDur);
+        } catch {
+          gain.gain.setValueAtTime(0, envAt + envDur + 1 / sr);
+        }
+      }
       // Keyframed pan rides the same span.
       const panCurve = panEnvelope(sounding, p.fps, lo, hi);
       if (panCurve) pan.pan.setValueCurveAtTime(panCurve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * panCurve.length), panCurve.length - 2)), envAt, envDur);

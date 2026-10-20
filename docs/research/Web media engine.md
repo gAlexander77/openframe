@@ -700,6 +700,9 @@ function audibleMediaTime(): number {
 > [!warning] Measured 2026-10-20: a split is not a splice
 > Two clips that play one file on from each other (a split) are scheduled as two sources, each through its own gain. Ramping each to nothing over a 4 ms click guard, as a splice needs, left an 18 dB hole of a few milliseconds at every split of a sounding clip. Without the guard the two sources meet sample for sample (the render matches the unsplit clip exactly but for one sample's interpolation), and a compressor on each half is filled by the first half's 6 ms delay tail; the second half's compressor still starts with no gain reduction, 24-40 dB under the signal for ~10 ms ([[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
 
+> [!note] Measured 2026-10-20: a split's halves share one compressor
+> A `DynamicsCompressorNode` (and a biquad EQ) carries state, so two nodes cannot continue one sound. Routing both halves' sources through one EQ and compressor, fanned out to each half's own filters and gain, renders the split identical to the unsplit clip (error -150 dBFS; it was 15-21 dB under the signal for 12-14 ms with the strong and voice presets). The gains then gate the shared output, which brought out an `AudioParam` default: a `GainNode` passes at its `value` (1) until its first automation event, so a half whose gain was first set 10 ms before its start passed the other half's sound until then, doubled. Create the gain at 0. A `setValueAtTime` exactly at the end of a `setValueCurveAtTime` is allowed (the curve owns [t, t + d)), and closes the earlier half's gain at the cut ([[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]).
+
 ### 4.7 Waveform peaks
 
 - Compute in a worker, from `AudioSampleSink.samples()` in one linear pass. `copyTo(f32, { planeIndex: c, format: 'f32-planar' })`.

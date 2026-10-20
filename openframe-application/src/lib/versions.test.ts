@@ -357,7 +357,7 @@ describe("what rides on a picture in versions (ADR-110)", () => {
     // The full-frame shot is drawn 1.78 times larger to cover the tall
     // frame: its blur grows with it, as it did, against what it shows.
     expect(param(by(q, shot), "blur", "amount")).toBe(30);
-    // A glow has no pixel-sized number to scale.
+    // So does its glow's reach (ADR-117): it stays.
     expect((by(q, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params).toEqual((by(p, shot) as VideoClip).effects.find((e) => e.type === "glow")!.params);
     // The title's blur and shake keep their size against its letters: the
     // shake was 1.78 times as far up and down, 0.56 across.
