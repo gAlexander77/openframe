@@ -412,13 +412,15 @@ export const APP_TOOLS: AppTool[] = [
       if (!(end > start)) throw new Error("end must be after start");
       const n = Math.min(36, Math.max(2, Math.round((end - start) * fps) + 1));
       const times = Array.from({ length: n }, (_, i) => +(start + ((end - start) * i) / (n - 1)).toFixed(3));
+      // The sheet first: with no project open it says so.
+      const image = await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6));
       const d = h.describe() as { tracks: { main?: boolean; clips: { start: number }[] }[]; markers: { at: number; label: string }[] };
       const inside = (t: number) => t >= start && t <= end;
       const cuts = (d.tracks.find((t) => t.main)?.clips ?? []).map((c) => c.start).filter((t) => t > 0 && inside(t));
       const markers = d.markers.filter((m) => inside(m.at)).map((m) => ({ at: m.at, label: m.label }));
       return {
         content: [
-          { type: "image", data: await h.sheet(times, Number(a.tile_width ?? 240), Number(a.columns ?? 6)), mimeType: "image/jpeg" },
+          { type: "image", data: image, mimeType: "image/jpeg" },
           { type: "text", text: JSON.stringify({ frames: times, cuts, markers }) },
         ],
       };

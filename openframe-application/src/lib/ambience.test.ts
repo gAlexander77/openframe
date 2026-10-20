@@ -149,6 +149,22 @@ describe("ambience beds", { timeout: 60_000 }, () => {
     }
   });
 
+  it("surf opens on a wave and keeps its roar between sets", () => {
+    // A bed under one shot of the sea must not open on a lull (the desktop
+    // check found 3 to 9 s of trough at the start of half the seeds), and
+    // the wash between sets stays a roar under the breaks (it fell 20 dB).
+    const { mono } = bed("surf");
+    const level = (a: number, b: number) => {
+      let e = 0;
+      for (let i = a; i < b; i++) e += mono[i] * mono[i];
+      return 10 * Math.log10(e / (b - a) + 1e-12);
+    };
+    const all = level(0, mono.length);
+    const perSecond = Array.from({ length: SECONDS }, (_, s) => level(s * RATE, (s + 1) * RATE) - all);
+    expect(Math.max(...perSecond.slice(0, 4))).toBeGreaterThan(3);
+    expect(Math.min(...perSecond)).toBeGreaterThan(-10);
+  });
+
   it("loop without a seam and have no clicks", () => {
     for (const id of Object.keys(AMBIENCE)) {
       const { mono } = bed(id);

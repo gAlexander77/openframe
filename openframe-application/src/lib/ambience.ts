@@ -189,7 +189,9 @@ function events(rng: Rng, rate: number, perSecond: () => number, voice: (rng: Rn
   const active: Voice[] = [];
   let pos = 0;
   const after = () => Math.max(1, (gap ? gap() : -Math.log(1 - rng.next()) / Math.max(1e-3, perSecond())) * rate);
-  let next = gap ? rng.next() * after() : after();
+  // Evenly spaced events (waves) begin within a second and a half, so a
+  // short bed never opens on a long lull.
+  let next = gap ? rng.next() * Math.min(after(), 1.5 * rate) : after();
   return {
     fill(L, R, len) {
       L.fill(0, 0, len);
@@ -492,9 +494,9 @@ export const AMBIENCE: Record<string, Bed> = {
     lufs: -25,
     layers: [
       [(g, r) => waves(g, r), 0],
-      [(g, r) => noiseBed(g, r, "pink", [lp(450, r), hp(40, r)], { width: 0.9, drift: { step: 6, db: 4 } }), -12],
+      [(g, r) => noiseBed(g, r, "pink", [lp(450, r), hp(40, r)], { width: 0.9, drift: { step: 6, db: 4 } }), -6],
       // Farther waves and foam along the beach: never quite silent up high.
-      [(g, r) => noiseBed(g, r, "pink", [hp(900, r), lp(6000, r)], { width: 0.95, drift: { step: 4, db: 6 } }), -21],
+      [(g, r) => noiseBed(g, r, "pink", [hp(900, r), lp(6000, r)], { width: 0.95, drift: { step: 4, db: 6 } }), -15],
     ],
   },
   rain: {

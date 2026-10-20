@@ -224,7 +224,7 @@ pub async fn adopt_begin(
 }
 
 /// A file name that cannot climb out of its folder or upset any OS.
-fn safe_name(name: &str) -> String {
+pub(crate) fn safe_name(name: &str) -> String {
     let base = Path::new(name)
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())

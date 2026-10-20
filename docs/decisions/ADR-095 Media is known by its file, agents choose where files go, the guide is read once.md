@@ -68,7 +68,9 @@ never replaces a file.** Rust (`export_begin_auto`, `project_collect`)
 checks the folder is absolute and not a file, then writes as before: an
 export takes the first free name (`Trip.mp4`, `Trip (2).mp4`, a name whose
 `.part` is still being written counting as taken), and a collection makes a
-new `OpenFrame-<time>` folder inside. When the export took a numbered name,
+new folder inside named after the project (`Trip`, `Trip (2)`; it was
+`OpenFrame-<time>` until the desktop check found an agent reading a
+nineteen-digit number back). When the export took a numbered name,
 the answer's `note` says so ("Trip.mp4 was already there, so this file is
 Trip (2).mp4; nothing was replaced."; `lib/export.ts renamedNote`). Without
 `folder` nothing changes. The person's own exports keep the save dialog.

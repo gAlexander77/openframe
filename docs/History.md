@@ -1534,6 +1534,25 @@ as many agents as needed.
     stem; previews draw text at the canvas's size, as export does. The
     stale first motion tile did not reproduce and has a drive.
 
+- **Checked in the desktop app**, built from the merged branch and driven
+  through the stdio bridge Codex used: each of its problems was replayed
+  (an import named "launch", a trimmed song's drop and bars, lines paced
+  on their own, ambience and effects on tracks of their own, a duck that
+  holds every line, contrast measured behind each title, the 9:16 check
+  keeping the rocket and the Eiffel Tower, an export and a collection into
+  a named folder, a second export numbered) and all held. Three things it
+  found were fixed: a collection's folder was named `OpenFrame-<time in
+  nanoseconds>` (now the project's name); preview_motion with no project
+  open answered "Cannot read properties of undefined" (now that none is
+  open); the surf bed opened on a lull of up to 9 s on half its seeds and
+  fell 20 dB between sets, so under a voice the sea went quiet (now the
+  first wave comes within 1.5 s and the roar between sits 6 dB higher).
+- **Every drive** ran against the merged web build, three at a time on one
+  dev server. The two that stub desktop calls (`media-relink`,
+  `desktop-session-jobs`) ran in an isolated desktop instance;
+  `longgop-cut` and `music-structure` need their media copied into the
+  worktree's `scratch/` first.
+
 ### Lessons paid for in this round
 
 - **A real production is the best test.** One film found twelve problems
@@ -1548,3 +1567,9 @@ as many agents as needed.
 - **Moving a Rust target folder breaks it.** Build scripts record absolute
   paths (Tauri's permission files); `cargo clean -p` the packages whose
   `output` names the old path.
+- **A synthesized sound is judged over time, not by its average.** The
+  surf bed passed its spectrum, movement and repetition tests and still
+  opened on nine seconds of trough; its level second by second showed it.
+- **Editing source under a running dev server reloads every page on it**:
+  the app an agent is driving and every drive on that server. Edit between
+  test runs, or try a change in a copy outside the app's module graph.

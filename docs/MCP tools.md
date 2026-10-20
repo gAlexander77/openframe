@@ -149,7 +149,7 @@ Open a project JSON as a new project identity. Desktop resolves relative media b
 
 ### collect_project
 
-Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder, so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.
+Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder named after the project (numbered when the name is taken), so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

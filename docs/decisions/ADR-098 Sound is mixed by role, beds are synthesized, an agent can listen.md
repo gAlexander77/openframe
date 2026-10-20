@@ -62,7 +62,8 @@ events: Minnaert bubbles with Van den Doel's rising chirp for water
 second, sizes by a power law), decaying ticks for raindrops, cars passing
 as 1/distance swells with a Doppler fall and a pan across, waves that
 swell, break (a brightness opening in a third of a second) and wash back
-with foam's crackle every 6.5 to 13 seconds, and a rocket's crackle as
+with foam's crackle every 6.5 to 13 seconds (the first within 1.5 s, so
+a bed under one shot of the sea never opens on a lull), and a rocket's crackle as
 skewed shock spikes over its roar. Everything slow moves at random
 (gusts, a brook's busyness, rain's intensity, each layer's level), so no
 pattern comes round again. Each layer's level is set against the first
@@ -91,7 +92,10 @@ reaching 8 kHz; rain loudest 2 to 8 kHz; a rocket loudest under 125 Hz; a
 street with its tires near 1 kHz; room tone sloping gently down. Wind,
 surf and traffic move 3 to 10 dB over seconds (their 400 ms loudness),
 water, rain, a rocket and a room under 3 dB, none dead still, and none
-correlates with itself at any lag from 2 to 15 s. The loop's join steps
+correlates with itself at any lag from 2 to 15 s. Surf has a wave in its
+first 4 seconds and no second more than 10 dB under its average: the
+desktop check found half its seeds opening on 3 to 9 s of trough and the
+roar between sets 20 dB down, which every other test had passed. The loop's join steps
 no more than an ordinary sample does (a mutation without the crossfade
 fails it), and no 10 ms window has a slope 12 times its neighborhood's
 (30 for rain's drops and the rocket's shocks, transients by nature).
