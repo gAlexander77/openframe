@@ -413,3 +413,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-114 A duck opens where it is asked and keeps the hand's keys, long words set the pace, a filtered voice keeps its loudness]] —
+  duck_under_speech plans a whole bed at once (no blip before a first
+  line or at a song's cut), holds pauses under min_gap and lists them,
+  opens on open_at moments such as the Drop markers, and keeps volume
+  keys made by hand outside the lines; a band moves down so long words
+  are read at most 5 syllables a second; add_voiceover takes read_as per
+  line; set_audio_filter keep_loudness measures a filter's loss and makes
+  it up; edges explain a step the music makes itself and flag one in a
+  ring-out.

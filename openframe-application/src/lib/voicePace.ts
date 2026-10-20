@@ -35,6 +35,28 @@ export function targetBand(readAs: ReadAs = "narration", asked?: [number, number
   return [+Math.max(1, lo + d).toFixed(2), +Math.max(1.2, hi + d).toFixed(2)];
 }
 
+/** Syllables a second a chosen read stays under (ADR-114): read speech
+ * runs 4-5.5 inside a phrase, and a band in words cannot see how long the
+ * words are. "Honestly? Mostly water." (7 syllables in 3 words) landed on
+ * narration's 2.3-2.8 words a second at speed 1.29: 6.0 syllables a
+ * second, rushed; asked for 1.9-2.4 it read 2.36, 5.5, still quick. */
+export const CHOSEN_MAX_SPS = 5;
+
+/**
+ * The band a line is read to, given its words' length: a band whose top
+ * would say them faster than CHOSEN_MAX_SPS syllables a second moves down,
+ * keeping its width, until its top does not; any other band is as it was.
+ * A band asked moves too (naturalness first); a speed given is the way to
+ * read faster. The tester's line: [2.3, 2.8] reads [1.64, 2.14], 4.4
+ * syllables a second at its middle, as its retake at speed 0.85 read.
+ */
+export function syllableBand(band: [number, number], words: number, syll: number): [number, number] {
+  if (!(words > 0) || !(syll > 0)) return band;
+  const top = (CHOSEN_MAX_SPS * words) / syll;
+  if (top >= band[1]) return band;
+  return [+Math.max(0.5, band[0] - (band[1] - top)).toFixed(2), +top.toFixed(2)];
+}
+
 /** What a line's band comes from, as kept with its script: its kind and
  * a band asked for. Takes saved before the kind was kept stored the
  * kind's band as if asked (read_as ad as [2.6, 3.1]); such a band is read
@@ -88,7 +110,9 @@ export function judgePace(wps: number | null, sps: number | null, band: [number,
   const out: PaceFinding[] = [];
   const aim = `aim ${lo}-${hi} words a second`;
   if (wps < lo) out.push({ level: wps < lo * (1 - PACE_SLACK) ? "fix" : "advice", problem: `slow: ${wps} words a second over the speech (${aim})` });
-  else if (wps > hi) out.push({ level: wps > hi * (1 + PACE_SLACK) ? "fix" : "advice", problem: `fast: ${wps} words a second over the speech (${aim})` });
+  // Over CHOSEN_MAX_SPS syllables a second, say so: a band moved down for
+  // long words (syllableBand) aims lower than its kind's.
+  else if (wps > hi) out.push({ level: wps > hi * (1 + PACE_SLACK) ? "fix" : "advice", problem: `fast: ${wps} words a second over the speech${sps > CHOSEN_MAX_SPS ? `, ${sps} syllables` : ""} (${aim}${sps > CHOSEN_MAX_SPS ? `: long words, at most ${CHOSEN_MAX_SPS} syllables a second` : ""})` });
   if (sps > RUSHED_SPS && wps <= hi) out.push({ level: "fix", problem: `rushed: ${sps} syllables a second (read speech runs 4-5.5), though its words a second are on target: long words; read it slower or split it` });
   if (sps < DRAWN_SPS && wps >= lo) out.push({ level: "advice", problem: `short words read slowly (${sps} syllables a second): on-target words a second draw them out; a fuller sentence, or pace slow for a closing line, reads more naturally` });
   return out;

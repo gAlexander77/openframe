@@ -3,9 +3,10 @@
 // works this way; CapCut's ducking is a black box you cannot touch up).
 
 import { soundingClips, soundSpan } from "../audio";
+import { interpolate } from "../keyframes";
 import { clipEnd } from "../project/ops";
 import type { AudioClip, Clip, DuckRecord, Id, Keyframe, Project, VideoClip } from "../project/types";
-import { secondsToFrames } from "../time";
+import { framesToSeconds, secondsToFrames, type Rational } from "../time";
 import { voiceClips } from "../voiceLines";
 
 /** A sound that plays under ducked music: the clip as it plays on the
@@ -38,6 +39,13 @@ export function voicesUnder(p: Project, music: (VideoClip | AudioClip)[], hasAud
   });
 }
 
+/** duck_under_speech's defaults (ADR-114): a pause under 1.1 s stays down
+ * (with the 0.1 s attack and 0.4 s release it would be up for under 0.6 s:
+ * a pump), and the music takes 0.4 s to come back after a line. */
+export const DUCK_MIN_GAP = 1.1;
+export const DUCK_RELEASE = 0.4;
+export const DUCK_ATTACK = 0.1;
+
 export interface DuckOptions {
   /** How far the music dips under speech, dB. */
   depthDb: number;
@@ -45,62 +53,204 @@ export interface DuckOptions {
   attack: number;
   /** Frames the music takes to come back after speech. */
   release: number;
-  /** Pauses up to this many frames stay ducked, so the music does not pump
-   * between sentences. */
-  hold: number;
+  /** A pause shorter than this many frames stays down: between lines, and
+   * between the music's start and the first line or the last line and the
+   * music's end, so the music never swells for a moment and dips again
+   * (a pump, or the 0.1 s blip before a first line: ADR-114). */
+  gap: number;
+  /** Timeline frames the music is up at (open_at: a drop): the pause that
+   * holds one comes up, however short; one inside a line stays down. */
+  open?: number[];
+}
+
+/** One dip under the lines of a music bed, on the timeline. */
+export interface DuckPlan {
+  /** Timeline frames and gains against the music's own volume (1: as it is). */
+  keys: { f: number; g: number }[];
+  /** Stretches the music dips for (lines sharing a dip are one). */
+  dips: number;
+  /** Pauses between lines the music stays down through (shorter than the
+   * gap, holding no open moment), timeline frames. */
+  held: [number, number][];
+  /** Each open moment: the frames the music is up around it (up), or the
+   * line it falls inside, where it stays down (line); neither when the
+   * music does not play there. */
+  open: { at: number; up?: [number, number]; line?: [number, number] }[];
+}
+
+/**
+ * Where the music sits under `speech` (timeline frame spans [a, b), one
+ * per line) across a bed playing timeline frames [lo, hi): down to
+ * `depthDb` (or each line's `depths`, dB, in `speech`'s order: a line the
+ * music covers more dips deeper) while a line speaks. Lines whose pause
+ * is shorter than the gap share a dip, the level moving in the pause
+ * where their depths differ, as a mixer rides a fader between lines; a
+ * pause that holds an open moment comes up whatever its length, back at
+ * the music's volume by the moment and down again after it. One plan over
+ * the whole bed, so a cut between two pieces of a song is no edge.
+ */
+export function duckPlan(speech: [number, number][], lo: number, hi: number, o: DuckOptions, depths?: number[]): DuckPlan {
+  const spans = speech
+    .map(([a, b], i) => ({ a: Math.max(a, lo), b: Math.min(b, hi), d: depths?.[i] ?? o.depthDb }))
+    .filter((s) => s.b > s.a)
+    .sort((x, y) => x.a - y.a);
+  // Overlapping lines (two voices at once) are one, at the deeper depth.
+  const lines: { a: number; b: number; d: number }[] = [];
+  for (const s of spans) {
+    const last = lines[lines.length - 1];
+    if (last && s.a <= last.b) [last.b, last.d] = [Math.max(last.b, s.b), Math.max(last.d, s.d)];
+    else lines.push({ ...s });
+  }
+  const moments = [...new Set(o.open ?? [])].sort((x, y) => x - y);
+  const inLine = (m: number) => lines.find((l) => m >= l.a && m < l.b);
+  const low = (d: number) => Math.pow(10, -d / 20);
+  const keys: { f: number; g: number }[] = [];
+  const held: [number, number][] = [];
+  const up = new Map<number, [number, number]>();
+  // Each pause, from a to b, between two lines or a line and the bed's
+  // edge: held down, or up from the release to the attack and at its
+  // music's volume by every moment it holds.
+  const pause = (a: number, b: number, before?: { d: number }, after?: { d: number }) => {
+    const ms = moments.filter((m) => m >= a && m < b && !inLine(m));
+    if (!ms.length && b - a < o.gap) {
+      if (!before) keys.push({ f: lo, g: low(after!.d) });
+      else if (!after) keys.push({ f: hi - 1, g: low(before.d) });
+      else {
+        held.push([a, b]);
+        if (before.d !== after.d) keys.push({ f: a, g: low(before.d) }, { f: b, g: low(after.d) });
+      }
+      return;
+    }
+    // Never up inside a line: a frame after the one before, a frame
+    // before the next.
+    let rise = before ? Math.max(a + 1, Math.min(a + o.release, ...ms)) : lo;
+    let fall = after ? Math.min(b - 1, Math.max(b - o.attack, ...ms)) : hi - 1;
+    if (before && after && rise > fall) {
+      if (!ms.length) {
+        // Shorter than the attack and the release together: the music
+        // comes part of the way up, where the two ramps meet.
+        const at = Math.round(a + ((b - a) * o.release) / (o.attack + o.release));
+        if (at > a && at < b) keys.push({ f: at, g: low(before.d) + (1 - low(before.d)) * Math.min(1, (at - a) / o.release) });
+        return;
+      }
+      rise = fall = Math.max(a + 1, Math.min(b - 1, ms[0]));
+    }
+    if (before && rise < hi - 1) keys.push({ f: rise, g: 1 });
+    if (after) keys.push({ f: Math.max(lo, fall), g: 1 });
+    for (const m of ms) up.set(m, [rise, fall]);
+  };
+  if (lines.length) pause(lo, lines[0].a, undefined, lines[0]);
+  lines.forEach((l, i) => {
+    keys.push({ f: l.a, g: low(l.d) }, { f: Math.min(hi - 1, l.b), g: low(l.d) });
+    const next = lines[i + 1];
+    pause(l.b, next ? next.a : hi, l, next);
+  });
+  const open = moments.map((at) => {
+    const line = inLine(at);
+    if (line) return { at, line: [line.a, line.b] as [number, number] };
+    const u = up.get(at);
+    return u ? { at, up: u } : { at };
+  });
+  // In time order, one key a frame (the later wins), none in the middle
+  // of three at one level.
+  keys.sort((x, y) => x.f - y.f);
+  const one = keys.filter((k, i) => keys[i + 1]?.f !== k.f);
+  return { keys: one.filter((k, i) => !(i > 0 && i < one.length - 1 && one[i - 1].g === k.g && one[i + 1].g === k.g)), dips: lines.length ? lines.length - held.length : 0, held, open };
+}
+
+/** The plan's keys as one clip of the bed plays them: frames from its
+ * start, scaled by its volume; where the plan runs on past its edges, a
+ * key at each edge holds the level there. */
+export function clipKeys(plan: Pick<DuckPlan, "keys">, start: number, end: number, base: number): { f: number; v: number }[] {
+  const ks = plan.keys;
+  if (!ks.length) return [];
+  const at = (f: number) => interpolate(ks.map((k) => ({ f: k.f, v: k.g })), f);
+  const inside = ks.filter((k) => k.f >= start && k.f <= end - 1).map((k) => ({ f: k.f, g: k.g }));
+  if (ks[0].f < start && inside[0]?.f !== start) inside.unshift({ f: start, g: at(start) });
+  if (ks[ks.length - 1].f > end - 1 && inside[inside.length - 1]?.f !== end - 1) inside.push({ f: end - 1, g: at(end - 1) });
+  return inside.map((k) => ({ f: k.f - start, v: base * k.g }));
 }
 
 /**
  * Volume keyframes (frames from the clip's start, linear gain) that hold
- * `base` and dip to `base - depthDb` under `speech` (timeline frame spans
- * [a, b)). The clip covers timeline frames [start, end). `depths` gives
- * each span its own depth instead (dB, in `speech`'s order: a line the
- * music covers more dips deeper). Spans close enough to share a dip stay
- * down between them, and where their depths differ the level moves in the
- * pause between them, as a mixer rides a fader between lines.
+ * `base` and dip under `speech` (timeline frame spans [a, b)) for a clip
+ * covering timeline frames [start, end): duckPlan over the clip alone.
  */
 export function duckKeys(speech: [number, number][], start: number, end: number, base: number, o: DuckOptions, depths?: number[]): { f: number; v: number }[] {
-  const spans = speech
-    .map(([a, b], i) => ({ a: Math.max(a, start), b: Math.min(b, end), d: depths?.[i] ?? o.depthDb }))
-    .filter((s) => s.b > s.a)
-    .sort((x, y) => x.a - y.a);
-  // Overlapping spans are one, at the deeper depth; nearby ones share a dip.
-  const groups: { a: number; b: number; d: number }[][] = [];
-  for (const s of spans) {
-    const group = groups[groups.length - 1];
-    const last = group?.[group.length - 1];
-    if (last && s.a <= last.b) [last.b, last.d] = [Math.max(last.b, s.b), Math.max(last.d, s.d)];
-    else if (last && s.a - last.b <= o.attack + o.release + o.hold) group.push({ ...s });
-    else groups.push([{ ...s }]);
-  }
-  const lastFrame = end - start - 1;
-  const low = (d: number) => base * Math.pow(10, -d / 20);
-  const keys: { f: number; v: number }[] = [];
-  for (const g of groups) {
-    const down = g[0].a - start;
-    const up = g[g.length - 1].b - start;
-    if (down - o.attack > 0) keys.push({ f: down - o.attack, v: base });
-    keys.push({ f: Math.max(0, down), v: low(g[0].d) });
-    for (let i = 1; i < g.length; i++) {
-      if (g[i].d === g[i - 1].d) continue;
-      keys.push({ f: Math.max(0, g[i - 1].b - start), v: low(g[i - 1].d) });
-      keys.push({ f: Math.max(0, g[i].a - start), v: low(g[i].d) });
-    }
-    keys.push({ f: Math.min(lastFrame, up), v: low(g[g.length - 1].d) });
-    if (up + o.release < lastFrame) keys.push({ f: up + o.release, v: base });
-  }
-  // Same frame twice (a dip from the clip's first frame): the later one wins.
-  return keys.filter((k, i) => keys[i + 1]?.f !== k.f);
+  return clipKeys(duckPlan(speech, start, end, o, depths), start, end, base);
 }
 
 /**
  * Each music clip's volume keys for one dip under `speech` across several
- * clips (a music track cut into pieces, ducked in one call): every clip
- * gets duckKeys over its own span, so a line across a cut dips on both
- * sides of it at the same depth.
+ * clips (a music track cut into pieces, ducked in one call): one plan over
+ * the whole bed, each clip given its part, so a line across a cut dips on
+ * both sides of it and the music never comes up at a cut between lines
+ * (it did, for 0.2 s, at a song's cut 0.7 s before a line).
  */
-export function trackDuckKeys(speech: [number, number][], clips: { id: string; start: number; end: number; base: number }[], o: DuckOptions, depths?: number[]): Map<string, { f: number; v: number }[]> {
-  return new Map(clips.map((c) => [c.id, duckKeys(speech, c.start, c.end, c.base, o, depths)]));
+export function trackDuckKeys(speech: [number, number][], clips: { id: string; start: number; end: number; base: number }[], o: DuckOptions, depths?: number[]): { plan: DuckPlan; keys: Map<string, { f: number; v: number }[]> } {
+  const plan = duckPlan(speech, Math.min(...clips.map((c) => c.start)), Math.max(...clips.map((c) => c.end)), o, depths);
+  return { plan, keys: new Map(clips.map((c) => [c.id, clipKeys(plan, c.start, c.end, c.base)])) };
+}
+
+// ---- keys made by hand outlive a duck (ADR-114) ---------------------------------
+// The second film test lifted its music on the drops and before its last
+// hit by hand; running the duck again wiped those keys.
+
+/** A key's place in the clip's file, ms: it keeps it through a move, a
+ * split or a trim (the keys shift with the in-point). ponytail: a speed
+ * curve or a reversed clip is read at its plain speed. */
+const fileMs = (c: { in: number; speed: number }, f: number, fps: Rational) => Math.round((c.in + framesToSeconds(f, fps) * (c.speed || 1)) * 1000);
+
+/** What a duck keeps of the keys it wrote: each key's place in the file
+ * (ms) and its value (x 1e4), so a key it wrote is known later and one
+ * added or changed by hand is not. */
+export function writtenKeys(c: { in: number; speed: number }, keys: { f: number; v: number }[], fps: Rational): [number, number][] {
+  return keys.map((k) => [fileMs(c, k.f, fps), Math.round(k.v * 1e4)]);
+}
+
+/** Is a volume key one the clip's last duck wrote? With no record of its
+ * keys (a duck from before ADR-114) every key is; never ducked, none is. */
+export function duckWrote(c: { in: number; speed: number; duck?: DuckRecord }, fps: Rational): (k: Keyframe) => boolean {
+  const list = c.duck?.written;
+  if (!c.duck) return () => false;
+  if (!list) return () => true;
+  // Within 0.6 of a frame: a key the duck wrote stays on its frame.
+  const tol = framesToSeconds(0.6, fps) * 1000;
+  return (k) => {
+    const ms = fileMs(c, k.f, fps), v = Math.round(k.v * 1e4);
+    return list.some(([m, x]) => Math.abs(m - ms) <= tol && Math.abs(x - v) <= 1);
+  };
+}
+
+/**
+ * A clip's volume keys after a duck: `duck` (its new keys, clip frames)
+ * and the keys already there that the last duck did not write (made by
+ * hand) wherever no line speaks (`lines`, clip frames, edges included).
+ * In a pause that holds one, the hand's keys replace the duck's there,
+ * and the duck's level is held at the lines either side, so the hand's
+ * level never ramps under a voice. One on a line's first or last frame
+ * moves a frame into the pause; one inside a line is replaced: the duck
+ * sets the level a voice is heard over.
+ */
+export function mergeKeys(current: Keyframe[] | undefined, wrote: (k: Keyframe) => boolean, duck: { f: number; v: number }[], lines: [number, number][]): { keys: Keyframe[]; ours: { f: number; v: number }[]; kept: Keyframe[]; replaced: Keyframe[] } {
+  const under = (f: number) => lines.some(([a, b]) => f >= a && f <= b);
+  // A key on a line's first or last frame (the tester lifted the duck's
+  // own key at a line's end for the hit after it) moves a frame into the
+  // pause beside it: the line's edge is the duck's, or the level would
+  // ramp under the voice.
+  const hand = (current ?? []).filter((k) => !wrote(k)).map((k) => {
+    const off = lines.find(([, b]) => k.f === b && !under(b + 1)) ? 1 : lines.find(([a]) => k.f === a && !under(a - 1)) ? -1 : 0;
+    return off ? { ...k, f: k.f + off } : k;
+  });
+  const kept = hand.filter((k) => !under(k.f)), replaced = hand.filter((k) => under(k.f));
+  if (!kept.length || !duck.length) return { keys: [...duck.map((k) => ({ f: k.f, v: k.v })), ...(duck.length ? [] : kept)].sort((x, y) => x.f - y.f), ours: duck, kept, replaced };
+  // The pause around a frame: the end of the line before, the start of the next.
+  const pauses = kept.map((k): [number, number] => [Math.max(-Infinity, ...lines.filter(([, b]) => b < k.f).map(([, b]) => b)), Math.min(Infinity, ...lines.filter(([a]) => a > k.f).map(([a]) => a))]);
+  const theirs = (f: number) => pauses.some(([a, b]) => f > a && f < b);
+  const ours = duck.filter((k) => !theirs(k.f));
+  for (const f of pauses.flat()) if (Number.isFinite(f) && !ours.some((k) => k.f === f)) ours.push({ f, v: interpolate(duck, f) });
+  ours.sort((x, y) => x.f - y.f);
+  return { keys: [...ours.map((k) => ({ f: k.f, v: k.v })), ...kept].sort((x, y) => x.f - y.f), ours, kept, replaced };
 }
 
 // ---- a duck that a voice line's change leaves behind (ADR-104) ----------------
@@ -199,6 +349,9 @@ export function duckArgs(d: Pick<StaleDuck, "clipIds" | "trackId" | "record">): 
     ...(r.minLineLu !== undefined ? { min_line_lu: r.minLineLu } : {}),
     ...(r.maxLineLu !== undefined ? { max_line_lu: r.maxLineLu } : {}),
     ...(r.depth !== undefined ? { depth: r.depth } : {}),
+    ...(r.openAt?.length ? { open_at: r.openAt } : {}),
+    ...(r.minGap !== undefined ? { min_gap: r.minGap } : {}),
+    ...(r.release !== undefined ? { release: r.release } : {}),
   };
 }
 
@@ -208,6 +361,6 @@ export function staleDuckNote(d: StaleDuck): string {
   const what = d.record.track ? `The music on track ${d.trackId}` : `The music clip ${d.clipIds[0]}`;
   const why = [d.lineIds.length ? `${d.lineIds.join(", ")} added, moved or changed length` : "", d.moved.length ? `${d.moved.join(", ")} moved, its dips with it` : ""].filter(Boolean).join("; ");
   return d.edited.length
-    ? `${what} was ducked under the voice before this edit (${why}), and its volume keys were edited since (${d.edited.join(", ")}), so it was not dipped again: duck_under_speech ${JSON.stringify(duckArgs(d))} would replace those keys.`
+    ? `${what} was ducked under the voice before this edit (${why}), and its volume keys were edited since (${d.edited.join(", ")}), so it was not dipped again: duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now, keeping the keys made by hand outside the lines and replacing those under a line.`
     : `${what} still dips for the voice as it was before this edit (${why}): duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now.`;
 }

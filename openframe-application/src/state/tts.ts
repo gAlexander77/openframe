@@ -18,12 +18,12 @@ import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { checkVoice, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
 import { retakeLine } from "../lib/voiceLines";
 import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, layoutLines, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
-import { bandSource, landSpeed, readWps, speedBounds, targetBand, type ReadAs, type ReadSpan } from "../lib/voicePace";
+import { bandSource, CHOSEN_MAX_SPS, landSpeed, readWps, speedBounds, syllableBand, targetBand, type ReadAs, type ReadSpan } from "../lib/voicePace";
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
 import { duckArgs, staleDuckNote, staleDucks, type StaleDuck } from "../lib/analysis/duck";
 import { edit } from "./actions";
-import { duckUnderSpeech } from "./ai";
+import { duckUnderSpeech, type DuckRequest } from "./ai";
 import { adoptAndProbe, prepare } from "./media";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -79,6 +79,9 @@ export interface Take {
   /** Words a second over the speech, as read, and the band it aimed at. */
   wps: number;
   band: [number, number];
+  /** Why the band is under the one asked or the kind's: long words, held
+   * under CHOSEN_MAX_SPS syllables a second (ADR-114). */
+  paceNote?: string;
   /** Reads it took to land on the band (1 with a speed given). */
   reads: number;
 }
@@ -193,8 +196,11 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
     return { out: out!, how, span: out!.last - out!.first, ...acc };
   };
   const words = writtenWords(text).length;
-  // A band asked wins over the pace; else the kind's, moved for the pace.
-  const band = targetBand(o.readAs ?? "narration", o.wps, o.pace ?? "normal");
+  const syll = writtenWords(text).reduce((n, w) => n + syllables(w), 0);
+  // A band asked wins over the pace; else the kind's, moved for the pace;
+  // either moved down when its top would rush long words (ADR-114).
+  const asked = targetBand(o.readAs ?? "narration", o.wps, o.pace ?? "normal");
+  const band = syllableBand(asked, words, syll);
   const auto = o.speed === undefined;
   // The first guess: its syllables at Heart's rate, the finish's pauses at
   // their least; a break where a mark is takes the mark's (out of the pace).
@@ -202,7 +208,7 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
     .filter((b) => !line.pauses.some((m) => Math.abs(b.at - m.at) <= 2))
     .reduce((n, b) => n + (b.sentence ? f.sentencePause : f.commaPause), 0);
   const landed = auto
-    ? await landSpeed(read, { words, syllables: writtenWords(text).reduce((n, w) => n + syllables(w), 0), natural, band, bounds: speedBounds(o.pace, !!o.wps), maxReads: MAX_READS })
+    ? await landSpeed(read, { words, syllables: syll, natural, band, bounds: speedBounds(o.pace, !!o.wps), maxReads: MAX_READS })
     : { read: await read(o.speed!), speed: o.speed!, reads: 1 };
   const { out, how } = landed.read;
   const { speed, reads } = landed;
@@ -220,7 +226,8 @@ export async function readLine(text: string, o: ReadOptions, signal: AbortSignal
     ...(o.wps ? { wps: o.wps } : {}),
     ...(auto ? { speedChosen: true } : {}),
   };
-  return { speedChosen: auto, audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine, wps, band, reads };
+  const paceNote = auto && band[1] < asked[1] ? `long words (${(syll / words).toFixed(1)} syllables each): read to ${band[0]}-${band[1]} words a second, not ${asked[0]}-${asked[1]}, so it says no more than ${CHOSEN_MAX_SPS} syllables a second; a speed given reads it faster` : undefined;
+  return { speedChosen: auto, audio, rate: out.rate, seconds: audio.length / out.rate, written, spoken, before: line.before, after: line.after, pauses: how, info, engine, wps, band, reads, ...(paceNote ? { paceNote } : {}) };
 }
 
 /** The takes as probed assets carrying their scripts, not yet in the
@@ -298,7 +305,13 @@ export interface VoiceLine {
   pace?: SpeechInfo["pace"];
   /** This line's words a second, [lowest, highest]; default the call's. */
   wps?: [number, number];
+  /** This line's kind of read (a second speaker's radio call read as social); default the call's. */
+  readAs?: ReadAs;
 }
+
+/** A line's band: its own words a second or kind, else the call's (a
+ * kind on the line wins over the call's words a second). */
+const lineBand = (l: VoiceLine, o: VoiceoverOptions): Pick<ReadOptions, "wps" | "readAs"> => (l.wps ? { wps: l.wps, readAs: l.readAs ?? o.readAs } : l.readAs ? { readAs: l.readAs } : { wps: o.wps, readAs: o.readAs });
 
 export interface VoiceoverOptions extends ReadOptions {
   /** The kind of read, whose words a second lines land on unless a speed
@@ -339,7 +352,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     for (const [i, l] of lines.entries()) {
       // ponytail: lines are read one by one in the one speech worker; on a
       // CPU without WebGPU a long script can pass the desktop bridge's 300 s.
-      takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed, pace: l.pace, wps: l.wps ?? opts.wps, readAs: opts.readAs }, signal));
+      takes.push(await readLine(l.text, { ...opts, voice: l.voice ?? opts.voice, speed: l.speed ?? opts.speed, pace: l.pace, ...lineBand(l, opts) }, signal));
       updateToast(tid, { progress: (i + 1) / (lines.length + 1) });
     }
     const assets = await takeAssets(takes, signal);
@@ -348,7 +361,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
       opts.start ?? 0,
     );
     const finish = opts.finish ?? "natural";
-    type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; voice_clip: string; caption_clip?: string; pauses?: Take["pauses"] };
+    type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; pace_note?: string; voice_clip: string; caption_clip?: string; pauses?: Take["pauses"] };
     const placed: Placed[] = [];
     const before = store.document();
     edit("Voiceover", (q) => {
@@ -369,6 +382,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
           words_per_second: t.wps,
           target_words_per_second: t.band,
           ...(t.speedChosen ? { speed_chosen: true as const, reads: t.reads } : {}),
+          ...(t.paceNote ? { pace_note: t.paceNote } : {}),
           voice_clip: added(before, q)[0]?.id ?? "",
           ...(t.pauses.length ? { pauses: t.pauses } : {}),
         });
@@ -479,6 +493,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
       speed: take.info.speed,
       words_per_second: take.wps,
       target_words_per_second: take.band,
+      ...(take.paceNote ? { pace_note: take.paceNote } : {}),
       ...voiceSpeedReport(o.speed, take.info.speed, take.speedChosen === true, was?.speed !== undefined, take.speedChosen ? { wps: take.wps, band: take.band, reads: take.reads } : undefined),
       ...(take.pauses.length ? { pauses: take.pauses } : {}),
       ...(o.ripple ? { shifted: +framesToSeconds(answer.shift, fps).toFixed(3) } : {}),
@@ -507,16 +522,10 @@ async function duckAgain(stale: StaleDuck[]): Promise<{ done: Record<string, unk
       notes.push(staleDuckNote(d));
       continue;
     }
-    const r = d.record;
     try {
-      const out = await duckUnderSpeech(r.track ? undefined : d.clipIds[0], {
-        ...(r.track ? { track_id: d.trackId } : {}),
-        ...(r.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: r.voiceAboveMusicLu } : {}),
-        ...(r.minLineLu !== undefined ? { min_line_lu: r.minLineLu } : {}),
-        ...(r.maxLineLu !== undefined ? { max_line_lu: r.maxLineLu } : {}),
-        ...(r.depth !== undefined ? { depth: r.depth } : {}),
-        label: "Retake voiceover line",
-      });
+      // As it was asked: its open moments, gap and release too.
+      const { clip_id, ...asked } = duckArgs(d) as DuckRequest & { clip_id?: string };
+      const out = await duckUnderSpeech(clip_id, { ...asked, label: "Retake voiceover line" });
       const b = out.balance;
       const lines = b?.per_line && "min_lu" in b.per_line ? { min_lu: b.per_line.min_lu, max_lu: b.per_line.max_lu } : undefined;
       done.push({ ...duckArgs(d), dipped_again: true, ...(b ? { voice_above_music_lu: b.voice_above_music_lu, ...(lines ? { lines } : {}), met: b.met } : { depth_db: out.depth_db }) });

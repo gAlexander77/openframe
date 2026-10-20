@@ -59,6 +59,9 @@ export interface EdgeReport {
   /** How loud the sound that starts here already was before it, against
    * what played before the edge, dB: a clip cut in mid-sound. */
   cut_in_db?: number;
+  /** At a join that steps 6 dB or more: what the music does there
+   * itself, so a step it makes anyway reads as the music's (ADR-114). */
+  step_note?: string;
   /** clean, or what is wrong. */
   verdict: string;
   fix?: { tool: string; args: Record<string, unknown> };
@@ -168,11 +171,25 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
     // Against the step the incoming file makes there itself: a cut just
     // before a downbeat has the hit after it and the bar's end before it.
     const moved = e.kind === "join" && e.cameIn !== undefined ? r.step_db + e.cameIn : r.step_db;
-    if (e.kind === "join" && Math.abs(moved) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut${moved !== r.step_db ? `, ${r1(Math.abs(moved))} dB more than the music does there` : ""} (fine if the music changes there)`);
+    // And against what the outgoing file would have done uncut (goesOn).
+    const uncut = e.kind === "join" && e.goesOn !== undefined ? r.step_db - e.goesOn : r.step_db;
+    // How far the step is off what the music does there itself, either file.
+    const offMusic = Math.min(Math.abs(moved), Math.abs(uncut));
+    // Inside a ring-out (the sound fell 6 dB or more over the second before
+    // the cut) a step stands out at half the size: the second film test cut
+    // a bar out of its outro and read a 6.9 dB step, called clean without a
+    // word; the file steps 6.0 dB on that bar itself, so it was the music's.
+    const fell = n - ms(1300) >= 0 ? db(rms(m, n - ms(1300), n - ms(1000))) - db(before) : 0;
+    const ringing = e.kind === "join" && fell >= TAIL_DB;
+    const told = problems.some((x) => /still rings/.test(x));
+    const ringStep = ringing && !told && Math.abs(r.step_db) >= TAIL_DB && offMusic >= TAIL_DB;
+    if (ringStep) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB inside a ring-out (the sound fell ${r1(fell)} dB over the second before), ${r1(offMusic)} dB more than the music does there: heard as a jump in its tail; cut before the tail, or crossfade longer`);
+    else if (e.kind === "join" && Math.abs(r.step_db) >= TAIL_DB && offMusic < TAIL_DB) r.step_note = `the music steps ${r1(Math.abs(moved) <= Math.abs(uncut) ? -(e.cameIn ?? 0) : (e.goesOn ?? 0))} dB there itself (a new bar or hit), so the join keeps its shape`;
+    if (e.kind === "join" && !ringing && Math.abs(moved) >= STEP_DB) problems.push(`the level ${r.step_db > 0 ? "jumps up" : "drops"} ${Math.abs(r.step_db)} dB at the cut${moved !== r.step_db ? `, ${r1(Math.abs(moved))} dB more than the music does there` : ""} (fine if the music changes there)`);
     if (problems.length) {
       r.verdict = problems.join("; ");
       const real = problems.some((x) => !/fine if/.test(x));
-      if (real && e.kind === "join") r.fix = { tool: "set_crossfade", args: { clip_id: e.clips[0], seconds: r.tail_cut_db !== undefined && r.tail_cut_db >= TAIL_DB ? 0.25 : 0.03 } };
+      if (real && e.kind === "join") r.fix = { tool: "set_crossfade", args: { clip_id: e.clips[0], seconds: ringStep || (r.tail_cut_db !== undefined && r.tail_cut_db >= TAIL_DB) ? 0.25 : 0.03 } };
       else if (real && e.kind === "end") r.fix = { tool: "set_fades", args: { clip_ids: [e.clips[0]], fade_out: 0.3 } };
       else if (real && e.kind === "start") r.fix = { tool: "set_fades", args: { clip_ids: [e.clips[0]], fade_in: 0.05 } };
     }

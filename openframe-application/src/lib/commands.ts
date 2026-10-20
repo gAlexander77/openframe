@@ -58,6 +58,7 @@ import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRati
 import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
 import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
+import { isDialog } from "./analysis/balance";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
 import { brandedStyle, brandOf, COLOR_ROLES, LOGO_VARIANTS, minTextSize, patchBrand, roleStyle, TEXT_ROLES, typeScale, type ColorRole, type LogoVariant, type TextRole } from "./brandKit";
 import { AD_ELEMENTS, addAdElement, SPOTS, titleWrap, type AdBackground, type AdElement, type Spot } from "./ads";
@@ -702,7 +703,7 @@ export const COMMANDS: Command[] = [
   {
     name: "set_audio_filter",
     description:
-      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes.',
+      'Filter a video or audio clip\'s sound, 24 dB per octave. type lowpass keeps the lows (muffled, as through a wall or from the next room); highpass keeps the highs (thin, as on a phone or a small radio). cutoff in Hz, 20..20000 (a new filter starts at 500 Hz low-pass, 300 Hz high-pass); without sweep it is fixed (its keyframes go). resonance in dB, 0..24 (default 0, a smooth slope; 6..12 adds the whistling peak of a synth sweep). sweep moves the cutoff from cutoff at sweep.start to sweep.to at sweep.end (timeline seconds), on a log scale, holding before and after; it replaces the cutoff\'s keyframes. The trailer move "muffled build, open on the drop" at 5 s: {type: "lowpass", cutoff: 400, sweep: {to: 20000, start: 4.5, end: 5}}. add_keyframe on lowpass.cutoff or highpass.cutoff adds more points. off: true removes that filter and its keyframes. A filter takes loudness out with what it cuts: a radio band-pass (highpass 380, lowpass 3400) took 3-3.6 LU off a voice. keep_loudness: true measures the clip before and after and makes up the difference after the filter (its makeup, dB), so a filtered voice line stays as loud as the others; it measures on this computer, so it runs on its own, not in a batch. makeup sets that gain by hand. Filtering a voice line without either answers a note.',
     input: S.obj(
       {
         clip_ids: S.ids("Video or audio clips"),
@@ -720,17 +721,27 @@ export const COMMANDS: Command[] = [
           "Move the cutoff from cutoff to `to` between two times (a filter sweep): keyframes, so it plays the same in preview and export",
         ),
         off: S.bool("Remove this filter"),
+        makeup: S.num("Gain after the filter, dB, to make up what it takes out (absent: 0)", { minimum: -24, maximum: 24 }),
+        keep_loudness: S.bool("Measure the clip before and after and set makeup so it stays as loud (a fixed filter only; not in a batch)"),
       },
       ["clip_ids", "type"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const kind = a.type as FilterKind;
       const path = `${kind}.cutoff`;
+      if (a.keep_loudness === true) throw new CommandError("keep_loudness measures the clip's sound on this computer: call set_audio_filter on its own, not in a batch, or give makeup in dB");
+      // A voice line filtered with nothing made up plays quieter than the rest (film test 2).
+      if (a.off !== true && a.makeup === undefined && report) {
+        const voices = (a.clip_ids as Id[]).filter((id) => { const l = ops.findClip(p, id); return l && (isDialog(l.track, p) || (l.clip.type === "audio" && !!ops.getAsset(p, l.clip.assetId)?.speech)); });
+        const note = `A filter takes loudness out of a voice (a radio band-pass, 380-3400 Hz, took 3-3.6 LU): set_audio_filter with keep_loudness: true on ${voices.join(", ")} makes it up, so the line stays as loud as the others.`;
+        // Once, though a batch filters it twice (a band-pass is two filters).
+        if (voices.length && !report.notes?.includes(note)) (report.notes ??= []).push(note);
+      }
       const sweep = a.sweep as { to: number; start: number; end: number; ease?: string } | undefined;
       const sweepEase = sweep?.ease === undefined ? undefined : easeById(sweep.ease);
       return fxEdit(p, a, "filter", (c) => {
         if (a.off === true) return withoutFx(c, kind, [path]);
-        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
+        const filter = cleanFx(kind, { cutoff: a.cutoff, resonance: a.resonance, makeup: a.makeup }, (c as Partial<Sound>)[kind] ?? FILTER_DEFAULTS[kind])!;
         const out = { ...c, [kind]: filter } as Clip;
         if (!sweep) return a.cutoff === undefined ? out : withoutKeys(out, [path]);
         const k0 = f(p, sweep.start) - c.start;
@@ -2890,7 +2901,7 @@ export function describeProject(p: Project) {
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         // How duck_under_speech dipped it: a voice line that changes dips it again so.
-        ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
+        ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.openAt?.length ? { open_at: c.duck.openAt } : {}), ...(c.duck.minGap !== undefined ? { min_gap: c.duck.minGap } : {}), ...(c.duck.release !== undefined ? { release: c.duck.release } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
         ...(c.type === "audio" && c.crossfade ? { crossfade: c.crossfade } : {}),
         ...soundFxSummary(c),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),

@@ -27,7 +27,7 @@ import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
 import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
-import { duckMark, trackDuckKeys, voicesUnder as voicesUnderMusic, type VoiceUnder } from "../lib/analysis/duck";
+import { DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
@@ -39,7 +39,7 @@ import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Clip, Cutout, DuckRecord, Id, ImageClip, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Clip, Cutout, DuckRecord, Id, ImageClip, Project, VideoClip } from "../lib/project/types";
 import { uid } from "../lib/project/defaults";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
@@ -674,6 +674,51 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
   return results;
 }
 
+/**
+ * set_audio_filter with keep_loudness (ADR-114): the filter as asked, each
+ * clip measured alone as it plays (its compressor, volume and room in)
+ * before and with the filter, and the difference made up after the filter
+ * (its makeup), as one undo step. The second film test's radio band-pass
+ * (highpass 380, lowpass 3400) took 3-3.6 LU off three voice lines, which
+ * then sat under the rest. Answers a note per clip.
+ */
+export async function keepFilterLoudness(args: Record<string, unknown>): Promise<string[]> {
+  const scope = projectWork.signal();
+  const { keep_loudness: _, ...asked } = args;
+  if (asked.off === true) throw new Error("keep_loudness keeps a filter's loudness; off removes the filter and its makeup");
+  if (asked.sweep !== undefined) throw new Error("keep_loudness holds a fixed filter's loudness, and a sweep changes it as it moves: give makeup in dB instead");
+  if (asked.makeup !== undefined) throw new Error("Give keep_loudness (measured) or makeup (dB), not both");
+  const before = store.document();
+  const ids = (asked.clip_ids as Id[] | undefined) ?? [];
+  // The filter as asked with nothing made up: what it takes out.
+  const after = runCommand(before, "set_audio_filter", { ...asked, makeup: 0 });
+  const path = `${String(asked.type)}.cutoff`;
+  const alone = (p: Project, id: Id): Project => ({ ...p, tracks: p.tracks.map((t) => ({ ...t, muted: false, solo: false, clips: t.clips.filter((c) => c.id === id) })) });
+  const sec = (f: number) => framesToSeconds(f, before.fps);
+  const made: Record<Id, number> = {};
+  const notes: string[] = [];
+  for (const id of ids) {
+    const c = ops.findClip(after, id)?.clip;
+    if (!c) continue;
+    if (c.keyframes?.[path]?.length) throw new Error(`${id}'s cutoff has keyframes (a sweep), so its loudness changes as it moves: give makeup in dB instead`);
+    // Its own span and a little after, for the room's tail.
+    const [t0, t1] = [sec(c.start), sec(c.start + c.duration) + 0.5];
+    const was = (await measureMix(alone(before, id), t0, t1, { signal: scope })).integrated;
+    const now = (await measureMix(alone(after, id), t0, t1, { signal: scope })).integrated;
+    if (!Number.isFinite(was) || !Number.isFinite(now)) {
+      notes.push(`${id} plays no sound to measure here (silent, muted or inside a compound clip), so nothing was made up.`);
+      continue;
+    }
+    made[id] = +Math.max(-24, Math.min(24, was - now)).toFixed(1) || 0;
+    const lost = +(was - now).toFixed(1) || 0;
+    notes.push(`${id}: the filter ${lost >= 0 ? `takes ${lost} LU out` : `adds ${-lost} LU`} (${was.toFixed(1)} LUFS before, ${now.toFixed(1)} with it); makeup ${made[id]} dB after the filter keeps it as loud.`);
+  }
+  scope.throwIfAborted();
+  if (store.document() !== before) throw new Error("The project changed while measuring; run set_audio_filter again.");
+  edit(`${asked.type === "lowpass" ? "Low-pass" : "High-pass"} filter, loudness kept`, (p) => ids.reduce((q, id) => runCommand(q, "set_audio_filter", { ...asked, clip_ids: [id], makeup: made[id] ?? 0 }), p));
+  return notes;
+}
+
 // ---- ducking ---------------------------------------------------------------------
 
 export interface DuckEdit {
@@ -687,9 +732,20 @@ export interface DuckEdit {
   /** The music clips dipped, when a whole track was (track_id). */
   clips?: Id[];
   balance?: DuckBalance;
-  /** One clip of a track that plays more: track_id ducks them all. */
-  note?: string;
+  /** Pauses between lines the music stays down through (shorter than
+   * min_gap, holding no open_at moment), timeline seconds. */
+  held?: [number, number][];
+  /** Each open_at moment: where the music is up around it, or the line it
+   * falls inside (the music stays down under a voice). */
+  open?: { at: number; label?: string; up?: [number, number]; inside_line?: [number, number]; plays?: false }[];
+  /** Volume keys made by hand (not by the duck before): kept outside the
+   * lines, replaced under them; timeline seconds. */
+  hand_keys?: { kept: number[]; replaced: number[] };
+  /** One clip of a track that plays more: track_id ducks them all; a drop
+   * the music stays down through. */
+  notes?: string[];
 }
+
 
 /** What the music sits under the voice, measured once the dips are set,
  * in the windows lib/analysis/balance.ts names (ADR-096). */
@@ -728,6 +784,13 @@ export interface DuckRequest extends Partial<DuckSettings> {
   max_line_lu?: number;
   /** Duck every clip with sound on this track, as one music bed. */
   track_id?: Id;
+  /** Moments the music comes up at (a drop): timeline seconds, or marker
+   * labels ("Drop" is every marker so labeled). */
+  open_at?: (number | string)[];
+  /** Seconds a pause must last for the music to come up (default 1.1). */
+  min_gap?: number;
+  /** Seconds the music takes to come back up after a line (default 0.4). */
+  release?: number;
   /** The undo step's name (a retake dips the music again under its own). */
   label?: string;
 }
@@ -827,20 +890,28 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   const inside = (s: [number, number]) => [Math.max(lo, s[0]), Math.min(hi, s[1])] as [number, number];
   // The lines: each clip's speech under the music, pauses under a second bridged.
   const lines = perClip.flatMap((spans) => speechWindows(spans.filter(under).map(inside).filter(([a, b]) => b > a), frames(1))).sort((x, y) => x[0] - y[0]);
-  const spans = perClip.flat();
-  const lineOf = spans.map(([a, b]) => lines.findIndex(([x, y]) => a < y && b > x));
-  const shape = { attack: frames(0.1), release: frames(0.4), hold: frames(0.6) };
+  // The moments the music comes up at: seconds, or every marker so labeled.
+  const opens = openMoments(original, opts.open_at);
+  const shape = { attack: frames(DUCK_ATTACK), release: Math.max(1, frames(opts.release ?? DUCK_RELEASE)), gap: frames(opts.min_gap ?? DUCK_MIN_GAP), open: opens.map((m) => m.frame) };
   const beds = cs.map((c) => ({ id: c.id, start: c.start, end: c.start + c.duration, base: c.volume }));
-  const keysAt = (db: number, lineDb?: number[]) => trackDuckKeys(spans, beds, { depthDb: db, ...shape }, lineDb && spans.map((_, i) => (lineOf[i] >= 0 ? lineDb[lineOf[i]] : db)));
+  // One plan over the whole bed, a dip a line (each line its own depth).
+  const planAt = (db: number, lineDb?: number[]) => trackDuckKeys(lines, beds, { depthDb: db, ...shape }, lineDb);
+  const keysAt = (db: number, lineDb?: number[]) => planAt(db, lineDb).keys;
   let keys = keysAt(depth);
   let balance: DuckBalance | undefined;
+  // Keys made by hand outside the lines stay (ADR-114): the duck's own
+  // from before are replaced, and the level is the duck's under a line.
+  const merged = (p: typeof original, ks: typeof keys) =>
+    new Map([...ks].flatMap(([id, list]) => {
+      const c = ops.findClip(p, id)?.clip as MediaClip | undefined;
+      return c ? [[id, { c, ...mergeKeys(c.keyframes?.volume, duckWrote(c, fps), list, lines.map(([a, b]): [number, number] => [a - c.start, b - c.start])) }] as const] : [];
+    }));
   const withKeys = (p: typeof original, ks: typeof keys) => {
-    for (const [id, list] of ks) {
-      const c = ops.findClip(p, id)?.clip;
-      if (!c) continue;
-      if (c.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: id, path: "volume" });
-      p = list.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
-    }
+    for (const [id, m] of merged(p, ks))
+      p = ops.updateClip(p, id, (x) => {
+        const { volume: _, ...rest } = x.keyframes ?? {};
+        return { ...x, keyframes: m.keys.length ? { ...rest, volume: m.keys } : rest } as Clip;
+      });
     return p;
   };
   if (measuring && !lines.length) {
@@ -931,8 +1002,8 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
       },
     };
   }
-  const all = [...keys.values()];
-  const dips = cs.reduce((n, c, k) => n + all[k].filter((x, i) => x.v < c.volume && !(all[k][i - 1]?.v < c.volume)).length, 0);
+  const plan = planAt(depth, lineDb).plan;
+  const dips = plan.dips;
   if (!dips && !measuring) {
     finish("ducking", "No speech found under it");
     return { voices: voices.length, dips: 0, keys: 0 };
@@ -944,17 +1015,70 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
     ...(minLine !== undefined ? { minLineLu: minLine } : {}),
     ...(opts.max_line_lu !== undefined ? { maxLineLu: opts.max_line_lu } : {}),
     ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+    ...(opts.open_at?.length ? { openAt: opts.open_at } : {}),
+    ...(opts.min_gap !== undefined ? { minGap: opts.min_gap } : {}),
+    ...(opts.release !== undefined ? { release: opts.release } : {}),
     ...(opts.track_id ? { track: true } : {}),
   };
-  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, ...duckMark(x) } }) as Clip), withKeys(p, keys)));
+  const now = store.get().project;
+  const done = merged(now, keys);
+  // Each clip keeps the keys it wrote, so the next duck knows the hand's.
+  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, ...duckMark(x), written: writtenKeys(x as MediaClip, done.get(id)?.ours ?? [], fps) } }) as Clip), withKeys(p, keys)));
+  const all = [...done.values()];
+  const sec = (f: number) => +framesToSeconds(f, fps).toFixed(3);
+  const handKept = all.flatMap((m) => m.kept.map((k) => sec(m.c.start + k.f))), handReplaced = all.flatMap((m) => m.replaced.map((k) => sec(m.c.start + k.f)));
+  // What the gaps did: the pauses held down, each moment asked to open,
+  // and a drop the music stays down through though it falls between lines.
+  const held = plan.held.map(([a, b]): [number, number] => [sec(a), sec(b)]);
+  const open = plan.open.map((o): NonNullable<DuckEdit["open"]>[number] => {
+    const m = opens.find((x) => x.frame === o.at);
+    return { at: sec(o.at), ...(m?.label ? { label: m.label } : {}), ...(o.up ? { up: [sec(o.up[0]), sec(o.up[1])] } : o.line ? { inside_line: [sec(o.line[0]), sec(o.line[1])] } : { plays: false }) };
+  });
+  const notes: string[] = [];
+  const drops = now.markers.filter((m) => /^drop/i.test(m.label) && plan.held.some(([a, b]) => m.frame >= a && m.frame < b) && !opens.some((x) => x.frame === m.frame));
+  if (drops.length)
+    notes.push(`The music stays down through ${plural(held.length, "pause")} between lines shorter than min_gap (${opts.min_gap ?? DUCK_MIN_GAP} s, so it does not pump; held lists them), and ${drops.map((m) => `the ${m.label} at ${sec(m.frame)} s`).join(" and ")} ${drops.length === 1 ? "falls in one and plays" : "fall in them and play"} ducked: open_at ["${drops[0].label}"] brings the music up there.`);
+  for (const o of open) if (o.inside_line) notes.push(`${o.label ? `The ${o.label}` : "The moment"} at ${o.at} s falls inside a line (${o.inside_line[0]}-${o.inside_line[1]} s), so the music stays down under the voice there: move the line off it to let it play.`);
+  for (const o of open) if (o.up && o.up[1] - o.up[0] < 0.2) notes.push(`The music is up for only ${+(o.up[1] - o.up[0]).toFixed(2)} s around ${o.at} s (the lines either side are close): move a line to give it room.`);
+  if (handReplaced.length) notes.push(`Volume keys made by hand under a line were replaced (${handReplaced.join(", ")} s): the duck sets the level a voice is heard over.`);
   const deepest = lineDb ? Math.max(depth, ...lineDb) : depth;
   const least = lineDb ? Math.min(depth, ...lineDb) : depth;
   finish("ducking", deepest > least ? `Lowered ${least}-${deepest} dB under ${plural(lines.length, "line")}` : `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
   // A song cut into pieces was ducked a piece at a time (film test 3.14).
   const home = opts.track_id ? undefined : ops.findClip(store.get().project, ids[0])?.track;
   const more = home ? home.clips.filter((x) => x.id !== ids[0] && (x.type === "audio" || x.type === "video")).length : 0;
-  const note = home && more ? `Only ${ids[0]} was ducked; its track ${home.id} plays ${more} more ${more === 1 ? "clip" : "clips"}: duck_under_speech track_id ${home.id} ducks them all as one bed.` : undefined;
-  return { voices: voices.length, dips, keys: all.reduce((n, k) => n + k.length, 0), depth_db: depth, ...(opts.track_id ? { clips: ids } : {}), ...(balance ? { balance } : {}), ...(note ? { note } : {}) };
+  if (home && more) notes.unshift(`Only ${ids[0]} was ducked; its track ${home.id} plays ${more} more ${more === 1 ? "clip" : "clips"}: duck_under_speech track_id ${home.id} ducks them all as one bed.`);
+  return {
+    voices: voices.length,
+    dips,
+    keys: all.reduce((n, m) => n + m.keys.length, 0),
+    depth_db: depth,
+    ...(opts.track_id ? { clips: ids } : {}),
+    ...(held.length ? { held } : {}),
+    ...(open.length ? { open } : {}),
+    ...(handKept.length || handReplaced.length ? { hand_keys: { kept: handKept, replaced: handReplaced } } : {}),
+    ...(balance ? { balance } : {}),
+    ...(notes.length ? { notes } : {}),
+  };
+}
+
+/** open_at's moments as timeline frames: seconds as given, a label as
+ * every marker so labeled (case aside). A label no marker has is refused,
+ * with the labels there are. */
+function openMoments(p: Project, open: (number | string)[] | undefined): { frame: number; label?: string }[] {
+  return (open ?? []).flatMap((x) => {
+    if (typeof x !== "number" && typeof x !== "string") throw new Error(`open_at takes timeline seconds or marker labels, not ${JSON.stringify(x)}`);
+    if (typeof x === "number") {
+      if (!(x >= 0)) throw new Error(`open_at ${x}: give timeline seconds (0 or more) or a marker label such as "Drop"`);
+      return [{ frame: secondsToFrames(x, p.fps) }];
+    }
+    const hits = p.markers.filter((m) => m.label.toLowerCase() === String(x).toLowerCase());
+    if (!hits.length) {
+      const labels = [...new Set(p.markers.map((m) => m.label))];
+      throw new Error(`open_at "${x}": no marker is labeled so (${labels.length ? `labels here: ${labels.join(", ")}` : "the project has no markers"}); give timeline seconds, or mark the moment (add_marker, or analyze_music markers drop)`);
+    }
+    return hits.map((m) => ({ frame: m.frame, label: m.label }));
+  });
 }
 
 export interface DenoiseEdit {

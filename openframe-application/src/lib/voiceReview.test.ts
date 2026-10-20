@@ -175,16 +175,21 @@ describe("verdicts", () => {
 
   it("tells advice from a miss", () => {
     // A tenth outside the band passes, with a retake to try.
-    expect(verdict({ ...ok, wps: 2.2 }, -20)).toEqual([]);
-    expect(advise({ ...ok, wps: 2.2 })[0]).toMatchObject({ note: expect.stringMatching(/passes/), tool: "retake_voiceover", args: { clip_id: "c_1", words_per_second: [2.3, 2.8] } });
+    // (Syllables in step with the words: a band moves down for long words.)
+    expect(verdict({ ...ok, wps: 2.2, sps: 3.3 }, -20)).toEqual([]);
+    expect(advise({ ...ok, wps: 2.2, sps: 3.3 })[0]).toMatchObject({ note: expect.stringMatching(/passes/), tool: "retake_voiceover", args: { clip_id: "c_1", words_per_second: [2.3, 2.8] } });
     // A speed already chosen for the band: the voice's limit, advice without a retake.
     const limit = { ...ok, wps: 3.2, speedChosen: true };
     expect(verdict(limit, -20)).toEqual([]);
     expect(advise(limit)[0].note).toMatch(/natural speeds.*fewer words/);
     // Short words read on target sound drawn out: a note.
     expect(advise({ ...ok, wps: 2.4, sps: 2.4 })[0].note).toMatch(/^short words/);
-    // Long words rushed at on-target words a second: a fix aiming 5 syllables a second.
-    const rushed = verdict({ ...ok, wps: 2.7, sps: 6 }, -20)[0];
-    expect(rushed).toMatchObject({ problem: expect.stringMatching(/^rushed/), args: { clip_id: "c_1", words_per_second: [2, 2.5] } });
+    // Long words read at narration's words a second (6 syllables a second):
+    // held to the band moved down for them, its top at 5 syllables a second,
+    // as the speed chooser holds it (ADR-114), even for a speed chosen before.
+    const rushed = verdict({ ...ok, wps: 2.7, sps: 6, speedChosen: true }, -20)[0];
+    expect(rushed).toMatchObject({ problem: expect.stringMatching(/^fast: 2.7 words a second over the speech, 6 syllables .*long words/), args: { clip_id: "c_1", words_per_second: [1.75, 2.25] } });
+    // A band asked moves down for long words too.
+    expect(verdict({ ...ok, wps: 2.7, sps: 6, asked: [2.3, 2.8] }, -20)[0]).toMatchObject({ problem: expect.stringMatching(/^fast/) });
   });
 });

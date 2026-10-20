@@ -127,7 +127,9 @@ each absent means off, so older projects open unchanged:
 ```
 
 - `highpass` / `lowpass`: `cutoff` in Hz (20..20000), `resonance` in dB
-  (0..24); 24 dB per octave. Keyframes on `lowpass.cutoff` and
+  (0..24); 24 dB per octave; `makeup?` in dB (-24..24, absent 0), a gain
+  after the filter making up what it takes out (set_audio_filter
+  keep_loudness, ADR-114). Keyframes on `lowpass.cutoff` and
   `highpass.cutoff` move on a log scale between keys.
 - `reverb`: `size` 0..1, `decay` seconds to fall 60 dB (0.1..10), `mix`
   0..1 wet share at equal power (keyframeable as `reverb.mix`).
