@@ -413,3 +413,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]] —
+  add_text without a track lands above everything showing then, never on
+  a free row under a grade, the hits or its own button; hits and bars act
+  on footage, so a title card stays above them; a title placed under an
+  adjustment layer is named; set_mask takes aspect (1 is round on any
+  picture) and names an edge it runs past; a version wider than its
+  master keeps all the master showed, centered, at the caller's focus;
+  pushes relax or hold eases a tall master's push-ins; versions list a
+  picture drawn across their captions; preview_media looks inside an
+  exported file.

@@ -38,7 +38,8 @@ import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./p
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
 import { fittedSize, textPad } from "./render/size";
 import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type SubjectNote } from "./reframe";
-import { secondsToFrames } from "./time";
+import { maskReach } from "./mask";
+import { framesToSeconds, secondsToFrames } from "./time";
 
 export type VersionRatio = "16:9" | "9:16" | "1:1" | "4:5" | "original";
 export const VERSION_RATIOS: VersionRatio[] = ["16:9", "9:16", "1:1", "4:5", "original"];
@@ -49,6 +50,13 @@ export const VERSION_FITS: VersionFit[] = ["fill", "blur", "fit"];
  * project has them. */
 export type VersionCaptions = "burn" | "none" | "as_project";
 export const VERSION_CAPTIONS: VersionCaptions[] = ["burn", "none", "as_project"];
+/** What a version does with a full-frame shot's keyed push (a zoom the
+ * editor keyed, frame_region's push-in): keeps it (default), relaxes it
+ * to half its zoom, or holds the shot at its widest. A tall master's
+ * pushes frame a narrow column; on a wider version the same zoom crops the
+ * picture's top and bottom as the master did, a rocket's nose with it. */
+export type VersionPushes = "keep" | "relax" | "hold";
+export const VERSION_PUSHES: VersionPushes[] = ["keep", "relax", "hold"];
 
 export interface VersionSpec {
   ratio: VersionRatio;
@@ -69,6 +77,8 @@ export interface VersionSpec {
   /** Clips framed by hand in this version: the point of each one's picture
    * to keep at the center. */
   focus?: Focus[];
+  /** Full-frame shots' keyed pushes: kept (default), relaxed or held. */
+  pushes?: VersionPushes;
   /** Clips moved, resized or hidden by hand in this version, after the
    * automatic adaptation (applyOverrides). */
   overrides?: VersionOverride[];
@@ -98,6 +108,24 @@ export interface ReframeOptions {
   reframe?: Reframe;
   focus?: Focus[];
   notes?: SubjectNote[];
+  pushes?: VersionPushes;
+}
+
+/** A shot's keyed scale eased toward its widest (least) value: `r` 0.5
+ * halves each key's zoom as a ratio, 0 holds the widest throughout. The
+ * picture never gets smaller than at its widest, so it still covers the
+ * frame where it did. */
+function easePush(c: VisualClip, r: number): VisualClip {
+  const keys = c.keyframes?.["transform.scale"];
+  if (!keys?.length) return c;
+  const least = Math.min(...keys.map((k) => Math.abs(k.v)));
+  if (!(least > 0)) return c;
+  const to = (v: number) => +(Math.sign(v) * least * Math.pow(Math.abs(v) / least, r)).toFixed(5);
+  if (r === 0) {
+    const { "transform.scale": _, ...rest } = c.keyframes!;
+    return { ...c, transform: { ...c.transform, scale: to(keys[0].v) }, keyframes: rest };
+  }
+  return { ...c, transform: { ...c.transform, scale: to(c.transform.scale) }, keyframes: { ...c.keyframes, "transform.scale": keys.map((k) => ({ ...k, v: to(k.v) })) } };
 }
 
 /** A file name that says what the version is: "Roast 9x16 6s textless". */
@@ -371,6 +399,8 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     let v = c as VisualClip;
     v = mapPath(v, "transform.scale", (s) => +(s * kScale).toFixed(5));
     if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * kScale).toFixed(5));
+    // A keyed push relaxed or held where the caller asks (ADR-116).
+    if (full && frame.pushes && frame.pushes !== "keep" && v.transform.scaleY === undefined) v = easePush(v, frame.pushes === "relax" ? 0.5 : 0);
     // Offsets in pixels grow with the picture, so the same part of it
     // stays at the frame's center.
     v = mapPath(v, "transform.x", (x) => (full ? (x * a.w * grow) / b.w : x));
@@ -1544,6 +1574,89 @@ export function versionCaptions(p: Project, mode: VersionCaptions): Project {
   return p.tracks.some(captionsOnly) ? { ...p, tracks: p.tracks.map((t) => (captionsOnly(t) ? { ...t, hidden: false } : t)) } : p;
 }
 
+/** A picture or graphic a version draws over or under its burned
+ * captions, as an agent reads it. */
+export interface CaptionCollision {
+  clip_id: Id;
+  caption_clip_id: Id;
+  /** Version seconds: the first moment they meet. */
+  at: number;
+  /** Over the captions (drawn above them) or under them. */
+  layer: "over" | "under";
+  /** The visible part of the clip there, canvas pixels. */
+  box: Rect;
+  note: string;
+}
+
+/** What a layer shows of itself, in pixels: its box, or with a closed
+ * mask (a porthole's circle) the mask's part of it. */
+function visibleBox(q: Project, c: VisualClip, rel: number): Rect {
+  const b = boxOf(q, c, rel);
+  const m = "mask" in c ? c.mask : undefined;
+  if (!m || m.invert || Math.abs(paramAt(c, "transform.rotation", rel)) > 1e-3) return b;
+  const w = b.right - b.left, h = b.bottom - b.top;
+  const now = { ...m, ...Object.fromEntries((["x", "y", "width", "height", "rotation"] as const).map((k) => [k, paramAt(c, `mask.${k}`, rel)])) };
+  const r = maskReach(now, w / Math.max(1, h));
+  if (!r) return b;
+  return { left: Math.max(b.left, b.left + (0.5 + r.left) * w), right: Math.min(b.right, b.left + (0.5 + r.right) * w), top: Math.max(b.top, b.top + (0.5 + r.top) * h), bottom: Math.min(b.bottom, b.top + (0.5 + r.bottom) * h) };
+}
+
+/**
+ * The pictures and graphics a version draws across its burned captions
+ * (Claude film test 2: the porthole picture-in-picture sat under the 16:9
+ * version's captions and nothing said so): every overlay that is not text
+ * (a picture-in-picture, a shape, a sticker, a card) showing with a
+ * caption, its visible part (a mask's) crossing the caption's letters and
+ * box. One per overlay, at the first moment, with the override that
+ * raises it clear. ADR-116.
+ */
+export function captionCollisions(q: Project): CaptionCollision[] {
+  const captions = seenTexts(q).filter((s) => s.c.caption && !s.via.length);
+  if (!captions.length) return [];
+  const order = new Map(q.tracks.map((t, i) => [t.id, i]));
+  const out: CaptionCollision[] = [];
+  const margin = 0.02 * Math.min(q.width, q.height);
+  for (const [ti, t] of q.tracks.entries()) {
+    // The main track's shots are what captions sit on, framed or not.
+    if (t.kind !== "video" || t.hidden || t.main) continue;
+    for (const c of t.clips) {
+      if (c.disabled || c.type === "text" || !isOverlay(q, c)) continue;
+      for (const s of captions) {
+        const from = Math.max(c.start, s.start), to = Math.min(c.start + c.duration, s.start + s.duration);
+        if (to <= from) continue;
+        // Where both rest: the middle of their time together.
+        const f = Math.floor((from + to) / 2);
+        const letters = seenLetters(q, s, f)?.box;
+        if (!letters) continue;
+        const v = visibleBox(q, c, f - c.start);
+        const w = Math.min(v.right, letters.right) - Math.max(v.left, letters.left), h = Math.min(v.bottom, letters.bottom) - Math.max(v.top, letters.top);
+        if (w < 4 || h < 4) continue;
+        const layer = ti < (order.get(s.track.id) ?? Infinity) ? "over" : "under";
+        // The override that puts it above the caption: moved up; when it
+        // would then leave the frame, also made smaller (about its own
+        // center, as an override scales) to fit the room above.
+        const rel = f - c.start, y0 = paramAt(c, "transform.y", rel), top = q.height * 0.05;
+        const room = letters.top - margin - top, tall = v.bottom - v.top;
+        const k = tall > room ? Math.max(0.1, room / tall) : 1;
+        const cy = q.height / 2 + y0 * q.height;
+        const y = y0 + (letters.top - margin - (cy + (v.bottom - cy) * k)) / q.height;
+        const fix = room < tall * 0.25 ? "" : `an override {clip_id: "${c.id}", y: ${+y.toFixed(3)}${k < 1 ? `, scale: ${+k.toFixed(2)}` : ""}} puts it above the caption, or `;
+        const at = +framesToSeconds(f, q.fps).toFixed(2);
+        out.push({
+          clip_id: c.id,
+          caption_clip_id: s.c.id,
+          at,
+          layer,
+          box: { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) },
+          note: `${c.id} (${c.type === "color" ? "a shape" : c.type === "compound" ? "a compound clip" : "a picture"}) is drawn ${layer} the caption ${s.c.id} at ${at} s in this shape, across ${Math.round(h)} px of its letters: ${fix}move the captions (set_caption_look, or the version's overrides)`,
+        });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 /** One version of the master: cut down, reshaped, textless, as asked.
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
  * card's length when the master has one). `looks` frame cropped footage on
@@ -1557,7 +1670,7 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   }
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
-  q = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes });
+  q = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
   if (v.textless) q = textless(q);
   // By hand, last: the version's overrides.
   if (v.overrides?.length) q = applyOverrides(q, v.overrides);
@@ -1577,9 +1690,9 @@ export function versionSound(r: { loudness?: { integrated: number; truePeak: num
 /** What an agent asks export_versions for: explicit versions, or every
  * ratio at every duration (the master's own length when none is given),
  * plus a textless master in the first ratio. At most `limit`. */
-export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRatio[]; durations?: number[]; textless?: boolean; fit?: VersionFit; captions?: VersionCaptions; reframe?: Reframe; focus?: Focus[]; overrides?: VersionOverride[] }, masterSeconds: number, limit = 12): VersionSpec[] {
+export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRatio[]; durations?: number[]; textless?: boolean; fit?: VersionFit; captions?: VersionCaptions; reframe?: Reframe; focus?: Focus[]; overrides?: VersionOverride[]; pushes?: VersionPushes }, masterSeconds: number, limit = 12): VersionSpec[] {
   // What every version shares, unless it says otherwise.
-  const shared = { ...(a.fit ? { fit: a.fit } : {}), ...(a.captions ? { captions: a.captions } : {}), ...(a.reframe ? { reframe: a.reframe } : {}), ...(a.focus?.length ? { focus: a.focus } : {}), ...(a.overrides?.length ? { overrides: a.overrides } : {}) };
+  const shared = { ...(a.fit ? { fit: a.fit } : {}), ...(a.pushes ? { pushes: a.pushes } : {}), ...(a.captions ? { captions: a.captions } : {}), ...(a.reframe ? { reframe: a.reframe } : {}), ...(a.focus?.length ? { focus: a.focus } : {}), ...(a.overrides?.length ? { overrides: a.overrides } : {}) };
   const out: VersionSpec[] = [...(a.versions ?? [])].map((v) => ({ ...shared, ...v }));
   if (a.ratios?.length || a.durations?.length) {
     const ratios = a.ratios?.length ? a.ratios : (["original"] as VersionRatio[]);

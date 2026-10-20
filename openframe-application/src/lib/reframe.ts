@@ -159,7 +159,14 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
   for (const axis of axes) {
     const size = (s: (typeof placed)[number]) => (axis === "x" ? s.w : s.h);
     const lo = (s: (typeof placed)[number]) => (axis === "x" ? s.shown.left : s.shown.top), hi = (s: (typeof placed)[number]) => (axis === "x" ? s.shown.right : s.shown.bottom);
-    const fit = (s: (typeof placed)[number], c: number) => Math.max(lo(s) + size(s) / 2, Math.min(hi(s) - size(s) / 2, c));
+    // Inside what the master showed; a frame wider than that (a 16:9
+    // version of a tall master's column) holds all of it instead. Clamping
+    // as if it were narrower put the frame's edge on the column's edge and
+    // the subject off center (Claude film test 2, ADR-116).
+    const fit = (s: (typeof placed)[number], c: number) => {
+      const a = lo(s) + size(s) / 2, b = hi(s) - size(s) / 2;
+      return a <= b ? Math.max(a, Math.min(b, c)) : Math.max(b, Math.min(a, c));
+    };
     if (look) auto[axis] = followPath(placed.map((s) => windowScores(s.map!, axis, size(s), s.shown)));
     const want = focus?.[axis];
     placed.forEach((s, k) => {
