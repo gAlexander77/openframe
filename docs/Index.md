@@ -413,3 +413,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
   title shows the drop shadow, border and colorize it carries; paste
   attributes carries shadow, border and compressor; audio crossfades are
   offered in the clip menu, drawn on the timeline and set in the Audio tab.
+- [[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]] —
+  the LAME tag's delay and padding are read as ffmpeg reads them and left
+  out of every MP3's playback, export, waveform, analysis and duration
+  (23 ms earlier at 48 kHz, sample for sample with ffmpeg); markers and
+  cuts saved from an old reading stay as measured; AAC was already exact.

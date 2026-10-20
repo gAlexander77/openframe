@@ -116,9 +116,11 @@ export interface Platform {
    * named, created if missing), under a name that replaces nothing ("Trip
    * (2).mp4" when Trip.mp4 is there). displayName is the whole path. */
   createAgentExportTarget?(suggestedName: string, extension: string, folder?: string): Promise<ExportTarget>;
-  /** The first `bytes` of a media file, to tell its format by content when
-   * its name says nothing (an import by a path without an extension). */
-  head(src: string, bytes: number): Promise<Uint8Array>;
+  /** `bytes` of a media file from byte `at` (its first, by default), to
+   * tell its format by content when its name says nothing (an import by a
+   * path without an extension), or read an MP3's gapless tag past its
+   * ID3 tag (engine/media.ts). Shorter at the file's end. */
+  head(src: string, bytes: number, at?: number): Promise<Uint8Array>;
 }
 
 export interface AgentEndpoint {

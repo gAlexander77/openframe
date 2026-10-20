@@ -141,11 +141,12 @@ clip now ducks as it did on the main track (4 dips; measured, met at
   compressor with no gain reduction (the first half's delay tail fills its
   6 ms lookahead): 24-40 dB under the signal for about 10 ms. Sharing one
   chain across a split is the upgrade if it is ever heard.
-- An MP3 plays 23.02 ms (LAME's 1105-sample encoder delay) later than a
+- An MP3 played 23.02 ms (LAME's 1105-sample encoder delay) later than a
   gapless decoder (ffmpeg) plays it: mediabunny presents the delay. The
-  app's analyses read the same timeline, so its own grids agree; a grid
-  from a cue sheet sits 23 ms early in the file, which section 2 keeps
-  before the downbeat. Trimming it means reading the LAME header.
+  app's analyses read the same timeline, so its own grids agreed; a grid
+  from a cue sheet sat 23 ms early in the file. Done in
+  [[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]:
+  the LAME tag is read and the delay left out everywhere.
 - A bed past 300 s still repeats its file under the click guard
   (`placeBed`'s ponytail), and `set_crossfade` cannot join the repeats
   (the next starts at its file's 0 s).

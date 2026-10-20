@@ -205,9 +205,9 @@ export const desktop: Platform = {
     }
   },
 
-  async head(src, bytes) {
+  async head(src, bytes, at = 0) {
     const { id, size } = await register(src);
-    return size ? readRange(convertFileSrc(id, "media"), 0, Math.min(size, bytes)) : new Uint8Array();
+    return size > at ? readRange(convertFileSrc(id, "media"), at, Math.min(size, at + bytes)) : new Uint8Array();
   },
 
   /** For stills only: the whole file lands in memory. */
