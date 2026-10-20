@@ -63,6 +63,15 @@ async function decodable(blob: Blob): Promise<Blob> {
 }
 
 /**
+ * Seconds of a file decoded before the first one heard, and thrown away.
+ * A decoder started cold at a packet gives that packet as silence when it
+ * leans on the one before (an MP3 frame's bit reservoir): every 10 s
+ * export window, and every clip starting mid-file, played 12-26 ms of
+ * silence from an MP3 song (found measuring a song's splice, ADR-104).
+ */
+export const DECODE_PREROLL = 0.1;
+
+/**
  * Where a file's source time 0 is, in container time. AAC's encoder priming
  * packet carries a negative timestamp (-21.3 ms at 48 kHz) that is decoded
  * but never presented; treating it as time 0 played every clip's sound

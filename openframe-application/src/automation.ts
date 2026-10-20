@@ -41,6 +41,7 @@ import { handleMcp, type JsonRpcRequest, type JsonRpcResponse, type McpHost } fr
 import { framesToSeconds, secondsToFrames } from "./lib/time";
 import { decodeMono, sourceFrames } from "./engine/analyze";
 import { checkProject, contrastTargets, tailTargets, type CheckKind, type Measured } from "./lib/designCheck";
+import { staleDuckNote, staleDucks } from "./lib/analysis/duck";
 import { boxPixels, measureLook, tailLevels } from "./lib/contrast";
 import type { Project } from "./lib/project/types";
 
@@ -67,7 +68,11 @@ const automation = {
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
     // Agents see and edit the whole document, whichever timeline the user
     // has open; edit_compound reaches inside compound clips (ADR-037).
+    const before = store.document();
     store.editDocument(commandLabel(name, args), (p) => runCommand(p, name, args, report));
+    // A voice line moved or resized under music ducked for it: the dip
+    // stays where the line was, and the answer says so (ADR-104).
+    for (const d of staleDucks(before, store.document())) (report.notes ??= []).push(staleDuckNote(d));
     return { ...describe(), ...report };
   },
   /** The sticker library, for add_sticker's name. */

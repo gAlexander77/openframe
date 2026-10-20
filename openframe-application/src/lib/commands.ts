@@ -55,6 +55,7 @@ import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary,
 import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, newMask, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
+import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
 import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
 import { KINETIC_ORDERS, KINETIC_UNITS } from "./kinetic";
@@ -2058,6 +2059,47 @@ export const COMMANDS: Command[] = [
     run: (p, a) => epic(() => fitMusic(p, a as unknown as FitMusic)),
   },
   {
+    name: "cut_music",
+    description:
+      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The song's audio clip"),
+        from: S.num("File seconds to cut from (moved to the nearest bar line)", { minimum: 0 }),
+        to: S.num("File seconds to cut to (moved to the nearest bar line)", { minimum: 0 }),
+        snap: S.str("Where from and to land: bar (default), beat, or none (as given)", { enum: ["bar", "beat", "none"] }),
+        crossfade: S.num(`Seconds the pieces crossfade over, ending at the cut (default ${MUSIC_CROSSFADE}; 0 a butt cut)`, { minimum: 0, maximum: MAX_CROSSFADE }),
+      },
+      ["clip_id", "from", "to"],
+    ),
+    run: (p, a, report) => {
+      try {
+        const r = cutMusic(p, a as unknown as MusicCut);
+        const bars = (() => {
+          const g = p.assets.find((x) => x.id === (ops.findClip(p, String(a.clip_id))?.clip as { assetId?: string } | undefined)?.assetId)?.musicGrid;
+          return g ? `, ${+((r.to - r.from) / (240 / g.bpm)).toFixed(2)} bars at ${g.bpm} BPM` : "";
+        })();
+        if (report) (report.notes ??= []).push(`Cut ${+r.from.toFixed(3)}-${+r.to.toFixed(3)} s of the song's file${bars}${r.join ? `; the pieces meet at ${+r.join.at.toFixed(3)} s on the timeline${r.join.crossfade ? ` with a ${r.join.crossfade} s crossfade` : ", a butt cut"}` : ""}.`);
+        return r.project;
+      } catch (e) {
+        throw e instanceof MusicCutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
+    name: "set_crossfade",
+    description:
+      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
+    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }) }, ["clip_id", "seconds"]),
+    run: (p, a) => {
+      try {
+        return setCrossfade(p, String(a.clip_id), Number(a.seconds));
+      } catch (e) {
+        throw e instanceof MusicCutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
     name: "set_music_grid",
     description:
       "Give a song's grid yourself, when analyze_music reads it wrong (its confidence is low, the bars fall between the kicks, the drop is missed or early) or when it is known (a cue sheet, the composer's notes): the tempo, a bar's first beat and, if known, its parts (a drop after another part is a drop), all in the music file's own seconds, four beats a bar. The grid is kept with the file: analyze_music, mark_beats and check_project read the song through it instead of guessing, on every clip of it, through trims, moves and speed changes. markers places the grid's markers on this clip now (Beat, Bar, Phrase, each part by name, Drop), following the clip as analyze_music's do and replacing the clip's own earlier ones of those kinds; by default the kinds it is marked with already (parts and the drop only when sections are given). The answer's note says where the grid plays on the timeline. clear: true forgets the grid. Example: {clip_id: 'c_3', bpm: 128, first_downbeat: 0, sections: [{at: 0, label: 'intro'}, {at: 7.5, label: 'build'}, {at: 15, label: 'drop'}, {at: 33.75, label: 'outro'}], markers: ['beats', 'bars', 'drop']}.",
@@ -2719,6 +2761,9 @@ export function describeProject(p: Project) {
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
+        // How duck_under_speech dipped it: a voice line that changes dips it again so.
+        ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
+        ...(c.type === "audio" && c.crossfade ? { crossfade: c.crossfade } : {}),
         ...soundFxSummary(c),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),

@@ -113,19 +113,35 @@ export function marginSummary(lines: LineBalance[]): { lines: number; min_lu: nu
 export const LINE_AIM_OVER = 0.3;
 
 /**
- * Each line's dip depth (dB) for every line to sit at least `min` LU over
- * the music, from each line's margin as measured with `depths` (null: not
- * measurable, kept as it is): a line short of it dips deeper by what it
- * lacks, a line over it keeps its dip; never under `floor` nor over 40.
- * The music's level falls by the dip's depth while a line plays, so a
- * line's margin grows by as much.
+ * Each line's dip depth (dB) for every line to sit at least `min` and at
+ * most `max` LU over the music, from each line's margin as measured with
+ * `depths` (null: not measurable, kept as it is): a line short of the
+ * minimum dips deeper by what it lacks, never under `floor`; a line past
+ * the ceiling dips less by what it has too much, down to no dip at all
+ * (the music is never raised); a line between keeps its dip. Never over
+ * 40. The music's level falls by the dip's depth while a line plays, so a
+ * line's margin moves by as much.
  */
-export function lineDepths(depths: number[], margins: (number | null)[], min: number, floor = 0): number[] {
+export function lineDepths(depths: number[], margins: (number | null)[], min: number | undefined, floor = 0, max?: number): number[] {
   return depths.map((d, i) => {
     const m = margins[i];
-    const want = m === null || m >= min ? d : d + min + LINE_AIM_OVER - m;
-    return +Math.min(40, Math.max(floor, want)).toFixed(1);
+    if (m !== null && min !== undefined && m < min) return +Math.min(40, Math.max(floor, d + min + LINE_AIM_OVER - m)).toFixed(1);
+    if (m !== null && max !== undefined && m > max) return +Math.min(40, Math.max(0, d - (m - max + LINE_AIM_OVER))).toFixed(1);
+    return d;
   });
+}
+
+/**
+ * The most a line sits over the music when duck_under_speech is not told
+ * (max_line_lu): 15 LU, the top of the 10-15 a promo's voice sits over
+ * its music, or 3 over the speech target or the minimum asked when either
+ * is higher. One depth for every line (the speech target's) emptied the
+ * film test's quiet intro and its outro's last hit: lines 16.7 and 18.7 LU
+ * over. A line past it dips less.
+ */
+export const LINE_CEILING_LU = 15;
+export function lineCeiling(target?: number, min?: number): number {
+  return Math.max(LINE_CEILING_LU, (target ?? 0) + 3, (min ?? 0) + 3);
 }
 
 /** Several windows' loudness as one program: energy averaged by length.

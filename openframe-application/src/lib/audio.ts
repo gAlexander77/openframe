@@ -50,7 +50,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
           out.push({
             clip: moved,
             track: s.track,
-            ...(s.overlap ? { overlap: { pre: s.overlap.pre / clip.speed, post: s.overlap.post / clip.speed } } : {}),
+            ...(s.overlap ? { overlap: { ...s.overlap, pre: s.overlap.pre / clip.speed, post: s.overlap.post / clip.speed, ...(s.overlap.fall ? { fall: s.overlap.fall / clip.speed } : {}) } } : {}),
             via: [...(s.via ?? []).map((v) => ({ ...v, clip: throughCompound(v.clip, clip, p.fps) })), { clip, track }],
           });
         }
@@ -108,6 +108,11 @@ export const EDGE_RAMP = 0.004;
 export interface Overlap {
   pre: number;
   post: number;
+  /** An audio crossfade, which ends at the cut instead of centering on
+   * it: the outgoing clip falls over its last `fall` seconds, and the
+   * incoming one (`rise`) rises over the `pre` seconds before its start. */
+  fall?: number;
+  rise?: boolean;
 }
 export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
 
@@ -122,11 +127,19 @@ export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
  */
 export function soundOverlaps(p: Project): Map<Id, Overlap> {
   const out = new Map<Id, Overlap>();
-  const plain = (c: VideoClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze && !c.tapeStop;
+  const plain = (c: VideoClip | AudioClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze && !c.tapeStop;
   for (const t of p.tracks) {
     const clips = [...t.clips].sort((a, b) => a.start - b.start);
     for (let i = 0; i + 1 < clips.length; i++) {
       const a = clips[i], b = clips[i + 1];
+      if (a.type === "audio" && b.type === "audio" && a.crossfade) {
+        const x = audioCrossfade(a, b, p.fps);
+        if (x > 0) {
+          out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), fall: x });
+          out.set(b.id, { pre: x, post: out.get(b.id)?.post ?? 0, rise: true });
+        }
+        continue;
+      }
       if (a.type !== "video" || b.type !== "video" || !a.transitionOut || a.start + a.duration !== b.start || !plain(a) || !plain(b)) continue;
       const src = p.assets.find((x) => x.id === a.assetId)?.duration ?? 0;
       const tail = src > 0 ? src - (a.in + framesToSeconds(a.duration, p.fps)) : 0;
@@ -139,6 +152,24 @@ export function soundOverlaps(p: Project): Map<Id, Overlap> {
   return out;
 }
 
+/**
+ * The seconds an audio clip's crossfade into the next one plays: its own
+ * `crossfade`, no longer than the next clip's file holds before its
+ * in-point (its sound rises over the seconds before its start) nor than
+ * half of either clip; 0 when they do not meet at a cut, when one is
+ * retimed (ponytail: the retimer's window would need to start early too),
+ * or when the next clip goes on in the same file where this one stops (a
+ * split, not a splice).
+ */
+export function audioCrossfade(a: AudioClip, b: AudioClip, fps: Rational): number {
+  if (!a.crossfade || a.start + a.duration !== b.start) return 0;
+  const plain = (c: AudioClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze && !c.tapeStop;
+  if (!plain(a) || !plain(b)) return 0;
+  if (a.assetId === b.assetId && Math.abs(a.in + framesToSeconds(a.duration, fps) - b.in) < 1e-3) return 0;
+  const x = Math.min(a.crossfade, b.in, framesToSeconds(a.duration, fps) / 2, framesToSeconds(b.duration, fps) / 2);
+  return x >= 0.001 ? x : 0;
+}
+
 /** What clipGainAt reads: a clip's sound settings and where it is. */
 type Gained = Sound & { start: number; duration: number; keyframes?: Clip["keyframes"] };
 
@@ -146,7 +177,9 @@ type Gained = Sound & { start: number; duration: number; keyframes?: Clip["keyfr
  * Gain of a clip at timeline second `t` (absolute). Fades are linear in
  * amplitude, as CapCut's are; keyframed volume interpolates by its curve.
  * A side that overlaps its neighbor (soundOverlaps) crossfades instead of
- * fading: sin over the whole overlap, so the two sides' powers sum to one.
+ * fading: sin over the whole overlap, so the two sides' powers sum to one;
+ * an audio crossfade (`fall`, `rise`) does so over the seconds before the
+ * cut, its own fades giving way to it.
  */
 export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: number, o: Overlap = NO_OVERLAP): number {
   const start = framesToSeconds(c.start, fps);
@@ -155,13 +188,19 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
   const rel = t - start;
   const r = Math.min(Math.max(Math.floor(rel * (fps.num / fps.den) + 1e-6), 0), c.duration - 1);
   let g = paramAt(c as Clip, "volume", r) * track.volume;
-  if (o.pre > 0) {
+  if (o.pre > 0 && o.rise) {
+    // An audio crossfade: risen by the cut, the clip plays on as it is.
+    if (t < start) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / o.pre));
+  } else if (o.pre > 0) {
     if (t < start + o.pre) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / (2 * o.pre)));
   } else {
     const fadeIn = Math.max(framesToSeconds(c.fadeIn, fps), EDGE_RAMP);
     if (rel < fadeIn) g *= rel / fadeIn;
   }
-  if (o.post > 0) {
+  if (o.fall) {
+    // Falling as the next clip rises, their powers summing to one.
+    if (t > end - o.fall) g *= Math.sin((Math.PI / 2) * ((end - t) / o.fall));
+  } else if (o.post > 0) {
     if (t > end - o.post) g *= Math.sin((Math.PI / 2) * ((end + o.post - t) / (2 * o.post)));
   } else {
     const fadeOut = Math.max(framesToSeconds(c.fadeOut, fps), EDGE_RAMP);

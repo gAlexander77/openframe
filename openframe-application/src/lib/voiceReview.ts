@@ -4,7 +4,7 @@
 // caller's (state/voiceReview.ts).
 
 import { numberWords, parseLine } from "./voiceScript";
-import { judgePace, PACE_BANDS, targetBand, type Pace } from "./voicePace";
+import { judgePace, targetBand, type Pace, type ReadAs } from "./voicePace";
 
 // ---- words --------------------------------------------------------------------------
 
@@ -40,11 +40,15 @@ export interface Difference {
 }
 
 /** One short word against another a letter apart, or a lone short word
- * missing or extra ("a", "the"): a slip, not a misread name. */
+ * missing ("a", "the"): a slip, not a misread name. A word heard that is
+ * not in the script is never one: it is a sound the voice made, or the
+ * recognizer's guess at a breath ("you"), and only a second hearing tells
+ * which (the film test's "You wake up..." passed unchecked). */
 function isMinor(d: Difference): boolean {
   const a = d.script ?? "", b = d.heard ?? "";
   if (/\s/.test(a) || /\s/.test(b)) return false;
-  if (!a || !b) return (a || b).length <= 3;
+  if (!a) return false;
+  if (!b) return a.length <= 3;
   if (Math.max(a.length, b.length) > 4 || Math.abs(a.length - b.length) > 1) return false;
   // One letter added, dropped or changed.
   let i = 0;
@@ -126,6 +130,15 @@ export function compareScript(text: string, heard: string, pronounce?: Record<st
   return b.differences.length < a.differences.length ? { words: written.length, matched: written.length - b.differences.length, differences: b.differences } : { words: written.length, ...a };
 }
 
+/** How much of what was heard matches the script: the words matched over
+ * those and every word either side of each difference, so a word heard
+ * that is not in the script counts too (it left the match at 1). */
+export function matchShare(matched: number, differences: Pick<Difference, "script" | "heard">[]): number {
+  const n = (s?: string) => (s ? s.split(" ").length : 0);
+  const off = differences.reduce((k, d) => k + Math.max(n(d.script), n(d.heard)), 0);
+  return matched + off ? +(matched / (matched + off)).toFixed(2) : 1;
+}
+
 /** The script words a difference covers, or what was heard for an extra word. */
 const covered = (d: Difference) => new Set((d.script ?? d.heard ?? "").split(" ").filter(Boolean));
 
@@ -179,11 +192,12 @@ export interface LineMeasure {
   voice?: string;
   speed?: number;
   pronounce?: Record<string, string>;
-  /** The line's intended pace (add_voiceover's pace): its band moves for it. */
+  /** The line's intended pace (add_voiceover's pace): its kind's band moves for it. */
   pace?: Pace;
-  /** The words a second it was read to, as asked (before its pace moves
-   * them); none: narration's. */
+  /** The words a second it was read to, as asked: wins over the pace. */
   asked?: [number, number];
+  /** The kind of read whose band it was read to when none was asked. */
+  readAs?: ReadAs;
   /** The speed was chosen to land on the band (a miss is then the voice's
    * limit, not a speed to change). */
   speedChosen?: boolean;
@@ -225,8 +239,8 @@ export interface Advice {
   args?: Record<string, unknown>;
 }
 
-/** The band a line is held to: as asked, or narration's, moved for its pace. */
-export const bandOf = (m: Pick<LineMeasure, "asked" | "pace">) => targetBand("narration", m.asked, m.pace ?? "normal");
+/** The band a line is held to: as asked, or its kind's moved for its pace. */
+export const bandOf = (m: Pick<LineMeasure, "asked" | "pace" | "readAs">) => targetBand(m.readAs ?? "narration", m.asked, m.pace ?? "normal");
 
 /** Words whose spelling a reader cannot sound out, as they sound: the
  * voice model's guess at them, and Whisper's, goes wrong more than most. */
@@ -300,7 +314,10 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
     else if (d.kind === "misheard" && spell) fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, pronounce: { ...m.pronounce, [spell[0]]: spell[1] } } });
     else if (d.kind === "misheard") fixes.push({ problem: `"${d.script}" was heard as "${d.heard}"${sure}; no respelling reads differently: read it slower, or reword the line around it`, tool: "retake_voiceover", args: slower });
     else if (d.kind === "missing") fixes.push({ problem: `"${d.script}" was not heard${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
-    else fixes.push({ problem: `"${d.heard}" was heard but is not in the script${sure}`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round((m.speed ?? 1) * 0.95) } });
+    // A word heard that was not written: most often a drawn-out onset or a
+    // breath heard as one ("you" for the glide into "Wake" at speed 0.6);
+    // a slower read draws it out more, a little faster tightens it.
+    else fixes.push({ problem: `"${d.heard}" was heard but is not in the script${sure}: a breath or a drawn-out sound heard as a word; read it a little faster`, tool: "retake_voiceover", args: { clip_id: m.clipId, speed: round(Math.min(1.3, (m.speed ?? 1) * 1.08)) } });
   }
   // Pace: a read off its band is read again to land on it (the retake
   // measures and corrects its speed); a line whose speed was already
@@ -311,7 +328,7 @@ export function verdict(m: LineMeasure, medianLufs: number | null): Fix[] {
       // Long words: aim the words a second where 5 syllables a second land.
       const w = (5 * m.wps!) / m.sps!;
       fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: [round(w - 0.25), round(w + 0.25)] } });
-    } else if (!m.speedChosen) fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: m.asked ?? PACE_BANDS.narration } });
+    } else if (!m.speedChosen) fixes.push({ problem: p.problem, tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } });
   }
   if (m.lead > R.leadMax) fixes.push({ problem: `${m.lead} s of silence before the first word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "start", to: round(m.start + m.lead - 0.06) } });
   if (m.tail > R.tailMax) fixes.push({ problem: `${m.tail} s of silence after the last word`, tool: "trim_clip", args: { clip_id: m.clipId, edge: "end", to: round(m.end - m.tail + 0.2) } });
@@ -339,9 +356,9 @@ export function advise(m: LineMeasure): Advice[] {
   const out: Advice[] = [];
   for (const p of judgePace(m.wps, m.sps, bandOf(m))) {
     if (p.level === "advice" && /^short words/.test(p.problem)) out.push({ note: p.problem });
-    else if (p.level === "advice") out.push({ note: `${p.problem}: within a tenth of its band, so it passes${m.speedChosen ? "" : "; a retake with words_per_second lands it"}`, ...(m.speedChosen ? {} : { tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: m.asked ?? PACE_BANDS.narration } }) });
+    else if (p.level === "advice") out.push({ note: `${p.problem}: within a tenth of its band, so it passes${m.speedChosen ? "" : "; a retake with words_per_second lands it"}`, ...(m.speedChosen ? {} : { tool: "retake_voiceover", args: { clip_id: m.clipId, words_per_second: bandOf(m) } }) });
     else if (m.speedChosen && !/^rushed/.test(p.problem))
-      out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3); ${/^slow/.test(p.problem) ? "fewer pause marks, or pace slow if the line is meant so" : "a [pause] at a phrase boundary, or pace fast if the line is meant so"}` });
+      out.push({ note: `${p.problem}: its speed was already chosen for the band and the voice came no nearer within its natural speeds (0.6-1.3; a line meant slow no faster than 1); ${/^slow/.test(p.problem) ? "fewer or longer words, or pace slow if the line is meant so" : "fewer words, or the line split in two, or pace fast if the line is meant so"}` });
   }
   return out;
 }

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { auditionSummary } from "./audition";
+import { auditionSummary, dropouts } from "./audition";
 
 const RATE = 48000;
 const tone = (hz: number, seconds: number, amp: number) => Float32Array.from({ length: seconds * RATE }, (_, i) => amp * Math.sin((2 * Math.PI * hz * i) / RATE));
@@ -34,4 +34,16 @@ it("says where the energy sits, how wide it is and when it clips", () => {
   expect(auditionSummary(hot, hot, RATE).clipped).toBeGreaterThan(0);
   const quiet = new Float32Array(RATE);
   expect(auditionSummary(quiet, quiet, RATE)).toMatchObject({ integrated_lufs: null, true_peak_dbtp: null, silent: [[0, 1]] });
+});
+
+it("finds a few milliseconds of silence inside sound, and not a pause between sounds", () => {
+  // A 220 Hz note with 20 ms of digital silence at 1 s (an MP3 packet a
+  // cold decoder lost), heard from 10 s; then a 0.4 s pause between notes.
+  const x = tone(220, 3, 0.2);
+  x.fill(0, RATE, RATE + 0.02 * RATE);
+  x.fill(0, 2 * RATE, 2.4 * RATE);
+  expect(dropouts(x, x, RATE, 10)).toEqual([11]);
+  expect(auditionSummary(x, x, RATE, 10).dropouts).toEqual([11]);
+  // Whole: none, and the summary leaves the field out.
+  expect(auditionSummary(tone(220, 3, 0.2), tone(220, 3, 0.2), RATE).dropouts).toBeUndefined();
 });

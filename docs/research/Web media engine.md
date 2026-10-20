@@ -688,6 +688,11 @@ function audibleMediaTime(): number {
 > [!warning] Measured 2026-10-13: the delay depends on the encoder
 > Against a PCM export of the same timeline, decoded with ffmpeg: Edge 155's **Media Foundation AAC encoder adds 0 samples** (a 1024 shift would make sound 21.3 ms early), while `@mediabunny/aac-encoder` (libavcodec WASM) adds **exactly 1024**. So measure it per device: encode a click, decode it back, shift by the distance it moved ([[ADR-016 AAC encoder delay is measured, not assumed]]). The negative-timestamp route works in mediabunny 1.61.4: `new AudioBufferSource(cfg, { startTimestamp: -delay / 48000 })` makes the MP4 muxer write an edit list. Opus in WebM/MKV measured 0 (its pre-skip is in the header).
 
+### 4.6.1 A cold decoder's first packet (decode side)
+
+> [!warning] Measured 2026-10-20: start decoding before the first sample you need
+> `AudioBufferSink.buffers(t)` and `AudioSampleSink.samples(t)` start a fresh decoder at the packet holding `t`. An MP3 frame leans on the frames before it (the bit reservoir), so that first frame came out as silence: rendering the 30 s MP3 fixture in the editor's 10 s windows left 12-22 ms of digital silence at every window start, and a clip starting mid-file (a song spliced at 12 s) began with 26 ms of silence: in every export, preview and measurement. Decoding from 0.1 s earlier and dropping what falls before `t` (`DECODE_PREROLL`, [[ADR-104 Voice and sound an agent can trust without ears]]) removed both; `preview_audio` now lists any 3-100 ms dropout inside sound.
+
 ### 4.7 Waveform peaks
 
 - Compute in a worker, from `AudioSampleSink.samples()` in one linear pass. `copyTo(f32, { planeIndex: c, format: 'f32-planar' })`.

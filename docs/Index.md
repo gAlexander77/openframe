@@ -353,3 +353,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   picture, fill the frame with a full-bleed split screen, hold text at the
   readable size, judge 4:5 by the apps' zones and take overrides by hand;
   unique copies copy nested compounds.
+- [[ADR-104 Voice and sound an agent can trust without ears]] —
+  a words_per_second band asked is held over any pace; pause marks stay
+  out of a line's pace and a slow line reads no faster than speed 1; a
+  word heard that is not in the script is heard again and counts against
+  match; duck_under_speech ducks a whole track under a 15 LU ceiling,
+  keeps how it ducked and dips again under a retake; cut_music cuts a
+  song on its bars with a crossfade, set_crossfade joins any two audio
+  clips, preview_audio measures every join and dropout; decoding starts
+  0.1 s early so an MP3 loses no packet.

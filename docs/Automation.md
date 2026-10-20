@@ -323,14 +323,28 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
   lowest), `speech` (while the voice speaks, its lines from first word to
   last, together) and `per_line` (each line alone: `min_lu`, `median_lu`,
   `max_lu` and where the lowest is).
-- `duck_under_speech` `{clip_id, voice_above_music_lu?, min_line_lu?,
-  depth?}` keys the music down under speech. `voice_above_music_lu` aims
-  the speech window; `min_line_lu` holds every line to at least that many
-  LU, each line's dip as deep as it needs (`depth`, or the depth the
-  speech target chose, is the least); both are met by rendering the stems
-  and measuring again. `balance` answers the speech window's numbers,
-  `target_lu` and `met`, and `per_line` (with `min_line_lu`, `each` line's
-  margin and dip).
+- `duck_under_speech` `{clip_id | track_id, voice_above_music_lu?,
+  min_line_lu?, max_line_lu?, depth?}` keys the music down under speech:
+  one clip, or every clip of a track as one bed (`track_id`, a song cut
+  into pieces in one call). `voice_above_music_lu` aims the speech window;
+  `min_line_lu` holds every line to at least that many LU, each line's dip
+  as deep as it needs (`depth`, or the depth the speech target chose, is
+  the usual dip); `max_line_lu` (default 15, or 3 over a higher target or
+  minimum, whenever the call measures) to at most, a line over a quiet
+  passage dipping less; all are met by rendering the stems and measuring
+  again. `balance` answers the speech window's numbers, `target_lu` and
+  `met`, and `per_line` (`min_target_lu`, `max_target_lu`, `each` line's
+  margin and dip). The music keeps how it was ducked: `retake_voiceover`
+  dips it again under the new take (`ducking` in its answer), and an edit
+  that moves a line under it answers a note
+  ([[ADR-104 Voice and sound an agent can trust without ears]]).
+- `cut_music` `{clip_id, from, to, snap?, crossfade?}` takes bars out of a
+  song (the file's seconds, on its grid's bar lines) and joins the pieces
+  with a 30 ms crossfade ending on the downbeat; `set_crossfade`
+  `{clip_id, seconds}` crossfades any audio clip into the next on its
+  track. `preview_audio`'s `edges` measure each join (`dip_db`,
+  `click_db`, `step_db`, `tail_cut_db`) and `dropouts` any few
+  milliseconds of silence inside sound.
 - `normalize_loudness` takes `spec` for a spec's target and true-peak
   ceiling; `export_video`'s `loudness` holds the true peak under -1 dBTP
   (-2 at ATSC's -24) and answers the `loudness` it reached.
@@ -393,9 +407,10 @@ Delivery ([[ADR-061 Delivery holds the true peak and says whether it passes]]):
 `review_voiceover` (`{"clip_ids"?, "music"?, "recheck"?}`, read-only) hears each voice
 line with Whisper and answers per line `script`, `heard`, `match` and
 `differences` (`missing`, `extra` or `misheard`, with `at` on the
-timeline; a short word a letter off is `minor`), `pace`
-(`target_words_per_second`, `over_speech` and `over_clip` words and
-syllables a second, `on_target`), `lead_silence`, `tail_silence`,
+timeline; a short word a letter off is `minor`; `match` counts a word
+heard that is not in the script, which is heard again too), `pace`
+(`target_words_per_second`, `over_speech` with its pause marks out and
+`over_clip` words and syllables a second, `on_target`), `lead_silence`, `tail_silence`,
 `longest_pause`, `loudness_lufs`, `true_peak_dbtp`, `pitch` (`median_hz`,
 `range_st`), `voice_above_music_lu` (the line window: this line, first
 word to last), a `verdict` (`ok` when nothing fails, or the problems),

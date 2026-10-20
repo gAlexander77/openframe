@@ -10,7 +10,7 @@ import { imageFor } from "./media";
 // responsive. A worker is the upgrade if long files show jank.
 
 import { ALL_FORMATS, AudioSampleSink, CanvasSink, Input } from "mediabunny";
-import { mediaOrigin } from "./media";
+import { DECODE_PREROLL, mediaOrigin } from "./media";
 import { LoudnessMeter } from "../lib/analysis/loudness";
 import { TruePeakMeter } from "../lib/analysis/truePeak";
 import { contentScore, DEFAULT_WEIGHTS, LUMA_WEIGHTS, rgbaToHsv } from "../lib/analysis/scenes";
@@ -59,7 +59,7 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
     const report = throttle(onProgress);
     let mono = new Float32Array(0);
     let plane = new Float32Array(0);
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const frames = sample.numberOfFrames;
@@ -113,7 +113,7 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
     const channels = Array.from({ length: Math.min(2, track.numberOfChannels) }, () => new Float32Array(n));
     const report = throttle(onProgress);
     let plane = new Float32Array(0);
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const frames = sample.numberOfFrames;
@@ -186,7 +186,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
         if (block.n === block.planes[0].length) await flush();
       }
     };
-    for await (const sample of new AudioSampleSink(track).samples(t0 + from, t0 + to)) {
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 + from - DECODE_PREROLL), t0 + to)) {
       try {
         signal?.throwIfAborted();
         const rate = sample.sampleRate;

@@ -26,8 +26,8 @@ import { markMusicClip, MUSIC_MARKERS, type MusicMarkerKind } from "../lib/epic"
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
-import { activeSpan, BALANCE_WINDOWS, duckDepth, isDialog, lineBalances, lineDepths, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
-import { duckKeys } from "../lib/analysis/duck";
+import { activeSpan, BALANCE_WINDOWS, duckDepth, isDialog, lineBalances, lineCeiling, lineDepths, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
+import { duckSignature, trackDuckKeys } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
@@ -39,7 +39,7 @@ import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Cutout, Id, ImageClip, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Clip, Cutout, DuckRecord, Id, ImageClip, VideoClip } from "../lib/project/types";
 import { uid } from "../lib/project/defaults";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
@@ -684,7 +684,11 @@ export interface DuckEdit {
   keys: number;
   /** The dip's depth; with min_line_lu, the least (each line's own is in balance.per_line.each). */
   depth_db?: number;
+  /** The music clips dipped, when a whole track was (track_id). */
+  clips?: Id[];
   balance?: DuckBalance;
+  /** One clip of a track that plays more: track_id ducks them all. */
+  note?: string;
 }
 
 /** What the music sits under the voice, measured once the dips are set,
@@ -703,27 +707,41 @@ export interface DuckBalance {
   voice_above_music_lu: number | null;
   /** voice_above_music_lu's target, when one was given. */
   target_lu?: number;
-  /** Every target given was met (within 0.5 LU over speech; every line at its minimum). */
+  /** Every target given was met (within 0.5 LU over speech; every line between its minimum and its ceiling). */
   met?: boolean;
   per_line: (NonNullable<ReturnType<typeof marginSummary>> | { lines: 0 }) & {
     window: "line";
     means: string;
     min_target_lu?: number;
+    /** The most a line sits over the music: max_line_lu, or its default (lineCeiling). */
+    max_target_lu?: number;
     met?: boolean;
-    /** With min_line_lu: each line, its margin and its own dip. */
+    /** Each line, its margin and its own dip. */
     each?: (LineBalance & { depth_db: number })[];
   };
 }
 
-/** Clips with sound that play under `clip`: not muted, not disabled. */
-function voicesUnder(clip: MediaClip): Target[] {
+/** duck_under_speech's arguments. */
+export interface DuckRequest extends Partial<DuckSettings> {
+  voice_above_music_lu?: number;
+  min_line_lu?: number;
+  max_line_lu?: number;
+  /** Duck every clip with sound on this track, as one music bed. */
+  track_id?: Id;
+  /** The undo step's name (a retake dips the music again under its own). */
+  label?: string;
+}
+
+/** Clips with sound that play under any of `music`: not muted, not
+ * disabled, not one of them. */
+function voicesUnder(music: MediaClip[]): Target[] {
   const p = store.get().project;
-  const end = clip.start + clip.duration;
+  const ids = new Set(music.map((m) => m.id));
   return p.tracks
     .filter((t) => !t.muted)
     .flatMap((t) => t.clips)
-    .filter((c): c is MediaClip => (c.type === "video" || c.type === "audio") && c.id !== clip.id && !c.disabled && !c.muted && c.volume > 0 && !c.freeze)
-    .filter((c) => c.start < end && c.start + c.duration > clip.start)
+    .filter((c): c is MediaClip => (c.type === "video" || c.type === "audio") && !ids.has(c.id) && !c.disabled && !c.muted && c.volume > 0 && !c.freeze)
+    .filter((c) => music.some((m) => c.start < m.start + m.duration && c.start + c.duration > m.start))
     .flatMap((c) => {
       const asset = ops.getAsset(p, c.assetId);
       return asset?.hasAudio && !SFX_FILES.has(asset.name) ? [{ clip: c, asset }] : [];
@@ -733,30 +751,51 @@ function voicesUnder(clip: MediaClip): Target[] {
 /** The built-in sound effects' file names (state/sfx.ts names them by label). */
 const SFX_FILES = new Set(Object.values(SFX).map((s) => `${s.label}.wav`));
 
+/** The music to duck: one clip, or every clip with sound on a track. */
+function duckTargets(clipId: Id | undefined, trackId: Id | undefined): Target[] {
+  if (!trackId) return [resolve("ducking", clipId)];
+  if (clipId) throw new Error("Give clip_id (one music clip) or track_id (every clip on a music track), not both.");
+  const t = store.get().project.tracks.find((x) => x.id === trackId);
+  if (!t) throw new Error(`No track with id ${trackId}: describe_project lists the tracks`);
+  if (t.locked) throw new Error(`Track ${t.name} is locked`);
+  const out = t.clips.filter((c) => (c.type === "audio" || c.type === "video") && !c.disabled && !c.muted).map((c) => targetFor("ducking", c.id)).filter((x): x is Target => typeof x !== "string");
+  if (!out.length) throw new Error(`Track ${t.name} has no clip with sound to duck`);
+  return out;
+}
+
 /**
- * Dip a music clip under the speech of every other clip with sound that
- * plays with it, as volume keyframes the user can adjust (one undo step;
- * existing volume keyframes are replaced). Speech is wherever the silence
- * detector finds no silence; a line is one clip's speech, its pauses under
- * a second bridged. voice_above_music_lu aims the voice that far over the
- * music while it speaks (all lines together); min_line_lu holds every line
- * to at least that margin, each line dipping as deep as it needs. Both are
+ * Dip music under the speech of every other clip with sound that plays
+ * with it, as volume keyframes the user can adjust (one undo step;
+ * existing volume keyframes are replaced): one clip, or every clip of a
+ * track as one bed (a song cut into pieces), a line across a cut dipping
+ * on both sides. Speech is wherever the silence detector finds no
+ * silence; a line is one clip's speech, its pauses under a second
+ * bridged. voice_above_music_lu aims the voice that far over the music
+ * while it speaks (all lines together); min_line_lu holds every line to
+ * at least that margin and max_line_lu (default lineCeiling) to at most,
+ * each line dipping as deep as it needs and no deeper (ADR-104). All are
  * measured on the rendered stems and met by measuring again (ADR-096).
+ * Each clip keeps how it was ducked (`duck`), so a voice line that
+ * changes later can dip it again the same way.
  * ponytail: every other audible clip counts as speech, music included; a
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
-export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> & { voice_above_music_lu?: number; min_line_lu?: number } = {}): Promise<DuckEdit> {
+export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Promise<DuckEdit> {
   const scope = projectWork.signal();
-  const { clip, asset } = resolve("ducking", clipId);
+  const targets = duckTargets(clipId || undefined, opts.track_id || undefined);
   let depth = opts.depth ?? state.settings.ducking.depth;
   const target = opts.voice_above_music_lu;
   const minLine = opts.min_line_lu;
-  if (target !== undefined && (!Number.isFinite(target) || target < 0 || target > 30)) throw new Error("Voice target must be between 0 and 30 LU.");
-  if (minLine !== undefined && (!Number.isFinite(minLine) || minLine < 0 || minLine > 30)) throw new Error("min_line_lu must be between 0 and 30 LU.");
-  const measuring = target !== undefined || minLine !== undefined;
+  for (const [name, v] of [["voice_above_music_lu", target], ["min_line_lu", minLine], ["max_line_lu", opts.max_line_lu]] as const)
+    if (v !== undefined && (!Number.isFinite(v) || v < 0 || v > 30)) throw new Error(`${name} must be between 0 and 30 LU.`);
+  if (opts.max_line_lu !== undefined && minLine !== undefined && opts.max_line_lu < minLine + 1) throw new Error("max_line_lu must be at least 1 LU over min_line_lu.");
+  const measuring = target !== undefined || minLine !== undefined || opts.max_line_lu !== undefined;
+  // A line never sits further over the music than this: a quiet passage
+  // dips less instead of being emptied (ADR-104).
+  const maxLine = measuring ? (opts.max_line_lu ?? lineCeiling(target, minLine)) : undefined;
   const original = store.get().project;
   const fps = store.get().project.fps;
-  let voices = voicesUnder(clip);
+  let voices = voicesUnder(targets.map((t) => t.clip));
   if (measuring) {
     const dialogIds = new Set(original.tracks.filter(t => isDialog(t, original)).flatMap(t => t.clips.map(c => c.id)));
     if (dialogIds.size) voices = voices.filter(v => dialogIds.has(v.clip.id));
@@ -766,8 +805,9 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     toast(msg, "error");
     throw new Error(msg);
   }
+  const named = targets.length > 1 ? `${targets.length} music clips` : targets[0].asset.name;
   // Each voice clip's speech, timeline frames.
-  const perClip = await job("ducking", clip, `Finding speech under ${asset.name}`, async (progress, signal) => {
+  const perClip = await job("ducking", targets[0].clip, `Finding speech under ${named}`, async (progress, signal) => {
     const out: [number, number][][] = [];
     for (const [i, v] of voices.entries()) {
       const [from, to] = windowOf(v.clip);
@@ -784,20 +824,29 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     return out;
   });
   scope.throwIfAborted();
-  const c = stillThere(clip.id);
+  const cs = targets.map((t) => stillThere(t.clip.id));
+  const ids = cs.map((c) => c.id);
   const frames = (s: number) => secondsToFrames(s, fps);
-  const inside = (s: [number, number]) => [Math.max(c.start, s[0]), Math.min(c.start + c.duration, s[1])] as [number, number];
+  const lo = Math.min(...cs.map((c) => c.start)), hi = Math.max(...cs.map((c) => c.start + c.duration));
+  const under = (s: [number, number]) => cs.some((c) => s[0] < c.start + c.duration && s[1] > c.start);
+  const inside = (s: [number, number]) => [Math.max(lo, s[0]), Math.min(hi, s[1])] as [number, number];
   // The lines: each clip's speech under the music, pauses under a second bridged.
-  const lines = perClip.flatMap((spans) => speechWindows(spans.map(inside).filter(([a, b]) => b > a), frames(1))).sort((x, y) => x[0] - y[0]);
+  const lines = perClip.flatMap((spans) => speechWindows(spans.filter(under).map(inside).filter(([a, b]) => b > a), frames(1))).sort((x, y) => x[0] - y[0]);
   const spans = perClip.flat();
   const lineOf = spans.map(([a, b]) => lines.findIndex(([x, y]) => a < y && b > x));
-  const keysAt = (db: number, lineDb?: number[]) =>
-    duckKeys(spans, c.start, c.start + c.duration, c.volume, { depthDb: db, attack: frames(0.1), release: frames(0.4), hold: frames(0.6) }, lineDb && spans.map((_, i) => (lineOf[i] >= 0 ? lineDb[lineOf[i]] : db)));
+  const shape = { attack: frames(0.1), release: frames(0.4), hold: frames(0.6) };
+  const beds = cs.map((c) => ({ id: c.id, start: c.start, end: c.start + c.duration, base: c.volume }));
+  const keysAt = (db: number, lineDb?: number[]) => trackDuckKeys(spans, beds, { depthDb: db, ...shape }, lineDb && spans.map((_, i) => (lineOf[i] >= 0 ? lineDb[lineOf[i]] : db)));
   let keys = keysAt(depth);
   let balance: DuckBalance | undefined;
   const withKeys = (p: typeof original, ks: typeof keys) => {
-    if (ops.findClip(p, c.id)?.clip.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: c.id, path: "volume" });
-    return ks.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: c.id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
+    for (const [id, list] of ks) {
+      const c = ops.findClip(p, id)?.clip;
+      if (!c) continue;
+      if (c.keyframes?.volume?.length) p = runCommand(p, "remove_keyframes", { clip_id: id, path: "volume" });
+      p = list.reduce((q, k) => runCommand(q, "add_keyframe", { clip_id: id, path: "volume", at: framesToSeconds(c.start + k.f, fps), value: k.v }), p);
+    }
+    return p;
   };
   if (measuring && !lines.length) {
     finish("ducking", "No speech found under it");
@@ -809,7 +858,7 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     const sec = (f: number) => framesToSeconds(f, fps);
     const t0 = sec(lines[0][0]), t1 = sec(Math.max(...lines.map((l) => l[1])));
     const win = lines.map(([a, b]) => [sec(a), sec(b)] as [number, number]);
-    const stem = (p: typeof original, ids: string[]) => ({ ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(x => ids.includes(x.id)) })) });
+    const stem = (p: typeof original, keep: string[]) => ({ ...p, tracks: p.tracks.map(t => ({ ...t, clips: t.clips.filter(x => keep.includes(x.id)) })) });
     const render = async (p: typeof original) => (await measureMix(p, t0, t1, { signal: scope })).steps;
     const voice = await render(stem(original, voices.map(v => v.clip.id)));
     // Each line from its first word to its last: the voice's own steps say where.
@@ -818,20 +867,20 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
     const speaking = speechWindows(said, 0.001);
     const speechLufs = (steps: number[]) => windowLoudness(steps, t0, speaking);
     const dialogLufs = speechLufs(voice);
-    const flat = await render(stem(withKeys(original, keysAt(0)), [c.id]));
+    const flat = await render(stem(withKeys(original, keysAt(0)), ids));
     if (target !== undefined) {
       // Measure only while someone speaks. One window from the first word to
       // the last took in the bed between lines too, where the dip releases,
       // and the target then pushed every line's dip to its 40 dB limit.
       depth = +duckDepth(dialogLufs, speechLufs(flat), target).toFixed(1);
-    } else if (opts.depth === undefined) depth = 0;
+    } else if (opts.depth === undefined && minLine !== undefined) depth = 0;
     // Render the actual keyed bed: fades, gaps and effect tails can keep
     // the achieved attenuation from matching the requested depth.
     let bed = flat;
     keys = keysAt(depth);
     for (let attempt = 0; attempt < 4 && (target !== undefined || depth > 0); attempt++) {
       keys = keysAt(depth);
-      bed = await render(stem(withKeys(original, keys), [c.id]));
+      bed = await render(stem(withKeys(original, keys), ids));
       if (target === undefined) break;
       const difference = loudnessDifference(dialogLufs, speechLufs(bed));
       if (difference === null) throw new Error("Cannot measure voice balance in this window.");
@@ -840,26 +889,27 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
       if (next === depth || attempt === 3) break;
       depth = next;
     }
-    // Every line to its minimum: each one's dip as deep as it needs.
+    // Every line between its minimum and its ceiling: a line short of the
+    // minimum dips deeper, one past the ceiling (a quiet passage) less.
     let each = lineBalances(voice, bed, t0, said);
-    if (minLine !== undefined) {
-      lineDb = lineDepths(said.map(() => depth), each.map((l) => l.voice_above_music_lu), minLine, depth);
-      for (let attempt = 0; attempt < 4 && lineDb.some((d) => d > depth); attempt++) {
-        keys = keysAt(depth, lineDb);
-        bed = await render(stem(withKeys(original, keys), [c.id]));
-        each = lineBalances(voice, bed, t0, said);
-        const next = lineDepths(lineDb, each.map((l) => l.voice_above_music_lu), minLine, depth);
-        // The keys kept are the ones just measured.
-        if (next.every((d, i) => d === lineDb![i]) || attempt === 3) break;
-        lineDb = next;
-      }
+    const fit = (ds: number[]) => lineDepths(ds, each.map((l) => l.voice_above_music_lu), minLine, depth, maxLine);
+    lineDb = fit(said.map(() => depth));
+    for (let attempt = 0; attempt < 4 && lineDb.some((d) => d !== depth); attempt++) {
+      keys = keysAt(depth, lineDb);
+      bed = await render(stem(withKeys(original, keys), ids));
+      each = lineBalances(voice, bed, t0, said);
+      const next = fit(lineDb);
+      // The keys kept are the ones just measured.
+      if (next.every((d, i) => d === lineDb![i]) || attempt === 3) break;
+      lineDb = next;
     }
     scope.throwIfAborted();
     if (store.get().project !== original) throw new Error("The project changed while measuring; run duck_under_speech again.");
     const music = speechLufs(bed);
     const difference = loudnessDifference(dialogLufs, music);
     const r1 = (x: number | null) => (x === null || !Number.isFinite(x) ? null : +x.toFixed(1));
-    const lineMet = minLine === undefined ? undefined : each.every((l) => l.voice_above_music_lu === null || l.voice_above_music_lu >= minLine - 0.05);
+    // A line over the ceiling with no dip left is as low as the music goes.
+    const lineMet = each.every((l, i) => l.voice_above_music_lu === null || ((minLine === undefined || l.voice_above_music_lu >= minLine - 0.05) && (maxLine === undefined || l.voice_above_music_lu <= maxLine + 0.05 || lineDb![i] === 0)));
     const speechMet = target === undefined || difference === null ? undefined : Math.abs(target - difference) <= 0.5;
     balance = {
       window: "speech",
@@ -872,24 +922,42 @@ export async function duckUnderSpeech(clipId?: Id, opts: Partial<DuckSettings> &
       music_lufs: r1(music),
       voice_above_music_lu: r1(difference),
       ...(target !== undefined ? { target_lu: target } : {}),
-      ...(speechMet !== undefined || lineMet !== undefined ? { met: speechMet !== false && lineMet !== false } : {}),
+      met: speechMet !== false && lineMet,
       per_line: {
         window: "line",
         means: BALANCE_WINDOWS.line,
         ...(marginSummary(each) ?? { lines: 0 }),
-        ...(minLine !== undefined ? { min_target_lu: minLine, met: lineMet, each: each.map((l, i) => ({ ...l, depth_db: lineDb?.[i] ?? depth })) } : {}),
+        ...(minLine !== undefined ? { min_target_lu: minLine } : {}),
+        ...(maxLine !== undefined ? { max_target_lu: maxLine } : {}),
+        met: lineMet,
+        each: each.map((l, i) => ({ ...l, depth_db: lineDb?.[i] ?? depth })),
       },
     };
   }
-  const dips = keys.filter((k, i) => k.v < c.volume && !(keys[i - 1]?.v < c.volume)).length;
+  const all = [...keys.values()];
+  const dips = cs.reduce((n, c, k) => n + all[k].filter((x, i) => x.v < c.volume && !(all[k][i - 1]?.v < c.volume)).length, 0);
   if (!dips && !measuring) {
     finish("ducking", "No speech found under it");
     return { voices: voices.length, dips: 0, keys: 0 };
   }
-  edit("Duck under speech", (p) => withKeys(p, keys));
+  // How it was asked, kept with each clip: a voice line that changes later
+  // dips it again the same way (ADR-104).
+  const record: Omit<DuckRecord, "keys"> = {
+    ...(target !== undefined ? { voiceAboveMusicLu: target } : {}),
+    ...(minLine !== undefined ? { minLineLu: minLine } : {}),
+    ...(opts.max_line_lu !== undefined ? { maxLineLu: opts.max_line_lu } : {}),
+    ...(opts.depth !== undefined ? { depth: opts.depth } : {}),
+    ...(opts.track_id ? { track: true } : {}),
+  };
+  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, keys: duckSignature(x.keyframes?.volume) } }) as Clip), withKeys(p, keys)));
   const deepest = lineDb ? Math.max(depth, ...lineDb) : depth;
-  finish("ducking", deepest > depth ? `Lowered ${depth}-${deepest} dB under ${plural(lines.length, "line")}` : `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
-  return { voices: voices.length, dips, keys: keys.length, depth_db: depth, ...(balance ? { balance } : {}) };
+  const least = lineDb ? Math.min(depth, ...lineDb) : depth;
+  finish("ducking", deepest > least ? `Lowered ${least}-${deepest} dB under ${plural(lines.length, "line")}` : `Lowered ${depth} dB under ${plural(dips, "stretch", "stretches")} of speech`);
+  // A song cut into pieces was ducked a piece at a time (film test 3.14).
+  const home = opts.track_id ? undefined : ops.findClip(store.get().project, ids[0])?.track;
+  const more = home ? home.clips.filter((x) => x.id !== ids[0] && (x.type === "audio" || x.type === "video")).length : 0;
+  const note = home && more ? `Only ${ids[0]} was ducked; its track ${home.id} plays ${more} more ${more === 1 ? "clip" : "clips"}: duck_under_speech track_id ${home.id} ducks them all as one bed.` : undefined;
+  return { voices: voices.length, dips, keys: all.reduce((n, k) => n + k.length, 0), depth_db: depth, ...(opts.track_id ? { clips: ids } : {}), ...(balance ? { balance } : {}), ...(note ? { note } : {}) };
 }
 
 export interface DenoiseEdit {

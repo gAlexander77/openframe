@@ -6,13 +6,15 @@
 import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Output, Quality } from "mediabunny";
 import { ensureMp3 } from "../engine/export";
 import { hasSound, measureMix, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "../engine/mixdown";
+import { decodeMono } from "../engine/analyze";
 import { auditionSummary, type AuditionSummary } from "../lib/analysis/audition";
+import { edgeReport, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
 import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
 import { stemsOf } from "../lib/audioRoles";
 import { EXPORT_SAMPLE_RATE } from "../lib/export";
 import { projectDuration } from "../lib/project/ops";
-import type { Project, TrackRole } from "../lib/project/types";
+import type { AudioClip, Project, TrackRole } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
@@ -50,8 +52,49 @@ export interface AuditionAnswer {
      * compound clips' mix), which no stem holds. */
     stems?: Partial<Record<TrackRole | "picture", number | null>>;
     as_exported_at?: number;
+    /** Every join of audio clips in the stretch, and any start or end of
+     * one that clicks, cuts a sound off or comes in mid-sound (ADR-104). */
+    edges?: EdgeReport[];
     note?: string;
   };
+}
+
+/** Seconds of a file measured either side of an edge. */
+const SIDE = 0.3;
+
+/** The audio clips' edges heard in [start, end): joins (a clip ending
+ * where the next on its track starts) and lone starts and ends, each with
+ * how its file goes on past the cut or came before it. */
+async function edgesOf(p: Project, heard: Project, start: number, end: number, signal: AbortSignal): Promise<AudioEdge[]> {
+  const sec = (f: number) => framesToSeconds(f, p.fps);
+  const out: AudioEdge[] = [];
+  const level = async (c: AudioClip, a: number, b: number) => {
+    const asset = p.assets.find((x) => x.id === c.assetId);
+    if (!asset?.hasAudio || a < 0 || b > asset.duration) return undefined;
+    const pcm = await decodeMono(asset, a, b, 16000, undefined, signal);
+    let s = 0;
+    for (const x of pcm) s += x * x;
+    return pcm.length ? 10 * Math.log10(s / pcm.length + 1e-20) : undefined;
+  };
+  const plain = (c: AudioClip) => c.speed === 1 && !c.speedCurve && !c.reverse && !c.freeze;
+  const diff = (x?: number, y?: number) => (x === undefined || y === undefined ? undefined : Math.max(-60, Math.min(60, x - y)));
+  for (const t of heard.tracks) {
+    if (t.kind !== "audio" || t.muted) continue;
+    const clips = t.clips.filter((c): c is AudioClip => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
+    for (const [i, c] of clips.entries()) {
+      const prev = clips[i - 1]?.start + clips[i - 1]?.duration === c.start ? clips[i - 1] : undefined;
+      const next = clips[i + 1]?.start === c.start + c.duration ? clips[i + 1] : undefined;
+      const at0 = sec(c.start), at1 = sec(c.start + c.duration);
+      const out1 = c.in + sec(c.duration);
+      if (!prev && at0 > start + 0.16 && at0 < end - 0.16)
+        out.push({ at: +at0.toFixed(3), kind: "start", clips: [c.id], faded: sec(c.fadeIn), ...(plain(c) && c.in >= SIDE ? { cameIn: diff(await level(c, c.in - SIDE, c.in), await level(c, c.in, c.in + SIDE)) } : {}) });
+      if (at1 > start + 0.16 && at1 < end - 0.16) {
+        const goesOn = plain(c) ? diff(await level(c, out1, out1 + SIDE), await level(c, out1 - SIDE, out1)) : undefined;
+        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? (c.crossfade ?? 0) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}) });
+      }
+    }
+  }
+  return out.sort((a, b) => a.at - b.at);
 }
 
 /** [start, end) of `p` rendered as export renders it, stereo at 48 kHz. */
@@ -142,6 +185,9 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
       }
     }
     if (asExported !== undefined) summary.as_exported_at = asExported;
+    // Each join, and any edge that is not clean, measured on what is heard.
+    const edges = edgeReport(L, R, RATE, start, await edgesOf(p, heard, start, end, signal)).filter((e) => e.kind === "join" || e.verdict !== "clean");
+    if (edges.length) summary.edges = edges;
     if (summary.clipped) notes.push("The mix passes full scale here, so a file of it clips: turn tracks or clips down, or export with a loudness target.");
     if (notes.length) summary.note = notes.join(" ");
     return { ...(req.audio === false ? {} : { mp3: await mp3(L, R) }), summary };
