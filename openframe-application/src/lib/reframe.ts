@@ -56,6 +56,9 @@ export interface SubjectNote {
   kept: number;
   /** Wider (or taller) than the frame: no placement keeps it whole. */
   wide?: boolean;
+  /** Cut by the master's own keyed push, which a held push would show
+   * (pushCut). */
+  push?: boolean;
 }
 
 /** The clip-relative frame where `c` shows source second `t`, or null
@@ -225,12 +228,93 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
       // Cut: this framing loses much of a subject the subject framing keeps.
       const cut = kept < 0.65 && shareInside(subject, ideal) >= 0.9;
       if (cut || wide) notes.push({ clipId: after.id, at: sec(s.rel), subject: round(subject), kept: +kept.toFixed(2), ...(wide ? { wide: true } : {}) });
+      else {
+        const pushed = pushCut(after, s.rel, s.map, s.shown, win);
+        if (pushed) notes.push({ clipId: after.id, at: sec(s.rel), subject: round(pushed.subject), kept: +pushed.kept.toFixed(2), push: true });
+      }
     });
   }
   return { clip, notes };
 }
 
 const round = (r: Rect01): Rect01 => ({ left: +r.left.toFixed(3), top: +r.top.toFixed(3), right: +r.right.toFixed(3), bottom: +r.bottom.toFixed(3) });
+
+/**
+ * A subject the master's own keyed push crops, in a version whose frame
+ * shows more of the shot than the master did (a 16:9 version of a tall
+ * short's push-in: the same zoom crops the picture's top and bottom, the
+ * rocket's nose with it, which reads as a close-up on 9:16 and as a
+ * mistake on 16:9). ADR-116 judged a subject only inside what the master
+ * showed, so this was never named (ADR-118). The subject is found in the
+ * whole picture, must be the master's (half of it or more in what the
+ * master showed), and is taken with the thin part that runs on from it
+ * on the axis the master's crop still decides (withSpine: the strongest
+ * blob of the launch was its flame, the nose a faint streak above it).
+ * Named when this frame leaves out 2% of the picture or more of it that
+ * way, a twentieth of it, where the shot at its widest (pushes "hold")
+ * would leave out at most half that.
+ */
+export function pushCut(c: VisualClip, rel: number, map: SaliencyMap, shown: Rect01, win: Rect01): { subject: Rect01; kept: number } | null {
+  const keys = c.keyframes?.["transform.scale"];
+  if (!keys?.length) return null;
+  // Where this frame shows more of the shot than the master did on one
+  // axis, the master's crop on the other is judged.
+  const wider = { x: win.right - win.left > shown.right - shown.left + 0.01, y: win.bottom - win.top > shown.bottom - shown.top + 0.01 };
+  if (wider.x === wider.y) return null;
+  const axis = wider.x ? "y" : "x";
+  const core = subjectBox(map);
+  if (!core || shareInside(core, shown) < 0.5) return null;
+  const subject = withSpine(map, core, axis);
+  const [lo, hi] = axis === "y" ? (["top", "bottom"] as const) : (["left", "right"] as const);
+  // What a window leaves out of the subject that way, a share of the
+  // picture, counted from 2% of it and a twentieth of the subject.
+  const out = (w: Rect01) => {
+    const off = Math.max(0, w[lo] - subject[lo]) + Math.max(0, subject[hi] - w[hi]);
+    return off >= 0.02 && off >= 0.05 * (subject[hi] - subject[lo]) ? off : 0;
+  };
+  const now = out(win);
+  if (!now) return null;
+  // The window at the shot's widest, about the same center, kept inside the picture.
+  const k = Math.abs(paramAt(c, "transform.scale", rel)) / Math.min(...keys.map((x) => Math.abs(x.v)));
+  const grow = (lo: number, hi: number): [number, number] => {
+    const half = Math.min(0.5, ((hi - lo) * k) / 2), mid = Math.max(half, Math.min(1 - half, (lo + hi) / 2));
+    return [mid - half, mid + half];
+  };
+  const [left, right] = grow(win.left, win.right), [top, bottom] = grow(win.top, win.bottom);
+  return out({ left, right, top, bottom }) <= now / 2 ? { subject, kept: shareInside(subject, win) } : null;
+}
+
+/**
+ * A subject's box grown along a thin part that runs on from it, up and
+ * down (axis y) or to the sides (x): row by row (column by column), while
+ * the strongest salience across the box is a tenth of the map's peak or
+ * more and twice its row's median (a rocket's nose against the sky above
+ * its flame, not the smoke spread across the frame below it).
+ */
+export function withSpine(map: SaliencyMap, b: Rect01, axis: "x" | "y"): Rect01 {
+  const { w, h, v } = map;
+  let peak = 0;
+  for (const x of v) peak = Math.max(peak, x);
+  const x0 = Math.floor(b.left * w), x1 = Math.ceil(b.right * w), y0 = Math.floor(b.top * h), y1 = Math.ceil(b.bottom * h);
+  // Along rows (vertical growth) or columns (horizontal).
+  const line = (vertical: boolean, i: number) => {
+    const n = vertical ? w : h;
+    const at = (j: number) => (vertical ? v[i * w + j] : v[j * w + i]);
+    const all = Array.from({ length: n }, (_, j) => at(j)).sort((a, c) => a - c);
+    const [lo, hi] = vertical ? [x0, x1] : [y0, y1];
+    let best = 0;
+    for (let j = lo; j < hi; j++) best = Math.max(best, at(j));
+    return best >= 0.1 * peak && best >= 2 * all[n >> 1];
+  };
+  const reach = (vertical: boolean, from: number, step: number, end: number) => {
+    let i = from;
+    while (i + step >= 0 && i + step < end && line(vertical, i + step)) i += step;
+    return i;
+  };
+  return axis === "y"
+    ? { ...b, top: Math.min(b.top, reach(true, y0, -1, h) / h), bottom: Math.max(b.bottom, (reach(true, y1 - 1, 1, h) + 1) / h) }
+    : { ...b, left: Math.min(b.left, reach(false, x0, -1, w) / w), right: Math.max(b.right, (reach(false, x1 - 1, 1, w) + 1) / w) };
+}
 
 /** The picture point at the frame's center with the shot placed by `l`. */
 function centerOf(q: Project, c: VisualClip, l: Layer): { u: number; v: number } {

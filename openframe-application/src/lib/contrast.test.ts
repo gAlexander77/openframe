@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boxPixels, contrastFixes, contrastRatio, endsByItself, hex, luminance, measureBackdrop, measureLook, tailLevels, titleLook } from "./contrast";
+import { boxPixels, contrastFixes, contrastRatio, endsByItself, hex, luminance, measureBackdrop, measureLook, tailLevels, titleLook, unevenFade } from "./contrast";
 import { DEFAULT_TEXT_STYLE } from "./project/defaults";
 
 /** A w x h RGBA picture, each pixel from `at(x, y)` (0..255 channels). */
@@ -113,5 +113,31 @@ describe("contrast", () => {
     const px = [...Array.from({ length: 95 }, () => [0.05, 0.05, 0.05]), ...Array.from({ length: 5 }, () => [1, 1, 1])];
     expect(measureLook(titleLook({ ...DEFAULT_TEXT_STYLE, color: "#ffffff" }), px)!.ratio).toBeGreaterThan(10);
     expect(boxPixels(new Uint8ClampedArray(4 * 4 * 4), 4, { left: 1, right: 3, top: 1, bottom: 3 })).toHaveLength(4);
+  });
+});
+
+describe("a title's fade (ADR-118)", () => {
+  // Claude film test 2's LAST NOTE: yellow on a box at 55%, its S over the
+  // rocket's white nose, the rest over the sky.
+  const label = (background: string) => titleLook({ ...DEFAULT_TEXT_STYLE, size: 44, color: "#ffd27a", background: { color: background, padding: 16, radius: 8 } });
+  const nose = [1, 1, 1], sky = [0.45, 0.55, 0.68];
+  const backdrop = (bright: number) => Array.from({ length: 100 }, (_, i) => (i < bright ? nose : sky));
+
+  it("finds the part of a title a fade loses while the rest is still seen", () => {
+    const u = unevenFade(label("rgba(0,0,0,0.55)"), backdrop(15))!;
+    expect(u).not.toBeNull();
+    // About a quarter of its opacity, as the frames showed: the S gone, the rest seen.
+    expect(u.opacity).toBeGreaterThan(0.15);
+    expect(u.opacity).toBeLessThan(0.4);
+    expect(u.faint).toBeLessThan(1.35);
+    expect(u.body).toBeGreaterThanOrEqual(1.6);
+    expect(hex(u.backdrop)).toBe("#ffffff");
+  });
+
+  it("lets a title fade as one with a solid box or outline, or over an even backdrop", () => {
+    expect(unevenFade(label("#000000"), backdrop(15))).toBeNull();
+    expect(unevenFade(titleLook({ ...DEFAULT_TEXT_STYLE, size: 44, color: "#ffffff", stroke: { color: "#000000", width: 4 } }), backdrop(15))).toBeNull();
+    expect(unevenFade(label("rgba(0,0,0,0.55)"), backdrop(0))).toBeNull();
+    expect(unevenFade(label("rgba(0,0,0,0.55)"), [])).toBeNull();
   });
 });

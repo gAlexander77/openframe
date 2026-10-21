@@ -371,7 +371,9 @@ function reportOf(notes: SubjectNote[]): SubjectReport[] {
       subject: { x: +s.left.toFixed(3), y: +s.top.toFixed(3), w: +(s.right - s.left).toFixed(3), h: +(s.bottom - s.top).toFixed(3) },
       note: n.wide
         ? `the subject is wider than this frame (${Math.round(n.kept * 100)}% of it shows): fit "blur" or "fit" shows it whole`
-        : `the subject is cut by the frame (${Math.round(n.kept * 100)}% of it shows): reframe "subject" (the default), or focus {clip_id: "${n.clipId}", x: ${cx}, y: ${cy}}`,
+        : n.push
+          ? `the master's push-in crops the subject in this wider frame (${Math.round(n.kept * 100)}% of it shows): pushes "relax" or "hold" on this version shows more of it`
+          : `the subject is cut by the frame (${Math.round(n.kept * 100)}% of it shows): reframe "subject" (the default), or focus {clip_id: "${n.clipId}", x: ${cx}, y: ${cy}}`,
     };
   });
 }
@@ -386,7 +388,8 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
   const looks = reshaped ? await lookAtShots(master) : undefined;
   const made = o.versions.map((v) => {
     const notes: SubjectNote[] = [];
-    return { spec: v, project: versionProject(master, v, keep, looks, notes), notes };
+    const moved: CaptionCollision[] = [];
+    return { spec: v, project: versionProject(master, v, keep, looks, notes, moved), notes, moved };
   });
   // Titles behind their subject: how much the subject hides in each shape,
   // against the master (ADR-103); one hidden past the limit shows in front
@@ -408,8 +411,9 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
       const f = secondsToFrames(n.at, project.fps);
       return runs.some((r) => r.clipId === n.clipId && f >= r.start && f < r.start + r.duration);
     };
-    // A picture or graphic across the burned captions (ADR-116).
-    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: captionCollisions(project) });
+    // A picture or graphic across the burned captions (ADR-116), and the
+    // pictures-in-picture the version moved clear of them (ADR-118).
+    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: [...m.moved, ...captionCollisions(project)] });
   }
   return out;
 }
@@ -563,7 +567,7 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
           g.fill();
         }
         g.restore();
-        const say = n.wide ? "subject too wide" : "subject cut";
+        const say = n.wide ? "subject too wide" : n.push ? "push cuts subject" : "subject cut";
         g.font = "bold 12px sans-serif";
         g.fillStyle = "rgba(0, 0, 0, 0.75)";
         g.fillRect(x + 4, y + label + th - 24, g.measureText(say).width + 10, 18);
@@ -607,7 +611,7 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
         g.setLineDash([5, 3]);
         g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
         g.restore();
-        const say = `${c.layer} the captions`;
+        const say = c.done ? "moved clear of the captions" : `${c.layer} the captions`;
         g.font = "bold 12px sans-serif";
         g.fillStyle = "rgba(0, 0, 0, 0.75)";
         g.fillRect(x + 4, y + label + th - 68, g.measureText(say).width + 10, 18);

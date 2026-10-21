@@ -13,7 +13,8 @@
 
 import { layerBox, TITLE_SAFE, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
-import { contrastFixes, endsByItself, hex, titleLook, type Backdrop, type PixelBox, type Tail, type TitleLook } from "./contrast";
+import { contrastFixes, endsByItself, hex, titleLook, type Backdrop, type PixelBox, type Tail, type TitleLook, type UnevenFade } from "./contrast";
+import { ANIMATIONS } from "./catalog";
 import { paramAt } from "./keyframes";
 import { textPad } from "./render/size";
 import { lookReach } from "./textLook";
@@ -60,6 +61,9 @@ export interface Measured {
   contrastNote?: string;
   /** Each long music clip's level at its very end and just before. */
   tails?: Record<Id, Tail>;
+  /** Titles that fade unevenly (contrast.ts unevenFade), measured at the
+   * middle of each fade, with the fixes that fade as one there. */
+  fades?: Record<Id, UnevenFade & { frame: number; fixes: string[] }>;
   /** Titles their subject hides (lib/behind.ts hiddenNote): past its
    * limit, with what to say. */
   hidden?: { clipId: Id; frame: number; message: string; fix: string }[];
@@ -188,6 +192,20 @@ export function titleMoments(c: TextClip, fps: number): number[] {
   return [...new Set(shares.map((k) => Math.round(lo + (hi - lo) * k)))];
 }
 
+/** The middles of a title's in and out animations that fade it (fade,
+ * zoom, pop, rise...: a whole-layer animation from or to no opacity),
+ * each a timeline frame, when the fade lasts two frames or more. Measured
+ * there, a title's backdrop is the one it fades over (ADR-118). */
+export function fadeMoments(c: TextClip): number[] {
+  // Played by each letter or word, it is drawn by the rasterizer, not faded whole.
+  const fades = (a?: TextClip["animIn"]) => !!a && !a.unit && (ANIMATIONS[a.type]?.from?.opacity ?? 1) < 1 && !ANIMATIONS[a.type]?.text && a.duration >= 2;
+  const last = c.start + c.duration - 1;
+  return [...new Set([...(fades(c.animIn) ? [c.start + (c.animIn!.duration >> 1)] : []), ...(fades(c.animOut) ? [last - (c.animOut!.duration >> 1)] : [])].filter((f) => f >= c.start && f <= last))];
+}
+
+/** At most this many fade middles are rendered for one check. */
+const FADE_FRAMES = 16;
+
 /** A title the app measures: the frames to render (titles off) with its
  * letters' box at each, in canvas pixels, its look, and the fixes to try
  * on the same pixels. `clipId` is the appearance's key (SeenText.key): a
@@ -195,6 +213,8 @@ export function titleMoments(c: TextClip, fps: number): number[] {
 export interface ContrastTarget {
   clipId: Id;
   samples: { frame: number; box: PixelBox }[];
+  /** The middles of its fades (fadeMoments), judged for evenness. */
+  fades?: { frame: number; box: PixelBox }[];
   look: TitleLook;
   fixes: { say: string; look: TitleLook }[];
 }
@@ -213,6 +233,7 @@ export function contrastTargets(p: Project, limit = 40, captions = 12): { target
   const every = Math.max(1, Math.ceil(caps.length / captions));
   const chosen = [...titles.slice(0, limit), ...caps.filter((_, i) => i % every === 0).slice(0, captions)];
   const targets: ContrastTarget[] = [];
+  let fadeFrames = 0;
   for (const s of chosen) {
     const frames = s.c.caption ? [s.start + Math.floor(s.duration / 2)] : titleMoments({ ...s.c, start: s.start, duration: s.duration }, p.fps.num / p.fps.den);
     const samples: ContrastTarget["samples"] = [];
@@ -224,7 +245,15 @@ export function contrastTargets(p: Project, limit = 40, captions = 12): { target
       opacity = Math.max(opacity, g.opacity);
     }
     if (!samples.length) continue;
-    targets.push({ clipId: s.key, samples, look: titleLook(s.c.style, opacity), fixes: contrastFixes(s.c.style).map((x) => ({ say: x.say, look: titleLook(x.style, opacity) })) });
+    // Its fades' middles, the earliest titles' first, a bounded number.
+    const fades: ContrastTarget["samples"] = [];
+    for (const f of s.c.caption ? [] : fadeMoments({ ...s.c, start: s.start, duration: s.duration })) {
+      const g = fadeFrames < FADE_FRAMES ? seenLetters(p, s, f) : null;
+      if (!g) continue;
+      fades.push({ frame: f, box: g.box });
+      fadeFrames++;
+    }
+    targets.push({ clipId: s.key, samples, ...(fades.length ? { fades } : {}), look: titleLook(s.c.style, opacity), fixes: contrastFixes(s.c.style).map((x) => ({ say: x.say, look: titleLook(x.style, opacity) })) });
   }
   return { targets, skipped: Math.max(0, titles.length - limit) };
 }
@@ -470,6 +499,18 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
           fix: inside(tried.length ? `set_text ${tried.map((x) => `${x.say} (measures ${x.ratio}:1 there)`).join(", or ")}; or move it over a calmer part of the picture` : "set_text style.background, style.stroke or a color further from the picture's"),
         });
       }
+      // Halfway through a fade, part of it gone while the rest is still
+      // seen; a title already hard to read is named for that instead.
+      const fade = m.ratio >= 3 ? measured.fades?.[s.key] : undefined;
+      if (fade)
+        add({
+          rule: "title_fades_unevenly",
+          level: "tip",
+          ...where0,
+          at: sec(fade.frame),
+          message: `${name} fades unevenly at ${sec(fade.frame)} s: at ${Math.round(fade.opacity * 100)}% of its opacity the part of it over ${hex(fade.backdrop)} is gone (${fade.faint}:1) while the rest is still seen (${fade.body}:1), so for a few frames it reads with letters missing`,
+          fix: inside(`${fade.fixes.length ? `set_text ${fade.fixes.join(", or ")} (it then fades as one there), or ` : ""}end it with a cut or a slide instead of a fade (set_animation out), or move it off the bright part`),
+        });
     } else if (!c.caption && !guarded(c)) {
       // Not measured: footage below the text (tracks[0] is the top) that no
       // opaque solid, such as an end card's background, covers between them.

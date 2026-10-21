@@ -98,6 +98,51 @@ export function measureLook(look: TitleLook, px: readonly (readonly number[])[])
   return { ratio: +at.ratio.toFixed(2), backdrop: [at.rgb[0], at.rgb[1], at.rgb[2]] };
 }
 
+/** As a title fades, most of it is still seen down to this, */
+const SEEN = 1.6;
+/** and a part of it under this is gone: in Claude film test 2's 16:9 file,
+ * at a quarter of its opacity, the S of LAST NOTE over the rocket's white
+ * nose (1.3:1) vanished while the rest over the sky (1.6:1) still showed. */
+const GONE = 1.35;
+
+/** A fade that loses part of a title before the rest: the opacity (a share
+ * of the title's own) where it does, what the faint part (a tenth of its
+ * backdrop) and the body (the median) measure there, and the faint part's
+ * backdrop. */
+export interface UnevenFade {
+  opacity: number;
+  faint: number;
+  body: number;
+  backdrop: [number, number, number];
+}
+
+/**
+ * Does a title fade as one over these backdrop pixels (boxPixels at its
+ * fade's middle)? Its letters and what is around them fade alike (the
+ * clip's opacity), so every title passes through 1:1 as it fades; what
+ * reads as a fault is a part of it gone while the rest is still seen:
+ * Claude film test 2's "LA_T NOTE", the S over the rocket's white nose
+ * with its see-through box fading, the rest over the sky. Stepping the
+ * opacity down, while the body (the median pixel) is still seen, a tenth
+ * of it (the 10th percentile) gone is such a part; null when none is. How
+ * far apart the two are is set by the look and the backdrop, not by the
+ * fade (each falls by about the same share of its contrast): a solid box
+ * or outline keeps them together, a see-through box over a bright part
+ * does not.
+ */
+export function unevenFade(look: TitleLook, px: readonly (readonly number[])[]): UnevenFade | null {
+  if (!px.length) return null;
+  for (let a = 1; a > 0.04; a -= 0.05) {
+    const l = { ...look, opacity: look.opacity * a };
+    const rated = px.map((rgb) => ({ ratio: letterContrast(l, rgb), rgb })).sort((x, y) => x.ratio - y.ratio);
+    const at = (k: number) => rated[Math.floor(k * (rated.length - 1) + 0.5)];
+    const body = at(0.5).ratio, faint = at(0.1);
+    if (body < SEEN) return null;
+    if (faint.ratio < GONE) return { opacity: +a.toFixed(2), faint: +faint.ratio.toFixed(2), body: +body.toFixed(2), backdrop: [faint.rgb[0], faint.rgb[1], faint.rgb[2]] };
+  }
+  return null;
+}
+
 /**
  * The contrast of plain text colors (channels 0..1, alpha last; a gradient
  * gives both ends) with the RGBA pixels of a `width`-wide picture inside

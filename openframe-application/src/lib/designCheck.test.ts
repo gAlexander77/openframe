@@ -1,8 +1,9 @@
 import { expect, it } from "vitest";
 import { runCommand } from "./commands";
-import { checkProject, contrastTargets, seenShots, tailTargets } from "./designCheck";
+import { checkProject, contrastTargets, fadeMoments, seenShots, tailTargets } from "./designCheck";
 import { createProject } from "./project/defaults";
-import type { Project } from "./project/types";
+import { findClip } from "./project/ops";
+import type { Project, TextClip } from "./project/types";
 
 const rules = (p: Project, kind?: Parameters<typeof checkProject>[1]) => checkProject(p, kind).findings.map((f) => f.rule);
 const base = () => {
@@ -192,6 +193,34 @@ it("trusts the measured contrast over the guess: white on the dark film passes, 
   expect(f.fix).toMatch(/^set_text style.stroke .* \(measures 12.4:1 there\), or style.background .* \(measures 7.9:1 there\)/);
   const middling = checkProject(p, "any", { contrast: { [id]: { ratio: 3.6, backdrop: [0.5, 0.5, 0.5], frame: 45 } } });
   expect(middling.findings.find((x) => x.rule === "text_low_contrast")!.level).toBe("tip");
+});
+
+it("measures a fading title at its fades' middles, and names one that loses a part before the rest (ADR-118)", () => {
+  let p = designed();
+  const id = textId(p);
+  p = runCommand(p, "set_animation", { clip_id: id, slot: "in", type: "pop", duration: 0.5 });
+  p = runCommand(p, "set_animation", { clip_id: id, slot: "out", type: "fade", duration: 0.2 });
+  // 0-3 s at 30 fps: the pop's middle (frame 7) and the fade's (89 - 3).
+  expect(fadeMoments(findClip(p, id)!.clip as TextClip)).toEqual([7, 86]);
+  const t = contrastTargets(p).targets.find((x) => x.clipId === id)!;
+  expect(t.fades!.map((f) => f.frame)).toEqual([7, 86]);
+  expect(t.fades![1].box.right - t.fades![1].box.left).toBeGreaterThan(100);
+  // A slide does not fade; a title's own word-by-word animation is drawn by its letters; a fade of a frame is a cut.
+  for (const type of ["slideLeft", "wordPop"]) {
+    const d = designed();
+    const q = runCommand(d, "set_animation", { clip_id: textId(d), slot: "out", type, duration: 0.5 });
+    expect(fadeMoments(findClip(q, textId(d))!.clip as TextClip), type).toEqual([]);
+  }
+  const c = findClip(p, id)!.clip as TextClip;
+  expect(fadeMoments({ ...c, animIn: undefined, animOut: { ...c.animOut!, duration: 1 } })).toEqual([]);
+  const fades = { [id]: { frame: 86, opacity: 0.25, faint: 1.26, body: 1.63, backdrop: [1, 1, 1] as [number, number, number], fixes: ['style.background {color: "#000000a6"}'] } };
+  const f = checkProject(p, "any", { contrast: { [id]: { ratio: 5.2, backdrop: [0.45, 0.55, 0.68], frame: 45 } }, fades }).findings.find((x) => x.rule === "title_fades_unevenly")!;
+  expect(f).toMatchObject({ level: "tip", clip_id: id, at: 2.87 });
+  expect(f.message).toMatch(/fades unevenly at 2.87 s: at 25% of its opacity the part of it over #ffffff is gone \(1.26:1\) while the rest is still seen \(1.63:1\)/);
+  expect(f.fix).toMatch(/^set_text style.background .* \(it then fades as one there\), or end it with a cut or a slide/);
+  // A title already hard to read at rest is named for that alone.
+  const low = checkProject(p, "any", { contrast: { [id]: { ratio: 2.1, backdrop: [1, 1, 1], frame: 45 } }, fades });
+  expect(low.findings.map((x) => x.rule)).not.toContain("title_fades_unevenly");
 });
 
 it("says why contrast was not measured, and names what ok means", () => {

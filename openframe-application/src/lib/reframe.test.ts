@@ -148,6 +148,40 @@ describe("versions keep the subject", () => {
     expect(landing(held, id, 0.5, end).x).toBeCloseTo(960, -1);
   });
 
+  it("notes a subject the master's own push crops in a wider version, which a held push shows", () => {
+    // Claude film test 2: the 9:16 master pushes into the launch (the top
+    // 9% of the picture cropped at its tightest); on 16:9 the same crop
+    // cuts the rocket's nose off a wide frame. The strongest blob is the
+    // flame; the nose is a faint streak running up from it.
+    let { p, id } = film();
+    p = { ...p, width: 1080, height: 1920 };
+    p = runCommand(p, "frame_region", { clip_id: id, region: { x: 0.342, y: 0, w: 0.316, h: 1 }, to_region: { x: 0.37, y: 0.09, w: 0.26, h: 0.82 } });
+    const rocket = (streak: boolean): SaliencyMap => {
+      const m = blob(0.5, 0.6, 0.08);
+      if (streak) for (let y = 1; y < Math.round(0.6 * m.h); y++) for (const x of [31, 32]) m.v[y * m.w + x] = Math.max(m.v[y * m.w + x], 0.3);
+      return m;
+    };
+    const times = Array.from({ length: 13 }, (_, i) => 2 + i * 0.5);
+    const looks = (streak: boolean): Looks => ({ [id]: { assetId: "a", times, maps: times.map(() => rocket(streak)) } });
+    const notes: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9" }, undefined, looks(true), notes);
+    const pushed = notes.filter((n) => n.push);
+    expect(pushed.length).toBeGreaterThan(0);
+    // Where the push is tight, the subject's top (the nose) is off the frame.
+    expect(pushed.every((n) => n.subject.top < 0.09 && n.kept < 1)).toBe(true);
+    // Held, the version shows it; and a flame alone, which no push cuts, is not named.
+    const held: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9", pushes: "hold" }, undefined, looks(true), held);
+    expect(held.filter((n) => n.push)).toEqual([]);
+    const flame: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9" }, undefined, looks(false), flame);
+    expect(flame).toEqual([]);
+    // The master's own shape crops nothing it did not show: no note there.
+    const same: SubjectNote[] = [];
+    versionProject(p, { ratio: "9:16" }, undefined, looks(true), same);
+    expect(same).toEqual([]);
+  });
+
   it("notes a subject the framing cuts, and one wider than the frame", () => {
     const { p, id } = film();
     const notes: SubjectNote[] = [];
