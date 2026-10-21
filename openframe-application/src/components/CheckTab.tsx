@@ -83,7 +83,7 @@ export function CheckTab() {
         <EmptyState
           icon={<ListChecks size={24} />}
           title="Check the edit before you export"
-          hint="Finds text cut off, too small or hard to read, black gaps, sound cut off mid-sound and more, each with how to fix it. It measures the rendered picture, so it takes a moment."
+          hint="Finds text cut off, too small or hard to read, black gaps, sound cut off mid-sound, clicks where sounds meet and more, each with how to fix it. It measures the rendered picture and sound, so it takes a moment."
         />
       )}
       {run && <Report run={run} stale={run.revision !== revision} />}

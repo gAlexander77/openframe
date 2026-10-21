@@ -1,6 +1,6 @@
 # ADR-111: A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades
 
-**Date:** 2026-10-20. **Status:** accepted. Closes three gaps
+**Date:** 2026-10-20. **Status:** accepted; `preview_audio`'s join measurements became check rules, and the gaps it kept open from ADR-109 closed, by [[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]. Closes three gaps
 [[ADR-109 What an agent can set, a person can see and change]] left.
 
 ## Context

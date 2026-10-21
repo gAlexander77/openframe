@@ -17,6 +17,8 @@ import type { Clip, ClipLabel, Id, Project, Track } from "../lib/project/types";
 import { CLIP_LABELS } from "../lib/catalog";
 import { enableToggle } from "../lib/clipEnable";
 import { crossfadeJoin, newCrossfade } from "../lib/crossfadeJoin";
+import { barCut, isSong } from "../lib/beatGrid";
+import { exportRange } from "../lib/export";
 import { audioCrossfade } from "../lib/audio";
 import { runCommand } from "../lib/commands";
 import { STICKER_SECONDS } from "../lib/stickers";
@@ -810,6 +812,22 @@ export function Timeline() {
     // where none fits, choosing it says what to change.
     const join = clip.type === "audio" ? crossfadeJoin(p0, clip.id) : null;
     const crossfade = () => void crossfadeInto(clip.id, true);
+    // A song's bars between In and Out, cut on its grid (ADR-119): offered
+    // on a song, named with the bars it takes, saying why when it cannot.
+    const bars = isSong(p0, clip.id) ? barCut(p0, clip.id, store.get().inPoint, store.get().outPoint) : null;
+    const barsName = bars && "bars" in bars ? `Cut ${bars.bars === 1 ? "1 bar" : `${bars.bars} bars`}` : "Cut bars";
+    const cutBars = () => {
+      if (!bars) return;
+      if ("why" in bars) return toast(bars.why, "error");
+      const at = Math.max(clip.start, exportRange(p0, "inout", store.get().inPoint, store.get().outPoint).from);
+      try {
+        edit(barsName, (p) => runCommand(p, "cut_music", { clip_id: clip.id, from: bars.from, to: bars.to }));
+        store.set({ inPoint: null, outPoint: null });
+        store.seek(at);
+      } catch (err) {
+        toast((err as Error).message, "error");
+      }
+    };
     // Effects go to unlocked clips that carry them, as the inspector's
     // Paste effects does.
     const effectTargets = sel.filter((l) => "effects" in l.clip && !l.track.locked).map((l) => l.clip.id);
@@ -840,6 +858,7 @@ export function Timeline() {
         onSelect: () => void replaceFromPicker(clip.id),
       },
       ...(clip.type === "audio" ? ([{ label: "Crossfade into next clip", checked: !!join?.plays, disabled: !join || lockedTrack, onSelect: crossfade }] as MenuItem[]) : []),
+      ...(bars ? ([{ label: "bars" in bars ? `${barsName} (In to Out)` : barsName, disabled: lockedTrack, onSelect: cutBars }] as MenuItem[]) : []),
       ...(syncVideo && syncSound
         ? ([
             { label: "Sync audio by waveform", onSelect: () => sync(false) },

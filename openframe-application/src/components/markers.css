@@ -13,7 +13,10 @@
 .marker-note { min-width: 0; }
 /* The note on one line; its tooltip shows it whole when it is cut. */
 .marker-note > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.marker-note small { display: block; margin-top: 3px; color: var(--text-3); font-size: var(--fs-xs); }
+.marker-note small { display: block; margin-top: 3px; color: var(--text-3); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The clip a marker follows (ADR-119), after its time. */
+.marker-follows { margin-left: 8px; }
+.marker-follows svg { vertical-align: -1px; }
 .marker-editor { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); overflow-y: visible; flex-shrink: 0; }
 .marker-editor label { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; gap: 8px; font-size: var(--fs-xs); color: var(--text-2); }
 .marker-editor .field { min-width: 0; width: 100%; height: 28px; }

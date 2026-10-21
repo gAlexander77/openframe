@@ -241,11 +241,18 @@ through all markers. Double-click a flag to open its editor, or use the
 list's trash button to delete it. Undo restores a deletion. The shortcuts
 panel lists marker navigation bindings.
 
-Markers retain their absolute timeline positions when clips move. Notes
-beyond the last clip are reachable and appear in the list, but do not make
-the exported movie longer. Editing markers leaves clips, gaps and clip
-selection alone. Saved markers reopen with the project; clip-specific
-markers and range markers are not implemented yet.
+Markers you add keep their timeline positions when clips move. A song's
+markers (its beats, bars, parts and drop, from **Beat markers** in AI
+tools, the Beat grid or an agent) follow their clip instead: the list
+names the clip after the marker's time, with a link icon, and they move
+when the song is moved, trimmed, split or sped up. **Detach** (the
+broken-link button on such a row) makes one stay where it is, like your
+own; giving it a new position does the same. Searching a clip's name
+lists the markers that follow it. Notes beyond the last clip are
+reachable and appear in the list, but do not make the exported movie
+longer. Editing markers leaves clips, gaps and clip selection alone.
+Saved markers reopen with the project; range markers are not
+implemented yet.
 
 Use **Export shown markers** to preview and save just the notes shown by
 the current search and color filter. **Timecoded notes** keeps frame-exact
@@ -271,7 +278,10 @@ text too small for a phone, on screen too briefly to read, or hard to
 read against the picture behind it (measured on the rendered frames),
 captions too fast, more than two fonts, a title hidden behind its
 subject, strobes that flash too fast, black gaps on the main track,
-music that stops dead at the end and sound cut off mid-sound. Choose
+music that stops dead at the end, sound cut off mid-sound, and a click,
+a dropout or a sound cut off where one audio clip meets the next (each
+join is played on its own track and measured; its fix is a crossfade
+from the clip menu). Choose
 what you are making under **Made as**: an **Ad** also asks for an end
 card, a **Social short** sizes text for a phone, **Cut to music** checks
 that the cuts land on the beat. **File → Check project…** opens the tab
@@ -427,6 +437,36 @@ music** card makes an original score on your computer, free to use.
 
 Agents get more control through `generate_music` (sections with fixed
 times, the loudness, the stems on their own tracks); see [[Automation]].
+
+## Correct a song's beat grid
+
+Select a music clip and open its **Audio** tab: **Beat grid** shows the
+song's tempo, where its first bar starts (in the song's own seconds) and
+its parts. A generated score already has one. For any other song choose
+**Detect beat grid**: the app reads the song on your computer and draws
+the grid on the clip, a dot on each beat and a line on each bar's first
+beat. If the lines fall between the kicks, correct them:
+
+- **Tempo**: type it, or play the song and click **Tap** along with the
+  beat; the tempo shows on the button and is kept when you stop tapping.
+- **First bar**: the arrows beside it nudge the grid 10 ms earlier or
+  later; or park the playhead on a downbeat you hear and choose **Set
+  downbeat here**.
+- **Parts**: put the playhead where the drop (or the build, the outro)
+  starts, pick it and choose **Add here**: it starts on the nearest bar.
+  Rename or remove a part in its row; its time takes you there.
+
+Each change is one undo step, and the song's beat and bar markers move
+with the grid. **Clear grid** forgets it.
+
+### Cut bars out of a song
+
+Mark **In** and **Out** around the bars to take out, right-click the
+song and choose **Cut bars**: the menu names how many (Cut 4 bars). Each
+mark moves to the nearest bar line, the bars go, the rest of the song
+closes up and plays on the beat, and the two pieces meet with a short
+crossfade so nothing clicks. The marks are cleared; Undo brings the bars
+back. The song needs its beat grid first, and plays at its own speed.
 
 ## Add sound effects and natural sound
 

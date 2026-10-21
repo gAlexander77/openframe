@@ -119,7 +119,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. **Delete shown** removes what the search and
-  color filter show (a run of beat markers, say) in one undo step.
+  color filter show (a run of beat markers, say) in one undo step. A
+  marker that follows a clip (a song's beats) names its clip and can be
+  detached; search finds it by the clip's name
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
   Double-click a ruler flag to edit it. Markers
   beyond the last clip remain reachable without extending export duration.
 - **Export marker text:** preview and save the displayed notes as exact
@@ -238,6 +241,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   a transition dropped on the join of two audio clips makes the same
   crossfade
   ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
+  A song's clip menu has **Cut bars**: the In to Out range on the song's
+  nearest bar lines, through `cut_music`, named with its count
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -826,6 +832,12 @@ makes a 13 s one). Times are timeline seconds.
   and its parts, kept with the file; every later reading, `mark_beats` and
   `check_project` use it, and its markers are placed at once
   ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]).
+  A person gives and corrects it in the Audio tab's **Beat grid**:
+  **Detect** keeps the reading as one fitted tempo and downbeat, drawn on
+  the clip as beat dots and bar lines; the tempo typed or tapped, the
+  downbeat nudged 10 ms or set at the playhead, parts added on the bar
+  nearest the playhead, each through `set_music_grid`
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
@@ -1119,6 +1131,10 @@ makes a 13 s one). Times are timeline seconds.
   marks the check out of date; Export shows the last check's counts and
   leads to it, without blocking the export
   ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
+  It hears where audio clips meet (each join on its own track, up to 24):
+  a tick, dropout or click, or a sound cut off, with the clip menu's
+  crossfade as the fix
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Previews drawn by the engine**: filter, effect, transition and text
   cards show the real shaders and text rasterizer on a generated sample
   shot, or on the selected clip's own frame; effects, transitions and
@@ -1196,7 +1212,9 @@ Three doors, one engine ([[Automation]]):
   shots on the busiest picture track
   ([[ADR-068 check_project measures the picture and the sound it judges]]);
   an audio clip cut off before the end while it still sounds, with no
-  fade, is a warning (`sound_cut_off`, ADR-100).
+  fade, is a warning (`sound_cut_off`, ADR-100); so is a hole, a click
+  or a sound cut off where two audio clips meet, each join played on its
+  own track (`click_at_join`, `sound_cut_at_join`, ADR-119).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width

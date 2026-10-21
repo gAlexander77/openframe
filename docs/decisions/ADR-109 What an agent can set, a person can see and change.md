@@ -1,6 +1,6 @@
 # ADR-109: What an agent can set, a person can see and change
 
-**Date:** 2026-10-20. **Status:** accepted. The person's side of
+**Date:** 2026-10-20. **Status:** accepted; the gaps for `set_music_grid`, `cut_music` and the Markers tab are closed by [[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]. The person's side of
 [[ADR-099 Feathers blur the shape, title runs share a baseline, pictures take a border]]
 to [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]].
 

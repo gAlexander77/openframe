@@ -20,6 +20,9 @@ import { lookReach } from "./textLook";
 import { frameAt, framesToSeconds, secondsToFrames } from "./time";
 import { findCompound, getAsset, mainTrack, projectDuration, sourceTimeAt } from "./project/ops";
 import { gridStructure, sourceToTimeline } from "./analysis/musicMap";
+import { CLICK_DB, DIP_DB, TAIL_DB, type EdgeReport } from "./analysis/edges";
+import { continues } from "./audio";
+import { crossfadeJoin } from "./crossfadeJoin";
 import type { Clip, CompoundClip, Id, Project, TextClip, Track, VisualClip } from "./project/types";
 import { layerAt, type Layer } from "./render/plan";
 
@@ -63,6 +66,11 @@ export interface Measured {
   /** Titles their subject hides (lib/behind.ts hiddenNote): past its
    * limit, with what to say. */
   hidden?: { clipId: Id; frame: number; message: string; fix: string }[];
+  /** Each join of audio clips (joinTargets) as preview_audio's edges judge
+   * it, heard on its own track (ADR-119). */
+  joins?: EdgeReport[];
+  /** Why not every join was measured. */
+  joinsNote?: string;
 }
 
 /** The letters of a title (with their box or outline, not the raster's
@@ -260,6 +268,32 @@ export function tailTargets(p: Project): { clipId: Id; assetId: Id; from: number
           return [{ clipId: c.id, assetId: c.assetId, from: Math.max(c.in, to - 4), to }];
         }),
   );
+}
+
+/** The joins of audio clips the check listens to (ADR-119): on each
+ * top-level audio track that plays, where an audio clip ends and the next
+ * starts, both sounding. A split that plays on in the same file (lib/audio
+ * continues) is clean by construction and left out. Timeline seconds. */
+export function joinTargets(p: Project): { trackId: Id; at: number; clips: [Id, Id] }[] {
+  const out: { trackId: Id; at: number; clips: [Id, Id] }[] = [];
+  for (const t of p.tracks) {
+    if (t.kind !== "audio" || t.muted) continue;
+    const clips = t.clips.filter((c) => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
+    clips.forEach((a, i) => {
+      const b = clips[i + 1];
+      if (b && a.start + a.duration === b.start && !continues(a, b, p.fps)) out.push({ trackId: t.id, at: +framesToSeconds(b.start, p.fps).toFixed(3), clips: [a.id, b.id] });
+    });
+  }
+  return out.sort((x, y) => x.at - y.at);
+}
+
+/** What fixes a join that clicks or cuts a sound off: a crossfade, or what
+ * to change first where none fits (crossfadeJoin's rules). */
+function joinFix(p: Project, a: Id, b: Id, seconds: number): string {
+  const j = crossfadeJoin(p, a);
+  if (j?.why && /own speed/.test(j.why)) return `set_fades fade_out ${seconds} on ${a} and fade_in ${seconds} on ${b} (a crossfade needs both at their own speed)`;
+  if (j?.why && /very start of its file/.test(j.why)) return `trim_clip the start of ${b} later (it starts at its file's start, so nothing can rise before the cut), then set_crossfade clip_id ${a} seconds ${seconds}`;
+  return `set_crossfade clip_id ${a} seconds ${seconds}`;
 }
 
 /** The visual track with the most shots (video, picture and compound
@@ -549,6 +583,27 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     else add({ rule: "sound_cut_off", level: "warning", clip_id: clipId, at: sec(last), message: t ? `An audio clip is cut off at ${sec(last)} s while still sounding, with no fade, and the video goes on: ${heard}` : `A long audio clip stops at ${sec(last)} s without a fade, its file running on (its sound was not measured)`, fix: "set_fades fade_out 0.3 (a song or a bed: 1.5), or trim_clip its end to where the sound pauses" });
   }
 
+  // Joins of audio clips, measured on each one's track (ADR-119): a hole or
+  // a click at the cut, or a sound cut off while it still rings.
+  for (const j of measured.joins ?? []) {
+    if (j.kind !== "join" || j.clips.length < 2) continue;
+    const [a, b] = j.clips;
+    const where = `where ${a} meets ${b} at ${+j.at.toFixed(2)} s`;
+    const hole = j.dip_db !== undefined && j.dip_db <= DIP_DB, click = j.click_db !== undefined && j.click_db >= CLICK_DB;
+    if (hole || click)
+      add({
+        rule: "click_at_join",
+        level: "warning",
+        clip_id: a,
+        clip_ids: [a, b],
+        at: +j.at.toFixed(2),
+        message: hole && j.dip_db! <= -40 ? `Silence for a few milliseconds ${where} (dip_db ${j.dip_db}), heard as a dropout` : hole ? `A ${-j.dip_db!} dB hole for a few milliseconds ${where} (dip_db), heard as a tick` : `A click ${where}: a sample step ${j.click_db} dB steeper than any around it (click_db)`,
+        fix: joinFix(p, a, b, 0.03),
+      });
+    if (j.tail_cut_db !== undefined && j.tail_cut_db >= TAIL_DB)
+      add({ rule: "sound_cut_at_join", level: "warning", clip_id: a, clip_ids: [a, b], at: +j.at.toFixed(2), message: `${a}'s sound is cut off ${where} while it still rings ${j.tail_cut_db} dB over what follows (tail_cut_db)`, fix: joinFix(p, a, b, 0.25) });
+  }
+
   if (kind === "ad" && !texts.some((s) => s.start + s.duration >= total - 1 && !s.c.caption))
     add({ rule: "no_end_card", level: "warning", message: "No title in the last seconds: an ad ends on the brand and a call to action", fix: "add_ad_element end_card over the last 2-3 s" });
 
@@ -593,7 +648,7 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     },
     findings: out,
     ...(measured.contrast ? { contrast: { measured: `${rated.length} titles at ${measured.moments ?? rated.length} moments on the rendered picture, with each one's box, shadow and outline; 4.5:1 reads easily, under 3:1 is a warning`, lowest: rated.slice(0, 12) } } : {}),
-    not_checked: `Loudness: measure_loudness (or export with loudness) before delivering.${notMeasured ? ` Contrast: ${notMeasured}; look with preview_frames.` : ""}`,
+    not_checked: `Loudness: measure_loudness (or export with loudness) before delivering.${notMeasured ? ` Contrast: ${notMeasured}; look with preview_frames.` : ""}${measured.joinsNote ? ` Joins: ${measured.joinsNote}; preview_audio's edges measure the rest.` : ""}`,
   };
 }
 

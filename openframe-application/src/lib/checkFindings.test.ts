@@ -139,8 +139,8 @@ describe("personFindings", () => {
   });
 
   it("keeps a rule it does not know in the check's own words, grouped by its name", () => {
-    const [f] = personFindings(base(), [{ rule: "click_at_join", level: "warning", message: "A join clicks at 2 s", fix: "set_fades", at: 2 }]);
-    expect(f).toMatchObject({ group: "sound", title: "A join clicks at 2 s", action: "", at: 2 });
+    const [f] = personFindings(base(), [{ rule: "voice_too_quiet", level: "warning", message: "A voice is too quiet at 2 s", fix: "set_fades", at: 2 }]);
+    expect(f).toMatchObject({ group: "sound", title: "A voice is too quiet at 2 s", action: "", at: 2 });
   });
 });
 

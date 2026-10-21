@@ -362,3 +362,14 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .layout-tile { flex-direction: column; height: auto; padding: 8px; white-space: normal; text-transform: capitalize; }
 .layout-preview { position: relative; display: block; width: 70px; height: 45px; }
 .layout-preview > span { position: absolute; border: 1px solid currentColor; border-radius: 2px; background: var(--bg-panel); }
+
+/* The Audio tab's Beat grid (ADR-119): Tap fills the slider's column;
+   each part a select, its time (a button to go there) and a remove. */
+.grid-tap { width: 100%; min-width: 0; height: 24px; padding: 0 6px; justify-content: center; font-size: var(--fs-xs); }
+.grid-parts { display: grid; gap: 4px; margin: 4px 0 0; padding: 0; list-style: none; }
+.grid-part, .grid-add { display: flex; align-items: center; gap: 6px; }
+.grid-part select.field, .grid-add select.field { flex: 1 1 96px; min-width: 0; height: 26px; }
+.grid-part-at { flex: 0 0 auto; height: 26px; padding: 0 6px; font-size: var(--fs-xs); }
+.grid-part-at.off { color: var(--text-3); }
+.grid-add { margin-top: 6px; }
+.grid-add .btn { flex: 0 0 auto; }
