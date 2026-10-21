@@ -342,7 +342,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
