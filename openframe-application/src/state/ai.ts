@@ -39,7 +39,8 @@ import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
 import { frameOfSource, framesOfRanges } from "../lib/project/cut";
 import * as ops from "../lib/project/ops";
-import type { Asset, AudioClip, Clip, Cutout, DuckRecord, Id, ImageClip, Project, VideoClip } from "../lib/project/types";
+import type { Asset, AudioClip, Clip, Cutout, DuckRecord, Id, ImageClip, MusicGrid, Project, VideoClip } from "../lib/project/types";
+import { fitGrid } from "../lib/beatGrid";
 import { uid } from "../lib/project/defaults";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
@@ -586,6 +587,29 @@ async function readSong(clipId: Id | undefined, given: StructureHints): Promise<
   }
   signal.throwIfAborted();
   return { m, clip: stillThere(id), asset, from, to, whole, cached, hints };
+}
+
+/**
+ * The grid a song reads as, in its file's own seconds: one tempo and a
+ * bar's first beat fitted to the beats it tracks (beatGrid fitGrid), and
+ * its parts. The Audio tab's Detect beat grid keeps it as the song's grid
+ * (set_music_grid), drawn on the clip for a person to correct (ADR-119).
+ * `unsure` says, in a person's words, what the reading is unsure of
+ * (confidenceNote's thresholds).
+ */
+export async function readMusicGrid(clipId: Id): Promise<{ grid: MusicGrid; unsure: string[] }> {
+  const { m, from } = await readSong(clipId, {});
+  const at = (ts: number[]) => ts.map((t) => t + from);
+  const line = fitGrid(at(m.beats), at(m.downbeats), m.bpm);
+  const sections = m.sections.map((s) => ({ at: +(s.start + from).toFixed(4), label: s.label }));
+  const c = m.confidence;
+  const unsure = [
+    ...(c.tempo < 0.5 ? ["the tempo is uncertain (tap along to set it)"] : []),
+    ...(c.bars < 0.4 ? ["the bar lines are a guess (set the downbeat on a kick you hear)"] : []),
+    ...(c.sections < 0.6 ? ["the parts are faint (add or remove them at the playhead)"] : []),
+  ];
+  finish("beats", `${line.bpm} BPM${sections.length > 1 ? ` · ${plural(sections.length, "part")}` : ""}`);
+  return { grid: { ...line, ...(sections.length > 1 ? { sections } : {}) }, unsure };
 }
 
 export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKind[]; bpm?: number; first_downbeat?: number; cues?: unknown } = {}): Promise<MusicAnalysis> {

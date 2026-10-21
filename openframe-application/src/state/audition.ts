@@ -15,7 +15,7 @@ import { applyLimiter } from "../lib/analysis/loudness";
 import { stemsOf } from "../lib/audioRoles";
 import { EXPORT_SAMPLE_RATE } from "../lib/export";
 import { projectDuration } from "../lib/project/ops";
-import type { AudioClip, Project, TrackRole } from "../lib/project/types";
+import type { AudioClip, Id, Project, TrackRole } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { currentScreen } from "./project";
 import { projectWork } from "./projectWork";
@@ -147,6 +147,24 @@ async function mp3(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>): 
 }
 
 const r3 = (x: number) => +x.toFixed(3);
+
+/** Seconds heard before and after a join when check_project measures it:
+ * the 1.3 s before a cut tell a ring-out, the 0.3 s either side its level. */
+const JOIN_BEFORE = 1.4, JOIN_AFTER = 0.4;
+
+/**
+ * One join of two audio clips judged as preview_audio's edges judge it,
+ * heard on its own track alone (check_project, ADR-119): a voice or a hit
+ * on another track neither hides a click nor makes one. `at` is the join's
+ * timeline second; undefined when it plays in silence or cannot be heard.
+ */
+export async function joinEdge(p: Project, trackId: Id, at: number, signal: AbortSignal): Promise<EdgeReport | undefined> {
+  const heard = isolateTracks(p, [trackId]);
+  const start = Math.max(0, at - JOIN_BEFORE), end = at + JOIN_AFTER;
+  const [L, R] = await render(heard, start, end, signal);
+  const edges = (await edgesOf(p, heard, start, end, signal)).filter((e) => e.kind === "join" && Math.abs(e.at - at) < 0.002);
+  return edgeReport(L, R, RATE, start, edges)[0];
+}
 
 /** preview_audio: hear (and measure) [start, end) of the mix or one stem. */
 export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer> {

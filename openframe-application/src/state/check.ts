@@ -10,9 +10,10 @@ import { exportStills } from "../engine/export";
 import { decodeMono } from "../engine/analyze";
 import { hiddenNote } from "../lib/behind";
 import { boxPixels, measureLook, tailLevels, unevenFade } from "../lib/contrast";
-import { checkProject, contrastTargets, tailTargets, withoutTitles, type CheckKind, type Measured } from "../lib/designCheck";
+import { checkProject, contrastTargets, joinTargets, tailTargets, withoutTitles, type CheckKind, type Measured } from "../lib/designCheck";
 import { getAsset } from "../lib/project/ops";
 import type { Id, Project } from "../lib/project/types";
+import { joinEdge } from "./audition";
 import { measureBehind } from "./behind";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -26,12 +27,18 @@ export interface MeasureProgress {
 
 const aborted = () => new DOMException("The check was canceled.", "AbortError");
 
+/** Joins of audio clips measured at most: each renders 1.8 s of its track
+ * and decodes a little of each file around the cut (ADR-119). A song cut
+ * on its bars has a few; a voiceover of lines end to end a few dozen. */
+export const MAX_JOINS = 24;
+
 /**
  * What check_project measures before it judges (ADR-068, ADR-097): every
  * title's contrast with the picture behind it at a few moments of its life
  * (designCheck.titleMoments), rendered as export draws it with every title
  * off, its box, shadow and outline counted, and the fixes it names tried
- * on the same pixels; and each long music clip's last seconds, decoded. A
+ * on the same pixels; each long music clip's last seconds, decoded; and
+ * each join of audio clips, rendered on its track (ADR-119). A
  * failure to measure falls back to the check's own guess and the answer
  * says why; it never fails the check. `progress` hears each step; `signal`
  * stops it between steps (an AbortError).
@@ -41,8 +48,9 @@ export async function measureForCheck(p: Project, opts: { progress?: (p: Measure
   const { targets, skipped } = contrastTargets(p);
   const frames = [...new Set(targets.flatMap((t) => [...t.samples, ...(t.fades ?? [])].map((s) => s.frame)))].sort((a, b) => a - b);
   const tails = tailTargets(p);
-  // Rendering a frame and decoding a sound's end take about as long.
-  const steps = Math.max(1, frames.length + 1 + tails.length);
+  const allJoins = joinTargets(p), joins = allJoins.slice(0, MAX_JOINS);
+  // Rendering a frame, decoding a sound's end and hearing a join take about as long.
+  const steps = Math.max(1, frames.length + 1 + tails.length + joins.length);
   let done = 0;
   const step = (stage: string, n = 1) => {
     if (opts.signal?.aborted) throw aborted();
@@ -120,6 +128,18 @@ export async function measureForCheck(p: Project, opts: { progress?: (p: Measure
       // Unreadable sound: the check keeps its plain rule.
     }
   }
+  // Each join of audio clips, heard on its track (ADR-119).
+  for (const [i, j] of joins.entries()) {
+    step(`Listening to where sounds meet: ${i + 1} of ${joins.length}`);
+    try {
+      const r = await joinEdge(p, j.trackId, j.at, opts.signal ?? new AbortController().signal);
+      if (r) (out.joins ??= []).push(r);
+    } catch {
+      if (opts.signal?.aborted) throw aborted();
+      // Unreadable sound: that join goes unjudged.
+    }
+  }
+  if (allJoins.length > joins.length) out.joinsNote = `the first ${joins.length} of ${allJoins.length} joins of audio clips were measured`;
   if (opts.signal?.aborted) throw aborted();
   return out;
 }

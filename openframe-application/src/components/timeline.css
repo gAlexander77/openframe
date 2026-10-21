@@ -176,6 +176,11 @@ button.tl-crumb:hover { background: var(--bg-2); color: var(--text-1); }
 /* Premiere's out-of-sync numbers: red, on both linked clips. */
 .clip-badge.sync { background: var(--danger); color: #fff; font-weight: 600; }
 .clip-strip, .clip-wave { position: absolute; pointer-events: none; }
+/* A song's beat grid (ADR-119): CapCut's amber beat dots along the
+   clip's foot, a larger one and a line on each bar's first beat. */
+.clip-grid { position: absolute; pointer-events: none; overflow: visible; }
+.clip-grid circle { fill: #ffd666; stroke: rgb(0 0 0 / 45%); stroke-width: 0.75; }
+.clip-grid line { stroke: rgb(255 214 102 / 70%); stroke-width: 1.25; }
 .clip-text .clip-label, .clip-adjustment .clip-label, .clip-color .clip-label { height: 100% !important; background: none; }
 .clip-key {
   position: absolute; bottom: 1px; z-index: 5;

@@ -5,14 +5,17 @@ import { formatTimecode, framesToSeconds, type Rational } from "./time";
 
 /** Markers are absolute timeline notes; moving one never moves a clip. A
  * marker that followed a clip's media (a beat) and is moved by hand is the
- * user's from then on: it stays where they put it. */
-export function updateMarker(p: Project, id: Id, patch: Partial<Pick<Marker, "frame" | "label" | "color">>): Project {
+ * user's from then on: it stays where they put it. `detach` makes it the
+ * user's where it stands (the Markers tab's Detach, ADR-119). */
+export function updateMarker(p: Project, id: Id, patch: Partial<Pick<Marker, "frame" | "label" | "color">> & { detach?: boolean }): Project {
   const marker = p.markers.find((m) => m.id === id);
   if (!marker) throw new Error(`No marker with id ${id}`);
   if (patch.frame !== undefined && (!Number.isSafeInteger(patch.frame) || patch.frame < 0)) throw new Error("Marker position must be a nonnegative integer frame");
-  const next = { ...marker, ...patch };
-  if (next.frame === marker.frame && next.label === marker.label && next.color === marker.color) return p;
-  if (next.frame !== marker.frame) delete next.follows;
+  const { detach, ...fields } = patch;
+  const next = { ...marker, ...fields };
+  const unbind = !!detach && !!marker.follows;
+  if (next.frame === marker.frame && next.label === marker.label && next.color === marker.color && !unbind) return p;
+  if (next.frame !== marker.frame || unbind) delete next.follows;
   return { ...p, markers: p.markers.map((m) => m.id === id ? next : m).sort((a, b) => a.frame - b.frame) };
 }
 
@@ -159,10 +162,12 @@ export function deleteMarkers(p: Project, ids: Id[]): Project {
   return { ...p, markers: p.markers.filter((m) => !chosen.has(m.id)) };
 }
 
-export function filterMarkers(markers: Marker[], fps: Rational, query: string, color = ""): Marker[] {
+export function filterMarkers(markers: Marker[], fps: Rational, query: string, color = "", clipName?: (id: Id) => string | undefined): Marker[] {
   const q = query.trim().toLowerCase();
+  // A marker that follows a clip is found by the clip's name too: "liftoff"
+  // lists the song's beats, for Export or Delete shown.
   return markers.filter((m) => (!color || m.color === color) &&
-    (!q || m.label.toLowerCase().includes(q) || formatTimecode(m.frame, fps).includes(q)))
+    (!q || m.label.toLowerCase().includes(q) || formatTimecode(m.frame, fps).includes(q) || (!!m.follows && !!clipName?.(m.follows.clip)?.toLowerCase().includes(q))))
     .sort((a, b) => a.frame - b.frame);
 }
 

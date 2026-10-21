@@ -654,7 +654,8 @@ dissolve between the parts" about 2 s. Each answer can be undone as a whole.
 ## In the page
 
 `update_marker` takes `marker_id` plus optional `at` (timeline seconds),
-`label`, and `color`. `delete_markers` takes `marker_ids`; unknown IDs reject
+`label`, `color`, and `detach` (a marker that follows a clip stays where
+it is, the timeline's own; ADR-119). `delete_markers` takes `marker_ids`; unknown IDs reject
 the entire command. Both are undoable and leave clip positions unchanged.
 Marker descriptions now include `id`, integer `frame`, and `color` alongside
 the existing `at` and `label`, so agents can target the note they described.

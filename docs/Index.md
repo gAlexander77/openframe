@@ -484,3 +484,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   a picture-in-picture a version would draw across its captions moves
   above them; check_project names a title whose fade loses a part before
   the rest, and a version names a subject the master's push-in crops.
+- [[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]] —
+  a song's Audio tab has a Beat grid: Detect keeps the reading as one
+  fitted tempo and downbeat, drawn on the clip as CapCut's beat dots;
+  tempo typed or tapped, the downbeat nudged or set at the playhead,
+  parts added on the nearest bar, all through set_music_grid; the clip
+  menu's Cut bars runs cut_music between In and Out; the Markers tab
+  names the clip a marker follows and detaches it (update_marker
+  detach); check_project hears each audio join on its own track, up to
+  24, as click_at_join and sound_cut_at_join with a crossfade as the fix.

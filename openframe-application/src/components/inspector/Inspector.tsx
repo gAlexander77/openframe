@@ -38,6 +38,7 @@ import { useFontWeights } from "../../state/fontWeights";
 import { BorderSection, CompositingSection, ShadowSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
 import { SoundFxSection } from "./SoundFx";
+import { BeatGridSection } from "./BeatGridSection";
 import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
@@ -559,6 +560,7 @@ function AudioTab({ clip }: { clip: Clip }) {
           />
         </Row>}
       </Section>
+      {clip.type === "audio" && <BeatGridSection clip={clip} />}
       <Section
         title="Equalizer"
         defaultOpen={!!clip.eq}

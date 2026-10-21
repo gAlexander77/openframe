@@ -1997,12 +1997,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "update_marker",
-    description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds.",
-    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["marker_id"]),
+    description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds. A marker that follows a clip (describe_project names its clip) stops following it when moved; detach: true stops it where it stands.",
+    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
     run: (p, a) => updateMarker(p, String(a.marker_id), {
       ...(a.at !== undefined ? { frame: f(p, a.at) } : {}),
       ...(a.label !== undefined ? { label: String(a.label) } : {}),
       ...(a.color !== undefined ? { color: String(a.color) } : {}),
+      ...(a.detach === true ? { detach: true } : {}),
     }),
   },
   {
