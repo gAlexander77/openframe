@@ -6,7 +6,7 @@
 
 import { paramAt } from "./keyframes";
 import { findClip, setParam, setUniformScale, updateClip } from "./project/ops";
-import type { Clip, Id, Project, VisualClip } from "./project/types";
+import type { Clip, Ease, Id, Project, VisualClip } from "./project/types";
 import { anchorShift, layerAt, type Layer } from "./render/plan";
 
 export type Align = "left" | "center" | "right" | "top" | "middle" | "bottom";
@@ -349,18 +349,31 @@ const FRAMED = ["transform.scale", "transform.x", "transform.y"] as const;
 /** Frame `r` (frame_region): static, or moving to `move.region` between two
  * clip-relative frames, easing in and out. Replaces those keyframes. */
 export function frameRegion(p: Project, id: Id, r: Region, move: { region: Region; from: number; to: number } | undefined, mode: "fill" | "fit"): Project {
+  return frameMoves(p, id, move ? [{ region: r, f: move.from }, { region: move.region, f: move.to }] : [{ region: r, f: 0 }], mode);
+}
+
+/** frame_region's moves (ADR-120): the clip shows each region at its
+ * clip-relative frame, in order, moving there from the one before with
+ * that move's ease (default easing in and out); before the first it holds
+ * the first, after the last the last. One move is a still frame. Replaces
+ * the scale and position keyframes. */
+export function frameMoves(p: Project, id: Id, moves: { region: Region; f: number; ease?: Ease }[], mode: "fill" | "fit"): Project {
   p = setUniformScale(p, [id], true);
   const c = findClip(p, id)!.clip as VisualClip;
-  const a = regionTransform(p, c, r, mode);
-  const b = move && regionTransform(p, c, move.region, mode);
+  const shown = moves.map((m) => regionTransform(p, c, m.region, mode));
   return updateClip(p, id, (clip) => {
     const keys = { ...clip.keyframes };
     FRAMED.forEach((k, i) => {
       delete keys[k];
-      const v = (t: typeof a) => [t.scale, t.x, t.y][i];
-      if (b && move) keys[k] = [{ f: move.from, v: v(a), ease: "easeInOut" }, { f: move.to, v: v(b) }];
+      const v = (t: (typeof shown)[number]) => [t.scale, t.x, t.y][i];
+      if (moves.length > 1) {
+        keys[k] = moves.map((m, j) => {
+          const e = j + 1 < moves.length ? (moves[j + 1].ease ?? "easeInOut") : undefined;
+          return { f: m.f, v: v(shown[j]), ...(e && e !== "linear" ? { ease: e } : {}) };
+        });
+      }
     });
-    const transform = { ...(clip as VisualClip).transform, scale: a.scale, x: a.x, y: a.y };
+    const transform = { ...(clip as VisualClip).transform, scale: shown[0].scale, x: shown[0].x, y: shown[0].y };
     return { ...clip, transform, keyframes: Object.keys(keys).length ? keys : undefined } as Clip;
   });
 }

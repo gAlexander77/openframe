@@ -477,3 +477,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sketch take a reach that versions scale (old ones load at the old
   reach); a split's halves share one EQ and compressor and render as the
   whole clip.
+- [[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]] —
+  add_callout rings a part of a screen recording with the rest dimmed,
+  two grouped shapes pinned to the recording that glide on and click as
+  they draw; a title or shape takes an anchor (a point of a clip's
+  picture) and its position is written from that clip's keys after every
+  edit, exactly where they share frames and ease, re-pinned where a hand
+  moves it; frame_region takes a list of moves; set_mask at keys from the
+  values the mask had.

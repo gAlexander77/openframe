@@ -17,7 +17,7 @@ import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type Voiceove
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
-import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { addSoundEffect, addSoundEffects, soundFiles } from "./state/sfx";
 import { addAmbience, type AmbienceRequest } from "./state/ambience";
 import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
@@ -67,6 +67,15 @@ const automation = {
     }
     const report: CommandReport = {};
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
+    // A callout's click is made first, as add_sound_effect's files are, and
+    // lands with the callout in one edit (ADR-120).
+    if (name === "add_callout" && (args as { sound?: unknown } | null)?.sound === true) {
+      return soundFiles(["click"]).then(({ add, done }) => {
+        store.editDocument(commandLabel(name, args), (p) => runAgentCommand(add(p), name, args, report, store.get().linkage));
+        done();
+        return { ...describe(), ...report };
+      });
+    }
     // keep_loudness measures the clip with and without the filter first (ADR-114).
     if (name === "set_audio_filter" && (args as { keep_loudness?: unknown } | null)?.keep_loudness === true) {
       const problems = validate(args, COMMANDS.find((c) => c.name === name)!.input);

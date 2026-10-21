@@ -1147,7 +1147,7 @@ To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.

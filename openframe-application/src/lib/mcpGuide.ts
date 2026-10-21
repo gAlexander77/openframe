@@ -53,8 +53,8 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   },
   {
     name: "Graphics and compositing",
-    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.",
-    tools: ["add_shape", "set_shape", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
+    blurb: "Shapes (bars, boxes, lines that draw on, soft glows), callouts that ring a part of a screen recording and follow its zooms, overlays pinned to footage, drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.",
+    tools: ["add_shape", "set_shape", "add_callout", "set_anchor", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
   { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
@@ -137,6 +137,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_crossfade: { clip_id: "c_3", seconds: 0.03 },
   add_cinematic_bars: { ratio: 2.39, animate_in: 0.6 },
   add_shape: { kind: "rounded_rectangle", start: 2, duration: 3, x: -0.25, y: 0.32, width: 0.4, height: 0.1, color: "#14101fcc", radius: 0.3 },
+  add_callout: { clip_id: "c_rec", region: { x: 0.102, y: 0.542, w: 0.018, h: 0.03 }, at: 14.2, duration: 4.3, dim: 0.5, to: [{ region: { x: 0.515, y: 0.825, w: 0.06, h: 0.095 }, at: 15.83 }], sound: true },
   set_shape: { clip_ids: ["c_8"], draw: 1, at: 2.6 },
   set_track_matte: { clip_id: "c_2", matte_clip_id: "above", mode: "alpha" },
   set_motion_blur: { clip_ids: ["c_4", "c_5"], on: true, shutter_angle: 180 },
@@ -264,6 +265,7 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 - Contrast: text over footage gets an outline, a shadow or a box (style.stroke, style.shadow, style.background); aim for 4.5:1 against what is behind it. A soft shadow (blur 16 on small type) barely helps over a bright sky; a box or a 2-3 px outline does. check_project measures every title on the rendered picture.
 - Color: one grade over every shot (set_filter or apply_lut on an adjustment clip over everything), so the piece reads as one film. Titles and shapes added without track_id land above it and above the beat hits, so the grade and the punches leave them alone; one put under it by track_id is named in the answer's notes.
 - Motion: titles get an in and an out animation; push slowly into stills (frame_region); do not move everything at once; whip transitions follow the direction of motion.
+- Screen recordings (explainers, demos): push into the part that matters, then pan on (frame_region moves, one call), ring it with add_callout on the word that names it, the rest dimmed, and glide the ring to the next part (to); pin labels to the picture (add_text anchor), so a zoom never leaves them behind.
 - Flashes: never more than three flashes in any one second (WCAG 2.3.1; UK ad rules test for it).
 - Sound: voice first, music ducked 10-15 dB under it (duck_under_speech; open_at ["Drop"] lets a drop between lines play), a whoosh on fast transitions, an impact on reveals with a riser whose peak lands on it, a beat of silence before the biggest hit; fade the music out over 1-2 s (set_fades). Silent footage gets its place's own sound under it (add_ambience: wind, water, rain, a city, a rocket's rumble, room tone), well under the voice. Listen before export: preview_audio plays a stretch of the mix or one stem (and measures it).
 - Loudness: online -14 LUFS with true peak at most -1 dBTP; EU broadcast -23 LUFS / -1 dBTP (EBU R128); US broadcast -24 LKFS / -2 dBTP (ATSC A/85).

@@ -7,7 +7,7 @@ const LABELS: Record<string, string> = {
   add_media_clip: "Add clip", set_param: "Change parameter", set_text: "Edit text",
   set_project: "Project settings", batch: "Edit clips", edit_compound: "Edit compound clip",
   set_hsl: "Change HSL", apply_lut: "Apply LUT", set_chroma_key: "Change chroma key",
-  set_colorize: "Colorize", set_crossfade: "Crossfade",
+  set_colorize: "Colorize", set_crossfade: "Crossfade", set_anchor: "Pin to footage",
 };
 /** What `off: true` (or seconds 0, preset off) removes, by command (ADR-109). */
 const REMOVES: Record<string, string> = {
@@ -31,6 +31,7 @@ export function commandLabel(name: string, args: unknown = {}): string {
   const a = record(args);
   if (name === "set_param" && typeof a.path === "string") return `Change ${paramName(a.path)}`;
   if (name === "set_clip_enabled" && typeof a.enabled === "boolean") return enableLabel(a.enabled, Array.isArray(a.clip_ids) ? Math.max(1, a.clip_ids.length) : 1);
+  if (name === "set_anchor" && a.none === true) return "Unpin";
   if (REMOVES[name] && (a.off === true || a.seconds === 0 || a.preset === "off")) return REMOVES[name];
   const label = LABELS[name] ?? words(name).replace(/^set /, "change ");
   return label.charAt(0).toUpperCase() + label.slice(1);

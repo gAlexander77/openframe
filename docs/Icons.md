@@ -24,6 +24,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Compound layers | Layers |
 | Stabilize / reduce noise | Focus / Funnel |
 | Preview axis / tracking subject | ScanLine / Crosshair |
+| Pin to footage / unpin / callout | Pin / PinOff / Scan |
 | Import / export | Upload / Download |
 | Save frame / export duration | ImageDown / Clock |
 | Home project placeholder | Clapperboard |

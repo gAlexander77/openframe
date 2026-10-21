@@ -21,9 +21,12 @@ export interface Path {
   y: number[];
 }
 
+/** Where a layer's picture is placed: what onCanvas and inSource read. */
+export type Placed = Pick<Layer, "x" | "y" | "scale" | "scaleY" | "rotation" | "flipX" | "flipY">;
+
 /** Canvas pixels of a point of the clip's picture (fractions of its
  * uncropped source), as `layer` places it. */
-export function onCanvas(p: Project, c: VisualClip, layer: Layer, u: number, v: number) {
+export function onCanvas(p: Project, c: VisualClip, layer: Placed, u: number, v: number) {
   const { w, h } = fittedSize(p, c);
   const lx = (u - 0.5) * w * layer.scale * (layer.flipX ? -1 : 1);
   const ly = (v - 0.5) * h * (layer.scaleY ?? layer.scale) * (layer.flipY ? -1 : 1);
@@ -32,7 +35,7 @@ export function onCanvas(p: Project, c: VisualClip, layer: Layer, u: number, v: 
 }
 
 /** The picture point (source fractions) under canvas pixel (x, y). */
-export function inSource(p: Project, c: VisualClip, layer: Layer, x: number, y: number) {
+export function inSource(p: Project, c: VisualClip, layer: Placed, x: number, y: number) {
   const { w, h } = fittedSize(p, c);
   const dx = x - p.width * (0.5 + layer.x), dy = y - p.height * (0.5 + layer.y);
   const rad = (layer.rotation * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
