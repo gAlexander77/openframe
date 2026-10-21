@@ -14,6 +14,7 @@ import {
   ListChecks,
   Music,
   PaintBucket,
+  Scan,
   Palette,
   Play,
   Plus,
@@ -35,7 +36,7 @@ import { organizeMedia, removeMedia } from "../lib/project/mediaOrganization";
 import type { Asset } from "../lib/project/types";
 import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
-import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
+import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
 import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
@@ -643,7 +644,7 @@ function TextTab() {
 function AdjustmentTab() {
   return (
     <div className="lib-content">
-      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length. A solid color is a plain background or a flash; set its color in the inspector.</p>
+      <p className="lib-hint">An adjustment layer grades everything below it on the timeline for its length. A solid color is a plain background or a flash; set its color in the inspector. A callout rings a part of the video under the playhead and dims the rest: drag the ring onto what it points at, and it stays there through the video's zooms.</p>
       <div className="card-grid small">
         <CatalogCard
           label="Custom adjustment"
@@ -656,6 +657,12 @@ function AdjustmentTab() {
           payload={{ kind: "color", label: "Solid color" }}
           onAdd={() => addColorLayer()}
           preview={<div className="fx-preview"><PaintBucket size={18} strokeWidth={1.4} /></div>}
+        />
+        <CatalogCard
+          label="Callout"
+          payload={{ kind: "callout", label: "Callout" }}
+          onAdd={() => addCalloutLayer()}
+          preview={<div className="fx-preview"><Scan size={18} strokeWidth={1.4} /></div>}
         />
       </div>
     </div>

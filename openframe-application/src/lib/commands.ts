@@ -26,10 +26,13 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
+import { placeSounds } from "./sfx";
+import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { paramAt, upsertKey } from "./keyframes";
+import { paramAt, setPath, upsertKey } from "./keyframes";
 import { keyframeProblem, partNeeds } from "./animatable";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
@@ -52,7 +55,7 @@ import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
 import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
-import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
+import { alignClips, ALIGNS, distributeClips, frameClips, frameMoves, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
 import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
@@ -333,6 +336,25 @@ function regionOf(v: unknown): Region {
   return r;
 }
 
+/** Pinning an overlay to footage (ADR-120). */
+const ANCHOR_SCHEMA = S.obj(
+  {
+    clip_id: S.str("The clip whose picture it follows (the screen recording or shot under it), on the same timeline"),
+    x: S.num("The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units)", { minimum: -1, maximum: 2 }),
+    y: S.num("The point down it: 0 its top, 1 its bottom", { minimum: -1, maximum: 2 }),
+  },
+  ["clip_id", "x", "y"],
+  "Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits",
+);
+
+/** A point anchor from an agent's `anchor`, for clip `self`. */
+function anchorArg(p: Project, v: unknown, self = ""): Anchor {
+  const a = v as { clip_id: string; x: number; y: number };
+  const problem = anchorProblem(p, self, String(a.clip_id));
+  if (problem) throw new CommandError(problem);
+  return { clipId: String(a.clip_id), keys: [{ f: 0, x: Number(a.x), y: Number(a.y) }] };
+}
+
 /** A style from an agent: the box parts get defaults, and an empty color
  * removes one, as an empty highlight does. */
 function styleFrom(base: Partial<TextStyle>, given: Partial<TextStyle>): Partial<TextStyle> {
@@ -535,17 +557,19 @@ export const COMMANDS: Command[] = [
         style: TEXT_STYLE_SCHEMA,
         role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
         track_id: S.str("Track id; default above everything at that time"),
+        anchor: ANCHOR_SCHEMA,
       },
       ["text", "start", "duration"],
     ),
     run: (p, a, report) => {
+      if (a.anchor !== undefined && (a.x !== undefined || a.y !== undefined)) throw new CommandError("give x and y, or anchor (which places it), not both");
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
       // running off the frame (9:16: off the apps' column).
       style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
       let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
-      clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
+      clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) }, ...(a.anchor !== undefined ? { anchor: anchorArg(p, a.anchor) } : {}) } as Clip;
       // Above everything showing then, as add_shape and stickers land: a
       // text added after its button went under it, on a free track below
       // the grade (Claude film test 2, ADR-116).
@@ -1265,7 +1289,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.",
+    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.",
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1313,9 +1337,14 @@ export const COMMANDS: Command[] = [
           sizes.height = +s.height.toFixed(5);
           for (const k of ["width", "height"] as const) keyedNeedsAt(clip, `mask.${k}`, a.at);
         }
+        // at keys what it is given, from the values the mask had at the
+        // clip's start when they were still: it used to set them for the
+        // whole clip and say nothing (Claude film test 3, ADR-120).
         for (const k of MASK_PARAMS) {
-          if (sizes[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
+          if (sizes[k] === undefined) continue;
+          p = now && rel !== undefined ? keyFrom(p, clip.id, `mask.${k}`, Number(sizes[k]), rel) : ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
         }
+        if (!now && rel !== undefined && report && MASK_PARAMS.some((k) => sizes[k] !== undefined)) (report.notes ??= []).push(`The mask on ${clip.id} is new, so its values hold from the clip's start; set_mask again with at keys a move from them.`);
         const note = maskEdgeNote(p, clip.id, rel ?? 0, at);
         if (note && report) (report.notes ??= []).push(note);
       }
@@ -1391,10 +1420,13 @@ export const COMMANDS: Command[] = [
         rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
         opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
         track_id: S.str("Track id; default above everything at that time"),
+        anchor: ANCHOR_SCHEMA,
       },
       ["kind", "start", "duration"],
     ),
     run: (p, a, report) => {
+      if (a.anchor !== undefined && (a.x !== undefined || a.y !== undefined)) throw new CommandError("give x and y, or anchor (which places it), not both");
+      const anchor = a.anchor !== undefined ? anchorArg(p, a.anchor) : undefined;
       const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
       const color = colorArg(a.color, "color") ?? "#ffffff";
       const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
@@ -1422,11 +1454,89 @@ export const COMMANDS: Command[] = [
         shape,
         opacity: Number(a.opacity ?? 1),
         transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
+        ...(anchor ? { anchor } : {}),
       } as Clip;
       if (a.track_id === undefined) return placeOnTop(p, clip, "Graphics");
       const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
       noteUnderAdjustment(q, clip.id, "a shape", report);
       return q;
+    },
+  },
+  {
+    name: "add_callout",
+    description:
+      "Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The footage it points at (a video or picture clip on the same timeline)"),
+        region: { ...REGION_SCHEMA, description: "The part to point at, in fractions of that clip's source picture: x, y its top-left corner" },
+        shape: S.str("ring (an ellipse around it), box, or rounded (a box with round corners; default)", { enum: [...CALLOUT_SHAPES] }),
+        dim: S.num("How dark the rest of the frame goes, 0 (no dim, only the ring) .. 1; default 0.5", { minimum: 0, maximum: 1 }),
+        draw_on: S.num("Seconds the ring takes to draw on around it; 0 shows it whole at once. Default 0.35", { minimum: 0, maximum: 5 }),
+        at: S.num("Timeline seconds it starts", { minimum: 0 }),
+        duration: S.num("Seconds it stays; default 2", { minimum: 0.1 }),
+        to: {
+          type: "array",
+          description: "Glides, in order: each reaches its region at its at (timeline seconds), moving there from where it was over glide seconds",
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The next part, in the same clip's source fractions" }, at: S.num("Timeline seconds it arrives there", { minimum: 0 }), glide: S.num("Seconds the move takes, ending at at; default 0.4", { minimum: 0.03, maximum: 10 }) }, ["region", "at"]),
+        },
+        color: S.str("The ring's color, CSS; default the brand kit's accent"),
+        stroke_width: S.num(`The ring's outline, pixels at 1080p; default ${CALLOUT_STROKE}`, { minimum: 1, maximum: 40 }),
+        sound: S.bool("A soft click as the ring draws on, on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already"),
+      },
+      ["clip_id", "region", "at"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to point at`);
+      const start = f(p, a.at), duration = span(p, a.at, a.duration ?? 2);
+      const sec = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(2);
+      if (start >= clip.start + clip.duration || start + duration <= clip.start) throw new CommandError(`the callout (${sec(start)}-${sec(start + duration)} s) does not overlap ${clip.id} (${sec(clip.start)}-${sec(clip.start + clip.duration)} s): point at the clip playing then`);
+      try {
+        const made = addCallout(p, {
+          clipId: clip.id,
+          region: regionOf(a.region),
+          shape: (a.shape as CalloutShape | undefined) ?? "rounded",
+          dim: Number(a.dim ?? 0.5),
+          start,
+          duration,
+          drawOn: f(p, a.draw_on ?? 0.35),
+          to: ((a.to ?? []) as { region: unknown; at: number; glide?: number }[]).map((t) => ({ region: regionOf(t.region), f: f(p, t.at), glide: f(p, t.glide ?? 0.4) })),
+          color: colorArg(a.color, "color"),
+          ...(a.stroke_width !== undefined ? { strokeWidth: Number(a.stroke_width) } : {}),
+        });
+        if (a.sound !== true) return made.project;
+        // The click's file is made outside the registry (automation.exec),
+        // as add_sound_effect's are; here it is placed.
+        const click = p.assets.find((x) => x.kind === "audio" && x.sound?.id === "click");
+        if (!click) throw new CommandError("sound true needs the click's file, which add_callout makes when it runs on its own (MCP or window.videoEditor.exec): inside a batch, add the callout without sound and add_sound_effect click at its start after");
+        return placeSounds(made.project, [{ name: "click", at: framesToSeconds(start, p.fps), volume: 0.35 }], new Map([["click", click]]), start).project;
+      } catch (e) {
+        throw e instanceof CalloutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
+    name: "set_anchor",
+    description:
+      "Pin titles, shapes or stickers to a point of a clip's picture (anchor {clip_id, x, y}, source fractions as frame_region takes them), so they follow its zooms and pans; or none true to unpin them where they are. A pinned clip moved by hand (a drag, set_param on its position) is pinned again where it lands. describe_project shows each clip's anchor.",
+    input: S.obj({ clip_ids: S.ids("The clips to pin or unpin (a callout's two parts: give both)"), anchor: ANCHOR_SCHEMA, none: S.bool("true: unpin them; they stay where they are now") }, ["clip_ids"]),
+    run: (p, a) => {
+      if ((a.anchor === undefined) === (a.none !== true)) throw new CommandError("give anchor (to pin) or none true (to unpin)");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to pin`);
+        if (a.none === true) {
+          p = ops.updateClip(p, clip.id, (c) => omit(c as Clip & { anchor?: unknown }, "anchor") as Clip);
+          continue;
+        }
+        const pin = anchorArg(p, a.anchor, clip.id);
+        // A callout's ring or dim keeps its region's size, its glides go.
+        const was = anchorOf(clip)?.keys[0];
+        const keys = [{ ...pin.keys[0], ...(was?.w !== undefined ? { w: was.w, h: was.h } : {}) }];
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, anchor: { ...anchorOf(c), ...pin, keys } }) as Clip);
+      }
+      return p;
     },
   },
   {
@@ -2700,7 +2810,7 @@ export const COMMANDS: Command[] = [
   {
     name: "frame_region",
     description:
-      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.",
+      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.",
     input: S.obj(
       {
         clip_id: S.str("Video or image clip id"),
@@ -2709,14 +2819,35 @@ export const COMMANDS: Command[] = [
         mode: S.str("How the region meets the canvas", { enum: ["fill", "fit"] }),
         from: S.num("Timeline seconds the move starts; default the clip's start"),
         to: S.num("Timeline seconds the move ends; default the clip's end"),
+        moves: {
+          type: "array",
+          description: "Instead of region, to_region, from and to: the regions in order, each shown at its at, moving there from the one before",
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The part shown at at" }, at: S.num("Timeline seconds the region fills the frame", { minimum: 0 }), ease: { ...EASE_SCHEMA, description: `How the move into this region goes: ${EASE_IDS.join(", ")}; default easeInOut` } }, ["region", "at"]),
+        },
       },
-      ["clip_id", "region"],
+      ["clip_id"],
     ),
     run: (p, a) => {
       const { clip, track } = clipOrThrow(p, a.clip_id);
       if (clip.type !== "video" && clip.type !== "image") throw new CommandError(`${clip.type} clips have no picture to frame`);
       if (track.locked) throw new CommandError(`track ${track.name} is locked`);
       const mode = a.mode === "fit" ? "fit" : "fill";
+      if (a.moves !== undefined) {
+        if (a.region !== undefined || a.to_region !== undefined || a.from !== undefined || a.to !== undefined) throw new CommandError("moves replaces region, to_region, from and to: give one or the other");
+        const list = a.moves as { region: unknown; at: number; ease?: string }[];
+        if (!list.length) throw new CommandError("moves needs at least one move");
+        const sec = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(2);
+        const moves = list.map((m, i) => {
+          const rel = f(p, m.at) - clip.start;
+          if (rel < 0 || rel > clip.duration) throw new CommandError(`move ${i + 1} at ${m.at} s is outside ${clip.id} (${sec(clip.start)}-${sec(clip.start + clip.duration)} s)`);
+          return { region: regionOf(m.region), f: Math.min(rel, clip.duration - 1), ...(m.ease !== undefined ? { ease: easeById(m.ease) } : {}) };
+        });
+        moves.forEach((m, i) => {
+          if (i && m.f <= moves[i - 1].f) throw new CommandError(`move ${i + 1} at ${list[i].at} s is not after move ${i} at ${list[i - 1].at} s: give the moves in order, a frame or more apart`);
+        });
+        return frameMoves(p, clip.id, moves, mode);
+      }
+      if (a.region === undefined) throw new CommandError("give region (with to_region for one move), or moves");
       const rel = (s: unknown, fallback: number) => (s === undefined ? fallback : Math.max(0, Math.min(clip.duration - 1, f(p, s) - clip.start)));
       const from = rel(a.from, 0), to = rel(a.to, clip.duration - 1);
       if (a.to_region && to <= from) throw new CommandError("to must come after from, inside the clip");
@@ -2801,6 +2932,18 @@ function missingPart(clip: Clip, path: string): string | null {
     if (cur === undefined || cur === null) return segs.slice(0, i + 1).join(".");
   }
   return null;
+}
+
+/** A key at clip frame `rel`; a path with no keys first gets one at the
+ * clip's start holding the value it had, so the value moves from there
+ * (at the start itself the value is simply set). */
+function keyFrom(p: Project, id: Id, path: string, value: number, rel: number): Project {
+  return ops.updateClip(p, id, (c) => {
+    const keys = c.keyframes?.[path] ?? [];
+    if (!keys.length && rel <= 0) return setPath(c, path, value);
+    const start = keys.length ? keys : [{ f: 0, v: paramAt(c, path, 0) }];
+    return { ...c, keyframes: { ...c.keyframes, [path]: upsertKey(start, { ...keys.find((k) => k.f === rel), f: rel, v: value }) } };
+  });
 }
 
 /** A keyed value given without `at` would go under its keys, where nothing
@@ -2912,8 +3055,12 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
     }
   }
   // A song's markers follow its clip, so the next step (a batch's, a
-  // cut_to_beats after a move) sees them where the beats now play.
-  return followClips(next);
+  // cut_to_beats after a move) sees them where the beats now play; what is
+  // pinned to a clip's picture follows it the same way (ADR-120).
+  const notes: string[] = [];
+  const out = followAnchors(p, followClips(next), notes);
+  if (notes.length && report) (report.notes ??= []).push(...notes);
+  return out;
 }
 
 /**
@@ -3024,6 +3171,7 @@ export function describeProject(p: Project) {
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...graphicsSummary(c),
+        ...anchorSummary(p, c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
         ...(c.type === "text" && (c.style.weight !== undefined || !c.style.bold) ? { weight: c.style.weight ?? 400 } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}), ...typeSummary(c.style) } : {}),

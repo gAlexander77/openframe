@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 165 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -25,7 +25,7 @@ To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
@@ -46,7 +46,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
@@ -1021,12 +1021,12 @@ Example:
 
 ### frame_region
 
-Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.
+Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip id |
-| `region` | { x, y, w, h } | yes | The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner |
+| `region` | { x, y, w, h } |  | The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner |
 | `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
 | `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
 | `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
@@ -1039,6 +1039,14 @@ Show one part of a video or picture full screen, as a zoom on a screen recording
 | `mode` | "fill" \| "fit" |  | How the region meets the canvas |
 | `from` | number |  | Timeline seconds the move starts; default the clip's start |
 | `to` | number |  | Timeline seconds the move ends; default the clip's end |
+| `moves` | { region, at, ease }[] |  | Instead of region, to_region, from and to: the regions in order, each shown at its at, moving there from the one before |
+| `moves[].region` | { x, y, w, h } | yes | The part shown at at |
+| `moves[].region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `moves[].region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `moves[].region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `moves[].region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `moves[].at` | number | yes | Timeline seconds the region fills the frame (0..) |
+| `moves[].ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | How the move into this region goes: linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce; default easeInOut |
 
 Example:
 
@@ -1129,7 +1137,7 @@ Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions 
 
 ### set_mask
 
-CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.
+CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1292,7 +1300,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 
 ## Graphics and compositing
 
-Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.
+Shapes (bars, boxes, lines that draw on, soft glows), callouts that ring a part of a screen recording and follow its zooms, overlays pinned to footage, drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.
 
 ### add_shape
 
@@ -1325,6 +1333,10 @@ Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid
 | `rotation` | number |  | Degrees, clockwise (turn a line to any angle) |
 | `opacity` | number |  | 0..1, default 1 (0..1) |
 | `track_id` | string |  | Track id; default above everything at that time |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
 
 Example:
 
@@ -1364,6 +1376,54 @@ Example:
 ```json
 {"name":"set_shape","arguments":{"clip_ids":["c_8"],"draw":1,"at":2.6}}
 ```
+
+### add_callout
+
+Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The footage it points at (a video or picture clip on the same timeline) |
+| `region` | { x, y, w, h } | yes | The part to point at, in fractions of that clip's source picture: x, y its top-left corner |
+| `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `shape` | "ring" \| "box" \| "rounded" |  | ring (an ellipse around it), box, or rounded (a box with round corners; default) |
+| `dim` | number |  | How dark the rest of the frame goes, 0 (no dim, only the ring) .. 1; default 0.5 (0..1) |
+| `draw_on` | number |  | Seconds the ring takes to draw on around it; 0 shows it whole at once. Default 0.35 (0..5) |
+| `at` | number | yes | Timeline seconds it starts (0..) |
+| `duration` | number |  | Seconds it stays; default 2 (0.1..) |
+| `to` | { region, at, glide }[] |  | Glides, in order: each reaches its region at its at (timeline seconds), moving there from where it was over glide seconds |
+| `to[].region` | { x, y, w, h } | yes | The next part, in the same clip's source fractions |
+| `to[].region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `to[].region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `to[].region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `to[].region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `to[].at` | number | yes | Timeline seconds it arrives there (0..) |
+| `to[].glide` | number |  | Seconds the move takes, ending at at; default 0.4 (0.03..10) |
+| `color` | string |  | The ring's color, CSS; default the brand kit's accent |
+| `stroke_width` | number |  | The ring's outline, pixels at 1080p; default 6 (1..40) |
+| `sound` | boolean |  | A soft click as the ring draws on, on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already |
+
+Example:
+
+```json
+{"name":"add_callout","arguments":{"clip_id":"c_rec","region":{"x":0.102,"y":0.542,"w":0.018,"h":0.03},"at":14.2,"duration":4.3,"dim":0.5,"to":[{"region":{"x":0.515,"y":0.825,"w":0.06,"h":0.095},"at":15.83}],"sound":true}}
+```
+
+### set_anchor
+
+Pin titles, shapes or stickers to a point of a clip's picture (anchor {clip_id, x, y}, source fractions as frame_region takes them), so they follow its zooms and pans; or none true to unpin them where they are. A pinned clip moved by hand (a drag, set_param on its position) is pinned again where it lands. describe_project shows each clip's anchor.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | The clips to pin or unpin (a callout's two parts: give both) |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
+| `none` | boolean |  | true: unpin them; they stay where they are now |
 
 ### set_shadow
 
@@ -1624,6 +1684,10 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id; default above everything at that time |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
 
 Example:
 

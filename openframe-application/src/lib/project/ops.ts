@@ -203,6 +203,8 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
   }
   if (c.type === "image") out = { ...out, imageIn: (c.imageIn ?? 0) + framesToSeconds(d, fps) } as Clip;
   if (c.keyframes) out = { ...out, keyframes: shiftKeys(c.keyframes, -d) };
+  // A pinned clip's glides stay on the timeline too (ADR-120).
+  if ("anchor" in c && c.anchor && c.anchor.keys.length > 1) out = { ...out, anchor: { ...c.anchor, keys: c.anchor.keys.map((k) => ({ ...k, f: k.f - d })) } } as Clip;
   if (c.type === "text" && c.wordTimes) out = { ...out, wordTimes: c.wordTimes.map((f) => f - d) } as Clip;
   return out;
 }

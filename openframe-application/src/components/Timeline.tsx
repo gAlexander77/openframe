@@ -27,7 +27,7 @@ import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } 
 import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import { addAdjustmentLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
+import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
 import { syncAudio } from "../state/ai";
@@ -175,6 +175,8 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       return { view: layer, run: () => addAdjustmentLayer(frame) };
     case "color":
       return { view: layer, run: () => addColorLayer(frame) };
+    case "callout":
+      return { view: layer, run: () => addCalloutLayer(frame) };
     case "sfx":
       // Its file is made on first use; it lands by an audio drop's rules.
       return { view: null, run: () => void addSoundEffect(payload.id, { frame }).catch((e) => toast(e instanceof Error ? e.message : String(e), "error")) };

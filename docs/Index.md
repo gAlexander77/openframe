@@ -493,3 +493,11 @@ Every non-obvious choice gets a short Architecture Decision Record in
   names the clip a marker follows and detaches it (update_marker
   detach); check_project hears each audio join on its own track, up to
   24, as click_at_join and sound_cut_at_join with a crossfade as the fix.
+- [[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]] —
+  add_callout rings a part of a screen recording with the rest dimmed,
+  two grouped shapes pinned to the recording that glide on and click as
+  they draw; a title or shape takes an anchor (a point of a clip's
+  picture) and its position is written from that clip's keys after every
+  edit, exactly where they share frames and ease, re-pinned where a hand
+  moves it; frame_region takes a list of moves; set_mask at keys from the
+  values the mask had.

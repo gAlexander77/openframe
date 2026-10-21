@@ -315,7 +315,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   picture, rotated and mirrored with it: drag inside to move it, the edge
   handles to size it, the knob to turn it (45° catches; Ctrl turns
   freely), the arrow to feather it and a rectangle's corner dot to round
-  it. Each drag is one undo step and keys animated numbers.
+  it. Each drag is one undo step and keys animated numbers. `set_mask`
+  with `at` keys the values it is given there, from what the mask held at
+  the clip's start ([[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]]).
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
@@ -413,6 +415,20 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   edits them; the timeline names the clip after its shape. The pieces of
   lower thirds, callouts, CTA buttons and end cards (`add_shape`,
   `set_shape`).
+- **Callouts** (ADR-120): a ring, box or rounded box that draws on around
+  a part of a screen recording or shot, the rest of the frame dimmed
+  through a hole the same shape, both pinned to that clip's picture, so
+  they stay on the part through its zooms and pans and glide on to other
+  parts; an optional click as the ring draws on. Two grouped shape
+  layers (the dim under the ring) that edit like any shape. Library >
+  Adjustment > Callout adds one on the video under the playhead; drag the
+  ring onto its part and the hole goes with it (`add_callout`).
+- **Pinned to footage** (ADR-120): a title, shape or sticker pinned to a
+  point of a clip's picture follows that clip's position, scale and keys,
+  frame_region's zooms included, through every later edit; moved by hand
+  it is pinned where it lands. Animation > Tracking shows what a layer is
+  pinned to, with Pin to footage and Unpin (`anchor` on `add_text` and
+  `add_shape`, `set_anchor`).
 - **Soft light** (ADR-069): a shape's **radial gradient** (from the
   center to its rim, an ellipse fitting the box, with a center and
   radius that keyframe) and **feather** (the shape blurred: the edge fades
@@ -1190,7 +1206,8 @@ Three doors, one engine ([[Automation]]):
   resources and a full `list_catalog`; [[MCP tools]] is the generated
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
-  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
+  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
+  through any number of moves in one call (`moves`, ADR-120).
   Every answer names the tool set it came from, so the stdio bridge tells
   a connected client (`notifications/tools/list_changed`) when a newer
   build brings other tools; over HTTP the client reconnects ([[Automation]]).
