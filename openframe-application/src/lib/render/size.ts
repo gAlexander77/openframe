@@ -7,7 +7,7 @@ import type { Project, TextClip, VisualClip } from "../project/types";
 
 /** A text clip's raster size. The engine registers its rasterizer at load;
  * without one (unit tests) a box from the style stands in. */
-let measureText = (c: TextClip, w: number, h: number): { width: number; height: number; layout?: { pad: number } } => ({
+let measureText = (c: TextClip, w: number, h: number): { width: number; height: number; layout?: { pad: number; lines?: string[] } } => ({
   width: c.style.maxWidth * w,
   height: ((c.style.size * h) / 1080) * c.style.lineHeight * Math.max(1, c.text.split("\n").length),
 });
@@ -41,3 +41,7 @@ export function fittedSize(p: Project, c: VisualClip): { w: number; h: number } 
  * outline, shadow or glow to spread), in canvas pixels; 0 without the
  * engine's rasterizer. */
 export const textPad = (p: Project, c: TextClip) => measureText(c, p.width, p.height).layout?.pad ?? 0;
+
+/** A text clip's lines as the rasterizer wraps them (cased as shown), or
+ * undefined without the engine's rasterizer (unit tests). */
+export const textLines = (p: Project, c: TextClip): string[] | undefined => measureText(c, p.width, p.height).layout?.lines;

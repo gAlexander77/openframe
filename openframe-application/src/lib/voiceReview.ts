@@ -8,17 +8,66 @@ import { CHOSEN_MAX_SPS, judgePace, syllableBand, targetBand, type Pace, type Re
 
 // ---- words --------------------------------------------------------------------------
 
-/** Words to compare: lower case, no punctuation, numbers spelled out,
- * % and & said; hyphens and slashes part words. */
-export function tokens(text: string): string[] {
+const ORDINAL: Record<string, string> = { one: "first", two: "second", three: "third", five: "fifth", eight: "eighth", nine: "ninth", twelve: "twelfth" };
+/** "21st" as said: the last word of the number made an ordinal. */
+const ordinalWords = (n: number) => {
+  const w = numberWords(n);
+  const last = w.at(-1)!;
+  return [...w.slice(0, -1), ORDINAL[last] ?? (last.endsWith("y") ? `${last.slice(0, -1)}ieth` : `${last}th`)];
+};
+const digitWords = (d: string, zero: string) => d.split("").map((x) => (x === "0" ? zero : numberWords(Number(x))[0]));
+
+/**
+ * The ways a number written in digits is said, the usual first: "1080" as
+ * one thousand eighty, ten eighty (in pairs, as years and resolutions are
+ * read), one thousand and eighty, or digit by digit (one oh eight oh);
+ * "3.5" as three point five. A recognizer writes digits for any of them,
+ * so the fourth film test's "ten-eighty p", heard as "1080p", was called
+ * the voice's mistake (ADR-124).
+ */
+export function numberReadings(digits: string): string[][] {
+  const [whole, part] = digits.split(".");
+  if (part !== undefined) return numberReadings(whole).map((w) => [...w, "point", ...digitWords(part, "zero")]);
+  const v = Number(whole);
+  const out: string[][] = [];
+  if (whole.length > 1 && whole.startsWith("0")) out.push(digitWords(whole, "oh"), digitWords(whole, "zero"));
+  else if (v < 1e6) {
+    out.push(numberWords(v));
+    if (v >= 100 && v % 100) out.push([...numberWords(v - (v % 100)), "and", ...numberWords(v % 100)]);
+    const hi = Math.floor(v / 100), lo = v % 100;
+    // In pairs, not "twenty hundred" for 2000.
+    if (v >= 100 && v < 10000 && !(lo === 0 && hi % 10 === 0)) out.push(lo === 0 ? [...numberWords(hi), "hundred"] : lo < 10 ? [...numberWords(hi), "oh", ...numberWords(lo)] : [...numberWords(hi), ...numberWords(lo)]);
+    if (whole.length > 1) out.push(digitWords(whole, "oh"), digitWords(whole, "zero"));
+  } else out.push(digitWords(whole, "zero"));
+  return out;
+}
+
+/** Whether `words` holds `seq` in a row. */
+const holds = (words: string[], seq: string[]) => words.some((_, i) => seq.every((w, j) => words[i + j] === w));
+
+/** Words to compare: lower case, no punctuation, numbers spelled out
+ * (as `other` says them when it holds one of their readings: the script
+ * against what was heard, ADR-124), "-14" as minus fourteen, "1080p" as a
+ * number and a letter, "3rd" as third, % & and $ said; hyphens and slashes
+ * part words. */
+export function tokens(text: string, other?: string[]): string[] {
   return text
     .replace(/%/g, " percent ")
     .replace(/&/g, " and ")
+    .replace(/\$(\d[\d,.]*)/g, "$1 dollars")
+    .replace(/(^|[\s(])[-−–](?=\d)/g, "$1minus ")
+    .replace(/(\d),(?=\d{3}\b)/g, "$1")
+    .replace(/(\d+)(st|nd|rd|th)\b/gi, (_, n: string) => ordinalWords(Number(n)).join(" "))
+    .replace(/(\d)(?=\p{L})|(\p{L})(?=\d)/gu, "$1$2 ")
     .split(/[\s\-–—/]+/)
     .flatMap((w) => {
-      const t = w.toLowerCase().replace(/[’]/g, "'").replace(/[^\p{L}\p{N}']/gu, "").replace(/^'+|'+$/g, "");
-      if (/^\d{1,4}$/.test(t)) return numberWords(Number(t));
-      return t ? [t] : [];
+      const t = w.toLowerCase().replace(/[’]/g, "'").replace(/\.$/, "").replace(/[^\p{L}\p{N}'.]/gu, "").replace(/^'+|'+$/g, "");
+      if (/^\d+(\.\d+)?$/.test(t)) {
+        const readings = numberReadings(t);
+        return (other && readings.find((r) => holds(other, r))) || readings[0];
+      }
+      const plain = t.replace(/\./g, "");
+      return plain ? [plain] : [];
     });
 }
 
@@ -119,15 +168,70 @@ export function diffWords(script: string[], heard: string[]): { matched: number;
   return { matched, differences };
 }
 
-/** The script against what was heard, against the words as written and as
- * respelled for the voice, whichever matches better. */
-export function compareScript(text: string, heard: string, pronounce?: Record<string, string>) {
-  const h = tokens(heard);
-  const written = tokens(parseLine(text).written);
-  const a = diffWords(written, h);
-  if (!pronounce || !Object.keys(pronounce).length) return { words: written.length, ...a };
-  const b = diffWords(tokens(parseLine(text, pronounce).spoken), h);
-  return b.differences.length < a.differences.length ? { words: written.length, matched: written.length - b.differences.length, differences: b.differences } : { words: written.length, ...a };
+const NUMBER_WORD: Record<string, number> = Object.fromEntries([
+  ...["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"].map((w, i) => [w, i]),
+  ...["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"].map((w, i) => [w, 20 + i * 10]),
+  ["oh", 0],
+]);
+
+/** The values number words can mean: counted ("one thousand eighty") and
+ * read in groups ("ten eighty", "one oh eight oh", "twenty twenty six");
+ * empty when a word is not a number's. */
+export function numberValues(words: string[]): Set<number> {
+  const out = new Set<number>();
+  const ws = words.filter((w) => w !== "and");
+  if (!ws.length || !ws.every((w) => w in NUMBER_WORD || w === "hundred" || w === "thousand")) return out;
+  let total = 0, cur = 0;
+  for (const w of ws) {
+    if (w === "hundred") cur = (cur || 1) * 100;
+    else if (w === "thousand") (total += (cur || 1) * 1000), (cur = 0);
+    else cur += NUMBER_WORD[w];
+  }
+  out.add(total + cur);
+  if (!ws.some((w) => w === "hundred" || w === "thousand")) {
+    // In groups: a tens word takes the ones word after it ("twenty six").
+    const groups: number[] = [];
+    for (const w of ws) {
+      const v = NUMBER_WORD[w], last = groups.length - 1;
+      if (last >= 0 && groups[last] >= 20 && groups[last] % 10 === 0 && v > 0 && v < 10) groups[last] += v;
+      else groups.push(v);
+    }
+    out.add(Number(groups.join("")));
+  }
+  return out;
+}
+
+/** A difference that is one number written two ways ("ten eighty" heard
+ * as "one thousand eighty"): the same words, not a misread (ADR-124). */
+export function sameNumber(d: Pick<Difference, "kind" | "script" | "heard">): boolean {
+  if (d.kind !== "misheard" || !d.script || !d.heard) return false;
+  const a = numberValues(d.script.split(" ")), b = numberValues(d.heard.split(" "));
+  return [...a].some((v) => b.has(v));
+}
+
+/**
+ * The script against what was heard, against the words as written, as
+ * respelled for the voice and as its caption shows them (a caption
+ * "1080p, -14" for the said "ten-eighty p, minus fourteen"), whichever
+ * matches better. Numbers are read as the other side says them, and a
+ * number written another way is not a difference.
+ */
+export function compareScript(text: string, heard: string, pronounce?: Record<string, string>, caption?: string) {
+  const plainHeard = tokens(heard);
+  const written = tokens(parseLine(text).written, plainHeard);
+  const against = (script: string[]) => {
+    const r = diffWords(script, tokens(heard, script));
+    const differences = r.differences.filter((d) => !sameNumber(d));
+    return { matched: r.matched + (r.differences.length - differences.length), differences };
+  };
+  let best = against(written);
+  const others = [pronounce && Object.keys(pronounce).length ? parseLine(text, pronounce).spoken : undefined, caption];
+  for (const o of others) {
+    if (o === undefined) continue;
+    const r = against(tokens(o, plainHeard));
+    if (r.differences.length < best.differences.length) best = { matched: written.length - r.differences.length, differences: r.differences };
+  }
+  return { words: written.length, ...best };
 }
 
 /** How much of what was heard matches the script: the words matched over

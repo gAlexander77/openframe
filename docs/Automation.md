@@ -171,7 +171,7 @@ the first time, never in a gap on the voiceover or the music, or on
 `track_id`), `add_ambience` (a natural sound bed under the pictures, see
 Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
 and its measurements, below),
-`set_caption_look` (one of six caption looks for every caption),
+`set_caption_look` (one of six caption looks, and a place, size and wrap width, for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `roll_edit` (a cut between two touching clips moved in one call,
 nothing else moving: the Roll tool), `move_track` (up or down the stack, so a grade sits under the

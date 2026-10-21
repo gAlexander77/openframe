@@ -1,7 +1,8 @@
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
-import { shiftRuns, styleRange } from "./textRuns";
+import { shiftRuns, styleRange, wrappedRange } from "./textRuns";
+import { textLines } from "./render/size";
 // The command registry: every edit an agent can make, by name, with a JSON
 // Schema for its arguments (ADR-006). One surface serves the in-app AI
 // AI assistant (as LLM tool definitions), the automation API, recipes/pipelines,
@@ -26,7 +27,7 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
 import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
 import { placeSounds } from "./sfx";
 import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
@@ -38,7 +39,7 @@ import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } 
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, presetOf, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
-import { replaceText, type Caption } from "./captions";
+import { casedText, replaceText, type Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { breakCompound, breakProblem, compoundProblem, compoundView, copyCompound, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
@@ -286,6 +287,39 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   const fresh = createTrack("video", "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
 }
+
+/** style_text_range's edit: the ranges it styled go to `took` (text offsets). */
+function styleTextRange(p: Project, a: Record<string, unknown>, took: (ranges: [number, number][]) => void): Project {
+  return commandError(() => ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
+    if (c.type !== "text") throw new Error("not a text clip");
+    if (a.match !== undefined && (a.start !== undefined || a.end !== undefined)) throw new Error("Choose match or start and end");
+    let ranges: [number, number][] = [];
+    if (a.match !== undefined) {
+      const match = String(a.match);
+      if (!match) throw new Error("match cannot be empty");
+      for (let at = c.text.indexOf(match); at >= 0; at = c.text.indexOf(match, at + match.length)) ranges.push([at, at + match.length]);
+      if (!a.all) ranges = ranges.slice(Number(a.occurrence ?? 1) - 1, Number(a.occurrence ?? 1));
+      if (!ranges.length) throw new Error("No matching text occurrence");
+    } else if (a.clear && a.start === undefined && a.end === undefined) return { ...c, style: { ...c.style, runs: [] } };
+    else ranges = [[Number(a.start), Number(a.end)]];
+    took(ranges);
+    let runs = c.style.runs ?? [];
+    // The style flat, or as an object as set_text takes it; flat fields win.
+    const look = { ...((a.style ?? {}) as Partial<TextRun>), ...a } as Partial<TextRun>;
+    for (const [start, end] of ranges) runs = styleRange(c.text, runs, start, end, look, a.clear === true);
+    return { ...c, style: { ...c.style, runs } };
+  }));
+}
+
+/** What a styled run of a title takes (style_text_range), flat or as its style. */
+const RUN_STYLE = {
+  color: S.str("CSS fill color; replaces the range gradient"),
+  gradient: S.obj({ from: S.str("Start CSS color"), to: S.str("End CSS color"), angle: S.num("Angle in degrees") }, ["from", "to", "angle"], "Linear fill gradient"),
+  weight: S.num("Font weight", { minimum: 100, maximum: 900 }),
+  italic: S.bool("Italic letters"),
+  underline: S.bool("Underline letters"),
+  scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }),
+};
 
 export const TEXT_STYLE_SCHEMA = S.obj({
   font: S.str("Font family"),
@@ -1987,32 +2021,28 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "style_text_range",
-    description: "Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.",
+    description: "Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. The style is color, gradient, weight, italic, underline and scale, given flat ({match: 'SALE', color: '#ff0'}) or as a style object as set_text takes one ({match: 'SALE', style: {color: '#ff0'}}). Later styles merge fields; a color replaces a gradient; a scaled run wraps at its own size. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.",
     input: S.obj({
       clip_id: S.str("Text clip id"), match: S.str("Literal word or phrase to find"),
       occurrence: S.num("1-based match occurrence; default 1", { minimum: 1 }), all: S.bool("Style every match"),
       start: S.num("Start UTF-16 character offset, inclusive", { minimum: 0 }), end: S.num("End UTF-16 character offset, exclusive", { minimum: 1 }),
-      color: S.str("CSS fill color; replaces the range gradient"),
-      gradient: S.obj({ from: S.str("Start CSS color"), to: S.str("End CSS color"), angle: S.num("Angle in degrees") }, ["from", "to", "angle"], "Linear fill gradient"),
-      weight: S.num("Font weight", { minimum: 100, maximum: 900 }), italic: S.bool("Italic letters"), underline: S.bool("Underline letters"),
-      scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }), clear: S.bool("Remove styles from the range, or the entire title without a range"),
+      ...RUN_STYLE,
+      style: S.obj(RUN_STYLE, [], "The same fields as one object, as set_text takes its style; the flat ones win"),
+      clear: S.bool("Remove styles from the range, or the entire title without a range"),
     }, ["clip_id"]),
-    run: (p, a) => commandError(() => ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, c => {
-      if (c.type !== "text") throw new Error("not a text clip");
-      if (a.match !== undefined && (a.start !== undefined || a.end !== undefined)) throw new Error("Choose match or start and end");
+    run: (p, a, report) => {
       let ranges: [number, number][] = [];
-      if (a.match !== undefined) {
-        const match = String(a.match);
-        if (!match) throw new Error("match cannot be empty");
-        for (let at = c.text.indexOf(match); at >= 0; at = c.text.indexOf(match, at + match.length)) ranges.push([at, at + match.length]);
-        if (!a.all) ranges = ranges.slice(Number(a.occurrence ?? 1) - 1, Number(a.occurrence ?? 1));
-        if (!ranges.length) throw new Error("No matching text occurrence");
-      } else if (a.clear && a.start === undefined && a.end === undefined) return { ...c, style: { ...c.style, runs: [] } };
-      else ranges = [[Number(a.start), Number(a.end)]];
-      let runs = c.style.runs ?? [];
-      for (const [start, end] of ranges) runs = styleRange(c.text, runs, start, end, a, a.clear === true);
-      return { ...c, style: { ...c.style, runs } };
-    })),
+      const q = styleTextRange(p, a, (r) => (ranges = r));
+      // A styled stretch the wrap parts: said, with the lines it is drawn on (ADR-124).
+      const c = clipOrThrow(q, a.clip_id).clip as TextClip;
+      const lines = report && !a.clear ? textLines(q, c) : undefined;
+      for (const [start, end] of lines ? ranges : []) {
+        const shown = (x: number) => casedText(c.text.slice(0, x), c.style.case).length;
+        const split = wrappedRange(casedText(c.text, c.style.case), lines!, shown(start), shown(end));
+        if (split) (report!.notes ??= []).push(`"${c.text.slice(start, end)}" is drawn on ${split.length} lines (${split.map((l) => `"${l}"`).join(" / ")}): at its size it is wider than the title wraps at (style.maxWidth ${+c.style.maxWidth.toFixed(3)} of the canvas width); a wider maxWidth, a smaller scale or size, or fewer words keeps it on one.`);
+      }
+      return q;
+    },
   },
   {
     name: "set_text",
@@ -2147,11 +2177,33 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_caption_look",
-    description: "Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.",
-    input: S.obj({ look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }) }, ["look"]),
+    description:
+      "Restyle every caption at once (CapCut's caption templates, and its caption panel's position and size). look gives them one of the built-in looks: classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal, which sets the whole caption style and its height. y and x move every caption, size and maxWidth size and narrow them, and style sets any other field of their style (add_text's: color, highlight, font, stroke...), over the look when both are given. Words and timings stay. Example: {y: -0.2, size: 52, maxWidth: 0.6} puts a tall video's captions in its upper band, smaller and narrower.",
+    input: S.obj({
+      look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }),
+      y: S.num("Every caption's vertical offset from the center, a canvas fraction (y down; 0.05 on a tall canvas sits above the apps' own captions and buttons)", { minimum: -0.5, maximum: 0.5 }),
+      x: S.num("Every caption's horizontal offset from the center, a canvas fraction (-0.04 centers them between a tall canvas's app rails)", { minimum: -0.5, maximum: 0.5 }),
+      size: S.num("Every caption's type size, pixels at 1080p", { minimum: 1 }),
+      maxWidth: S.num("The width every caption wraps within, a fraction of the canvas width", { minimum: 0.05, maximum: 1 }),
+      style: TEXT_STYLE_SCHEMA,
+    }),
     run: (p, a) => {
       if (!p.tracks.some((t) => t.clips.some((c) => c.type === "text" && c.caption))) throw new CommandError("There are no captions yet: add_captions, or generate them in the Captions tab, first");
-      return applyCaptionLook(p, String(a.look));
+      if (![a.look, a.y, a.x, a.size, a.maxWidth, a.style].some((v) => v !== undefined)) throw new CommandError("Give a look, or what to change on every caption: y, x, size, maxWidth or style");
+      const q = a.look === undefined ? p : applyCaptionLook(p, String(a.look));
+      const given = { ...((a.style ?? {}) as Partial<TextStyle>), ...(a.size !== undefined ? { size: Number(a.size) } : {}), ...(a.maxWidth !== undefined ? { maxWidth: Number(a.maxWidth) } : {}) };
+      const restyle = Object.keys(given).length > 0;
+      return {
+        ...q,
+        tracks: q.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c): Clip => {
+            if (c.type !== "text" || !c.caption) return c;
+            const style = restyle ? (styleFrom(c.style, given) as TextStyle) : c.style;
+            return { ...c, style, transform: { ...c.transform, ...(a.x !== undefined ? { x: Number(a.x) } : {}), ...(a.y !== undefined ? { y: Number(a.y) } : {}) } };
+          }),
+        })),
+      };
     },
   },
   {
@@ -2869,6 +2921,7 @@ export const COMMANDS: Command[] = [
           description: "The steps, in order",
           items: S.obj({ command: S.str("Command name, e.g. set_animation"), args: { type: "object", description: "That command's arguments" } }, ["command"]),
         },
+        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too)"),
       },
       ["commands"],
     ),
@@ -3225,10 +3278,19 @@ function typeSummary(st: TextStyle): { style?: Record<string, unknown> } {
   return Object.keys(out).length ? { style: out } : {};
 }
 
+/** Keys baked a frame or two apart, four or more in a row: a glide or a
+ * pan followed key by key (a callout pinned to a pushed-in shot, ADR-120),
+ * which nobody reads or edits one at a time. */
+export function bakedKeys(ks: Keyframe[]): boolean {
+  for (let i = 1, run = 1; i < ks.length; i++) if ((run = ks[i].f - ks[i - 1].f <= 2 ? run + 1 : 1) >= 4) return true;
+  return false;
+}
+
 /** A clip's keyframes for describeProject, each path's keys as [at, value]
  * or [at, value, ease] in timeline seconds (ease a preset's name or a
  * bezier), so an edit to a key shows in the change answer. A dense path
- * (tracking, ducking) is summed up instead. */
+ * (tracking, ducking) or a baked one (bakedKeys: a callout's glides were
+ * 30 keys each, about 6 KB an add_callout, ADR-124) is summed up instead. */
 function keySummary(c: Clip, s: (frames: number) => number) {
   const paths = Object.entries(c.keyframes ?? {}).filter(([, k]) => k.length);
   if (!paths.length) return {};
@@ -3240,7 +3302,7 @@ function keySummary(c: Clip, s: (frames: number) => number) {
   const MAX = 24;
   return {
     keyframes: Object.fromEntries(
-      paths.map(([path, ks]) => [path, ks.length <= MAX ? ks.map(key) : { count: ks.length, first: key(ks[0]), last: key(ks.at(-1)!), range: [r(Math.min(...ks.map((k) => k.v))), r(Math.max(...ks.map((k) => k.v)))] }]),
+      paths.map(([path, ks]) => [path, ks.length <= MAX && !bakedKeys(ks) ? ks.map(key) : { count: ks.length, first: key(ks[0]), last: key(ks.at(-1)!), range: [r(Math.min(...ks.map((k) => k.v))), r(Math.max(...ks.map((k) => k.v)))] }]),
     ),
   };
 }

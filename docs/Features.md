@@ -656,6 +656,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and `add_captions`' default style, is sized by the short side: a caption
   has the same pixels on 1080x1920 as on 1920x1080, instead of growing
   with the height to a dozen letters a line (a size asked for is kept).
+  The same command moves, sizes and narrows every caption at once (`y`,
+  `x`, `size`, `maxWidth`, and any other style field), over a look or on
+  its own (ADR-124).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip

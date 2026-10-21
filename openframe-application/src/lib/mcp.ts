@@ -23,7 +23,7 @@ import { DUCK_MIN_GAP, DUCK_RELEASE } from "./analysis/duck";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
-import { groupFindings, markerMoves, oneDuck, reviewSummary, shareCommon, shiftedTogether, withShared } from "./answerSize";
+import { groupFindings, markerMoves, oneDuck, quietAnswer, reviewSummary, shareClips, shiftedTogether, wholeClips } from "./answerSize";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -162,6 +162,16 @@ function markerSummary(items: unknown[]): unknown {
   return { count: list.length, by_label: by, from: at[0], to: at.at(-1), note: "describe_project lists every marker" };
 }
 
+/** A pinned clip's glides in an edit's answer: how many keys, from when
+ * to when. Its regions are the ones the call gave, and a callout's ring
+ * and dim each carried them all (about 1.4 KB a callout of four glides,
+ * ADR-124); describe_project lists every key. */
+function leanAnchor(c: unknown): unknown {
+  const a = (c as { anchor?: { keys?: { at: number }[] } }).anchor;
+  if (!Array.isArray(a?.keys) || a.keys.length <= 2) return c;
+  return { ...(c as object), anchor: { ...a, keys: { count: a.keys.length, from: a.keys[0].at, to: a.keys.at(-1)!.at } } };
+}
+
 /**
  * What an edit changed, from describe_project before and after: clips and
  * tracks added, changed (as they are now) and removed, assets added and
@@ -184,13 +194,14 @@ export function describeChanges(before: unknown, after: unknown): unknown {
       changed = m.listed as unknown as T[];
       if (m.moved.length) out.moved_markers = m.moved;
     }
-    // What a long list of clips shares is given once (ADR-115).
+    // What a long list of clips shares is given once (ADR-115), by track
+    // when that is shorter (ADR-124).
     const many = (x: unknown[], what: string) => {
       if (key === "markers") return markerSummary(x);
       if (key !== "clips") return x;
-      const s = shareCommon(x);
-      if (s.common) out[`${what}_clips_common`] = s.common;
-      return s.items;
+      const { [`${what}_clips`]: items, ...shared } = shareClips(x.map(leanAnchor), what);
+      Object.assign(out, shared);
+      return items;
     };
     if (added.length) out[`added_${key}`] = many(added, "added");
     if (changed.length) out[`changed_${key}`] = many(changed, "changed");
@@ -307,10 +318,12 @@ export function withMoves(r: ToolResult, before: unknown, after: unknown): ToolR
   const notes = gapNotes.filter((n) => !((body?.notes ?? []) as string[]).includes(n));
   if (!extra.length && !shifted.length && !notes.length) return r;
   // The clips the answer lists, whole again, then shared out with the moved ones.
-  const all = shareCommon([...((body?.changed_clips ?? []) as unknown[]).map((c) => withShared(c, body?.changed_clips_common)), ...extra]);
-  const add = { ...(extra.length ? { changed_clips: all.items, changed_clips_common: all.common } : {}), ...(shifted.length ? { shifted_clips: shifted } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
+  const all = extra.length ? shareClips([...wholeClips(body, "changed"), ...extra.map(leanAnchor)], "changed") : {};
+  const add = { ...all, ...(shifted.length ? { shifted_clips: shifted } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
   if (!body) return { ...r, content: [...r.content, { type: "text", text: JSON.stringify(add) }] };
-  return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...body, ...add }) } : c)) };
+  // The list is shared out anew, so its old shared parts go.
+  const kept = extra.length ? Object.fromEntries(Object.entries(body).filter(([k]) => !k.startsWith("changed_clips_common"))) : body;
+  return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...kept, ...add }) } : c)) };
 }
 
 /** A project in a few words, for open_project and new_project: the whole
@@ -451,7 +464,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "describe_project",
     description:
-      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
+      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; fields keeps only the clip fields named (fields [\"text\"]: captions as words and times); shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Only these clips, each under its track (or its compound)" },
       track_ids: { type: "array", items: { type: "string" }, description: "Only these tracks, each listed empty or not" },
@@ -462,6 +475,7 @@ export const APP_TOOLS: AppTool[] = [
       compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },
       clips: { type: "boolean", description: "false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true" },
       brand: { type: "boolean", description: "The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one" },
+      fields: { type: "array", items: { type: "string" }, description: "Each clip's id, type, start and end, and only these of its fields, e.g. [\"text\"] for captions as words and times, [\"transform\", \"keyframes\"] for where things sit" },
     }),
     call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
   },
@@ -1150,7 +1164,7 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
-Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they all share once, in added_clips_common or changed_clips_common, and markers that moved with their clip are counted in moved_markers; describe_project has the whole timeline.
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
@@ -1273,8 +1287,11 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           const meant = didYouMean(name, listTools().map((t) => t.name));
           return fail(req.id, -32602, `unknown tool ${name}${meant ? `; did you mean ${meant}?` : ""}`);
         }
+        // quiet: true on any edit answers the ids alone (ADR-124).
+        const { quiet, ...rest } = args;
         const before = host.describe();
-        return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
+        const changes = describeChanges(before, await host.exec(name, rest));
+        return ok(req.id, json(quiet === true ? quietAnswer(changes) : changes));
       } catch (e) {
         return ok(req.id, { content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true });
       }

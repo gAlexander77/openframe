@@ -18,7 +18,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
-Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they all share once, in added_clips_common or changed_clips_common, and markers that moved with their clip are counted in moved_markers; describe_project has the whole timeline.
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
@@ -74,7 +74,7 @@ Example:
 
 ### describe_project
 
-Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; shown says how much of each list is in the answer. Example: {"clip_ids": ["c_12"]}.
+Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; fields keeps only the clip fields named (fields ["text"]: captions as words and times); shown says how much of each list is in the answer. Example: {"clip_ids": ["c_12"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -87,6 +87,7 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `compounds` | boolean |  | false: no nested timelines (default: all, or those the clips shown play) |
 | `clips` | boolean |  | false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true |
 | `brand` | boolean |  | The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one |
+| `fields` | string[] |  | Each clip's id, type, start and end, and only these of its fields, e.g. ["text"] for captions as words and times, ["transform", "keyframes"] for where things sit |
 
 ### list_catalog
 
@@ -641,6 +642,7 @@ Run several commands in order as one edit (one undo step), all or nothing: set_a
 | `commands` | { command, args }[] | yes | The steps, in order |
 | `commands[].command` | string | yes | Command name, e.g. set_animation |
 | `commands[].args` | object |  | That command's arguments |
+| `quiet` | boolean |  | Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too) |
 
 Example:
 
@@ -1717,7 +1719,7 @@ Example:
 
 ### style_text_range
 
-Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.
+Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. The style is color, gradient, weight, italic, underline and scale, given flat ({match: 'SALE', color: '#ff0'}) or as a style object as set_text takes one ({match: 'SALE', style: {color: '#ff0'}}). Later styles merge fields; a color replaces a gradient; a scaled run wraps at its own size. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1736,6 +1738,16 @@ Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively
 | `italic` | boolean |  | Italic letters |
 | `underline` | boolean |  | Underline letters |
 | `scale` | number |  | Size multiplier relative to the base size (0.25..4) |
+| `style` | { color, gradient, weight, italic, underline, scale } |  | The same fields as one object, as set_text takes its style; the flat ones win |
+| `style.color` | string |  | CSS fill color; replaces the range gradient |
+| `style.gradient` | { from, to, angle } |  | Linear fill gradient |
+| `style.gradient.from` | string | yes | Start CSS color |
+| `style.gradient.to` | string | yes | End CSS color |
+| `style.gradient.angle` | number | yes | Angle in degrees |
+| `style.weight` | number |  | Font weight (100..900) |
+| `style.italic` | boolean |  | Italic letters |
+| `style.underline` | boolean |  | Underline letters |
+| `style.scale` | number |  | Size multiplier relative to the base size (0.25..4) |
 | `clear` | boolean |  | Remove styles from the range, or the entire title without a range |
 
 ### animate_text_style
@@ -1814,16 +1826,21 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 
 ### set_caption_look
 
-Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.
+Restyle every caption at once (CapCut's caption templates, and its caption panel's position and size). look gives them one of the built-in looks: classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal, which sets the whole caption style and its height. y and x move every caption, size and maxWidth size and narrow them, and style sets any other field of their style (add_text's: color, highlight, font, stroke...), over the look when both are given. Words and timings stay. Example: {y: -0.2, size: 52, maxWidth: 0.6} puts a tall video's captions in its upper band, smaller and narrower.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" | yes | Look |
+| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" |  | Look |
+| `y` | number |  | Every caption's vertical offset from the center, a canvas fraction (y down; 0.05 on a tall canvas sits above the apps' own captions and buttons) (-0.5..0.5) |
+| `x` | number |  | Every caption's horizontal offset from the center, a canvas fraction (-0.04 centers them between a tall canvas's app rails) (-0.5..0.5) |
+| `size` | number |  | Every caption's type size, pixels at 1080p (1..) |
+| `maxWidth` | number |  | The width every caption wraps within, a fraction of the canvas width (0.05..1) |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
 
 Example:
 
 ```json
-{"name":"set_caption_look","arguments":{"look":"pop"}}
+{"name":"set_caption_look","arguments":{"look":"pop","y":-0.2,"size":52,"maxWidth":0.6}}
 ```
 
 ### replace_caption_text

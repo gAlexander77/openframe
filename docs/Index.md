@@ -520,3 +520,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sized by its own box, keys and stroke, never a transform scale; the
   check lists a callout off the frame or off what it pointed at, and its
   sheet labels under each frame.
+- [[ADR-124 Answers and hints that tell the truth, captions restyled together, lines as tall as their letters]] —
+  review_voiceover compares numbers as said (ten eighty for 1080, minus
+  for -14) and against the line's caption, never asking a slower read for
+  a number written another way; baked keys and an answer's anchor glides
+  are counted, a list spanning tracks shares per track, quiet: true on an
+  edit answers ids, describe_project takes fields; set_caption_look moves,
+  sizes and narrows every caption; check_project gives each zone finding
+  the move that clears it and keeps a title's move inside the apps' zone;
+  each line of a title is as tall as its letters, style_text_range takes a
+  style object and says when the wrap parts a styled stretch.

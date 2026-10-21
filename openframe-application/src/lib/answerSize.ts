@@ -67,6 +67,76 @@ export function shareCommon<T>(list: T[], from = SHARE_FROM): { items: T[]; comm
   return { items: list.map((c) => (strip(c, shared) ?? {}) as T), common: shared };
 }
 
+const size = (v: unknown) => JSON.stringify(v ?? null).length;
+
+/**
+ * A list of clips in an edit's answer, as `${what}_clips` with what the
+ * clips share given once (ADR-124): all of them in `${what}_clips_common`,
+ * or, when the list spans tracks, what each track's clips share in
+ * `${what}_clips_common_by_track` (each entry keeps its track), whichever
+ * is shorter. The fourth film test's batch restyled 48 captions and four
+ * step labels: nothing was common to all 52, so every caption came back
+ * with its whole style (about 20 KB). Lossless: wholeClips undoes it.
+ */
+export function shareClips(list: unknown[], what: string): Record<string, unknown> {
+  const all = shareCommon(list);
+  const one = { [`${what}_clips`]: all.items, ...(all.common ? { [`${what}_clips_common`]: all.common } : {}) };
+  const track = (c: unknown) => (isObj(c) && typeof c.track === "string" ? c.track : undefined);
+  const tracks = new Set(list.map(track));
+  if (tracks.size < 2 || list.length < SHARE_FROM) return one;
+  const byTrack: Record<string, Record<string, unknown>> = {};
+  for (const t of tracks) {
+    if (!t) continue;
+    const mine = list.filter((c) => track(c) === t).map((c) => {
+      const { track: _t, ...rest } = c as Record<string, unknown>;
+      return rest;
+    });
+    const s = shareCommon(mine);
+    if (s.common) byTrack[t] = s.common;
+  }
+  if (!Object.keys(byTrack).length) return one;
+  const items = list.map((c) => {
+    const shared = byTrack[track(c) ?? ""];
+    if (!shared) return c;
+    const { track: t, ...rest } = c as Record<string, unknown>;
+    return { ...((strip(rest, shared) as object | undefined) ?? {}), track: t };
+  });
+  const per = { [`${what}_clips`]: items, [`${what}_clips_common_by_track`]: byTrack };
+  return size(per) < size(one) ? per : one;
+}
+
+/** An answer's `${what}_clips` whole again, whichever way shareClips gave
+ * what they share. */
+export function wholeClips(body: Record<string, unknown> | undefined, what: string): unknown[] {
+  const list = (body?.[`${what}_clips`] ?? []) as unknown[];
+  const common = body?.[`${what}_clips_common`];
+  const byTrack = (body?.[`${what}_clips_common_by_track`] ?? {}) as Record<string, unknown>;
+  return list.map((c) => {
+    const t = isObj(c) && typeof c.track === "string" ? c.track : undefined;
+    const own = t && byTrack[t] ? (withShared(c, byTrack[t]) as Record<string, unknown>) : c;
+    return common === undefined ? own : withShared(own, common);
+  });
+}
+
+/**
+ * An edit's answer with `quiet: true`: the ids of what it added, changed
+ * and removed, and what it says in words (notes, what it overwrote, a gap
+ * it closed, markers that moved), without each clip's settings. For a
+ * model that knows what it asked for: the fourth film test's batch of 8
+ * callouts answered 25 KB, its caption restyles 20 KB each.
+ */
+export function quietAnswer(full: unknown): unknown {
+  if (!isObj(full)) return full;
+  const out: Record<string, unknown> = {};
+  const ids = (v: unknown) => (Array.isArray(v) ? v.map((x) => (isObj(x) && "id" in x ? x.id : x)) : v);
+  for (const [k, v] of Object.entries(full)) {
+    if (/_clips_common/.test(k)) continue;
+    if (/^(added|changed)_(clips|tracks|markers|assets|compounds)$/.test(k)) out[k] = isObj(v) ? v : ids(v);
+    else out[k] = v;
+  }
+  return out;
+}
+
 type MarkerDesc = { id: string; at?: number; frame?: number; label?: string; clip?: string };
 
 /** Markers this many or more moved together by one edit are counted. */
