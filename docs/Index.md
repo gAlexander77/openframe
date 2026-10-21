@@ -520,3 +520,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sized by its own box, keys and stroke, never a transform scale; the
   check lists a callout off the frame or off what it pointed at, and its
   sheet labels under each frame.
+- [[ADR-123 Fitted shots are footage a version reframes, and framing knobs act or say why]] —
+  a shot fitted with bands (spanning the frame one way, covering its
+  middle, nothing under it) is reframed as footage at its pixels against
+  the short side, and every shot with fill covers the new frame at its
+  widest; focus points with at make a path; options says what became of
+  focus, pushes and overrides, an override carries the rings pointing
+  into its picture, and coverage names footage left floating small;
+  frame_region place_at puts a region anywhere at any zoom; a batch's
+  follow is no hand move, and a re-pinned glide is described as one.

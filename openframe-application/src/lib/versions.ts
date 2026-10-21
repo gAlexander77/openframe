@@ -38,7 +38,7 @@ import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
 import { fittedSize, textPad } from "./render/size";
-import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
+import { lookFor, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
 import { anchorOf, reanchor } from "./anchors";
 import { calloutReports, calloutsOf, followCallouts, followed, shotTargets, type CalloutReport } from "./versionCallouts";
 import { maskReach } from "./mask";
@@ -81,7 +81,7 @@ export interface VersionSpec {
   /** Clips framed by hand in this version: the point of each one's picture
    * to keep at the center. */
   focus?: Focus[];
-  /** Full-frame shots' keyed pushes: kept (default), relaxed or held. */
+  /** Keyed pushes of full-frame and fitted shots: kept (default), relaxed or held. */
   pushes?: VersionPushes;
   /** Clips moved, resized or hidden by hand in this version, after the
    * automatic adaptation (applyOverrides). */
@@ -115,6 +115,12 @@ export interface ReframeOptions {
   pushes?: VersionPushes;
   /** What the callouts over a shot point at (ADR-122), by the shot's id. */
   targets?: (id: Id) => ShotTargets | undefined;
+  /** Hears what became of the caller's focus, pushes and overrides
+   * (ADR-123); `framed` the shots a focus framed, `eased` those pushes
+   * relaxed or held. */
+  said?: OptionNote[];
+  framed?: Id[];
+  eased?: Id[];
 }
 
 /** A shot's keyed scale eased toward its widest (least) value: `r` 0.5
@@ -258,11 +264,45 @@ function fullFrame(p: Project, c: VisualClip, m: Frame): boolean {
   return m.w * fit * s * (1 - c.crop.left - c.crop.right) >= p.width * 0.97 && m.h * fit * sy * (1 - c.crop.top - c.crop.bottom) >= p.height * 0.97;
 }
 
-/** Does a video or picture clip cover its frame (a shot a new shape
- * crops), where it rests? */
+/**
+ * A shot fitted into the master's frame rather than filling it (ADR-123):
+ * a video or picture (not a sticker) whose picture spans the frame edge to
+ * edge on one axis and covers its middle (the central tenth both ways),
+ * with bands on the other, at its first frame or at one of its position or
+ * scale keys: a widescreen screen recording in a 9:16 master, pushed in
+ * with frame_region fit. Not a window: no crop, closed mask or border, not
+ * in a group, not pinned, not turned, and no picture under it covering the
+ * frame's middle at its middle (a band of footage or a logo over a
+ * background is a layout). A version reframes it as it does a full-frame
+ * shot; laid out as a picture-in-picture, Claude film test 4's 16:9
+ * version floated its interface shots small in black and ran its rings
+ * off the frame.
+ */
+function fittedShot(p: Project, c: VisualClip): boolean {
+  if ((c.type !== "video" && c.type !== "image") || (c.type === "image" && getAsset(p, c.assetId)?.sticker)) return false;
+  const k = c.crop, m = c.mask;
+  if (k.left + k.right + k.top + k.bottom > 1e-3 || (m && !m.invert && m.shape !== "linear" && m.shape !== "mirror") || c.border || c.group || c.anchor) return false;
+  const W = p.width, H = p.height;
+  const middle = (b: Rect) => b.left <= W * 0.45 && b.right >= W * 0.55 && b.top <= H * 0.45 && b.bottom >= H * 0.55;
+  const ti = p.tracks.findIndex((t) => t.clips.some((x) => x.id === c.id));
+  const mid = c.start + Math.floor(c.duration / 2);
+  const under = p.tracks.slice(ti + 1).some((t) => t.kind === "video" && !t.hidden && t.clips.some((x) => !x.disabled && (x.type === "video" || x.type === "image" || x.type === "compound") && mid >= x.start && mid < x.start + x.duration && middle(boxOf(p, x, mid - x.start))));
+  if (ti >= 0 && under) return false;
+  const frames = new Set([0, ...KEYED.flatMap((path) => (c.keyframes?.[path] ?? []).map((key) => key.f))]);
+  for (const rel of frames) {
+    if (rel < 0 || rel >= c.duration || Math.abs(paramAt(c, "transform.rotation", rel)) > 1e-3) continue;
+    const b = boxOf(p, c, rel);
+    const spans = (b.left <= W * 0.015 && b.right >= W * 0.985) || (b.top <= H * 0.015 && b.bottom >= H * 0.985);
+    if (spans && middle(b)) return true;
+  }
+  return false;
+}
+
+/** Does a video or picture clip cover its frame, or fill one axis of it
+ * as a fitted shot (fittedShot): a shot a new shape crops? */
 export function fillsFrame(p: Project, c: Clip): boolean {
   const m = mediaSize(p, c);
-  return !!m && fullFrame(p, c as VisualClip, m);
+  return !!m && (fullFrame(p, c as VisualClip, m) || fittedShot(p, c as VisualClip));
 }
 
 /** A shape that spans the frame where it rests: both its edges at or past
@@ -455,17 +495,32 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
   const m = c.type === "compound" ? a : mediaSize(master, c);
   if (m) {
     const fitA = Math.min(a.w / m.w, a.h / m.h), fitB = Math.min(b.w / m.w, b.h / m.h);
-    const full = fullFrame(master, c, m);
+    // A shot fitted with bands is footage too (ADR-123): framed as a
+    // full-frame shot is, from here on.
+    const fitted = c.type !== "compound" && !fullFrame(master, c, m) && fittedShot(master, c);
+    const full = fullFrame(master, c, m) || fitted;
     // How much larger the picture is drawn, in pixels: a full-frame shot
-    // keeps covering (fill) or fitting (blur, fit) the frame; anything
+    // keeps covering (fill) or fitting (blur, fit) the frame; a fitted one
+    // keeps its pixels against the short side (its interface as readable
+    // as in the master); with fill, either grows where it would not cover
+    // the new frame at its widest (a push that pulls back past covering:
+    // 02-timeline-play's reveal floated at 1213 x 682 on 16:9); anything
     // smaller keeps its size against the short side.
-    const grow = full ? (fit === "fill" ? Math.max(b.w / m.w, b.h / m.h) / Math.max(a.w / m.w, a.h / m.h) : fitB / fitA) : short(b) / short(a);
+    let grow = !full ? short(b) / short(a) : fit !== "fill" ? fitB / fitA : fitted ? short(b) / short(a) : Math.max(b.w / m.w, b.h / m.h) / Math.max(a.w / m.w, a.h / m.h);
+    if (full && fit === "fill" && c.type !== "compound") {
+      const sx = leastScale(c), sy = c.transform.scaleY !== undefined ? Math.min(Math.abs(c.transform.scaleY), ...(c.keyframes?.["transform.scaleY"] ?? []).map((x) => Math.abs(x.v))) : sx;
+      const k = c.crop;
+      grow = Math.max(grow, b.w / (m.w * fitA * sx * (1 - k.left - k.right)), b.h / (m.h * fitA * sy * (1 - k.top - k.bottom)));
+    }
     const kScale = (fitA / fitB) * grow;
     let v = c as VisualClip;
     v = mapPath(v, "transform.scale", (s) => +(s * kScale).toFixed(5));
     if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * kScale).toFixed(5));
     // A keyed push relaxed or held where the caller asks (ADR-116).
-    if (full && frame.pushes && frame.pushes !== "keep" && v.transform.scaleY === undefined) v = easePush(v, frame.pushes === "relax" ? 0.5 : 0);
+    if (full && frame.pushes && frame.pushes !== "keep" && v.transform.scaleY === undefined) {
+      if (new Set((v.keyframes?.["transform.scale"] ?? []).map((k) => k.v)).size > 1) frame.eased?.push(c.id);
+      v = easePush(v, frame.pushes === "relax" ? 0.5 : 0);
+    }
     // Offsets in pixels grow with the picture, so the same part of it
     // stays at the frame's center.
     v = mapPath(v, "transform.x", (x) => (full ? (x * a.w * grow) / b.w : x));
@@ -483,7 +538,9 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     if (full && fit === "blur") v = { ...v, canvas: { type: "blur", amount: SHORT_BLUR } };
     // Cropped footage framed on its subject, or where the caller says.
     if (full && fit === "fill" && (c.type === "video" || c.type === "image")) {
-      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", frame.focus?.find((x) => x.clip_id === c.id), frame.targets?.(c.id));
+      const focus = frame.focus?.filter((x) => x.clip_id === c.id);
+      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", focus?.length ? focus : undefined, frame.targets?.(c.id), frame.said);
+      if (focus?.length) frame.framed?.push(c.id);
       frame.notes?.push(...r.notes);
       v = r.clip;
     }
@@ -622,7 +679,7 @@ function restOf(p: Project, set: VisualClip[]): number {
 function isOverlay(q: Project, c: Clip): c is VisualClip {
   if (c.type === "audio" || c.type === "adjustment" || (c.type === "compound" && !asUnit(q, c))) return false;
   if (c.type === "text") return true;
-  if (spansFrame(q, c)) return false;
+  if (spansFrame(q, c) || fittedShot(q, c)) return false;
   const b = boxOf(q, c, restOf(q, [c]) - c.start);
   return b.right - b.left < q.width * 0.95 || b.bottom - b.top < q.height * 0.95;
 }
@@ -1895,15 +1952,156 @@ export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(),
   return q;
 }
 
+// ---- what a version says about itself (ADR-123) ---------------------------------------
+
+export type { OptionNote } from "./reframe";
+
+/** Footage a version shows much smaller in its frame than the master did:
+ * a picture floating in black (ADR-123). */
+export interface CoverageReport {
+  clip_id: Id;
+  /** Version seconds: its worst moment. */
+  at: number;
+  /** The share of the frame footage covers there, in the version and in
+   * the master at the same moment of the clip. */
+  covered: number;
+  master: number;
+  note: string;
+}
+
+/** What a version says besides its subjects, captions and callouts: what
+ * became of the caller's focus, pushes and overrides, and footage that
+ * covers much less of its frame than of the master's. */
+export interface VersionSays {
+  options: OptionNote[];
+  coverage: CoverageReport[];
+}
+
+/** Why a focus named a clip this version did not frame by it. */
+function focusMissed(m: Project, v: VersionSpec, id: Id, reshaped: boolean): string {
+  const c = m.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+  const inside = !c && timelines(m).some(({ tracks }) => tracks.some((t) => t.clips.some((x) => x.id === id)));
+  if (inside) return `${id} is inside a compound clip: focus frames footage on the project's timeline (the compound clip is the picture there); overrides {clip_id: "${id}", x, y, scale} place it`;
+  if (!c) return `no clip ${id} in this version${v.duration !== undefined ? " (the cut-down may have cut it out)" : ""}: focus takes describe_project's clip ids`;
+  if (!reshaped) return `this version keeps the master's shape, so nothing is cropped and the focus on ${id} changes nothing`;
+  if (c.type !== "video" && c.type !== "image") return `${id} is a ${c.type === "text" ? "title" : c.type === "color" ? "shape or solid" : c.type === "compound" ? "compound clip" : c.type + " clip"}, not footage a version crops: overrides {clip_id: "${id}", x, y} place it`;
+  if ((v.fit ?? "fill") !== "fill" && fillsFrame(m, c)) return `focus frames what fit "fill" crops; with fit "${v.fit}" this version scales ${id} about the master's framing and the focus changes nothing`;
+  return `${id} neither fills the master's frame nor spans it edge to edge (a picture-in-picture or a window), so this version places it as an overlay at its size: overrides {clip_id: "${id}", x, y, scale} place it`;
+}
+
+/**
+ * The share of a frame its footage covers at timeline frame f: videos and
+ * pictures (not stickers) on the visible tracks of the timeline, at least
+ * half opaque, by what they show (a closed mask's part), on a grid of
+ * points; a picture over a blurred copy of itself (fit "blur") covers it
+ * all. ponytail: footage inside compound clips is not counted.
+ */
+function footageCover(p: Project, f: number): number {
+  const boxes: Rect[] = [];
+  for (const t of p.tracks) {
+    if (t.kind !== "video" || t.hidden) continue;
+    for (const c of t.clips) {
+      if (c.disabled || f < c.start || f >= c.start + c.duration) continue;
+      if ((c.type !== "video" && c.type !== "image") || (c.type === "image" && getAsset(p, c.assetId)?.sticker)) continue;
+      if (c.canvas?.type === "blur") return 1;
+      if (paramAt(c, "opacity", f - c.start) < 0.5) continue;
+      boxes.push(visibleBox(p, c, f - c.start));
+    }
+  }
+  const N = 24;
+  let hit = 0;
+  for (let i = 0; i < N; i++)
+    for (let j = 0; j < N; j++) {
+      const x = ((i + 0.5) / N) * p.width, y = ((j + 0.5) / N) * p.height;
+      if (boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom)) hit++;
+    }
+  return hit / (N * N);
+}
+
+/** A clip's own box on its frame at its frame rel, clipped to the frame, as
+ * a share of it. */
+function ownShare(p: Project, c: VisualClip, rel: number): number {
+  const b = visibleBox(p, c, rel);
+  const w = Math.max(0, Math.min(b.right, p.width) - Math.max(b.left, 0)), h = Math.max(0, Math.min(b.bottom, p.height) - Math.max(b.top, 0));
+  return (w * h) / (p.width * p.height);
+}
+
+/**
+ * Footage version q shows floating in its frame where master p filled it
+ * (ADR-123): every half second of q, the share of the frame its footage
+ * covers against the master's at the same moment of the largest picture
+ * showing; one report a clip, at its worst moment, where the version's
+ * share is under 0.7 and 0.15 or more under the master's. Claude film test
+ * 4's fitted interface shots came out as small pictures in black on 16:9
+ * and nothing said so.
+ */
+export function coverageReports(p: Project, q: Project, fit: VersionFit = "fill"): CoverageReport[] {
+  const master = new Map(p.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  const step = Math.max(1, secondsToFrames(0.5, q.fps));
+  const worst = new Map<Id, { f: number; cv: number; cm: number; c: VisualClip; m: VisualClip }>();
+  for (let f = 0; f < projectDuration(q); f += step) {
+    const showing = q.tracks
+      .filter((t) => t.kind === "video" && !t.hidden)
+      .flatMap((t) => t.clips)
+      .filter((c): c is VideoClip | ImageClip => !c.disabled && f >= c.start && f < c.start + c.duration && (c.type === "video" || (c.type === "image" && !getAsset(q, c.assetId)?.sticker)));
+    if (!showing.length) continue;
+    const c = showing.reduce((a, b) => (ownShare(q, b, f - b.start) > ownShare(q, a, f - a.start) ? b : a));
+    const m = master.get(c.id) as VisualClip | undefined;
+    if (!m || f - c.start >= m.duration) continue;
+    const cv = footageCover(q, f), cm = footageCover(p, m.start + f - c.start);
+    if (cv >= 0.7 || cm - cv < 0.15) continue;
+    const was = worst.get(c.id);
+    if (!was || cv < was.cv) worst.set(c.id, { f, cv, cm, c, m });
+  }
+  return [...worst.values()].map(({ f, cv, cm, c, m }) => {
+    const at = +framesToSeconds(f, q.fps).toFixed(2);
+    const own = ownShare(q, c, f - c.start), was = ownShare(p, m, f - c.start);
+    const k = +Math.sqrt(was / Math.max(1e-6, own)).toFixed(2);
+    const shot = fillsFrame(p, m);
+    const fix =
+      shot && fit !== "fill" ? `fit "${fit}" shows it whole; fit "fill" (the default) crops it to cover the frame, "blur" fills around it`
+      : shot ? `an override {clip_id: "${c.id}", scale: ${k}} enlarges it`
+      : `this version places it as a picture-in-picture at its size against the frame's short side: an override {clip_id: "${c.id}", scale: ${k}} gives it the share it had`;
+    return { clip_id: c.id, at, covered: +cv.toFixed(2), master: +cm.toFixed(2), note: `footage covers ${Math.round(cv * 100)}% of this frame at ${at} s (${Math.round(cm * 100)}% of the master's), ${c.id} floating in the empty rest: ${fix}` };
+  });
+}
+
+/**
+ * After the overrides: what points into a picture an override moved or
+ * resized (a ring, a spotlight's hole, anything pinned to it) follows it
+ * there, unless an override placed that too (ADR-123). The overrides came
+ * after the callouts were written, so Claude film test 4's rings stayed
+ * where the picture had been.
+ */
+function carryPinned(master: Project, q: Project, list: VersionOverride[], said: OptionNote[]): Project {
+  const hand = new Set(list.map((o) => o.clip_id));
+  const moved = new Set(list.filter((o) => o.x !== undefined || o.y !== undefined || o.scale !== undefined).map((o) => o.clip_id));
+  const riders = calloutsOf(master).filter((k) => k.follows && k.shot && moved.has(k.shot) && !hand.has(k.id));
+  if (!riders.length) return q;
+  const placed = followCallouts(master, q, riders.filter((k) => !k.anchored));
+  // reanchor writes every pinned clip: those an override placed keep it.
+  const kept = new Map(placed.tracks.flatMap((t) => t.clips).filter((c) => hand.has(c.id) && anchorOf(c)).map((c) => [c.id, c] as const));
+  const out = reanchor(placed);
+  for (const shot of moved) {
+    const ids = riders.filter((k) => k.shot === shot).map((k) => k.id);
+    if (ids.length) said.push({ option: "overrides", clip_id: shot, note: `${ids.join(", ")} (pointing into ${shot}) moved with it, on what ${ids.length > 1 ? "they point" : "it points"} at` });
+  }
+  return kept.size ? { ...out, tracks: out.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => kept.get(c.id) ?? c) })) } : out;
+}
+
 /** One version of the master: cut down, reshaped, textless, as asked.
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
  * card's length when the master has one). `looks` frame cropped footage on
  * its subject; `notes` collects where a framing cuts one; `moved` the
  * pictures-in-picture moved clear of the captions (clearCaptions);
  * `callouts` the rings, spotlights and pinned clips it leaves off the frame
- * or off what they point at (ADR-122). */
-export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[], callouts?: CalloutReport[]): Project {
+ * or off what they point at (ADR-122); `says` what became of the focus,
+ * pushes and overrides, and footage left floating (ADR-123). */
+export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[], callouts?: CalloutReport[], says?: VersionSays): Project {
   let q = p;
+  // A focus path's times as frames of its clip, before a cut-down moves it.
+  const starts = new Map(p.tracks.flatMap((t) => t.clips.map((c) => [c.id, c.start] as const)));
+  const focus = v.focus?.map((f) => (f.at === undefined || !starts.has(f.clip_id) ? f : { ...f, rel: secondsToFrames(f.at, p.fps) - starts.get(f.clip_id)! }));
   if (v.duration !== undefined) {
     const frames = Math.max(1, secondsToFrames(v.duration, p.fps));
     const card = endCardStart(p);
@@ -1912,12 +2110,20 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
   const master = q;
-  const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
+  const said: OptionNote[] = [], framed: Id[] = [], eased: Id[] = [];
+  const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus, notes, pushes: v.pushes, said, framed, eased });
   q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
   if (v.textless) q = textless(q);
-  // By hand, last: the version's overrides.
-  if (v.overrides?.length) q = applyOverrides(q, v.overrides);
+  // By hand, last: the version's overrides, and what points into a picture they move.
+  if (v.overrides?.length) q = carryPinned(master, applyOverrides(q, v.overrides), v.overrides, said);
   if (callouts && shaped !== master) callouts.push(...calloutReports(master, q));
+  if (says) {
+    // A focus or a push that changed nothing says why (ADR-123).
+    for (const id of new Set((v.focus ?? []).map((f) => f.clip_id))) if (!framed.includes(id)) said.unshift({ option: "focus", clip_id: id, note: focusMissed(master, v, id, shaped !== master) });
+    if (v.pushes && v.pushes !== "keep" && !eased.length) said.push({ option: "pushes", note: shaped === master ? `this version keeps the master's shape, so pushes "${v.pushes}" changes nothing` : `pushes "${v.pushes}" changed nothing: no shot this version crops or fits has a keyed zoom (frame_region moves, or keys on transform.scale)` });
+    says.options.push(...said);
+    if (shaped !== master) says.coverage.push(...coverageReports(master, q, v.fit ?? "fill"));
+  }
   return { ...q, name: versionName(p.name, v) };
 }
 

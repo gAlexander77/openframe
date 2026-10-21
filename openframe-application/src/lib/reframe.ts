@@ -13,12 +13,12 @@
 import { followPath, subjectBox, windowScores, shareInside, type Rect01, type SaliencyMap } from "./analysis/subject";
 import { thin } from "./analysis/track";
 import { inSource, onCanvas } from "./follow";
-import { paramAt } from "./keyframes";
+import { ease, paramAt } from "./keyframes";
 import { sourceTimeAt } from "./project/ops";
 import type { Id, Keyframe, Project, VisualClip } from "./project/types";
 import type { Layer } from "./render/plan";
 import { fittedSize } from "./render/size";
-import { framesToSeconds } from "./time";
+import { framesToSeconds, secondsToFrames } from "./time";
 
 /** What the app saw of a shot's pictures: saliency maps at source seconds
  * of its media (state/subjects.ts). A still has one. */
@@ -38,11 +38,47 @@ export const REFRAMES: Reframe[] = ["subject", "center"];
 
 /** A caller's framing of one clip in a version: the point of its picture
  * (fractions from the top left, as preview_media shows it) to keep at the
- * center of the frame; an axis left out stays on the subject. */
+ * center of the frame; an axis left out stays on the subject. Several for
+ * one clip, each with `at`, make a path (ADR-123): centered on each point
+ * at its time, held until the next, moving to it over the FOCUS_GLIDE
+ * before it, as add_callout's ring glides. */
 export interface Focus {
   clip_id: Id;
   x?: number;
   y?: number;
+  /** Timeline seconds of the master. */
+  at?: number;
+  /** `at` as a frame of the clip (versionProject sets it, before a
+   * cut-down moves the clip). */
+  rel?: number;
+}
+
+/** What a version did with a caller's focus, pushes or overrides, where
+ * that was not plainly what was asked or where it carried more (ADR-123):
+ * Claude film test 4's focus and pushes changed nothing on its fitted
+ * interface shots and the answers said nothing. */
+export interface OptionNote {
+  option: "focus" | "pushes" | "overrides";
+  clip_id?: Id;
+  note: string;
+}
+
+/** Seconds a focus path takes to move to its next point. */
+export const FOCUS_GLIDE = 0.4;
+
+/** A focus path's value on one axis at clip frame r: each point's at its
+ * frame, held, eased to the next over `glide` frames before it; points
+ * without an axis are left out; undefined when none has it. */
+export function focusAt(points: Focus[], axis: "x" | "y", r: number, glide: number): number | undefined {
+  const list = points.filter((p) => p[axis] !== undefined).map((p) => ({ f: p.rel ?? 0, v: p[axis]! })).sort((a, b) => a.f - b.f);
+  if (!list.length) return undefined;
+  if (r <= list[0].f) return list[0].v;
+  for (let i = 1; i < list.length; i++) {
+    const a = list[i - 1], b = list[i], from = Math.max(a.f, b.f - glide);
+    if (r < from) return a.v;
+    if (r < b.f) return a.v + (b.v - a.v) * ease("easeInOut", (r - from) / Math.max(1, b.f - from));
+  }
+  return list.at(-1)!.v;
 }
 
 /** Where a version's framing of a shot cuts its subject. */
@@ -109,8 +145,11 @@ export function framesRegion(p: Project, c: VisualClip): boolean {
   for (const rel of frames) {
     if (rel < 0 || rel >= c.duration) continue;
     const l = restLayer(c, rel);
-    const zoom = Math.min((Math.abs(l.scale) * S.w) / p.width, (Math.abs(l.scaleY ?? l.scale) * S.h) / p.height);
-    if (zoom >= REGION_ZOOM - 1e-6) return true;
+    const zx = (Math.abs(l.scale) * S.w) / p.width, zy = (Math.abs(l.scaleY ?? l.scale) * S.h) / p.height;
+    if (Math.min(zx, zy) >= REGION_ZOOM - 1e-6) return true;
+    // A fitted shot (bands on one axis, ADR-123) pushed past the frame on
+    // the other: frame_region fit's push into a widescreen recording.
+    if (Math.min(zx, zy) < 1 && Math.max(zx, zy) >= REGION_ZOOM - 1e-6) return true;
     const r = shownRect(p, c, l);
     if (Math.abs((r.left + r.right) / 2 - 0.5) > 0.02 || Math.abs((r.top + r.bottom) / 2 - 0.5) > 0.02) return true;
   }
@@ -184,17 +223,24 @@ const SAMPLE = 0.5;
  * "center" keeps `after` as it is. Notes say where the result cuts the
  * subject the looks see where the subject decides or the caller asked for
  * the center, and where the master's own push cuts it, whatever the mode.
+ * `focus` is the caller's points for this clip (one, or a path with at);
+ * `said` hears what a focus could not do (an axis the frame shows whole, a
+ * point held back inside the picture), ADR-123.
  */
-export function reframeShot(master: Project, q: Project, before: VisualClip, after: VisualClip, look: ShotLook | undefined, mode: Reframe = "subject", focus?: Focus, targets?: ShotTargets): { clip: VisualClip; notes: SubjectNote[] } {
+export function reframeShot(master: Project, q: Project, before: VisualClip, after: VisualClip, look: ShotLook | undefined, mode: Reframe = "subject", focus?: Focus[], targets?: ShotTargets, said?: OptionNote[]): { clip: VisualClip; notes: SubjectNote[] } {
   const none = { clip: after, notes: [] as SubjectNote[] };
   const crop = after.crop;
   // What decides the framing where no focus does.
   const aim = mode === "center" ? "center" : targets?.frames.length ? "targets" : framesRegion(master, before) ? "region" : "subject";
   // Turned or cut pictures keep the old framing; so does a shot with
   // neither a look, a focus nor a callout.
-  if (Math.abs(after.transform.rotation) > 1e-3 || crop.left + crop.right + crop.top + crop.bottom > 1e-3 || (!look && !focus && aim !== "targets")) return none;
+  if (Math.abs(after.transform.rotation) > 1e-3 || crop.left + crop.right + crop.top + crop.bottom > 1e-3 || (!look && !focus && aim !== "targets")) {
+    if (focus) said?.push({ option: "focus", clip_id: after.id, note: `${after.id} is turned or cropped, so this version keeps its framing and the focus changes nothing` });
+    return none;
+  }
   const S = fittedSize(q, after);
   const fps = q.fps;
+  const glide = secondsToFrames(FOCUS_GLIDE, fps);
   // The frames to place it at: the look's samples inside the clip, else
   // every half second; with its first and last frame.
   const every = Math.max(1, Math.round((SAMPLE * fps.num) / fps.den));
@@ -213,6 +259,13 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
     const have = new Set(samples.map((s) => s.rel));
     for (const rel of [...targets!.frames, ...motionFrames(before)]) if (rel >= 0 && rel < after.duration && !have.has(rel)) (samples.push({ rel }), have.add(rel));
   }
+  // A focus path: every frame it moves, each with the nearest look.
+  if (focus && focus.some((x) => x.rel !== undefined)) {
+    const looked = samples.filter((s) => s.map);
+    const near = (rel: number) => looked.reduce<(typeof samples)[number] | undefined>((b, s) => (!b || Math.abs(s.rel - rel) < Math.abs(b.rel - rel) ? s : b), undefined);
+    const have = new Set(samples.map((s) => s.rel));
+    for (const x of focus) for (let f = Math.max(0, (x.rel ?? 0) - glide); f <= Math.min(after.duration - 1, x.rel ?? 0); f++) if (!have.has(f)) (samples.push({ rel: f, map: near(f)?.map }), have.add(f));
+  }
   samples.sort((a, b) => a.rel - b.rel);
   if (samples[0].rel > 0) samples.unshift({ rel: 0, map: samples[0].map, looked: samples[0].looked });
   if (samples.at(-1)!.rel < after.duration - 1) samples.push({ rel: after.duration - 1, map: samples.at(-1)!.map, looked: samples.at(-1)!.looked });
@@ -226,6 +279,10 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
     return { ...s, l, w, h, shown };
   });
   const axes = (["x", "y"] as const).filter((a) => placed.some((s) => (a === "x" ? s.w : s.h) < 0.995));
+  // A focus on an axis this shape shows whole has nothing to move.
+  for (const a of ["x", "y"] as const) {
+    if (focus?.some((x) => x[a] !== undefined) && !axes.includes(a)) said?.push({ option: "focus", clip_id: after.id, note: `${after.id} shows its picture's whole ${a === "x" ? "width" : "height"} in this shape, so focus ${a} has nothing to move` });
+  }
   if (!axes.length) return none;
 
   const centers = placed.map((s) => centerOf(q, after, s.l));
@@ -247,9 +304,9 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
       return a <= b ? Math.max(a, Math.min(b, c)) : Math.max(b, Math.min(a, c));
     };
     if (look && (aim === "subject" || aim === "center")) auto[axis] = followPath(placed.map((s) => windowScores(s.map!, axis, size(s), s.shown)));
-    const want = focus?.[axis];
     placed.forEach((s, k) => {
       const t = aimed[k];
+      const want = focus && focusAt(focus, axis, s.rel, glide);
       const c =
         want !== undefined ? fit(s, want)
         : aim === "subject" && look ? auto[axis][k]
@@ -282,6 +339,23 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
       const keep = thin(values, 1 / dim);
       const list: Keyframe[] = keep.map((i) => ({ f: placed[i].rel, v: +values[i].toFixed(5) }));
       clip = { ...clip, transform: { ...clip.transform, [axis]: list[0].v }, keyframes: { ...keys, [path]: list } };
+    }
+  }
+  // A focus point the frame could not center (the picture's edge, or what
+  // the master showed, held it back): said, at its worst moment.
+  if (focus && said) {
+    for (const axis of axes) {
+      let worst: { k: number; want: number; got: number } | undefined;
+      placed.forEach((s, k) => {
+        const want = focusAt(focus, axis, s.rel, glide);
+        if (want === undefined || (axis === "x" ? s.w : s.h) >= 0.995) return;
+        const got = centerOf(q, clip, restLayer(clip, s.rel))[axis === "x" ? "u" : "v"];
+        if (Math.abs(got - want) > 0.02 && (!worst || Math.abs(got - want) > Math.abs(worst.got - worst.want))) worst = { k, want, got };
+      });
+      if (worst) {
+        const at = +framesToSeconds(after.start + placed[worst.k].rel, fps).toFixed(2);
+        said.push({ option: "focus", clip_id: after.id, note: `focus ${axis} ${+worst.want.toFixed(3)} on ${after.id} is held at ${+worst.got.toFixed(3)} at ${at} s: the frame stays on the picture and around what the master showed of it` });
+      }
     }
   }
 
