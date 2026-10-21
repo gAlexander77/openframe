@@ -33,6 +33,14 @@ const captionRow = ops.isCaptionTrack;
 const joinable = (p: Project, t: Track | undefined): t is Track =>
   !!t && t.kind === "video" && !t.main && !t.locked && !effectRow(t) && !captionRow(t) && !t.clips.some((c) => isFootage(p, c));
 
+/** A row of an ad element's own (ADR-121): every clip on it a grouped part
+ * named as the row is ("End card" on "End card"). Only that element, or
+ * another of its name, lands there: the fourth film test's step labels,
+ * hook title and every callout ring and dim went onto an end card's rows
+ * free before it, so its pills sat on a track named "End card" and moving
+ * the card's rows would have carried them (ADR-125). */
+const elementRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => !!c.group && c.name === t.name);
+
 /** The track overlays over [start, end) go directly above: the topmost
  * video track that shows anything then, holds footage at all or is a row
  * of adjustment layers (the main track when none does), so a title never
@@ -85,7 +93,8 @@ export function placeOnTop(p: Project, clip: Clip, name: string): Project {
  * and ad element callers group the clips themselves. `own`: the block
  * shares no row with anything else (an ad element, ADR-121), so moving an
  * unrelated track never slides between its parts; it may reuse the rows of
- * an earlier element of the same name (`name` the clips' own).
+ * an earlier element of the same name (`name` the clips' own), and nothing
+ * placed later lands on its rows (elementRow, ADR-125).
  */
 export function placeStack(p: Project, clips: Clip[], name: string, own = false): Project {
   if (!clips.length) return p;
@@ -101,7 +110,7 @@ export function placeStack(p: Project, clips: Clip[], name: string, own = false)
     let id: string;
     // own: only a row of the same element's parts (named alike) is shared,
     // never an empty one made for something else (the tester's Callouts).
-    if (joinable(p, above) && (!own || (above.name === name && above.clips.every((c) => c.name === name)))) {
+    if (joinable(p, above) && (own ? above.name === name && above.clips.every((c) => c.name === name) : !elementRow(above))) {
       id = above.id;
       at -= 1;
     } else {

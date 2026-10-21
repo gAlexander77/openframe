@@ -329,6 +329,12 @@ export function renamedNote(wanted: string, path: string): string | undefined {
   return got === wanted ? undefined : `${wanted} was already there, so this file is ${got}; nothing was replaced.`;
 }
 
+/** What an agent's export answers when it replaced a file of its name in
+ * the folder it named, as asked (replace, ADR-125). */
+export function replacedNote(path: string): string {
+  return `${path.split(/[\\/]/).pop() ?? path} replaced the file of that name in that folder, as asked (replace).`;
+}
+
 export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: number | null; outPoint: number | null }): ExportPlan {
   const range = exportRange(p, s.range, inOut.inPoint, inOut.outPoint);
   const timelineFrames = range.to - range.from;

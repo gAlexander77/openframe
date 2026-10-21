@@ -1,6 +1,6 @@
 # ADR-121: Captions stay on top, ad elements keep rows of their own, and answers count what moved together
 
-**Date:** 2026-10-21. **Status:** accepted; the versions check sheet labels under each frame too since [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]]. Builds on
+**Date:** 2026-10-21. **Status:** accepted; the versions check sheet labels under each frame too since [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]]; nothing else lands on an element's rows, and an end card gives up its logo before its type, since [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]. Builds on
 [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]]
 (where overlays land), [[ADR-115 A voiceover captions itself a few words at a time, and answers give what they share once]]
 (word captions, answer sizes), [[ADR-105 Answers hold what was asked, tracked titles center on their letters, pictures take a color]]

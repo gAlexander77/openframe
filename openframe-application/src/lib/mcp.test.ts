@@ -581,6 +581,17 @@ describe("what the Codex film test found (2026-10-19)", () => {
     expect(listTools().find((t) => t.name === "collect_project")!.inputSchema.properties).toHaveProperty("folder");
   });
 
+  it("replaces a file only when asked, and only in the folder named (ADR-125)", async () => {
+    const h = host();
+    await run(h, "export_video", { name: "film", folder: "D:/Deliveries", replace: true });
+    expect(h.exports.at(-1)).toEqual({ name: "film", folder: "D:/Deliveries", replace: true });
+    await run(h, "export_versions", { ratios: ["16:9"], folder: "D:/Deliveries", replace: true });
+    expect(h.versionCalls.at(-1)).toMatchObject({ folder: "D:/Deliveries", replace: true });
+    expect(await err(h, "export_video", { name: "film", replace: true })).toMatch(/replace needs folder/);
+    expect(await err(h, "export_versions", { ratios: ["16:9"], replace: true })).toMatch(/replace needs folder/);
+    expect(h.exports).toHaveLength(1);
+  });
+
   it("names the argument a model meant, for every tool", async () => {
     expect(await err(host(), "seek", { time: 11 })).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at)");
     expect(await err(host(), "set_text", { clip_id: "c", style: { fontSize: 80 } })).toContain("args.style.fontSize is not a known argument; did you mean size?");

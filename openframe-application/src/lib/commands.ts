@@ -58,7 +58,7 @@ import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary,
 import { alignClips, ALIGNS, distributeClips, frameClips, frameMoves, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
-import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
+import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, repeatMusic, setCrossfade, type MusicCut } from "./musicCut";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
 import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
 import { isDialog } from "./analysis/balance";
@@ -285,6 +285,30 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   if (free) return [p, free.id];
   const fresh = createTrack("video", "Overlay");
   return [ops.addTrack(p, fresh), fresh.id];
+}
+
+/**
+ * A shot added on the main track a frame after the one before it ends
+ * starts where that one ends instead, a frame longer so it still ends
+ * where asked (when its file has the frame), and the answer says so. A
+ * start given to the millisecond rounds to the frame after a clip whose
+ * end a speed change rounded down: the fourth film test's batch set one
+ * clip to 1.4x (ending at 49.500 s) and gave the next 49.521, which landed
+ * at 49.533, a frame of black nobody asked for (ADR-125).
+ */
+function closeFrameGap(p: Project, trackId: Id, clipId: Id, a: Record<string, unknown>, report?: CommandReport): Project {
+  const t = p.tracks.find((x) => x.id === trackId);
+  const clip = t?.clips.find((c) => c.id === clipId);
+  if (!t?.main || !clip || a.mode === "insert") return p;
+  const before = t.clips.filter((c) => c.id !== clipId && ops.clipEnd(c) <= clip.start).reduce((end, c) => Math.max(end, ops.clipEnd(c)), -1);
+  if (before < 0 || clip.start - before !== 1) return p;
+  const s = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(3);
+  // Its head a frame earlier in its file, so it still ends where asked;
+  // a file with no frame before the in-point moves the clip instead.
+  const grown = ops.roomLeft(p, clip) >= 1;
+  const q = grown ? ops.trimClip(p, clipId, "start", before) : ops.updateClip(p, clipId, (c) => ({ ...c, start: before }));
+  if (report) (report.notes ??= []).push(`${clipId} starts at ${s(before)} s, where the clip before it ends: start ${a.start} rounded to ${s(clip.start)} s, a frame of black after it${grown ? "; its end is where asked" : "; it ends a frame earlier"}.`);
+  return q;
 }
 
 export const TEXT_STYLE_SCHEMA = S.obj({
@@ -531,7 +555,7 @@ export const COMMANDS: Command[] = [
       },
       ["asset_id", "start"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const asset = ops.getAsset(p, String(a.asset_id));
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
@@ -541,7 +565,7 @@ export const COMMANDS: Command[] = [
       const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
       const [q, trackId] = landingTrack(p, clip, a.track_id);
-      return ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite");
+      return closeFrameGap(ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite"), trackId, clip.id, a, report);
     },
   },
   {
@@ -1482,11 +1506,11 @@ export const COMMANDS: Command[] = [
         to: {
           type: "array",
           description: "Glides, in order: each reaches its region at its at (timeline seconds), moving there from where it was over glide seconds",
-          items: S.obj({ region: { ...REGION_SCHEMA, description: "The next part, in the same clip's source fractions" }, at: S.num("Timeline seconds it arrives there", { minimum: 0 }), glide: S.num("Seconds the move takes, ending at at; default 0.4", { minimum: 0.03, maximum: 10 }) }, ["region", "at"]),
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The next part, in the same clip's source fractions" }, at: S.num("Timeline seconds it arrives there", { minimum: 0 }), glide: S.num("Seconds the move takes, ending at at; default 0.4", { minimum: 0.03, maximum: 10 }), sound: S.bool("A soft click as it arrives there; default the callout's sound") }, ["region", "at"]),
         },
         color: S.str("The ring's color, CSS; default the brand kit's accent"),
         stroke_width: S.num(`The ring's outline, pixels at 1080p; default ${CALLOUT_STROKE}`, { minimum: 1, maximum: 40 }),
-        sound: S.bool("A soft click as the ring draws on, on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already"),
+        sound: S.bool("A soft click as the ring draws on and as it arrives at each to (a to's own sound: false leaves that one silent, true clicks it alone), on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already"),
       },
       ["clip_id", "region", "at"],
     ),
@@ -1509,12 +1533,16 @@ export const COMMANDS: Command[] = [
           color: colorArg(a.color, "color"),
           ...(a.stroke_width !== undefined ? { strokeWidth: Number(a.stroke_width) } : {}),
         });
-        if (a.sound !== true) return made.project;
+        // A click where it draws on and where it lands on each next part:
+        // the fourth film test placed twelve arrival clicks by hand
+        // (ADR-125). A to's own sound wins over the callout's.
+        const clicks = [...(a.sound === true ? [start] : []), ...((a.to ?? []) as { at: number; sound?: boolean }[]).filter((t) => t.sound ?? a.sound === true).map((t) => f(p, t.at))];
+        if (!clicks.length) return made.project;
         // The click's file is made outside the registry (automation.exec),
         // as add_sound_effect's are; here it is placed.
         const click = p.assets.find((x) => x.kind === "audio" && x.sound?.id === "click");
-        if (!click) throw new CommandError("sound true needs the click's file, which add_callout makes when it runs on its own (MCP or window.videoEditor.exec): inside a batch, add the callout without sound and add_sound_effect click at its start after");
-        return placeSounds(made.project, [{ name: "click", at: framesToSeconds(start, p.fps), volume: 0.35 }], new Map([["click", click]]), start).project;
+        if (!click) throw new CommandError("sound needs the click's file, which add_callout makes when it runs on its own (MCP or window.videoEditor.exec): inside a batch, add the callout without sound and add_sound_effect click at its start (and each to's at) after");
+        return placeSounds(made.project, clicks.map((fr) => ({ name: "click", at: framesToSeconds(fr, p.fps), volume: 0.35 })), new Map([["click", click]]), start).project;
       } catch (e) {
         throw e instanceof CalloutError ? new CommandError(e.message) : e;
       }
@@ -2333,7 +2361,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_music",
     description:
-      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}.",
+      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. repeat n plays the bars from-to n more times right after they play instead of cutting them (a loop: the song grows by whole bars, its later part and every clip after it on its track playing that much later, each jump back joined as a cut's is): to land a final hit later, or to fill a longer cut. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}; four bars at 120 BPM played twice: {\"clip_id\": \"c_3\", \"from\": 8, \"to\": 16, \"repeat\": 1}.",
     input: S.obj(
       {
         clip_id: S.str("The song's audio clip"),
@@ -2341,18 +2369,27 @@ export const COMMANDS: Command[] = [
         to: S.num("File seconds to cut to (moved to the nearest bar line)", { minimum: 0 }),
         snap: S.str("Where from and to land: bar (default), beat, or none (as given)", { enum: ["bar", "beat", "none"] }),
         crossfade: S.num(`Seconds the pieces crossfade over, ending at the cut (default ${MUSIC_CROSSFADE}; 0 a butt cut)`, { minimum: 0, maximum: MAX_CROSSFADE }),
+        repeat: S.num("Play from-to this many more times right after it instead of cutting it (1 plays those bars twice), 1 to 16", { minimum: 1, maximum: 16 }),
       },
       ["clip_id", "from", "to"],
     ),
     run: (p, a, report) => {
       try {
-        const r = cutMusic(p, a as unknown as MusicCut);
-        const bars = (() => {
+        const barsOf = (from: number, to: number) => {
           const g = p.assets.find((x) => x.id === (ops.findClip(p, String(a.clip_id))?.clip as { assetId?: string } | undefined)?.assetId)?.musicGrid;
           if (!g) return "";
-          const n = +((r.to - r.from) / (240 / g.bpm)).toFixed(2);
+          const n = +((to - from) / (240 / g.bpm)).toFixed(2);
           return `, ${n} ${n === 1 ? "bar" : "bars"} at ${g.bpm} BPM`;
-        })();
+        };
+        if (a.repeat !== undefined) {
+          const r = repeatMusic(p, { ...(a as unknown as MusicCut), times: Number(a.repeat) });
+          const n = Number(a.repeat), s = (x: number) => +x.toFixed(3);
+          const meet = r.joins.map((j) => `${s(j.at)} s`).join(", ");
+          if (report) (report.notes ??= []).push(`Repeated ${s(r.from)}-${s(r.to)} s of the song's file ${n === 1 ? "once" : `${n} times`}${barsOf(r.from, r.to)}: the song plays ${s(r.moved)} s longer, and clips after it on its track moved as much; the pieces meet at ${meet} on the timeline${r.joins[0]?.crossfade ? ` with a ${r.joins[0].crossfade} s crossfade` : ", butt cuts"}. preview_audio's edges measure the joins.`);
+          return r.project;
+        }
+        const r = cutMusic(p, a as unknown as MusicCut);
+        const bars = barsOf(r.from, r.to);
         if (report) (report.notes ??= []).push(`Cut ${+r.from.toFixed(3)}-${+r.to.toFixed(3)} s of the song's file${bars}${r.join ? `; the pieces meet at ${+r.join.at.toFixed(3)} s on the timeline${r.join.crossfade ? ` with a ${r.join.crossfade} s crossfade` : ", a butt cut"}` : ""}.`);
         return r.project;
       } catch (e) {

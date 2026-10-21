@@ -91,6 +91,9 @@ fn complete(job: Job, commit: bool) -> Result<PathBuf, String> {
 pub struct Begun {
     id: u32,
     display_name: String,
+    /// An agent asked to replace a file of the name, and one is there.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    replaced: bool,
 }
 
 /// Ask where to save; `None` when the user cancels. Rust shows the dialog so
@@ -121,6 +124,7 @@ pub async fn export_begin(
     Ok(Some(Begun {
         id: exports.open(dest)?,
         display_name,
+        replaced: false,
     }))
 }
 
@@ -129,15 +133,22 @@ pub async fn export_begin(
 /// absolute folder the agent named (ADR-095; created if missing). The page
 /// names the file and at most that folder, and an existing file is never
 /// replaced (" (2)", " (3)"...), so an agent can add files but never write
-/// over one. `display_name` is the whole path, which the agent reports.
+/// over one, unless it asks to with `replace` and names the folder: then a
+/// file of that name in that folder is replaced when the export finishes
+/// (ADR-125). `display_name` is the whole path, which the agent reports.
 #[tauri::command]
 pub async fn export_begin_auto(
     app: tauri::AppHandle,
     suggested_name: String,
     extension: String,
     folder: Option<String>,
+    replace: Option<bool>,
     exports: tauri::State<'_, Exports>,
 ) -> Result<Begun, String> {
+    let replace = replace.unwrap_or(false);
+    if replace && folder.is_none() {
+        return Err("replace needs folder: it replaces a file only in the folder you name".into());
+    }
     let plain = |s: &str| {
         !s.is_empty()
             && !s.contains(['/', '\\', ':'])
@@ -155,10 +166,11 @@ pub async fn export_begin_auto(
             .join(&app.package_info().name),
     };
     std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let dest = free_name(&dir, &suggested_name, &extension);
+    let (dest, replaced) = agent_dest(&dir, &suggested_name, &extension, replace)?;
     Ok(Begun {
         id: exports.open(dest.clone())?,
         display_name: dest.display().to_string(),
+        replaced,
     })
 }
 
@@ -176,6 +188,38 @@ pub fn agent_folder(folder: &str) -> Result<PathBuf, String> {
         return Err(format!("{} is a file, not a folder", dir.display()));
     }
     Ok(dir)
+}
+
+/// Where an agent's export goes in `dir`: the first free name (ADR-095),
+/// or with `replace` `<name>.<ext>` itself, a file of that name there
+/// replaced when the export finishes (the fourth film test could only add a
+/// numbered file beside a superseded one, ADR-125), never a folder or a
+/// file another export is still writing. Answers the path and whether a
+/// file is there to replace.
+fn agent_dest(
+    dir: &Path,
+    name: &str,
+    extension: &str,
+    replace: bool,
+) -> Result<(PathBuf, bool), String> {
+    if !replace {
+        return Ok((free_name(dir, name, extension), false));
+    }
+    let dest = dir.join(format!("{name}.{extension}"));
+    if dest.is_dir() {
+        return Err(format!(
+            "{} is a folder: replace replaces only a file",
+            dest.display()
+        ));
+    }
+    if dest.with_extension(format!("{extension}.part")).exists() {
+        return Err(format!(
+            "{} is still being written by another export",
+            dest.display()
+        ));
+    }
+    let there = dest.exists();
+    Ok((dest, there))
 }
 
 /// `<name>.<ext>` in `dir`, or the first of `<name> (2).<ext>`, `<name>
@@ -438,6 +482,42 @@ mod tests {
         // A file still being written is taken too.
         std::fs::write(d.join("Trip (2).mp4.part"), b"x").unwrap();
         assert_eq!(free_name(&d, "Trip", "mp4"), d.join("Trip (3).mp4"));
+    }
+
+    #[test]
+    fn agent_exports_replace_only_when_asked_and_only_a_file() {
+        let d = temp_dir("replace");
+        // Asked: the name itself, nothing there yet.
+        assert_eq!(
+            agent_dest(&d, "Trip", "mp4", true).unwrap(),
+            (d.join("Trip.mp4"), false)
+        );
+        std::fs::write(d.join("Trip.mp4"), b"old").unwrap();
+        assert_eq!(
+            agent_dest(&d, "Trip", "mp4", true).unwrap(),
+            (d.join("Trip.mp4"), true)
+        );
+        // Not asked: a numbered name, as always.
+        assert_eq!(
+            agent_dest(&d, "Trip", "mp4", false).unwrap(),
+            (d.join("Trip (2).mp4"), false)
+        );
+        // The export replaces the old file only when it finishes.
+        let ex = Exports::default();
+        let id = ex.open(d.join("Trip.mp4")).unwrap();
+        write_all_at(&ex.file(id).unwrap(), b"new", 0).unwrap();
+        assert_eq!(std::fs::read(d.join("Trip.mp4")).unwrap(), b"old");
+        // Another export of the name meanwhile is refused.
+        assert!(agent_dest(&d, "Trip", "mp4", true)
+            .unwrap_err()
+            .contains("being written"));
+        complete(ex.take(id).unwrap(), true).unwrap();
+        assert_eq!(std::fs::read(d.join("Trip.mp4")).unwrap(), b"new");
+        // Never a folder.
+        std::fs::create_dir_all(d.join("Cut.mp4")).unwrap();
+        assert!(agent_dest(&d, "Cut", "mp4", true)
+            .unwrap_err()
+            .contains("folder"));
     }
 
     #[test]

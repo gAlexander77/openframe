@@ -24,6 +24,7 @@ import { gridStructure, sourceToTimeline } from "./analysis/musicMap";
 import { CLICK_DB, DIP_DB, TAIL_DB, type EdgeReport } from "./analysis/edges";
 import { continues } from "./audio";
 import { crossfadeJoin } from "./crossfadeJoin";
+import { calloutsOffFrame } from "./versionCallouts";
 import type { Clip, CompoundClip, Id, Project, TextClip, Track, VisualClip } from "./project/types";
 import { layerAt, type Layer } from "./render/plan";
 
@@ -318,10 +319,14 @@ export function joinTargets(p: Project): { trackId: Id; at: number; clips: [Id, 
 
 /** What fixes a join that clicks or cuts a sound off: a crossfade, or what
  * to change first where none fits (crossfadeJoin's rules). */
-function joinFix(p: Project, a: Id, b: Id, seconds: number): string {
+function joinFix(p: Project, a: Id, b: Id, seconds: number, heard?: EdgeReport): string {
+  // A join into silence, or one with the crossfade already: move it (ADR-125).
+  if (heard?.fix?.tool === "roll_edit") return `roll_edit clip_id ${a} to ${heard.fix.args.to} (a bar ${Number(heard.fix.args.to) > heard.at ? "later" : "earlier"}), where both files sound`;
+  if (heard?.silent_before !== undefined) return `roll_edit the join (clip_id ${a}) to a bar line where ${b}'s file sounds before its in-point (set_music_grid gives the bars)`;
   const j = crossfadeJoin(p, a);
   if (j?.why && /own speed/.test(j.why)) return `set_fades fade_out ${seconds} on ${a} and fade_in ${seconds} on ${b} (a crossfade needs both at their own speed)`;
   if (j?.why && /very start of its file/.test(j.why)) return `trim_clip the start of ${b} later (it starts at its file's start, so nothing can rise before the cut), then set_crossfade clip_id ${a} seconds ${seconds}`;
+  if (j && j.plays >= seconds - 1e-3) return `roll_edit the join (clip_id ${a}) where both files sound: a ${j.plays} s crossfade is already set`;
   return `set_crossfade clip_id ${a} seconds ${seconds}`;
 }
 
@@ -569,6 +574,22 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   // Titles drawn over each other, or over the captions (ADR-121).
   out.push(...textOverlaps(p, texts));
 
+  // Callouts that ride their footage off the frame (ADR-125), measured as
+  // export_versions measures them in a version (ADR-122).
+  for (const k of calloutsOffFrame(p)) {
+    const ids = k.clip_ids.join(" and ");
+    const early = k.leaves > k.start;
+    add({
+      rule: "callout_off_frame",
+      level: "warning",
+      clip_id: k.clip_ids[0],
+      clip_ids: k.clip_ids,
+      at: sec(k.worst),
+      message: `${k.what} (${ids}) runs off the frame: ${Math.round(k.share * 100)}% of it is outside at ${sec(k.worst)} s${early ? `, leaving from ${sec(k.leaves)} s` : ""}`,
+      fix: early ? `trim_clip the end of ${ids} to ${sec(k.leaves)} s, or frame_region the shot so what it points at stays in the frame` : "frame_region the shot so what it points at is in the frame, or point at a part that is",
+    });
+  }
+
   if (smallCaptions.length) {
     const [first] = smallCaptions, need = Math.max(...smallCaptions.map((x) => x.need));
     add({ rule: "text_too_small", level: "warning", clip_id: first.id, at: first.at, message: `${smallCaptions.length === 1 ? "A caption is" : `${smallCaptions.length} captions are`} ${pct(first.size)}% of the frame's height (size ${Math.round(first.size)}); ${first.why}`, fix: `set_text clip_ids (the captions) style.size ${need} or more` });
@@ -641,11 +662,11 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
         clip_id: a,
         clip_ids: [a, b],
         at: +j.at.toFixed(2),
-        message: hole && j.dip_db! <= -40 ? `Silence for a few milliseconds ${where} (dip_db ${j.dip_db}), heard as a dropout` : hole ? `A ${-j.dip_db!} dB hole for a few milliseconds ${where} (dip_db), heard as a tick` : `A click ${where}: a sample step ${j.click_db} dB steeper than any around it (click_db)`,
-        fix: joinFix(p, a, b, 0.03),
+        message: hole && j.dip_db! <= -40 && j.silent_before === undefined ? `Silence for a few milliseconds ${where} (dip_db ${j.dip_db}), heard as a dropout` : hole && j.silent_before !== undefined ? `A ${-j.dip_db!} dB hole ${where} (dip_db): ${b}'s file is silent for ${j.silent_before} s just before its in-point (silent_before), so a crossfade into it fades into silence` : hole ? `A ${-j.dip_db!} dB hole for a few milliseconds ${where} (dip_db), heard as a tick` : `A click ${where}: a sample step ${j.click_db} dB steeper than any around it (click_db)`,
+        fix: joinFix(p, a, b, 0.03, j),
       });
     if (j.tail_cut_db !== undefined && j.tail_cut_db >= TAIL_DB)
-      add({ rule: "sound_cut_at_join", level: "warning", clip_id: a, clip_ids: [a, b], at: +j.at.toFixed(2), message: `${a}'s sound is cut off ${where} while it still rings ${j.tail_cut_db} dB over what follows (tail_cut_db)`, fix: joinFix(p, a, b, 0.25) });
+      add({ rule: "sound_cut_at_join", level: "warning", clip_id: a, clip_ids: [a, b], at: +j.at.toFixed(2), message: `${a}'s sound is cut off ${where} while it still rings ${j.tail_cut_db} dB over what follows (tail_cut_db)`, fix: joinFix(p, a, b, 0.25, j) });
   }
 
   if (kind === "ad" && !texts.some((s) => s.start + s.duration >= total - 1 && !s.c.caption))
@@ -705,8 +726,10 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
  * test's lower third sat on its voiceover's captions and the check passed
  * it, its contrast being fine. A title over captions is one finding naming
  * every caption it crosses, with the move that clears them. Parts of one
- * group (an ad element, a template) or of one compound clip are laid out
- * together and not judged against each other, nor a line's chunks.
+ * group (a template) or of one compound clip are laid out together and not
+ * judged against each other, nor a line's chunks; an ad element's parts,
+ * laid out apart, are (ADR-125: an end card's headline enlarged by hand
+ * ran into its button).
  */
 function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
   const sec = (f: number) => +framesToSeconds(f, p.fps).toFixed(2);
@@ -719,7 +742,10 @@ function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
   for (const [i, a] of texts.entries()) {
     for (const b of texts.slice(i + 1)) {
       if (a.c.caption && b.c.caption && a.track === b.track) continue;
-      if ((a.c.group && a.c.group === b.c.group) || (a.via.length && a.via[0].id === b.via[0]?.id)) continue;
+      // An ad element's parts (named after it) are laid out apart, so they
+      // are judged: a headline made larger by hand ran into its button.
+      const element = !!a.c.name && a.c.name === b.c.name;
+      if ((a.c.group && a.c.group === b.c.group && !element) || (a.via.length && a.via[0].id === b.via[0]?.id)) continue;
       // Only while both rest: a title rising in past a caption is not read there.
       const [a0, a1] = settled(a), [b0, b1] = settled(b);
       const lo = Math.max(a0, b0), hi = Math.min(a1, b1);

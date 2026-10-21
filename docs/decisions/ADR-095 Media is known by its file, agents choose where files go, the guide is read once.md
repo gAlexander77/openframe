@@ -1,6 +1,6 @@
 # ADR-095: Media is known by its file, agents choose where files go, the guide is read once
 
-**Date:** 2026-10-19. **Status:** accepted. Revises the destination rule of
+**Date:** 2026-10-19. **Status:** accepted; an agent replaces a file of its export's name in the folder it names when it asks (replace) since [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]. Revises the destination rule of
 [[ADR-052 Agents read what changed and export without a dialog]].
 
 ## Context

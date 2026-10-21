@@ -607,13 +607,17 @@ animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
 0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
-`start`, `end`, `folder`) writes to `<Videos>\OpenFrame\` with no dialog, or
-into `folder` (an absolute path, created if missing), and never replaces a
-file: a name already there gets a number (`Trip (2).mp4`) and the answer's
-note says so. It answers with the path, size and a note (what the loudness
-pass did, and any new name). Past about four minutes it answers `running`;
-follow it with `export_status`. `export_versions` takes the same `folder`
-for every version, and `collect_project` (`{"folder"}`) makes its new
+`start`, `end`, `folder`, `replace`) writes to `<Videos>\OpenFrame\` with no
+dialog, or into `folder` (an absolute path, created if missing), and never
+replaces a file: a name already there gets a number (`Trip (2).mp4`) and the
+answer's note says so. `replace: true`, with `folder` only, replaces a file
+of the same name in that folder when the export finishes, so an agent can
+supersede its own earlier export; the note says so
+([[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]).
+It answers with the path, size and a note (what the loudness pass did, and
+any new name). Past about four minutes it answers `running`; follow it with
+`export_status`. `export_versions` takes the same `folder` and `replace` for
+every version, and `collect_project` (`{"folder"}`) makes its new
 `OpenFrame-<time>` folder inside the one named instead of asking in a
 dialog. In the browser build `folder` is refused with the reason, not
 ignored. ([[ADR-052 Agents read what changed and export without a dialog]],

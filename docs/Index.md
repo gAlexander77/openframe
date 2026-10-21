@@ -520,3 +520,14 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sized by its own box, keys and stroke, never a transform scale; the
   check lists a callout off the frame or off what it pointed at, and its
   sheet labels under each frame.
+- [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]] —
+  nothing else lands on an ad element's own rows; an end card in a short
+  room gives up its logo before its type, fitted by
+  bisection, a pulsing button floored at the bottom of its pulse, and its
+  parts overlapping are named; preview_audio and check_project name a
+  join into the incoming file's silence and roll it a bar instead of
+  asking for a crossfade already set; cut_music repeats bars; a
+  main-track add a frame past the clip before starts where it ends;
+  add_callout clicks on each glide's arrival; check_project names a
+  callout that leaves the frame; export_video and export_versions replace
+  a file of their name in the folder named when asked.

@@ -69,7 +69,8 @@ const automation = {
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
     // A callout's click is made first, as add_sound_effect's files are, and
     // lands with the callout in one edit (ADR-120).
-    if (name === "add_callout" && (args as { sound?: unknown } | null)?.sound === true) {
+    const callout = args as { sound?: unknown; to?: { sound?: unknown }[] } | null;
+    if (name === "add_callout" && (callout?.sound === true || (Array.isArray(callout?.to) && callout.to.some((t) => t?.sound === true)))) {
       return soundFiles(["click"]).then(({ add, done }) => {
         store.editDocument(commandLabel(name, args), (p) => runAgentCommand(add(p), name, args, report, store.get().linkage));
         done();

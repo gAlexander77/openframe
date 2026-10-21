@@ -24,6 +24,13 @@ export interface AudioEdge {
   /** The file that comes in here as it is at its in-point, unedited
    * (ownOnset): a sample step that steep is the music's own attack. */
   onset?: Onset;
+  /** At a join: the incoming file is digital silence for `seconds` right
+   * before its in-point `in` (file seconds), so a crossfade into it fades
+   * into silence. */
+  silentBefore?: { seconds: number; in: number };
+  /** Where the join could move instead (timeline seconds, roll_edit): a
+   * bar later or earlier, where the incoming file sounds before it. */
+  rollTo?: number;
 }
 
 /** A file's own attack at a point: its steepest sample step within 2 ms
@@ -62,6 +69,9 @@ export interface EdgeReport {
   /** At a join that steps 6 dB or more: what the music does there
    * itself, so a step it makes anyway reads as the music's (ADR-114). */
   step_note?: string;
+  /** Seconds the incoming file is silent right before its in-point, when
+   * that is the hole: a crossfade cannot fill it, a moved join can. */
+  silent_before?: number;
   /** clean, or what is wrong. */
   verdict: string;
   fix?: { tool: string; args: Record<string, unknown> };
@@ -140,8 +150,17 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
       const side = Math.max(Math.min(rms(d, n - ms(12), n - ms(6)), rms(d, n + ms(6), n + ms(12))), around[Math.floor(around.length / 2)] / 10);
       if (side > 0) {
         r.dip_db = r1(Math.max(-60, Math.min(0, db(lowAt(n)) - db(side))));
-        if (r.dip_db <= -40) problems.push("silence for a few milliseconds at the cut, heard as a dropout");
-        else if (r.dip_db <= DIP_DB) problems.push(`a ${-r.dip_db} dB hole for a few milliseconds at the cut (a butt cut's click guard), heard as a tick`);
+        // The incoming file silent before its in-point (a breath before a
+        // drop): the crossfade fades into that silence, and a longer one
+        // deepens the hole. The fourth film test was sent to set_crossfade
+        // 0.03, already set, twice (ADR-125).
+        const quiet = e.silentBefore && r.dip_db <= DIP_DB ? e.silentBefore : undefined;
+        if (quiet) {
+          r.silent_before = quiet.seconds;
+          const where = e.rollTo !== undefined ? `, e.g. a bar ${e.rollTo > e.at ? "later" : "earlier"} (roll_edit to ${e.rollTo} s)` : " (roll_edit it to a bar line where the incoming file sounds)";
+          problems.push(`a ${-r.dip_db} dB hole at the cut: ${e.clips[1]}'s file is silent for ${quiet.seconds} s just before its in-point (${+(quiet.in - quiet.seconds).toFixed(3)}-${+quiet.in.toFixed(3)} s of the file), so ${e.faded ? "the crossfade fades" : "a crossfade would fade"} into that silence and a longer one deepens the hole: move the join where both files sound${where}`);
+        } else if (r.dip_db <= -40) problems.push("silence for a few milliseconds at the cut, heard as a dropout");
+        else if (r.dip_db <= DIP_DB) problems.push(`a ${-r.dip_db} dB hole for a few milliseconds at the cut (${e.faded ? `under the ${e.faded} s crossfade` : "a butt cut's click guard"}), heard as a tick`);
       }
     }
     // Against the steepest step around, and the incoming file's own attack
@@ -189,7 +208,13 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
     if (problems.length) {
       r.verdict = problems.join("; ");
       const real = problems.some((x) => !/fine if/.test(x));
-      if (real && e.kind === "join") r.fix = { tool: "set_crossfade", args: { clip_id: e.clips[0], seconds: ringStep || (r.tail_cut_db !== undefined && r.tail_cut_db >= TAIL_DB) ? 0.25 : 0.03 } };
+      const seconds = ringStep || (r.tail_cut_db !== undefined && r.tail_cut_db >= TAIL_DB) ? 0.25 : 0.03;
+      // Never the crossfade the join has already: move the join instead.
+      const elsewhere = r.silent_before !== undefined || e.faded >= seconds - 1e-3;
+      if (real && e.kind === "join" && elsewhere && e.rollTo !== undefined) r.fix = { tool: "roll_edit", args: { clip_id: e.clips[0], to: e.rollTo } };
+      else if (real && e.kind === "join" && elsewhere) {
+        if (r.silent_before === undefined) r.verdict += `; the ${e.faded} s crossfade is already set: move the join (roll_edit) where both files sound`;
+      } else if (real && e.kind === "join") r.fix = { tool: "set_crossfade", args: { clip_id: e.clips[0], seconds } };
       else if (real && e.kind === "end") r.fix = { tool: "set_fades", args: { clip_ids: [e.clips[0]], fade_out: 0.3 } };
       else if (real && e.kind === "start") r.fix = { tool: "set_fades", args: { clip_ids: [e.clips[0]], fade_in: 0.05 } };
     }
