@@ -1062,7 +1062,13 @@ makes a 13 s one). Times are timeline seconds.
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
-  a 5 s ad took 4.4 s headless.
+  a 5 s ad took 4.4 s headless. A shot fitted with bands (a widescreen
+  screen recording in a 9:16 master) is footage a version reframes, at
+  its pixels against the short side and covering the new frame; `focus`
+  points with `at` make a path; every answer says what became of
+  `focus`, `pushes` and `overrides` (`options`), an override on a shot
+  carries its rings, and footage left floating small is named
+  (`coverage`) ([[ADR-123 Fitted shots are footage a version reframes, and framing knobs act or say why]]).
 - **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
   15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
   behind the roaster, lower third, offer, end card, faded music), checks
@@ -1207,7 +1213,9 @@ Three doors, one engine ([[Automation]]):
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
   its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
-  through any number of moves in one call (`moves`, ADR-120).
+  through any number of moves in one call (`moves`, ADR-120), each
+  region centered on any canvas point at any zoom with `place_at`
+  (ADR-123).
   Every answer names the tool set it came from, so the stdio bridge tells
   a connected client (`notifications/tools/list_changed`) when a newer
   build brings other tools; over HTTP the client reconnects ([[Automation]]).

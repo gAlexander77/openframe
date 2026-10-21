@@ -261,6 +261,19 @@ const sameAnchor = (a: Anchor, b: Anchor, anyMask = false) =>
 
 const sec = (p: Project, frames: number) => +framesToSeconds(frames, p.fps).toFixed(3);
 
+/** Where a re-pinned clip follows its footage, as it is: a point or a
+ * region of the source, or the several it glides through. Claude film test
+ * 4 heard "at x 0.15, y 0.522" for a ring gliding through five regions
+ * (ADR-123). `start` is the clip's, r the frame it was moved at. */
+function pinnedWhere(p: Project, start: number, a: Anchor, r: number): string {
+  const n = (v: number) => +v.toFixed(3);
+  const one = (k: { x: number; y: number; w?: number; h?: number }) => (k.w !== undefined ? `the region {x: ${n(k.x - k.w / 2)}, y: ${n(k.y - k.h! / 2)}, w: ${n(k.w)}, h: ${n(k.h!)}}` : `x ${n(k.x)}, y ${n(k.y)}`);
+  const region = a.keys[0].w !== undefined;
+  const distinct = new Set(a.keys.map((k) => JSON.stringify([k.x, k.y, k.w, k.h]))).size;
+  if (distinct <= 1) return `${region ? "on" : "at"} ${one(a.keys[0])} of its source`;
+  return `through its ${distinct} ${region ? "regions" : "points"}, each moved as much (${one(anchorAt(a, r))} of its source at ${sec(p, start + r)} s, where it was moved; describe_project lists them all)`;
+}
+
 /** One timeline's anchored clips written from their footage; null when
  * nothing changed. `old` is the same timeline before the edit (absent:
  * no hand edits to look for). */
@@ -284,12 +297,16 @@ function followTimeline(p: Project, tracks: Track[], old: Track[] | undefined, n
     const v = c as VisualClip, paths = anchorPaths(v);
     const f = footage(a, c.id);
     if (!f || written(c0!, paths) === written(v, paths)) continue;
+    // Values its anchor writes were written by a follow, not a hand: an
+    // edit inside a batch is followed once inside and once around it, and
+    // the second pass took the first's work for a move (ADR-123).
+    const { keys: ks } = anchoredKeys(p, f as VisualClip, v);
+    if (written(write(v, paths, ks), paths) === written(v, paths)) continue;
     const r = mostChanged(p, c0!, v, paths);
     if (r === undefined) continue;
     const moved = regrip(p, f, v, r);
     next.set(c.id, { ...v, anchor: moved });
-    const k = anchorAt(moved, r);
-    notes?.push(`${c.id} was moved by hand, so it is pinned there now: it follows ${f.id}'s picture at x ${+k.x.toFixed(3)}, y ${+k.y.toFixed(3)} of its source.`);
+    notes?.push(`${c.id} was moved by hand, so it is pinned there now: it follows ${f.id}'s picture ${pinnedWhere(p, c.start, moved, r)}.`);
     if (!c.group) continue;
     for (const m of all) {
       const am = anchorOf(m), m0 = was.get(m.id) as VisualClip | undefined;

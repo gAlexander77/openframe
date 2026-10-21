@@ -336,6 +336,23 @@ function regionOf(v: unknown): Region {
   return r;
 }
 
+/** frame_region's place_at (ADR-123): where on the canvas a region's
+ * center goes, a band showing where the picture runs out. */
+const PLACE_AT_SCHEMA = S.obj(
+  {
+    x: S.num("Across the canvas from its center: -0.5 left edge .. 0.5 right edge; default 0", { minimum: -0.5, maximum: 0.5 }),
+    y: S.num("Down the canvas from its center: -0.5 top .. 0.5 bottom; default 0", { minimum: -0.5, maximum: 0.5 }),
+  },
+  [],
+  "Put the region's center at this point of the canvas (fractions from its center) at any zoom, instead of sliding the picture back from its edges; a band shows where the picture runs out",
+);
+
+const placeAt = (v: unknown): { x: number; y: number } | undefined => {
+  if (v === undefined) return undefined;
+  const o = v as { x?: number; y?: number };
+  return { x: o.x ?? 0, y: o.y ?? 0 };
+};
+
 /** Pinning an overlay to footage (ADR-120). */
 const ANCHOR_SCHEMA = S.obj(
   {
@@ -2814,7 +2831,7 @@ export const COMMANDS: Command[] = [
   {
     name: "frame_region",
     description:
-      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.",
+      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band, which keeps a part at the picture's edge at the canvas's edge; place_at {x, y} instead puts the region's center at that point of the canvas (fractions from its center, as positions are: {x: 0, y: 0} centers it at any zoom, {x: 0, y: -0.15} above the middle, clear of a tall frame's buttons), leaving a band where the picture runs out. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.",
     input: S.obj(
       {
         clip_id: S.str("Video or image clip id"),
@@ -2826,8 +2843,9 @@ export const COMMANDS: Command[] = [
         moves: {
           type: "array",
           description: "Instead of region, to_region, from and to: the regions in order, each shown at its at, moving there from the one before",
-          items: S.obj({ region: { ...REGION_SCHEMA, description: "The part shown at at" }, at: S.num("Timeline seconds the region fills the frame", { minimum: 0 }), ease: { ...EASE_SCHEMA, description: `How the move into this region goes: ${EASE_IDS.join(", ")}; default easeInOut` } }, ["region", "at"]),
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The part shown at at" }, at: S.num("Timeline seconds the region fills the frame", { minimum: 0 }), ease: { ...EASE_SCHEMA, description: `How the move into this region goes: ${EASE_IDS.join(", ")}; default easeInOut` }, place_at: { ...PLACE_AT_SCHEMA, description: "This move's place_at, instead of the call's" } }, ["region", "at"]),
         },
+        place_at: PLACE_AT_SCHEMA,
       },
       ["clip_id"],
     ),
@@ -2836,15 +2854,17 @@ export const COMMANDS: Command[] = [
       if (clip.type !== "video" && clip.type !== "image") throw new CommandError(`${clip.type} clips have no picture to frame`);
       if (track.locked) throw new CommandError(`track ${track.name} is locked`);
       const mode = a.mode === "fit" ? "fit" : "fill";
+      const at = placeAt(a.place_at);
       if (a.moves !== undefined) {
         if (a.region !== undefined || a.to_region !== undefined || a.from !== undefined || a.to !== undefined) throw new CommandError("moves replaces region, to_region, from and to: give one or the other");
-        const list = a.moves as { region: unknown; at: number; ease?: string }[];
+        const list = a.moves as { region: unknown; at: number; ease?: string; place_at?: unknown }[];
         if (!list.length) throw new CommandError("moves needs at least one move");
         const sec = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(2);
         const moves = list.map((m, i) => {
           const rel = f(p, m.at) - clip.start;
           if (rel < 0 || rel > clip.duration) throw new CommandError(`move ${i + 1} at ${m.at} s is outside ${clip.id} (${sec(clip.start)}-${sec(clip.start + clip.duration)} s)`);
-          return { region: regionOf(m.region), f: Math.min(rel, clip.duration - 1), ...(m.ease !== undefined ? { ease: easeById(m.ease) } : {}) };
+          const there = placeAt(m.place_at) ?? at;
+          return { region: regionOf(m.region), f: Math.min(rel, clip.duration - 1), ...(m.ease !== undefined ? { ease: easeById(m.ease) } : {}), ...(there ? { at: there } : {}) };
         });
         moves.forEach((m, i) => {
           if (i && m.f <= moves[i - 1].f) throw new CommandError(`move ${i + 1} at ${list[i].at} s is not after move ${i} at ${list[i - 1].at} s: give the moves in order, a frame or more apart`);
@@ -2855,7 +2875,7 @@ export const COMMANDS: Command[] = [
       const rel = (s: unknown, fallback: number) => (s === undefined ? fallback : Math.max(0, Math.min(clip.duration - 1, f(p, s) - clip.start)));
       const from = rel(a.from, 0), to = rel(a.to, clip.duration - 1);
       if (a.to_region && to <= from) throw new CommandError("to must come after from, inside the clip");
-      return frameRegion(p, clip.id, regionOf(a.region), a.to_region ? { region: regionOf(a.to_region), from, to } : undefined, mode);
+      return frameRegion(p, clip.id, regionOf(a.region), a.to_region ? { region: regionOf(a.to_region), from, to } : undefined, mode, at);
     },
   },
   {

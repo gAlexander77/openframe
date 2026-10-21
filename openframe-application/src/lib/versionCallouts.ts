@@ -419,7 +419,7 @@ export function calloutReports(p: Project, q: Project, callouts = calloutsOf(p))
       if (big) fix = `${on} is wider than this frame: fit "blur" or "fit" shows it whole, or a saved version can point at a part of it`;
       else if (sm && "transform" in sm) {
         const u = inPicture(p, c, k.part, sm, worst.r);
-        fix = `focus {clip_id: "${k.shot}", x: ${+((u.left + u.right) / 2).toFixed(3)}, y: ${+((u.top + u.bottom) / 2).toFixed(3)}} centers ${on}`;
+        fix = `focus {clip_id: "${k.shot}", x: ${+((u.left + u.right) / 2).toFixed(3)}, y: ${+((u.top + u.bottom) / 2).toFixed(3)}, at: ${at}} centers ${on} there (one focus point with at for each part it glides to make a path)`;
       } else fix = `${on} runs off this frame too`;
       note = `${name} runs off the frame at ${at} s in this shape (${share}% of it outside): ${fix}`;
     }
