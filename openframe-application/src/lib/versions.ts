@@ -31,7 +31,7 @@ import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
 import { EFFECTS } from "./catalog";
-import { captionFit, captionY } from "./captionLooks";
+import { CAPTION_WRAP, captionFit, captionMax, captionY } from "./captionLooks";
 import { withoutCaptions } from "./captions";
 import { seenLetters, seenTexts } from "./designCheck";
 import { paramAt } from "./keyframes";
@@ -40,6 +40,7 @@ import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, T
 import { fittedSize, textPad } from "./render/size";
 import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type SubjectNote } from "./reframe";
 import { maskReach } from "./mask";
+import { lookReach } from "./textLook";
 import { framesToSeconds, secondsToFrames } from "./time";
 
 export type VersionRatio = "16:9" | "9:16" | "1:1" | "4:5" | "original";
@@ -1114,6 +1115,64 @@ function placeCaption(master: Project, q: Project, c: TextClip): TextClip {
   return { ...c, style: fit.style, transform: { ...c.transform, x: fit.x, y: captionY(q, c.transform.y) } };
 }
 
+/** How a version places the captions itself, as its frame's captions
+ * rather than as overlays: "tall" on a tall version of a wide master (the
+ * apps' column, ADR-091); "open" on a version that is not tall of a tall
+ * master (16:9 or 1:1 of a short: out of the apps' place), or a landscape
+ * version of a square one (ADR-118); undefined otherwise. */
+function captionPlace(a: Frame, b: Frame): "tall" | "open" | undefined {
+  if (b.h > b.w && a.w > a.h) return "tall";
+  if ((b.w >= b.h && a.h > a.w) || (b.w > b.h && a.w === a.h)) return "open";
+  return undefined;
+}
+
+/**
+ * How much a version scales its master's captions ("open" captionPlace),
+ * all by one factor so a caption made larger on purpose (a countdown)
+ * stays larger: their pixels against the short side, as a title's, and on
+ * a landscape frame brought down until the typical caption (the median)
+ * is no larger than captions are there (captionMax, 72: 6.7% of the
+ * height). A short's pop captions are about a tenth of the phone's width;
+ * kept so on 16:9 they took a tenth of its height, two lines a fifth of
+ * the picture, and read large for a website (Claude film test 2). On a
+ * square, seen at a phone's width in a feed as the short is, they keep
+ * their size.
+ */
+function captionScale(m: Project, q: Project): number {
+  const k = short({ w: q.width, h: q.height }) / q.height / (short({ w: m.width, h: m.height }) / m.height);
+  if (!(q.width > q.height)) return k;
+  const sizes = m.tracks.flatMap((t) => t.clips.flatMap((c) => (c.type === "text" && c.caption && !c.disabled ? [c.style.size * k] : []))).sort((x, y) => x - y);
+  return sizes.length ? k * Math.min(1, captionMax(q) / sizes[Math.floor(sizes.length / 2)]) : k;
+}
+
+/** A caption on a version that is not tall, from a tall or square master
+ * ("open" captionPlace): scaled by `k` (captionScale), never under the
+ * frame's readable size (minTextSize, as check_project judges it); a tall
+ * master's caption (under the middle, clear of the apps' buttons there)
+ * goes where captions sit on this frame (centered, y 0.36 as add_captions
+ * places them, wrapping at the captions' width), all at one height; its
+ * box kept inside the title-safe area. */
+function placeOpenCaption(m: Project, q: Project, c: TextClip, k: number): TextClip {
+  const z = titleZone(q);
+  const floor = minTextSize(q.width, q.height) / c.style.size, wrap = +Math.min(1 - z.left - z.right, CAPTION_WRAP).toFixed(3);
+  let kk = Math.max(k, floor);
+  let v: TextClip = { ...c, style: { ...scaleStyle(c.style, kk, Infinity), maxWidth: wrap }, ...(m.height > m.width ? { transform: { ...c.transform, x: 0, y: captionY(q, 0.36) } } : {}) };
+  // A word wider than the safe width cannot wrap (a countdown's LIFTOFF.
+  // at twice the captions' size on a square): it shrinks to fit, never
+  // under the readable size, as a title does (refitClip), measured as
+  // check_project measures it, the letters with their outline.
+  for (let i = 0; i < 4; i++) {
+    const r = lookReach(v.style, q.height / 1080);
+    const w = fittedSize(q, v).w - 2 * Math.max(0, textPad(q, v) - Math.max(r.box, r.stroke + r.stroke2)), room = (1 - z.left - z.right) * q.width;
+    if (w <= room || kk <= floor) break;
+    kk = Math.max(floor, (0.99 * kk * room) / w);
+    v = { ...v, style: { ...scaleStyle(c.style, kk, Infinity), maxWidth: wrap } };
+  }
+  const over = boxOf(q, v).bottom - q.height * (1 - z.bottom);
+  if (over > 0) v = { ...v, transform: { ...v.transform, y: +(v.transform.y - over / q.height).toFixed(5) } };
+  return v;
+}
+
 /** The master in another shape. Compound timelines first, since a
  * compound clip's box is what its timeline draws: one played as a picture
  * refits as one (asPicture), a whole scene nested at rest as a frame of
@@ -1132,9 +1191,14 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
   // group, so a headline is not pushed onto its window.
   const tall = height > width && p.width > p.height;
   const narrower = p.width > p.height && width / height < p.width / p.height - 0.01;
+  // A tall master made square or wide: its captions leave the apps' place
+  // for this frame's, at a landscape caption's size on 16:9 (ADR-118).
+  const place = captionPlace(a, b);
   // One timeline refit as a frame: each clip on its own, then its overlays placed.
   const asFrame = (m: Project, out: Project): Track[] => {
-    const caption = (c: Clip): c is TextClip => tall && c.type === "text" && !!c.caption;
+    const caption = (c: Clip): c is TextClip => !!place && c.type === "text" && !!c.caption;
+    const k = place === "open" ? captionScale(m, out) : 1;
+    const placeOne = (c: TextClip) => (place === "tall" ? placeCaption(m, out, c) : placeOpenCaption(m, out, c, k));
     let sets = overlaySets(m).filter((s) => !s.some(caption));
     const comps = narrower ? sideBySide(m, sets) : [];
     const follows = followersOf(m, sets, comps);
@@ -1163,7 +1227,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     }
     // Pixels at a 1080-tall frame that keep their pixels against the short side.
     const px = (a.h / b.h) * (short(b) / short(a));
-    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame), px)) })) };
+    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeOne(c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame), px)) })) };
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
@@ -1319,8 +1383,9 @@ function cardTexts(q: Project, id: Id, scale: number, depth = 0): { c: TextClip;
 function readableCards(p: Project, out: Project, pictures: Set<Id>): Project {
   if (!pictures.size) return out;
   const was = new Map(timelines(p).flatMap(({ tracks }) => tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const))));
-  const tall = out.height > out.width;
-  const captions = tall ? out.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled))).map((c) => ({ ...spanOf([c]), top: boxOf(out, c).top })) : [];
+  // Captions the version placed itself keep their band (ADR-091, ADR-118).
+  const placed = !!captionPlace({ w: p.width, h: p.height }, { w: out.width, h: out.height }) || out.height > out.width;
+  const captions = placed ? out.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled))).map((c) => ({ ...spanOf([c]), top: boxOf(out, c).top })) : [];
   let q = out;
   // The cards on the project's timeline and on the scenes nested whole in it.
   for (const { k, tracks } of timelines(out)) {
@@ -1658,7 +1723,14 @@ export interface CaptionCollision {
   /** The visible part of the clip there, canvas pixels. */
   box: Rect;
   note: string;
+  /** What the version did about it: a picture-in-picture moved clear of
+   * the captions (clearCaptions), and how to place it otherwise. */
+  done?: string;
 }
+
+/** A collision with the share of the caption's letters' height it
+ * crosses, and the override that clears it, when one does. */
+type Collision = CaptionCollision & { depth: number; fix?: { y: number; scale: number } };
 
 /** What a layer shows of itself, in pixels: its box, or with a closed
  * mask (a porthole's circle) the mask's part of it. */
@@ -1683,10 +1755,14 @@ function visibleBox(q: Project, c: VisualClip, rel: number): Rect {
  * raises it clear. ADR-116.
  */
 export function captionCollisions(q: Project): CaptionCollision[] {
+  return collide(q).map(({ fix: _, depth: __, ...c }) => c);
+}
+
+function collide(q: Project): Collision[] {
   const captions = seenTexts(q).filter((s) => s.c.caption && !s.via.length);
   if (!captions.length) return [];
   const order = new Map(q.tracks.map((t, i) => [t.id, i]));
-  const out: CaptionCollision[] = [];
+  const out: Collision[] = [];
   const margin = 0.02 * Math.min(q.width, q.height);
   for (const [ti, t] of q.tracks.entries()) {
     // The main track's shots are what captions sit on, framed or not.
@@ -1721,6 +1797,8 @@ export function captionCollisions(q: Project): CaptionCollision[] {
           layer,
           box: { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) },
           note: `${c.id} (${c.type === "color" ? "a shape" : c.type === "compound" ? "a compound clip" : "a picture"}) is drawn ${layer} the caption ${s.c.id} at ${at} s in this shape, across ${Math.round(h)} px of its letters: ${fix}move the captions (set_caption_look, or the version's overrides)`,
+          depth: h / Math.max(1, letters.bottom - letters.top),
+          ...(fix ? { fix: { y: +y.toFixed(3), scale: +k.toFixed(2) } } : {}),
         });
         break;
       }
@@ -1729,11 +1807,70 @@ export function captionCollisions(q: Project): CaptionCollision[] {
   return out;
 }
 
+/** A picture-in-picture, as a version may move it: a video, a picture (not
+ * a sticker) or a floating window (a compound clip playing footage and no
+ * titles), alone: not part of a group (an ad element) or a layout's cut
+ * cell (a split screen's half), which keep their designed places. */
+function isInset(q: Project, c: Clip): boolean {
+  if (c.group || c.disabled) return false;
+  if (c.type === "video" || c.type === "image") {
+    const k = c.crop;
+    return k.left + k.right + k.top + k.bottom < 0.002 && !(c.type === "image" && getAsset(q, c.assetId)?.sticker);
+  }
+  if (c.type !== "compound") return false;
+  const inside = (id: Id, depth = 0): Clip[] => (depth > 4 ? [] : (findCompound(q, id)?.tracks ?? []).flatMap((t) => t.clips.flatMap((x) => (x.type === "compound" ? [x, ...inside(x.compoundId, depth + 1)] : [x]))));
+  const all = inside(c.compoundId);
+  return all.some((x) => x.type === "video" || (x.type === "image" && !getAsset(q, x.assetId)?.sticker)) && !all.some((x) => x.type === "text");
+}
+
+/**
+ * A version's pictures-in-picture kept clear of its burned captions, as
+ * tall versions keep titles and cards above them (ADR-118): one that
+ * crosses a caption's letters in this shape, where the master kept it
+ * clear (`master`: the master with the captions as the version burns
+ * them), is moved by the override the collision names (up, and smaller
+ * when it would leave the frame), unless the version's overrides place it
+ * (`keep`). Designed layouts (a group, a card, a shape, a split screen's
+ * cell) are left where the layout puts them and only named. Claude film
+ * test 2's porthole sat under the 16:9 version's captions until the
+ * tester moved it by hand. `moved` hears each, with what was done.
+ */
+export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(), moved: CaptionCollision[] = []): Project {
+  // What the master draws across its captions is its design; a touch (a
+  // ring grazing the letters' outline, under a quarter of their height) is
+  // not (the film's porthole grazed its caption by 7 px).
+  const was = new Set(collide(master).filter((x) => x.depth >= 0.25).map((x) => x.clip_id));
+  const done = new Map<Id, { hit: CaptionCollision; y: number; scale: number }>();
+  const root = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  // A fix is measured at one moment; a taller caption later may need a second.
+  for (let i = 0; i < 3; i++) {
+    const hits = collide(q).filter((h) => h.fix && !was.has(h.clip_id) && !keep.has(h.clip_id) && isInset(q, root.get(h.clip_id)!));
+    if (!hits.length) break;
+    q = applyOverrides(q, hits.map((h) => ({ clip_id: h.clip_id, y: h.fix!.y, scale: h.fix!.scale })));
+    for (const { fix, depth: _, ...h } of hits) {
+      const before = done.get(h.clip_id);
+      done.set(h.clip_id, { hit: before?.hit ?? h, y: fix!.y, scale: (before?.scale ?? 1) * fix!.scale });
+    }
+  }
+  const now = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  for (const { hit, y, scale } of done.values()) {
+    const s = +scale.toFixed(2);
+    // Where it shows now, for the check sheet's outline.
+    const c = now.get(hit.clip_id) as VisualClip, v = visibleBox(q, c, secondsToFrames(hit.at, q.fps) - c.start);
+    const box = { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) };
+    // The note says what it was; done what the version did.
+    const note = `${hit.note.replace(" is drawn ", " was drawn ").replace(/: .*$/, "")}, where the master keeps it clear`;
+    moved.push({ ...hit, box, note, done: `moved clear of the captions in this version: y ${y}${s < 1 ? `, ${s} times its size` : ""}; an override {clip_id: "${hit.clip_id}", y, scale} places it otherwise` });
+  }
+  return q;
+}
+
 /** One version of the master: cut down, reshaped, textless, as asked.
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
  * card's length when the master has one). `looks` frame cropped footage on
- * its subject; `notes` collects where a framing cuts one. */
-export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[]): Project {
+ * its subject; `notes` collects where a framing cuts one; `moved` the
+ * pictures-in-picture moved clear of the captions (clearCaptions). */
+export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[]): Project {
   let q = p;
   if (v.duration !== undefined) {
     const frames = Math.max(1, secondsToFrames(v.duration, p.fps));
@@ -1742,7 +1879,8 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   }
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
-  q = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
+  const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
+  q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
   if (v.textless) q = textless(q);
   // By hand, last: the version's overrides.
   if (v.overrides?.length) q = applyOverrides(q, v.overrides);

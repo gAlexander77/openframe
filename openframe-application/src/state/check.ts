@@ -9,7 +9,7 @@ import { useSyncExternalStore } from "react";
 import { exportStills } from "../engine/export";
 import { decodeMono } from "../engine/analyze";
 import { hiddenNote } from "../lib/behind";
-import { boxPixels, measureLook, tailLevels } from "../lib/contrast";
+import { boxPixels, measureLook, tailLevels, unevenFade } from "../lib/contrast";
 import { checkProject, contrastTargets, tailTargets, withoutTitles, type CheckKind, type Measured } from "../lib/designCheck";
 import { getAsset } from "../lib/project/ops";
 import type { Id, Project } from "../lib/project/types";
@@ -39,7 +39,7 @@ const aborted = () => new DOMException("The check was canceled.", "AbortError");
 export async function measureForCheck(p: Project, opts: { progress?: (p: MeasureProgress) => void; signal?: AbortSignal } = {}): Promise<Measured> {
   const out: Measured = {};
   const { targets, skipped } = contrastTargets(p);
-  const frames = [...new Set(targets.flatMap((t) => t.samples.map((s) => s.frame)))].sort((a, b) => a - b);
+  const frames = [...new Set(targets.flatMap((t) => [...t.samples, ...(t.fades ?? [])].map((s) => s.frame)))].sort((a, b) => a - b);
   const tails = tailTargets(p);
   // Rendering a frame and decoding a sound's end take about as long.
   const steps = Math.max(1, frames.length + 1 + tails.length);
@@ -56,6 +56,7 @@ export async function measureForCheck(p: Project, opts: { progress?: (p: Measure
       const bare = withoutTitles(p);
       const w = Math.min(640, p.width), h = Math.max(2, Math.round((w * p.height) / p.width)), k = w / p.width;
       const contrast: NonNullable<Measured["contrast"]> = {};
+      const fades: NonNullable<Measured["fades"]> = {};
       const canvas = new OffscreenCanvas(w, h);
       const g = canvas.getContext("2d", { willReadFrequently: true })!;
       // A few frames a render, so a long film's titles do not hold every
@@ -70,6 +71,14 @@ export async function measureForCheck(p: Project, opts: { progress?: (p: Measure
           bmp.close();
           const rgba = g.getImageData(0, 0, w, h).data;
           for (const t of targets) {
+            // The middle of a fade: does it fade as one (ADR-118)? The
+            // worst is the one that loses a part earliest in the fade.
+            const fade = t.fades?.find((x) => x.frame === frame);
+            if (fade) {
+              const px = boxPixels(rgba, w, { left: fade.box.left * k, right: fade.box.right * k, top: fade.box.top * k, bottom: fade.box.bottom * k });
+              const u = unevenFade(t.look, px);
+              if (u && !(fades[t.clipId] && fades[t.clipId].opacity >= u.opacity)) fades[t.clipId] = { ...u, frame, fixes: t.fixes.filter((x) => !unevenFade(x.look, px)).map((x) => x.say) };
+            }
             const s = t.samples.find((x) => x.frame === frame);
             if (!s) continue;
             const px = boxPixels(rgba, w, { left: s.box.left * k, right: s.box.right * k, top: s.box.top * k, bottom: s.box.bottom * k });
@@ -80,6 +89,7 @@ export async function measureForCheck(p: Project, opts: { progress?: (p: Measure
         }
       }
       out.contrast = contrast;
+      if (Object.keys(fades).length) out.fades = fades;
       out.moments = frames.length;
       if (skipped) out.contrastNote = `${skipped} titles past the first 40 were not measured`;
     } catch (e) {

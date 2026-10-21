@@ -477,3 +477,10 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sketch take a reach that versions scale (old ones load at the old
   reach); a split's halves share one EQ and compressor and render as the
   whole clip.
+- [[ADR-118 A version's captions take its frame, pictures keep clear of them, and fades and push-ins are judged]] —
+  a tall short's captions on 16:9 and 1:1 move to the bottom, all at one
+  height, on 16:9 at a landscape caption's size (the typical one at most
+  72, a countdown staying as much larger), titles keeping the short side;
+  a picture-in-picture a version would draw across its captions moves
+  above them; check_project names a title whose fade loses a part before
+  the rest, and a version names a subject the master's push-in crops.
