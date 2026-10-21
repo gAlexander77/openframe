@@ -178,3 +178,19 @@ describe("describe_project's filters on nested timelines and edge cases (ADR-108
     expect(() => filterDescription(d, { start: 5, end: 4 })).toThrow("end must not be before start");
   });
 });
+
+describe("describe_project leaves the brand kit to the whole timeline (ADR-121)", () => {
+  it("gives the kit with the whole timeline, and with a narrowed answer only when asked", () => {
+    const p = runCommand(project(), "set_brand", { name: "Roast", primary: "#ff3366", tagline: "Fresh every morning" });
+    const whole = describeProject(p) as unknown as { brand?: unknown; tracks: { clips: { id: string }[] }[] };
+    expect(whole.brand).toBeDefined();
+    const id = whole.tracks[0].clips[0].id;
+    // The third film test read the kit with every clip it looked up.
+    expect((filterDescription(whole, { clip_ids: [id] }) as { brand?: unknown }).brand).toBeUndefined();
+    expect((filterDescription(whole, { start: 1, end: 2 }) as { brand?: unknown }).brand).toBeUndefined();
+    expect((filterDescription(whole, { clip_ids: [id], brand: true }) as { brand?: unknown }).brand).toEqual(whole.brand);
+    const without = filterDescription(whole, { brand: false }) as { brand?: unknown; tracks: unknown[] };
+    expect(without.brand).toBeUndefined();
+    expect(without.tracks).toEqual(whole.tracks);
+  });
+});

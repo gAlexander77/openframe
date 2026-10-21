@@ -566,6 +566,9 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     if (cps > 20) add({ rule: "caption_too_fast", level: "warning", clip_id: run[0].id, clip_ids: run.map((c) => c.id), at: +run[0].start.toFixed(2), message: `${run.length} captions shown a few words at a time read ${cps.toFixed(0)} characters a second over ${seconds.toFixed(2)} s, ${+run[0].start.toFixed(2)}-${+run.at(-1)!.end.toFixed(2)} s (keep a line under 20 a second)`, fix: "fewer words, or the captions held longer (trim_clip), or the voice read slower (retake_voiceover words_per_second)" });
   }
 
+  // Titles drawn over each other, or over the captions (ADR-121).
+  out.push(...textOverlaps(p, texts));
+
   if (smallCaptions.length) {
     const [first] = smallCaptions, need = Math.max(...smallCaptions.map((x) => x.need));
     add({ rule: "text_too_small", level: "warning", clip_id: first.id, at: first.at, message: `${smallCaptions.length === 1 ? "A caption is" : `${smallCaptions.length} captions are`} ${pct(first.size)}% of the frame's height (size ${Math.round(first.size)}); ${first.why}`, fix: `set_text clip_ids (the captions) style.size ${need} or more` });
@@ -691,6 +694,89 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     ...(measured.contrast ? { contrast: { measured: `${rated.length} titles at ${measured.moments ?? rated.length} moments on the rendered picture, with each one's box, shadow and outline; 4.5:1 reads easily, under 3:1 is a warning`, lowest: rated.slice(0, 12) } } : {}),
     not_checked: `Loudness: measure_loudness (or export with loudness) before delivering.${notMeasured ? ` Contrast: ${notMeasured}; look with preview_frames.` : ""}${measured.joinsNote ? ` Joins: ${measured.joinsNote}; preview_audio's edges measure the rest.` : ""}`,
   };
+}
+
+/**
+ * Text drawn over text (ADR-121): two titles, or a title and a caption, on
+ * screen at once whose letters' boxes (with their own box or outline)
+ * cross by more than a few pixels, judged once both have played their in
+ * and before either's out (one passing another as it animates in or out is
+ * not read there). The third film
+ * test's lower third sat on its voiceover's captions and the check passed
+ * it, its contrast being fine. A title over captions is one finding naming
+ * every caption it crosses, with the move that clears them. Parts of one
+ * group (an ad element, a template) or of one compound clip are laid out
+ * together and not judged against each other, nor a line's chunks.
+ */
+function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
+  const sec = (f: number) => +framesToSeconds(f, p.fps).toFixed(2);
+  const frac = (v: number) => +v.toFixed(3);
+  const tol = (4 * p.height) / 1080;
+  const settled = (s: SeenText): [number, number] => [s.start + (s.via.length ? 0 : (s.c.animIn?.duration ?? 0)), s.start + s.duration - 1 - (s.via.length ? 0 : (s.c.animOut?.duration ?? 0))];
+  type Hit = { s: SeenText; box: PixelBox; at: number; w: number; h: number };
+  const over = new Map<string, { s: SeenText; box: PixelBox; hits: Hit[] }>();
+  const pairs: { a: SeenText; b: Hit }[] = [];
+  for (const [i, a] of texts.entries()) {
+    for (const b of texts.slice(i + 1)) {
+      if (a.c.caption && b.c.caption && a.track === b.track) continue;
+      if ((a.c.group && a.c.group === b.c.group) || (a.via.length && a.via[0].id === b.via[0]?.id)) continue;
+      // Only while both rest: a title rising in past a caption is not read there.
+      const [a0, a1] = settled(a), [b0, b1] = settled(b);
+      const lo = Math.max(a0, b0), hi = Math.min(a1, b1);
+      if (hi < lo) continue;
+      const f = Math.round((lo + hi) / 2);
+      const ga = seenLetters(p, a, f), gb = seenLetters(p, b, f);
+      if (!ga || !gb || ga.opacity < 0.05 || gb.opacity < 0.05) continue;
+      const w = Math.min(ga.box.right, gb.box.right) - Math.max(ga.box.left, gb.box.left), h = Math.min(ga.box.bottom, gb.box.bottom) - Math.max(ga.box.top, gb.box.top);
+      if (w <= tol || h <= tol) continue;
+      // A title over captions: one finding for the title, every caption in it.
+      const [title, cap, tb, cb] = a.c.caption && !b.c.caption ? [b, a, gb.box, ga.box] : [a, b, ga.box, gb.box];
+      if (!title.c.caption && cap.c.caption) {
+        const o = over.get(title.key) ?? { s: title, box: tb, hits: [] };
+        o.hits.push({ s: cap, box: cb, at: f, w, h });
+        over.set(title.key, o);
+      } else pairs.push({ a, b: { s: b, box: gb.box, at: f, w, h } });
+    }
+  }
+  const name = (s: SeenText) => (s.c.caption ? `the caption "${s.c.text.slice(0, 24)}"` : `"${s.c.text.slice(0, 24)}"`);
+  const out: Finding[] = [];
+  for (const { s, box, hits } of over.values()) {
+    const caps = { top: Math.min(...hits.map((x) => x.box.top)), bottom: Math.max(...hits.map((x) => x.box.bottom)) };
+    const gap = 0.02 * p.height;
+    // Clear of them by the shorter move that stays inside the title-safe
+    // area, the title's group (a lower third's name and role) as one.
+    const mates = s.c.group ? texts.filter((x) => x.c.group === s.c.group && x !== s).flatMap((x) => seenLetters(p, x, Math.min(x.start + x.duration - 1, Math.max(x.start, hits[0].at)))?.box ?? []) : [];
+    const span = { top: Math.min(box.top, ...mates.map((b) => b.top)), bottom: Math.max(box.bottom, ...mates.map((b) => b.bottom)) };
+    const lift = caps.top - gap - span.bottom, drop = caps.bottom + gap - span.top;
+    const fits = (d: number) => span.top + d >= TITLE_SAFE * p.height && span.bottom + d <= (1 - TITLE_SAFE) * p.height;
+    const up = !fits(drop) || (fits(lift) && -lift <= drop);
+    const dy = up ? lift : drop;
+    const t = "transform" in s.c ? s.c.transform : undefined;
+    const keyed = !!s.c.keyframes?.["transform.y"] || s.via.length > 0;
+    const move = `move it ${up ? "up" : "down"} ${frac(Math.abs(dy) / p.height)} of the frame's height${t && !keyed ? ` (set_param transform.y ${frac(t.y + dy / p.height)}${s.c.group ? ", and its group's other parts by the same amount" : ""})` : ""}`;
+    const first = hits[0];
+    out.push({
+      rule: "text_overlaps_text",
+      level: "warning",
+      clip_id: s.c.id,
+      clip_ids: [s.c.id, ...hits.map((x) => x.s.c.id)],
+      ...(s.via.length ? { compound_clip_id: s.via[0].id } : {}),
+      at: sec(first.at),
+      message: `${name(s)} is drawn across ${hits.length === 1 ? name(first.s) : `${hits.length} captions`} (${sec(Math.min(...hits.map((x) => x.s.start)))}-${sec(Math.max(...hits.map((x) => x.s.start + x.s.duration)))} s; at ${sec(first.at)} s their boxes share ${Math.round(first.w)} x ${Math.round(first.h)} px): both are hard to read`,
+      fix: `${move}, or move the captions (set_caption_look y)`,
+    });
+  }
+  for (const { a, b } of pairs)
+    out.push({
+      rule: "text_overlaps_text",
+      level: "warning",
+      clip_id: a.c.id,
+      clip_ids: [a.c.id, b.s.c.id],
+      at: sec(b.at),
+      message: `${name(a)} and ${name(b.s)} are drawn across each other at ${sec(b.at)} s (their boxes share ${Math.round(b.w)} x ${Math.round(b.h)} px): both are hard to read`,
+      fix: "move one of them (set_param transform.x/y, align_clips), or show them one after the other (trim_clip)",
+    });
+  return out;
 }
 
 /** What `ok` means, said with the counts: ok is no errors (black, flashes

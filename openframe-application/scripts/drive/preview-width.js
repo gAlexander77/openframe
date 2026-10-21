@@ -49,7 +49,7 @@ async (page) => {
     details[`9:16 at ${f.asked}`] = { ok: f.width === w && f.height === Math.round((w * 1920) / 1080) && red(f.top) && blue(f.bottom), ...f };
   }
   for (const f of out.wide) details[`16:9 at ${f.asked}`] = { ok: f.width === f.asked && f.height === Math.round((f.asked * 1080) / 1920) && red(f.top) && blue(f.bottom), ...f };
-  // Two 300-wide tiles and their three 6-pixel gaps.
-  details.sheet = { ok: out.sheet.width === 2 * 300 + 3 * 6 && out.sheet.height === Math.round((300 * 1920) / 1080) + 2 * 6, width: out.sheet.width, height: out.sheet.height };
+  // Two 300-wide tiles, each over an 18-pixel label strip, and their three 6-pixel gaps.
+  details.sheet = { ok: out.sheet.width === 2 * 300 + 3 * 6 && out.sheet.height === Math.round((300 * 1920) / 1080) + 18 + 2 * 6, width: out.sheet.width, height: out.sheet.height };
   return { ok: Object.values(details).every((d) => d.ok), details };
 };

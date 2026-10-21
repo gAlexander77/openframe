@@ -18,7 +18,7 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { advise, bandOf, compareScript, judgeHearings, matchShare, verdict, type LineMeasure } from "../lib/voiceReview";
+import { advise, bandOf, compareScript, judgeHearings, matchShare, scriptPace, verdict, type LineMeasure } from "../lib/voiceReview";
 import { bandSource, paceOf } from "../lib/voicePace";
 import { parseLine } from "../lib/voiceScript";
 import { currentScreen } from "./project";
@@ -193,8 +193,12 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       };
     });
     const ok = out.filter((l) => l.verdict === "ok").length;
-    const first = Math.min(...measured.map((m) => m.start + m.lead)), last = Math.max(...measured.map((m) => m.end - m.tail));
-    const words = measured.reduce((n, m) => n + m.words, 0);
+    // The script's pace, only over lines in a row (ADR-121).
+    const reviewed = new Set(lines.map((c) => c.id));
+    const script = scriptPace(
+      measured.map((m) => ({ first: m.start + m.lead, last: m.end - m.tail, words: m.words })),
+      voiceClips(p).filter((c) => !reviewed.has(c.id)).map((c) => ({ start: framesToSeconds(c.start, fps), end: framesToSeconds(clipEnd(c), fps) })),
+    );
     const rates = measured.map((m) => m.wps).filter((x): x is number => x !== null).sort((a, b) => a - b);
     const margins = measured.map((m) => m.overMusic).filter((x): x is number => x !== null).sort((a, b) => a - b);
     const mid = (xs: number[]) => xs[Math.floor(xs.length / 2)];
@@ -209,8 +213,8 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
           ...(rates.length ? { lines_words_per_second: { min: rates[0], median: mid(rates), max: rates.at(-1)!, window: "each line over its speech, first word to last" } } : {}),
           // The script's pace with every pause between lines in: lower than
           // the lines' own (2.3-2.8 inside lines reads about 1.8-2.4 here).
-          script_words_per_second: last > first ? round(words / (last - first)) : null,
-          script_window: "the first line's first word to the last line's last word, the gaps between lines included",
+          script_words_per_second: script.words_per_second,
+          script_window: script.window,
         },
         ...(margins.length ? { voice_above_music: { window: "line", means: BALANCE_WINDOWS.line, min_lu: margins[0], median_lu: mid(margins), max_lu: margins.at(-1)! } } : {}),
         loudness_spread_lu: levels.length > 1 ? round(levels.at(-1)! - levels[0], 1) : 0,

@@ -371,3 +371,19 @@ export function advise(m: LineMeasure): Advice[] {
   }
   return out;
 }
+
+/**
+ * The script's pace over the lines reviewed: their words over the stretch
+ * from the first one's first word to the last one's last, the gaps between
+ * them included (ADR-121). Only when no other line speaks inside that
+ * stretch: two retaken lines 16 s apart read 1.03 words a second, the
+ * words of the eight lines between them not counted. `others` are the
+ * voice lines not reviewed, timeline seconds.
+ */
+export function scriptPace(lines: { first: number; last: number; words: number }[], others: { start: number; end: number }[]): { words_per_second: number | null; window: string } {
+  const first = Math.min(...lines.map((l) => l.first)), last = Math.max(...lines.map((l) => l.last));
+  const between = others.filter((o) => o.start < last && o.end > first).length;
+  if (between) return { words_per_second: null, window: `not given: ${between} other line${between === 1 ? " speaks" : "s speak"} between the lines reviewed, whose words it would leave out; review the lines in a row, or every line (no clip_ids), for the script's pace` };
+  const words = lines.reduce((n, l) => n + l.words, 0);
+  return { words_per_second: last > first ? +(words / (last - first)).toFixed(2) : null, window: "the first line's first word to the last line's last word, the gaps between lines included" };
+}

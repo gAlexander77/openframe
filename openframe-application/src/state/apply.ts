@@ -60,10 +60,11 @@ export const layerSeconds = () => prefsStore.get().layerSeconds;
 /** Seconds a new transition lasts (shorter when a clip beside it is). */
 export const transitionSeconds = () => prefsStore.get().transitionSeconds;
 
-/** A new top video track (CapCut stacks the newest layer on top). */
+/** A new top video track (CapCut stacks the newest layer on top), under
+ * the captions (ADR-121): an effect layer over them would blur them too. */
 function topTrack(p: Project, name: string): [Project, Id] {
   const t = createTrack("video", name);
-  return [ops.addTrack(p, t, 0), t.id];
+  return [ops.addTrack(p, t), t.id];
 }
 
 /** The clip a preset adds; the library card's preview renders this same

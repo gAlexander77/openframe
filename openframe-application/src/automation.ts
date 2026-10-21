@@ -175,23 +175,24 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
 }
 
-/** Frames in a grid, each stamped with its label: the contact sheets. */
+/** Frames in a grid, each with its label on a strip under it: the contact
+ * sheets. The label sits outside the picture (ADR-121): stamped on its top
+ * left it hid the third film test's section labels, which then looked
+ * clipped. */
 async function tiles(frames: { src: CanvasImageSource | null; label: string; w: number; h: number }[], tileWidth: number, columns: number): Promise<string> {
-  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6;
+  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6, strip = 18;
   const h = Math.round((frames.find((f) => f.src)?.h ?? 9) * tileWidth / (frames.find((f) => f.src)?.w ?? 16));
-  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + gap) + gap);
+  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + strip + gap) + gap);
   const ctx = out.getContext("2d")!;
   // A dark ground, so frames with white edges still read as separate tiles.
   ctx.fillStyle = "#1e1e1e";
   ctx.fillRect(0, 0, out.width, out.height);
   for (const [i, f] of frames.entries()) {
-    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + gap);
+    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + strip + gap);
     if (f.src) ctx.drawImage(f.src, x, y, tileWidth, h);
     ctx.font = "bold 13px sans-serif";
-    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-    ctx.fillRect(x + 4, y + 4, ctx.measureText(f.label).width + 10, 19);
     ctx.fillStyle = "#fff";
-    ctx.fillText(f.label, x + 9, y + 18);
+    ctx.fillText(f.label, x + 2, y + h + 14);
   }
   return jpeg(out);
 }

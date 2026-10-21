@@ -7,7 +7,7 @@ import { decodeMono } from "../engine/analyze";
 import { transcribePcm } from "../engine/transcribe";
 import { dips, speechActivity } from "../lib/analysis/speech";
 import type { Caption, Word } from "../lib/captions";
-import { chunkCaptions, markBreaks, voiceWordTimes } from "../lib/captionWords";
+import { chunkCaptions, markBreaks, overLimit, voiceWordTimes } from "../lib/captionWords";
 import type { Asset } from "../lib/project/types";
 import { parseLine } from "../lib/voiceScript";
 import { TRANSCRIPT_MODEL } from "./transcript";
@@ -36,6 +36,11 @@ export async function takeChunks(asset: Asset, caption: string, script: string, 
   const marks = caption === parseLine(script).written ? markBreaks(script) : undefined;
   const timed = voiceWordTimes(caption, words, { first: act.first, last: act.last, dips: dips(pcm, RATE) }, { marks });
   return { chunks: chunkCaptions(timed, max, asset.duration), heard };
+}
+
+/** A note for each caption holding more than `max` words, and why. */
+export function overLimitNotes(chunks: Caption[], max: number): string[] {
+  return overLimit(chunks, max).map((c) => `"${c.text}" holds ${c.words?.length ?? c.text.split(/\s+/).length} words: they are spoken in ${(c.end - c.start).toFixed(2)} s, too quickly to show ${max} at a time without a caption that flashes by (under 0.3 s).`);
 }
 
 /** What an answer says about captions made a few words at a time. */

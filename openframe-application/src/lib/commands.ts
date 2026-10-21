@@ -471,7 +471,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_track",
-    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
+    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones, under a row of captions on top (captions stay the top layer; move_track above_track_id puts a track over them); audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
     input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name"), role: S.str("Audio tracks: the stem it is", { enum: TRACK_ROLES }) }, ["kind"]),
     run: (p, a) => {
       if (a.role !== undefined && a.kind !== "audio") throw new CommandError("role is for audio tracks");
@@ -645,7 +645,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
@@ -655,7 +655,7 @@ export const COMMANDS: Command[] = [
         subline: S.str("lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
         cta: S.str("Button words for end_card and cta_button; default 'Shop now'"),
         url: S.str("end_card and cta_button: website line; default the brand's url"),
-        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
+        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none. end_card and logo_reveal draw one by default (auto); lower_third only when given, left of the name and title and as tall as both; offer_badge and cta_button draw none and refuse it", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
         position: S.str("Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered)", { enum: SPOTS }),
         background: S.str("end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none", { enum: ["brand", "primary", "scrim", "none"] }),
         glow: S.bool("logo_reveal: a glow that flares as the logo lands"),
@@ -663,10 +663,12 @@ export const COMMANDS: Command[] = [
       },
       ["element", "start"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const logo = a.logo as LogoVariant | "auto" | "none" | undefined;
+      // A logo the element would not draw is refused, not dropped (ADR-121).
+      if (logo && logo !== "none" && (a.element === "offer_badge" || a.element === "cta_button")) throw new CommandError(`${a.element} draws no logo: leave logo out (end_card, lower_third and logo_reveal draw one)`);
       if (logo && logo !== "auto" && logo !== "none" && !brandOf(p).logos?.[logo] && !brandOf(p).logos?.main) throw new CommandError("the brand kit has no logo: import one and set_brand logo first, or pass logo none");
-      return addAdElement(p, a.element as AdElement, {
+      const r = addAdElement(p, a.element as AdElement, {
         start: f(p, a.start),
         ...(a.duration !== undefined ? { duration: span(p, a.start, a.duration) } : {}),
         headline: a.headline as string | undefined,
@@ -678,7 +680,9 @@ export const COMMANDS: Command[] = [
         background: a.background as AdBackground | undefined,
         glow: a.glow === true,
         flash: a.flash === true,
-      }).project;
+      });
+      if (report && r.notes.length) (report.notes ??= []).push(...r.notes);
+      return r.project;
     },
   },
   {
