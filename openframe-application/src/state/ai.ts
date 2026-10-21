@@ -20,14 +20,14 @@ import { adoptAndImport } from "./media";
 import { cutOutImage, makeMatte } from "../engine/cutout";
 import { SFX } from "../lib/sfx";
 import { BEATS_PER_BAR, detectBeats, musicStructure, type MusicStructure } from "../lib/analysis/beats";
-import { confidenceNote, gridHints, mapMusic, readMusicHints, type MappedMusic } from "../lib/analysis/musicMap";
+import { confidenceNote, gridHints, mapMusic, readMusicHints, sourceToTimeline, type MappedMusic } from "../lib/analysis/musicMap";
 import type { StructureHints } from "../lib/analysis/beats";
 import { markMusicClip, MUSIC_MARKERS, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
 import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
-import { DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
+import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
@@ -1038,6 +1038,16 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   if (drops.length)
     notes.push(`The music stays down through ${plural(held.length, "pause")} between lines shorter than min_gap (${opts.min_gap ?? DUCK_MIN_GAP} s, so it does not pump; held lists them), and ${drops.map((m) => `the ${m.label} at ${sec(m.frame)} s`).join(" and ")} ${drops.length === 1 ? "falls in one and plays" : "fall in them and play"} ducked: open_at ["${drops[0].label}"] brings the music up there.`);
   for (const o of open) if (o.inside_line) notes.push(`${o.label ? `The ${o.label}` : "The moment"} at ${o.at} s falls inside a line (${o.inside_line[0]}-${o.inside_line[1]} s), so the music stays down under the voice there: move the line off it to let it play.`);
+  // A drop or the final hit inside a line plays ducked: said, with the move that frees it (ADR-121).
+  const moments = [
+    ...cs.flatMap((c, i) => cueMoments(targets[i].asset.musicGrid, (t) => sourceToTimeline(c as MediaClip, fps).frame(t))),
+    ...now.markers.filter((m) => /^drop/i.test(m.label)).map((m) => ({ frame: m.frame, label: `the ${m.label}` })),
+  ];
+  for (const { moment, line } of cuesUnderLines(moments, lines, frames(DUCK_ATTACK), opens.map((x) => x.frame))) {
+    const v = voices.find((x) => moment.frame >= x.span[0] - frames(DUCK_ATTACK) && moment.frame < x.span[1]);
+    const at = sec(moment.frame);
+    notes.push(`${moment.label[0].toUpperCase()}${moment.label.slice(1)} at ${at} s falls inside a line (${sec(lines[line][0])}-${sec(lines[line][1])} s${v ? `, ${v.top}` : ""}) and plays ${lineDb?.[line] ?? depth} dB down under it: move_clip the line to start at ${+(at + 0.5).toFixed(2)} s or later, then duck again with open_at [${at}], to let it be heard.`);
+  }
   for (const o of open) if (o.up && o.up[1] - o.up[0] < 0.2) notes.push(`The music is up for only ${+(o.up[1] - o.up[0]).toFixed(2)} s around ${o.at} s (the lines either side are close): move a line to give it room.`);
   if (handReplaced.length) notes.push(`Volume keys made by hand under a line were replaced (${handReplaced.join(", ")} s): the duck sets the level a voice is heard over.`);
   const deepest = lineDb ? Math.max(depth, ...lineDb) : depth;

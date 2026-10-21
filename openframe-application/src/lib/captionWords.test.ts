@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { chunkCaptions, markBreaks, voiceWordTimes } from "./captionWords";
+import { chunkCaptions, markBreaks, overLimit, voiceWordTimes } from "./captionWords";
 
 // The film test's mission control line: Whisper heard "Station," at 0.46 s;
 // the voice starts at 0.05 s and pauses at the comma from 0.55 to 0.68 s.
@@ -76,4 +76,22 @@ it("lets a chunk go after its last word across a long pause, and never flashes o
   const quick = chunkCaptions(timed([["Ready,", 0, 0.4], ["go.", 0.5, 0.62], ["Now", 0.7, 1.2]]), 1, 1.5);
   expect(quick.map((c) => c.text)).toEqual(["Ready, go.", "Now"]);
   expect(quick.every((c) => c.end - c.start >= 0.3)).toBe(true);
+});
+
+// The third film test's line 2, timed as get_transcript heard it: three
+// words at a time made "and it runs on" (four), because "your" moved on
+// from "on your", leaving "on" up 0.12 s, which then joined the chunk
+// before past the limit (ADR-121).
+it("holds the word limit when a chunk would flash by, and says when it cannot", () => {
+  const line = timed([["OpenFrame", 0.6, 0.98], ["gives", 0.98, 1.2], ["you", 1.2, 1.46], ["both.", 1.46, 1.88], ["It's", 2.08, 2.4], ["free,", 2.4, 2.86], ["open", 3.24, 3.56], ["source,", 3.56, 3.98], ["and", 4.16, 4.24], ["it", 4.24, 4.5], ["runs", 4.5, 4.76], ["on", 4.76, 4.88], ["your", 4.88, 5.06], ["own", 5.06, 5.5], ["computer.", 5.5, 5.84]]);
+  const caps = chunkCaptions(line, 3, 6);
+  expect(caps.every((c) => c.text.split(" ").length <= 3)).toBe(true);
+  expect(caps.every((c) => c.end - c.start >= 0.3 - 1e-9)).toBe(true);
+  expect(caps.map((c) => c.text).join(" ")).toBe(line.map((w) => w.text).join(" "));
+  expect(caps.map((c) => c.text)).not.toContain("and it runs on");
+  expect(overLimit(caps, 3)).toEqual([]);
+  // One word at a time, two words spoken in 0.12 s cannot both stay up:
+  // they join, and overLimit names the chunk for the answer's note.
+  const quick = chunkCaptions(timed([["Ready,", 0, 0.4], ["go.", 0.5, 0.62], ["Now", 0.7, 1.2]]), 1, 1.5);
+  expect(overLimit(quick, 1).map((c) => c.text)).toEqual(["Ready, go."]);
 });

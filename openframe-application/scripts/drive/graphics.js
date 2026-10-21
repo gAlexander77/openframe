@@ -138,13 +138,13 @@ async (page) => {
   fs.writeFileSync(file, Buffer.from(sheet.data, "base64"));
   // Two close-ups: the wipe's blurred edge, and the finished lower third.
   for (const at of [2.3, 5.7]) fs.writeFileSync(`__REPO__/scratch/graphics-${at}.png`, Buffer.from((await call("preview_frame", { at, max_width: 1280 })).data, "base64"));
-  // A few pixel checks on the sheet itself (tiles 480 wide, 6 px gaps).
+  // A few pixel checks on the sheet itself (tiles 480 wide, each over an 18 px label strip, 6 px gaps).
   const px = await page.evaluate(async (b64) => {
     const bmp = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
     const c = new OffscreenCanvas(bmp.width, bmp.height).getContext("2d");
     c.drawImage(bmp, 0, 0);
     const tile = (i, fx, fy) => {
-      const w = 480, h = 270, x = 6 + (i % 4) * (w + 6), y = 6 + Math.floor(i / 4) * (h + 6);
+      const w = 480, h = 270, x = 6 + (i % 4) * (w + 6), y = 6 + Math.floor(i / 4) * (h + 18 + 6);
       return [...c.getImageData(Math.floor(x + fx * w), Math.floor(y + fy * h), 1, 1).data].slice(0, 3);
     };
     return {

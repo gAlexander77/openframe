@@ -15,7 +15,8 @@
 
 import { VERTICAL_SAFE } from "./align";
 import { brandOf, LIFT, minTextSize, pickLogo, readableOn, roleStyle, textOn, typeScale, withAlpha, type LogoVariant } from "./brandKit";
-import { placeOnTop } from "./overlays";
+import { seenLetters, seenTexts } from "./designCheck";
+import { placeStack } from "./overlays";
 import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
 import type { Adjust, Animation, Asset, Clip, ColorClip, Cutout, Grade, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
@@ -239,6 +240,15 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     const parts = [part({ ...name, animIn: anim(p, "rise", 0.45), animOut: fadeOut }), part({ ...title, animIn: anim(p, "rise", 0.45), animOut: fadeOut }, 0.15)];
     stack(p, parts, [6 * H]);
     alignLeft(p, parts);
+    // A logo asked for sits left of the name and title, as tall as both
+    // (a broadcast lower third's bug); none unless asked (ADR-121).
+    const logoId = o.logo === undefined || o.logo === "none" ? undefined : pickLogo(b, o.logo, box);
+    const block = bounds(p, parts);
+    const logo = logoId && logoPart(p, logoId, (block.bottom - block.top) / p.height, 0.2 * fit);
+    if (logo) {
+      const z = sizeOf(p, logo);
+      parts.unshift({ ...part({ ...logo, animIn: anim(p, "pop", 0.45), animOut: fadeOut }), dx: block.left - 16 * H - z.w / 2, dy: (block.top + block.bottom) / 2 });
+    }
     return parts;
   }
 
@@ -338,37 +348,90 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
  * and lasting to the element's end, stacked above everything showing then,
  * grouped and named after the element. Returns the new clip ids.
  */
-export function addAdElement(p: Project, element: AdElement, o: AdOptions): { project: Project; clipIds: Id[] } {
+export function addAdElement(p: Project, element: AdElement, o: AdOptions): { project: Project; clipIds: Id[]; notes: string[] } {
   const spot = element === "end_card" ? "center" : (o.position ?? DEFAULT_SPOT[element]);
-  const room = roomFor(p, element, spot);
+  const duration = Math.max(1, o.duration ?? secondsToFrames(AD_SECONDS[element], p.fps));
+  const end = o.start + duration;
   // Too big for its room (a long headline on 9:16, whose safe area is half
   // the frame's height): built again smaller, every part and gap alike, a
   // few times since rounded sizes, wrapping and the text floor make it
   // inexact.
-  let fit = 1;
-  let parts = build(p, element, o, room, fit);
-  for (let i = 0; i < 4; i++) {
-    const b = bounds(p, parts);
-    const k = Math.min((room.right - room.left) / Math.max(1, b.right - b.left), (room.bottom - room.top) / Math.max(1, b.bottom - b.top));
-    if (k >= 1 || fit <= MIN_FIT) break;
-    fit = Math.max(MIN_FIT, fit * k * 0.99);
-    parts = build(p, element, o, room, fit);
+  const layout = (room: Rect) => {
+    let fit = 1;
+    let parts = build(p, element, o, room, fit);
+    for (let i = 0; i < 4; i++) {
+      const b = bounds(p, parts);
+      const k = Math.min((room.right - room.left) / Math.max(1, b.right - b.left), (room.bottom - room.top) / Math.max(1, b.bottom - b.top));
+      if (k >= 1 || fit <= MIN_FIT) break;
+      fit = Math.max(MIN_FIT, fit * k * 0.99);
+      parts = build(p, element, o, room, fit);
+    }
+    place(p, parts, spot, room);
+    return parts;
+  };
+  const room = roomFor(p, element, spot);
+  let parts = layout(room);
+  // Clear of the captions showing then (ADR-121): the third film test's
+  // lower third sat on its voiceover's captions. The room gives up the
+  // captions' side of the frame and the element is laid out again in it.
+  const notes: string[] = [];
+  const band = captionBand(p, o.start, end);
+  const box = placedBox(p, parts);
+  if (band && box && crosses(box, band.box)) {
+    const gap = 0.02 * p.height;
+    const below = (band.box.top + band.box.bottom) / 2 > p.height / 2;
+    const cleared = below ? { ...room, bottom: Math.min(room.bottom, band.box.top - gap) } : { ...room, top: Math.max(room.top, band.box.bottom + gap) };
+    const y = (v: number) => +(v / p.height - 0.5).toFixed(3);
+    const which = band.ids.length === 1 ? `the caption ${band.ids[0]}` : `${band.ids.length} captions`;
+    if (cleared.bottom - cleared.top > 0.15 * p.height) {
+      parts = layout(cleared);
+      notes.push(`Placed ${below ? "above" : "below"} the captions showing then (${which}, ${below ? `from y ${y(band.box.top)}` : `down to y ${y(band.box.bottom)}`}); captions stay the top layer.`);
+    } else notes.push(`The captions showing then (${which}) leave too little room, so the ${AD_LABELS[element].toLowerCase()} crosses them: give another position, or move the captions (set_caption_look y).`);
   }
-  place(p, parts, spot, room);
-  const duration = Math.max(1, o.duration ?? secondsToFrames(AD_SECONDS[element], p.fps));
-  const end = o.start + duration;
   const group = parts.length > 1 ? uid("g") : undefined;
-  const ids: Id[] = [];
-  for (const x of parts) {
+  const clips = parts.map((x) => {
     const start = Math.min(end - 1, o.start + secondsToFrames(x.delay, p.fps));
     // A flash is only as long as its fade.
     const len = x.clip.name === "Flash" ? Math.min(end - start, secondsToFrames(0.4, p.fps)) : end - start;
-    const clip = { ...x.clip, id: uid("c"), start, duration: Math.max(1, len), name: x.clip.name ?? AD_LABELS[element], ...(group ? { group } : {}) } as Clip;
-    p = placeOnTop(p, clip, AD_LABELS[element]);
-    ids.push(clip.id);
-  }
-  return { project: p, clipIds: ids };
+    return { ...x.clip, id: uid("c"), start, duration: Math.max(1, len), name: x.clip.name ?? AD_LABELS[element], ...(group ? { group } : {}) } as Clip;
+  });
+  // The element lands as one block on rows of its own (ADR-121). Its parts
+  // used to land one at a time on whatever row was free: the film test's
+  // end card put its card on Titles, its icon on Spotlight and its headline
+  // on Callouts, so moving one of those tracks hid the icon under the card.
+  return { project: placeStack(p, clips, AD_LABELS[element], true), clipIds: clips.map((c) => c.id), notes };
 }
+
+/** The captions shown during [start, end) frames, as one box around their
+ * letters (canvas pixels), with their ids. */
+function captionBand(p: Project, start: number, end: number): { box: Rect; ids: Id[] } | undefined {
+  const seen = seenTexts(p).filter((s) => s.c.caption && s.start < end && s.start + s.duration > start);
+  const boxes = seen.flatMap((s) => {
+    const g = seenLetters(p, s);
+    return g ? [{ box: g.box, id: s.c.id }] : [];
+  });
+  if (!boxes.length) return undefined;
+  return {
+    box: { left: Math.min(...boxes.map((b) => b.box.left)), right: Math.max(...boxes.map((b) => b.box.right)), top: Math.min(...boxes.map((b) => b.box.top)), bottom: Math.max(...boxes.map((b) => b.box.bottom)) },
+    ids: boxes.map((b) => b.id),
+  };
+}
+
+/** The placed parts' box in canvas pixels (a background that fills the
+ * frame left out). */
+function placedBox(p: Project, parts: Part[]): Rect | undefined {
+  const laid = parts.filter((x) => !x.full && "transform" in x.clip);
+  if (!laid.length) return undefined;
+  const boxes = laid.map((x) => {
+    const t = (x.clip as { transform: { x: number; y: number } }).transform;
+    const z = sizeOf(p, x.clip);
+    const cx = (0.5 + t.x) * p.width, cy = (0.5 + t.y) * p.height;
+    return { left: cx - z.w / 2, right: cx + z.w / 2, top: cy - z.h / 2, bottom: cy + z.h / 2 };
+  });
+  return { left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) };
+}
+
+const crosses = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 // ---- text behind the subject ------------------------------------------------------
 

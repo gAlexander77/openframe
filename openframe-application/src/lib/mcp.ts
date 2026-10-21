@@ -11,7 +11,7 @@ import { DEFAULT_VOICE, VOICES } from "./tts";
 import { CHOSEN_MAX_SPS, PACE_BANDS, READ_AS, readBand } from "./voicePace";
 import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
-import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
+import { cueAnswer, MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { coerceNumbers, COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { filterDescription, type DescribeFilter } from "./describeFilter";
@@ -23,7 +23,7 @@ import { DUCK_MIN_GAP, DUCK_RELEASE } from "./analysis/duck";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
-import { groupFindings, markerMoves, oneDuck, reviewSummary, shareCommon, withShared } from "./answerSize";
+import { groupFindings, markerMoves, oneDuck, reviewSummary, shareCommon, shiftedTogether, withShared } from "./answerSize";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -302,12 +302,13 @@ export function withMoves(r: ToolResult, before: unknown, after: unknown): ToolR
     // Not JSON: the moves go in a part of their own.
   }
   const listed = new Set(((body?.changed_clips ?? []) as { id: string }[]).map((c) => c.id));
-  const extra = moved.filter((c) => !listed.has(c.id));
+  // Clips a ripple carried by one amount are counted, not listed (ADR-121).
+  const { listed: extra, shifted } = shiftedTogether(moved.filter((c) => !listed.has(c.id)), was);
   const notes = gapNotes.filter((n) => !((body?.notes ?? []) as string[]).includes(n));
-  if (!extra.length && !notes.length) return r;
+  if (!extra.length && !shifted.length && !notes.length) return r;
   // The clips the answer lists, whole again, then shared out with the moved ones.
   const all = shareCommon([...((body?.changed_clips ?? []) as unknown[]).map((c) => withShared(c, body?.changed_clips_common)), ...extra]);
-  const add = { ...(extra.length ? { changed_clips: all.items, changed_clips_common: all.common } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
+  const add = { ...(extra.length ? { changed_clips: all.items, changed_clips_common: all.common } : {}), ...(shifted.length ? { shifted_clips: shifted } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
   if (!body) return { ...r, content: [...r.content, { type: "text", text: JSON.stringify(add) }] };
   return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...body, ...add }) } : c)) };
 }
@@ -415,6 +416,7 @@ function musicSchema(files: boolean): JsonSchema {
     fx: { type: "boolean", description: "Risers, impacts, reverse cymbals and braams into and on the drops (default true)" },
     max_nudge: { type: "number", minimum: 0, maximum: 0.2, description: "How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06)" },
     start: { type: "number", minimum: 0, description: "Timeline seconds the music starts at (default 0); the answer's times include it" },
+    detail: { type: "string", enum: ["summary", "full"], description: "summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed" },
     brightness: { type: "number", minimum: -1, maximum: 1, description: "The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0)" },
   };
   if (files) {
@@ -459,6 +461,7 @@ export const APP_TOOLS: AppTool[] = [
       markers: { type: "boolean", description: "false: no markers; true: all (default: all, or those in the stretch or on the clips shown)" },
       compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },
       clips: { type: "boolean", description: "false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true" },
+      brand: { type: "boolean", description: "The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one" },
     }),
     call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
   },
@@ -751,7 +754,7 @@ APP_TOOLS.push(
     inputSchema: obj({
       by_track: { type: "boolean", description: "Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line" },
       per_second: { type: "boolean", description: "With by_track, each track's three-second loudness every second too (long; default false: summaries only)" },
-      kind: { type: "string", enum: PROGRAM_KINDS, description: "What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default)" },
+      kind: { type: "string", enum: PROGRAM_KINDS, description: "What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast, explainer (one voice leading over a ducked bed: a tutorial, a narrated demo or product explainer) or any (default)" },
       spec: { type: "string", enum: SPEC_IDS, description: "Delivery spec to check; default all three" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Measure as export_video with this loudness (LUFS) delivers it; default as mixed" },
       start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
@@ -896,15 +899,21 @@ APP_TOOLS.push(
   // ---- music: an original score (lib/music) ----
   {
     name: "generate_music",
-    description: `Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: ${STYLE_IDS.map((id) => `${id} (${STYLES[id].label}: ${STYLES[id].blurb}; ${STYLES[id].bpm} BPM)`).join("; ")}. Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.`,
+    description: `Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: ${STYLE_IDS.map((id) => `${id} (${STYLES[id].label}: ${STYLES[id].blurb}; ${STYLES[id].bpm} BPM)`).join("; ")}. Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, the beat and bar lengths with counts of each (detail full lists every bar and beat), the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.`,
     inputSchema: musicSchema(true),
-    call: async (h, a) => json(await h.ai("generateMusic", "", a)),
+    call: async (h, a) => {
+      const { detail, ...rest } = a;
+      return json(cueAnswer((await h.ai("generateMusic", "", rest)) as Parameters<typeof cueAnswer>[0], detail));
+    },
   },
   {
     name: "plan_music",
-    description: "The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.",
+    description: "The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, the bar and beat grid (detail full lists every bar and beat), drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.",
     inputSchema: musicSchema(false),
-    call: (_h, a) => json(planMusicAnswer(a)),
+    call: (_h, a) => {
+      const { detail, ...rest } = a;
+      return json(cueAnswer(planMusicAnswer(rest), detail));
+    },
   },
   // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
   {

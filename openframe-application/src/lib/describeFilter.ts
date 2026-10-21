@@ -21,6 +21,10 @@ export interface DescribeFilter {
   /** false: the tracks alone, each with how many clips it holds instead of
    * its clips (the cheap way to learn track ids, ADR-115). */
   clips?: boolean;
+  /** The brand kit: true gives it with a narrowed answer, false leaves it
+   * out of the whole one; by default it comes with the whole timeline only
+   * (ADR-121: a model reading one clip at a time read the kit each time). */
+  brand?: boolean;
 }
 
 interface ClipDesc {
@@ -42,7 +46,7 @@ interface Desc {
   [k: string]: unknown;
 }
 
-export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds", "clips"] as const;
+export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds", "clips", "brand"] as const;
 
 /** The description narrowed as `f` asks, with `shown` saying how much of
  * each list is in it ("5 of 43") wherever something was left out, and
@@ -123,6 +127,7 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
     else delete out[key];
     tell(key, list?.length ?? 0, all?.length ?? 0);
   }
+  if (f.brand === false || (narrow && f.brand !== true)) delete out.brand;
   if (Object.keys(shown).length) out.shown = shown;
   const timelines = [d.tracks, ...nested.map((k) => k.tracks)];
   const missing = [...(f.clip_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.clips.some((c) => c.id === id)))), ...(f.track_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.id === id)))];

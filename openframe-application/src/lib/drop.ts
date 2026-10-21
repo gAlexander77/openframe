@@ -96,7 +96,7 @@ export function placeAsset(
   }
   if (to === "overlay") {
     const t = createTrack("video", "Overlay");
-    return { project: ops.addClip(ops.addTrack(p, t, 0), t.id, clip), clipId };
+    return { project: ops.addClip(ops.addTrack(p, t), t.id, clip), clipId };
   }
   const target = to ? ops.findTrack(p, to) : ops.mainTrack(p);
   if (!target || target.kind !== "video") return { project: p, clipId };

@@ -223,3 +223,38 @@ export function reviewSummary(review: Review): Review {
   });
   return { lines, summary: { ...review.summary, detail: "summary: each line's verdict, fixes, pace, loudness and margin; detail full adds the syllables, the clip window, silences, peaks and pitch of every line" } };
 }
+
+/** Clips that moved by one amount: start and end shifted alike, on the
+ * same track. */
+type Moved = { id: string; start: number; end: number; track: string };
+
+/**
+ * An app tool's moved clips with the ones a ripple carried, SHARE_FROM or
+ * more shifted by one amount, counted instead of listed (ADR-121):
+ * retake_voiceover ripple answered every caption after the line with its
+ * whole style, about 40 clips and 4k tokens a retake, where the shift and
+ * a count say it. Each count gives the shift, how many clips moved and on
+ * which tracks, and the stretch they now cover; a clip that moved
+ * otherwise (a new length, another track) is listed as before.
+ */
+export function shiftedTogether(moved: Moved[], was: Map<string, Moved>): { listed: Moved[]; shifted: { by: number; clips: number; from: number; to: number; tracks: Record<string, number> }[] } {
+  const by = new Map<string, Moved[]>();
+  const listed: Moved[] = [];
+  for (const c of moved) {
+    const w = was.get(c.id);
+    const d = w ? +(c.start - w.start).toFixed(3) : NaN;
+    if (!w || w.track !== c.track || Math.abs(c.end - w.end - d) > 0.0015 || !d) listed.push(c);
+    else by.set(String(d), [...(by.get(String(d)) ?? []), c]);
+  }
+  const shifted: ReturnType<typeof shiftedTogether>["shifted"] = [];
+  for (const [d, cs] of by) {
+    if (cs.length < SHARE_FROM) {
+      listed.push(...cs);
+      continue;
+    }
+    const tracks: Record<string, number> = {};
+    for (const c of cs) tracks[c.track] = (tracks[c.track] ?? 0) + 1;
+    shifted.push({ by: Number(d), clips: cs.length, from: Math.min(...cs.map((c) => c.start)), to: Math.max(...cs.map((c) => c.end)), tracks });
+  }
+  return { listed: moved.filter((c) => listed.includes(c)), shifted };
+}

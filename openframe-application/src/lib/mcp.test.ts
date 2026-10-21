@@ -695,3 +695,26 @@ describe("what the second Claude film found (ADR-113)", () => {
     expect(text(await call(h, "tools/call", { name: "preview_frame", arguments: { at: "later" } }))).toContain("args.at must be a number");
   });
 });
+
+describe("what the third Claude film found (ADR-121)", () => {
+  it("counts the clips a ripple carried by one amount instead of listing each with its style", async () => {
+    // retake_voiceover ripple answered about 40 captions with their whole
+    // style, some 4k tokens a retake.
+    const h = host();
+    h.project = runCommand(h.project, "add_media_clip", { asset_id: "a1", start: 0, duration: 4 });
+    const words = Array.from({ length: 8 }, (_, i) => ({ text: `word ${i}`, start: 4 + i * 0.5, end: 4.5 + i * 0.5 }));
+    h.project = runCommand(h.project, "add_captions", { captions: words });
+    const caps = h.project.tracks[0].clips.map((c) => c.id);
+    h.ai = (async () => {
+      // The retaken line shortens (the main clip stands in for it), and every caption after it moves 0.3 s earlier.
+      h.project = runCommand(h.project, "trim_clip", { clip_id: h.project.tracks.find((t) => t.main)!.clips[0].id, edge: "end", to: 3.7 });
+      for (const id of caps) h.project = runCommand(h.project, "move_clip", { clip_id: id, start: (h.project.tracks[0].clips.find((c) => c.id === id)!.start - 9) / 30 });
+      return { voice_clip: "c_line", shifted: -0.3 };
+    }) as unknown as typeof h.ai;
+    const r = await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c_music"] } });
+    const answer = JSON.parse(text(r));
+    expect(answer.shifted_clips).toEqual([{ by: -0.3, clips: 8, from: 3.7, to: 7.7, tracks: { [h.project.tracks[0].id]: 8 } }]);
+    expect(answer.changed_clips).toHaveLength(1);
+    expect(JSON.stringify(answer)).not.toMatch(/word 3/);
+  });
+});

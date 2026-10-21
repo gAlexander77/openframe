@@ -86,6 +86,7 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `markers` | boolean |  | false: no markers; true: all (default: all, or those in the stretch or on the clips shown) |
 | `compounds` | boolean |  | false: no nested timelines (default: all, or those the clips shown play) |
 | `clips` | boolean |  | false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true |
+| `brand` | boolean |  | The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one |
 
 ### list_catalog
 
@@ -307,7 +308,7 @@ Add an adjustment layer: its color settings, filter and effects apply to every l
 
 ### add_track
 
-Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
+Add an empty video (visual) or audio track. Video tracks stack above existing ones, under a row of captions on top (captions stay the top layer; move_track above_track_id puts a track over them); audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -673,7 +674,7 @@ Compose an original score that fits the edit, or read an imported track's struct
 
 ### generate_music
 
-Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: launch (Product launch: modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook; 120 BPM); cinematic (Cinematic: big and swelling: string ostinato, legato strings and horns, choir, taiko and big hits, long hall reverb; 90 BPM); corporate (Upbeat corporate: bright and positive: piano eighths, plucked guitar strums, glockenspiel hook, claps, shaker and an eighth-note bass; 116 BPM); lofi (Lo-fi chill: laid back: swung boom-bap drums, Rhodes sevenths and ninths, round bass, sparse melody, vinyl crackle and tape wow; 80 BPM); ambient (Ambient: calm and spacious: evolving pads, glassy bells, a sub drone and a soft pulse, long hall reverb; 92 BPM). Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.
+Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: launch (Product launch: modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook; 120 BPM); cinematic (Cinematic: big and swelling: string ostinato, legato strings and horns, choir, taiko and big hits, long hall reverb; 90 BPM); corporate (Upbeat corporate: bright and positive: piano eighths, plucked guitar strums, glockenspiel hook, claps, shaker and an eighth-note bass; 116 BPM); lofi (Lo-fi chill: laid back: swung boom-bap drums, Rhodes sevenths and ninths, round bass, sparse melody, vinyl crackle and tape wow; 80 BPM); ambient (Ambient: calm and spacious: evolving pads, glassy bells, a sub drone and a soft pulse, long hall reverb; 92 BPM). Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, the beat and bar lengths with counts of each (detail full lists every bar and beat), the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -695,6 +696,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `detail` | "summary" \| "full" |  | summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed |
 | `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 | `loudness` | number |  | Integrated loudness to master to, LUFS (default -14, online video) (-30..-8) |
 | `stems` | boolean |  | Also import the drums, bass, harmony and lead stems (default false) |
@@ -710,7 +712,7 @@ Example:
 
 ### plan_music
 
-The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.
+The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, the bar and beat grid (detail full lists every bar and beat), drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -732,6 +734,7 @@ The cue sheet generate_music would answer for these arguments, at once and witho
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `detail` | "summary" \| "full" |  | summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed |
 | `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 
 Example:
@@ -1820,7 +1823,7 @@ Restyle clips with the brand kit, keeping their words, timing and place. Titles:
 
 ### add_ad_element
 
-Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
+Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1831,7 +1834,7 @@ Add a finished ad element in the brand kit's colors and fonts (set_brand first; 
 | `subline` | string |  | lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline) |
 | `cta` | string |  | Button words for end_card and cta_button; default 'Shop now' |
 | `url` | string |  | end_card and cta_button: website line; default the brand's url |
-| `logo` | "auto" \| "main" \| "light" \| "dark" \| "icon" \| "none" |  | Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none |
+| `logo` | "auto" \| "main" \| "light" \| "dark" \| "icon" \| "none" |  | Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none. end_card and logo_reveal draw one by default (auto); lower_third only when given, left of the name and title and as tall as both; offer_badge and cta_button draw none and refuse it |
 | `position` | "top-left" \| "top" \| "top-right" \| "left" \| "center" \| "right" \| "bottom-left" \| "bottom" \| "bottom-right" |  | Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered) |
 | `background` | "brand" \| "primary" \| "scrim" \| "none" |  | end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none |
 | `glow` | boolean |  | logo_reveal: a glow that flares as the logo lands |
@@ -2480,7 +2483,7 @@ Measure the mix the way export renders it (48 kHz stereo, every clip's effects, 
 |---|---|---|---|
 | `by_track` | boolean |  | Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line |
 | `per_second` | boolean |  | With by_track, each track's three-second loudness every second too (long; default false: summaries only) |
-| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default) |
+| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "explainer" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast, explainer (one voice leading over a ducked bed: a tutorial, a narrated demo or product explainer) or any (default) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |

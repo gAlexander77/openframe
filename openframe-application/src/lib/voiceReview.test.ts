@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advise, bandOf, compareScript, diffWords, judgeHearings, matchShare, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
+import { advise, bandOf, compareScript, diffWords, judgeHearings, matchShare, respell, scriptPace, tokens, verdict, type LineMeasure } from "./voiceReview";
 
 describe("words to compare", () => {
   it("drops case and punctuation, spells numbers and says symbols", () => {
@@ -191,5 +191,20 @@ describe("verdicts", () => {
     expect(rushed).toMatchObject({ problem: expect.stringMatching(/^fast: 2.7 words a second over the speech, 6 syllables .*long words/), args: { clip_id: "c_1", words_per_second: [1.75, 2.25] } });
     // A band asked moves down for long words too.
     expect(verdict({ ...ok, wps: 2.7, sps: 6, asked: [2.3, 2.8] }, -20)[0]).toMatchObject({ problem: expect.stringMatching(/^fast/) });
+  });
+});
+
+describe("the script's pace (ADR-121)", () => {
+  it("is given only over lines in a row", () => {
+    // The third film test's two retakes, 16 s apart: 1.03 words a second,
+    // eight lines' words between them left out.
+    const retakes = [{ first: 19.97, last: 23.9, words: 11 }, { first: 36.07, last: 40.35, words: 10 }];
+    const between = [{ start: 24.73, end: 30.28 }, { start: 31.58, end: 35.87 }];
+    const r = scriptPace(retakes, between);
+    expect(r.words_per_second).toBeNull();
+    expect(r.window).toMatch(/2 other lines speak between the lines reviewed/);
+    // Lines in a row, or all of them: as before.
+    expect(scriptPace(retakes, [{ start: 50, end: 54 }]).words_per_second).toBe(1.03);
+    expect(scriptPace([{ first: 0.6, last: 4.6, words: 9 }, { first: 5.1, last: 11, words: 15 }], []).words_per_second).toBe(2.31);
   });
 });

@@ -167,5 +167,11 @@ describe("the loudness range against what a mix is for", () => {
     expect(rangeVerdict(4, "ad").verdict).toBe("typical");
     expect(rangeVerdict(12, "social")).toMatchObject({ verdict: "wide", note: expect.stringMatching(/phone/) });
     expect(rangeVerdict(2).kind).toBe("any");
+    // A voice-led explainer over a ducked bed (ADR-121): the third film
+    // test's 2.4 LU was flat for an ad, and is typical for an explainer.
+    expect(rangeVerdict(2.4, "ad").verdict).toBe("flat");
+    expect(rangeVerdict(2.4, "explainer")).toEqual({ kind: "explainer", typical_lu: [1.5, 6], verdict: "typical" });
+    expect(rangeVerdict(1, "explainer").note).toMatch(/Flat for a voice-led explainer/);
+    expect(rangeVerdict(8, "explainer").verdict).toBe("wide");
   });
 });

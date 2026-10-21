@@ -477,3 +477,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sketch take a reach that versions scale (old ones load at the old
   reach); a split's halves share one EQ and compressor and render as the
   whole clip.
+- [[ADR-121 Captions stay on top, ad elements keep rows of their own, and answers count what moved together]] —
+  new tracks and overlays land under a captions row at the top; an ad
+  element is one block on rows of its own and lands clear of the captions
+  showing then; a lower third draws the logo it is given, a badge or button
+  refuses one; check_project flags text over text; word captions hold
+  their limit or say why; a ripple's moved clips are counted, music
+  answers give the grid as counts, a narrowed describe_project leaves the
+  brand kit out; the script's pace only over lines in a row; a drop or
+  final hit ducked under a line is named; contact sheets label under each
+  frame; measure_loudness kind explainer.

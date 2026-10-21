@@ -25,7 +25,7 @@ import { duckArgs, staleDuckNote, staleDucks, type StaleDuck } from "../lib/anal
 import type { Caption } from "../lib/captions";
 import { edit } from "./actions";
 import { duckUnderSpeech, type DuckRequest } from "./ai";
-import { chunkNote, takeChunks } from "./voiceWords";
+import { chunkNote, overLimitNotes, takeChunks } from "./voiceWords";
 import { adoptAndProbe, prepare } from "./media";
 import { projectWork } from "./projectWork";
 import { store } from "./store";
@@ -425,7 +425,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     const end = Math.max(...times.map((t) => t.end));
     toast(`Added the voiceover, ${end.toFixed(1)} s`);
     // New lines over music ducked for others: it does not dip under them yet.
-    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...lateLineNotes(lines.map((l) => l.at), times), ...(chunked ? [chunkNote(chunked, chunks.every((c) => c.heard))] : []), ...staleDucks(before, store.document()).map(staleDuckNote)];
+    const notes = [...(lines.some((l) => asksEmphasis(l.text)) ? [EMPHASIS_NOTE] : []), ...lateLineNotes(lines.map((l) => l.at), times), ...(chunked ? [chunkNote(chunked, chunks.every((c) => c.heard)), ...chunks.flatMap((c) => overLimitNotes(c.chunks, chunked))] : []), ...staleDucks(before, store.document()).map(staleDuckNote)];
     return { lines: placed, end, finish, engine: { quality: opts.quality ?? "best", ...takes[0].engine }, ...(notes.length ? { notes } : {}) };
   } catch (e) {
     if (signal.aborted) toast("Canceled");
@@ -511,7 +511,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     const ducking = await duckAgain(staleDucks(before, store.document()));
     toast(`Read the line again, ${take.seconds.toFixed(1)} s`);
     const fps = store.document().fps;
-    const notes = [...(asksEmphasis(text) ? [EMPHASIS_NOTE] : []), ...(words && chunked ? [chunkNote(chunked, words.heard)] : []), ...ducking.notes];
+    const notes = [...(asksEmphasis(text) ? [EMPHASIS_NOTE] : []), ...(words && chunked ? [chunkNote(chunked, words.heard), ...overLimitNotes(words.chunks, chunked)] : []), ...ducking.notes];
     return {
       voice_clip: clipId,
       ...(answer.captionIds ? { caption_clips: answer.captionIds } : { caption_clip: answer.captionId }),
