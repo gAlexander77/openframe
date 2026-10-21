@@ -511,3 +511,12 @@ Every non-obvious choice gets a short Architecture Decision Record in
   brand kit out; the script's pace only over lines in a row; a drop or
   final hit ducked under a line is named; contact sheets label under each
   frame; measure_loudness kind explainer.
+- [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]] —
+  a version crops a shot around what its callouts point at, else the
+  region the master's push or zoom frames, and the subject only where the
+  master shows the shot whole; rings, spotlights' holes and pinned clips
+  are written again from the version's picture (reanchor for anchors),
+  a ring around a caption stays around it; a shape a version fits is
+  sized by its own box, keys and stroke, never a transform scale; the
+  check lists a callout off the frame or off what it pointed at, and its
+  sheet labels under each frame.

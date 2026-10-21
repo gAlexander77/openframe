@@ -38,7 +38,9 @@ import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
 import { fittedSize, textPad } from "./render/size";
-import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type SubjectNote } from "./reframe";
+import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
+import { anchorOf, reanchor } from "./anchors";
+import { calloutReports, calloutsOf, followCallouts, followed, shotTargets, type CalloutReport } from "./versionCallouts";
 import { maskReach } from "./mask";
 import { lookReach } from "./textLook";
 import { framesToSeconds, secondsToFrames } from "./time";
@@ -111,6 +113,8 @@ export interface ReframeOptions {
   focus?: Focus[];
   notes?: SubjectNote[];
   pushes?: VersionPushes;
+  /** What the callouts over a shot point at (ADR-122), by the shot's id. */
+  targets?: (id: Id) => ShotTargets | undefined;
 }
 
 /** A shot's keyed scale eased toward its widest (least) value: `r` 0.5
@@ -479,7 +483,7 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     if (full && fit === "blur") v = { ...v, canvas: { type: "blur", amount: SHORT_BLUR } };
     // Cropped footage framed on its subject, or where the caller says.
     if (full && fit === "fill" && (c.type === "video" || c.type === "image")) {
-      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", frame.focus?.find((x) => x.clip_id === c.id));
+      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", frame.focus?.find((x) => x.clip_id === c.id), frame.targets?.(c.id));
       frame.notes?.push(...r.notes);
       v = r.clip;
     }
@@ -539,7 +543,13 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     }
     if (c.mask && c.mask.shape !== "linear" && c.mask.shape !== "mirror" && !(c.shape && spansFrame(master, c))) {
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
-      out = { ...out, mask: { ...c.mask, width: +(c.mask.width * kw).toFixed(5), height: +(c.mask.height * kh).toFixed(5) } } as Clip;
+      // Its keys with it: a keyed size kept the master's fractions (ADR-122).
+      const keyed: Record<string, Keyframe[]> = {};
+      for (const [path, k] of [["mask.width", kw], ["mask.height", kh]] as const) {
+        const keys = c.keyframes?.[path];
+        if (keys?.length) keyed[path] = keys.map((key) => ({ ...key, v: +(key.v * k).toFixed(5) }));
+      }
+      out = { ...out, mask: { ...c.mask, width: +(c.mask.width * kw).toFixed(5), height: +(c.mask.height * kh).toFixed(5) }, ...(Object.keys(keyed).length ? { keyframes: { ...out.keyframes, ...keyed } } : {}) } as Clip;
     }
     return out;
   }
@@ -652,9 +662,15 @@ function share(lo: number, hi: number, min: number, max: number): number {
 const startAt = (t: number, size: number, min: number, max: number) => (size > max - min ? (min + max) / 2 - size / 2 : min + t * (max - min - size));
 
 /** A layer `f` times its size: a title's type (and its wrap width, so its
- * lines stay), any other layer's scale. */
+ * lines stay), a shape's own box, stroke and feather (keys and all), any
+ * other layer's scale. A shape fitted by its transform scale kept size
+ * keys in the master's fractions under a scale they did not know about:
+ * Claude film test 3's frame-wide ring, shrunk to 0.57, drew the Undo
+ * button's ring at 0.57 of the button, and a width keyed by hand in the
+ * saved version came out 0.57 of what was asked (ADR-122). */
 function shrink(c: VisualClip, f: number): VisualClip {
   if (c.type === "text") return { ...c, style: { ...scaleStyle(c.style, f, Infinity), maxWidth: +(c.style.maxWidth * f).toFixed(5) } };
+  if (c.type === "color" && c.shape) return scaleShape(c, f, f, f);
   let v = mapPath(c, "transform.scale", (s) => +(s * f).toFixed(5));
   if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * f).toFixed(5));
   return v;
@@ -1194,12 +1210,21 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
   // A tall master made square or wide: its captions leave the apps' place
   // for this frame's, at a landscape caption's size on 16:9 (ADR-118).
   const place = captionPlace(a, b);
+  // Callouts (ADR-122): rings, spotlights and pinned clips point at a part
+  // of a picture. The crop keeps what they point at, and they are kept on
+  // it (followCallouts, reanchor) instead of laid out with the titles.
+  const callouts = calloutsOf(p);
+  const kept = followed(callouts);
+  const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(p, callouts, id) };
   // One timeline refit as a frame: each clip on its own, then its overlays placed.
   const asFrame = (m: Project, out: Project): Track[] => {
     const caption = (c: Clip): c is TextClip => !!place && c.type === "text" && !!c.caption;
     const k = place === "open" ? captionScale(m, out) : 1;
     const placeOne = (c: TextClip) => (place === "tall" ? placeCaption(m, out, c) : placeOpenCaption(m, out, c, k));
-    let sets = overlaySets(m).filter((s) => !s.some(caption));
+    let sets = overlaySets(m)
+      .filter((s) => !s.some(caption))
+      .map((s) => s.filter((c) => !kept.has(c.id) && !anchorOf(c)))
+      .filter((s) => s.length);
     const comps = narrower ? sideBySide(m, sets) : [];
     const follows = followersOf(m, sets, comps);
     // A split screen that filled the frame fills the new one (bleedPlans).
@@ -1227,7 +1252,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     }
     // Pixels at a 1080-tall frame that keep their pixels against the short side.
     const px = (a.h / b.h) * (short(b) / short(a));
-    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeOne(c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame), px)) })) };
+    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeOne(c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), framing), px)) })) };
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
@@ -1238,7 +1263,9 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  const done = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  const settled = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  // Callouts back on what they point at, as this version shows it.
+  const done = reanchor(followCallouts(p, settled, callouts));
   // What rides on each picture, once its size is settled (ADR-110).
   const was = new Map([...p.tracks, ...(p.compounds ?? []).filter((k) => !pictures.has(k.id)).flatMap((k) => k.tracks)].flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   const ride = (tracks: Track[]) =>
@@ -1788,7 +1815,10 @@ function collide(q: Project): Collision[] {
         const k = tall > room ? Math.max(0.1, room / tall) : 1;
         const cy = q.height / 2 + y0 * q.height;
         const y = y0 + (letters.top - margin - (cy + (v.bottom - cy) * k)) / q.height;
-        const fix = room < tall * 0.25 ? "" : `an override {clip_id: "${c.id}", y: ${+y.toFixed(3)}${k < 1 ? `, scale: ${+k.toFixed(2)}` : ""}} puts it above the caption, or `;
+        // A callout (a ring, a pinned clip) points at what is under it:
+        // moving it would take it off that (ADR-122), so the captions move.
+        const pointer = !!anchorOf(c) || (c.type === "color" && c.shape?.fill === false);
+        const fix = pointer ? "it points at what is under it, so " : room < tall * 0.25 ? "" : `an override {clip_id: "${c.id}", y: ${+y.toFixed(3)}${k < 1 ? `, scale: ${+k.toFixed(2)}` : ""}} puts it above the caption, or `;
         const at = +framesToSeconds(f, q.fps).toFixed(2);
         out.push({
           clip_id: c.id,
@@ -1798,7 +1828,7 @@ function collide(q: Project): Collision[] {
           box: { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) },
           note: `${c.id} (${c.type === "color" ? "a shape" : c.type === "compound" ? "a compound clip" : "a picture"}) is drawn ${layer} the caption ${s.c.id} at ${at} s in this shape, across ${Math.round(h)} px of its letters: ${fix}move the captions (set_caption_look, or the version's overrides)`,
           depth: h / Math.max(1, letters.bottom - letters.top),
-          ...(fix ? { fix: { y: +y.toFixed(3), scale: +k.toFixed(2) } } : {}),
+          ...(fix && !pointer ? { fix: { y: +y.toFixed(3), scale: +k.toFixed(2) } } : {}),
         });
         break;
       }
@@ -1869,8 +1899,10 @@ export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(),
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
  * card's length when the master has one). `looks` frame cropped footage on
  * its subject; `notes` collects where a framing cuts one; `moved` the
- * pictures-in-picture moved clear of the captions (clearCaptions). */
-export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[]): Project {
+ * pictures-in-picture moved clear of the captions (clearCaptions);
+ * `callouts` the rings, spotlights and pinned clips it leaves off the frame
+ * or off what they point at (ADR-122). */
+export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[], callouts?: CalloutReport[]): Project {
   let q = p;
   if (v.duration !== undefined) {
     const frames = Math.max(1, secondsToFrames(v.duration, p.fps));
@@ -1879,11 +1911,13 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   }
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
+  const master = q;
   const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
   q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
   if (v.textless) q = textless(q);
   // By hand, last: the version's overrides.
   if (v.overrides?.length) q = applyOverrides(q, v.overrides);
+  if (callouts && shaped !== master) callouts.push(...calloutReports(master, q));
   return { ...q, name: versionName(p.name, v) };
 }
 

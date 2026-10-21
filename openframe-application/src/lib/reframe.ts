@@ -79,9 +79,61 @@ export function relOf(c: VisualClip, t: number, fps: Project["fps"]): number | n
   return Math.abs(at(lo) - t) <= Math.abs(at(hi) - t) ? lo : hi;
 }
 
+/** What the callouts over a shot point at (lib/versionCallouts.ts,
+ * ADR-122): the shot frames where one starts, stops or moves (every frame
+ * of a glide, and a moment before each starts, so the frame is there when
+ * it draws on), and the union of their targets in the shot's picture at a
+ * shot frame, null where none shows. */
+export interface ShotTargets {
+  frames: number[];
+  at(rel: number): Rect01 | null;
+}
+
+/** How far past the scale that covers the frame a shot must be zoomed for
+ * the master to frame a region of it (frame_region, a keyed or set zoom):
+ * a drift slower than a tenth is motion, not a choice of what to show. */
+export const REGION_ZOOM = 1.1;
+
+/**
+ * Does the master frame a region of a full-frame shot (ADR-122): at rest
+ * or at one of its position or scale keys, zoomed REGION_ZOOM past the
+ * scale that covers the frame, or moved off its middle by 2% of the
+ * picture? Then a version crops around that region; the subject detector
+ * is for shots the master shows whole. Claude film test 3's 1:1 version
+ * framed the city picture its saliency found inside the region the editor
+ * pushed into, and cut out the Letter rise card the push was for.
+ */
+export function framesRegion(p: Project, c: VisualClip): boolean {
+  const S = fittedSize(p, c);
+  const frames = new Set([0, ...["transform.x", "transform.y", "transform.scale", "transform.scaleY"].flatMap((k) => (c.keyframes?.[k] ?? []).map((key) => key.f))]);
+  for (const rel of frames) {
+    if (rel < 0 || rel >= c.duration) continue;
+    const l = restLayer(c, rel);
+    const zoom = Math.min((Math.abs(l.scale) * S.w) / p.width, (Math.abs(l.scaleY ?? l.scale) * S.h) / p.height);
+    if (zoom >= REGION_ZOOM - 1e-6) return true;
+    const r = shownRect(p, c, l);
+    if (Math.abs((r.left + r.right) / 2 - 0.5) > 0.02 || Math.abs((r.top + r.bottom) / 2 - 0.5) > 0.02) return true;
+  }
+  return false;
+}
+
+/** Every frame where a clip's position or scale keys move it, within its
+ * length. */
+function motionFrames(c: VisualClip): number[] {
+  const out = new Set<number>();
+  for (const path of ["transform.x", "transform.y", "transform.scale", "transform.scaleY"]) {
+    const keys = c.keyframes?.[path] ?? [];
+    for (let i = 1; i < keys.length; i++) {
+      if (keys[i].v === keys[i - 1].v) continue;
+      for (let f = Math.max(0, keys[i - 1].f); f <= Math.min(c.duration - 1, keys[i].f); f++) out.add(f);
+    }
+  }
+  return [...out];
+}
+
 /** A clip's place on its frame at clip frame `rel`, from its own transform
  * and keys (not the in and out animations), as onCanvas reads a layer. */
-function restLayer(c: VisualClip, rel: number, x?: number, y?: number): Layer {
+export function restLayer(c: VisualClip, rel: number, x?: number, y?: number): Layer {
   const scale = paramAt(c, "transform.scale", rel);
   return {
     x: x ?? paramAt(c, "transform.x", rel),
@@ -116,35 +168,54 @@ const SAMPLE = 0.5;
 
 /**
  * A full-frame shot refit to a version's frame (`after`, its scale already
- * grown to cover), placed so the version's frame holds its subject: at
- * every look sample the window of the new frame's size is chosen inside
- * what the master showed (`master`, `before`) on the axis the new shape
- * crops, together over the shot (followPath), or at the caller's focus;
- * the position is keyed there (kept within the picture) and thinned.
+ * grown to cover), placed so the version's frame holds what matters in it,
+ * on the axis the new shape crops, inside what the master showed
+ * (`master`, `before`) at each moment (ADR-122):
+ * - the caller's focus, on the axes it gives;
+ * - else what the callouts over the shot point at (`targets`: a ring, a
+ *   spotlight's hole), the frame centered on them at every frame they
+ *   show or move, held on the last one between them and already on the
+ *   first before it;
+ * - else, where the master frames a region of the shot (framesRegion), its
+ *   framing kept, centered on that region (as "center");
+ * - else the subject its looks see, chosen together over the shot
+ *   (followPath).
+ * The position is keyed there (kept within the picture) and thinned.
  * "center" keeps `after` as it is. Notes say where the result cuts the
- * subject, measured on the looks, whatever the mode.
+ * subject the looks see where the subject decides or the caller asked for
+ * the center, and where the master's own push cuts it, whatever the mode.
  */
-export function reframeShot(master: Project, q: Project, before: VisualClip, after: VisualClip, look: ShotLook | undefined, mode: Reframe = "subject", focus?: Focus): { clip: VisualClip; notes: SubjectNote[] } {
+export function reframeShot(master: Project, q: Project, before: VisualClip, after: VisualClip, look: ShotLook | undefined, mode: Reframe = "subject", focus?: Focus, targets?: ShotTargets): { clip: VisualClip; notes: SubjectNote[] } {
   const none = { clip: after, notes: [] as SubjectNote[] };
   const crop = after.crop;
+  // What decides the framing where no focus does.
+  const aim = mode === "center" ? "center" : targets?.frames.length ? "targets" : framesRegion(master, before) ? "region" : "subject";
   // Turned or cut pictures keep the old framing; so does a shot with
-  // neither a look nor a focus.
-  if (Math.abs(after.transform.rotation) > 1e-3 || crop.left + crop.right + crop.top + crop.bottom > 1e-3 || (!look && !focus)) return none;
+  // neither a look, a focus nor a callout.
+  if (Math.abs(after.transform.rotation) > 1e-3 || crop.left + crop.right + crop.top + crop.bottom > 1e-3 || (!look && !focus && aim !== "targets")) return none;
   const S = fittedSize(q, after);
   const fps = q.fps;
   // The frames to place it at: the look's samples inside the clip, else
   // every half second; with its first and last frame.
   const every = Math.max(1, Math.round((SAMPLE * fps.num) / fps.den));
   const still = after.type === "image" || !look || look.times.length === 1;
-  const samples: { rel: number; map?: SaliencyMap }[] = [];
+  const samples: { rel: number; map?: SaliencyMap; looked?: boolean }[] = [];
   if (look && !still) look.times.forEach((t, i) => {
     const rel = relOf(after, t, fps);
-    if (rel !== null && !samples.some((s) => s.rel === rel)) samples.push({ rel, map: look.maps[i] });
+    if (rel !== null && !samples.some((s) => s.rel === rel)) samples.push({ rel, map: look.maps[i], looked: true });
   });
-  if (!samples.length) for (let rel = 0; rel < after.duration; rel += every) samples.push({ rel, map: look?.maps[0] });
+  if (!samples.length) for (let rel = 0; rel < after.duration; rel += every) samples.push({ rel, map: look?.maps[0], looked: !!look });
+  // Callouts: every frame they start, stop or glide, and every frame the
+  // master's push moves, so the frame stays on them and the picture keeps
+  // covering it through an eased push (keys every half second, linear
+  // between, left a band bare mid-push).
+  if (aim === "targets") {
+    const have = new Set(samples.map((s) => s.rel));
+    for (const rel of [...targets!.frames, ...motionFrames(before)]) if (rel >= 0 && rel < after.duration && !have.has(rel)) (samples.push({ rel }), have.add(rel));
+  }
   samples.sort((a, b) => a.rel - b.rel);
-  if (samples[0].rel > 0) samples.unshift({ rel: 0, map: samples[0].map });
-  if (samples.at(-1)!.rel < after.duration - 1) samples.push({ rel: after.duration - 1, map: samples.at(-1)!.map });
+  if (samples[0].rel > 0) samples.unshift({ rel: 0, map: samples[0].map, looked: samples[0].looked });
+  if (samples.at(-1)!.rel < after.duration - 1) samples.push({ rel: after.duration - 1, map: samples.at(-1)!.map, looked: samples.at(-1)!.looked });
 
   // Per sample: the frame's size in picture fractions, and the room its
   // center has: inside what the master showed of the shot.
@@ -159,6 +230,11 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
 
   const centers = placed.map((s) => centerOf(q, after, s.l));
   const auto: Record<"x" | "y", number[]> = { x: [], y: [] };
+  // What the callouts point at, at each sample: held on the last one
+  // between them, and on the first before it shows.
+  const aimed: (Rect01 | null)[] = aim === "targets" ? placed.map((s) => targets!.at(s.rel)) : [];
+  const first = aimed.find(Boolean) ?? null;
+  for (let k = 0, last = first; k < aimed.length; k++) aimed[k] = aimed[k] ?? last, (last = aimed[k]);
   for (const axis of axes) {
     const size = (s: (typeof placed)[number]) => (axis === "x" ? s.w : s.h);
     const lo = (s: (typeof placed)[number]) => (axis === "x" ? s.shown.left : s.shown.top), hi = (s: (typeof placed)[number]) => (axis === "x" ? s.shown.right : s.shown.bottom);
@@ -170,10 +246,15 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
       const a = lo(s) + size(s) / 2, b = hi(s) - size(s) / 2;
       return a <= b ? Math.max(a, Math.min(b, c)) : Math.max(b, Math.min(a, c));
     };
-    if (look) auto[axis] = followPath(placed.map((s) => windowScores(s.map!, axis, size(s), s.shown)));
+    if (look && (aim === "subject" || aim === "center")) auto[axis] = followPath(placed.map((s) => windowScores(s.map!, axis, size(s), s.shown)));
     const want = focus?.[axis];
     placed.forEach((s, k) => {
-      const c = want !== undefined ? fit(s, want) : mode === "subject" && look ? auto[axis][k] : (axis === "x" ? centers[k].u : centers[k].v);
+      const t = aimed[k];
+      const c =
+        want !== undefined ? fit(s, want)
+        : aim === "subject" && look ? auto[axis][k]
+        : aim === "targets" && t ? fit(s, axis === "x" ? (t.left + t.right) / 2 : (t.top + t.bottom) / 2)
+        : axis === "x" ? centers[k].u : centers[k].v;
       if (axis === "x") centers[k].u = c;
       else centers[k].v = c;
     });
@@ -181,7 +262,7 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
 
   // The position that puts each chosen center at the frame's center, kept
   // where the picture still covers the frame.
-  const moved = mode === "subject" || !!focus;
+  const moved = aim === "subject" || aim === "targets" || !!focus;
   let clip = after;
   for (const axis of axes) {
     if (!moved) break;
@@ -204,15 +285,25 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
     }
   }
 
-  // Where the frame, as placed, cuts the subject the looks see.
+  // Where the frame, as placed, cuts the subject the looks see: where the
+  // subject decides, or the caller asked for the center. Where the editor
+  // framed a region or pointed at a part, the detector's subject does not
+  // second-guess it (a screen recording's most salient part is rarely what
+  // the push was for); a subject the master's own push cuts is still named.
   const notes: SubjectNote[] = [];
+  const judged = aim === "subject" || aim === "center";
   if (look) {
     const sec = (rel: number) => +framesToSeconds(after.start + rel, fps).toFixed(2);
     placed.forEach((s, k) => {
-      if (!s.map) return;
+      if (!s.map || !s.looked) return;
+      const win = frameRect(q, clip, s.rel, S);
+      if (!judged) {
+        const pushed = pushCut(after, s.rel, s.map, s.shown, win);
+        if (pushed) notes.push({ clipId: after.id, at: sec(s.rel), subject: round(pushed.subject), kept: +pushed.kept.toFixed(2), push: true });
+        return;
+      }
       const subject = subjectBox(s.map, s.shown);
       if (!subject) return;
-      const win = frameRect(q, clip, s.rel, S);
       const kept = shareInside(subject, win);
       const ideal = { ...win };
       for (const axis of axes) {
