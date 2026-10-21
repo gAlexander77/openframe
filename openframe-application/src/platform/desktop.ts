@@ -242,9 +242,10 @@ export const desktop: Platform = {
       sidecar: (extension, text) => invoke<string>("export_sidecar", { id: begun.id, extension, text }),
     };
   },
-  async createAgentExportTarget(suggestedName, extension, folder) {
-    const begun = await invoke<{ id: number; displayName: string }>("export_begin_auto", { suggestedName, extension, folder: folder ?? null });
+  async createAgentExportTarget(suggestedName, extension, folder, replace) {
+    const begun = await invoke<{ id: number; displayName: string; replaced?: boolean }>("export_begin_auto", { suggestedName, extension, folder: folder ?? null, replace: replace ?? false });
     return {
+      ...(begun.replaced ? { replaced: true } : {}),
       writable: writeJob(begun.id),
       displayName: begun.displayName,
       reveal: () => invoke<void>("export_reveal", { id: begun.id }),

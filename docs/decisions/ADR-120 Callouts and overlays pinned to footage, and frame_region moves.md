@@ -1,6 +1,6 @@
 # ADR-120: Callouts and overlays pinned to footage, and frame_region moves
 
-**Date:** 2026-10-21. **Status:** accepted; versions crop around anchored clips' targets, leave them out of their layout and reanchor them since [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]]. Builds on
+**Date:** 2026-10-21. **Status:** accepted; versions crop around anchored clips' targets, leave them out of their layout and reanchor them since [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]]; a callout clicks on each glide's arrival, and check_project names one that leaves the frame, since [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]. Builds on
 [[ADR-052 Agents read what changed and export without a dialog]] (frame_region),
 [[ADR-057 Shape layers are color clips with a shape]],
 [[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]] (markers that follow a clip),

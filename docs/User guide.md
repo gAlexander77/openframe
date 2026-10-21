@@ -671,3 +671,6 @@ asking; `open_project_file` accepts a path only on desktop.
 An AI agent exporting over MCP writes into your Videos folder, in a folder
 named OpenFrame, or into a folder it names. It never replaces a file: a
 second export of the same name is saved as "Name (2)", and the agent is told.
+Only when it names the folder and asks to replace (to supersede its own
+earlier export there) does a new file take the old one's place, once the
+export has finished.

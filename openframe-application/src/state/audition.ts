@@ -14,7 +14,7 @@ import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
 import { stemsOf } from "../lib/audioRoles";
 import { EXPORT_SAMPLE_RATE } from "../lib/export";
-import { projectDuration } from "../lib/project/ops";
+import { projectDuration, rollBounds } from "../lib/project/ops";
 import type { AudioClip, Id, Project, TrackRole } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { currentScreen } from "./project";
@@ -62,6 +62,8 @@ export interface AuditionAnswer {
 
 /** Seconds of a file measured either side of an edge. */
 const SIDE = 0.3;
+/** Under this (dBFS RMS) a file is silent: a digital breath before a hit. */
+const SILENT_DBFS = -60;
 
 /** The audio clips' edges heard in [start, end): joins (a clip ending
  * where the next on its track starts) and lone starts and ends, each with
@@ -88,6 +90,49 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
     const x = await decodeMono(asset, from, c.in + 0.064, RATE, undefined, signal);
     return { onset: ownOnset(x, RATE, Math.round((c.in - from) * RATE)) };
   };
+  // How long the incoming file is digital silence right before its
+  // in-point (a breath before a drop): a crossfade into it fades into that
+  // silence, and a longer one deepens the hole (ADR-125). Seconds, from
+  // the in-point back, when 20 ms or more.
+  const silentBefore = async (c: AudioClip) => {
+    const asset = p.assets.find((x) => x.id === c.assetId);
+    if (!asset?.hasAudio || !plain(c) || c.in < 0.02) return undefined;
+    const rate = 16000, win = rate / 200;
+    const x = await decodeMono(asset, Math.max(0, c.in - 1), c.in, rate, undefined, signal);
+    let n = 0;
+    for (let e = x.length; e - win >= 0; e -= win) {
+      let s = 0;
+      for (let i = e - win; i < e; i++) s += x[i] * x[i];
+      if (10 * Math.log10(s / win + 1e-20) > SILENT_DBFS) break;
+      n += win;
+    }
+    return n / rate >= 0.02 ? +(n / rate).toFixed(3) : undefined;
+  };
+  // Where the join could move instead (roll_edit), a bar later or earlier
+  // (the song's grid, or Bar markers on either clip), keeping both clips a
+  // frame long and in their files, with the incoming file sounding before
+  // its new in-point.
+  const rollTo = async (a: AudioClip, b: AudioClip): Promise<number | undefined> => {
+    const at = sec(b.start);
+    const grid = p.assets.find((x) => x.id === b.assetId)?.musicGrid;
+    const bars = grid
+      ? [at + 240 / grid.bpm, at - 240 / grid.bpm]
+      : p.markers.filter((m) => m.label === "Bar" && (m.follows?.clip === a.id || m.follows?.clip === b.id) && m.frame !== b.start).map((m) => sec(m.frame)).sort((x, y) => Math.abs(x - at) - Math.abs(y - at) || y - x).slice(0, 2);
+    const bounds = rollBounds(p, a.id, b.id);
+    const asset = p.assets.find((x) => x.id === b.assetId);
+    if (!bounds || !asset) return undefined;
+    for (const to of bars) {
+      const fr = Math.round(to * p.fps.num / p.fps.den);
+      if (fr < bounds.lo || fr > bounds.hi) continue;
+      const inB = b.in + (to - at);
+      if (inB < 0.05) continue;
+      const pre = await decodeMono(asset, inB - 0.05, inB, 16000, undefined, signal);
+      let s = 0;
+      for (const v of pre) s += v * v;
+      if (pre.length && 10 * Math.log10(s / pre.length + 1e-20) > SILENT_DBFS) return +to.toFixed(3);
+    }
+    return undefined;
+  };
   for (const t of heard.tracks) {
     if (t.kind !== "audio" || t.muted) continue;
     const clips = t.clips.filter((c): c is AudioClip => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
@@ -102,7 +147,9 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
         const goesOn = plain(c) ? diff(await level(c, out1, out1 + SIDE), await level(c, out1 - SIDE, out1)) : undefined;
         // The next clip's own step at its in-point: the music's, not the cut's.
         const cameIn = next && plain(next) && next.in >= SIDE ? diff(await level(next, next.in - SIDE, next.in), await level(next, next.in, next.in + SIDE)) : undefined;
-        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? audioCrossfade(c, next, p.fps) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}), ...(cameIn !== undefined ? { cameIn } : {}), ...(next ? await onset(next) : {}) });
+        const silent = next ? await silentBefore(next) : undefined;
+        const roll = next && silent !== undefined ? await rollTo(c, next) : undefined;
+        out.push({ at: +at1.toFixed(3), kind: next ? "join" : "end", clips: next ? [c.id, next.id] : [c.id], faded: next ? audioCrossfade(c, next, p.fps) : sec(c.fadeOut), ...(goesOn !== undefined ? { goesOn } : {}), ...(cameIn !== undefined ? { cameIn } : {}), ...(next ? await onset(next) : {}), ...(next && silent !== undefined ? { silentBefore: { seconds: silent, in: next.in }, ...(roll !== undefined ? { rollTo: roll } : {}) } : {}) });
       }
     }
   }

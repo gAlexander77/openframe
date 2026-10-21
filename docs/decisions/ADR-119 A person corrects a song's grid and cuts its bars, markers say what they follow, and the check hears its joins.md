@@ -1,6 +1,6 @@
 # ADR-119: A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins
 
-**Date:** 2026-10-20. **Status:** accepted. Closes gaps that
+**Date:** 2026-10-20. **Status:** accepted; a join into the incoming file's silence is rolled a bar, not crossfaded again, since [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]. Closes gaps that
 [[ADR-109 What an agent can set, a person can see and change]] and
 [[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]
 left.

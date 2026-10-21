@@ -45,6 +45,8 @@ export interface ExportTarget {
    * `extension` (captions as .srt). Desktop writes it in the same folder;
    * the web downloads it. Answers where it went, as displayName does. */
   sidecar?(extension: string, text: string): Promise<string>;
+  /** An agent asked to replace a file of the name, and one was there. */
+  replaced?: boolean;
 }
 
 export interface Platform {
@@ -114,8 +116,10 @@ export interface Platform {
   /** Desktop: start an export without a dialog, for agents (export_video),
    * in the user's Videos folder, or in `folder` (an absolute path the agent
    * named, created if missing), under a name that replaces nothing ("Trip
-   * (2).mp4" when Trip.mp4 is there). displayName is the whole path. */
-  createAgentExportTarget?(suggestedName: string, extension: string, folder?: string): Promise<ExportTarget>;
+   * (2).mp4" when Trip.mp4 is there), or with `replace` and a folder the
+   * name itself, a file of that name replaced when it finishes (ADR-125).
+   * displayName is the whole path. */
+  createAgentExportTarget?(suggestedName: string, extension: string, folder?: string, replace?: boolean): Promise<ExportTarget>;
   /** `bytes` of a media file from byte `at` (its first, by default), to
    * tell its format by content when its name says nothing (an import by a
    * path without an extension), or read an MP3's gapless tag past its

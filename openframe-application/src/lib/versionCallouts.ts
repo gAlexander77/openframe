@@ -437,3 +437,64 @@ export function calloutBoxAt(q: Project, id: Id, f: number): Box | null {
   const part: Part = a ? (a.mask ? "mask" : a.keys[0].w !== undefined && c.type === "color" && c.shape ? "shape" : "point") : (calloutPart(q, c) ?? (c.type === "color" && c.mask && CLOSED.has(c.mask.shape) ? "mask" : c.type === "color" && c.shape ? "shape" : "point"));
   return boxOfSpot(calloutSpot(q, c, part, f - c.start));
 }
+
+/** A callout that leaves the master's own frame (check_project). */
+export interface OffFrame {
+  /** Its parts: a ring first, then its dim. */
+  clip_ids: Id[];
+  /** How it is named: "a ring", "a spotlight's hole"... */
+  what: string;
+  /** Timeline frames: its worst moment, and where it starts to leave. */
+  worst: number;
+  leaves: number;
+  /** Its first frame. */
+  start: number;
+  /** The share of its box outside the frame at its worst. */
+  share: number;
+}
+
+/**
+ * The callouts that leave the frame of the project itself, as the versions
+ * check measures them in a version (calloutReports): every sixth of a
+ * second each shows, a quarter of its box or more outside at its worst. A
+ * ring pinned to a screen recording rides the recording's pan: the fourth
+ * film test's ring on a landed clip rode a pan straight off the left edge
+ * of its 9:16 frame, its dim's hole with it, and nothing said so (ADR-125).
+ * A callout's ring and dim are one finding. It starts leaving where its
+ * share outside first climbs past where it rested before (a ring around a
+ * part at the frame's edge is cut a little from the start): trimming it to
+ * end there keeps it whole.
+ */
+export function calloutsOffFrame(p: Project): OffFrame[] {
+  const byId = clipsById(p);
+  const step = Math.max(1, secondsToFrames(1 / 6, p.fps));
+  const out = new Map<string, OffFrame & { part: Part }>();
+  for (const k of calloutsOf(p)) {
+    const c = byId.get(k.id);
+    if (!c || !("transform" in c)) continue;
+    const outside = (r: number) => {
+      const s = calloutSpot(p, c, k.part, r), b = boxOfSpot(s);
+      const inside = Math.max(0, Math.min(b.right, p.width) - Math.max(b.left, 0)) * Math.max(0, Math.min(b.bottom, p.height) - Math.max(b.top, 0));
+      return 1 - inside / Math.max(1, s.w * s.h);
+    };
+    const frames: number[] = [];
+    for (let r = 0; r < c.duration; r += step) frames.push(r);
+    if (frames.at(-1) !== c.duration - 1) frames.push(c.duration - 1);
+    const shares = frames.map(outside);
+    const w = shares.indexOf(Math.max(...shares));
+    if (shares[w] < 0.25) continue;
+    const rest = Math.min(...shares.slice(0, w + 1)) + 0.05;
+    let i = w;
+    while (i > 0 && shares[i - 1] > rest) i--;
+    // Frame by frame between the last sample at rest and the first past it.
+    let leaves = frames[i];
+    if (i > 0) for (let r = frames[i - 1] + 1; r <= frames[i]; r++) if (outside(r) > rest) { leaves = r; break; }
+    const key = c.group ?? c.id;
+    const was = out.get(key);
+    const ids = was ? (k.part === "shape" ? [c.id, ...was.clip_ids] : [...was.clip_ids, c.id]) : [c.id];
+    const mine = { clip_ids: ids, what: nameOf(c, k.part), worst: c.start + frames[w], leaves: c.start + leaves, start: c.start, share: +shares[w].toFixed(2), part: k.part };
+    // The ring speaks for its dim: it is what the eye follows.
+    out.set(key, !was || (k.part === "shape" && was.part !== "shape") ? mine : { ...was, clip_ids: ids, leaves: Math.min(was.leaves, mine.leaves) });
+  }
+  return [...out.values()].map(({ part: _, ...x }) => x).sort((a, b) => a.worst - b.worst);
+}
