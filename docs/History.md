@@ -1658,3 +1658,57 @@ lane in its own worktree, merged and gated before the next.
 - **Merge rewritten descriptions word by word.** When two lanes rewrite
   one tool description, merge it against the common base token by token
   (`git merge-file` on one word per line) rather than picking a side.
+
+## 2026-10-21 — The sixth improvements branch: explainers, how-tos and their versions (Claude Code)
+
+The owner asked to keep going: find bugs, missing features and edge cases,
+fix them and iterate. Branch `improvements-6` took the lanes left open at
+the end of the fifth branch, then two more blind Claude Code films.
+
+- **Leftovers from the fifth branch:**
+  - [[ADR-117 A whole file relinks to itself, effects keep their size at every render size, and a split's halves share one compressor]]:
+    a clip rounded a frame past its file was refused its own file on
+    relink; the RGB split, VHS lines and the pixelate transition were
+    sized in render pixels (the viewer showed them 2.7x larger than the
+    export); glow, denoise and sketch got radius parameters versions can
+    scale.
+  - [[ADR-118 A version's captions take its frame, pictures keep clear of them, and fades and push-ins are judged]]:
+    a 9:16 short's captions read twice too large on its 16:9 cut.
+  - [[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]:
+    the Beat grid section, Cut bars, and `click_at_join` in the check.
+- **The third Claude Code film**, a 70 s product explainer cut from the
+  app's own screen recordings, found 16 problems; guiding the eye was all
+  hand work (16 keyframes per callout move, positions computed by hand).
+  [[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]]
+  added `add_callout` and anchors;
+  [[ADR-121 Captions stay on top, ad elements keep rows of their own, and answers count what moved together]]
+  and [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]]
+  fixed the rest, including a 1:1 version that had cropped out every
+  target the explainer zoomed to.
+- **The fourth Claude Code film**, a 58.5 s vertical how-to from the same
+  recordings, found 16 more: its 16:9 version floated the fitted shots in
+  black with four rings off the frame, and `focus`, `pushes` and
+  `overrides` silently did nothing there.
+  [[ADR-123 Fitted shots are footage a version reframes, and framing knobs act or say why]],
+  [[ADR-124 Answers and hints that tell the truth, captions restyled together, lines as tall as their letters]]
+  and [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]
+  fixed them.
+- **Checked:** tsc and the full unit suite after every merge (1,637 tests
+  at the end); a full drive sweep reached 185 of 197 drives, all passing,
+  before Claude Code stopped it for low memory; each lane ran the drives
+  its change touched; both films' exports looked at frame by frame.
+
+### Lessons paid for in this round
+
+- **Screen recordings are a genre of their own.** Natural footage is
+  framed on its subject; a screen recording is framed on what the editor
+  zoomed to and what the callouts point at. Versions now crop by the
+  editor's intent first and saliency last.
+- **A knob that does nothing must say so.** Three version options were
+  silent no-ops on fitted shots; every one now acts or answers why not.
+- **Memory is a shared budget.** With the owner's browser holding 21 GB,
+  three agents plus a two-shard sweep ran the PC out of memory; agents
+  now wait under 5 GB free, and the full test suite never runs beside an
+  open browser.
+- **Two lanes can name the same new file.** Both film-4 lanes added
+  `film4Fixes.test.ts`; the merge kept both under different names.
