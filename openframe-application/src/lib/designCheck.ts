@@ -11,7 +11,7 @@
 // box over footage is flagged as a risk instead, and the answer says why.
 // Loudness is left to measure_loudness and export.
 
-import { layerBox, TITLE_SAFE, VERTICAL_SAFE } from "./align";
+import { layerBox, TITLE_SAFE, titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { contrastFixes, endsByItself, hex, titleLook, type Backdrop, type PixelBox, type Tail, type TitleLook, type UnevenFade } from "./contrast";
 import { ANIMATIONS } from "./catalog";
@@ -455,6 +455,83 @@ export function captionRuns(caps: CaptionShown[]): CaptionShown[][] {
 
 const shownChars = (text: string) => text.replace(/\s+/g, " ").trim().length;
 
+/** A side of a tall frame the apps draw over (VERTICAL_SAFE). */
+type Zone = "bottom" | "right" | "top" | "left";
+/** A box in fractions of the frame from its center (x right, y down). */
+type Box = { left: number; right: number; top: number; bottom: number };
+/** The edges titles keep within, fractions from the center (top and left negative). */
+type Edges = { top: number; bottom: number; left: number; right: number };
+
+const r3 = (v: number) => +v.toFixed(3);
+const down2 = (v: number) => Math.floor(v * 100 + 1e-6) / 100;
+
+/**
+ * One fix for every caption that reaches into the same zones of a tall
+ * frame (ADR-124): set_caption_look moves and sizes them all, so it names
+ * the value that clears the worst of them. Out at a side: centered between
+ * the rails and, when wider than the column, narrowed (maxWidth); out at
+ * the bottom or top: moved up or down; too big for the room: smaller. The
+ * fourth film test's x overflow was told "captions sit at y 0.05".
+ */
+function captionZoneFix(kinds: Zone[], list: { c: TextClip; box: Box }[], z: Edges): string {
+  const call: string[] = [], why: string[] = [];
+  let factor = 1;
+  const cw = z.right - z.left, zh = z.bottom - z.top;
+  if (kinds.includes("left") || kinds.includes("right")) {
+    call.push(`x ${r3((z.left + z.right) / 2)}`);
+    why.push(`between the side rails (x ${r3(z.left)}..${r3(z.right)})`);
+    const widest = Math.max(...list.map(({ box }) => box.right - box.left));
+    if (widest > cw - 0.004) {
+      const w = down2(Math.min(...list.map(({ c, box }) => c.style.maxWidth - (box.right - box.left - cw) - 0.01)));
+      if (w >= 0.2) call.push(`maxWidth ${w}`);
+      else factor = Math.min(factor, (cw - 0.01) / widest);
+    }
+  }
+  const up = kinds.includes("bottom"), down = kinds.includes("top");
+  if (up || down) {
+    const tallest = Math.max(...list.map(({ box }) => box.bottom - box.top));
+    const y = up ? Math.min(...list.map(({ c, box }) => c.transform.y - (box.bottom - z.bottom) - 0.005)) : Math.max(...list.map(({ c, box }) => c.transform.y + (z.top - box.top) + 0.005));
+    // Every caption moves to it: each must still fit the other way.
+    const fits = up !== down && tallest < zh && list.every(({ c, box }) => (up ? box.top + (y - c.transform.y) >= z.top : box.bottom + (y - c.transform.y) <= z.bottom));
+    if (fits) {
+      call.push(`y ${r3(y)}`);
+      why.push(up ? `above the apps' captions and buttons (y under ${r3(z.bottom)})` : `below their tabs (y over ${r3(z.top)})`);
+    } else factor = Math.min(factor, (zh - 0.01) / tallest);
+  }
+  const size = Math.floor(Math.min(...list.map(({ c }) => c.style.size)) * factor);
+  const smaller = factor < 1 ? `set_caption_look size ${size} or less: the captions are too ${kinds.some((k) => k === "left" || k === "right") && !call.some((x) => x.startsWith("maxWidth")) ? "wide" : "tall"} for the room the apps leave` : "";
+  if (!call.length) return smaller;
+  return `set_caption_look ${call.join(" ")} (every caption, ${why.join(" and ")})${smaller ? `, and ${smaller}` : ", or a smaller size"}`;
+}
+
+/**
+ * A title's fix for the zones of a tall frame it reaches into (ADR-124):
+ * the move that brings its box inside, or a narrower wrap or a smaller
+ * size when it is wider or taller than the room. A keyed or nested title
+ * is told where its box must stay instead, with the way to move.
+ */
+function titleZoneFix(c: TextClip, kinds: Zone[], box: Box, z: Edges, nested: boolean): string {
+  const t = c.transform;
+  const xs = kinds.includes("left") || kinds.includes("right"), ys = kinds.includes("top") || kinds.includes("bottom");
+  const dirs = [kinds.includes("bottom") && "up", kinds.includes("top") && "down", kinds.includes("right") && "left", kinds.includes("left") && "right"].filter(Boolean).join(" and ");
+  const within = `so its box stays within x ${r3(z.left)}..${r3(z.right)} and y ${r3(z.top)}..${r3(z.bottom)}`;
+  if (nested || c.keyframes?.["transform.x"] || c.keyframes?.["transform.y"]) return `move it ${dirs} ${within}, or make it smaller`;
+  const cw = z.right - z.left, zh = z.bottom - z.top, bw = box.right - box.left, bh = box.bottom - box.top;
+  const out: string[] = [];
+  if (xs) {
+    if (bw <= cw - 0.004) out.push(`set_param transform.x ${r3(t.x + (box.right > z.right ? z.right - box.right - 0.003 : z.left - box.left + 0.003))}`);
+    else {
+      const w = down2(c.style.maxWidth - (bw - cw) - 0.01);
+      out.push(w >= 0.2 && c.text.trim().includes(" ") ? `set_text style.maxWidth ${w} and set_param transform.x ${r3((z.left + z.right) / 2)} (a narrower wrap, centered between the rails)` : `set_text style.size ${Math.floor((c.style.size * (cw - 0.01)) / bw)} or less and set_param transform.x ${r3((z.left + z.right) / 2)}`);
+    }
+  }
+  if (ys) {
+    if (bh <= zh - 0.004 && !(kinds.includes("top") && kinds.includes("bottom"))) out.push(`set_param transform.y ${r3(t.y + (box.bottom > z.bottom ? z.bottom - box.bottom - 0.003 : z.top - box.top + 0.003))}`);
+    else out.push(`set_text style.size ${Math.floor((c.style.size * (zh - 0.01)) / bh)} or less`);
+  }
+  return `${out.join(", and ")} (${within})${c.group ? ", its group's other parts by the same amount" : ""}`;
+}
+
 export function checkProject(p: Project, kind: CheckKind = "any", measured: Measured = {}) {
   const out: Finding[] = [];
   const sec = (f: number) => +framesToSeconds(f, p.fps).toFixed(2);
@@ -478,6 +555,22 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
   // Captions shown a few words at a time are read as the line they make.
   const runs = captionRuns(texts.filter((s) => s.c.caption).map((s) => ({ id: s.c.id, track: s.track.id, start: framesToSeconds(s.start, p.fps), end: framesToSeconds(s.start + s.duration, p.fps), text: s.c.text })));
   const inRun = new Set(runs.flatMap((r) => r.map((c) => c.id)));
+  const fracBox = (b: PixelBox): Box => ({ left: frac(b.left / p.width - 0.5), right: frac(b.right / p.width - 0.5), top: frac(b.top / p.height - 0.5), bottom: frac(b.bottom / p.height - 0.5) });
+  // The apps' zones a box reaches into, and one fix for every caption that
+  // reaches into the same ones (ADR-124): the captions move and size together.
+  const zonesOf = (b: Box): Zone[] => (vertical ? (["bottom", "right", "top", "left"] as const).filter((k) => (k === "bottom" ? b.bottom > z.bottom + 0.001 : k === "right" ? b.right > z.right + 0.001 : k === "top" ? b.top < z.top - 0.001 : b.left < z.left - 0.001)) : []);
+  const captionFixes = new Map<string, string>();
+  if (vertical) {
+    const byZones = new Map<string, { c: TextClip; box: Box }[]>();
+    for (const s of texts) {
+      if (!s.c.caption || s.via.length) continue;
+      const g = seenLetters(p, s);
+      const box = g && fracBox(g.box);
+      const kinds = box ? zonesOf(box) : [];
+      if (kinds.length) byZones.set(kinds.join("+"), [...(byZones.get(kinds.join("+")) ?? []), { c: s.c, box: box! }]);
+    }
+    for (const [key, list] of byZones) captionFixes.set(key, captionZoneFix(key.split("+") as Zone[], list, z));
+  }
 
   for (const s of texts) {
     const { c, track } = s;
@@ -489,14 +582,20 @@ export function checkProject(p: Project, kind: CheckKind = "any", measured: Meas
     const outer = s.via[0], inner = s.via.at(-1);
     const where0 = outer ? { clip_id: c.id, compound_clip_id: outer.id } : { clip_id: c.id };
     const inside = (fix: string) => (inner ? `edit_compound compound_id "${inner.compoundId}" running, on clip_id "${c.id}": ${fix}` : fix);
-    const box = { left: frac(g.box.left / p.width - 0.5), right: frac(g.box.right / p.width - 0.5), top: frac(g.box.top / p.height - 0.5), bottom: frac(g.box.bottom / p.height - 0.5) };
+    const box = fracBox(g.box);
     const where = `its box runs x ${box.left}..${box.right}, y ${box.top}..${box.bottom} (fractions from the center)`;
     const name = c.caption ? "A caption" : `"${c.text.slice(0, 24)}"${outer ? ` (in compound clip ${outer.id})` : ""}`;
     const place = (fix: string) => (outer ? `set_param transform.x/y or transform.scale on the compound clip ${outer.id}, or ${inside(fix)}` : fix);
     const out = [box.left < -z.safe - 0.001 && `left of ${-z.safe}`, box.right > z.safe + 0.001 && `right of ${z.safe}`, box.top < -z.safe - 0.001 && `above ${-z.safe}`, box.bottom > z.safe + 0.001 && `below ${z.safe}`].filter(Boolean);
     if (out.length) add({ rule: "text_outside_title_safe", level: "warning", ...where0, at: sec(mid), message: `${name} reaches outside the 90% title-safe area (${out.join(", ")}): ${where}`, fix: place("align_clips with margin 0.05, or set_param transform.x/y and a smaller style.size") });
-    const zones = vertical ? [box.bottom > z.bottom + 0.001 && `the bottom 35% (below y ${frac(z.bottom)}): captions, names, the description`, box.right > z.right + 0.001 && `the right 19% (right of x ${frac(z.right)}): like, comment, share`, box.top < z.top - 0.001 && `the top 14% (above y ${frac(z.top)}): the tabs and search`, box.left < z.left - 0.001 && `the left 11% (left of x ${frac(z.left)})`].filter(Boolean) : [];
-    if (zones.length) add({ rule: "text_under_app_buttons", level: "warning", ...where0, at: sec(mid), message: `${name} reaches into ${zones.join("; and ")}, where TikTok, Reels and Shorts draw over the video; ${where}`, fix: c.caption ? "captions on a tall canvas sit at y 0.05 (add_captions y, set_param transform.y)" : place(`move it so its box stays within x ${frac(z.left)}..${frac(z.right)} and y ${frac(z.top)}..${frac(z.bottom)}, or make it smaller`) });
+    const kinds = zonesOf(box);
+    const said: Record<Zone, string> = { bottom: `the bottom 35% (below y ${frac(z.bottom)}): captions, names, the description`, right: `the right 19% (right of x ${frac(z.right)}): like, comment, share`, top: `the top 14% (above y ${frac(z.top)}): the tabs and search`, left: `the left 11% (left of x ${frac(z.left)})` };
+    if (kinds.length) {
+      // A fix for the zones this one reaches (ADR-124): an x overflow is not
+      // cured by a y, and alike findings group by it.
+      const fix = c.caption && !outer ? captionFixes.get(kinds.join("+"))! : place(titleZoneFix(c, kinds, box, z, !!outer));
+      add({ rule: "text_under_app_buttons", level: "warning", ...where0, at: sec(mid), message: `${name} reaches into ${kinds.map((k) => said[k]).join("; and ")}, where TikTok, Reels and Shorts draw over the video; ${where}`, fix });
+    }
     // Drawn at its own scale and every compound clip's that shows it.
     const size = c.style.size * g.scale;
     if (size < minSize - 0.5) {
@@ -748,12 +847,23 @@ function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
     const mates = s.c.group ? texts.filter((x) => x.c.group === s.c.group && x !== s).flatMap((x) => seenLetters(p, x, Math.min(x.start + x.duration - 1, Math.max(x.start, hits[0].at)))?.box ?? []) : [];
     const span = { top: Math.min(box.top, ...mates.map((b) => b.top)), bottom: Math.max(box.bottom, ...mates.map((b) => b.bottom)) };
     const lift = caps.top - gap - span.bottom, drop = caps.bottom + gap - span.top;
-    const fits = (d: number) => span.top + d >= TITLE_SAFE * p.height && span.bottom + d <= (1 - TITLE_SAFE) * p.height;
-    const up = !fits(drop) || (fits(lift) && -lift <= drop);
+    // Inside the zone titles keep to: on a tall frame clear of the apps'
+    // tabs and buttons too (ADR-124: the fourth film test's step label was
+    // told to move up into the top 14%).
+    const zone = titleZone(p);
+    const inZone = (top: number, bottom: number) => top >= zone.top * p.height - 0.5 && bottom <= (1 - zone.bottom) * p.height + 0.5;
+    const fits = (d: number) => inZone(span.top + d, span.bottom + d);
+    const up = fits(lift) && (!fits(drop) || -lift <= drop);
     const dy = up ? lift : drop;
     const t = "transform" in s.c ? s.c.transform : undefined;
     const keyed = !!s.c.keyframes?.["transform.y"] || s.via.length > 0;
-    const move = `move it ${up ? "up" : "down"} ${frac(Math.abs(dy) / p.height)} of the frame's height${t && !keyed ? ` (set_param transform.y ${frac(t.y + dy / p.height)}${s.c.group ? ", and its group's other parts by the same amount" : ""})` : ""}`;
+    const move = fits(dy) ? `move it ${up ? "up" : "down"} ${frac(Math.abs(dy) / p.height)} of the frame's height${t && !keyed ? ` (set_param transform.y ${frac(t.y + dy / p.height)}${s.c.group ? ", and its group's other parts by the same amount" : ""})` : ""}` : "";
+    // Or the captions move the other way, by set_caption_look y, while
+    // they stay inside the zone themselves.
+    const capY = hits[0].s.c.transform.y;
+    const capDown = span.bottom + gap - caps.top, capUp = span.top - gap - caps.bottom;
+    const capMoves = [capDown, capUp].filter((d) => inZone(caps.top + d, caps.bottom + d)).sort((a, b) => Math.abs(a) - Math.abs(b));
+    const capMove = capMoves.length && !hits[0].s.via.length ? `move the captions ${capMoves[0] > 0 ? "down" : "up"} (set_caption_look y ${frac(capY + capMoves[0] / p.height)})` : "";
     const first = hits[0];
     out.push({
       rule: "text_overlaps_text",
@@ -763,7 +873,7 @@ function textOverlaps(p: Project, texts: SeenText[]): Finding[] {
       ...(s.via.length ? { compound_clip_id: s.via[0].id } : {}),
       at: sec(first.at),
       message: `${name(s)} is drawn across ${hits.length === 1 ? name(first.s) : `${hits.length} captions`} (${sec(Math.min(...hits.map((x) => x.s.start)))}-${sec(Math.max(...hits.map((x) => x.s.start + x.s.duration)))} s; at ${sec(first.at)} s their boxes share ${Math.round(first.w)} x ${Math.round(first.h)} px): both are hard to read`,
-      fix: `${move}, or move the captions (set_caption_look y)`,
+      fix: [move, capMove].filter(Boolean).join(", or ") || `there is no room for both inside the frame's ${p.height > p.width ? "zone clear of the apps (y " + frac(zone.top - 0.5) + ".." + frac(0.5 - zone.bottom) + ")" : "title-safe area"}: make it or the captions smaller (set_text style.size, set_caption_look size), or show it before or after them (trim_clip)`,
     });
   }
   for (const { a, b } of pairs)

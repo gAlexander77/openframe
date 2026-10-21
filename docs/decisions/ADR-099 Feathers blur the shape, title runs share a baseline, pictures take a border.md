@@ -1,6 +1,6 @@
 # ADR-099: Feathers blur the shape, title runs share a baseline, pictures take a border
 
-**Date:** 2026-10-20. **Status:** accepted.
+**Date:** 2026-10-20. **Status:** accepted; each line takes its own pitch since [[ADR-124 Answers and hints that tell the truth, captions restyled together, lines as tall as their letters]].
 
 ## Context
 

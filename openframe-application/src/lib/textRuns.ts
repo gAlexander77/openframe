@@ -84,13 +84,22 @@ export function runSegments(text: string, start: number, style: TextStyle) {
   return ends.slice(1).filter((end, i) => end > ends[i]).map((end, i) => ({ text: text.slice(ends[i] - start, end - start), start: ends[i], style: runStyle(style, ends[i]) }));
 }
 
+/** How tall a line is drawn against the title's size: its tallest letters'
+ * scale, so a line all in a run at 0.72 is 0.72 of a line high (ADR-124);
+ * 1 for an empty line or a title without runs. Spaces do not count. */
+export function lineScale(line: string, start: number, style: TextStyle): number {
+  if (!style.runs?.length) return 1;
+  const parts = runSegments(line, start, style).filter((r) => r.text.trim());
+  return parts.length ? Math.max(...parts.map((r) => style.runs!.find((x) => x.start <= r.start && r.start < x.end)?.scale ?? 1)) : 1;
+}
+
 export function measureRuns(text: string, start: number, style: TextStyle, measure: (text: string, style: TextStyle) => number): number {
   return runSegments(text, start, style).reduce((width, r) => width + measure(r.text, r.style), 0);
 }
 
 /** A piece of a title as the rasterizer draws it: where its text starts,
  * its left edge and width, and its line's middle (raster pixels). */
-export interface RunPiece { start?: number; text?: string; x: number; width: number; y: number }
+export interface RunPiece { start?: number; text?: string; x: number; width: number; y: number; /** Its line's height, when lines differ (lineScale). */ h?: number }
 
 /** The box each run's letters cover in the raster, across every line it
  * wraps onto (ADR-099): a run's own gradient runs from its first letter to
@@ -105,7 +114,8 @@ export function runBoxes(runs: TextRun[], pieces: RunPiece[], lineHeight: number
     const run = runs.find((r) => r.start <= at && at < r.end);
     if (!run) continue;
     const b = boxes.get(run);
-    const top = p.y - lineHeight / 2, bottom = p.y + lineHeight / 2;
+    const lh = p.h ?? lineHeight;
+    const top = p.y - lh / 2, bottom = p.y + lh / 2;
     const right = p.x + p.width - (p.text === "" ? 0 : letterSpacing);
     boxes.set(run, b ? { left: Math.min(b.left, p.x), top: Math.min(b.top, top), right: Math.max(b.right, right), bottom: Math.max(b.bottom, bottom) } : { left: p.x, top, right, bottom });
   }
@@ -122,6 +132,24 @@ export function baselineShifts(pieces: { y: number; above: number }[]): number[]
   const deepest = new Map<number, number>();
   for (const p of pieces) deepest.set(p.y, Math.max(deepest.get(p.y) ?? -Infinity, p.above));
   return pieces.map((p) => deepest.get(p.y)! - p.above);
+}
+
+/**
+ * The lines a stretch of a title (shown text offsets, end-exclusive) is
+ * drawn across when wrapping parts it, or null when it sits on one line or
+ * only the title's own line breaks part it. The fourth film test's "IN
+ * OPENFRAME" at scale 0.72 came out as "IN" over "OPENFRAME", and nothing
+ * said it was wider than the wrap width (ADR-124).
+ */
+export function wrappedRange(shown: string, lines: string[], start: number, end: number): string[] | null {
+  let cursor = 0;
+  const spans = lines.map((l) => {
+    const at = Math.max(0, shown.indexOf(l, cursor));
+    cursor = Math.max(cursor, at) + l.length;
+    return [at, at + l.length] as const;
+  });
+  const hit = lines.filter((_, i) => spans[i][0] < end && spans[i][1] > start && spans[i][1] > spans[i][0]);
+  return hit.length > shown.slice(start, end).split("\n").length ? hit : null;
 }
 
 export function styleRange(text: string, runs: TextRun[] | undefined, start: number, end: number, style: Partial<TextRun>, clear = false): TextRun[] {

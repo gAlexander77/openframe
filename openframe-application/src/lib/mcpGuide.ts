@@ -175,7 +175,7 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   remove_keyframes: { clip_ids: ["c_title"], path: "opacity" },
   retake_voiceover: { clip_id: "c_vo2", pronounce: { MCP: "M C P" }, words_per_second: [2.3, 2.8], ripple: true },
   duck_under_speech: { track_id: "t_music", voice_above_music_lu: 12, min_line_lu: 10 },
-  set_caption_look: { look: "pop" },
+  set_caption_look: { look: "pop", y: -0.2, size: 52, maxWidth: 0.6 },
   auto_reframe: { clip_id: "c_123", ratio: "9:16" },
   preview_frames: { times: [0.5, 2, 4, 6, 8, 10, 12, 14] },
   preview_motion: { start: 7.5, end: 9.5, fps: 10 },
@@ -327,7 +327,7 @@ ${DESIGN_POINTER}`,
 1. new_project; set_project 1080x1920; import_media.
 2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
 3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
-4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, get_transcript (words with times) and add_captions with a few words per caption and their word times; then set_caption_look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons.
+4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, get_transcript (words with times) and add_captions with a few words per caption and their word times; then set_caption_look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once.
 5. Hook title in the first second (add_text, size 120-160, with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect).
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p).

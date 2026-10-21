@@ -529,3 +529,13 @@ Every non-obvious choice gets a short Architecture Decision Record in
   into its picture, and coverage names footage left floating small;
   frame_region place_at puts a region anywhere at any zoom; a batch's
   follow is no hand move, and a re-pinned glide is described as one.
+- [[ADR-124 Answers and hints that tell the truth, captions restyled together, lines as tall as their letters]] —
+  review_voiceover compares numbers as said (ten eighty for 1080, minus
+  for -14) and against the line's caption, never asking a slower read for
+  a number written another way; baked keys and an answer's anchor glides
+  are counted, a list spanning tracks shares per track, quiet: true on an
+  edit answers ids, describe_project takes fields; set_caption_look moves,
+  sizes and narrows every caption; check_project gives each zone finding
+  the move that clears it and keeps a title's move inside the apps' zone;
+  each line of a title is as tall as its letters, style_text_range takes a
+  style object and says when the wrap parts a styled stretch.

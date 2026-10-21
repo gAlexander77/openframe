@@ -64,7 +64,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       const act = speechActivity(pcm, RATE);
       const pitch = pitchStats(pitchTrack(pcm, RATE));
       const sp = asset.speech;
-      const cmp = sp ? compareScript(sp.text, heard, sp.pronounce) : { words: heardWords.length, matched: heardWords.length, differences: [] };
+      const cmp = sp ? compareScript(sp.text, heard, sp.pronounce, sp.caption) : { words: heardWords.length, matched: heardWords.length, differences: [] };
       // As mixed: the voice's track alone, and the music under it, from the
       // line's first word to its last (the line window, ADR-096: the music
       // in its lead-in and tail is not under any word).
@@ -142,7 +142,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       try {
         for (const { m, i, sp } of doubtful) {
           const again = (await transcribePcm(heardPcm[i], 0, { model: RECHECK_MODEL, language: null }, () => undefined, signal)).map((w) => w.text.trim()).join(" ");
-          const second = compareScript(sp!.text, again, sp!.pronounce);
+          const second = compareScript(sp!.text, again, sp!.pronounce, sp!.caption);
           m.differences = judgeHearings(m.differences, second.differences);
           m.recheck = { heard: again, match: second.words ? matchShare(second.matched, second.differences) : null };
         }

@@ -22,6 +22,8 @@ export interface TextLayout {
    * of the same height: the canvas centers the em box ("middle"), CSS
    * centers the font's ascent plus descent. */
   baselineShift: number;
+  /** The lines as drawn, wrapped (cased as shown). */
+  lines?: string[];
 }
 
 /**
