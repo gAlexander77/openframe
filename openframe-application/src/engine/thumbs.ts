@@ -1,3 +1,4 @@
+import { sourceForPurpose } from "./playbackProxies";
 // Thumbnails and waveforms, generated in the background after import and
 // cached for the session. A small job queue keeps at most two files
 // decoding at once so import never starves playback. Results arrive
@@ -48,7 +49,7 @@ export const thumbs = {
     return () => listeners.delete(l);
   },
   version: () => version,
-  strip: (a: Asset) => strips.get(a.proxy ?? a.src),
+  strip: (a: Asset) => strips.get(sourceForPurpose(a, "filmstrip")) ?? strips.get(a.proxy ?? a.src),
   peaks: (a: Asset) => peaks.get(a.proxy ?? a.src),
   poster: (a: Asset) => posters.get(a.src),
 };
@@ -76,7 +77,7 @@ function pump() {
 
 /** Start generating everything an asset needs. Idempotent. */
 export function prepare(asset: Asset) {
-  const src = asset.proxy ?? asset.src;
+  const src = sourceForPurpose(asset, "thumbnail");
   if (started.has(src)) return;
   started.add(src);
   if (asset.kind === "image") {
@@ -95,7 +96,7 @@ export function prepare(asset: Asset) {
     return;
   }
   if (asset.hasVideo && asset.kind === "video") enqueue(() => makeStrip(asset, src));
-  if (asset.hasAudio) enqueue(() => makePeaks(asset, src));
+  if (asset.hasAudio) enqueue(() => makePeaks(asset, asset.proxy ?? asset.src));
 }
 
 async function toUrl(bmp: ImageBitmap): Promise<string> {

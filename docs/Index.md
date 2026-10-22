@@ -557,3 +557,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.
+- [[ADR-131 Playback proxies are purpose scoped and disposable cache]] — separate preview copies from delivery sources, validate cache
+  health on this machine, and make batches as undoable metadata.

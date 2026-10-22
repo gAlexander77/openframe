@@ -1,3 +1,6 @@
+import type { SourcePurpose } from "../lib/proxyPolicy";
+import { sourceForPurpose, checkPlaybackProxy, originalFingerprint, missingPlaybackProxy, proxyHealth } from "./playbackProxies";
+import { prefsStore } from "../state/prefs";
 // The preview player: turns store state into pictures and sound.
 //
 // - Paused: any change to the project, playhead, hover frame (preview
@@ -26,7 +29,7 @@ import { audibleTime, audioContext, masterBus, scheduleAudio, type Schedule } fr
 import { Compositor, type SourceImage } from "./compositor";
 import { ReverseCursor, VideoCursor, type HeldFrame, type ReverseOptions } from "./cursor";
 import { loadPlanLuts } from "./luts";
-import { imageFor, mediaFor, mediaForSrc, type MediaFile } from "./media";
+import { imageFor, mediaForSrc, type MediaFile } from "./media";
 import { rasterizeText } from "./text";
 
 interface CursorEntry {
@@ -45,7 +48,7 @@ export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?
 export class CursorPool {
   private map = new Map<string, CursorEntry>();
 
-  constructor(private reverse: ReverseOptions = {}) {}
+  constructor(private reverse: ReverseOptions = {}, private purpose: SourcePurpose | (() => SourcePurpose) = "export", private playbackOn: () => boolean = () => true) {}
 
   /** `lane` 1 is a clip's second cursor, for frame blending's next frame:
    * one cursor holds one sample, so two frames need two. */
@@ -63,10 +66,18 @@ export class CursorPool {
     return this.open(JSON.stringify([clipId, "matte", src, reverse]), () => mediaForSrc(src), reverse);
   }
 
-  private forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
+  private async forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
     const asset = getAsset(p, assetId);
+    if (asset) await checkPlaybackProxy(asset);
     // Relinking and undo can change a clip's source without changing its ID.
-    return this.open(JSON.stringify([clipId, asset?.proxy ?? asset?.src, reverse]), () => (asset ? mediaFor(asset) : null), reverse);
+    const purpose = typeof this.purpose === "function" ? this.purpose() : this.purpose;
+    const src = asset ? sourceForPurpose(asset, purpose, this.playbackOn()) : undefined;
+    const fingerprint = asset && src === asset.src ? originalFingerprint(asset) : undefined;
+    return this.open(JSON.stringify([clipId, src, fingerprint, reverse]), () => asset && src ? mediaForSrc(src, fingerprint).catch((e) => {
+      if (src !== asset.playbackProxy?.src) throw e;
+      missingPlaybackProxy(asset);
+      return mediaForSrc(asset.proxy ?? asset.src, asset.proxy ? undefined : originalFingerprint(asset));
+    }) : null, reverse);
   }
 
   private open(key: string, media: () => Promise<MediaFile> | null, reverse: boolean) {
@@ -241,10 +252,12 @@ export class Player {
     });
   }
   // Reversed clips hold their decoded windows at about screen size.
-  private pool = new CursorPool({ maxSide: 1280 });
+  private pool = new CursorPool({ maxSide: 1280 }, () => store.get().scopes ? "scopes" : "preview", () => prefsStore.get().proxyPlayback);
   private wanted: number | null = null;
   private rendering = false;
   private unsub: () => void;
+  private unsubPrefs: () => void;
+  private unsubProxies: () => void;
   private last: Partial<EditorState> = {};
   /** Display size of the canvas in device pixels. */
   private displayW = 0;
@@ -276,6 +289,9 @@ export class Player {
 
   constructor() {
     this.unsub = store.subscribe(() => this.onStore());
+    const refresh = () => { this.preps.clear(); this.prepFor = null; this.request(); };
+    this.unsubPrefs = prefsStore.subscribe(refresh);
+    this.unsubProxies = proxyHealth.subscribe(refresh);
     provide({
       playPause: () => (this.rate ? this.pause() : this.play(1)),
       shuttleForward: () => this.play(this.rate <= 0 ? 1 : Math.min(this.rate * 2, 8)),
@@ -353,6 +369,7 @@ export class Player {
     const prev = this.last;
     this.last = s;
     if (s.compare.mode === "off" && (this.reference || prev.compare?.mode !== "off")) this.clearReference();
+    if (prev.scopes !== s.scopes) { this.preps.clear(); this.prepFor = null; this.request(); }
     if (prev.compare !== s.compare || (s.compare.mode === "beforeAfter" && prev.selection !== s.selection)) this.request();
     if (this.rate !== 0) {
       // An edit during playback restarts it from the current frame so sound
@@ -606,6 +623,8 @@ export class Player {
   dispose() {
     this.pause();
     this.unsub();
+    this.unsubPrefs();
+    this.unsubProxies();
     this.clearReference();
     this.pool.clear();
     this.compositor?.dispose();

@@ -1,3 +1,4 @@
+import { proxyState } from "./proxyPolicy";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
@@ -3221,7 +3222,7 @@ export function describeProject(p: Project) {
     fps: +(p.fps.num / p.fps.den).toFixed(3),
     duration: s(ops.projectDuration(p)),
     ...(p.masterVolume !== undefined ? { master_volume: p.masterVolume } : {}),
-    assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
+    assets: p.assets.map((a) => ({ ...(a.playbackProxy ? { proxy: proxyState(a), proxy_size: a.playbackProxy.size } : {}), id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
     tracks: p.tracks.map(track),
     // A marker that follows a clip (a song's beat) names it.
     markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.follows ? { clip: m.follows.clip } : {}) })),

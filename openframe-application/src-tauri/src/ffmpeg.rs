@@ -330,6 +330,210 @@ fn proxy_args(enc: Option<&Encoder>, input: &Path, info: &Summary, output: &Path
     a
 }
 
+/// Playback copies stay separate from the full-resolution decode fallback.
+#[derive(Clone, Copy, Deserialize, Serialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum PlaybackSize {
+    Half,
+    Quarter,
+    #[serde(rename = "720p")]
+    P720,
+}
+impl PlaybackSize {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Half => "half",
+            Self::Quarter => "quarter",
+            Self::P720 => "720p",
+        }
+    }
+    fn scale(self) -> &'static str {
+        match self {
+            Self::Half => "scale=trunc(iw/4)*2:trunc(ih/4)*2",
+            Self::Quarter => "scale=trunc(iw/8)*2:trunc(ih/8)*2",
+            Self::P720 => "scale=w='if(lte(iw,ih),720,-2)':h='if(lte(iw,ih),-2,720)'",
+        }
+    }
+}
+fn playback_name(fingerprint: &str, size: PlaybackSize) -> String {
+    format!("playback-{fingerprint}-{}.mp4", size.label())
+}
+fn playback_args(input: &Path, info: &Summary, output: &Path, size: PlaybackSize) -> Vec<OsString> {
+    let mut a: Vec<OsString> =
+        "-hide_banner -nostdin -y -loglevel error -nostats -progress pipe:1 -i"
+            .split_whitespace()
+            .map(OsString::from)
+            .collect();
+    a.push(input.into());
+    let filter = format!("{},format=yuv420p", size.scale());
+    let mut push = |args: &[&str]| a.extend(args.iter().map(OsString::from));
+    // ponytail: CRF 23 uses libx264, absent from the planned LGPL bundle.
+    // Add LGPL encoder-specific quality settings before bundling this feature.
+    // Keep source timestamps. FFmpeg applies the display matrix before scaling,
+    // as the decode fallback does: phone footage stays upright, without a tag
+    // that a transcode/filter chain can drop.
+    push(&[
+        "-map",
+        "0:v:0",
+        "-map_metadata",
+        "0",
+        "-fps_mode",
+        "passthrough",
+        "-vf",
+        &filter,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-g",
+        "12",
+        "-keyint_min",
+        "12",
+        "-sc_threshold",
+        "0",
+        "-pix_fmt",
+        "yuv420p",
+    ]);
+    if let Some(audio) = &info.audio {
+        push(&[
+            "-map",
+            "0:a:0",
+            "-c:a",
+            if audio.codec == "aac" { "copy" } else { "aac" },
+        ]);
+    } else {
+        push(&["-an"]);
+    }
+    push(&["-movflags", "+faststart", "-f", "mp4"]);
+    a.push(output.into());
+    a
+}
+
+#[derive(Serialize)]
+pub struct PlaybackProxy {
+    src: PathBuf,
+    width: u32,
+    height: u32,
+    size: PlaybackSize,
+    fingerprint: String,
+}
+#[derive(Serialize)]
+pub struct PlaybackInfo {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fingerprint: Option<String>,
+    exists: bool,
+}
+
+#[tauri::command]
+pub async fn ffmpeg_playback_proxy_info(
+    path: PathBuf,
+    proxy: Option<PathBuf>,
+) -> Result<PlaybackInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        Ok(PlaybackInfo {
+            fingerprint: cache_key(&path).ok(),
+            exists: proxy.is_some_and(|p| p.is_file()),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn ffmpeg_delete_playback_proxy(
+    app: tauri::AppHandle,
+    path: PathBuf,
+) -> Result<(), String> {
+    // A document may name any source; deletion is limited to our playback cache.
+    if !path.exists() {
+        return Ok(());
+    }
+    let dir = proxy_dir(&app)?.canonicalize().map_err(|e| e.to_string())?;
+    let resolved = path.canonicalize().map_err(|e| e.to_string())?;
+    if resolved.parent() != Some(dir.as_path())
+        || !resolved
+            .file_name()
+            .is_some_and(|n| n.to_string_lossy().starts_with("playback-"))
+        || resolved.extension().is_none_or(|e| e != "mp4")
+    {
+        return Err("Only cached playback proxies can be deleted.".into());
+    }
+    std::fs::remove_file(resolved).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn ffmpeg_playback_proxy(
+    app: tauri::AppHandle,
+    path: PathBuf,
+    job: String,
+    size: PlaybackSize,
+    on_progress: Channel<Progress>,
+) -> Result<PlaybackProxy, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let ffmpeg = tool(&app, "ffmpeg");
+        let ffprobe = tool(&app, "ffprobe");
+        let fingerprint = cache_key(&path)?;
+        let info = probe(&ffprobe, &path)?;
+        if info.video.is_none() {
+            return Err("Playback proxies need video media.".into());
+        }
+        let dir = proxy_dir(&app)?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let out = dir.join(playback_name(&fingerprint, size));
+        if !out.is_file() {
+            // Unique partials prevent overlapping requests from sharing a write.
+            let safe_job: String = job
+                .chars()
+                .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+                .take(64)
+                .collect();
+            let part = dir.join(format!(
+                "playback-{fingerprint}-{}-{safe_job}.part",
+                size.label()
+            ));
+            let send = |fraction| {
+                let _ = on_progress.send(Progress { fraction });
+            };
+            let args = playback_args(&path, &info, &part, size);
+            let result = app
+                .state::<Ffmpeg>()
+                .run(&job, &ffmpeg, &args, info.duration, &send);
+            if let Err(failure) = result {
+                let _ = std::fs::remove_file(&part);
+                return Err(match failure {
+                    Failure::Canceled => "canceled".into(),
+                    Failure::Failed(e) => e,
+                });
+            }
+            if cache_key(&path)? != fingerprint {
+                let _ = std::fs::remove_file(&part);
+                return Err("The original changed while making its playback proxy.".into());
+            }
+            files::replace(&part, &out).map_err(|e| e.to_string())?;
+        }
+        let v = probe(&ffprobe, &out)?
+            .video
+            .ok_or("The playback proxy has no video.")?;
+        let (width, height) = if v.rotation == 90 || v.rotation == 270 {
+            (v.height, v.width)
+        } else {
+            (v.width, v.height)
+        };
+        let _ = on_progress.send(Progress { fraction: 1.0 });
+        Ok(PlaybackProxy {
+            src: out,
+            width,
+            height,
+            size,
+            fingerprint,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// A stable name for a source's proxy: the same file, unchanged, maps to the
 /// same proxy, so reimporting it is instant. FNV-1a, which (unlike std's
 /// hasher) never changes between Rust releases.
@@ -749,6 +953,113 @@ mod tests {
         };
         let a = proxy_args(None, Path::new("in.wma"), &audio_only, Path::new("o"));
         assert!(a.iter().any(|x| x == "-vn"));
+    }
+
+    #[test]
+    fn playback_command_lines_keep_timing_rotation_and_short_gops() {
+        let mut info = summarize(PRORES.as_bytes()).unwrap();
+        info.video.as_mut().unwrap().rotation = 90;
+        for (size, scale) in [
+            (PlaybackSize::Half, "scale=trunc(iw/4)*2:trunc(ih/4)*2"),
+            (PlaybackSize::Quarter, "scale=trunc(iw/8)*2:trunc(ih/8)*2"),
+            (
+                PlaybackSize::P720,
+                "scale=w='if(lte(iw,ih),720,-2)':h='if(lte(iw,ih),-2,720)'",
+            ),
+        ] {
+            let args = playback_args(Path::new("phone.mov"), &info, Path::new("o.part"), size)
+                .iter()
+                .map(|a| a.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join(" ");
+            assert!(args.contains(scale), "{args}");
+            assert!(args.contains("-i phone.mov") && !args.contains("-noautorotate"));
+            assert!(args.contains("-map_metadata 0 -fps_mode passthrough"));
+            assert!(!args.contains("transpose") && !args.contains("-r "));
+            assert!(args.contains(
+                "-preset veryfast -crf 23 -g 12 -keyint_min 12 -sc_threshold 0 -pix_fmt yuv420p"
+            ));
+            assert!(args.contains("-c:v libx264"));
+            assert!(args.contains("-map 0:a:0 -c:a aac"));
+            assert!(args.ends_with("-movflags +faststart -f mp4 o.part"));
+        }
+        info.audio.as_mut().unwrap().codec = "aac".into();
+        let args = playback_args(Path::new("in"), &info, Path::new("out"), PlaybackSize::Half);
+        assert!(args.windows(2).any(|w| w == ["-c:a", "copy"]));
+        info.audio = None;
+        assert!(
+            playback_args(Path::new("in"), &info, Path::new("out"), PlaybackSize::Half)
+                .iter()
+                .any(|a| a == "-an")
+        );
+    }
+
+    #[test]
+    fn playback_proxy_keeps_phone_rotation_and_frame_rate() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/media/h264-1080p30.mp4");
+        if !src.is_file() || Command::new("ffmpeg").arg("-version").output().is_err() {
+            eprintln!("skipped: needs ffmpeg and fixtures");
+            return;
+        }
+        // Keep this lane's generated media inside its worktree.
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scratch/playback-proxy-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let phone = dir.join("phone.mov");
+        let status = command(Path::new("ffmpeg"))
+            .args([
+                "-y",
+                "-v",
+                "error",
+                "-noautorotate",
+                "-display_rotation:v:0",
+                "90",
+                "-i",
+            ])
+            .arg(&src)
+            .args(["-t", "0.5", "-c", "copy"])
+            .arg(&phone)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let info = probe(Path::new("ffprobe"), &phone).unwrap();
+        let rotation = info.video.as_ref().unwrap().rotation;
+        assert!(rotation == 90 || rotation == 270);
+        let ff = Ffmpeg::default();
+        for (size, expected) in [
+            (PlaybackSize::Half, (540, 960)),
+            (PlaybackSize::Quarter, (270, 480)),
+            (PlaybackSize::P720, (720, 1280)),
+        ] {
+            let out = dir.join(playback_name(&cache_key(&phone).unwrap(), size));
+            let args = playback_args(&phone, &info, &out, size);
+            assert!(ff
+                .run(
+                    size.label(),
+                    Path::new("ffmpeg"),
+                    &args,
+                    info.duration,
+                    &|_| {}
+                )
+                .is_ok());
+            let made = probe(Path::new("ffprobe"), &out).unwrap();
+            let video = made.video.unwrap();
+            assert_eq!((video.width, video.height), expected);
+            assert_eq!(
+                video.rotation, 0,
+                "phone rotation is baked into upright pixels"
+            );
+            assert_eq!(video.fps, info.video.as_ref().unwrap().fps);
+            assert_eq!(video.codec, "h264");
+        }
+    }
+
+    #[test]
+    fn playback_cache_names_include_original_fingerprint_and_size() {
+        let half = playback_name("clip-123", PlaybackSize::Half);
+        assert_eq!(half, "playback-clip-123-half.mp4");
+        assert_ne!(half, playback_name("clip-456", PlaybackSize::Half));
+        assert_ne!(half, playback_name("clip-123", PlaybackSize::Quarter));
+        assert_ne!(half, playback_name("clip-123", PlaybackSize::P720));
     }
 
     #[test]

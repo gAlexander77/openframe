@@ -175,6 +175,31 @@ with the grid. Search/filter/view choices survive tab changes. Opening or
 creating a project clears search/type/usage filters; view and sort last for
 the app session. Browsing and selecting uses do not consume Undo steps.
 
+## Edit heavy footage with playback proxies
+
+On desktop, right-click a video card and choose **Create proxy**, then
+**Half** (the default), **Quarter**, or **720p** (720 pixels on the short
+side). To make a batch, check several video cards and right-click one of
+them. A progress toast names each file; **Cancel** stops the remaining work.
+Completed copies are added as one undo step. FFmpeg with libx264 must be
+installed for this conversion.
+
+The card's **P** badge and tooltip show the proxy's state, size and dimensions.
+**P...** means making; **P!** means stale or missing. **Manage media** lists
+that information and offers **Create proxies for all 4K and HEVC media**
+(also including ProRes). An import hint offers proxies once per heavy import
+batch. **Delete proxy** removes the cached file and reference. Undo restores
+the reference, and the missing copy can be recreated.
+
+Use **Proxy playback** in the player's toolbar or **View** to compare the
+original and proxy without reopening the project. The choice is remembered;
+it starts on. Export, saved frames, AI review and analysis always use the
+original or its full-resolution decode fallback. Scopes switch the viewer
+to that source while open. Missing copies, including on another computer,
+and copies made from an original that changed or was relinked are ignored.
+The browser build offers the controls but clearly says proxy generation and
+deletion are desktop-only.
+
 ## Select and arrange clips
 
 Click a picture in the viewer to select the top unlocked clip whose box

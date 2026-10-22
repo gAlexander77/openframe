@@ -55,6 +55,21 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   lines up with other material sample for sample, as ffmpeg plays it; an
   AAC file's priming was already left out by its edit list
   ([[ADR-112 An MP3 plays without its encoder delay, as ffmpeg plays it]]).
+- **Playback proxies on demand** (desktop): right-click video cards for
+  **Create proxy > Half, Quarter or 720p**, or select several cards with
+  their checkboxes and create a batch. Smaller H.264 copies with short GOPs
+  make heavy footage easier to scrub and reverse. Each batch has progress,
+  Cancel and one undo step. Manage media shows proxy state and makes copies
+  for all 4K, HEVC and ProRes footage; an import hint offers the same help.
+  The player's **Proxy playback** button and View menu switch instantly;
+  the preference is remembered and starts on. Cards badge ready, making,
+  stale and missing copies. A changed original or missing cache falls back
+  safely. Export, saved stills, agent review, analysis and scopes always use
+  the original or its full-resolution decode fallback; opening scopes also
+  switches the viewer to that source. `create_proxies` and `delete_proxies`
+  expose the desktop workflow to agents, who rarely need it. Creation uses
+  an installed FFmpeg with libx264; the browser clearly refuses generation
+  and deletion ([[ADR-131 Playback proxies are purpose scoped and disposable cache]]).
 - Background filmstrips and waveforms, two files at a time.
 - **Hover scrub** on video cards, as in CapCut: moving across a card shows
   the frame under the pointer, with a line, from the timeline's

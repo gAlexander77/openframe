@@ -757,3 +757,19 @@ describe("ungraded previews and shot matching", () => {
     expect(bad!.result).toMatchObject({ isError: true });
   });
 });
+
+it("routes desktop playback proxy tools with a half-size default and clear browser refusal", async () => {
+  const h = host();
+  const call = (name: string, args: unknown) => handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+  const missing = await call("create_proxies", { asset_ids: ["a1"] });
+  expect(JSON.stringify(missing)).toContain("not available in the browser build");
+  const sizes: unknown[] = [];
+  Object.assign(h, { createProxies: async (ids: string[], size: string) => { sizes.push([ids, size]); return [{ asset_id: "a1", proxy: "ready", size, seconds: 2 }]; }, deleteProxies: async () => [{ asset_id: "a1", proxy: "none", seconds: 0.1 }] });
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: ["a1"] }))).toContain("ready");
+  expect(sizes).toEqual([[["a1"], "half"]]);
+  await call("create_proxies", { asset_ids: ["a1"], size: "quarter" });
+  expect(sizes[1]).toEqual([["a1"], "quarter"]);
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: ["a1"], size: "bad" }))).toContain("isError");
+  expect(JSON.stringify(await call("create_proxies", { asset_ids: [] }))).toContain("Choose at least one");
+  expect(JSON.stringify(await call("delete_proxies", { asset_ids: ["a1"] }))).toContain("none");
+});

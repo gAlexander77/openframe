@@ -1,7 +1,8 @@
+import { usePrefs } from "../state/prefs";
 import { CompareControl, CompareOverlay } from "./ViewerCompare";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player } from "../engine/player";
-import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat, SkipBack, SkipForward } from "../icons";
+import { Files, ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat, SkipBack, SkipForward } from "../icons";
 import { toast } from "../state/toast";
 import { boxesAt, hitClipAt, nudgeClips } from "../lib/align";
 import { canvasSize, ratioOf, RATIOS } from "../lib/canvas";
@@ -215,6 +216,7 @@ function ScopesToggle() {
 function Transport() {
   const playing = useEditor((s) => s.playing);
   const loop = useEditor((s) => s.loop);
+  const { proxyPlayback } = usePrefs();
   return (
     <div className="transport">
       <Timecodes />
@@ -239,6 +241,7 @@ function Transport() {
         </button>
       </div>
       <div className="transport-right">
+        <button className={`icon-btn proxy-toggle${proxyPlayback ? " on" : ""}`} aria-label="Proxy playback" aria-pressed={proxyPlayback} data-tip={tipFor("toggleProxies", `Proxy playback: ${proxyPlayback ? "on" : "off"}`)} onClick={() => run("toggleProxies")}><Files size={16} /></button>
         <ViewerZoom />
         <CanvasRatio />
         <PreviewQuality />

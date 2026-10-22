@@ -28,6 +28,7 @@ on 2026-10-18; when they change, change this page with them.
 | Shuttle stop | `K` |
 | Shuttle forward | `L` |
 | Loop playback | `Ctrl+L` |
+| Proxy playback | `Alt+Shift+P` |
 | Play in to out | `Ctrl+Shift+Space` |
 | Toggle compare | `Alt+Shift+C` |
 | Full-screen preview | `Ctrl+Shift+F` |

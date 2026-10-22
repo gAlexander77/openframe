@@ -78,6 +78,16 @@ export interface Brand {
 
 export type AssetKind = "video" | "audio" | "image";
 
+export type PlaybackProxySize = "half" | "quarter" | "720p";
+export interface PlaybackProxy {
+  src: string;
+  width: number;
+  height: number;
+  size: PlaybackProxySize;
+  /** Original path, byte size and modified time, hashed by the platform. */
+  fingerprint: string;
+}
+
 export interface Asset {
   id: Id;
   kind: AssetKind;
@@ -88,6 +98,8 @@ export interface Asset {
   /** Edit-friendly copy (desktop: made by ffmpeg) when the webview cannot
    * decode the original. Preview and export read this when present. */
   proxy?: string;
+  /** Optional preview-only copy. Export and analysis always read proxy/src. */
+  playbackProxy?: PlaybackProxy;
   /** Timed image frames repeat for the length of the clip. */
   animated?: boolean;
   /** Seconds. Images report 0: they last as long as their clip. */

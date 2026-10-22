@@ -23,7 +23,10 @@ async (page) => {
         if (!e || e === document.documentElement) return true;
         if (shownMemo.has(e)) return shownMemo.get(e);
         const cs = css(e);
-        const v = cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) >= 0.05 && shown(e.parentElement);
+        // A closed <details> hides everything but its summary without
+        // display:none on the children, so check for it by hand.
+        const folded = e.parentElement?.tagName === "DETAILS" && !e.parentElement.open && e.tagName !== "SUMMARY";
+        const v = !folded && cs.display !== "none" && cs.visibility !== "hidden" && Number(cs.opacity) >= 0.05 && shown(e.parentElement);
         shownMemo.set(e, v);
         return v;
       };

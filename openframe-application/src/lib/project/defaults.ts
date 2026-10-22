@@ -1,3 +1,4 @@
+import { normalizePlaybackProxy } from "../proxyPolicy";
 import { cleanRuns } from "../textRuns";
 // Factories for every project object, and `normalizeProject`, the trust
 // boundary for project JSON. Whatever comes in — a file saved by an older
@@ -386,7 +387,8 @@ export function normalizeProject(raw: unknown): Project {
       throw new ProjectError(`assets[${i}]: needs at least a "src"`);
     }
     const kind = a.kind === "audio" || a.kind === "image" ? a.kind : "video";
-    const { musicGrid: rawGrid, ...rest } = a;
+    const { musicGrid: rawGrid, playbackProxy: rawProxy, ...rest } = a;
+    const playbackProxy = normalizePlaybackProxy(rawProxy);
     const musicGrid = normalizeMusicGrid(rawGrid);
     return {
       ...rest,
@@ -399,6 +401,7 @@ export function normalizeProject(raw: unknown): Project {
       hasVideo: typeof a.hasVideo === "boolean" ? a.hasVideo : kind !== "audio",
       hasAudio: typeof a.hasAudio === "boolean" ? a.hasAudio : kind !== "image",
       ...(musicGrid ? { musicGrid } : {}),
+      ...(playbackProxy ? { playbackProxy } : {}),
     } as Asset;
   });
   const assetIds = new Set(assets.map((a) => a.id));

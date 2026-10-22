@@ -1,3 +1,5 @@
+import { checkPlaybackProxy, originalFingerprint } from "./playbackProxies";
+import { proxySource } from "../lib/proxyPolicy";
 // Media files: one mediabunny Input per asset, opened lazily and shared by
 // every clip of that asset, plus probing at import. Bytes come from the
 // platform (a File on the web, a range-capable URL on the desktop); this
@@ -153,16 +155,23 @@ async function openInput(source: Source, src: string): Promise<MediaFile> {
 const files = new Map<string, Promise<MediaFile>>();
 
 /** The open media for an asset, preferring its proxy when it has one. */
-export const mediaFor = (asset: Asset): Promise<MediaFile> => mediaForSrc(asset.proxy ?? asset.src);
+export const mediaFor = async (asset: Asset): Promise<MediaFile> => {
+  await checkPlaybackProxy(asset);
+  const src = proxySource(asset, "analysis", false);
+  return mediaForSrc(src, src === asset.src ? originalFingerprint(asset) : undefined);
+};
 
 /** The open media at a platform location (an asset's file, or a
  * background matte, which is stored like media). */
-export function mediaForSrc(src: string): Promise<MediaFile> {
-  let m = files.get(src);
+export function mediaForSrc(src: string, fingerprint?: string): Promise<MediaFile> {
+  // A replaced original at the same path needs a fresh Input. Existing
+  // cursors/export still own the previous Input and its borrowed samples.
+  const key = fingerprint ? `${src}\0${fingerprint}` : src;
+  let m = files.get(key);
   if (!m) {
     m = platform.sourceFor(src).then((source) => openInput(source, src));
-    files.set(src, m);
-    m.catch(() => files.delete(src));
+    files.set(key, m);
+    m.catch(() => files.delete(key));
   }
   return m;
 }
@@ -170,10 +179,11 @@ export function mediaForSrc(src: string): Promise<MediaFile> {
 /** Close an asset's decoders and file handle (asset removed or relinked). */
 export async function closeMedia(src: string) {
   await closeAnimation(src);
-  const m = files.get(src);
-  files.delete(src);
   trims.delete(src);
-  (await m?.catch(() => null))?.input.dispose();
+  for (const [key, m] of files) if (key === src || key.startsWith(`${src}\0`)) {
+    files.delete(key);
+    (await m.catch(() => null))?.input.dispose();
+  }
 }
 
 // ---- images --------------------------------------------------------------------
