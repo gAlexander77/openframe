@@ -92,6 +92,22 @@ const call = (h: McpHost, method: string, params?: Record<string, unknown>) => h
 
 const text = (r: Awaited<ReturnType<typeof call>>) => (r!.result as { content: { text: string }[] }).content[0].text;
 
+describe("MCP highlight discovery", () => {
+  it("passes source options through and accepts auto or boolean scene sampling", async () => {
+    const h = host();
+    for (const scenes of [true, false, "auto"]) {
+      const args = { asset_id: "a1", count: 3, scenes, weights: { audio: 0.7 }, times: [4], keywords: ["no way"], transcribe: false };
+      await call(h, "tools/call", { name: "find_highlights", arguments: args });
+      expect(h.aiCalls.at(-1)).toEqual(["findHighlights", "", args]);
+    }
+    for (const args of [{ asset_id: "a1", scenes: "all" }, { asset_id: "a1", count: -1 }, { asset_id: "a1", weights: { audio: -1 } }]) {
+      expect((await call(h, "tools/call", { name: "find_highlights", arguments: args }))!.result).toMatchObject({ isError: true });
+    }
+    expect(h.aiCalls).toHaveLength(3);
+    expect(listTools().find(t => t.name === "find_highlights")!.annotations.readOnlyHint).not.toBe(true);
+  });
+});
+
 describe("MCP projects", () => {
   it("lists saved projects newest first, marking the open one", async () => {
     const list = JSON.parse(text(await call(host(), "tools/call", { name: "list_projects", arguments: {} })));

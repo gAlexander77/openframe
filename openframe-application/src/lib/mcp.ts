@@ -146,7 +146,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "autoCaptions" | "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "matchColor" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
+export type AiTool = "findHighlights" | "autoCaptions" | "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "matchColor" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -487,6 +487,35 @@ const columns = (dflt: number): JsonSchema => ({ type: "integer", minimum: 1, ma
 
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
+  {
+    name: "find_highlights",
+    description: "Rank exciting moments in a long VOD using local audio excitement and speech, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.",
+    inputSchema: obj({
+      asset_id: { type: "string", description: "Imported source asset id; give exactly one asset_id or clip_id" },
+      clip_id: { type: "string", description: "Timeline video or audio clip; rank inside its source range. Asset requests can infer a covering timeline clip for markers" },
+      count: { type: "integer", minimum: 1, maximum: 100, description: "Maximum candidates to return (default 10); weak moments are omitted" },
+      min_length: { type: "number", minimum: 1, maximum: 300, description: "Minimum window seconds (default 15); must not exceed max_length" },
+      max_length: { type: "number", minimum: 1, maximum: 300, description: "Maximum window seconds (default 60)" },
+      lead_in: { type: "number", minimum: 0, maximum: 60, description: "Seconds before the build-up (default 4), adjusted toward speech pauses" },
+      lead_out: { type: "number", minimum: 0, maximum: 60, description: "Seconds after the payoff (default 3), adjusted toward speech pauses" },
+      min_gap: { type: "number", minimum: 1, maximum: 600, description: "Minimum seconds between highlight peaks (default max of 20 and min_length)" },
+      chat_file: { type: "string", description: "Chat replay absolute path on desktop; URL on web. Twitch/TwitchDownloader JSON, chat-downloader JSON/JSONL or timestamped text; at most 32 MiB" },
+      times: { type: "array", items: { type: "number", minimum: 0 }, description: "Viewer clips or streamer markers in source seconds; strong moment hints" },
+      keywords: { type: "array", items: { type: "string" }, description: "Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true" },
+      transcribe: { type: "boolean", description: "Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false)" },
+      scenes: { enum: [true, false, "auto"], description: "Sample one 96 px frame per second (auto by default: enabled for video up to 2 hours, disabled for longer files)" },
+      weights: { ...obj({
+        audio: { type: "number", minimum: 0, maximum: 10, description: "Audio excitement weight (default 0.5)" },
+        speech: { type: "number", minimum: 0, maximum: 10, description: "Voice activity preference (default 0.1)" },
+        chat: { type: "number", minimum: 0, maximum: 10, description: "Chat rate spikes and emotes/clip mentions (default 0.25)" },
+        scenes: { type: "number", minimum: 0, maximum: 10, description: "Scene changes per minute (default 0.05)" },
+        times: { type: "number", minimum: 0, maximum: 10, description: "Given viewer-clip hints (default 0.8)" },
+        keywords: { type: "number", minimum: 0, maximum: 1, description: "Candidate transcript keyword bonus (default 0.3)" },
+      }), description: "Relative signal weights; only present signals contribute, score clamped to 0-1" },
+      markers: { type: "boolean", description: "Add Highlight N range markers following clip_id (or a covering clip of asset_id), replacing its earlier highlight markers as one undo step (default false)" },
+    }),
+    call: async (h, a) => appJson(await h.ai("findHighlights", "", a)),
+  },
   {
     name: "help",
     description: "The guide to these tools. topic: overview (the tools by step; start here), ad, epic_edit, voiceover or social_short (step-by-step playbooks), design (the rules of thumb every playbook follows, given once here), catalog, params (set_param paths), or any tool's name for its parameters and an example call.",

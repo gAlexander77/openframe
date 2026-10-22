@@ -1027,6 +1027,19 @@ makes a 13 s one). Times are timeline seconds.
 
 ## AI tools (all on this machine)
 
+- **Find highlights**: choose a long stream VOD in the AI tools card, add
+  an optional chat replay, set Count and the minimum/maximum Length, then
+  Run. Ranked moments show a score, numeric reasons and optional quotes;
+  select one to seek, Play to hear it, or Add markers for following
+  Highlight N ranges in one undo step. `find_highlights` gives agents the
+  same source-second windows, with viewer-clip times, keywords, signal
+  weights and candidate-only Whisper refinement. Audio streams at 16 kHz
+  into compact features: a three-minute median discounts sustained loud
+  gameplay; chat spikes, emotes and clip requests add evidence. Scene
+  sampling is one small frame per second, automatic only up to two hours.
+  Vocal excitement is a heuristic; review candidates before making clips
+  ([[ADR-140 Highlight discovery streams features and refines candidates]]).
+
 - **Remove silences**, **Split scenes**, **Beat markers**, **Normalize
   loudness** (EBU R128, to −14/−16/−23/−24 LUFS, the true peak under
   its ceiling, −2 dBTP for ATSC's −24; `spec` names one; a mono clip

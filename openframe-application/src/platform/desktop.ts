@@ -118,6 +118,19 @@ export const desktop: Platform = {
   },
 
   kind: "desktop",
+  async openChatReplay(path, signal) {
+    // ponytail: JSON replays are parsed whole. Cap input at 32 MiB to keep
+    // multi-hour analysis bounded; incremental message parsing is next.
+    if (path !== undefined && !/^(?:[a-z]:[\\/]|\/|\\\\)/i.test(path)) throw new Error("Chat replay must be an absolute path.");
+    const picked = path ?? await open({ multiple: false, title: "Open chat replay", filters: [{ name: "Chat replay", extensions: ["json", "jsonl", "txt"] }] });
+    if (!picked) return null;
+    signal?.throwIfAborted();
+    const { size } = await register(picked);
+    if (size > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB. Split it before importing.");
+    const text = await (await desktop.blobFor(picked)).text();
+    signal?.throwIfAborted();
+    return { name: picked.split(/[\\/]/).at(-1)!, text };
+  },
   async openTimelineFile(path) {
     if (path !== undefined && !/^(?:[a-z]:[\\/]|\/|\\\\)/i.test(path)) throw new Error("Timeline file must be an absolute path.");
     const picked = path ?? await open({ multiple: false, title: "Import timeline", filters: [{ name: "Timelines", extensions: ["otio", "fcpxml", "xml"] }] });

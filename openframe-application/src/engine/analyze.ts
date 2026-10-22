@@ -21,6 +21,75 @@ import { platform } from "../platform";
 
 export type Progress = (fraction: number) => void;
 
+/** One decoder pass, bounded 10-second 16 kHz buffers. Source timestamps
+ * preserve gaps and encoder priming, as decodeMono does. */
+export async function streamMono(asset: Asset, consume: (pcm: Float32Array) => void, onProgress?: Progress, signal?: AbortSignal): Promise<void> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryAudioTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
+    const size = 160000, length = Math.ceil(asset.duration * 16000);
+    const sum = new Float32Array(size), count = new Uint16Array(size);
+    let base = 0, previous = 0, plane = new Float32Array(0), mono = new Float32Array(0);
+    const flush = (n: number) => {
+      for (let i = 0; i < n; i++) { if (count[i]) previous = sum[i] /= count[i]; else sum[i] = previous; }
+      consume(sum.subarray(0, n)); sum.fill(0); count.fill(0); base += n;
+    };
+    const report = throttle(onProgress);
+    let yielded = performance.now();
+    for await (const sample of new AudioSampleSink(track).samples(Math.max(0, t0 - DECODE_PREROLL), t0 + asset.duration)) {
+      try {
+        signal?.throwIfAborted();
+        const frames = sample.numberOfFrames, channels = sample.numberOfChannels;
+        if (mono.length < frames) [mono, plane] = [new Float32Array(frames), new Float32Array(frames)];
+        mono.fill(0, 0, frames);
+        for (let ch = 0; ch < channels; ch++) {
+          sample.copyTo(plane, { planeIndex: ch, format: "f32-planar" });
+          for (let j = 0; j < frames; j++) mono[j] += plane[j] / channels;
+        }
+        const first = (sample.timestamp - t0) * 16000, step = 16000 / sample.sampleRate;
+        for (let j = 0; j < frames; j++) {
+          const k = Math.floor(first + j * step);
+          if (k < base || k >= length) continue;
+          while (k >= base + size) { signal?.throwIfAborted(); flush(size); }
+          sum[k - base] += mono[j]; count[k - base]++;
+        }
+        report((sample.timestamp - t0) / asset.duration);
+      } finally { sample.close(); }
+      if (performance.now() - yielded > 50) { await new Promise(resolve => setTimeout(resolve, 0)); yielded = performance.now(); }
+    }
+    while (base < length) { signal?.throwIfAborted(); flush(Math.min(size, length - base)); }
+    onProgress?.(1);
+  } finally { input.dispose(); }
+}
+
+/** One low-resolution frame per second. Seeking skips intervening pictures;
+ * codecs may still decode dependency frames within a GOP. */
+export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<number[]> {
+  const input = await openInput(asset);
+  try {
+    const track = await input.getPrimaryVideoTrack();
+    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
+    const origin = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+    const sink = new CanvasSink(track, { width: 96 });
+    let previous: Uint8Array | undefined;
+    const cuts: number[] = [], report = throttle(onProgress);
+    for (let t = 0; t < asset.duration; t++) {
+      signal?.throwIfAborted();
+      const wrapped = await sink.getCanvas(origin + t);
+      if (!wrapped) continue;
+      const { canvas } = wrapped;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+      const hsv = rgbaToHsv(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+      if (previous && contentScore(previous, hsv, DEFAULT_WEIGHTS) >= 25) cuts.push(t);
+      previous = hsv;
+      report(t / asset.duration);
+    }
+    return cuts;
+  } finally { input.dispose(); }
+}
+
 async function openInput(asset: Asset): Promise<Input> {
   return new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
 }

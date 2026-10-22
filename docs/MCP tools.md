@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 185 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 187 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -42,6 +42,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `import_timeline`, `export_timeline`, `set_project`
+- **Clips**: `find_highlights`, `add_highlight_markers`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
@@ -64,7 +65,7 @@ The guide to these tools. topic: overview (the tools by step; start here), ad, e
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `topic` | string |  | overview (default), design, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
+| `topic` | string |  | overview (default), design, stream_clips, ad, epic_edit, voiceover, social_short, catalog, params, or a tool's name |
 
 Example:
 
@@ -220,6 +221,61 @@ Example:
 
 ```json
 {"name":"set_project","arguments":{"width":1080,"height":1920,"fps":"30"}}
+```
+
+## Clips
+
+Find the best moments in a long stream, review them, then make clips.
+
+### find_highlights
+
+Rank exciting moments in a long VOD using local audio excitement and speech, optional chat replay, scene activity and given viewer-clip times. Results are SOURCE seconds, with score 0-1, numeric reasons, signals used and elapsed_seconds. Read-only unless markers is true (one undoable edit). Only candidate windows are transcribed when requested; keywords then refine ranking and quotes. Defaults: count 10, length 15-60 s, lead-in 4 s, lead-out 3 s, minimum peak gap 20 s. Audio uses a surrounding 3-minute median, 3 s short-term and 400 ms momentary BS.1770 loudness; vocal excitement is heuristic, not laughter recognition. Audio is streamed at 16 kHz and compact features cached per asset. Preview candidates with preview_media before making clips.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string |  | Imported source asset id; give exactly one asset_id or clip_id |
+| `clip_id` | string |  | Timeline video or audio clip; rank inside its source range. Asset requests can infer a covering timeline clip for markers |
+| `count` | integer |  | Maximum candidates to return (default 10); weak moments are omitted (1..100) |
+| `min_length` | number |  | Minimum window seconds (default 15); must not exceed max_length (1..300) |
+| `max_length` | number |  | Maximum window seconds (default 60) (1..300) |
+| `lead_in` | number |  | Seconds before the build-up (default 4), adjusted toward speech pauses (0..60) |
+| `lead_out` | number |  | Seconds after the payoff (default 3), adjusted toward speech pauses (0..60) |
+| `min_gap` | number |  | Minimum seconds between highlight peaks (default max of 20 and min_length) (1..600) |
+| `chat_file` | string |  | Chat replay absolute path on desktop; URL on web. Twitch/TwitchDownloader JSON, chat-downloader JSON/JSONL or timestamped text; at most 32 MiB |
+| `times` | number[] |  | Viewer clips or streamer markers in source seconds; strong moment hints |
+| `keywords` | string[] |  | Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true |
+| `transcribe` | boolean |  | Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false) |
+| `scenes` | true \| false \| "auto" |  | Sample one 96 px frame per second (auto by default: enabled for video up to 2 hours, disabled for longer files) |
+| `weights` | { audio, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
+| `weights.audio` | number |  | Audio excitement weight (default 0.5) (0..10) |
+| `weights.speech` | number |  | Voice activity preference (default 0.1) (0..10) |
+| `weights.chat` | number |  | Chat rate spikes and emotes/clip mentions (default 0.25) (0..10) |
+| `weights.scenes` | number |  | Scene changes per minute (default 0.05) (0..10) |
+| `weights.times` | number |  | Given viewer-clip hints (default 0.8) (0..10) |
+| `weights.keywords` | number |  | Candidate transcript keyword bonus (default 0.3) (0..1) |
+| `markers` | boolean |  | Add Highlight N range markers following clip_id (or a covering clip of asset_id), replacing its earlier highlight markers as one undo step (default false) |
+
+Example:
+
+```json
+{"name":"find_highlights","arguments":{"asset_id":"a_vod","count":10,"transcribe":false,"scenes":"auto"}}
+```
+
+### add_highlight_markers
+
+Add reviewed highlight ranges in SOURCE seconds as Highlight N range markers following a timeline clip. Replaces that clip's previous Highlight N markers, in one undo step. Ranges must be entirely inside the clip.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Source video or audio clip on the timeline |
+| `ranges` | { start, end }[] | yes | Ranked highlight windows in source seconds |
+| `ranges[].start` | number | yes | Source start in seconds (0..) |
+| `ranges[].end` | number | yes | Source end in seconds (0..) |
+
+Example:
+
+```json
+{"name":"add_highlight_markers","arguments":{"clip_id":"c_vod","ranges":[{"start":120,"end":150}]}}
 ```
 
 ## Media
