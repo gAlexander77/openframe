@@ -12,6 +12,11 @@ export type ActionId =
   | "stepForward"
   | "stepBack10"
   | "stepForward10"
+  | "selectNearestEdit"
+  | "selectNextEdit"
+  | "selectPrevEdit"
+  | "extendEdit"
+  | "fitSource"
   | "prevEdit"
   | "nextEdit"
   | "goStart"
@@ -102,6 +107,11 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   stepForward: ["ArrowRight"],
   stepBack10: ["Shift+ArrowLeft"],
   stepForward10: ["Shift+ArrowRight"],
+  selectNearestEdit: ["Shift+V"],
+  selectNextEdit: ["Shift+ArrowDown"],
+  selectPrevEdit: ["Shift+ArrowUp"],
+  extendEdit: ["E"],
+  fitSource: ["Shift+F"],
   prevEdit: ["ArrowUp"],
   nextEdit: ["ArrowDown"],
   goStart: ["Home"],
@@ -202,6 +212,11 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   stepForward: "Next frame",
   stepBack10: "Back 10 frames",
   stepForward10: "Forward 10 frames",
+  selectNearestEdit: "Select nearest edit point",
+  selectNextEdit: "Select next edit point",
+  selectPrevEdit: "Select previous edit point",
+  extendEdit: "Extend edit to playhead",
+  fitSource: "Fit source to fill timeline range",
   prevEdit: "Previous edit point",
   nextEdit: "Next edit point",
   goStart: "Go to start",

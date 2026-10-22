@@ -7,14 +7,14 @@ import { prepare } from "../engine/thumbs";
 import { uid } from "../lib/project/defaults";
 import * as ops from "../lib/project/ops";
 import type { Asset, Id, LutFile } from "../lib/project/types";
-import { placeAsset } from "../lib/drop";
+import { placeAsset, placeSourceEdit } from "../lib/drop";
 import { platform, type ImportedFile } from "../platform";
 import { edit, provide } from "./actions";
 import { importLuts, isLutName } from "./luts";
 import { store } from "./store";
 import { dismiss, toast, updateToast } from "./toast";
 import { projectWork } from "./projectWork";
-import type { SourceRange } from "../lib/sourceMonitor";
+import type { SourceMarks, SourceRange } from "../lib/sourceMonitor";
 import { formatLimit, URL_COPY_LIMIT } from "../lib/urlImport";
 
 /** Codecs as people say them in messages: "ProRes", not the parser's "prores". */
@@ -212,6 +212,23 @@ export function addToTimeline(asset: Asset, at?: number, trackId?: Id | "overlay
     const c = ops.findClip(store.get().project, id)?.clip;
     store.select([id]);
     if (c && at === undefined) store.seek(c.start + c.duration);
+  }
+  return id;
+}
+
+/** A marked source placement is one timing edit, with marks cleared only on success. */
+export function editFromSource(asset: Asset, mode: ops.PlaceMode, marks: SourceMarks): Id {
+  let id = "";
+  edit(mode === "insert" ? "Insert source" : "Overwrite source", (p) => {
+    const r = placeSourceEdit(p, asset, store.get().playhead, marks, mode);
+    id = r.clipId;
+    return r.project;
+  }, { magnet: false });
+  if (id) {
+    store.select([id]);
+    store.set({ inPoint: null, outPoint: null });
+    const c = ops.findClip(store.get().project, id)?.clip;
+    if (c) store.seek(ops.clipEnd(c));
   }
   return id;
 }

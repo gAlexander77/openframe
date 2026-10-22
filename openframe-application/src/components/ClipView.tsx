@@ -4,7 +4,8 @@ import { memo, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore 
 import { fromDb, toDb } from "../lib/audio";
 import { gridTicks } from "../lib/beatGrid";
 import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
-import { store } from "../state/store";
+import { cutSides } from "../lib/editPoints";
+import { store, useEditor } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
 import { compoundHasSound, compoundPeaks, compoundStrip } from "../engine/compoundThumbs";
 import { useTimelineDisplay } from "../state/timelineDisplay";
@@ -215,6 +216,7 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
 
 export const ClipView = memo(function ClipView(p: Props) {
   const { clip: c, zoom, height } = p;
+  const edges = useEditor((s) => s.selectedEdits);
   const display = useTimelineDisplay();
   const tint = c.labelColor ?? p.track.color;
   const v = useThumbVersion();
@@ -347,10 +349,11 @@ export const ClipView = memo(function ClipView(p: Props) {
           strip (Premiere's audio handles), not only in the inspector. */}
       {c.type === "video" && showWave && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={WAVE_H} top={height - WAVE_H} fps={p.fps} slim />}
       {p.selected && <ClipKeys clip={c} zoom={zoom} locked={p.track.locked} />}
+      {edges.filter((e) => e.clipId === c.id).map((e) => <span key={e.edge} className={`edit-bracket ${e.edge}`} data-edit-edge={e.edge} aria-label={`Selected ${e.edge} edit point`} />)}
       {!tiny && !p.track.locked && (
         <>
-          <div className="trim trim-start" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />
-          <div className="trim trim-end" onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "end"); }} />
+          <div className="trim trim-start" onDoubleClick={(e) => { e.stopPropagation(); if (store.get().tool === "select") store.set({ selectedEdits: cutSides(store.get().project, { clipId: c.id, edge: "start" }) }); }} onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "start"); }} />
+          <div className="trim trim-end" onDoubleClick={(e) => { e.stopPropagation(); if (store.get().tool === "select") store.set({ selectedEdits: cutSides(store.get().project, { clipId: c.id, edge: "end" }) }); }} onPointerDown={(e) => { e.stopPropagation(); p.onDown(e, c, "end"); }} />
         </>
       )}
     </div>

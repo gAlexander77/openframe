@@ -40,7 +40,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
-    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "roll_edit", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
+    tools: ["add_media_clip", "add_color_clip", "add_adjustment_clip", "add_track", "update_track", "move_track", "delete_track", "split", "split_at_times", "trim_clip", "extend_edit", "trim_edits", "edit_from_source", "roll_edit", "slip_clip", "move_clip", "nudge_clips", "duplicate_clips", "delete_clips", "lift_range", "close_gaps", "cut_ranges", "split_scenes", "group_clips", "ungroup_clips", "transform_group", "set_clip_enabled", "set_clip_label", "rename_clip", "freeze_frame", "detach_audio", "sync_to_clip", "create_compound_clip", "break_compound_clip", "edit_compound", "rename_compound", "batch", "undo", "redo", "seek"],
   },
   {
     name: "Music, beats and markers",
@@ -109,6 +109,9 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   new_project: { name: "Spring sale ad" },
   set_project: { width: 1080, height: 1920, fps: "30" },
   import_media: { files: [{ src: "C:/Footage/product.mp4", name: "Product hero" }, { src: "C:/Music/track.mp3" }] },
+  extend_edit: { edits: [{ clip_id: "c_123", edge: "end" }], to: 4.5 },
+  trim_edits: { edits: [{ clip_id: "c_123", edge: "end" }], by: -1, unit: "frames" },
+  edit_from_source: { asset_id: "a_123", source_in: 2, source_out: 8, timeline_in: 10, timeline_out: 13, mode: "overwrite", fit: "fill" },
   add_media_clip: { asset_id: "a_123", start: 0, duration: 3.5, in: 12 },
   add_text: { text: "50% OFF", start: 1, duration: 2.5, y: -0.1, style: { size: 160, bold: true, color: "#ffffff", font: "Arial Black", stroke: { color: "#000000", width: 8 } } },
   set_text: { clip_ids: ["c_123"], style: { background: { color: "#000000b3", padding: 18, radius: 12 } } },

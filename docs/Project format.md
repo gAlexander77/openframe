@@ -73,7 +73,7 @@ Track   { id, kind: video|audio, name, main?, clips: Clip[],
           solo?, height?: small|large, role? }   (role, audio tracks only: dialog|music|effects|ambience,
           the stem it is; absent, it is judged by its clips' files: ADR-098)
 Compound { id, name, tracks: Track[], markers: Marker[] }   (a nested timeline)
-Marker  { id, frame, label, color, follows?: { clip, at } }   (follows: a song's beat,
+Marker  { id, frame, label, color, duration?: frames, chapter?: boolean, follows?: { clip, at } }   (follows: a song's beat,
           bar, part or drop on a video or audio clip, at that second of its file;
           the marker moves with the clip, through a compound clip that plays it
           once the clip is inside one, and goes when nothing plays it: ADR-101,
@@ -424,3 +424,11 @@ then contains one loop in seconds. The image clip can last longer and loop.
 Collected JSON uses relative `src` and `proxy` paths beside the project file,
 including LUTs and nested cutout media; opening it creates a fresh id.
 `ImageClip.imageIn` optionally stores the animation phase in source seconds; trims and splits preserve it.
+
+Marker `duration` is an optional nonnegative integer frame count; absent or
+zero means a point. `chapter` is an optional boolean, absent meaning false.
+Normalization drops invalid values at both root and compound boundaries.
+Ranges follow their start when `follows` is present. Chapter-enabled MP4
+exports include only explicit chapter markers; these fields do not change
+rendered pictures or project duration. Edit-point selections are session
+state and never enter the project file.

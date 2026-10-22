@@ -18,6 +18,7 @@ import type { KeyRef } from "../lib/keyframeEdit";
 import type { Guides } from "../lib/align";
 import type { CropRatio } from "../lib/crop";
 import type { Crop, Id, Project } from "../lib/project/types";
+import type { EditPoint } from "../lib/editPoints";
 import type { TrimPreviewState } from "../lib/trimPreview";
 
 /** select and blade are CapCut's; ripple, roll, slip and slide are the
@@ -57,6 +58,8 @@ export interface EditorState {
    * project's own timeline. */
   nest: NestEntry[];
   selection: Id[];
+  /** Selected timeline edges, never serialized into the project. */
+  selectedEdits: EditPoint[];
   /** Explicit request to open transition settings; cleared by normal selection. */
   transitionEdit: Id | null;
   /** Current frame. */
@@ -146,6 +149,7 @@ let state: EditorState = {
   project: createProject(),
   nest: [],
   selection: [],
+  selectedEdits: [],
   transitionEdit: null,
   playhead: 0,
   playing: false,
@@ -255,6 +259,7 @@ function setProject(project: Project, extra: Partial<EditorState> = {}) {
   set({
     project,
     selection: liveSelection(project, extra.selection ?? state.selection),
+    selectedEdits: state.selectedEdits.filter((e) => !!findClip(project, e.clipId)),
     revision: state.revision + 1,
     ...labels(),
     ...extra,
@@ -417,6 +422,7 @@ export const store = {
       colorMatchBusy: false,
       nest: [],
       selection: [],
+      selectedEdits: [],
       transitionEdit: null,
       playhead: 0,
       playing: false,
@@ -440,7 +446,7 @@ export const store = {
   },
 
   select(ids: Id[]) {
-    set({ selection: ids, keySel: null, transitionEdit: null });
+    set({ selection: ids, selectedEdits: [], keySel: null, transitionEdit: null });
   },
 };
 
@@ -450,7 +456,7 @@ export const rootInPoint = (s: EditorState) => (s.nest.length ? s.nest[0].inPoin
 export const rootOutPoint = (s: EditorState) => (s.nest.length ? s.nest[0].outPoint : s.outPoint);
 
 /** Editor state that belongs to one timeline: moving between levels drops it. */
-const away: Partial<EditorState> = { keySel: null, textEdit: null, trimPreview: null, markerEdit: null, hoverFrame: null, inPoint: null, outPoint: null };
+const away: Partial<EditorState> = { selectedEdits: [], keySel: null, textEdit: null, trimPreview: null, markerEdit: null, hoverFrame: null, inPoint: null, outPoint: null };
 
 /** Put a document from history back, staying as deep in compound clips as
  * it still allows (an undone Create compound clip takes you out). */

@@ -561,3 +561,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.
+
+- [[ADR-132 Precise edits resolve marks before placement and chapters extend movie metadata]] - session edge selection, three/four-point placement, range markers and opt-in MP4 chapters.

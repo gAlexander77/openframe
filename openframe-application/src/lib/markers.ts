@@ -7,14 +7,16 @@ import { formatTimecode, framesToSeconds, type Rational } from "./time";
  * marker that followed a clip's media (a beat) and is moved by hand is the
  * user's from then on: it stays where they put it. `detach` makes it the
  * user's where it stands (the Markers tab's Detach, ADR-119). */
-export function updateMarker(p: Project, id: Id, patch: Partial<Pick<Marker, "frame" | "label" | "color">> & { detach?: boolean }): Project {
+export function updateMarker(p: Project, id: Id, patch: Partial<Pick<Marker, "frame" | "label" | "color" | "duration" | "chapter">> & { detach?: boolean }): Project {
   const marker = p.markers.find((m) => m.id === id);
   if (!marker) throw new Error(`No marker with id ${id}`);
   if (patch.frame !== undefined && (!Number.isSafeInteger(patch.frame) || patch.frame < 0)) throw new Error("Marker position must be a nonnegative integer frame");
+  if (patch.duration !== undefined && (!Number.isSafeInteger(patch.duration) || patch.duration < 0)) throw new Error("Marker duration must be a nonnegative integer frame");
+  if (patch.chapter !== undefined && typeof patch.chapter !== "boolean") throw new Error("Chapter must be a boolean");
   const { detach, ...fields } = patch;
   const next = { ...marker, ...fields };
   const unbind = !!detach && !!marker.follows;
-  if (next.frame === marker.frame && next.label === marker.label && next.color === marker.color && !unbind) return p;
+  if (next.frame === marker.frame && next.label === marker.label && next.color === marker.color && next.duration === marker.duration && next.chapter === marker.chapter && !unbind) return p;
   if (next.frame !== marker.frame || unbind) delete next.follows;
   return { ...p, markers: p.markers.map((m) => m.id === id ? next : m).sort((a, b) => a.frame - b.frame) };
 }

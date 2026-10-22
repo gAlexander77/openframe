@@ -10,6 +10,7 @@
 // captureStream, so a slow machine takes longer but never drops a frame
 // (research pitfall 23).
 
+import { appendChapters, chaptersInRange } from "../lib/chapters";
 import { beforePlan } from "../lib/viewerCompare";
 import {
   ALL_FORMATS,
@@ -31,6 +32,7 @@ import {
   canEncodeAudio,
   getEncodableVideoCodecs,
   getFirstEncodableVideoCodec,
+  type IsobmffOutputFormatOptions,
   type OutputFormat,
   type StreamTargetChunk,
 } from "mediabunny";
@@ -191,13 +193,13 @@ export function memoryTarget() {
 /** The codecs mediabunny encodes (a GIF has its own encoder). */
 type MediaCodec = Exclude<VideoCodec, "gif">;
 
-function outputFormat(c: Container, plan: ExportPlan): OutputFormat {
+function outputFormat(c: Container, plan: ExportPlan, chapterOptions?: IsobmffOutputFormatOptions): OutputFormat {
   // MP4/MOV reserve room for the index up front ("fast start": playable
   // while downloading) - possible because the packet counts are known.
   switch (c) {
     case "mp4":
     case "m4a":
-      return new Mp4OutputFormat({ fastStart: "reserve" });
+      return new Mp4OutputFormat(chapterOptions ?? { fastStart: "reserve" });
     case "mov":
       return new MovOutputFormat({ fastStart: "reserve" });
     case "webm":
@@ -295,12 +297,22 @@ export async function exportProject(
   // ---- the canceled file must not be committed ---------------------------------
   const inner = target.writable.getWriter();
   let bytes = 0;
+  const chapters = plan.chapters && plan.container === "mp4" ? chaptersInRange(p.markers, p.fps, plan.range) : [];
+  let movie: { data: Uint8Array<ArrayBuffer>; position: number } | null = null;
+  const chapterOptions: IsobmffOutputFormatOptions | undefined = chapters.length ? { fastStart: false, onMoov: (data, position) => { movie = { data: appendChapters(data, chapters), position }; } } : undefined;
   const writable = new WritableStream<StreamTargetChunk>({
     write: (chunk) => {
       bytes = Math.max(bytes, chunk.position + chunk.data.byteLength);
       return inner.write(chunk);
     },
-    close: () => (stopError ? inner.abort(stopError) : inner.close()),
+    close: async () => {
+      if (stopError) return inner.abort(stopError);
+      if (movie) {
+        await inner.write({ type: "write", ...movie });
+        bytes = Math.max(bytes, movie.position + movie.data.byteLength);
+      }
+      await inner.close();
+    },
     abort: (reason) => inner.abort(reason),
   });
 
@@ -315,7 +327,7 @@ export async function exportProject(
     // Titles must rasterize in their real font from the first frame.
     await guard(document.fonts.ready);
 
-    output = new Output({ format: outputFormat(plan.container, plan), target: new StreamTarget(writable, { chunked: true, chunkSize: 8 * 2 ** 20 }) });
+    output = new Output({ format: outputFormat(plan.container, plan, chapterOptions), target: new StreamTarget(writable, { chunked: true, chunkSize: 8 * 2 ** 20 }) });
 
     // ---- video track ------------------------------------------------------------
     let video: CanvasSource | null = null;

@@ -97,3 +97,12 @@ describe("a chosen canvas (UX-02)", () => {
     expect(normalizeProject({ width: 1080, height: 1920 }).canvasFixed).toBeUndefined();
   });
 });
+
+it("normalizes optional marker ranges and chapter flags at root and inside compounds", () => {
+  const markers = [{ id: "valid", duration: 30, chapter: true }, { id: "invalid", duration: -1, chapter: "yes" }, { id: "fraction", duration: 1.5 }, { id: "infinite", duration: Infinity }];
+  const p = normalizeProject({ markers, compounds: [{ id: "k", tracks: [], markers }] });
+  for (const list of [p.markers, p.compounds![0].markers]) {
+    expect(list[0]).toMatchObject({ duration: 30, chapter: true });
+    for (const m of list.slice(1)) { expect(m).not.toHaveProperty("duration"); expect(m).not.toHaveProperty("chapter"); }
+  }
+});

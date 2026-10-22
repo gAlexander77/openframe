@@ -4,6 +4,7 @@ import { enableLabel } from "./clipEnable";
 import { paramLabel } from "./paramInfo";
 
 const LABELS: Record<string, string> = {
+  extend_edit: "Extend edit", trim_edits: "Trim edits", edit_from_source: "Edit from source",
   match_color: "Match color",
   apply_default_transitions: "Apply default transitions",
   set_pitch: "Pitch", apply_voice_preset: "Voice changer",

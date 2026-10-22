@@ -103,6 +103,11 @@ on 2026-10-18; when they change, change this page with them.
 | Clear range | `Alt+X` |
 | Lift in to out | `;` |
 | Extract in to out | `'` |
+| Select nearest edit point | `Shift+V` |
+| Select next edit point | `Shift+Down` |
+| Select previous edit point | `Shift+Up` |
+| Extend edit to playhead | `E` |
+| Fit source to fill timeline range | `Shift+F` |
 | Insert source at playhead | `,` |
 | Overwrite source at playhead | `.` |
 
@@ -141,5 +146,8 @@ Solo track act on the tracks of selected clips.
 - **Typing on the canvas:** Escape or a click outside finishes; Enter
   breaks a title's line, and in a caption it finishes (Ctrl+Enter breaks
   the line). Shortcuts stay off while typing.
+- **Selected edit points:** the existing Alt+arrow frame nudges trim or roll
+  bracketed edges; Escape clears them. Source Fit to fill is active while
+  the source monitor is open. V keeps its existing clip activation binding.
 - **Selected keyframes** take Delete, Copy, Paste and Escape before clips
   do.

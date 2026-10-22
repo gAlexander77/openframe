@@ -233,6 +233,8 @@ export interface ExportSettings {
   /** What becomes of the captions (add_captions' clips): drawn into the
    * picture, an SRT file beside the export, both, or neither. */
   captions: CaptionExport;
+  /** Explicit chapter markers in MP4 only; default off. */
+  chapters?: boolean;
 }
 
 export type CaptionExport = "burn" | "srt" | "both" | "none";
@@ -266,6 +268,7 @@ export interface ExportPlan {
   extension: string;
   mime: string;
   container: Container;
+  chapters?: boolean;
   video: { codec: VideoCodec; width: number; height: number; fps: Rational; bitrate: number } | null;
   audio: { codec: AudioCodec; bitrate: number; sampleRate: number; channels: number } | null;
   /** Timeline frames [from, to). */
@@ -367,6 +370,7 @@ export function planExport(p: Project, s: ExportSettings, inOut: { inPoint: numb
     extension: container,
     mime,
     container,
+    ...(s.chapters && container === "mp4" ? { chapters: true } : {}),
     video,
     audio,
     range,

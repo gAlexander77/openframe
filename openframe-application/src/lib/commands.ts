@@ -1,3 +1,5 @@
+import { moveEdits, type EditLanding, type EditPoint } from "./editPoints";
+import { placeSourceEdit } from "./drop";
 import { FADE_CURVES, type FadeCurve } from "./project/types";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
@@ -98,6 +100,8 @@ export interface Command {
 }
 
 export interface CommandReport {
+  edits?: (EditLanding & { seconds: number })[];
+  sourceEdit?: { clip_id: Id; speed: number };
   cuts?: CutsReport;
   overwritten?: { id: Id; kind: Clip["type"]; what: "removed" | "trimmed" }[];
   notes?: string[];
@@ -477,6 +481,18 @@ function easeArg(name: unknown, bezier: unknown): Ease | undefined {
 
 // ---- the registry ------------------------------------------------------------------
 
+function editSchema(): JsonSchema {
+  return { type: "array", description: "Edit points; select both sides of a touching cut for a roll", items: S.obj({ clip_id: S.str("Clip id"), edge: S.str("Selected edge", { enum: ["start", "end"] }) }, ["clip_id", "edge"]) };
+}
+function runEdits(p: Project, a: Record<string, unknown>, target: { to: number } | { by: number }, report?: CommandReport): Project {
+  const edges = (a.edits as { clip_id: Id; edge: EditPoint["edge"] }[]).map((e) => ({ clipId: e.clip_id, edge: e.edge }));
+  if (!edges.length) throw new CommandError("Select at least one edit point");
+  for (const e of edges) clipOrThrow(p, e.clipId);
+  const r = moveEdits(p, edges, target, a.ripple === true);
+  if (report) report.edits = r.edges.map((e) => ({ ...e, seconds: framesToSeconds(e.frame, p.fps) }));
+  return r.project;
+}
+
 export const COMMANDS: Command[] = [
   {
     name: "paste_attributes",
@@ -807,6 +823,33 @@ export const COMMANDS: Command[] = [
       if (a.track_id !== undefined && (c.type === "text" || (c.type === "color" && c.shape) || (c.type === "compound" && !isFootage(q, c)))) noteUnderAdjustment(q, c.id, c.type === "text" ? "a title" : c.type === "compound" ? "a title card" : "a shape", report);
       return q;
     },
+  },
+  {
+    name: "extend_edit",
+    description: "Move selected start/end edges to timeline seconds. Both touching sides roll; single sides trim, leaving gaps unless ripple is true. Answers every landed frame and any source, neighbor, length or locked-track limit.",
+    input: S.obj({ edits: editSchema(), to: S.num("Timeline seconds to extend to", { minimum: 0 }), ripple: S.bool("Shift later clips for single-edge trims; default false") }, ["edits", "to"]),
+    run: (p, a, report) => runEdits(p, a, { to: f(p, a.to) }, report),
+  },
+  {
+    name: "trim_edits",
+    description: "Nudge selected edit edges together; touching opposite sides roll. by is integer frames by default; unit seconds converts by to timeline frames. Answers each landed edge and stop reason.",
+    input: S.obj({ edits: editSchema(), by: S.num("Signed movement in frames (default) or seconds with unit seconds"), unit: S.str("Unit of by; default frames", { enum: ["frames", "seconds"] }), ripple: S.bool("Shift later clips for single-edge trims; default false") }, ["edits", "by"]),
+    run: (p, a, report) => {
+      if (a.unit !== "seconds" && !Number.isSafeInteger(a.by)) throw new CommandError("by must be integer frames, or use unit seconds");
+      return runEdits(p, a, { by: a.unit === "seconds" ? f(p, a.by) : Number(a.by) }, report);
+    },
+  },
+  {
+    name: "edit_from_source",
+    description: "Insert or overwrite source media using three/four-point marks (exclusive Outs). Source In/Out plus timeline In places that source range. A timeline range plus source In reads forward, or plus source Out backtimes. Four different-length marks require fit fill (constant speed) or trim (speed 1). Insufficient media rejects the whole edit. Returns sourceEdit with the made clip id and speed.",
+    input: S.obj({ asset_id: S.str("Source asset id"), source_in: S.num("Source In seconds", { minimum: 0 }), source_out: S.num("Exclusive source Out seconds", { minimum: 0 }), timeline_in: S.num("Timeline In seconds; defaults to the playhead when neither timeline mark is given", { minimum: 0 }), timeline_out: S.num("Exclusive timeline Out seconds", { minimum: 0 }), mode: S.str("Placement operation", { enum: ["insert", "overwrite"] }), fit: S.str("Resolve four-point duration mismatch", { enum: ["fill", "trim"] }), track_id: S.str("Destination track id; default main video or first unlocked audio track") }, ["asset_id", "mode"]),
+    run: (p, a, report) => commandError(() => {
+      const asset = p.assets.find((x) => x.id === a.asset_id);
+      if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
+      const r = placeSourceEdit(p, asset, 0, { sourceIn: a.source_in as number | undefined, sourceOut: a.source_out as number | undefined, timelineIn: a.timeline_in as number | undefined, timelineOut: a.timeline_out as number | undefined, fit: a.fit as "fill" | "trim" | undefined }, a.mode as ops.PlaceMode, a.track_id as Id | undefined);
+      if (report) report.sourceEdit = { clip_id: r.clipId, speed: r.speed };
+      return r.project;
+    }),
   },
   {
     name: "trim_clip",
@@ -2232,17 +2275,19 @@ export const COMMANDS: Command[] = [
   {
     name: "add_marker",
     description: "Drop a marker at a time (chapters, beats, notes).",
-    input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["at"]),
-    run: (p, a) => ops.addMarker(p, createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined)),
+    input: S.obj({ at: S.num("Seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), duration: S.num("Range duration in seconds; zero is a point", { minimum: 0 }), chapter: S.bool("Include this marker in chapter-enabled MP4 exports") }, ["at"]),
+    run: (p, a) => ops.addMarker(p, { ...createMarker(f(p, a.at), String(a.label ?? ""), a.color ? String(a.color) : undefined), ...(a.duration !== undefined ? { duration: f(p, a.duration) } : {}), ...(a.chapter !== undefined ? { chapter: a.chapter === true } : {}) }),
   },
   {
     name: "update_marker",
     description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds. A marker that follows a clip (describe_project names its clip) stops following it when moved; detach: true stops it where it stands.",
-    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
+    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), duration: S.num("Range duration in seconds; zero restores a point", { minimum: 0 }), chapter: S.bool("Include this marker in chapter-enabled MP4 exports"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
     run: (p, a) => updateMarker(p, String(a.marker_id), {
       ...(a.at !== undefined ? { frame: f(p, a.at) } : {}),
       ...(a.label !== undefined ? { label: String(a.label) } : {}),
       ...(a.color !== undefined ? { color: String(a.color) } : {}),
+      ...(a.duration !== undefined ? { duration: f(p, a.duration) } : {}),
+      ...(a.chapter !== undefined ? { chapter: a.chapter === true } : {}),
       ...(a.detach === true ? { detach: true } : {}),
     }),
   },
@@ -3276,7 +3321,7 @@ export function describeProject(p: Project) {
     assets: p.assets.map((a) => ({ id: a.id, kind: a.kind, name: a.name, duration: a.duration, width: a.width, height: a.height, hasAudio: a.hasAudio, ...(a.animated ? { animated: true, looping: true } : {}), ...(a.musicGrid ? { music_grid: { bpm: a.musicGrid.bpm, first_downbeat: a.musicGrid.firstDownbeat, ...(a.musicGrid.sections ? { sections: a.musicGrid.sections } : {}) } } : {}) })),
     tracks: p.tracks.map(track),
     // A marker that follows a clip (a song's beat) names it.
-    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.follows ? { clip: m.follows.clip } : {}) })),
+    markers: p.markers.map((m) => ({ id: m.id, frame: m.frame, at: s(m.frame), label: m.label, color: m.color, ...(m.duration !== undefined ? { duration: s(m.duration), duration_frames: m.duration } : {}), ...(m.chapter !== undefined ? { chapter: m.chapter } : {}), ...(m.follows ? { clip: m.follows.clip } : {}) })),
     ...(p.luts?.length ? { luts: p.luts.map((l) => ({ id: l.id, name: l.name, kind: l.kind, size: l.size })) } : {}),
     ...(p.brand ? { brand: p.brand } : {}),
     // Nested timelines, described like the project's (times their own).

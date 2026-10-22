@@ -88,14 +88,14 @@ export function MarkersTab() {
           return <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
           <button className="marker-jump" aria-label={`Go to ${m.label || "Untitled marker"} at ${formatTimecode(m.frame, fps)}${on ? `, on ${on}` : ""}`} aria-pressed={selected === m.id} onClick={() => openMarkers(m.id)}>
             <i className="marker-dot" style={{ background: m.color }} />
-            <span className="marker-note"><span data-cut>{m.label || "Untitled marker"}</span><small className="num">{formatTimecode(m.frame, fps)}{on && <span className="marker-follows"><Link2 size={11} /> {on}</span>}</small></span>
+            <span className="marker-note"><span data-cut>{m.label || "Untitled marker"}</span><small className="num">{formatTimecode(m.frame, fps)}{m.duration ? `, ${formatTimecode(m.duration, fps)} long` : ""}{m.chapter ? ", Chapter" : ""}{on && <span className="marker-follows"><Link2 size={11} /> {on}</span>}</small></span>
           </button>
           {m.follows && <button className="icon-btn small" aria-label={`Detach ${m.label || "untitled marker"} from ${on ?? "its clip"}`} data-tip="Detach from its clip: it stays here" onClick={() => store.edit("Detach marker", (p) => runCommand(p, "update_marker", { marker_id: m.id, detach: true }))}><Unlink2 size={13} /></button>}
           <button className="icon-btn small" aria-label={`Delete ${m.label || "untitled marker"}`} data-tip="Delete marker" onClick={() => store.edit("Delete marker", (p) => runCommand(p, "delete_markers", { marker_ids: [m.id] }))}><Trash2 size={13} /></button>
         </div>;
         })}
       </div>
-      {current && <MarkerEditor key={`${current.id}:${current.frame}:${current.label}:${current.color}`} marker={current} fps={fps} on={current.follows ? nameOf(current.follows.clip) : undefined} />}
+      {current && <MarkerEditor key={`${current.id}:${current.frame}:${current.label}:${current.color}:${current.duration}:${current.chapter}`} marker={current} fps={fps} on={current.follows ? nameOf(current.follows.clip) : undefined} />}
       {exporting && <MarkerExport markers={list} onClose={() => setExporting(false)} />}
     </div>
   );
@@ -105,15 +105,18 @@ function MarkerEditor({ marker, fps, on }: { marker: Marker; fps: Rational; on?:
   const [label, setLabel] = useState(marker.label);
   const [time, setTime] = useState(formatTimecode(marker.frame, fps));
   const [color, setColor] = useState(marker.color);
+  const [duration, setDuration] = useState(formatTimecode(marker.duration ?? 0, fps));
+  const [chapter, setChapter] = useState(marker.chapter === true);
+  const length = parseTimecode(duration, fps);
   const frame = parseTimecode(time, fps);
-  const valid = frame !== null && Number.isSafeInteger(frame) && frame >= 0;
-  const changed = label !== marker.label || frame !== marker.frame || color !== marker.color;
+  const valid = frame !== null && Number.isSafeInteger(frame) && frame >= 0 && length !== null && Number.isSafeInteger(length) && length >= 0;
+  const changed = label !== marker.label || frame !== marker.frame || color !== marker.color || length !== (marker.duration ?? 0) || chapter !== (marker.chapter === true);
   return (
     <form className="marker-editor" aria-label="Edit marker" onSubmit={(e) => {
       e.preventDefault();
       if (!valid || !changed) return;
       // Notes do not move clips: skip the clip-edit magnet/linkage pass.
-      store.edit("Edit marker", (p) => runCommand(p, "update_marker", { marker_id: marker.id, label, color, at: framesToSeconds(frame, fps) }));
+      store.edit("Edit marker", (p) => runCommand(p, "update_marker", { marker_id: marker.id, label, color, at: framesToSeconds(frame, fps), duration: framesToSeconds(length!, fps), chapter }));
       openMarkers(marker.id);
     }} onKeyDown={(e) => {
       if (e.key === "Escape") { e.stopPropagation(); store.set({ markerEdit: null }); }
@@ -121,6 +124,8 @@ function MarkerEditor({ marker, fps, on }: { marker: Marker; fps: Rational; on?:
       <label>Note<input className="field" aria-label="Marker note" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
       <label>Position<input className="field num" aria-label="Marker position" aria-invalid={!valid} aria-describedby="marker-time-hint" value={time} onChange={(e) => setTime(e.target.value)} /></label>
       <p className="lib-hint" id="marker-time-hint">{valid ? "Timecode or seconds with s, for example 12.5s." : "Enter a valid nonnegative timecode or seconds with s."}{valid && on ? ` It moves with ${on}; a new position detaches it.` : ""}</p>
+      <label>Duration<input className="field num" aria-label="Marker duration" aria-invalid={length === null || length < 0} value={duration} onChange={(e) => setDuration(e.target.value)} /></label>
+      <label>Chapter<input type="checkbox" role="switch" aria-label="Chapter" checked={chapter} onChange={(e) => setChapter(e.target.checked)} /></label>
       <div className="marker-palette" role="group" aria-label="Marker color">
         {COLORS.map(([value, name]) => <button type="button" key={value} aria-label={name} aria-pressed={color === value} data-tip={name} onClick={() => setColor(value)} style={{ background: value }} />)}
       </div>

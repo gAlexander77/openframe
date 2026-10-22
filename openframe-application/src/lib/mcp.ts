@@ -706,6 +706,7 @@ export const APP_TOOLS: AppTool[] = [
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for the mix; default as mixed" },
       start: { type: "number", minimum: 0, description: "Export from this second" },
       end: { type: "number", minimum: 0, description: "Export to this second" },
+      chapters: { type: "boolean", description: "Include only chapter-marked timeline markers as real MP4 chapters; default false, MP4 only" },
       captions: { type: "string", enum: ["burn", "srt", "both", "none"], description: "The captions: burn into the picture (default), srt file beside it, both, or none" },
       folder: FOLDER,
       replace: REPLACE,
@@ -713,7 +714,7 @@ export const APP_TOOLS: AppTool[] = [
     call: async (h, a) => {
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, folder: a.folder, replace: a.replace }));
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, chapters: a.chapters, folder: a.folder, replace: a.replace }));
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);

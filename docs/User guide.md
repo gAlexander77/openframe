@@ -306,8 +306,15 @@ own; giving it a new position does the same. Searching a clip's name
 lists the markers that follow it. Notes beyond the last clip are
 reachable and appear in the list, but do not make the exported movie
 longer. Editing markers leaves clips, gaps and clip selection alone.
-Saved markers reopen with the project; range markers are not
-implemented yet.
+Saved markers reopen with the project. Set **Duration** with the same
+timecode or seconds rules as Position (zero makes a point marker). A range
+draws a band on the ruler; drag its right end to resize it in one undo step.
+Its start keeps following its clip when attached; changing only Duration
+does not detach it. Turn on **Chapter** to include its start and note in an
+MP4 export with **Chapters from markers** enabled. Only chapter-marked notes
+are included. Partial exports start the preceding chapter at zero.
+MP4 supports up to 255 chapters, and titles use at most 255 UTF-8 bytes.
+Chapter exports put their movie metadata at the end of the file.
 
 Use **Export shown markers** to preview and save just the notes shown by
 the current search and color filter. **Timecoded notes** keeps frame-exact
@@ -603,6 +610,30 @@ frames, set **Mark In** and **Mark Out**, then **Add range**. Out includes the
 frame you see. The range is placed using the current timeline mode; Undo
 removes it. Previewing does not move the timeline playhead. Marks reset when
 the preview closes. Image previews offer **Add image** instead.
+
+**Insert** and **Overwrite** also honor the timeline marks. Mark source In
+and Out plus timeline In to place that source range at the timeline In.
+With timeline In and Out, mark only source In to read forward for that
+length, or only source Out to backtime the source so it ends there. Outs
+are exclusive in commands; the source monitor includes the displayed frame.
+Four marks of different lengths ask for **Fit to fill** (change constant
+speed) or **Trim source to fit** (speed one). The separate **Fit to fill**
+button overwrites the timeline range using the selected source range; its
+binding is shown in Keyboard shortcuts. Too little media leaves the timeline
+and marks untouched. Successful Insert/Overwrite clears the timeline marks.
+Agents use `edit_from_source` with optional source/timeline In/Out seconds.
+
+To extend a timeline cut precisely, click a clip edge with Select. Its
+bracket shows the chosen side. Add edges with Shift; Alt-click or
+double-click a touching cut to choose both sides for a roll. Move the
+playhead and use **Extend edit to playhead** from Timeline or Keyboard shortcuts.
+With no edge selected, it finds the nearest edge on selected clips' tracks
+(or all unlocked tracks). The frame nudge actions move selected edges; with
+no selected edges they move clips. Escape clears brackets. **Select nearest
+edit point**, **Select next edit point**, and **Select previous edit point**
+move the edge selection without moving the playhead. A tie chooses the
+earlier frame, then the outgoing side; gaps never roll. Limits appear in a
+toast. These edits leave gaps even with the main-track magnet enabled.
 
 ## Organize media
 
