@@ -550,3 +550,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   add_callout clicks on each glide's arrival; check_project names a
   callout that leaves the frame; export_video and export_versions replace
   a file of their name in the folder named when asked.
+- [[ADR-126 The MCP server answers at once when the editor page is not listening]] —
+  a listener flag and the main page's load hook answer requests at once
+  while the editor is unavailable, drain interrupted requests with a
+  warning to check the project, and keep the long timeout for exports.

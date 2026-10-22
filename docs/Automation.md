@@ -39,6 +39,10 @@ Then:
 
 The app must be running with Allow AI agents on whenever the agent works;
 start a new agent session after adding the server.
+While the editor page is reloading or broken, the agent gets an immediate
+error explaining that the editor is not ready, or that it reloaded before
+answering and the project must be checked before retrying an edit.
+Restarting OpenFrame clears this state so the editor can listen again.
 
 **When the app gains tools.** A client lists a server's tools once, when
 it connects, so tools (or parameters) a newer build adds stay invisible to
