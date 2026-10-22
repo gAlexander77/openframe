@@ -27,7 +27,7 @@ import { clampZoom, fitZoom, refitTimeline, rulerTicks, snapSpan, trackHeight } 
 import { formatTimecode, framesToSeconds, secondsToFrames } from "../lib/time";
 import { platform } from "../platform";
 import { canPaste, edit, provide, settleOptions } from "../state/actions";
-import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
+import { audioCrossfadeSeconds, crossfadeInto, addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, layerSeconds, placeTextPreset, transitionSeconds } from "../state/apply";
 import { registerDropZone, useDragging, type DragPayload, type DragState } from "../state/drag";
 import { addToTimeline, importFiles, pickAndImport } from "../state/media";
 import { syncAudio } from "../state/ai";
@@ -189,7 +189,7 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
       const join = audioJoin(tracks, row, frame);
       if (join) {
         const j = crossfadeJoin(p, join.clipId);
-        const d = Math.max(1, secondsToFrames(j && !j.why ? newCrossfade(j, transitionSeconds()) : transitionSeconds(), p.fps));
+        const d = Math.max(1, secondsToFrames(j && !j.why ? newCrossfade(j, audioCrossfadeSeconds()) : audioCrossfadeSeconds(), p.fps));
         const view = { row: join.row, newTrack: false, frame: join.frame - d, duration: d, shifts: none, label: "Crossfade", insert: false, attach: true };
         return {
           view,
@@ -208,36 +208,11 @@ function planDrop(payload: DragPayload, row: number, frame: number): { view: Dro
   }
 }
 
-/**
- * Crossfade audio clip `clipId` into the next one (ADR-109): the
- * transitions' default length, as far as the join allows; where none
- * fits, say what to change. The clip menu's item toggles it off again; a
- * transition dropped on the join (ADR-111) always sets it. True when the
- * crossfade was set or removed.
- */
-function crossfadeInto(clipId: Id, toggle: boolean): boolean {
-  const join = crossfadeJoin(store.get().project, clipId);
-  if (!join) return false;
-  const off = toggle && join.plays > 0;
-  if (!off && join.why) {
-    toast(join.why, "error");
-    return false;
-  }
-  const seconds = off ? 0 : newCrossfade(join, transitionSeconds());
-  try {
-    edit(seconds ? "Crossfade" : "Remove crossfade", (p) => runCommand(p, "set_crossfade", { clip_id: clipId, seconds }));
-    return true;
-  } catch (err) {
-    toast((err as Error).message, "error");
-    return false;
-  }
-}
-
 // A list outside the timeline (the Check tab) moved the playhead: the
 // timeline scrolls it into view, as it does for a marker.
-const revealers = new Set<() => void>();
-export function revealPlayhead() {
-  revealers.forEach((r) => r());
+const revealers = new Set<(clipId?: string) => void>();
+export function revealPlayhead(clipId?: string) {
+  revealers.forEach((r) => r(clipId));
 }
 
 /** Equal previews draw the same; skip the re-render on every pointer move. */
@@ -302,7 +277,17 @@ export function Timeline() {
   useLayoutEffect(showPlayhead, [depth]);
   useEffect(() => {
     // After the seek renders: leaving a compound clip changes the width.
-    const reveal = () => requestAnimationFrame(showPlayhead);
+    const reveal = (clipId?: string) => requestAnimationFrame(() => {
+      showPlayhead();
+      const el = scrollRef.current;
+      // A distant clip is culled until the horizontal scroll renders.
+      // Reveal its row from layout, so vertical reach does not need its DOM.
+      const row = clipId && layoutRows(store.get().project).rows.find((r) => r.track.clips.some((c) => c.id === clipId));
+      if (el && row) {
+        if (row.top < el.scrollTop) el.scrollTop = row.top;
+        else if (RULER_H + row.top + row.height > el.scrollTop + el.clientHeight) el.scrollTop = RULER_H + row.top + row.height - el.clientHeight;
+      }
+    });
     revealers.add(reveal);
     return () => void revealers.delete(reveal);
   }, [showPlayhead]);
@@ -1068,7 +1053,7 @@ export function Timeline() {
 
 /** Open a compound clip for editing (ADR-037); playback stops, as it
  * would for any change of timeline. */
-function openCompound(clipId: Id) {
+export function openCompound(clipId: Id) {
   player.pause();
   store.openCompound(clipId);
 }

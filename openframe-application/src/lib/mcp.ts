@@ -20,6 +20,8 @@ import type { MappedMusic } from "./analysis/musicMap";
 import { PROGRAM_KINDS, SPEC_IDS } from "./analysis/delivery";
 import { LINE_CEILING_LU } from "./analysis/balance";
 import { DUCK_MIN_GAP, DUCK_RELEASE } from "./analysis/duck";
+import { findClips, type FindClipsOptions } from "./timelineIndex";
+import type { Project } from "./project/types";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
@@ -190,7 +192,7 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   const b = before as Desc, a = after as Desc;
   if (!a?.tracks || !b?.tracks) return after;
   const notes = [...((a.notes as string[] | undefined) ?? []), ...closedGapNotes(b, a)];
-  const out: Record<string, unknown> = { duration: a.duration, ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(notes.length ? { notes } : {}) };
+  const out: Record<string, unknown> = { duration: a.duration, ...(a.cuts ? { cuts: a.cuts } : {}), ...(a.overwritten ? { overwritten: a.overwritten } : {}), ...(notes.length ? { notes } : {}) };
   const diff = <T extends { id: string }>(was: Map<string, T>, now: Map<string, T>, key: string) => {
     const added = [...now.values()].filter((x) => !was.has(x.id));
     let changed = [...now.values()].filter((x) => was.has(x.id) && !same(was.get(x.id), x));
@@ -488,6 +490,19 @@ export const APP_TOOLS: AppTool[] = [
       fields: { type: "array", items: { type: "string" }, description: "Each clip's id, type, start and end, and only these of its fields, e.g. [\"text\"] for captions as words and times, [\"transform\", \"keyframes\"] for where things sit" },
     }),
     call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
+  },
+  {
+    name: "find_clips",
+    description: "Find clips by name, media name, text or kind, including inside compound clips. Answers compact rows sorted by start, total and shown. Nested times and stretch filters are local to that compound timeline; compound_clip_id names the containing clip instance. A point (start equals end) finds clips playing then; a stretch is end-exclusive.",
+    inputSchema: obj({
+      query: { type: "string", description: "Case-insensitive text in the clip name, media name, title/caption text or kind" },
+      kind: { type: "string", enum: ["video", "audio", "text", "caption", "image", "color", "adjustment", "compound"], description: "Only this kind; text means titles, caption means captions" },
+      track_id: { type: "string", description: "Only clips on this track" },
+      start: { type: "number", minimum: 0, description: "Clips still playing after this second (local time inside compounds)" },
+      end: { type: "number", minimum: 0, description: "Clips starting before this second (same as start finds a point)" },
+      limit: { type: "integer", minimum: 1, maximum: 1000, description: "Maximum rows returned (default 50)" },
+    }),
+    call: (h, a) => json(findClips(h.projectJson() as Project, a as FindClipsOptions)),
   },
   {
     name: "list_catalog",

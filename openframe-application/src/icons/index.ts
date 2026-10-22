@@ -82,6 +82,7 @@ export {
   Link2,
   List,
   ListChecks,
+  ListVideo,
   Loader2,
   Lock,
   LockOpen,

@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   List,
   ListChecks,
+  ListVideo,
   Music,
   PaintBucket,
   Scan,
@@ -38,6 +39,7 @@ import { formatDuration } from "../lib/time";
 import { TEXT_TEMPLATES, templateClips } from "../lib/templates";
 import { addAdjustmentLayer, addCalloutLayer, addColorLayer, addTextPreset, applyEffect, applyFilter, applyTemplate, applyTransition, presetClip, TEXT_PRESETS } from "../state/apply";
 import { beginDrag, type DragPayload } from "../state/drag";
+import { prefsStore, usePrefs } from "../state/prefs";
 import { edit } from "../state/actions";
 import { addToTimeline, pickAndImport } from "../state/media";
 import { toast } from "../state/toast";
@@ -52,6 +54,7 @@ import { EnginePreview } from "./EnginePreview";
 import { StickersTab } from "./StickersTab";
 import "./library.css";
 import { AiToolsTab } from "./AiToolsTab";
+import { TimelineIndex } from "./TimelineIndex";
 import { MarkersTab } from "./MarkersTab";
 import { CheckTab } from "./CheckTab";
 import { MediaManager } from "./MediaManager";
@@ -73,6 +76,7 @@ const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "adjustment", label: "Adjustment", icon: SlidersHorizontal },
   { id: "ai", label: "AI tools", icon: WandSparkles },
   { id: "markers", label: "Markers", icon: Bookmark },
+  { id: "timeline", label: "Timeline", icon: ListVideo },
   { id: "check", label: "Check", icon: ListChecks },
 ];
 
@@ -136,6 +140,7 @@ export function LibraryPanel() {
         {tab === "captions" && <CaptionsTab />}
         {tab === "ai" && <AiToolsTab />}
         {tab === "markers" && <MarkersTab />}
+        {tab === "timeline" && <TimelineIndex />}
         {tab === "check" && <CheckTab />}
       </div>
     </section>
@@ -488,9 +493,9 @@ function AmbienceBeds() {
   );
 }
 
-function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string }) {
+function CatalogCard(props: { label: string; payload: DragPayload; onAdd: () => void; preview: React.ReactNode; className?: string; onContextMenu?: (e: React.MouseEvent) => void }) {
   return (
-    <div className={`card ${props.className ?? ""}`} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
+    <div className={`card ${props.className ?? ""}`} onContextMenu={props.onContextMenu} onPointerDown={(e) => beginDrag(e, props.payload)} onDoubleClick={props.onAdd}>
       <div className="card-thumb">
         {props.preview}
         <button className="card-add" aria-label={`Add ${props.label}`} data-tip={`Add ${props.label}`} onPointerDown={(e) => e.stopPropagation()} onClick={props.onAdd}>
@@ -563,7 +568,12 @@ function EffectsTab() {
 }
 
 function TransitionsTab() {
-  return (
+  const prefs = usePrefs();
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(!!menu, menuRef, () => setMenu(null));
+  return (<>
+    {menu && <div className="ctx-anchor" ref={menuRef} style={{ left: menu.x, top: menu.y }}><MenuList items={menu.items} onDone={() => setMenu(null)} style={{ top: 0 }} /></div>}
     <CatalogTab
       defs={TRANSITIONS}
       hint="Drop on the cut between two clips, or select a clip and click +. Between two audio clips it makes a crossfade."
@@ -571,13 +581,14 @@ function TransitionsTab() {
         <CatalogCard
           key={k}
           label={d.label}
+          onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY, items: [{ label: "Set as default", checked: prefs.transitionType === k, onSelect: () => prefsStore.set({ transitionType: k }) }] }); }}
           payload={{ kind: "transition", type: k, label: d.label }}
           onAdd={() => applyTransition(k)}
-          preview={<EnginePreview spec={{ kind: "transition", type: k }} />}
+          preview={<><EnginePreview spec={{ kind: "transition", type: k }} />{prefs.transitionType === k && <span className="badge-added transition-default">Default</span>}</>}
         />
       )}
     />
-  );
+  </>);
 }
 
 function FiltersTab() {

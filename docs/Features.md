@@ -96,6 +96,28 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Timeline
 
+- **Timeline index:** the library's Timeline tab lists the open timeline's
+  clips, including a compound's contents while editing it. Search clip or
+  media names, any line of a title or caption, or a kind; filter by kind
+  and sort by start, name or track. Each row shows its track, timecode,
+  duration and color label; deactivated clips are dimmed. Click or use
+  arrows and Enter to select, seek and reveal a clip; double-click a
+  compound to open it. Agents use `find_clips`, which also searches nested
+  timelines and names each hit's containing compound clip.
+- **Default transitions at several cuts:** select the clips before cuts
+  and choose Apply default video transition or Apply default audio
+  crossfade in the Timeline menu or Keyboard shortcuts. With no selection,
+  the nearest eligible main-track cut is used. Preferences sets the video
+  type and length and the audio crossfade length (initially Dissolve and
+  0.5 s for each); right-click a transition card to Set as default, marked
+  by its Default badge. One undo removes the whole application. Gaps,
+  locked tracks and existing transitions are skipped; lengths fit each
+  join. Agents use `apply_default_transitions`, with optional type,
+  duration and replace overrides and an applied/skipped cut report.
+- **Mute and solo track keys:** act on the tracks of selected clips,
+  together in one undo step. A mixed selection turns them all on; when
+  all are on, it turns them off. The Timeline menu exposes both actions.
+
 - CapCut's toggles: main track **magnet** (gapless, reorders on drag, including a drop at the very front),
   **snapping** with a cyan guide, **linkage** (titles, overlays and sound
   effects follow the shot under most of them through ripples and
@@ -234,7 +256,7 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   ([[ADR-104 Voice and sound an agent can trust without ears]],
   [[ADR-107 A split plays on, a cut keeps its downbeat, and a duck follows its music]]).
   A person makes a crossfade with the audio clip menu's **Crossfade into next clip** (the
-  transitions' default length, as far as the join allows, or why none
+  audio crossfade default length, as far as the join allows, or why none
   fits), sees it drawn at the cut like a transition, and sets its length
   in the Audio tab's **Crossfade** row
   ([[ADR-109 What an agent can set, a person can see and change]]);
@@ -291,6 +313,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   in a project.
 
 ## Viewer
+
+- **Mute playback:** the speaker in the transport and the mixer's master
+  strip share a session-only preview switch, also in Keyboard shortcuts.
+  It silences timeline playback, scrubbing, source previews and library
+  auditions before the master peak and loudness meters. Export and saved
+  track mute/solo settings are independent
+  ([[ADR-127 Timeline conveniences share search and edit paths, monitor mute belongs to preview]]).
 
 - WebGL2 compositor: transforms, crop, 13 blend modes (CapCut's 11 plus
   Add, Difference, Exclusion), chroma key, masks, color adjustments,
@@ -1159,7 +1188,7 @@ makes a 13 s one). Times are timeline seconds.
   inspector; drag it to place it.
 - CapCut's tabs: Media, Audio, Text, Stickers, Effects, Transitions,
   Captions, Filters, Adjustment, with category sub-navigation; then AI
-  tools, Markers and Check.
+  tools, Markers, Timeline and Check.
 - **Check** (also File > Check project, and the Export dialog's Check
   row): the agent's `check_project`, run for a person on request, with
   the same measuring (each title's contrast on the rendered picture, the

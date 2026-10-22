@@ -554,6 +554,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
   a listener flag and the main page's load hook answer requests at once
   while the editor is unavailable, drain interrupted requests with a
   warning to check the project, and keep the long timeout for exports.
+- [[ADR-127 Timeline conveniences share search and edit paths, monitor mute belongs to preview]] - shared clip search and bulk transition setters, viewer defaults, and a session-only output gain for preview sound.
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.

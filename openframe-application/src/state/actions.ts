@@ -4,6 +4,7 @@
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
+import { nearestMainCut } from "../lib/defaultTransitions";
 import { clampZoom } from "../lib/timeline";
 import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, focusKeeps, withChanges, type ActionId, type Focused, type KeymapChanges } from "../lib/keymap";
 import { breakCompound, breakProblem, compoundProblem, createCompound, newClipIds } from "../lib/project/compound";
@@ -119,7 +120,25 @@ function stepBy(n: number) {
   store.seek(s.playhead + n);
 }
 
+function applyDefaults(kind: "video" | "audio") {
+  const s = store.get();
+  const ids = s.selection.length ? s.selection : nearestMainCut(s.project, s.playhead, kind);
+  if (!ids.length) return toast("Select clips before the cuts to transition");
+  edit(kind === "video" ? "Apply default video transition" : "Apply default audio crossfade", (p) => runCommand(p, "apply_default_transitions", { clip_ids: ids, kind }));
+}
+function toggleSelectedTracks(key: "muted" | "solo") {
+  const s = store.get();
+  const tracks = s.project.tracks.filter((t) => t.clips.some((c) => s.selection.includes(c.id)));
+  if (!tracks.length) return toast("Select a clip on the track to mute or solo");
+  const on = !tracks.every((t) => !!t[key]);
+  store.edit(key === "muted" ? "Mute track" : "Solo track", (p) => tracks.reduce((q, t) => runCommand(q, "update_track", { track_id: t.id, [key]: on }), p));
+}
+
 provide({
+  applyDefaultVideoTransition: () => applyDefaults("video"),
+  applyDefaultAudioCrossfade: () => applyDefaults("audio"),
+  muteTrack: () => toggleSelectedTracks("muted"),
+  soloTrack: () => toggleSelectedTracks("solo"),
   undo: () => store.undo(),
   redo: () => store.redo(),
 

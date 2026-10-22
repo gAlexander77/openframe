@@ -74,6 +74,7 @@ import { cleanColorize, COLORIZE_DEFAULT } from "./colorize";
 import { COLOR_PATHS, colorKey, keyColor } from "./textAnim";
 import { TILT_MAX, TILT_PARAMS } from "./tilt";
 import { MATTE_MODES, trackAbove } from "./trackMatte";
+import { applyDefaultTransitions, type CutsReport, type DefaultTransitionOptions } from "./defaultTransitions";
 import { didYouMean } from "./didYouMean";
 
 export type JsonSchema = {
@@ -96,6 +97,7 @@ export interface Command {
 }
 
 export interface CommandReport {
+  cuts?: CutsReport;
   overwritten?: { id: Id; kind: Clip["type"]; what: "removed" | "trimmed" }[];
   notes?: string[];
 }
@@ -2014,6 +2016,26 @@ export const COMMANDS: Command[] = [
       if (v === undefined) throw new CommandError(COLOR_PATHS.has(path) ? `give color (a CSS color) for ${path}` : a.color !== undefined ? `${a.color} is not a color` : "give value");
       const key = { f: f(p, a.at) - clip.start, v, ...(e && e !== "linear" ? { ease: e } : {}) };
       return ops.updateClip(p, clip.id, (c) => ({ ...c, keyframes: { ...c.keyframes, [path]: upsertKey(c.keyframes?.[path], key) } }));
+    },
+  },
+  {
+    name: "apply_default_transitions",
+    description: "Apply default transitions to touching cuts after clip_ids (omit for every cut on main). Video defaults to the preferred type and duration (initially dissolve, 0.5 s); audio to the preferred crossfade length (initially 0.5 s). kind both handles each clip by its kind. Existing transitions stay unless replace is true; locked tracks and gaps are skipped. Durations shorten to each join's limits. One edit, with applied and skipped cuts and reasons.",
+    input: S.obj({
+      clip_ids: S.ids("Clips before the cuts; omitted means every cut on the main track"),
+      kind: S.str("Which cuts (default video)", { enum: ["video", "audio", "both"] }),
+      type: S.str("Override the preferred video transition", { enum: Object.keys(TRANSITIONS) }),
+      duration: S.num("Override the video/audio length in seconds; shortened to fit each join", { minimum: 0.05 }),
+      replace: S.bool("Replace existing transitions or crossfades (default false)"),
+    }),
+    run: (p, a, report) => {
+      const result = applyDefaultTransitions(p, a as DefaultTransitionOptions);
+      if (report) {
+        report.cuts ??= { applied: [], skipped: [] };
+        report.cuts.applied.push(...result.cuts.applied);
+        report.cuts.skipped.push(...result.cuts.skipped);
+      }
+      return result.project;
     },
   },
   {

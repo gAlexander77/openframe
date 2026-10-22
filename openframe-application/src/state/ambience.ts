@@ -5,7 +5,7 @@
 // is long enough is reused.
 
 import { renderBedFile, renderBedPcm } from "../engine/ambience";
-import { audioContext } from "../engine/audio";
+import { audioContext, masterBus } from "../engine/audio";
 import { AMBIENCE, AMBIENCE_IDS, BED_MAX_SECONDS, bedFileName, placeBed } from "../lib/ambience";
 import { projectDuration } from "../lib/project/ops";
 import type { Asset, Id } from "../lib/project/types";
@@ -112,7 +112,7 @@ export async function auditionAmbience(name: string): Promise<void> {
   g.gain.linearRampToValueAtTime(1, t + 0.5);
   g.gain.setValueAtTime(1, t + 7);
   g.gain.linearRampToValueAtTime(0, t + 8);
-  src.connect(g).connect(ctx.destination);
+  src.connect(g).connect(masterBus().input);
   await ctx.resume();
   src.start(t);
   playing = src;

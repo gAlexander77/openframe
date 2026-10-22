@@ -5,6 +5,8 @@
 // everything below for its duration. A drop (`at` given) always acts where
 // it lands, never on the selection, so it does what its preview shows.
 
+import { crossfadeJoin, newCrossfade } from "../lib/crossfadeJoin";
+import { edit } from "./actions";
 import { prefsStore } from "./prefs";
 import { player } from "../engine/player";
 import { effectDefaults, FILTERS, TRANSITIONS } from "../lib/catalog";
@@ -59,6 +61,7 @@ const visualSelection = (p: Project): Clip[] =>
 export const layerSeconds = () => prefsStore.get().layerSeconds;
 /** Seconds a new transition lasts (shorter when a clip beside it is). */
 export const transitionSeconds = () => prefsStore.get().transitionSeconds;
+export const audioCrossfadeSeconds = () => prefsStore.get().audioCrossfadeSeconds;
 
 /** A new top video track (CapCut stacks the newest layer on top), under
  * the captions (ADR-121): an effect layer over them would blur them too. */
@@ -213,6 +216,26 @@ export function applyFilter(type: string, clipId?: Id, at?: number) {
   store.select([id]);
 }
 
+/** Crossfade a touching audio join using the preferred audio length,
+ * capped to its handles. The clip menu can toggle an existing one off. */
+export function crossfadeInto(clipId: Id, toggle: boolean): boolean {
+  const join = crossfadeJoin(store.get().project, clipId);
+  if (!join) return false;
+  const off = toggle && join.plays > 0;
+  if (!off && join.why) {
+    toast(join.why, "error");
+    return false;
+  }
+  const seconds = off ? 0 : newCrossfade(join, audioCrossfadeSeconds());
+  try {
+    edit(seconds ? "Crossfade" : "Remove crossfade", (p) => runCommand(p, "set_crossfade", { clip_id: clipId, seconds }));
+    return true;
+  } catch (err) {
+    toast((err as Error).message, "error");
+    return false;
+  }
+}
+
 /** Put a transition on a cut: the one after `clipId`, or on a click (not
  * `dropped`) the selected clip's or the one nearest the playhead on the
  * main track. */
@@ -230,6 +253,10 @@ export function applyTransition(type: string, clipId?: Id, dropped = false) {
   }
   if (!left) {
     toast("Transitions go between two touching clips — add another clip first");
+    return;
+  }
+  if (left.type === "audio") {
+    if (crossfadeInto(left.id, false)) store.select([left.id]);
     return;
   }
   const before = store.get().project;

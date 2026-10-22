@@ -84,9 +84,19 @@ export type ActionId =
   | "showShortcuts"
   | "showPreferences"
   | "toggleCompare"
+  | "applyDefaultVideoTransition"
+  | "applyDefaultAudioCrossfade"
+  | "mutePlayback"
+  | "muteTrack"
+  | "soloTrack"
   | "saveFrame";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
+  soloTrack: ["Alt+S"],
+  muteTrack: ["Shift+H"],
+  mutePlayback: ["Shift+S"],
+  applyDefaultAudioCrossfade: ["Mod+Alt+Shift+D"],
+  applyDefaultVideoTransition: ["Mod+Alt+D"],
   playPause: ["Space"],
   stepBack: ["ArrowLeft"],
   stepForward: ["ArrowRight"],
@@ -182,6 +192,11 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
 };
 
 export const ACTION_LABELS: Record<ActionId, string> = {
+  soloTrack: "Solo track",
+  muteTrack: "Mute track",
+  mutePlayback: "Mute playback",
+  applyDefaultAudioCrossfade: "Apply default audio crossfade",
+  applyDefaultVideoTransition: "Apply default video transition",
   playPause: "Play / pause",
   stepBack: "Previous frame",
   stepForward: "Next frame",

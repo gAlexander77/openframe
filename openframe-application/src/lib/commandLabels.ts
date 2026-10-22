@@ -5,6 +5,7 @@ import { paramLabel } from "./paramInfo";
 
 const LABELS: Record<string, string> = {
   match_color: "Match color",
+  apply_default_transitions: "Apply default transitions",
   add_media_clip: "Add clip", set_param: "Change parameter", set_text: "Edit text",
   set_project: "Project settings", batch: "Edit clips", edit_compound: "Edit compound clip",
   set_hsl: "Change HSL", apply_lut: "Apply LUT", set_chroma_key: "Change chroma key",

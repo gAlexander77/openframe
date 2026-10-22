@@ -46,3 +46,6 @@
 .about-note { margin: 8px 0 0; color: var(--text-3); font-size: var(--fs-xs); }
 .prefs-gap { margin-top: 18px; }
 .prefs-switch { grid-template-columns: 1fr auto; }
+
+.prefs-transition { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.prefs-transition select { min-width: 0; width: 100%; }
