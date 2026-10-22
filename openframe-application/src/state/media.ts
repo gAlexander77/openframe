@@ -3,6 +3,9 @@ import { createProxies, proxyAction } from "./proxies";
 // Getting media into the project: probe, add assets, place clips. Shared by
 // the media panel, OS drag and drop, and the automation API.
 
+import { decodeMono } from "../engine/analyze";
+import { classifyAudioRole, type AudioRoleGuess } from "../lib/analysis/audioRole";
+import { assetRole } from "../lib/audioRoles";
 import { probe } from "../engine/media";
 import { formatName, isImageName, mediaName, SNIFF_BYTES, sourceName } from "../lib/mediaKind";
 import { prepare } from "../engine/thumbs";
@@ -28,7 +31,7 @@ const codecName = (c: string | undefined) => (c ? (CODEC_NAMES[c] ?? c.toUpperCa
 
 /** What became of one file of an import, in the order given: its asset, or
  * the LUT it was, or why it failed (import_media answers every one). */
-export type ImportOutcome = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lut: LutFile } | { file: ImportedFile; error: string };
+export type ImportOutcome = { file: ImportedFile; asset: Asset; audioRole?: AudioRoleGuess } | { file: ImportedFile; lut: LutFile } | { file: ImportedFile; error: string };
 
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
@@ -78,7 +81,7 @@ export async function probeFiles(files: ImportedFile[], signal = projectWork.sig
   return (await probeEach(files, signal)).flatMap((o) => ("asset" in o ? [o.asset] : []));
 }
 
-type Probed = { file: ImportedFile; asset: Asset } | { file: ImportedFile; lutFile: true } | { file: ImportedFile; error: string };
+type Probed = { file: ImportedFile; asset: Asset; audioRole?: AudioRoleGuess } | { file: ImportedFile; lutFile: true } | { file: ImportedFile; error: string };
 
 /**
  * Each file probed, in order. The format is told by the file, never by the
@@ -156,7 +159,19 @@ async function probeEach(files: ImportedFile[], signal: AbortSignal): Promise<Pr
         audioCodec: info.audioCodec,
         rotation: info.rotation,
       };
-      out.push({ file: given, asset });
+      let audioRole: AudioRoleGuess | undefined;
+      if (asset.kind === "audio" && !assetRole(asset)) {
+        try {
+          const pcm = await decodeMono(asset, 0, Math.min(60, asset.duration), 8000, undefined, signal);
+          audioRole = classifyAudioRole(pcm, 8000);
+          if (audioRole.role) asset.role = audioRole.role;
+        } catch {
+          signal.throwIfAborted();
+          audioRole = { reason: "Audio analysis unavailable; role left unset", seconds: 0, pauses: 0, modulation: 0, periodicity: 0 };
+        }
+        toast(`${asset.name}: ${audioRole.reason}`);
+      }
+      out.push({ file: given, asset, ...(audioRole ? { audioRole } : {}) });
     } catch (e) {
       if (signal.aborted) return [];
       fail(`couldn't be opened: ${e instanceof Error ? e.message : e}`);

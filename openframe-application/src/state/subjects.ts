@@ -48,11 +48,11 @@ export function shotsToLook(p: Project): VisualClip[] {
 /** Look at every shot a version can crop: its saliency maps at timesOf.
  * A shot whose pictures cannot be decoded is left out (it keeps the
  * centered framing). */
-export async function lookAtShots(p: Project, signal?: AbortSignal): Promise<Looks> {
+export async function lookAtShots(p: Project, signal?: AbortSignal, shots = shotsToLook(p)): Promise<Looks> {
   const looks: Looks = {};
   const canvas = new OffscreenCanvas(WIDTH, WIDTH);
   const g = canvas.getContext("2d", { willReadFrequently: true })!;
-  for (const c of shotsToLook(p)) {
+  for (const c of shots) {
     signal?.throwIfAborted();
     if (c.type !== "video" && c.type !== "image") continue;
     const asset = getAsset(p, c.assetId);

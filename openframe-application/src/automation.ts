@@ -293,7 +293,7 @@ const mcpHost: McpHost = {
     // `name` is only the library's label; the file says what it is (ADR-095).
     const out = await importEach(files.map((f) => ({ name: f.name ?? sourceName(f.src), src: f.src, size: 0 })));
     return out.map((o) =>
-      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height }
+      "asset" in o ? { id: o.asset.id, name: o.asset.name, kind: o.asset.kind, duration: o.asset.duration, width: o.asset.width, height: o.asset.height, ...(o.asset.kind === "audio" ? { role: o.asset.role ?? null, ...(o.audioRole ? { audio_role: o.audioRole } : {}) } : {}) }
       : "lut" in o ? { lut_id: o.lut.id, name: o.lut.name, kind: "lut" }
       : { src: o.file.src, name: o.file.name, error: o.error },
     );

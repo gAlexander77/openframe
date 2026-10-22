@@ -27,7 +27,7 @@ async (page) => {
   details.original = { ok: after.json === before.json && after.undo === before.undo };
   const all = await call("list_projects");
   const saved = Array.isArray(all) ? all : all.projects;
-  details.created = { ok: result.projects.length === 3 && result.projects.every((p, i) => saved.some(s => s.id === p.id) && Math.abs(p.seconds - [22, 27, 32][i]) < 0.04 && p.captions > 0), projects: result.projects };
+  details.created = { ok: result.projects.length === 3 && result.projects.every((p, i) => saved.some(s => s.id === p.id) && p.seconds >= [22, 27, 32][i] && p.seconds <= [24, 29, 34][i] && p.captions > 0), projects: result.projects };
   for (const [i, made] of result.projects.entries()) {
     await call("open_project", { project: made.id });
     const q = await page.evaluate(() => window.videoEditor.project());

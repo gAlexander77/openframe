@@ -13,7 +13,7 @@ const audio = (id: string, extra: Partial<Asset> = {}): Asset => ({ id, kind: "a
 function film(): { p: Project; voice: Track; song: Track } {
   let p = createProject();
   const speech = audio("line", { speech: { text: "Home.", voice: "af_heart", speed: 0.9 } });
-  const song = audio("song");
+  const song = audio("song", { role: "music" });
   p = { ...p, assets: [speech, song] };
   const voice = createTrack("audio", "Narration"); // a name no rule knows
   const music = createTrack("audio", "Audio");
@@ -33,7 +33,7 @@ it("knows what a file is by where it came from, not by its name", () => {
   expect(assetRole({ ...audio("x"), name: "Riser take 2.wav" })).toBeUndefined();
 });
 
-it("judges a track by its role, then its files, then (old projects) its name, else music", () => {
+it("judges a track by its role, then its files, then (old projects) its name, else unset", () => {
   const { p, voice, song } = film();
   const of = assetsOf(p);
   expect(trackRole(p.tracks.find((t) => t.id === voice.id)!, of)).toBe("dialog");
@@ -89,4 +89,13 @@ it("lands library drops and add_media_clip by what the sound is", () => {
   expect(() => runCommand(p, "update_track", { track_id: p.tracks[0].id, role: "music" })).toThrow(/audio tracks/);
   const made = runCommand(p, "add_track", { kind: "audio", name: "Bed", role: "ambience" });
   expect(made.tracks.at(-1)).toMatchObject({ name: "Bed", role: "ambience" });
+});
+
+it("keeps uncertain imports out of music stems", () => {
+  const p = createProject();
+  const r = roleTrack(p, undefined, 0, 30);
+  const t = r.project.tracks.find(t => t.id === r.trackId)!;
+  expect(t.role).toBeUndefined();
+  expect(trackRole(t)).toBeUndefined();
+  expect(stemsOf(r.project).music).not.toContain(t.id);
 });

@@ -39,8 +39,20 @@ vertical-fill or full 16:9 layout, optionally place the facecam box on the
 source preview, and choose captions and an opening hook. Enter the
 streamer's name, handle and platform to add an opening credit and Follow
 end card. Making clips saves separate projects and leaves this project
-open. Each reported length includes the appended two-second credit card.
-Review speech recognition and edit each hook before publishing.
+open. Each reported length includes the credit card, held at least two
+seconds and longer for longer copy. Hooks stay below the facecam or clear
+of the detected subject; credits and captions stay clear of the apps'
+buttons. Captions join short chunks when reading needs more time. Creation
+checks the finished project, including rendered contrast. Agents receive
+remaining findings; an impossible hook is omitted and reported. Open a
+saved clip and use **Check** to review it, then review speech recognition
+and edit its hook before publishing.
+
+Imported audio is sampled for up to a minute to distinguish speech from
+music. The import message explains the assigned role; uncertain audio
+stays unclassified. Set an audio track's role yourself when a mixed bed,
+singing or background noise makes the result ambiguous. Agents receive
+`role` and the analysis reason from `import_media`.
 
 On Home, select projects with their selection boxes and choose **Export
 selected**. Choose a desktop folder (blank uses the usual export folder),
