@@ -1,3 +1,4 @@
+import { MatchColorSection } from "./MatchColorSection";
 import { LayoutsSection } from "./LayoutsSection";
 import { runStyle } from "../../lib/textRuns";
 import { EmptyState } from "../EmptyState";
@@ -1103,6 +1104,7 @@ function AdjustTab({ clip }: { clip: Clip }) {
           ]}
         />
       </div>
+      {(clip.type === "video" || clip.type === "image") && <MatchColorSection />}
       <div className="grade-pane" key={sub}>
         {sub === "basic" && (clip.type === "video" || clip.type === "image") && (
           <div className="insp-actions auto-adjust">
@@ -1922,6 +1924,7 @@ function MultiSelection({ count }: { count: number }) {
           <EffectClipboard />
           <AttributeClipboard />
         </Section>
+        {clips.some(c => c.type === "video" || c.type === "image") && <MatchColorSection />}
         <LayoutsSection ids={pictures.map(c => c.id)} />
         {pictures.length > 1 && (
           <Section title={`Picture (${pictures.length} clips)`}>

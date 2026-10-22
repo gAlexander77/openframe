@@ -203,6 +203,8 @@ export class Compositor {
   private blank3d: WebGLTexture | null = null;
   /** LUT tables on the GPU by source, with the parsed table they came from. */
   private lutTextures = new Map<string, { lut: Lut; tex: WebGLTexture; width: number }>();
+  private compareTexture: WebGLTexture | null = null;
+  private compareBitmap: ImageBitmap | null = null;
   /** Small target for scaled readbacks (scopes). */
   private small: { fb: WebGLFramebuffer; rb: WebGLRenderbuffer; w: number; h: number } | null = null;
 
@@ -1027,6 +1029,42 @@ export class Compositor {
     this.draw();
   }
 
+  /** Present only the left/top of a second picture. Intermediate passes
+   * remain full-frame; scissoring is restricted to the final presentation. */
+  compare(plan: PlanItem[] | null, bitmap: ImageBitmap | null, sources: (l: Layer) => SourceImage | null, background: string, split: number, horizontal: boolean) {
+    const gl = this.gl;
+    let tex: WebGLTexture;
+    if (plan) tex = this.composite(plan, sources, 0, { n: 0 }).tex;
+    else if (bitmap) {
+      if (this.compareBitmap !== bitmap) {
+        this.clearCompare();
+        this.compareTexture = this.makeTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.compareTexture);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap);
+        this.compareBitmap = bitmap;
+      }
+      tex = this.compareTexture!;
+    } else return;
+    this.bindTarget(null);
+    const fs = plan ? PRESENT_FS : PRESENT_FS.replace("texture(u_tex, v_uv)", "texture(u_tex, vec2(v_uv.x, 1.0 - v_uv.y))");
+    const u = this.use(this.program(plan ? "present" : "compare-reference", FULLSCREEN_VS, fs));
+    this.bindTex(0, tex, u("u_tex"));
+    gl.uniform3fv(u("u_background"), hexToRgb(background));
+    gl.enable(gl.SCISSOR_TEST);
+    const t = Math.max(0, Math.min(1, split));
+    if (horizontal) {
+      const h = Math.round(this.height * t);
+      gl.scissor(0, this.height - h, this.width, h);
+    } else gl.scissor(0, 0, Math.round(this.width * t), this.height);
+    try { this.draw(); } finally { gl.disable(gl.SCISSOR_TEST); }
+  }
+
+  clearCompare() {
+    if (this.compareTexture) this.gl.deleteTexture(this.compareTexture);
+    this.compareTexture = null;
+    this.compareBitmap = null;
+  }
+
   /** Composite a plan with nesting level `depth`'s framebuffers. Returns
    * the target holding the premultiplied result, transparent where nothing
    * was drawn. `slot` numbers the unkeyed source uploads of the frame. */
@@ -1236,6 +1274,7 @@ export class Compositor {
     this.disposed = true;
     const gl = this.gl;
     this.freeTargets();
+    this.clearCompare();
     for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
     if (this.blank2d) gl.deleteTexture(this.blank2d);

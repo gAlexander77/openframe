@@ -245,6 +245,12 @@ export const ClipView = memo(function ClipView(p: Props) {
       className={`clip clip-${c.type}${(c as { caption?: boolean }).caption ? " clip-caption" : ""}${p.selected ? " selected" : ""}${c.disabled ? " disabled" : ""}${p.track.locked ? " locked" : ""}`}
       style={{ transform: `translateX(${c.start * zoom + (p.shift ?? 0)}px)`, width: Math.max(2, w), height, ...(tint ? ({ "--label": c.labelColor ? CLIP_LABELS[tint].color : `color-mix(in srgb, ${CLIP_LABELS[tint].color} 38%, #20252b)` } as React.CSSProperties) : {}) }}
       data-label={tint}
+      onPointerDownCapture={(e) => {
+        if (!store.get().colorMatchPicking || e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (c.type === "video" || c.type === "image") store.set({ colorMatchReference: c.id, colorMatchPicking: false });
+      }}
       onPointerDown={(e) => p.onDown(e, c, "body")}
       // Keyboard reach (UX-33): Tab focuses one clip, arrows move between
       // them. A click must not focus it, or the arrows would stop stepping

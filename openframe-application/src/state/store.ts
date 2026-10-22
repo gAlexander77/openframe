@@ -78,6 +78,10 @@ export interface EditorState {
   previewScale: 1 | 0.5 | 0.25;
   /** The Scopes panel is showing (in the media library's place). */
   scopes: boolean;
+  compare: { mode: "off" | "beforeAfter" | "reference"; split: number; orientation: "vertical" | "horizontal" };
+  colorMatchReference: Id | null;
+  colorMatchPicking: boolean;
+  colorMatchBusy: boolean;
   mixer: boolean;
   /** Viewer overlays only: never saved into the project or rendered. */
   viewerGuides: Guides;
@@ -152,6 +156,10 @@ let state: EditorState = {
   trimPreview: null,
   previewScale: 1,
   scopes: false,
+  compare: { mode: "off", split: 0.5, orientation: "vertical" },
+  colorMatchReference: null,
+  colorMatchPicking: false,
+  colorMatchBusy: false,
   mixer: false,
   viewerGuides: "off",
   leftTab: "media",
@@ -399,6 +407,10 @@ export const store = {
     future = [];
     set({
       project,
+      compare: { mode: "off", split: 0.5, orientation: "vertical" },
+      colorMatchReference: null,
+      colorMatchPicking: false,
+      colorMatchBusy: false,
       nest: [],
       selection: [],
       transitionEdit: null,

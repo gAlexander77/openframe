@@ -25,6 +25,11 @@ import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
 import { groupFindings, markerMoves, oneDuck, quietAnswer, reviewSummary, shareClips, shiftedTogether, wholeClips } from "./answerSize";
 
+const BEFORE_SCHEMA = {
+  before: { type: "boolean", description: "Bypass the look for an ungraded comparison, without editing the project (default false)" },
+  before_clip_ids: { type: "array", items: { type: "string" }, description: "Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers" },
+} as const;
+
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
 export interface JsonRpcRequest {
@@ -60,10 +65,10 @@ export interface McpHost {
   redo(): unknown;
   seek(seconds: number): unknown;
   /** PNG of the frame at `seconds`, base64 without the data: prefix. */
-  frame(seconds: number, maxWidth: number): Promise<string>;
+  frame(seconds: number, maxWidth: number, before?: boolean, beforeClipIds?: string[]): Promise<string>;
   /** One JPEG of several frames in a grid, each stamped with its time
    * (photographs: as PNG a sheet ran to megabytes, ADR-073). */
-  sheet(times: number[], tileWidth: number, columns: number): Promise<string>;
+  sheet(times: number[], tileWidth: number, columns: number, before?: boolean, beforeClipIds?: string[]): Promise<string>;
   /** The same, of an imported video's own frames at source seconds. */
   mediaSheet(assetId: string, times: number[], tileWidth: number, columns: number): Promise<string>;
   /** The same, of a file that is not imported (an exported video): its
@@ -123,7 +128,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
+export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "matchColor" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -559,14 +564,15 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "preview_frame",
     description: "See the composited picture at a time: returns a PNG image of the frame exactly as it would export.",
-    inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" }, max_width: { type: "integer", minimum: 64, maximum: 1920, description: "Image width, default 640 (at most the canvas width)" } }, ["at"]),
-    call: async (h, a) => ({ content: [{ type: "image", data: await h.frame(Number(a.at), Number(a.max_width ?? 640)), mimeType: "image/png" }] }),
+    inputSchema: obj({ ...BEFORE_SCHEMA, at: { type: "number", minimum: 0, description: "Seconds" }, max_width: { type: "integer", minimum: 64, maximum: 1920, description: "Image width, default 640 (at most the canvas width)" } }, ["at"]),
+    call: async (h, a) => ({ content: [{ type: "image", data: await h.frame(Number(a.at), Number(a.max_width ?? 640), a.before === true, a.before_clip_ids as string[] | undefined), mimeType: "image/png" }] }),
   },
   {
     name: "preview_frames",
     description: "See several moments at once: one JPEG contact sheet of the frames at the given times, each stamped with its time. Check a whole edit in one call, then preview_frame a moment that needs a closer look.",
     inputSchema: obj(
       {
+        ...BEFORE_SCHEMA,
         times: { type: "array", items: { type: "number", minimum: 0 }, description: "Seconds, up to 24" },
         columns: columns(4),
         tile_width: { type: "integer", minimum: 120, maximum: 640, description: "Width of each frame, default 320" },
@@ -576,7 +582,7 @@ export const APP_TOOLS: AppTool[] = [
     call: async (h, a) => {
       const times = (a.times as number[]).slice(0, 24);
       if (!times.length) throw new Error("times needs at least one time");
-      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4)), mimeType: "image/jpeg" }] };
+      return { content: [{ type: "image", data: await h.sheet(times, Number(a.tile_width ?? 320), Number(a.columns ?? 4), a.before === true, a.before_clip_ids as string[] | undefined), mimeType: "image/jpeg" }] };
     },
   },
   {
@@ -1075,6 +1081,17 @@ APP_TOOLS.push(
     description: "Correct a video or picture clip's exposure, white balance and levels from its frame at the playhead (CapCut's Auto adjust), setting its Basic adjustment sliders.",
     inputSchema: obj({ clip_id: { type: "string", description: "Video or image clip" } }, ["clip_id"]),
     call: async (h, a) => json(await h.ai("autoAdjustClip", String(a.clip_id), {})),
+  },
+  {
+    name: "match_color",
+    description: "Match video or picture clips to a reference shot's rendered look. Samples five frames per clip, replaces the targets' look with editable RGB curves and saturation, preserves the master curve, and applies all targets in one undo step. Reports mean channel differences in levels before and after. Re-running samples targets without their look, so the match does not compound.",
+    inputSchema: obj({
+      reference_clip_id: { type: "string", description: "Video or picture clip whose rendered look to match" },
+      clip_ids: { type: "array", items: { type: "string" }, description: "One or more target video or picture clip IDs, excluding the reference" },
+      strength: { type: "number", minimum: 0, maximum: 1, description: "Mix the correction toward identity, 0..1 (default 1); zero leaves the project unchanged" },
+      match_saturation: { type: "boolean", description: "Also match mean chroma using Basic saturation (default true)" },
+    }, ["reference_clip_id", "clip_ids"]),
+    call: async (h, a) => json(await h.ai("matchColor", a.clip_ids as string[], { referenceClipId: a.reference_clip_id, strength: a.strength ?? 1, matchSaturation: a.match_saturation !== false })),
   },
   // ---- ads: text behind the subject, deliverables ----
   {

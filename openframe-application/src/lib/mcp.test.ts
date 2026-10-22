@@ -321,7 +321,7 @@ describe("what a blind test of the tools found", () => {
   it("checks app tools' arguments too, naming the ones it knows", async () => {
     const r = await call(host(), "tools/call", { name: "preview_frame", arguments: { time: 0.7 } });
     expect(r!.result).toMatchObject({ isError: true });
-    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: at, max_width)");
+    expect(text(r)).toBe("args.at is required; args.time is not a known argument; did you mean at? (known: before, before_clip_ids, at, max_width)");
   });
 
   it("says what set_filter and a picture's set_animation changed", async () => {
@@ -727,5 +727,33 @@ describe("what the third Claude film found (ADR-121)", () => {
     expect(answer.shifted_clips).toEqual([{ by: -0.3, clips: 8, from: 3.7, to: 7.7, tracks: { [h.project.tracks[0].id]: 8 } }]);
     expect(answer.changed_clips).toHaveLength(1);
     expect(JSON.stringify(answer)).not.toMatch(/word 3/);
+  });
+});
+
+
+describe("ungraded previews and shot matching", () => {
+  it("validates before and clip IDs for both preview tools and forwards them", async () => {
+    const h = host(), frames: unknown[][] = [];
+    const frameHost: McpHost = { ...h, frame: async (...args) => { frames.push(args); return "iVBOR"; }, sheet: async (...args) => { frames.push(args); return "/9j/"; } };
+    for (const name of ["preview_frame", "preview_frames"]) {
+      const base = name === "preview_frame" ? { at: 1 } : { times: [1, 2] };
+      for (const invalid of [{ before: "yes" }, { before: 1 }, { before_clip_ids: "a" }, { before_clip_ids: [5] }]) {
+        const r = await call(frameHost, "tools/call", { name, arguments: { ...base, ...invalid } });
+        expect(r!.result).toMatchObject({ isError: true });
+      }
+      const r = await call(frameHost, "tools/call", { name, arguments: { ...base, before: true, before_clip_ids: ["a"] } });
+      expect(r!.result).not.toHaveProperty("isError");
+    }
+    expect(frames).toEqual([[1, 640, true, ["a"]], [[1, 2], 320, 4, true, ["a"]]]);
+  });
+
+  it("validates matching strength and passes all targets through one async tool", async () => {
+    const h = host();
+    const args = { reference_clip_id: "ref", clip_ids: ["a", "b"] };
+    const good = await call(h, "tools/call", { name: "match_color", arguments: args });
+    expect(good!.result).not.toHaveProperty("isError");
+    expect(h.aiCalls).toEqual([["matchColor", ["a", "b"], { referenceClipId: "ref", strength: 1, matchSaturation: true }]]);
+    const bad = await call(h, "tools/call", { name: "match_color", arguments: { ...args, strength: 2 } });
+    expect(bad!.result).toMatchObject({ isError: true });
   });
 });

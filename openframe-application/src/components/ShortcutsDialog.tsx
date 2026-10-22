@@ -48,7 +48,7 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
     Playback: [
       "playPause", "stepBack", "stepForward", "stepBack10", "stepForward10",
       "prevEdit", "nextEdit", "goStart", "goEnd", "shuttleBack", "shuttleStop",
-      "shuttleForward", "toggleLoop", "playInToOut", "fullscreenPreview",
+      "shuttleForward", "toggleLoop", "playInToOut", "fullscreenPreview", "toggleCompare",
     ],
     Editing: [
       "split", "splitAll", "trimStartToPlayhead", "trimEndToPlayhead", "delete",

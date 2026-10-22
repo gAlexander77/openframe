@@ -153,7 +153,7 @@ provide({
   },
   selectAll: () => store.select(store.get().project.tracks.flatMap((t) => t.clips.map((c) => c.id))),
   // Escape lets go of selected keyframes first, then of clips.
-  deselect: () => (store.get().keySel ? store.set({ keySel: null }) : store.select([])),
+  deselect: () => (store.get().colorMatchPicking ? store.set({ colorMatchPicking: false }) : store.get().keySel ? store.set({ keySel: null }) : store.select([])),
   copy: () => {
     if (!copySelectedKeys()) copyClips();
   },
@@ -207,6 +207,7 @@ provide({
   markIn: () => store.set({ inPoint: store.get().playhead }),
   markOut: () => store.set({ outPoint: store.get().playhead }),
   clearInOut: () => store.set({ inPoint: null, outPoint: null }),
+  toggleCompare: () => { const c = store.get().compare; store.set({ compare: { ...c, mode: c.mode === "off" ? "beforeAfter" : "off" } }); },
   toggleLoop: () => store.set({ loop: !store.get().loop }),
   // The source monitor provides these while it is open.
   insertSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),

@@ -29,6 +29,7 @@ on 2026-10-18; when they change, change this page with them.
 | Shuttle forward | `L` |
 | Loop playback | `Ctrl+L` |
 | Play in to out | `Ctrl+Shift+Space` |
+| Toggle compare | `Alt+Shift+C` |
 | Full-screen preview | `Ctrl+Shift+F` |
 
 ## Editing

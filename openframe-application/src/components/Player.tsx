@@ -1,3 +1,4 @@
+import { CompareControl, CompareOverlay } from "./ViewerCompare";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { player } from "../engine/player";
 import { ChartColumnBig, ChevronLeft, ChevronRight, ImageDown, Maximize2, Pause, Play, Repeat, SkipBack, SkipForward } from "../icons";
@@ -143,6 +144,7 @@ export function PlayerPanel() {
       <header className="panel-head">
         <span className="panel-title">Player</span>
         <ViewerGuideControl />
+        <CompareControl />
         <ScopesToggle />
       </header>
       <div
@@ -185,6 +187,7 @@ export function PlayerPanel() {
           <canvas ref={canvasRef} className="player-canvas" />
           <ViewerGuides />
           <TransformOverlay width={box.w} height={box.h} />
+          <CompareOverlay />
         </div>
         <Meter />
         {trimPreview && <TrimPreview state={trimPreview} />}
