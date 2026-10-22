@@ -1,4 +1,4 @@
-import { highlightTitle, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
+import { highlightTitle, scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
 import { describe, expect, it } from "vitest";
 import { findHighlights, HighlightAudio, highlightWindow, refineHighlight, rollingBaseline, type HighlightFeature } from "./highlights";
 
@@ -132,4 +132,19 @@ it("gives ordinary and unfinished lead-test transcripts a short title without ke
   expect(highlightTitle("A much longer sentence that simply continues on and on, landing confirmed!", ["landing"])).toBe("landing confirmed!");
   expect(highlightTitle("We have landed. This is an astonishingly long excited sentence that continues for far more than sixty characters!")).toBe("We have landed.");
   expect(highlightTitle("   ")).toBe("Highlight");
+});
+
+describe("scene sampling order", () => {
+  it("covers the whole file in its first pass and every interval once in all", () => {
+    const passes = scenePasses(45 * 60, 4);
+    expect(passes[0][0]).toBe(0);
+    expect(passes[0].at(-1)).toBeGreaterThan(45 * 60 - 64);
+    expect(passes[0].length).toBeGreaterThanOrEqual(32);
+    const all = passes.flat().sort((a, b) => a - b);
+    expect(all).toEqual(Array.from({ length: 675 }, (_, i) => i * 4));
+    for (const pass of passes) expect(pass).toEqual([...pass].sort((a, b) => a - b));
+  });
+  it("keeps short files to one pass at the interval", () => {
+    expect(scenePasses(30, 1)).toEqual([Array.from({ length: 30 }, (_, i) => i)]);
+  });
 });

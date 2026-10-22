@@ -18,7 +18,7 @@ import { run } from "./actions";
 export interface HighlightRequest extends HighlightOptions {
   asset_id?: string; clip_id?: string; chat_file?: string; transcribe?: boolean; scenes?: boolean | "auto"; markers?: boolean;
 }
-export interface HighlightAnswer { asset_id: string; clip_id?: string; highlights: Highlight[]; elapsed_seconds: number; signals: string[]; cached: boolean; scene_sampling?: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; elapsed_seconds: number } }
+export interface HighlightAnswer { asset_id: string; clip_id?: string; highlights: Highlight[]; elapsed_seconds: number; signals: string[]; cached: boolean; scene_sampling?: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; even_interval_seconds?: number; elapsed_seconds: number } }
 interface HighlightState { result?: HighlightAnswer; progress: number; stage: string; busy: boolean; error?: string }
 let state: HighlightState = { progress: 0, stage: "", busy: false };
 const listeners = new Set<() => void>();

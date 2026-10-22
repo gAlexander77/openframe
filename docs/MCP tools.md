@@ -246,7 +246,7 @@ Rank exciting moments in a long VOD using local audio excitement and speech, opt
 | `times` | number[] |  | Viewer clips or streamer markers in source seconds; strong moment hints |
 | `keywords` | string[] |  | Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true |
 | `transcribe` | boolean |  | Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false) |
-| `scenes` | true \| false \| "auto" |  | Sample 96 px frames every 1 s, or every 4 s past 20 minutes; at most 75 s spent sampling. scene_sampling reports interval, samples, coverage and elapsed time. auto enables video up to 2 hours |
+| `scenes` | true \| false \| "auto" |  | Sample 96 px frames every 1 s, or every 4 s past 20 minutes, coarse to fine over the whole file; at most 75 s spent sampling. scene_sampling reports interval, samples, covered_seconds (seconds' worth at the interval), even_interval_seconds (the spacing reached across the whole file) and elapsed time. auto enables video up to 2 hours |
 | `weights` | { audio, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
 | `weights.audio` | number |  | Audio excitement weight (default 0.5) (0..10) |
 | `weights.speech` | number |  | Voice activity preference (default 0.1) (0..10) |

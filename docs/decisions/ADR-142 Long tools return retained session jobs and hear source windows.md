@@ -35,3 +35,17 @@ Results disappear on app restart. Cancellation is cooperative at engine
 checkpoints; completed batch files and saved projects remain. Sparse or
 incomplete scenes reduce visual evidence, so audio/chat and human review
 still matter. The 45-minute hardware target needs a real drive measurement.
+
+## Measured on the 45-minute VOD, 2026-10-22
+
+In the desktop app (RTX 5070 laptop), `find_highlights` with scenes and
+Whisper answered `running` at 45 s and finished in 185 s (about ten minutes
+before this ADR). Two runs then showed the 75 s scene budget sampling 417
+and 238 frames: sampled in order from the start, it reached 27:48 and then
+only 15:52. Moments inside the sampled part get a small scene bonus
+(0.016 here) that later ones never get, which is how the parachute call
+(27:14) fell out of the top six on the slower run. Sampling now runs coarse
+to fine, each pass ascending through mediabunny's `canvasesAtTimestamps`:
+every 32 s across the whole file first, then the midpoints down to 4 s; a
+cut-short reading spans the file evenly, and `even_interval_seconds` says
+how fine it got.

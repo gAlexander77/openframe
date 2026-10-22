@@ -528,7 +528,7 @@ export const APP_TOOLS: AppTool[] = [
       times: { type: "array", items: { type: "number", minimum: 0 }, description: "Viewer clips or streamer markers in source seconds; strong moment hints" },
       keywords: { type: "array", items: { type: "string" }, description: "Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true" },
       transcribe: { type: "boolean", description: "Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false)" },
-      scenes: { enum: [true, false, "auto"], description: "Sample 96 px frames every 1 s, or every 4 s past 20 minutes; at most 75 s spent sampling. scene_sampling reports interval, samples, coverage and elapsed time. auto enables video up to 2 hours" },
+      scenes: { enum: [true, false, "auto"], description: "Sample 96 px frames every 1 s, or every 4 s past 20 minutes, coarse to fine over the whole file; at most 75 s spent sampling. scene_sampling reports interval, samples, covered_seconds (seconds' worth at the interval), even_interval_seconds (the spacing reached across the whole file) and elapsed time. auto enables video up to 2 hours" },
       weights: { ...obj({
         audio: { type: "number", minimum: 0, maximum: 10, description: "Audio excitement weight (default 0.5)" },
         speech: { type: "number", minimum: 0, maximum: 10, description: "Voice activity preference (default 0.1)" },

@@ -8,6 +8,23 @@ import { LoudnessMeter } from "./loudness";
 export const sceneSampling = (seconds: number) => ({ interval_seconds: seconds > 20 * 60 ? 4 : 1 });
 export const SCENE_BUDGET_SECONDS = 75;
 
+/** Scene sample times coarse to fine, each pass ascending (about 32 samples
+ * first, then the midpoints, down to `interval`): a reading its budget cuts
+ * short still spans the whole file evenly instead of only its start, which
+ * gave early moments a scene bonus late ones never got. */
+export function scenePasses(seconds: number, interval: number): number[][] {
+  let top = 0;
+  while (interval * 2 ** (top + 1) * 32 <= seconds) top++;
+  const passes: number[][] = [];
+  for (let level = top; level >= 0; level--) {
+    const step = interval * 2 ** level, pass: number[] = [];
+    // The first pass takes every multiple of its step; later ones only the new odd multiples.
+    for (let t = level === top ? 0 : step; t < seconds; t += level === top ? step : 2 * step) pass.push(t);
+    passes.push(pass);
+  }
+  return passes;
+}
+
 export const HIGHLIGHT_STEP = 0.5;
 export const HIGHLIGHT_WEIGHTS = { audio: 0.5, speech: 0.1, chat: 0.25, scenes: 0.05, times: 0.8, keywords: 0.3 };
 export type HighlightWeights = typeof HIGHLIGHT_WEIGHTS;

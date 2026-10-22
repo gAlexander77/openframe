@@ -1076,9 +1076,12 @@ GPU resources. See [[ADR-144 Session resources have byte budgets and explicit ow
   gameplay; chat spikes, emotes and clip requests add evidence. Scene
   sampling is one small frame per second, or every four seconds past
   20 minutes, automatic only up to two hours. A 75-second scene budget
-  keeps expensive codec seeking bounded; `scene_sampling` reports the
-  interval, samples, source coverage, completion and elapsed time. Audio
-  and chat still cover the whole source when scene coverage is incomplete.
+  keeps expensive codec seeking bounded. Sampling runs coarse to fine
+  (about 32 frames across the whole file, then the midpoints), so a reading
+  the budget cuts short still spans the file evenly; `scene_sampling`
+  reports the interval, samples, coverage, the even spacing it reached
+  (`even_interval_seconds`), completion and elapsed time. Audio and chat
+  cover the whole source either way.
   Vocal excitement is a heuristic; review candidates before making clips
   ([[ADR-140 Highlight discovery streams features and refines candidates]]).
 - **Readable automatic captions:** whole-line generation chooses phrase and

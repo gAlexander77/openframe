@@ -1,4 +1,4 @@
-import { sceneSampling, SCENE_BUDGET_SECONDS } from "../lib/analysis/highlights";
+import { scenePasses, sceneSampling, SCENE_BUDGET_SECONDS } from "../lib/analysis/highlights";
 import { proxySource } from "../lib/proxyPolicy";
 import { borrowImage } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
@@ -67,34 +67,45 @@ export async function streamMono(asset: Asset, consume: (pcm: Float32Array) => v
 
 /** Sparse low-resolution frames (1 or 4 s). Seeking skips intervening pictures;
  * codecs may still decode dependency frames within a GOP. */
-export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<{ cuts: number[]; sampling: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; elapsed_seconds: number } }> {
+export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signal?: AbortSignal): Promise<{ cuts: number[]; sampling: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; even_interval_seconds?: number; elapsed_seconds: number } }> {
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const origin = await mediaOrigin(track, await input.getPrimaryAudioTrack());
     const sink = new CanvasSink(track, { width: 96, poolSize: 1 });
-    let previous: Uint8Array | undefined;
-    const cuts: number[] = [], report = throttle(onProgress);
+    const report = throttle(onProgress);
     const started = performance.now(), { interval_seconds } = sceneSampling(asset.duration);
-    let samples = 0, covered_seconds = 0;
-    for (let t = 0; t < asset.duration; t += interval_seconds) {
-      // ponytail: bound costly long-GOP seeking to 75 s; a worker with a
-      // keyframe scene index could cover the full file within this budget.
-      if ((performance.now() - started) / 1000 >= SCENE_BUDGET_SECONDS) break;
-      signal?.throwIfAborted();
-      const wrapped = await sink.getCanvas(origin + t);
-      covered_seconds = Math.min(asset.duration, t + interval_seconds);
-      if (!wrapped) continue;
-      samples++;
-      const { canvas } = wrapped;
-      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-      const hsv = rgbaToHsv(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+    const passes = scenePasses(asset.duration, interval_seconds), total = passes.reduce((n, p) => n + p.length, 0);
+    // 96 px RGBA per sample (about 20 KB): neighbors are known only once the passes end.
+    const frames = new Map<number, Uint8ClampedArray>();
+    let attempted = 0, finest: number | undefined;
+    reading: for (const [i, pass] of passes.entries()) {
+      let k = 0;
+      for await (const wrapped of sink.canvasesAtTimestamps(pass.map(t => origin + t))) {
+        // ponytail: bound costly long-GOP seeking to 75 s; a worker with a
+        // keyframe scene index could cover the full file within this budget.
+        if ((performance.now() - started) / 1000 >= SCENE_BUDGET_SECONDS) break reading;
+        signal?.throwIfAborted();
+        const t = pass[k++];
+        attempted++;
+        report(attempted / total);
+        if (!wrapped) continue;
+        const { canvas } = wrapped;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+        frames.set(t, ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+      }
+      finest = interval_seconds * 2 ** (passes.length - 1 - i);
+    }
+    const cuts: number[] = [];
+    let previous: Uint8Array | undefined;
+    for (const t of [...frames.keys()].sort((a, b) => a - b)) {
+      const hsv = rgbaToHsv(frames.get(t)!);
       if (previous && contentScore(previous, hsv, DEFAULT_WEIGHTS) >= 25) cuts.push(t);
       previous = hsv;
-      report(t / asset.duration);
     }
-    return { cuts, sampling: { interval_seconds, samples, covered_seconds, complete: covered_seconds >= asset.duration, elapsed_seconds: (performance.now() - started) / 1000 } };
+    const samples = frames.size, covered_seconds = Math.min(asset.duration, attempted * interval_seconds);
+    return { cuts, sampling: { interval_seconds, samples, covered_seconds, complete: attempted === total, ...(finest === undefined ? {} : { even_interval_seconds: finest }), elapsed_seconds: (performance.now() - started) / 1000 } };
   } finally { input.dispose(); }
 }
 
