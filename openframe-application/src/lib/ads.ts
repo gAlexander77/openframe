@@ -253,7 +253,12 @@ function backdrop(p: Project, bg: AdBackground): { clip?: ColorClip; fill?: stri
 function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1, give = 1): Part[] {
   const b = brandOf(p);
   const c = b.colors;
-  const k = typeScale(p.width, p.height) * fit;
+  // A tall end card's headline starts at 24% of the safe column's width,
+  // in 1080p style units. The room fitter gives logo space first and keeps
+  // type readable; the button keeps its role's size against the headline.
+  const columnType = (room.right - room.left) * 0.24 * 1080 / p.height;
+  const type = typeScale(p.width, p.height);
+  const k = (element === "end_card" && p.height / p.width >= 1.5 ? Math.max(type, columnType / 100) : type) * fit;
   const H = (p.height / 1080) * fit;
   const part = (clip: Clip, delay = 0, full = false): Part => ({ clip, delay, dx: 0, dy: 0, full });
   // A text part; its box and letter spacing shrink with the rest.

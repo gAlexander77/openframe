@@ -29,6 +29,11 @@ export const blurSigma = (amount: number) => Math.max(0, amount) * 0.3;
 /** Amounts past the old maximum run on the pyramid. */
 export const usesPyramid = (amount: number) => amount > CLASSIC_BLUR_MAX;
 
+/** Keep the classic glow through its original reach. Wide glows use a
+ * Gaussian with the same variance as its seven equally weighted taps. */
+export const usesGlowPyramid = (radius: number) => radius > 18;
+export const glowSigma = (radius: number) => Math.max(0, radius) * 2 / 3;
+
 /** Taps either side of the center in the Gaussian, over three sigma. The
  * shader's loop is this. */
 export const TAPS = 16;

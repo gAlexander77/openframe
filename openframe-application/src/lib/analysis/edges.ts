@@ -31,6 +31,27 @@ export interface AudioEdge {
   /** Where the join could move instead (timeline seconds, roll_edit): a
    * bar later or earlier, where the incoming file sounds before it. */
   rollTo?: number;
+  /** Without a grid, the target is quiet in both source files. */
+  rollIntoSilence?: boolean;
+}
+
+/** A frame within half a second of `at` with 20 ms of digital silence
+ * on both sides in both files. The arrays start at timeline second `from`
+ * and cover the legal roll range; frame snapping is part of the search. */
+export function silentJoinTarget(a: Float32Array, b: Float32Array, rate: number, from: number, at: number, fps: number): number | undefined {
+  const side = Math.ceil(rate * 0.02), n = Math.min(a.length, b.length);
+  const powers = [a, b].map(x => {
+    const sum = new Float64Array(n + 1);
+    for (let i = 0; i < n; i++) sum[i + 1] = sum[i] + x[i] ** 2;
+    return sum;
+  });
+  let best: number | undefined;
+  for (let f = Math.ceil(Math.max(from + side / rate, at - 0.5) * fps); f <= Math.floor(Math.min(from + (n - side) / rate, at + 0.5) * fps); f++) {
+    const to = f / fps, i = Math.round((to - from) * rate);
+    if (Math.abs(to - at) < 0.5 / fps || powers.some(s => (s[i + side] - s[i - side]) / (2 * side) > 1e-6)) continue;
+    if (best === undefined || Math.abs(to - at) < Math.abs(best - at)) best = to;
+  }
+  return best === undefined ? undefined : +best.toFixed(3);
 }
 
 /** A file's own attack at a point: its steepest sample step within 2 ms
@@ -157,7 +178,7 @@ export function edgeReport(L: Float32Array, R: Float32Array, rate: number, t0: n
         const quiet = e.silentBefore && r.dip_db <= DIP_DB ? e.silentBefore : undefined;
         if (quiet) {
           r.silent_before = quiet.seconds;
-          const where = e.rollTo !== undefined ? `, e.g. a bar ${e.rollTo > e.at ? "later" : "earlier"} (roll_edit to ${e.rollTo} s)` : " (roll_edit it to a bar line where the incoming file sounds)";
+          const where = e.rollIntoSilence ? `, or into the nearby silent stretch (roll_edit to ${e.rollTo} s)` : e.rollTo !== undefined ? `, e.g. a bar ${e.rollTo > e.at ? "later" : "earlier"} (roll_edit to ${e.rollTo} s)` : " (roll_edit it to a bar line where the incoming file sounds)";
           problems.push(`a ${-r.dip_db} dB hole at the cut: ${e.clips[1]}'s file is silent for ${quiet.seconds} s just before its in-point (${+(quiet.in - quiet.seconds).toFixed(3)}-${+quiet.in.toFixed(3)} s of the file), so ${e.faded ? "the crossfade fades" : "a crossfade would fade"} into that silence and a longer one deepens the hole: move the join where both files sound${where}`);
         } else if (r.dip_db <= -40) problems.push("silence for a few milliseconds at the cut, heard as a dropout");
         else if (r.dip_db <= DIP_DB) problems.push(`a ${-r.dip_db} dB hole for a few milliseconds at the cut (${e.faded ? `under the ${e.faded} s crossfade` : "a butt cut's click guard"}), heard as a tick`);

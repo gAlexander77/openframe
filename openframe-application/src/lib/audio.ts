@@ -65,7 +65,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
   return out;
 }
 
-/** A split compound with inserts is one audio bus, while its picture and
+/** A split compound with EQ, compression or inserts is one audio bus, while its picture and
  * selectable halves remain separate. Its mapped inner clips then enter
  * the same track/compound instance graph across the cut. */
 export function continuousCompoundSound(clips: Clip[], fps: Rational): Clip[] {
@@ -77,7 +77,7 @@ export function continuousCompoundSound(clips: Clip[], fps: Rational): Clip[] {
   ]);
   for (const c of clips) {
     const a = out.at(-1);
-    if (a?.type === "compound" && c.type === "compound" && c.inserts?.some(i => i.on) && !a.disabled && !c.disabled && !a.muted && !c.muted && !a.freeze && !c.freeze && !a.fadeOut && !c.fadeIn && !a.transitionOut && !a.reverse && !c.reverse && !a.speedCurve && !c.speedCurve && a.start + a.duration === c.start && signature(a) === signature(c) && Math.abs(a.in + framesToSeconds(a.duration, fps) * a.speed - c.in) < 1e-3) {
+    if (a?.type === "compound" && c.type === "compound" && (c.eq || c.compressor || c.inserts?.some(i => i.on)) && !a.disabled && !c.disabled && !a.muted && !c.muted && !a.freeze && !c.freeze && !a.fadeOut && !c.fadeIn && !a.transitionOut && !a.reverse && !c.reverse && !a.speedCurve && !c.speedCurve && a.start + a.duration === c.start && signature(a) === signature(c) && Math.abs(a.in + framesToSeconds(a.duration, fps) * a.speed - c.in) < 1e-3) {
       out[out.length - 1] = { ...a, duration: a.duration + c.duration, fadeOut: c.fadeOut, fadeOutCurve: c.fadeOutCurve };
     } else out.push(c);
   }

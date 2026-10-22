@@ -811,6 +811,13 @@ function ownPlan(master: Project, q: Project, m: Measured, captions: Span[] = []
   const centered = Math.abs((was.left + was.right) / 2 - master.width / 2) < master.width * 0.01;
   const safeA = areaOf(master, centered), safeB = areaOf(q, centered);
   safeB.bottom = aboveCaptions(q, safeB, spanOf(m.set), captions);
+  // Leave the outline room settleTitles measures before fitting the group:
+  // moving its type up afterward must not push its logo above the safe area.
+  if (group) {
+    const margin = Math.max(0, ...now.filter((c): c is TextClip => c.type === "text").map(c => outlineRoom(q, c)));
+    safeB.top += margin;
+    safeB.bottom -= margin;
+  }
   // A lone picture that the new frame would cut (a floating window wider
   // than a 9:16 frame) is fitted as a group is.
   const fitted = group || (now[0].type !== "text" && (size.w > q.width + 1 || size.h > q.height + 1));
@@ -1271,10 +1278,12 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
   // of a picture. The crop keeps what they point at, and they are kept on
   // it (followCallouts, reanchor) instead of laid out with the titles.
   const callouts = calloutsOf(p);
-  const kept = followed(callouts);
-  const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(p, callouts, id) };
   // One timeline refit as a frame: each clip on its own, then its overlays placed.
   const asFrame = (m: Project, out: Project): Track[] => {
+    // Each nested scene is a frame too: its rings belong to its shots,
+    // rather than the root timeline's overlay layout.
+    const local = calloutsOf(m), kept = followed(local);
+    const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(m, local, id) };
     const caption = (c: Clip): c is TextClip => !!place && c.type === "text" && !!c.caption;
     const k = place === "open" ? captionScale(m, out) : 1;
     const placeOne = (c: TextClip) => (place === "tall" ? placeCaption(m, out, c) : placeOpenCaption(m, out, c, k));
@@ -1313,7 +1322,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
-    return placeSets(m, fitted, sets, stacks, follows, captions, bleeds).tracks;
+    return followCallouts(m, placeSets(m, fitted, sets, stacks, follows, captions, bleeds), local).tracks;
   };
   let out: Project = q;
   if (p.compounds) {
@@ -1993,6 +2002,33 @@ export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(),
   // ring grazing the letters' outline, under a quarter of their height) is
   // not (the film's porthole grazed its caption by 7 px).
   const was = new Set(collide(master).filter((x) => x.depth >= 0.25).map((x) => x.clip_id));
+  if (q.height > q.width) {
+    const done = new Set<Id>();
+    // collide names the first caption a ring crosses. Re-measure after
+    // every move, so later captions and rings also leave room for each other.
+    const count = q.tracks.reduce((n, t) => n + t.clips.length, 0);
+    for (let i = 0; i < count; i++) {
+      const hits = collide(q).filter(h => !keep.has(h.clip_id) && !keep.has(h.caption_clip_id));
+      let changed = false;
+      for (const hit of hits) {
+        const c = q.tracks.flatMap(t => t.clips).find(c => c.id === hit.clip_id);
+        if (!c || !(anchorOf(c) || (c.type === "color" && c.shape?.fill === false))) continue;
+        if (calloutsOf(q).some(k => k.id === c.id && k.title === hit.caption_clip_id)) continue;
+        const s = seenTexts(q).find(s => s.c.id === hit.caption_clip_id && !s.via.length);
+        const box = s && seenLetters(q, s, secondsToFrames(hit.at, q.fps))?.box;
+        if (!s || !box) continue;
+        const dy = hit.box.top - 0.02 * Math.min(q.width, q.height) - box.bottom;
+        if (box.top + dy < titleZone(q).top * q.height) continue;
+        const y = +(s.c.transform.y + dy / q.height).toFixed(5);
+        q = applyOverrides(q, [{ clip_id: s.c.id, y }]);
+        if (!done.has(hit.clip_id)) moved.push({ ...hit, done: `captions moved above the ring in this version; ${s.c.id} y ${y}` });
+        done.add(hit.clip_id);
+        changed = true;
+        break;
+      }
+      if (!changed) break;
+    }
+  }
   const done = new Map<Id, { hit: CaptionCollision; y: number; scale: number }>();
   const root = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   // A fix is measured at one moment; a taller caption later may need a second.

@@ -3,9 +3,25 @@
 // moments between hits are not taken for a hole.
 
 import { describe, expect, it } from "vitest";
-import { edgeReport, ownOnset, type AudioEdge } from "./edges";
+import { edgeReport, ownOnset, silentJoinTarget, type AudioEdge } from "./edges";
 
 const RATE = 48000;
+
+it("finds a legal silent join near a cut without a beat grid, in both files", () => {
+  const a = new Float32Array(16000).fill(0.1), b = a.slice();
+  a.fill(0, 11000, 14000);
+  b.fill(0, 12000, 14000);
+  const to = silentJoinTarget(a, b, 16000, 9.5, 10, 30)!;
+  expect(to).toBeGreaterThanOrEqual(10.27);
+  expect(to).toBeLessThanOrEqual(10.35);
+  expect(to * 30).toBeCloseTo(Math.round(to * 30), 1);
+  // Silence in just one file, a zero crossing, or silence too far away
+  // is not a safe place for the two pieces to hand over.
+  expect(silentJoinTarget(a, new Float32Array(16000).fill(0.1), 16000, 9.5, 10, 30)).toBeUndefined();
+  expect(silentJoinTarget(a, b, 16000, 9.5, 9.6, 30)).toBeUndefined();
+  const sine = Float32Array.from({ length: 16000 }, (_, i) => Math.sin(i / 20));
+  expect(silentJoinTarget(sine, sine, 16000, 9.5, 10, 30)).toBeUndefined();
+});
 
 /** Seeded noise. */
 function rng(seed: number) {

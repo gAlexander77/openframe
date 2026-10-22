@@ -25,7 +25,7 @@ import { rasterMaskPath } from "./maskPath";
 //
 // Preview and export share this class; only the canvas and size differ.
 
-import { blurPlan, blurSigma, usesPyramid } from "../lib/blur";
+import { blurPlan, blurSigma, glowSigma, usesGlowPyramid, usesPyramid } from "../lib/blur";
 import { bakeCurves } from "../lib/curves";
 import type { GradeParams } from "../lib/grade";
 import { fit1d, type Lut } from "../lib/lut";
@@ -48,6 +48,8 @@ import {
   FLOOD_STEP_FS,
   FULLSCREEN_VS,
   GAUSS_FS,
+  GLOW_EXTRACT_FS,
+  GLOW_UP_FS,
   LAYER_FS,
   LAYER_SHAPE_FS,
   LAYER_VS,
@@ -451,6 +453,24 @@ export class Compositor {
     this.bindTex(0, r.tex, u("u_tex"));
     gl.uniform2f(u("u_size"), r.w, r.h);
     gl.uniform1i(u("u_spline"), r.spline ? 1 : 0);
+    this.draw();
+  }
+
+  private wideGlow(src: Target, params: Record<string, number>, out: Target) {
+    const gl = this.gl, base = this.pyramidLevel(0);
+    this.bindSized(base.a, base.w, base.h);
+    let u = this.use(this.program("glow:extract", FULLSCREEN_VS, GLOW_EXTRACT_FS));
+    this.bindTex(0, src.tex, u("u_tex"));
+    gl.uniform1f(u("u_threshold"), params.threshold);
+    this.draw();
+    const r = this.gaussian(base.a.tex, glowSigma(params.radius) * this.height / 1080);
+    this.bindTarget(out);
+    u = this.use(this.program("glow:up", FULLSCREEN_VS, GLOW_UP_FS));
+    this.bindTex(0, src.tex, u("u_tex"));
+    this.bindTex(1, r.tex, u("u_blur"));
+    gl.uniform2f(u("u_size"), r.w, r.h);
+    gl.uniform1i(u("u_spline"), r.spline ? 1 : 0);
+    gl.uniform1f(u("u_amount"), params.amount);
     this.draw();
   }
 
@@ -1030,7 +1050,11 @@ export class Compositor {
       cur = dest;
     };
     for (const e of effects) {
-      if (e.type === "blur" && usesPyramid(e.params.amount)) {
+      if (e.type === "glow" && usesGlowPyramid(e.params.radius)) {
+        const dest = temps[i++ % 2];
+        this.wideGlow(cur, e.params, dest);
+        cur = dest;
+      } else if (e.type === "blur" && usesPyramid(e.params.amount)) {
         // Past the old maximum: the pyramid (ADR-069). Up to it, the two
         // passes below draw exactly what they always have.
         const dest = temps[i++ % 2];
