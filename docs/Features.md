@@ -1386,6 +1386,22 @@ Select a picture with position keyframes to see its motion path. Drag a dot to m
   pan makes one undo step; double-click resets it. Master gain is included
   in preview, offline loudness measurement and export. Commands:
   `update_track`, `set_project` (`master_volume`).
+- **Track inserts and clip dynamics:** the mixer's Effects area puts a
+  parametric EQ (up to eight bands), compressor, gate/expander, de-esser,
+  limiter, reverb or echo on an audio track, in order. Every clip feeds
+  one chain before the track fader and pan, so dialog cleanup keeps its
+  detector state across cuts. Nested tracks process before their compound
+  clip's bus. Switch inserts off, drag to reorder, open their controls or
+  reset them; each gesture is one undo step. The Audio inspector's
+  **Dynamics** section gives a single clip the same gate, de-esser,
+  lookahead limiter and parametric EQ after its existing sound settings.
+  **Dialog cleanup**, **Podcast voice**, **Music bed** and **Broadcast
+  limiter** expand into editable settings in either place. The old
+  three-band EQ stays, with the parametric bands after it. Preview,
+  export, loudness measurement, normalization, ducking and voice review
+  use the same graph. Commands: `add_audio_insert`, `update_audio_insert`,
+  `move_audio_insert`, `remove_audio_insert`, `set_dynamics`
+  ([[ADR-134 Track inserts and dynamics share one audio graph]]).
 - **Animated GIF, WebP and APNG:** when ImageDecoder supports the format,
   import reads real frame durations and retains alpha. The initial clip
   lasts one loop; extending it repeats the loop. Timeline thumbnails,

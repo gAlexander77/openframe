@@ -52,7 +52,8 @@ export function regroupCopies(clips: Clip[]): Clip[] {
   const count = new Map<Id, number>();
   for (const c of clips) if (c.group) count.set(c.group, (count.get(c.group) ?? 0) + 1);
   const fresh = new Map<Id, Id>();
-  return clips.map((c) => {
+  return clips.map((original) => {
+    const c = "inserts" in original && original.inserts ? { ...original, inserts: original.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") })) } : original;
     if (!c.group) return c;
     if (count.get(c.group)! < 2) {
       const { group: _, ...rest } = c;

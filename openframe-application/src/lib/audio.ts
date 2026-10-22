@@ -2,6 +2,7 @@
 // clip's gain over time (volume x track volume x fades x keyframes). Pure,
 // so the envelope that Web Audio plays is the one the tests check.
 
+import { insertsPreroll } from "./audioInserts";
 import { paramAt } from "./keyframes";
 import { findCompound, isTimed, sourceOffset, setLevel } from "./project/ops";
 import { fxTail } from "./soundFx";
@@ -40,7 +41,7 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
   const overlaps = soundOverlaps({ ...p, tracks });
   for (const track of tracks) {
     if (track.muted || (solo && !track.solo)) continue;
-    for (const clip of track.clips) {
+    for (const clip of continuousCompoundSound(track.clips, p.fps)) {
       if (!isTimed(clip) || clip.disabled || clip.muted || clip.freeze) continue;
       if (clip.type === "compound") {
         const k = findCompound(p, clip.compoundId);
@@ -60,6 +61,25 @@ function collect(p: Project, tracks: Track[], hasAudio: (assetId: string) => boo
       const o = overlaps.get(clip.id);
       out.push({ clip, track, ...(o ? { overlap: o } : {}) });
     }
+  }
+  return out;
+}
+
+/** A split compound with inserts is one audio bus, while its picture and
+ * selectable halves remain separate. Its mapped inner clips then enter
+ * the same track/compound instance graph across the cut. */
+export function continuousCompoundSound(clips: Clip[], fps: Rational): Clip[] {
+  const out: Clip[] = [];
+  const signature = (c: CompoundClip) => JSON.stringify([
+    c.compoundId, c.speed, c.changePitch, c.volume, c.pan, c.eq, c.compressor, c.fill,
+    c.inserts?.map(({ type, on, params }) => ({ type, on, params })),
+    Object.entries(c.keyframes ?? {}).filter(([path]) => path === "volume" || path === "pan").map(([path, keys]) => [path, keys.map(k => ({ ...k, f: k.f + c.start }))]),
+  ]);
+  for (const c of clips) {
+    const a = out.at(-1);
+    if (a?.type === "compound" && c.type === "compound" && c.inserts?.some(i => i.on) && !a.disabled && !c.disabled && !a.muted && !c.muted && !a.freeze && !c.freeze && !a.fadeOut && !c.fadeIn && !a.transitionOut && !a.reverse && !c.reverse && !a.speedCurve && !c.speedCurve && a.start + a.duration === c.start && signature(a) === signature(c) && Math.abs(a.in + framesToSeconds(a.duration, fps) * a.speed - c.in) < 1e-3) {
+      out[out.length - 1] = { ...a, duration: a.duration + c.duration, fadeOut: c.fadeOut, fadeOutCurve: c.fadeOutCurve };
+    } else out.push(c);
   }
   return out;
 }
@@ -261,7 +281,7 @@ export function soundGainAt(s: SoundingClip, fps: Rational, t: number, through =
 
 /** A compound clip's sound is mixed as a bus when it has an EQ or a
  * compressor: those act on its clips' sound together (ADR-100). */
-export const isBus = (k: CompoundClip) => !!k.compressor || EQ_BANDS.some((b) => !!k.eq?.[b.key]);
+export const isBus = (k: CompoundClip) => !!k.inserts?.some(i => i.on) || !!k.compressor || EQ_BANDS.some((b) => !!k.eq?.[b.key]);
 
 /** One bus a sounding clip's sound passes through. */
 export interface BusHop {
@@ -306,7 +326,7 @@ export const COMPRESSOR_SETTLE = 1;
  * silence into the sound and its gain stepped. */
 export function soundPreroll(s: SoundingClip): number {
   const compressed = [s.clip, ...(s.via ?? []).map((v) => v.clip)].some((c) => !!c.compressor);
-  return Math.max(fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0, s.clip.pitch ? 0.2 : 0);
+  return Math.max(insertsPreroll(s.track.inserts), insertsPreroll(s.clip.inserts), ...(s.via ?? []).flatMap(v => [insertsPreroll(v.clip.inserts), insertsPreroll(v.track.inserts)]), fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0, s.clip.pitch ? 0.2 : 0);
 }
 
 /** A clip's EQ and compressor, as the mixer builds them: equal keys play
@@ -433,13 +453,13 @@ export function continuousSoundRuns(sounding: SoundingClip[], fps: Rational): So
     const c = s.clip;
     const keys = Object.entries(c.keyframes ?? {}).filter(([path]) => /^(volume|pan|lowpass\.|highpass\.|echo\.|reverb\.)/.test(path)).map(([path, keys]) => [path, keys.map((k) => ({ ...k, f: k.f + c.start }))]);
     const speed = c.speedCurve?.points.map((k) => ({ ...k, f: k.f + c.start }));
-    return JSON.stringify([keys, speed, c.type, c.assetId, c.speed, c.changePitch, c.reverse, c.pitch, c.volume, c.pan, c.eq, c.compressor, c.fill, c.mono, c.highpass, c.lowpass, c.saturation, c.ringMod, c.echo, c.reverb, s.via]);
+    return JSON.stringify([keys, speed, c.type, c.assetId, c.speed, c.changePitch, c.reverse, c.pitch, c.volume, c.pan, c.eq, c.compressor, c.inserts?.map(({ type, on, params }) => ({ type, on, params })), c.fill, c.mono, c.highpass, c.lowpass, c.saturation, c.ringMod, c.echo, c.reverb, s.via]);
   };
   for (const s of [...sounding].sort((a, b) => a.clip.start - b.clip.start)) {
     const c = s.clip;
     const prev = out.findLast((x) => x.track === s.track && x.clip.start + x.clip.duration === c.start);
     const a = prev?.clip;
-    const changed = c.pitch || c.voice || c.saturation || c.ringMod;
+    const changed = c.pitch || c.voice || c.saturation || c.ringMod || c.inserts?.length;
     if (changed && a && !a.tapeStop && !a.freeze && !c.freeze && !a.fadeOut && !c.fadeIn && !(a.type === "audio" && a.crossfade) && !(a.type === "video" && a.transitionOut) && signature(prev!) === signature(s) && Math.abs(a.in + (a.reverse ? -1 : 1) * sourceOffset(a, a.duration, fps) - c.in) < 1e-3) {
       prev!.clip = { ...a, duration: a.duration + c.duration, fadeOut: c.fadeOut, fadeOutCurve: c.fadeOutCurve, tapeStop: c.tapeStop };
       prev!.overlap = { ...prev!.overlap, pre: prev!.overlap?.pre ?? 0, post: s.overlap?.post ?? 0, joinsNext: s.overlap?.joinsNext, fall: s.overlap?.fall };

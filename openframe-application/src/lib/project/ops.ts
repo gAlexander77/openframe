@@ -221,6 +221,7 @@ export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   const right = omit(moveLeftEdge({ ...c, id: uid("c") } as Clip, r, fps), ["animIn"]);
   if ("fadeOut" in left) (left as AudioClip).fadeOut = 0;
   if ("fadeIn" in right) (right as AudioClip).fadeIn = 0;
+  if ("inserts" in right && right.inserts) right.inserts = right.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") }));
   return [left, right];
 }
 
@@ -798,6 +799,7 @@ export function detachAudio(p: Project, clipId: Id): Project {
     fadeOut: v.fadeOut,
     ...Object.fromEntries((["pitch", "fadeInCurve", "fadeOutCurve", "voice", "saturation", "ringMod", "mono", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"] as const).filter((key) => v[key] !== undefined).map((key) => [key, structuredClone(v[key])])),
     muted: false,
+    ...(v.inserts ? { inserts: v.inserts.map(i => ({ ...structuredClone(i), id: uid("insert") })) } : {}),
     group: v.group ?? uid("g"),
   };
   let q = updateClip(p, clipId, (c) => ({ ...c, muted: true, group: audio.group }) as Clip);

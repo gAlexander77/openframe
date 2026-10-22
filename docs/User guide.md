@@ -705,6 +705,25 @@ short-term LUFS; with many tracks, their strips scroll sideways and the
 master stays in view at the right. A drag is one undo step. Double-click a
 fader or pan to reset it. Close the panel with **Close mixer** or Escape.
 
+In an audio strip's **Effects** area, choose a processor and press **Add
+insert**, or choose **Add preset**. **Dialog cleanup** starts with an 80 Hz
+high-pass, a -50 dBFS gate, 4 dB de-essing, voice compression and a -1 dBFS
+limiter. Click an insert's name to open its controls, then adjust sliders
+or reset it. Its checkbox bypasses it; drag rows or use their up/down
+buttons to change order; the trash button removes it. Track effects hear
+all of the track's clips together and keep their state across cuts.
+
+For one clip, select it and open **Audio > Dynamics**. Switch on **Gate**
+to reduce noise between words, **De-esser** to soften sibilance, or
+**Limiter** to hold peaks. Each shows its main control; **More** exposes
+attack, hold, release or detector frequencies. **Parametric EQ** adds up
+to eight bands with frequency (Hz), gain (dB), Q and filter shape. It runs
+after the old Equalizer. Presets also work here and replace the clip's
+insert chain; **Insert order and other effects** exposes the full chain.
+A limiter's ceiling applies before later inserts and faders, which can
+raise the level again. Its lookahead delays sound 5 ms per limiter.
+
+
 The speaker in the player's transport and on the master strip is **Mute
 playback**. It silences previews, scrubbing and auditions, and the master
 meters read silence. It lasts for the app session and leaves exports

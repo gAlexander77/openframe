@@ -1,3 +1,5 @@
+import { cleanInsertParams, DYNAMICS_PRESETS, editInsert, editInsertOwner, EQ_TYPES, INSERT_NAMES, INSERT_RANGES, newInsert, presetInserts, type DynamicsPreset } from "./audioInserts";
+import type { Insert, InsertType } from "./project/types";
 import { FADE_CURVES, type FadeCurve } from "./project/types";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
@@ -144,6 +146,18 @@ const S = {
     additionalProperties: false,
   }),
 };
+
+const insertBandSchema = S.obj({
+  type: S.str("Biquad shape", { enum: EQ_TYPES }), freq: S.num("Center or cutoff, Hz, 20..20000"), gain: S.num("Boost or cut, dB, -24..24 (peaking and shelves)"), q: S.num("Q ratio, 0.1..30 (shelves use slope 1)"), on: S.bool("Enable this band; default true"),
+}, [], "One parametric equalizer band");
+const insertParamsSchema = S.obj({
+  ...Object.fromEntries(Object.values(INSERT_RANGES).flatMap(r => Object.entries(r)).map(([key, [, , , unit]]) => [key, S.num(`${key}, ${unit}; processor-specific range (use its controls or defaults)`)])),
+  bands: { type: "array", description: "Parametric EQ bands in order, up to eight", items: insertBandSchema },
+}, [], "Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1");
+const dynamicsSchema = (type: "gate" | "deesser" | "limiter" | "eq") => S.obj({
+  ...(type === "eq" ? { bands: insertParamsSchema.properties!.bands } : Object.fromEntries(Object.entries(INSERT_RANGES[type]!).map(([key, [lo, hi, , unit]]) => [key, S.num(`${key}, ${unit}, ${lo}..${hi}`)]))),
+  on: S.bool("Enable this processor; false bypasses it"),
+}, [], `${INSERT_NAMES[type]} settings; omitted values retain their setting`);
 
 /** Validate arguments against the subset of JSON Schema the registry uses.
  * Returns the problems, empty when valid. This is the trust boundary for
@@ -849,6 +863,54 @@ export const COMMANDS: Command[] = [
     run: (p, a) => ops.setSpeed(p, clipOrThrow(p, a.clip_id).clip.id, Number(a.speed)),
   },
   {
+    name: "add_audio_insert",
+    description: "Add an ordered audio insert to an audio track or a sounding clip. Track clips sum before inserts, then volume and pan; detectors keep state across cuts. Give exactly one track_id or clip_id. type eq is up to eight parametric bands, after the legacy three-band EQ. With preset, adds that complete chain (dialog_cleanup, podcast_voice, music_bed, broadcast_limiter); type is then omitted. Example: {track_id: 't_dialog', preset: 'dialog_cleanup'}. index is zero-based; omitted appends. A limiter holds sample peaks before subsequent inserts/faders, with 5 ms lookahead; the export master limiter is separate.",
+    input: S.obj({ track_id: S.str("Audio track id"), clip_id: S.str("Audio, video or compound clip id"), type: S.str("Processor type; required without preset", { enum: Object.keys(INSERT_NAMES) }), params: insertParamsSchema, index: S.num("Zero-based insertion position; omitted appends", { minimum: 0 }), preset: S.str("Add a complete cleanup chain", { enum: Object.keys(DYNAMICS_PRESETS) }) }),
+    run: (p, a) => commandError(() => editInsertOwner(p, a, list => {
+      if (!a.preset && !a.type) throw new CommandError("Give type or preset");
+      if (a.preset && (a.type || a.params)) throw new CommandError("A preset supplies its own types and parameters");
+      const added = a.preset ? presetInserts(a.preset as DynamicsPreset) : [newInsert(a.type as InsertType, a.params)];
+      if (list.length + added.length > 32) throw new CommandError("At most 32 inserts per track or clip");
+      const at = Math.min(list.length, Math.round(a.index as number ?? list.length));
+      return [...list.slice(0, at), ...added, ...list.slice(at)];
+    })),
+  },
+  {
+    name: "update_audio_insert",
+    description: "Change settings or bypass an audio insert by its id from describe_project. Omitted numbers retain their setting; bands replaces the EQ band list. Settings are clamped to each processor's safe ranges.",
+    input: S.obj({ insert_id: S.str("Insert id"), params: insertParamsSchema, on: S.bool("Enable the insert; false bypasses it without losing settings") }, ["insert_id"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => list.map((i, n) => n === at ? { ...i, on: a.on as boolean ?? i.on, params: cleanInsertParams(i.type, { ...i.params, ...a.params as object }) } as Insert : i))),
+  },
+  {
+    name: "move_audio_insert",
+    description: "Move an insert within its track or clip's ordered chain. One move is one undo step; order changes the sound.",
+    input: S.obj({ insert_id: S.str("Insert id"), index: S.num("New zero-based position in this chain", { minimum: 0 }) }, ["insert_id", "index"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => { const out = list.filter((_, n) => n !== at); out.splice(Math.min(out.length, Math.round(Number(a.index))), 0, list[at]); return out; })),
+  },
+  {
+    name: "remove_audio_insert",
+    description: "Remove an audio insert and its settings from its track or clip. Undo restores it.",
+    input: S.obj({ insert_id: S.str("Insert id") }, ["insert_id"]),
+    run: (p, a) => commandError(() => editInsert(p, String(a.insert_id), (list, at) => list.filter((_, n) => n !== at))),
+  },
+  {
+    name: "set_dynamics",
+    description: "Set a clip's gate, split-band de-esser, lookahead limiter and parametric EQ in one undo step. Each object updates the first matching insert or adds one; on false bypasses it. preset replaces the clip's insert chain with editable settings, then supplied objects override it. eq bands replaces up to eight bands. Existing legacy EQ/compressor remain. Tracks use add_audio_insert preset dialog_cleanup so one cleanup chain runs across every dialog cut.",
+    input: S.obj({ clip_id: S.str("Audio, video or compound clip id"), preset: S.str("Starting chain", { enum: Object.keys(DYNAMICS_PRESETS) }), gate: dynamicsSchema("gate"), deesser: dynamicsSchema("deesser"), limiter: dynamicsSchema("limiter"), eq: dynamicsSchema("eq") }, ["clip_id"]),
+    run: (p, a) => commandError(() => editInsertOwner(p, { clip_id: a.clip_id }, list => {
+      const out = a.preset ? presetInserts(a.preset as DynamicsPreset) : [...list];
+      for (const type of ["gate", "deesser", "limiter", "eq"] as const) {
+        if (!a[type]) continue;
+        const { on, ...params } = a[type] as Record<string, unknown>;
+        const at = out.findIndex(i => i.type === type), old = out[at];
+        const next = { ...(old ?? newInsert(type)), on: on as boolean ?? old?.on ?? true, params: cleanInsertParams(type, { ...old?.params, ...params }) } as Insert;
+        if (at < 0) out.push(next); else out[at] = next;
+      }
+      if (out.length > 32) throw new CommandError("At most 32 inserts per clip");
+      return out;
+    })),
+  },
+  {
     name: "set_compressor",
     description:
       "Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, Premiere's Dynamics): preset voice (speech; the usual choice), gentle, strong, or off. threshold (dBFS), ratio, knee (dB), attack and release (seconds) and makeup (dB) adjust it. On a compound clip it acts on the mix of everything inside, as a bus does: one compressor over a voice and its music, after the compound clip's EQ and before its volume and fades. normalize_loudness measures through it, and export loudness reaches its target with far less limiting.",
@@ -1047,6 +1109,7 @@ export const COMMANDS: Command[] = [
           if (Number(a.value) < -12 || Number(a.value) > 12) throw new CommandError("pitch is -12..12 semitones");
           return fxEdit(q, { clip_ids: [id] }, "pitch shift", (c) => ({ ...c, pitch: Number(a.value) }) as Clip);
         }
+        if (path === "inserts" || path.startsWith("inserts.")) throw new CommandError("Use update_audio_insert to edit insert settings");
         const processor = /^(saturation|ringMod)\.(\w+)$/.exec(path);
         if (processor) {
           const key = processor[1] as "saturation" | "ringMod";
@@ -3298,6 +3361,7 @@ export function describeProject(p: Project) {
       ...(t.solo ? { solo: true } : {}),
       ...(t.volume !== 1 ? { volume: +t.volume.toFixed(4) } : {}),
       ...(t.pan ? { pan: t.pan } : {}),
+      ...(t.inserts?.length ? { inserts: t.inserts } : {}),
       ...(t.color ? { color: t.color } : {}),
       ...(t.height ? { height: t.height } : {}),
       clips: t.clips.map((c) => ({
@@ -3327,6 +3391,7 @@ export function describeProject(p: Project) {
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),
         ...("eq" in c && c.eq ? { eq: c.eq } : {}),
+        ...("inserts" in c && c.inserts?.length ? { inserts: c.inserts, dynamics: c.inserts.filter(i => ["gate", "deesser", "limiter", "eq"].includes(i.type)) } : {}),
         ...("compressor" in c && c.compressor ? { compressor: compressorPreset(c.compressor) } : {}),
         // How duck_under_speech dipped it: a voice line that changes dips it again so.
         ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.openAt?.length ? { open_at: c.duck.openAt } : {}), ...(c.duck.minGap !== undefined ? { min_gap: c.duck.minGap } : {}), ...(c.duck.release !== undefined ? { release: c.duck.release } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),

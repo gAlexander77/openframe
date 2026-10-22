@@ -561,3 +561,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.
+- [[ADR-134 Track inserts and dynamics share one audio graph]] ? ordered
+  track and clip inserts, shared worklet dynamics and parametric EQ,
+  continuous detector history across cuts and offline windows.
