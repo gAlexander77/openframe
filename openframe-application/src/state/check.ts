@@ -43,12 +43,12 @@ export const MAX_JOINS = 24;
  * says why; it never fails the check. `progress` hears each step; `signal`
  * stops it between steps (an AbortError).
  */
-export async function measureForCheck(p: Project, opts: { progress?: (p: MeasureProgress) => void; signal?: AbortSignal } = {}): Promise<Measured> {
+export async function measureForCheck(p: Project, opts: { progress?: (p: MeasureProgress) => void; signal?: AbortSignal; sound?: boolean } = {}): Promise<Measured> {
   const out: Measured = {};
   const { targets, skipped } = contrastTargets(p);
   const frames = [...new Set(targets.flatMap((t) => [...t.samples, ...(t.fades ?? [])].map((s) => s.frame)))].sort((a, b) => a - b);
-  const tails = tailTargets(p);
-  const allJoins = joinTargets(p), joins = allJoins.slice(0, MAX_JOINS);
+  const tails = opts.sound === false ? [] : tailTargets(p);
+  const allJoins = opts.sound === false ? [] : joinTargets(p), joins = allJoins.slice(0, MAX_JOINS);
   // Rendering a frame, decoding a sound's end and hearing a join take about as long.
   const steps = Math.max(1, frames.length + 1 + tails.length + joins.length);
   let done = 0;

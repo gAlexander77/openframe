@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand } from "./commands";
-import { adjacentMarker, deleteMarkers, filterMarkers, updateMarker } from "./markers";
+import { addedMarkerCount, adjacentMarker, deleteMarkers, filterMarkers, updateMarker } from "./markers";
 import { createProject, normalizeProject } from "./project/defaults";
 import { projectDuration } from "./project/ops";
 
@@ -83,4 +83,12 @@ describe("timeline marker management", () => {
     p = runCommand(p, "delete_markers", { marker_ids: ["beat"] });
     expect(p.markers.map((m) => m.id)).not.toContain("beat");
   });
+});
+
+
+it("counts additions separately from removed beats when replacing a shorter grid", () => {
+  const p = project();
+  expect(addedMarkerCount(p, { ...p, markers: p.markers.slice(0, 2) })).toBe(0);
+  expect(addedMarkerCount(p, { ...p, markers: [{ ...p.markers[0], id: "replacement" }] })).toBe(0);
+  expect(addedMarkerCount(p, { ...p, markers: [{ ...p.markers[0], frame: 95 }] })).toBe(1);
 });

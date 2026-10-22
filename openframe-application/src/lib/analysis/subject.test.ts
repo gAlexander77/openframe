@@ -91,3 +91,11 @@ describe("a picture's subject", () => {
     expect((performance.now() - t) / 10).toBeLessThan(60);
   });
 });
+
+
+it("centers repeating foam with no dominant subject instead of chasing one bright cell", () => {
+  const map = { w: W, h: H, v: Float32Array.from({ length: W * H }, (_, i) => i % 8 < 3 && Math.floor(i / W) % 8 < 3 ? 1 : 0.05) };
+  expect(subjectBox(map)).toBeNull();
+  expect(best(windowScores(map, "x", 0.316, whole))).toBe(0.5);
+  expect(subjectBox({ ...map, v: new Float32Array(W * H).fill(1) })).toBeNull();
+});

@@ -1,16 +1,17 @@
 // preview_audio (ADR-098): a stretch of the mix, or one stem, rendered
 // offline through the mixer export uses (engine/mixdown.ts), encoded as a
-// short MP3 a model that takes audio can listen to, and measured for one
+// short audio file a model that takes audio can listen to, and measured for one
 // that cannot (lib/analysis/audition.ts). Nothing is edited.
 
-import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Output, Quality } from "mediabunny";
-import { ensureMp3 } from "../engine/export";
+import { AudioBufferSource, BufferTarget, Mp4OutputFormat, Mp3OutputFormat, Output, Quality } from "mediabunny";
+import { ensureAac, ensureMp3 } from "../engine/export";
 import { hasSound, measureMix, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "../engine/mixdown";
 import { audioContext, scheduleAudio } from "../engine/audio";
 import { findClip } from "../lib/project/ops";
 import { decodeMono } from "../engine/analyze";
 import { auditionSummary, type AuditionSummary } from "../lib/analysis/audition";
-import { audioCrossfade } from "../lib/audio";
+import { previewAudioFormat, previewWav, PREVIEW_AUDIO_MIME, type PreviewAudioFormat } from "../lib/previewAudio";
+import { audioCrossfade, wholeSoundEffect } from "../lib/audio";
 import { edgeReport, ownOnset, type AudioEdge, type EdgeReport } from "../lib/analysis/edges";
 import { isolateTracks } from "../lib/analysis/balance";
 import { applyLimiter } from "../lib/analysis/loudness";
@@ -38,16 +39,18 @@ export interface AuditionRequest {
   solo?: Solo;
   /** Hear it as export_video with this loudness delivers it. */
   loudness?: number;
-  /** Leave the MP3 out: the measurements alone. */
+  /** Leave the audio file out: the measurements alone. */
   audio?: boolean;
+  format?: PreviewAudioFormat;
 }
 
 export interface AuditionAnswer {
-  mp3?: Uint8Array;
+  audio?: { data: Uint8Array; mimeType: string };
   summary: AuditionSummary & {
     start: number;
     end: number;
     solo: Solo;
+    format?: PreviewAudioFormat;
     /** The tracks heard, when one stem is. */
     tracks?: string[];
     /** Each stem's own integrated loudness where it sounds, and the
@@ -145,7 +148,7 @@ async function edgesOf(p: Project, heard: Project, start: number, end: number, s
       const out1 = c.in + sec(c.duration);
       if (!prev && at0 > start + 0.16 && at0 < end - 0.16)
         out.push({ at: +at0.toFixed(3), kind: "start", clips: [c.id], faded: sec(c.fadeIn), ...(plain(c) && c.in >= SIDE ? { cameIn: diff(await level(c, c.in - SIDE, c.in), await level(c, c.in, c.in + SIDE)) } : {}), ...(await onset(c)) });
-      if (at1 > start + 0.16 && at1 < end - 0.16) {
+      if (at1 > start + 0.16 && at1 < end - 0.16 && !(next && wholeSoundEffect(p, c) && wholeSoundEffect(p, next))) {
         const goesOn = plain(c) ? diff(await level(c, out1, out1 + SIDE), await level(c, out1 - SIDE, out1)) : undefined;
         // The next clip's own step at its in-point: the music's, not the cut's.
         const cameIn = next && plain(next) && next.in >= SIDE ? diff(await level(next, next.in - SIDE, next.in), await level(next, next.in, next.in + SIDE)) : undefined;
@@ -175,24 +178,48 @@ async function render(p: Project, start: number, end: number, signal: AbortSigna
   return [L, R];
 }
 
-/** Stereo planes as an MP3 file, LAME in WebAssembly where the platform has no encoder. */
-async function mp3(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>): Promise<Uint8Array> {
-  await ensureMp3(BITRATE);
+/** Stereo planes as MP3 (LAME) or AAC in M4A. */
+async function encoded(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>, format: "mp3" | "m4a"): Promise<Uint8Array> {
   const target = new BufferTarget();
-  const out = new Output({ format: new Mp3OutputFormat(), target });
-  const src = new AudioBufferSource({ codec: "mp3", quality: new Quality({ bitrate: BITRATE }) });
+  const out = new Output({ format: format === "mp3" ? new Mp3OutputFormat() : new Mp4OutputFormat(), target });
+  const src = new AudioBufferSource({ codec: format === "mp3" ? "mp3" : "aac", quality: new Quality({ bitrate: BITRATE }) });
   out.addAudioTrack(src);
-  await out.start();
-  for (let at = 0; at < L.length; at += RATE) {
-    const n = Math.min(RATE, L.length - at);
-    const piece = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: RATE });
-    piece.copyToChannel(L.subarray(at, at + n), 0);
-    piece.copyToChannel(R.subarray(at, at + n), 1);
-    await src.add(piece);
+  try {
+    await out.start();
+    for (let at = 0; at < L.length; at += RATE) {
+      const n = Math.min(RATE, L.length - at);
+      const piece = new AudioBuffer({ length: n, numberOfChannels: 2, sampleRate: RATE });
+      piece.copyToChannel(L.subarray(at, at + n), 0);
+      piece.copyToChannel(R.subarray(at, at + n), 1);
+      await src.add(piece);
+    }
+    src.close();
+    await out.finalize();
+    return new Uint8Array(target.buffer!);
+  } catch (e) {
+    await out.cancel().catch(() => {});
+    throw e;
   }
-  src.close();
-  await out.finalize();
-  return new Uint8Array(target.buffer!);
+}
+
+async function audioFile(L: Float32Array<ArrayBuffer>, R: Float32Array<ArrayBuffer>, asked: PreviewAudioFormat) {
+  const can = { mp3: false, m4a: false };
+  // Registration and the actual encode can each fail (a worker blocked by
+  // the host, for example). Either failure advances to the next format.
+  if (asked === "mp3") {
+    try { await ensureMp3(BITRATE); can.mp3 = true; } catch { /* Try AAC. */ }
+    if (can.mp3) {
+      try { return { data: await encoded(L, R, "mp3"), format: "mp3" as const }; } catch { can.mp3 = false; }
+    }
+  }
+  if (asked !== "wav") {
+    try { await ensureAac(BITRATE); can.m4a = true; } catch { /* WAV needs no encoder. */ }
+  }
+  const format = previewAudioFormat(asked, can);
+  if (format === "m4a") {
+    try { return { data: await encoded(L, R, "m4a"), format }; } catch { /* Fall through to WAV. */ }
+  }
+  return { data: previewWav(L, R), format: "wav" as const };
 }
 
 const r3 = (x: number) => +x.toFixed(3);
@@ -269,7 +296,10 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
     if (edges.length) summary.edges = edges;
     if (summary.clipped) notes.push("The mix passes full scale here, so a file of it clips: turn tracks or clips down, or export with a loudness target.");
     if (notes.length) summary.note = notes.join(" ");
-    return { ...(req.audio === false ? {} : { mp3: await mp3(L, R) }), summary };
+    if (req.audio === false) return { summary };
+    const file = await audioFile(L, R, req.format ?? "mp3");
+    summary.format = file.format;
+    return { audio: { data: file.data, mimeType: PREVIEW_AUDIO_MIME[file.format] }, summary };
   } finally {
     dismiss(tid);
   }

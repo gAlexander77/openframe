@@ -91,8 +91,8 @@ export interface McpHost {
    * frames at `times`, or `count` spread over it, and what it is. */
   fileSheet?(src: string, times: number[] | undefined, count: number, tileWidth: number, columns: number): Promise<{ image: string; file: unknown }>;
   /** A stretch of the sound rendered as export renders it (preview_audio):
-   * an MP3 (base64; absent when audio is false) and its measurements. */
-  audition(options: { start: number; end?: number; solo?: string; loudness?: number; audio?: boolean }): Promise<{ data?: string; mimeType?: string; summary: unknown }>;
+   * an audio file (base64; absent when audio is false) and its measurements. */
+  audition(options: { start: number; end?: number; solo?: string; loudness?: number; audio?: boolean; format?: "mp3" | "m4a" | "wav" }): Promise<{ data?: string; mimeType?: string; summary: unknown }>;
   /** The design check (lib/designCheck.ts) of the open project; the app
    * renders the picture behind every title at a few moments and decodes
    * each music clip's last seconds first, so it may take a moment. */
@@ -105,7 +105,7 @@ export interface McpHost {
   exportVersions(options: VersionsRequest): Promise<unknown>;
   /** One JPEG (base64) of every version at a few moments, nothing
    * exported, and where each version's framing cuts a shot's subject. */
-  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown; callouts?: unknown; options?: unknown; coverage?: unknown; text_overlaps?: unknown }>;
+  versionsSheet(options: VersionsRequest & { at?: number[]; times?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown; callouts?: unknown; options?: unknown; coverage?: unknown; text_overlaps?: unknown }>;
   /** Each version saved as a project of its own, nothing exported. */
   saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
@@ -684,19 +684,20 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "preview_audio",
     description:
-      "Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short MP3 (an audio content block, 96 kbps stereo, at most 30 s a call) for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role, and picture: what the video tracks play, their footage's own sound and any compound clip's mix), each its own integrated loudness where it sounds, so they do not add up to the mix's. edges measures, sample by sample, every place in the stretch where an audio clip meets the next on its track (a song's splice) and any clip start or end that is not clean: dip_db (a hole of a few milliseconds at the cut, as a butt cut's click guard leaves: -10 or deeper is heard as a tick), click_db (a sample step steeper than any around it and than the incoming file's own attack there, so a kick on the downbeat a cut lands on is no click), step_db (the level after against before; a join stepping 6 dB or more that the music makes there itself, on a new bar or hit, says so in step_note, and one inside a ring-out (the sound falling 6 dB or more over the second before) that neither file makes there is flagged at 6 dB, not 12), tail_cut_db (the clip's own file rings on that much louder than what follows: a tail cut dead) and cut_in_db (a clip coming in mid-sound), each with a verdict (clean, or what is wrong) and the fix (set_crossfade, set_fades); dropouts lists anywhere the sound falls to nothing for 3-100 ms inside sound (a lost packet, a hole). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.",
+      "Hear the sound: a stretch of the mix, or one stem, rendered offline through the mixer export uses (every clip's volume, fades, ducking keys, EQ, compressor, filters, reverb and echo tails), returned as a short audio content block (at most 30 s): format mp3 (default, LAME in WebAssembly, 96 kbps stereo), m4a (AAC, audio/mp4), or wav (16-bit, 24 kHz mono). MP3 falls back to M4A, then WAV if encoding is unavailable; M4A falls back to WAV. The answer names the actual format for a model that can listen, and as text the measurements for one that cannot: integrated loudness, the loudest 3 s and 400 ms, every second's loudness, the true peak, silent stretches, where the energy sits (below 250 Hz, to 4 kHz, above, and the octave slope; speech and most mixes slope -3 to -6 dB an octave), the stereo correlation and clipped samples; with solo mix also each stem's loudness (dialog, music, effects, ambience, by each track's role, and picture: what the video tracks play, their footage's own sound and any compound clip's mix), each its own integrated loudness where it sounds, so they do not add up to the mix's. edges measures, sample by sample, every place in the stretch where an audio clip meets the next on its track (a song's splice) and any clip start or end that is not clean: dip_db (a hole of a few milliseconds at the cut, as a butt cut's click guard leaves: -10 or deeper is heard as a tick), click_db (a sample step steeper than any around it and than the incoming file's own attack there, so a kick on the downbeat a cut lands on is no click), step_db (the level after against before; a join stepping 6 dB or more that the music makes there itself, on a new bar or hit, says so in step_note, and one inside a ring-out (the sound falling 6 dB or more over the second before) that neither file makes there is flagged at 6 dB, not 12), tail_cut_db (the clip's own file rings on that much louder than what follows: a tail cut dead) and cut_in_db (a clip coming in mid-sound), each with a verdict (clean, or what is wrong) and the fix (set_crossfade, set_fades); dropouts lists anywhere the sound falls to nothing for 3-100 ms inside sound (a lost packet, a hole). solo: mix (default), voice (the dialog tracks alone), music, effects or ambience; the picture's own sound plays only in mix. loudness hears it as export_video with that loudness delivers it (the whole mix is measured first, so it takes longer). audio false answers the measurements alone. Nothing is changed.",
     inputSchema: obj(
       {
         start: { type: "number", minimum: 0, description: "Timeline seconds" },
         end: { type: "number", minimum: 0, description: "Timeline seconds; default start + 10, at most start + 30" },
         solo: { type: "string", enum: ["mix", "voice", "music", "effects", "ambience"], description: "What to hear: the whole mix (default) or one stem by role" },
         loudness: { type: "number", minimum: -40, maximum: -5, description: "Hear it as export_video with this loudness (LUFS) delivers it; default as mixed" },
-        audio: { type: "boolean", description: "false: the measurements only, no MP3 (default true)" },
+        audio: { type: "boolean", description: "false: the measurements only, no audio file (default true)" },
+        format: { type: "string", enum: ["mp3", "m4a", "wav"], description: "Audio format; default mp3 with M4A then WAV fallback. M4A falls back to WAV; WAV is 16-bit 24 kHz mono. The answer names the actual format" },
       },
       ["start"],
     ),
     call: async (h, a) => {
-      const r = await h.audition(given({ start: Number(a.start), end: a.end === undefined ? undefined : Number(a.end), solo: a.solo, loudness: a.loudness, audio: a.audio }) as { start: number });
+      const r = await h.audition(given({ start: Number(a.start), end: a.end === undefined ? undefined : Number(a.end), solo: a.solo, loudness: a.loudness, audio: a.audio, format: a.format }) as { start: number });
       return { content: [...(r.data ? [{ type: "audio" as const, data: r.data, mimeType: r.mimeType ?? "audio/mpeg" }] : []), { type: "text", text: JSON.stringify(appAnswer(r.summary)) }] };
     },
   },
@@ -1194,7 +1195,8 @@ APP_TOOLS.push(
       save_projects: { type: "boolean", description: "true: save each version as a project of its own to fine-tune (open_project it, edit, export_video), and export nothing" },
       keep_end: { type: "number", minimum: 0, description: "Seconds of the end every cut-down keeps; default the end card's length (add_ad_element end_card), else 0" },
       check: { type: "boolean", description: "true: answer a contact sheet of every version and export nothing" },
-      check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length, up to 8; default [0.15, 0.5, 0.92]. A version's moments wrap into rows at 1600 px" },
+      check_times: { type: "array", items: { type: "number", minimum: 0 }, description: "Moments in seconds of the master, up to 8, mutually exclusive with check_at. Removed moments in a cut-down are omitted; its retained end-card moments move with the card" },
+      check_at: { type: "array", items: { type: "number", minimum: 0, maximum: 1 }, description: "The moments the check sheet shows, as fractions of each version's length (0 to 1), mutually exclusive with check_times, up to 8; default [0.15, 0.5, 0.92]. A version's moments wrap into rows at 1600 px" },
       tile_width: { type: "integer", minimum: 120, maximum: 800, description: "Width of each frame on the check sheet, its height following the version's shape; default frames 220 px tall (a 16:9 frame 391 px wide)" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv"], description: "Default mp4 (H.264 + AAC)" },
       resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Short side; default from the project" },
@@ -1205,13 +1207,16 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
+      if (a.check_times !== undefined && a.check_at !== undefined) throw new Error("check_times (master seconds) and check_at (fractions) are mutually exclusive");
+      const times = (a.check_times as number[] | undefined)?.slice(0, 8);
+      if (times?.some((t) => t > master)) throw new Error(`check_times must be within the master's duration (${master} s)`);
       const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined, reframe: a.reframe as Reframe | undefined, focus: a.focus as Focus[] | undefined, overrides: a.overrides as VersionOverride[] | undefined, pushes: a.pushes as VersionPushes | undefined }, master);
       const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, folder: a.folder, replace: a.replace }) } as VersionsRequest;
       if (a.save_projects === true) return json({ projects: await h.saveVersions(req), note: "Nothing exported. Each version is a project of its own: open_project one to fine-tune it (frame_region, set_param, set_text), then export_video; the master is open and unchanged." });
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
         const shares = at?.length ? at : [0.15, 0.5, 0.92];
-        const sheet = await h.versionsSheet({ ...req, ...(at?.length ? { at } : {}), ...(a.tile_width !== undefined ? { tileWidth: Number(a.tile_width) } : {}) });
+        const sheet = await h.versionsSheet({ ...req, ...(times?.length ? { times } : at?.length ? { at } : {}), ...(a.tile_width !== undefined ? { tileWidth: Number(a.tile_width) } : {}) });
         const subjects = Array.isArray(sheet.subjects) && sheet.subjects.length ? { subjects: sheet.subjects } : {};
         const titles = Array.isArray(sheet.titles) && sheet.titles.length ? { titles: sheet.titles } : {};
         const overlaps = Array.isArray(sheet.overlaps) && sheet.overlaps.length ? { caption_overlaps: sheet.overlaps } : {};
@@ -1219,7 +1224,7 @@ APP_TOOLS.push(
         const options = Array.isArray(sheet.options) && sheet.options.length ? { options: sheet.options } : {};
         const textOverlaps = Array.isArray(sheet.text_overlaps) && sheet.text_overlaps.length ? { text_overlaps: sheet.text_overlaps } : {};
         const coverage = Array.isArray(sheet.coverage) && sheet.coverage.length ? { coverage: sheet.coverage } : {};
-        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on what its callouts point at, else the region the master frames, else its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it, or done: moved clear by the version), a callout off the frame or off what it points at (listed in callouts), or footage covering much less of the frame than in the master (listed in coverage); options says what became of focus, pushes and overrides where that was not plainly what was asked.`, ...subjects, ...titles, ...overlaps, ...callouts, ...coverage, ...options, ...textOverlaps }) }] };
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${times?.length ? `${times.join(", ")} s of the master (moments removed in a cut-down are omitted; if none remain, its opening is shown)` : `${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length`}; footage a version crops is framed on what its callouts point at, else the region the master frames, else its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it, or done: moved clear by the version), a callout off the frame or off what it points at (listed in callouts), or footage covering much less of the frame than in the master (listed in coverage); options says what became of focus, pushes and overrides where that was not plainly what was asked.`, ...subjects, ...titles, ...overlaps, ...callouts, ...coverage, ...options, ...textOverlaps }) }] };
       }
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
@@ -1255,7 +1260,7 @@ To make a video:
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
-8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (an MP3 and its measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
+8. Check: preview_frames (a contact sheet of many moments), preview_motion around cuts and moves (frames in a row, with the beats), preview_audio to hear the mix or one stem (MP3 with M4A or WAV fallback, its format and measurements), check_project (the design rules, each finding naming the tool that fixes it); fix, then check again.
 9. export_video writes the file to the user's Videos folder (or the absolute folder you name) and returns its path; loudness -14 suits online video.
 Music: generate_music composes an original score fitted to the edit (sections with bars or times, a drop where the climax is, the final hit on the end card) and answers its cue sheet; plan_music tries a form first.
 Music-synced (epic, hype, velocity) edits: add the music, analyze_music (markers bars and drop), fit_music drop_at to place the drop, cut_to_beats the shots, add_beat_hits, set_speed_ramp a shot onto a beat, add_cinematic_bars, add_sound_effect end_at (a riser into the drop), then fit_music to end it.

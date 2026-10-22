@@ -103,13 +103,17 @@ const KIND_NAMES: Record<ProgramKind, string> = { film: "a film", ad: "an ad", s
 
 /** How a mix's loudness range compares with its kind's, and what to do
  * when it is far off. */
-export function rangeVerdict(lra: number, kind: ProgramKind = "any"): { kind: ProgramKind; typical_lu: [number, number]; verdict: "very flat" | "flat" | "typical" | "wide"; note?: string } {
+export function rangeVerdict(lra: number, kind: ProgramKind = "any", context?: { music: boolean; heldPauses?: number }): { kind: ProgramKind; typical_lu: [number, number]; verdict: "very flat" | "flat" | "typical" | "wide"; note?: string } {
   const [lo, hi] = RANGE_FOR_KIND[kind];
   const name = KIND_NAMES[kind];
   const v = lra < lo / 2 ? "very flat" : lra < lo ? "flat" : lra > hi ? "wide" : "typical";
+  const advice = context?.heldPauses !== undefined
+    ? `The music's duck holds ${context.heldPauses} ${context.heldPauses === 1 ? "pause" : "pauses"} down in this stretch. Try duck_under_speech with a lower min_gap to let shorter pauses rise, or open_at on chosen moments; keep the voice clear.`
+    : context?.music === false ? "Let quiet passages stay quiet; use lighter compression and limiting where they flatten the voice or natural sound."
+    : "Let it breathe: the music up between lines (duck_under_speech min_line_lu dips each line only as deep as it needs), quiet parts kept quiet, light compression and limiting.";
   const note =
     v === "very flat" || v === "flat"
-      ? `${v === "very flat" ? "Very flat" : "Flat"} for ${name}: its loud and quiet passages sit within ${lra.toFixed(1)} LU, where ${name} usually spans ${lo}-${hi} LU. Let it breathe: the music up between lines (duck_under_speech min_line_lu dips each line only as deep as it needs), quiet parts kept quiet, light compression and limiting.`
+      ? `${v === "very flat" ? "Very flat" : "Flat"} for ${name}: its loud and quiet passages sit within ${lra.toFixed(1)} LU, where ${name} usually spans ${lo}-${hi} LU. ${advice}`
       : v === "wide"
         ? `Wide for ${name} (${lra.toFixed(1)} LU, usually ${lo}-${hi}): the quiet passages may be lost on a phone or in a noisy room; bring them up or compress gently.`
         : undefined;

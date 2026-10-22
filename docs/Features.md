@@ -912,6 +912,8 @@ same arguments and seed give the same music.
 - **A cue sheet**: tempo, key, chords, every bar and beat, the sections,
   drops, the final hit, cut points, and Bar, section and Drop markers on
   request, so `cut_to_beats` and `add_beat_hits` work on it at once.
+  Analyzing a supplied grid preserves every planned beat through a quiet
+  ending, and replacing markers reports additions, never a negative count.
 - **Stems**: drums, bass, harmony and lead as files of their own (they add
   up to the mix), on four grouped tracks if asked.
 - **One section again**: a section's own seed regenerates its drums,
@@ -944,7 +946,9 @@ makes a 13 s one). Times are timeline seconds.
   downbeat nudged 10 ms or set at the playhead, parts added on the bar
   nearest the playhead, each through `set_music_grid`
   ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
-- **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
+- **Cut to the beat** (`cut_to_beats`): an explicit `end` is a final
+  boundary too, so a shot can cover the score's ring-out past its last
+  sounding beat. A list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
   up, or a shot's own count. One long clip gives many shots (each reads on
@@ -1107,10 +1111,22 @@ A quiet recording need not leave the music nearly silent.
   that passes full scale, and measures as export with a target would
   deliver it, so an agent checks before it exports
   ([[ADR-061 Delivery holds the true peak and says whether it passes]]).
+  Flat-range advice counts the pauses the music's saved duck holds down,
+  with `min_gap` and `open_at` to open them; without music it suggests
+  keeping quiet passages quiet.
 - **Broadcast targets**: export Loudness and Normalize loudness offer
   -24 LKFS (ATSC A/85, US TV) beside -14, -16 and -23; the limiter holds
   the **true peak**, not the sample peak, under -1 dBTP (-2 for ATSC),
   and the export's answer says what the mix reached.
+
+- **Playable mix previews** (`preview_audio`): a short MP3 from registered
+  LAME, with AAC in M4A then 16-bit 24 kHz mono WAV as fallbacks; `format`
+  asks for `mp3`, `m4a` or `wav` and the answer names what was returned.
+  Measurements still describe the full-resolution mix. Complete generated
+  risers and impacts meeting at their requested moment are sound events,
+  so the checker does not suggest moving the hit as if repairing a splice.
+  Voiceover answers give each placed clip's frame-aligned start and end,
+  keeping the speech length in `seconds`.
 
 ## Ads and deliverables
 
@@ -1146,7 +1162,9 @@ A quiet recording need not leave the music nearly silent.
   call-to-action button, the website), a **lower third** (name in a box over the title in the primary
   color), an **offer badge** (tilted, pulsing, with a small tag), a
   **call-to-action button**, and a **logo reveal** (the logo pops in, with
-  an optional glow flare and white flash, and the tagline).
+  an optional glow flare and white flash, and the tagline). Explicit
+  headline lines shrink to fit the column before wrapping, stopping at
+  the readable floor; the logo and room rules still apply.
 - **Text behind the subject** (`text_behind_subject`): a title sits behind
   the person or product in a video or a photo. The background is removed
   on this computer (a video's Remove background matte; a photo cut out once
@@ -1185,7 +1203,14 @@ A quiet recording need not leave the music nearly silent.
   in one version by hand, kept in a saved version project (ADR-101).
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
-  of them all first (`check_at` picks the moments). Seven 480p versions of
+  of them all first: `check_at` picks fractions of each version, while
+  `check_times` picks seconds of the master (use one). Cut-downs omit
+  removed moments and move retained end-card moments with the card.
+  A hidden-only override also works on an adjustment layer. Diffuse or
+  repeating texture without a distinct subject uses center framing and
+  says so; `focus` still chooses a region. Adapted title fades are measured
+  as the project check measures them; an uneven fade becomes a cut, with
+  the change named in `options`. Seven 480p versions of
   a 5 s ad took 4.4 s headless. A shot fitted with bands (a widescreen
   screen recording in a 9:16 master) is footage a version reframes, at
   its pixels against the short side and covering the new frame; `focus`

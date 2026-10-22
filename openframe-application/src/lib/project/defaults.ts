@@ -329,6 +329,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     }
     c.in = Math.max(0, num(c.in, 0));
     c.speed = num(c.speed, 1) > 0 ? num(c.speed, 1) : 1;
+    if (isObj(c.duck) && c.duck.held !== undefined) {
+      const d = { ...c.duck };
+      if (Array.isArray(d.held)) d.held = d.held.filter((s): s is [number, number] => Array.isArray(s) && s.length === 2 && s.every((n) => typeof n === "number" && Number.isFinite(n) && n >= 0) && s[1] > s[0]).map((s) => [...s]);
+      else delete d.held;
+      c.duck = d;
+    }
     // Optional retiming fields: absent means off, so files written before
     // they existed load unchanged.
     const raw = isObj(c.speedCurve) && Array.isArray(c.speedCurve.points) ? c.speedCurve : null;

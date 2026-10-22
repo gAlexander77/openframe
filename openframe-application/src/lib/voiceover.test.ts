@@ -1,4 +1,7 @@
 import { expect, it } from "vitest";
+import { createProject } from "./project/defaults";
+import { runCommand } from "./commands";
+import { placedLineTimes } from "./voiceScript";
 import { placeTake } from "./voiceover";
 import { encodeWav } from "./wav";
 
@@ -25,4 +28,16 @@ it("writes a 16-bit PCM WAV header and clamped samples", () => {
   expect(v.getUint16(22, true)).toBe(1);
   expect(v.getUint32(40, true)).toBe(8);
   expect([0, 1, 2, 3].map((i) => v.getInt16(44 + i * 2, true))).toEqual([0, 32767, -32768, 32767]);
+});
+
+
+it("reports the placed frame times, keeping speech seconds separate from clip length", () => {
+  const p = { ...createProject({ fps }), assets: [{ id: "voice", kind: "audio" as const, name: "Voice.wav", src: "voice.wav", hasAudio: true, hasVideo: false, duration: 4.519 }] };
+  const q = runCommand(p, "add_media_clip", { asset_id: "voice", start: 0 });
+  const c = q.tracks.flatMap((t) => t.clips).find((c) => c.type === "audio")!;
+  expect(placedLineTimes(c, fps)).toEqual({ start: 0, end: 4.533 });
+  const next = runCommand(q, "add_media_clip", { asset_id: "voice", start: 4.719 });
+  const d = next.tracks.flatMap((t) => t.clips).find((x) => x.id !== c.id && x.type === "audio")!;
+  expect(placedLineTimes(d, fps).start).toBe(4.733);
+  expect(p.assets[0].duration).toBe(4.519);
 });

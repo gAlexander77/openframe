@@ -21,7 +21,7 @@ import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEX
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
 import type { Adjust, Animation, Asset, Clip, ColorClip, Cutout, Grade, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
 import { effectDefaults, FILTERS } from "./catalog";
-import { fittedSize } from "./render/size";
+import { fittedSize, textPad } from "./render/size";
 import { secondsToFrames } from "./time";
 
 export type AdElement = "end_card" | "lower_third" | "offer_badge" | "cta_button" | "logo_reveal";
@@ -193,7 +193,7 @@ function place(p: Project, parts: Part[], spot: Spot, room: Rect) {
   }
 }
 
-/** The smallest a pulsing part draws (the catalog's pulse: scale 1 ± 0.06). */
+/** The smallest a pulsing part draws (the catalog's pulse: scale 1 Â± 0.06). */
 const PULSE_LOW = 0.94;
 
 /** A text part in a style, wrapping inside `room` (its box's padding
@@ -202,8 +202,27 @@ const PULSE_LOW = 0.94;
  * and check_project named it too small, ADR-125). */
 function textPart(p: Project, words: string, style: Partial<TextStyle>, room: Rect, pulse = false): TextClip {
   const pad = ((style.background?.padding ?? 0) * p.height) / 1080;
-  const size = Math.max(style.size ?? DEFAULT_TEXT_STYLE.size, Math.ceil(minTextSize(p.width, p.height) / (pulse ? PULSE_LOW : 1)));
-  return createTextClip(words, 0, 1, { maxWidth: +Math.max(0.1, (room.right - room.left - 2 * pad) / p.width).toFixed(3), ...style, size });
+  const floor = Math.ceil(minTextSize(p.width, p.height) / (pulse ? PULSE_LOW : 1));
+  let size = Math.max(style.size ?? DEFAULT_TEXT_STYLE.size, floor);
+  const maxWidth = style.maxWidth ?? +Math.max(0.1, (room.right - room.left - 2 * pad) / p.width).toFixed(3);
+  if (words.includes("\n")) {
+    // Respect authored lines before wrapping: measure the widest without
+    // a column, then fit it down to the readable floor (ADR-135).
+    const fits = (size: number) => {
+      const c = createTextClip(words, 0, 1, { ...style, size, maxWidth: 10 });
+      return fittedSize(p, c).w - 2 * textPad(p, c) <= maxWidth * p.width;
+    };
+    if (!fits(size)) {
+      let lo = floor, hi = size;
+      for (let i = 0; i < 12; i++) {
+        const mid = (lo + hi) / 2;
+        if (fits(mid)) lo = mid;
+        else hi = mid;
+      }
+      size = Math.floor(lo * 100) / 100;
+    }
+  }
+  return createTextClip(words, 0, 1, { ...style, maxWidth, size });
 }
 
 /** The logo picture, scaled to `height` (a canvas fraction) and never

@@ -456,3 +456,11 @@ export function normalizationMix(p: Project, clipId: Id): Project {
   const unit = setLevel(p, clipId, 1);
   return { ...unit, masterVolume: 1, tracks: unit.tracks.map((t) => ({ ...t, volume: 1, pan: 0, muted: false, solo: false, clips: t.clips.filter((c) => c.id === clipId) })) };
 }
+
+/** A complete generated sound is a timed event, not a splice. Trimming it
+ * inside the file still makes a cut worth checking. */
+export function wholeSoundEffect(p: Project, c: Clip): boolean {
+  if (c.type !== "audio" || c.reverse || c.speedCurve || c.freeze) return false;
+  const a = p.assets.find((a) => a.id === c.assetId);
+  return !!a?.sound && Math.abs(c.in) < 1e-6 && Math.abs(c.duration * p.fps.den / p.fps.num * c.speed - a.duration) <= p.fps.den / p.fps.num * c.speed + 1e-6;
+}

@@ -97,3 +97,12 @@ describe("a chosen canvas (UX-02)", () => {
     expect(normalizeProject({ width: 1080, height: 1920 }).canvasFixed).toBeUndefined();
   });
 });
+
+
+it("validates optional held duck pauses without dropping unrelated clip data", () => {
+  const load = (held: unknown) => normalizeProject({ assets: [{ id: "music", src: "music.wav", kind: "audio", duration: 10, hasAudio: true }], tracks: [{ kind: "audio", clips: [{ type: "audio", assetId: "music", duration: 300, duck: { keys: 12, held, minGap: 1.1 }, custom: "kept" }] }] }).tracks.flatMap((t) => t.clips).find((c) => c.type === "audio")!;
+  const c = load([[1, 1.5], [3, 2], [0, Infinity], ["1", 2], [-1, 2], null]);
+  expect(c).toMatchObject({ duck: { keys: 12, minGap: 1.1, held: [[1, 1.5]] }, custom: "kept" });
+  expect(load("broken")).toMatchObject({ duck: { keys: 12 } });
+  expect((load("broken") as { duck?: { held?: unknown } }).duck?.held).toBeUndefined();
+});

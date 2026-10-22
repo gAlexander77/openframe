@@ -2,6 +2,8 @@
 // volume keyframes rather than a hidden sidechain (Premiere's Auto-Duck
 // works this way; CapCut's ducking is a black box you cannot touch up).
 
+import { tracksOfRole } from "../audioRoles";
+import { sourceToTimeline } from "./musicMap";
 import { soundingClips, soundSpan } from "../audio";
 import { interpolate } from "../keyframes";
 import { clipEnd } from "../project/ops";
@@ -413,4 +415,22 @@ export function cuesUnderLines(moments: CueMoment[], lines: [number, number][], 
     out.push({ moment: m, line });
   }
   return out;
+}
+
+/** Pauses actually held by the last duck, clipped to the measured window.
+ * Split pieces may share one pause: count the union, not the records. */
+export function duckRangeContext(p: Project, start = 0, end = Infinity): { music: boolean; heldPauses?: number } {
+  const clips = tracksOfRole(p, "music").filter((t) => !t.muted && t.volume > 0).flatMap((t) => t.clips).filter((c): c is AudioClip => c.type === "audio" && !c.muted && !c.disabled && c.volume > 0 && framesToSeconds(c.start, p.fps) < end && framesToSeconds(c.start + c.duration, p.fps) > start);
+  const ducked = clips.filter((c) => c.duck);
+  if (!ducked.length || ducked.some((c) => c.duck!.held === undefined)) return { music: clips.length > 0 };
+  const spans = ducked.flatMap((c) => {
+    const map = sourceToTimeline(c, p.fps);
+    return c.duck!.held!.map(([a, b]) => [Math.max(start, map.edge(a)), Math.min(end, map.edge(b))]).filter(([a, b]) => b > a);
+  }).sort((a, b) => a[0] - b[0]);
+  let count = 0, last = -Infinity;
+  for (const [a, b] of spans) {
+    if (a > last + 0.001) count++;
+    last = Math.max(last, b);
+  }
+  return { music: clips.length > 0, heldPauses: count };
 }
