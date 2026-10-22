@@ -2,7 +2,7 @@ import { LayoutsSection } from "./LayoutsSection";
 import { runStyle } from "../../lib/textRuns";
 import { EmptyState } from "../EmptyState";
 import { useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
+import { ArrowDown, ArrowUp, Bold, CaseLower, CaseSensitive, CaseUpper, Crop as CropIcon, Crosshair, Eye, EyeOff, FlipHorizontal2, FlipVertical2, Heart, Italic, Loader2, Pin, PinOff, Plus, Ratio, RotateCcw, WandSparkles, Sparkles, Star, Trash2, Underline, X } from "../../icons";
 import { EQ_BANDS, fromDb, soundingClips, toDb } from "../../lib/audio";
 import { COMPRESSOR_PRESETS, compressorPreset } from "../../lib/compressor";
 import { crossfadeJoin } from "../../lib/crossfadeJoin";
@@ -20,6 +20,8 @@ import { DEFAULT_ADJUST, DEFAULT_TRANSFORM } from "../../lib/project/defaults";
 import * as ops from "../../lib/project/ops";
 import type { Animation, AudioClip, BlendMode, CanvasFill, Clip, CompoundClip, Id, Mask, Project, TextClip, TextStyle, VideoClip, VisualClip } from "../../lib/project/types";
 import { frameClips, pictureAspect } from "../../lib/align";
+import { footageUnder, underPoint } from "../../lib/anchors";
+import { layerAt } from "../../lib/render/plan";
 import { MASK_LABELS, MASK_SHAPES, newMask, type MaskShape } from "../../lib/mask";
 import { canCrop, NO_CROP } from "../../lib/crop";
 import { applyCrop, beginCrop, resetCrop } from "../../state/cropEdit";
@@ -38,6 +40,7 @@ import { useFontWeights } from "../../state/fontWeights";
 import { BorderSection, CompositingSection, ShadowSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
 import { SoundFxSection } from "./SoundFx";
+import { BeatGridSection } from "./BeatGridSection";
 import { CurvesPanel } from "./CurvesPanel";
 import { HslPanel } from "./HslPanel";
 import { LutPanel } from "./LutPanel";
@@ -559,6 +562,7 @@ function AudioTab({ clip }: { clip: Clip }) {
           />
         </Row>}
       </Section>
+      {clip.type === "audio" && <BeatGridSection clip={clip} />}
       <Section
         title="Equalizer"
         defaultOpen={!!clip.eq}
@@ -970,6 +974,54 @@ function AnimationTab({ clip }: { clip: Clip }) {
   );
 }
 
+/** Pinned to footage (ADR-120): the clip whose picture this layer follows
+ * through its zooms and pans, and the buttons that pin it there (at its
+ * center, on the video under it at the playhead) or let it go: set_anchor,
+ * as an agent pins it. */
+function PinRow({ clip }: { clip: VisualClip }) {
+  const target = useEditor((s) => (clip.anchor ? ops.findClip(s.project, clip.anchor.clipId)?.clip : undefined));
+  const under = useEditor((s) => (clip.anchor || s.playhead < clip.start || s.playhead >= clip.start + clip.duration ? undefined : footageUnder(s.project, s.playhead, clip.id)));
+  const name = (c: Clip) => c.name ?? ("assetId" in c ? ops.getAsset(store.get().project, c.assetId)?.name : undefined) ?? c.id;
+  const command = (label: string, args: Record<string, unknown>) => {
+    try {
+      store.edit(label, (p) => runCommand(p, "set_anchor", args));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    }
+  };
+  const pin = () => {
+    const s = store.get(), l = layerAt(s.project, clip, s.playhead);
+    if (!under || !l) return;
+    const at = underPoint(s.project, under, s.playhead, l.x, l.y);
+    command("Pin to footage", { clip_ids: [clip.id], anchor: { clip_id: under.id, x: +at.x.toFixed(4), y: +at.y.toFixed(4) } });
+  };
+  // A callout's ring and dim let go together.
+  const unpin = () => {
+    const mates = store.get().project.tracks.flatMap((t) => t.clips).filter((c) => c.id === clip.id || (!!clip.group && c.group === clip.group && "anchor" in c && !!c.anchor));
+    command("Unpin", { clip_ids: mates.map((c) => c.id), none: true });
+  };
+  return (
+    <>
+      <p className="insp-hint">
+        {clip.anchor
+          ? `Pinned to ${target ? name(target) : clip.anchor.clipId}: it follows that clip's zooms and pans. Drag it to pin it somewhere else.`
+          : "Pin this layer to the video under it, where its center is now, to follow that video's zooms and pans."}
+      </p>
+      <div className="insp-actions">
+        {clip.anchor ? (
+          <button className="btn" onClick={unpin}>
+            <PinOff size={14} /> Unpin
+          </button>
+        ) : (
+          <button className="btn" disabled={!under} data-tip={under ? undefined : "Move the playhead over this layer and a video under it"} onClick={pin}>
+            <Pin size={14} /> Pin to footage
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 /** CapCut's Tracking: place a box on a subject in the video under this
  * layer, and the layer follows it from the playhead; on a video, the box
  * can instead keep its subject centered (reframe). state/tracking.ts. */
@@ -987,6 +1039,7 @@ function TrackingSection({ clip }: { clip: VisualClip }) {
       : (pinWhy ?? "Pin this layer to a moving subject in the video under it, from the playhead on.");
   return (
     <Section title="Tracking">
+      {clip.type !== "video" && <PinRow clip={clip} />}
       <p className="insp-hint" role={mine ? "status" : undefined}>
         {mine ? `Following the subject… ${Math.round(job.progress * 100)}%` : placing ? `Drag the box onto the subject and size it to fit, then ${placing === "center" ? "Reframe" : "Track"}.` : idle}
       </p>

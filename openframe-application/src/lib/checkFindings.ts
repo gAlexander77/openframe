@@ -61,11 +61,14 @@ const GROUP: Record<string, CheckGroup> = {
   no_end_card: "timing",
   flashes_too_fast: "timing",
   gap_on_main_track: "timing",
+  callout_off_frame: "timing",
   cuts_off_beat: "timing",
   no_beat_grid: "timing",
   no_sound: "sound",
   music_ends_abruptly: "sound",
   sound_cut_off: "sound",
+  click_at_join: "sound",
+  sound_cut_at_join: "sound",
 };
 
 /** A rule this file does not know yet (one added to the check later) goes
@@ -105,8 +108,23 @@ const list = (xs: string[], and = "and") => (xs.length < 2 ? xs.join("") : `${xs
 /** A contrast ratio as a person reads it: one decimal. */
 const ratioOf = (r: string) => String(+(+r).toFixed(1));
 
-/** The words for one finding. `inCompound`: a title drawn by a compound clip. */
-function words(f: Finding, name: string, inCompound: boolean, caption: boolean): Pick<PersonFinding, "title" | "action" | "detail"> {
+/** Where two sounds meet, named: one song cut in two is "the two pieces of"
+ * it. */
+const meeting = (name: string, next: string) => (name === next ? `the two pieces of ${name} meet` : `${name} meets ${next}`);
+
+/** What fixes a join, in the app's controls: the clip menu's crossfade, or
+ * what to change first where none fits (designCheck joinFix). */
+function joinAction(fix: string, name: string, next: string, longer: boolean): string {
+  if (/^roll_edit/.test(fix)) return `Move the cut where both pieces sound: drag the cut between ${name} and ${next} a bar later or earlier with the Roll tool. A crossfade cannot help here.`;
+  if (/^set_fades/.test(fix)) return `Give ${name} a short Fade out and ${next} a short Fade in (Audio tab): a crossfade needs both clips at their own speed.`;
+  const menu = `right-click ${name} and choose Crossfade into next clip`;
+  if (/^trim_clip/.test(fix)) return `Trim the start of ${next} a little later so its sound can rise before the cut, then add a crossfade from the clip menu (${menu}).`;
+  return longer ? `Add a crossfade from the clip menu (${menu}) and lengthen it to about 0.25 s in the Audio tab, or cut where the sound pauses.` : `Add a crossfade from the clip menu: ${menu}.`;
+}
+
+/** The words for one finding. `inCompound`: a title drawn by a compound
+ * clip. `next`: the second clip a finding names (the clip after a join). */
+function words(f: Finding, name: string, inCompound: boolean, caption: boolean, next = "the next clip"): Pick<PersonFinding, "title" | "action" | "detail"> {
   const m = f.message, x = f.fix;
   const openIt = "or double-click the compound clip and change the title inside it";
   switch (f.rule) {
@@ -212,6 +230,14 @@ function words(f: Finding, name: string, inCompound: boolean, caption: boolean):
         action: "Right-click the gap on the main track and choose Close gap, or fill it with a clip.",
       };
     }
+    case "callout_off_frame": {
+      const share = num(m, /: (\d+)% of it is outside/), from = num(m, /leaving from ([\d.]+) s/);
+      return {
+        title: `${name} runs off the frame`,
+        detail: share ? `${share}% of it is outside the frame at its worst${from ? `; it starts leaving at ${from} s` : ""}, as the shot it points into moves.` : undefined,
+        action: from ? `Trim the callout's end to ${from} s, or reframe the shot so the part it points at stays in view.` : "Reframe the shot so the part it points at is in view.",
+      };
+    }
     case "cuts_off_beat": {
       const off = num(m, /^(\d+) of (\d+) cuts/), all = num(m, /^(\d+) of (\d+) cuts/, 2);
       return {
@@ -238,6 +264,23 @@ function words(f: Finding, name: string, inCompound: boolean, caption: boolean):
         detail: "It stops while still sounding, with no fade, and the video goes on.",
         action: "Give it a short Fade out in the Audio tab (0.3 s; a song or a bed 1.5 s), or trim its end to where the sound pauses.",
       };
+    case "click_at_join": {
+      const dip = num(m, /A ([\d.]+) dB hole/), click = num(m, /a sample step ([\d.]+) dB steeper/), silent = /^Silence/.test(m), quiet = num(m, /silent for ([\d.]+) s just before/);
+      const kind = silent ? "A dropout" : dip ? "A tick" : "A click";
+      return {
+        title: `${kind} where ${meeting(name, next)}`,
+        detail: quiet ? `The second piece's file is silent for ${quiet} s just before where it starts, so a crossfade into it fades into silence.` : silent ?"The sound stops for a few milliseconds at the cut." : dip ? `For a few milliseconds at the cut the sound drops ${dip} dB.` : click ? `The sound jumps ${click} dB more sharply at the cut than anywhere around it.` : undefined,
+        action: joinAction(x, name, next, false),
+      };
+    }
+    case "sound_cut_at_join": {
+      const rings = num(m, /still rings ([\d.]+) dB/);
+      return {
+        title: `${name} is cut off where ${next} starts`,
+        detail: rings ? `It still rings ${rings} dB over what plays after the cut, and stops dead.` : undefined,
+        action: joinAction(x, name, next, true),
+      };
+    }
     default:
       // A rule added to the check since: its own words, which name tools.
       return { title: f.message, action: "" };
@@ -249,7 +292,7 @@ function tabOf(rule: string, inCompound: boolean): PersonFinding["tab"] {
   if (/^text_(outside_title_safe|under_app_buttons|too_small)$/.test(rule)) return inCompound ? "video" : "text";
   if (/^(text_low_contrast|text_contrast_risk|title_hidden_by_subject)$/.test(rule)) return inCompound ? undefined : "text";
   if (rule === "flashes_too_fast") return "effects";
-  if (rule === "sound_cut_off" || rule === "music_ends_abruptly") return "audio";
+  if (rule === "sound_cut_off" || rule === "music_ends_abruptly" || rule === "click_at_join" || rule === "sound_cut_at_join") return "audio";
   return undefined;
 }
 
@@ -260,7 +303,8 @@ export function personFindings(p: Project, findings: Finding[], duration = 0): P
     const c = clipAnywhere(p, f.clip_id);
     const caption = c?.type === "text" && !!c.caption;
     const inCompound = !!f.compound_clip_id;
-    const w = words(f, nameOf(p, c), inCompound, caption);
+    const second = f.clip_ids?.[1] && f.clip_ids[1] !== f.clip_id ? nameOf(p, clipAnywhere(p, f.clip_ids[1])) : undefined;
+    const w = words(f, nameOf(p, c), inCompound, caption, second);
     // An end card goes in the last seconds: that is where to look.
     const at = f.at ?? (f.rule === "no_end_card" && duration > 0 ? Math.max(0, duration - 2.5) : undefined);
     const select = f.compound_clip_id ?? f.clip_id;

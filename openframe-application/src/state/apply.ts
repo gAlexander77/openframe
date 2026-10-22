@@ -13,8 +13,10 @@ import * as ops from "../lib/project/ops";
 import { animationSpan, placeOnTop, revealSpan } from "../lib/overlays";
 import type { Clip, Id, Project, TextClip, TextStyle } from "../lib/project/types";
 import { addTemplate, TEXT_TEMPLATES, wordArtStyle } from "../lib/templates";
-import { secondsToFrames, type Rational } from "../lib/time";
+import { framesToSeconds, secondsToFrames, type Rational } from "../lib/time";
 import { titleWrap } from "../lib/ads";
+import { footageUnder, underPoint } from "../lib/anchors";
+import { runCommand } from "../lib/commands";
 import { store } from "./store";
 import { toast } from "./toast";
 
@@ -58,10 +60,11 @@ export const layerSeconds = () => prefsStore.get().layerSeconds;
 /** Seconds a new transition lasts (shorter when a clip beside it is). */
 export const transitionSeconds = () => prefsStore.get().transitionSeconds;
 
-/** A new top video track (CapCut stacks the newest layer on top). */
+/** A new top video track (CapCut stacks the newest layer on top), under
+ * the captions (ADR-121): an effect layer over them would blur them too. */
 function topTrack(p: Project, name: string): [Project, Id] {
   const t = createTrack("video", name);
-  return [ops.addTrack(p, t, 0), t.id];
+  return [ops.addTrack(p, t), t.id];
 }
 
 /** The clip a preset adds; the library card's preview renders this same
@@ -251,6 +254,32 @@ export function addColorLayer(at?: number) {
     return ops.addClip(p, tid, clip);
   });
   store.select([id]);
+}
+
+/** A callout (ADR-120) on the video or picture under the playhead: a
+ * rounded ring around the middle of what the viewer shows, the rest
+ * dimmed, both pinned to that clip. The ring is selected, to be dragged
+ * onto what it points at (its hole goes with it) and sized in Shape. */
+export function addCalloutLayer(at?: number) {
+  const s = store.get(), f = at ?? s.playhead, p = s.project;
+  const shot = footageUnder(p, f);
+  if (!shot) return void toast("Move the playhead over a video or picture to point at");
+  // A box an eighth of the frame high around the canvas center, in the
+  // picture's own fractions, kept inside it.
+  const r = underPoint(p, shot, f, 0, 0, (0.16 * p.height) / p.width, 0.125);
+  const w = Math.min(1, r.w), h = Math.min(1, r.h);
+  const region = { x: Math.min(1 - w, Math.max(0, r.x - w / 2)), y: Math.min(1 - h, Math.max(0, r.y - h / 2)), w, h };
+  let ring = "";
+  try {
+    store.edit("Add callout", (q) => {
+      const next = runCommand(q, "add_callout", { clip_id: shot.id, region, at: framesToSeconds(f, q.fps), duration: 2 });
+      ring = next.tracks.flatMap((t) => t.clips).find((c) => c.name === "Callout" && !ops.findClip(q, c.id))?.id ?? "";
+      return next;
+    });
+  } catch (e) {
+    return void toast(e instanceof Error ? e.message : String(e), "error");
+  }
+  if (ring) store.select([ring]);
 }
 
 export function addAdjustmentLayer(at?: number) {

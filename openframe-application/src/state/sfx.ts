@@ -4,7 +4,7 @@
 // file and the clips in one undoable edit.
 
 import { findClip } from "../lib/project/ops";
-import type { Asset, Id } from "../lib/project/types";
+import type { Asset, Id, Project } from "../lib/project/types";
 import { placeSounds, SFX, type SoundCue } from "../lib/sfx";
 import { framesToSeconds } from "../lib/time";
 import { encodeWav } from "../lib/wav";
@@ -63,6 +63,19 @@ export async function addSoundEffects(cues: SoundCue[]): Promise<{ clipIds: Id[]
   });
   fresh.forEach(prepare);
   return { clipIds };
+}
+
+/** Effects' files that a command places itself (add_callout's click,
+ * ADR-120): made and probed when the project has none yet. `add` puts the
+ * new ones in the project inside the command's own edit, so the file and
+ * the clips are one undo step; `done` prepares them once added. */
+export async function soundFiles(ids: string[]): Promise<{ add: (p: Project) => Project; done: () => void }> {
+  const fresh: Asset[] = [];
+  for (const id of ids) {
+    const r = await soundAsset(id);
+    if (r.fresh) fresh.push(r.asset);
+  }
+  return { add: (p) => (fresh.length ? { ...p, assets: [...p.assets, ...fresh.filter((x) => !p.assets.some((y) => y.id === x.id))] } : p), done: () => fresh.forEach(prepare) };
 }
 
 /** Hear an effect before adding it, on the app's own audio output. */

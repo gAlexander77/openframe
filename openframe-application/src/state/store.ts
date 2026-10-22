@@ -11,6 +11,7 @@ import { toast } from "./toast";
 import { closePath, compoundView, innerFrameAt, nestsItself, openPath, pruneCompounds, withCompoundView, type NestLevel } from "../lib/project/compound";
 import { createProject } from "../lib/project/defaults";
 import { followClips } from "../lib/markers";
+import { followAnchors } from "../lib/anchors";
 import { DEFAULT_MEDIA_BROWSER, type MediaBrowser } from "../lib/mediaLibrary";
 import { clipEnd, findClip, findCompound, projectDuration } from "../lib/project/ops";
 import type { KeyRef } from "../lib/keyframeEdit";
@@ -266,7 +267,8 @@ export const store = {
    * which records nothing. Inside a compound clip, an edit that would make
    * an open compound play itself is refused. */
   edit(label: string, fn: (p: Project) => Project, extra: Partial<EditorState> = {}) {
-    let next = fn(state.project);
+    // What is pinned to a clip's picture follows it (ADR-120).
+    let next = followAnchors(state.project, fn(state.project));
     if (next === state.project) return;
     if (state.nest.length && nestsItself(next, state.nest)) {
       toast("A compound clip can't contain itself.", "error");
@@ -283,7 +285,7 @@ export const store = {
    * that every level uses), with undo. */
   editDocument(label: string, fn: (doc: Project) => Project) {
     const doc = documentOf(state);
-    const next = fn(doc);
+    const next = followAnchors(doc, fn(doc));
     if (next === doc) return;
     record(doc, label);
     const { project, nest } = reopen(pruneCompounds({ ...next, updatedAt: Date.now() }));
@@ -301,7 +303,7 @@ export const store = {
    * with no press (a script setting its value, assistive technology) is
    * one edit of its own when `label` names it, and nothing otherwise. */
   previewGesture(fn: (p: Project) => Project, label?: string) {
-    if (gestureBase) setProject(fn(gestureBase));
+    if (gestureBase) setProject(followAnchors(gestureBase, fn(gestureBase)));
     else if (label) store.edit(label, fn);
   },
   endGesture(label: string) {

@@ -477,3 +477,76 @@ Every non-obvious choice gets a short Architecture Decision Record in
   sketch take a reach that versions scale (old ones load at the old
   reach); a split's halves share one EQ and compressor and render as the
   whole clip.
+- [[ADR-118 A version's captions take its frame, pictures keep clear of them, and fades and push-ins are judged]] —
+  a tall short's captions on 16:9 and 1:1 move to the bottom, all at one
+  height, on 16:9 at a landscape caption's size (the typical one at most
+  72, a countdown staying as much larger), titles keeping the short side;
+  a picture-in-picture a version would draw across its captions moves
+  above them; check_project names a title whose fade loses a part before
+  the rest, and a version names a subject the master's push-in crops.
+- [[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]] —
+  a song's Audio tab has a Beat grid: Detect keeps the reading as one
+  fitted tempo and downbeat, drawn on the clip as CapCut's beat dots;
+  tempo typed or tapped, the downbeat nudged or set at the playhead,
+  parts added on the nearest bar, all through set_music_grid; the clip
+  menu's Cut bars runs cut_music between In and Out; the Markers tab
+  names the clip a marker follows and detaches it (update_marker
+  detach); check_project hears each audio join on its own track, up to
+  24, as click_at_join and sound_cut_at_join with a crossfade as the fix.
+- [[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]] —
+  add_callout rings a part of a screen recording with the rest dimmed,
+  two grouped shapes pinned to the recording that glide on and click as
+  they draw; a title or shape takes an anchor (a point of a clip's
+  picture) and its position is written from that clip's keys after every
+  edit, exactly where they share frames and ease, re-pinned where a hand
+  moves it; frame_region takes a list of moves; set_mask at keys from the
+  values the mask had.
+- [[ADR-121 Captions stay on top, ad elements keep rows of their own, and answers count what moved together]] —
+  new tracks and overlays land under a captions row at the top; an ad
+  element is one block on rows of its own and lands clear of the captions
+  showing then; a lower third draws the logo it is given, a badge or button
+  refuses one; check_project flags text over text; word captions hold
+  their limit or say why; a ripple's moved clips are counted, music
+  answers give the grid as counts, a narrowed describe_project leaves the
+  brand kit out; the script's pace only over lines in a row; a drop or
+  final hit ducked under a line is named; contact sheets label under each
+  frame; measure_loudness kind explainer.
+- [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]] —
+  a version crops a shot around what its callouts point at, else the
+  region the master's push or zoom frames, and the subject only where the
+  master shows the shot whole; rings, spotlights' holes and pinned clips
+  are written again from the version's picture (reanchor for anchors),
+  a ring around a caption stays around it; a shape a version fits is
+  sized by its own box, keys and stroke, never a transform scale; the
+  check lists a callout off the frame or off what it pointed at, and its
+  sheet labels under each frame.
+- [[ADR-123 Fitted shots are footage a version reframes, and framing knobs act or say why]] —
+  a shot fitted with bands (spanning the frame one way, covering its
+  middle, nothing under it) is reframed as footage at its pixels against
+  the short side, and every shot with fill covers the new frame at its
+  widest; focus points with at make a path; options says what became of
+  focus, pushes and overrides, an override carries the rings pointing
+  into its picture, and coverage names footage left floating small;
+  frame_region place_at puts a region anywhere at any zoom; a batch's
+  follow is no hand move, and a re-pinned glide is described as one.
+- [[ADR-124 Answers and hints that tell the truth, captions restyled together, lines as tall as their letters]] —
+  review_voiceover compares numbers as said (ten eighty for 1080, minus
+  for -14) and against the line's caption, never asking a slower read for
+  a number written another way; baked keys and an answer's anchor glides
+  are counted, a list spanning tracks shares per track, quiet: true on an
+  edit answers ids, describe_project takes fields; set_caption_look moves,
+  sizes and narrows every caption; check_project gives each zone finding
+  the move that clears it and keeps a title's move inside the apps' zone;
+  each line of a title is as tall as its letters, style_text_range takes a
+  style object and says when the wrap parts a styled stretch.
+- [[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]] —
+  nothing else lands on an ad element's own rows; an end card in a short
+  room gives up its logo before its type, fitted by
+  bisection, a pulsing button floored at the bottom of its pulse, and its
+  parts overlapping are named; preview_audio and check_project name a
+  join into the incoming file's silence and roll it a bar instead of
+  asking for a crossfade already set; cut_music repeats bars; a
+  main-track add a frame past the clip before starts where it ends;
+  add_callout clicks on each glide's arrival; check_project names a
+  callout that leaves the frame; export_video and export_versions replace
+  a file of their name in the folder named when asked.

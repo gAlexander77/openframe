@@ -83,7 +83,7 @@ describe("versions keep the subject", () => {
     expect(landing(center, id, 0.5).x).toBeCloseTo(540, 0);
   });
 
-  it("stays inside what the master showed: a push-in's framing is kept", () => {
+  it("stays inside what the master showed: a push-in's framing is kept, centered on the region it frames", () => {
     let { p, id } = film();
     // The master pushes in to 1.5x on the picture's middle.
     p = runCommand(p, "add_keyframe", { clip_id: id, path: "transform.scale", at: 0, value: 1 });
@@ -93,9 +93,17 @@ describe("versions keep the subject", () => {
     // At the end the master shows 0.17..0.83 of the width: the frame keeps inside it.
     const rel = 177, l = { x: paramAt(c, "transform.x", rel), y: 0, scale: paramAt(c, "transform.scale", rel), rotation: 0, flipX: false, flipY: false } as Layer;
     expect(inSource(q, c, l, 1080, 0).u).toBeLessThanOrEqual(0.834);
-    // At the start (the whole picture) it reaches the subject.
-    expect(landing(q, id, 0.9, 0).x).toBeGreaterThan(300);
+    // The push frames a region (ADR-122): the frame stays on it from the
+    // start, as the master's push does, rather than chasing the subject the
+    // detector sees outside it (before, it reached 0.9 at the start).
+    expect(landing(q, id, 0.5, 0).x).toBeCloseTo(540, 0);
+    expect(landing(q, id, 0.5, rel).x).toBeCloseTo(540, 0);
     expect(paramAt(c, "transform.scale", rel) / paramAt(c, "transform.scale", 0)).toBeCloseTo(1.5, 1);
+    // A drift under a tenth is motion: the subject still frames it.
+    const slow = film();
+    let drift = runCommand(slow.p, "add_keyframe", { clip_id: slow.id, path: "transform.scale", at: 0, value: 1 });
+    drift = runCommand(drift, "add_keyframe", { clip_id: slow.id, path: "transform.scale", at: 5.9, value: 1.05 });
+    expect(landing(reshape(drift, "9:16", "fill", { looks: looking(slow.id, () => 0.9) }), slow.id, 0.9, 0).x).toBeLessThan(1080);
   });
 
   it("keeps a wider version's frame around what a tall master showed, at the caller's focus", () => {
@@ -146,6 +154,40 @@ describe("versions keep the subject", () => {
     expect(zoom(held)).toBeCloseTo(1, 3);
     expect(shownTop(held)).toBeCloseTo(0, 2);
     expect(landing(held, id, 0.5, end).x).toBeCloseTo(960, -1);
+  });
+
+  it("notes a subject the master's own push crops in a wider version, which a held push shows", () => {
+    // Claude film test 2: the 9:16 master pushes into the launch (the top
+    // 9% of the picture cropped at its tightest); on 16:9 the same crop
+    // cuts the rocket's nose off a wide frame. The strongest blob is the
+    // flame; the nose is a faint streak running up from it.
+    let { p, id } = film();
+    p = { ...p, width: 1080, height: 1920 };
+    p = runCommand(p, "frame_region", { clip_id: id, region: { x: 0.342, y: 0, w: 0.316, h: 1 }, to_region: { x: 0.37, y: 0.09, w: 0.26, h: 0.82 } });
+    const rocket = (streak: boolean): SaliencyMap => {
+      const m = blob(0.5, 0.6, 0.08);
+      if (streak) for (let y = 1; y < Math.round(0.6 * m.h); y++) for (const x of [31, 32]) m.v[y * m.w + x] = Math.max(m.v[y * m.w + x], 0.3);
+      return m;
+    };
+    const times = Array.from({ length: 13 }, (_, i) => 2 + i * 0.5);
+    const looks = (streak: boolean): Looks => ({ [id]: { assetId: "a", times, maps: times.map(() => rocket(streak)) } });
+    const notes: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9" }, undefined, looks(true), notes);
+    const pushed = notes.filter((n) => n.push);
+    expect(pushed.length).toBeGreaterThan(0);
+    // Where the push is tight, the subject's top (the nose) is off the frame.
+    expect(pushed.every((n) => n.subject.top < 0.09 && n.kept < 1)).toBe(true);
+    // Held, the version shows it; and a flame alone, which no push cuts, is not named.
+    const held: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9", pushes: "hold" }, undefined, looks(true), held);
+    expect(held.filter((n) => n.push)).toEqual([]);
+    const flame: SubjectNote[] = [];
+    versionProject(p, { ratio: "16:9" }, undefined, looks(false), flame);
+    expect(flame).toEqual([]);
+    // The master's own shape crops nothing it did not show: no note there.
+    const same: SubjectNote[] = [];
+    versionProject(p, { ratio: "9:16" }, undefined, looks(true), same);
+    expect(same).toEqual([]);
   });
 
   it("notes a subject the framing cuts, and one wider than the frame", () => {

@@ -62,6 +62,17 @@ export function captionSized<T extends Partial<TextStyle>>(p: { width: number; h
   };
 }
 
+/** The largest caption a look gives this canvas, as a style size: 72 on a
+ * square or wide one (Word pop, Bold yellow: 6.7% of a 16:9 frame's
+ * height; broadcast subtitles are 4.6-5.6%), the same pixels on a tall
+ * one. What a landscape version brings a tall short's captions down to
+ * (ADR-118). */
+export const captionMax = (p: { width: number; height: number }) => Math.max(...Object.keys(CAPTION_LOOKS).map((id) => captionSized(p, lookStyle(id)).size));
+
+/** The width captions wrap within on a canvas that is not tall: two lines
+ * of a subtitle, as add_captions and the looks have them. */
+export const CAPTION_WRAP = BASE.maxWidth;
+
 /** Every caption takes the look: its style and height. */
 export function applyCaptionLook(p: Project, id: string): Project {
   const y = captionY(p, CAPTION_LOOKS[id].y);

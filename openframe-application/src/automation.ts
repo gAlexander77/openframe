@@ -17,7 +17,7 @@ import { retakeVoiceover, textToSpeech, voiceover, type VoiceLine, type Voiceove
 import { reviewVoiceover } from "./state/voiceReview";
 import { autoAdjustClip } from "./state/autoColor";
 import { trackMotion } from "./state/tracking";
-import { addSoundEffect, addSoundEffects } from "./state/sfx";
+import { addSoundEffect, addSoundEffects, soundFiles } from "./state/sfx";
 import { addAmbience, type AmbienceRequest } from "./state/ambience";
 import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
@@ -67,6 +67,16 @@ const automation = {
     }
     const report: CommandReport = {};
     if (name === "add_sticker") return execAddSticker(args, report).then(() => ({ ...describe(), ...report }));
+    // A callout's click is made first, as add_sound_effect's files are, and
+    // lands with the callout in one edit (ADR-120).
+    const callout = args as { sound?: unknown; to?: { sound?: unknown }[] } | null;
+    if (name === "add_callout" && (callout?.sound === true || (Array.isArray(callout?.to) && callout.to.some((t) => t?.sound === true)))) {
+      return soundFiles(["click"]).then(({ add, done }) => {
+        store.editDocument(commandLabel(name, args), (p) => runAgentCommand(add(p), name, args, report, store.get().linkage));
+        done();
+        return { ...describe(), ...report };
+      });
+    }
     // keep_loudness measures the clip with and without the filter first (ADR-114).
     if (name === "set_audio_filter" && (args as { keep_loudness?: unknown } | null)?.keep_loudness === true) {
       const problems = validate(args, COMMANDS.find((c) => c.name === name)!.input);
@@ -166,23 +176,24 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
 }
 
-/** Frames in a grid, each stamped with its label: the contact sheets. */
+/** Frames in a grid, each with its label on a strip under it: the contact
+ * sheets. The label sits outside the picture (ADR-121): stamped on its top
+ * left it hid the third film test's section labels, which then looked
+ * clipped. */
 async function tiles(frames: { src: CanvasImageSource | null; label: string; w: number; h: number }[], tileWidth: number, columns: number): Promise<string> {
-  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6;
+  const cols = Math.min(columns, frames.length), rows = Math.ceil(frames.length / cols), gap = 6, strip = 18;
   const h = Math.round((frames.find((f) => f.src)?.h ?? 9) * tileWidth / (frames.find((f) => f.src)?.w ?? 16));
-  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + gap) + gap);
+  const out = new OffscreenCanvas(cols * (tileWidth + gap) + gap, rows * (h + strip + gap) + gap);
   const ctx = out.getContext("2d")!;
   // A dark ground, so frames with white edges still read as separate tiles.
   ctx.fillStyle = "#1e1e1e";
   ctx.fillRect(0, 0, out.width, out.height);
   for (const [i, f] of frames.entries()) {
-    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + gap);
+    const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + strip + gap);
     if (f.src) ctx.drawImage(f.src, x, y, tileWidth, h);
     ctx.font = "bold 13px sans-serif";
-    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-    ctx.fillRect(x + 4, y + 4, ctx.measureText(f.label).width + 10, 19);
     ctx.fillStyle = "#fff";
-    ctx.fillText(f.label, x + 9, y + 18);
+    ctx.fillText(f.label, x + 2, y + h + 14);
   }
   return jpeg(out);
 }
@@ -332,7 +343,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts, options: sheet.options, coverage: sheet.coverage };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");

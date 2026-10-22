@@ -1,7 +1,33 @@
 # Next agent handoff - OpenFrame
 
-**Updated:** 2026-10-14. This is the current owner direction for the next
+**Updated:** 2026-10-21. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
+
+## Current state - 2026-10-21 (read first)
+
+- `main` holds all six improvements rounds (to ADR-125): `improvements-6`
+  merged on 2026-10-21 after a full drive sweep on a second machine
+  (History, "The sixth branch swept on a second machine, and merged").
+- **The owner's standing direction (2026-10-21):** keep finding and fixing
+  bugs, add what major editors have that OpenFrame lacks, test the MCP
+  tools with real, voiced edits, and merge finished work into `main`
+  through pull requests (the owner is the only person on the repository).
+  Hand detailed work to Codex (`codex exec`) to spare Claude usage.
+- **Sweeps:** skip the desktop-only `media-relink` and
+  `desktop-session-jobs`, and `window-header`, which needs its own runner;
+  `music-structure` needs the private promo track. Rerun failures alone
+  before reading them as bugs ([[Driving the app]], traps 23 to 26).
+- **Then:** the open items the ADRs record (per-letter border fades, a
+  compressor restarting on a split compound, glow sampling at radius 48,
+  captions over rings on tall versions, callouts inside compounds, the ad
+  spot's small 9:16 end card, the on-canvas editor's single line spacing,
+  the silent-join hint without a beat grid).
+- **Blind MCP tests** found most of rounds 5 and 6: run `claude -p` from a
+  folder outside the repo, so only the user-scope OpenFrame MCP server is
+  registered. Allow only the OpenFrame tools plus Read, Write, Edit and
+  Glob, with no shell or web. Give it a brief and its media, and fix what
+  its report and calls show. Run one tester per app, because the tools act
+  on the app's one open project.
 
 ## Decisions and scope
 

@@ -1,6 +1,6 @@
 # ADR-097: Checks and versions judge by the picture
 
-**Date:** 2026-10-19. **Status:** accepted; titles inside compound clips are measured since [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]; a frame wider than what the master showed holds all of it, and pushes can be eased, since [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]].
+**Date:** 2026-10-19. **Status:** accepted; titles inside compound clips are measured since [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]; a frame wider than what the master showed holds all of it, and pushes can be eased, since [[ADR-116 New titles land on top, masks say where they end, wider versions keep the master's framing]]; a shot the master frames a region of, or that callouts point into, is cropped around that instead of its subject since [[ADR-122 Versions crop around what the editor framed, and callouts stay on what they point at]].
 
 ## Context
 

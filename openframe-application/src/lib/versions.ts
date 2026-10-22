@@ -31,15 +31,18 @@ import { titleZone, VERTICAL_SAFE } from "./align";
 import { minTextSize } from "./brandKit";
 import { canvasSize } from "./canvas";
 import { EFFECTS } from "./catalog";
-import { captionFit, captionY } from "./captionLooks";
+import { CAPTION_WRAP, captionFit, captionMax, captionY } from "./captionLooks";
 import { withoutCaptions } from "./captions";
 import { seenLetters, seenTexts } from "./designCheck";
 import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
 import { fittedSize, textPad } from "./render/size";
-import { lookFor, reframeShot, type Focus, type Looks, type Reframe, type SubjectNote } from "./reframe";
+import { lookFor, reframeShot, type Focus, type Looks, type OptionNote, type Reframe, type ShotTargets, type SubjectNote } from "./reframe";
+import { anchorOf, reanchor } from "./anchors";
+import { calloutReports, calloutsOf, followCallouts, followed, shotTargets, type CalloutReport } from "./versionCallouts";
 import { maskReach } from "./mask";
+import { lookReach } from "./textLook";
 import { framesToSeconds, secondsToFrames } from "./time";
 
 export type VersionRatio = "16:9" | "9:16" | "1:1" | "4:5" | "original";
@@ -78,7 +81,7 @@ export interface VersionSpec {
   /** Clips framed by hand in this version: the point of each one's picture
    * to keep at the center. */
   focus?: Focus[];
-  /** Full-frame shots' keyed pushes: kept (default), relaxed or held. */
+  /** Keyed pushes of full-frame and fitted shots: kept (default), relaxed or held. */
   pushes?: VersionPushes;
   /** Clips moved, resized or hidden by hand in this version, after the
    * automatic adaptation (applyOverrides). */
@@ -110,6 +113,14 @@ export interface ReframeOptions {
   focus?: Focus[];
   notes?: SubjectNote[];
   pushes?: VersionPushes;
+  /** What the callouts over a shot point at (ADR-122), by the shot's id. */
+  targets?: (id: Id) => ShotTargets | undefined;
+  /** Hears what became of the caller's focus, pushes and overrides
+   * (ADR-123); `framed` the shots a focus framed, `eased` those pushes
+   * relaxed or held. */
+  said?: OptionNote[];
+  framed?: Id[];
+  eased?: Id[];
 }
 
 /** A shot's keyed scale eased toward its widest (least) value: `r` 0.5
@@ -253,11 +264,45 @@ function fullFrame(p: Project, c: VisualClip, m: Frame): boolean {
   return m.w * fit * s * (1 - c.crop.left - c.crop.right) >= p.width * 0.97 && m.h * fit * sy * (1 - c.crop.top - c.crop.bottom) >= p.height * 0.97;
 }
 
-/** Does a video or picture clip cover its frame (a shot a new shape
- * crops), where it rests? */
+/**
+ * A shot fitted into the master's frame rather than filling it (ADR-123):
+ * a video or picture (not a sticker) whose picture spans the frame edge to
+ * edge on one axis and covers its middle (the central tenth both ways),
+ * with bands on the other, at its first frame or at one of its position or
+ * scale keys: a widescreen screen recording in a 9:16 master, pushed in
+ * with frame_region fit. Not a window: no crop, closed mask or border, not
+ * in a group, not pinned, not turned, and no picture under it covering the
+ * frame's middle at its middle (a band of footage or a logo over a
+ * background is a layout). A version reframes it as it does a full-frame
+ * shot; laid out as a picture-in-picture, Claude film test 4's 16:9
+ * version floated its interface shots small in black and ran its rings
+ * off the frame.
+ */
+function fittedShot(p: Project, c: VisualClip): boolean {
+  if ((c.type !== "video" && c.type !== "image") || (c.type === "image" && getAsset(p, c.assetId)?.sticker)) return false;
+  const k = c.crop, m = c.mask;
+  if (k.left + k.right + k.top + k.bottom > 1e-3 || (m && !m.invert && m.shape !== "linear" && m.shape !== "mirror") || c.border || c.group || c.anchor) return false;
+  const W = p.width, H = p.height;
+  const middle = (b: Rect) => b.left <= W * 0.45 && b.right >= W * 0.55 && b.top <= H * 0.45 && b.bottom >= H * 0.55;
+  const ti = p.tracks.findIndex((t) => t.clips.some((x) => x.id === c.id));
+  const mid = c.start + Math.floor(c.duration / 2);
+  const under = p.tracks.slice(ti + 1).some((t) => t.kind === "video" && !t.hidden && t.clips.some((x) => !x.disabled && (x.type === "video" || x.type === "image" || x.type === "compound") && mid >= x.start && mid < x.start + x.duration && middle(boxOf(p, x, mid - x.start))));
+  if (ti >= 0 && under) return false;
+  const frames = new Set([0, ...KEYED.flatMap((path) => (c.keyframes?.[path] ?? []).map((key) => key.f))]);
+  for (const rel of frames) {
+    if (rel < 0 || rel >= c.duration || Math.abs(paramAt(c, "transform.rotation", rel)) > 1e-3) continue;
+    const b = boxOf(p, c, rel);
+    const spans = (b.left <= W * 0.015 && b.right >= W * 0.985) || (b.top <= H * 0.015 && b.bottom >= H * 0.985);
+    if (spans && middle(b)) return true;
+  }
+  return false;
+}
+
+/** Does a video or picture clip cover its frame, or fill one axis of it
+ * as a fitted shot (fittedShot): a shot a new shape crops? */
 export function fillsFrame(p: Project, c: Clip): boolean {
   const m = mediaSize(p, c);
-  return !!m && fullFrame(p, c as VisualClip, m);
+  return !!m && (fullFrame(p, c as VisualClip, m) || fittedShot(p, c as VisualClip));
 }
 
 /** A shape that spans the frame where it rests: both its edges at or past
@@ -450,17 +495,32 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
   const m = c.type === "compound" ? a : mediaSize(master, c);
   if (m) {
     const fitA = Math.min(a.w / m.w, a.h / m.h), fitB = Math.min(b.w / m.w, b.h / m.h);
-    const full = fullFrame(master, c, m);
+    // A shot fitted with bands is footage too (ADR-123): framed as a
+    // full-frame shot is, from here on.
+    const fitted = c.type !== "compound" && !fullFrame(master, c, m) && fittedShot(master, c);
+    const full = fullFrame(master, c, m) || fitted;
     // How much larger the picture is drawn, in pixels: a full-frame shot
-    // keeps covering (fill) or fitting (blur, fit) the frame; anything
+    // keeps covering (fill) or fitting (blur, fit) the frame; a fitted one
+    // keeps its pixels against the short side (its interface as readable
+    // as in the master); with fill, either grows where it would not cover
+    // the new frame at its widest (a push that pulls back past covering:
+    // 02-timeline-play's reveal floated at 1213 x 682 on 16:9); anything
     // smaller keeps its size against the short side.
-    const grow = full ? (fit === "fill" ? Math.max(b.w / m.w, b.h / m.h) / Math.max(a.w / m.w, a.h / m.h) : fitB / fitA) : short(b) / short(a);
+    let grow = !full ? short(b) / short(a) : fit !== "fill" ? fitB / fitA : fitted ? short(b) / short(a) : Math.max(b.w / m.w, b.h / m.h) / Math.max(a.w / m.w, a.h / m.h);
+    if (full && fit === "fill" && c.type !== "compound") {
+      const sx = leastScale(c), sy = c.transform.scaleY !== undefined ? Math.min(Math.abs(c.transform.scaleY), ...(c.keyframes?.["transform.scaleY"] ?? []).map((x) => Math.abs(x.v))) : sx;
+      const k = c.crop;
+      grow = Math.max(grow, b.w / (m.w * fitA * sx * (1 - k.left - k.right)), b.h / (m.h * fitA * sy * (1 - k.top - k.bottom)));
+    }
     const kScale = (fitA / fitB) * grow;
     let v = c as VisualClip;
     v = mapPath(v, "transform.scale", (s) => +(s * kScale).toFixed(5));
     if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * kScale).toFixed(5));
     // A keyed push relaxed or held where the caller asks (ADR-116).
-    if (full && frame.pushes && frame.pushes !== "keep" && v.transform.scaleY === undefined) v = easePush(v, frame.pushes === "relax" ? 0.5 : 0);
+    if (full && frame.pushes && frame.pushes !== "keep" && v.transform.scaleY === undefined) {
+      if (new Set((v.keyframes?.["transform.scale"] ?? []).map((k) => k.v)).size > 1) frame.eased?.push(c.id);
+      v = easePush(v, frame.pushes === "relax" ? 0.5 : 0);
+    }
     // Offsets in pixels grow with the picture, so the same part of it
     // stays at the frame's center.
     v = mapPath(v, "transform.x", (x) => (full ? (x * a.w * grow) / b.w : x));
@@ -478,7 +538,9 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     if (full && fit === "blur") v = { ...v, canvas: { type: "blur", amount: SHORT_BLUR } };
     // Cropped footage framed on its subject, or where the caller says.
     if (full && fit === "fill" && (c.type === "video" || c.type === "image")) {
-      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", frame.focus?.find((x) => x.clip_id === c.id));
+      const focus = frame.focus?.filter((x) => x.clip_id === c.id);
+      const r = reframeShot(master, q, c, v, lookFor(frame.looks, c), frame.reframe ?? "subject", focus?.length ? focus : undefined, frame.targets?.(c.id), frame.said);
+      if (focus?.length) frame.framed?.push(c.id);
       frame.notes?.push(...r.notes);
       v = r.clip;
     }
@@ -538,7 +600,13 @@ function refitClip(master: Project, q: Project, c: Clip, fit: VersionFit, groupe
     }
     if (c.mask && c.mask.shape !== "linear" && c.mask.shape !== "mirror" && !(c.shape && spansFrame(master, c))) {
       const kw = (a.w / b.w) * (short(b) / short(a)), kh = (a.h / b.h) * (short(b) / short(a));
-      out = { ...out, mask: { ...c.mask, width: +(c.mask.width * kw).toFixed(5), height: +(c.mask.height * kh).toFixed(5) } } as Clip;
+      // Its keys with it: a keyed size kept the master's fractions (ADR-122).
+      const keyed: Record<string, Keyframe[]> = {};
+      for (const [path, k] of [["mask.width", kw], ["mask.height", kh]] as const) {
+        const keys = c.keyframes?.[path];
+        if (keys?.length) keyed[path] = keys.map((key) => ({ ...key, v: +(key.v * k).toFixed(5) }));
+      }
+      out = { ...out, mask: { ...c.mask, width: +(c.mask.width * kw).toFixed(5), height: +(c.mask.height * kh).toFixed(5) }, ...(Object.keys(keyed).length ? { keyframes: { ...out.keyframes, ...keyed } } : {}) } as Clip;
     }
     return out;
   }
@@ -611,7 +679,7 @@ function restOf(p: Project, set: VisualClip[]): number {
 function isOverlay(q: Project, c: Clip): c is VisualClip {
   if (c.type === "audio" || c.type === "adjustment" || (c.type === "compound" && !asUnit(q, c))) return false;
   if (c.type === "text") return true;
-  if (spansFrame(q, c)) return false;
+  if (spansFrame(q, c) || fittedShot(q, c)) return false;
   const b = boxOf(q, c, restOf(q, [c]) - c.start);
   return b.right - b.left < q.width * 0.95 || b.bottom - b.top < q.height * 0.95;
 }
@@ -651,9 +719,15 @@ function share(lo: number, hi: number, min: number, max: number): number {
 const startAt = (t: number, size: number, min: number, max: number) => (size > max - min ? (min + max) / 2 - size / 2 : min + t * (max - min - size));
 
 /** A layer `f` times its size: a title's type (and its wrap width, so its
- * lines stay), any other layer's scale. */
+ * lines stay), a shape's own box, stroke and feather (keys and all), any
+ * other layer's scale. A shape fitted by its transform scale kept size
+ * keys in the master's fractions under a scale they did not know about:
+ * Claude film test 3's frame-wide ring, shrunk to 0.57, drew the Undo
+ * button's ring at 0.57 of the button, and a width keyed by hand in the
+ * saved version came out 0.57 of what was asked (ADR-122). */
 function shrink(c: VisualClip, f: number): VisualClip {
   if (c.type === "text") return { ...c, style: { ...scaleStyle(c.style, f, Infinity), maxWidth: +(c.style.maxWidth * f).toFixed(5) } };
+  if (c.type === "color" && c.shape) return scaleShape(c, f, f, f);
   let v = mapPath(c, "transform.scale", (s) => +(s * f).toFixed(5));
   if (v.transform.scaleY !== undefined) v = mapPath(v, "transform.scaleY", (s) => +(s * f).toFixed(5));
   return v;
@@ -1114,6 +1188,64 @@ function placeCaption(master: Project, q: Project, c: TextClip): TextClip {
   return { ...c, style: fit.style, transform: { ...c.transform, x: fit.x, y: captionY(q, c.transform.y) } };
 }
 
+/** How a version places the captions itself, as its frame's captions
+ * rather than as overlays: "tall" on a tall version of a wide master (the
+ * apps' column, ADR-091); "open" on a version that is not tall of a tall
+ * master (16:9 or 1:1 of a short: out of the apps' place), or a landscape
+ * version of a square one (ADR-118); undefined otherwise. */
+function captionPlace(a: Frame, b: Frame): "tall" | "open" | undefined {
+  if (b.h > b.w && a.w > a.h) return "tall";
+  if ((b.w >= b.h && a.h > a.w) || (b.w > b.h && a.w === a.h)) return "open";
+  return undefined;
+}
+
+/**
+ * How much a version scales its master's captions ("open" captionPlace),
+ * all by one factor so a caption made larger on purpose (a countdown)
+ * stays larger: their pixels against the short side, as a title's, and on
+ * a landscape frame brought down until the typical caption (the median)
+ * is no larger than captions are there (captionMax, 72: 6.7% of the
+ * height). A short's pop captions are about a tenth of the phone's width;
+ * kept so on 16:9 they took a tenth of its height, two lines a fifth of
+ * the picture, and read large for a website (Claude film test 2). On a
+ * square, seen at a phone's width in a feed as the short is, they keep
+ * their size.
+ */
+function captionScale(m: Project, q: Project): number {
+  const k = short({ w: q.width, h: q.height }) / q.height / (short({ w: m.width, h: m.height }) / m.height);
+  if (!(q.width > q.height)) return k;
+  const sizes = m.tracks.flatMap((t) => t.clips.flatMap((c) => (c.type === "text" && c.caption && !c.disabled ? [c.style.size * k] : []))).sort((x, y) => x - y);
+  return sizes.length ? k * Math.min(1, captionMax(q) / sizes[Math.floor(sizes.length / 2)]) : k;
+}
+
+/** A caption on a version that is not tall, from a tall or square master
+ * ("open" captionPlace): scaled by `k` (captionScale), never under the
+ * frame's readable size (minTextSize, as check_project judges it); a tall
+ * master's caption (under the middle, clear of the apps' buttons there)
+ * goes where captions sit on this frame (centered, y 0.36 as add_captions
+ * places them, wrapping at the captions' width), all at one height; its
+ * box kept inside the title-safe area. */
+function placeOpenCaption(m: Project, q: Project, c: TextClip, k: number): TextClip {
+  const z = titleZone(q);
+  const floor = minTextSize(q.width, q.height) / c.style.size, wrap = +Math.min(1 - z.left - z.right, CAPTION_WRAP).toFixed(3);
+  let kk = Math.max(k, floor);
+  let v: TextClip = { ...c, style: { ...scaleStyle(c.style, kk, Infinity), maxWidth: wrap }, ...(m.height > m.width ? { transform: { ...c.transform, x: 0, y: captionY(q, 0.36) } } : {}) };
+  // A word wider than the safe width cannot wrap (a countdown's LIFTOFF.
+  // at twice the captions' size on a square): it shrinks to fit, never
+  // under the readable size, as a title does (refitClip), measured as
+  // check_project measures it, the letters with their outline.
+  for (let i = 0; i < 4; i++) {
+    const r = lookReach(v.style, q.height / 1080);
+    const w = fittedSize(q, v).w - 2 * Math.max(0, textPad(q, v) - Math.max(r.box, r.stroke + r.stroke2)), room = (1 - z.left - z.right) * q.width;
+    if (w <= room || kk <= floor) break;
+    kk = Math.max(floor, (0.99 * kk * room) / w);
+    v = { ...v, style: { ...scaleStyle(c.style, kk, Infinity), maxWidth: wrap } };
+  }
+  const over = boxOf(q, v).bottom - q.height * (1 - z.bottom);
+  if (over > 0) v = { ...v, transform: { ...v.transform, y: +(v.transform.y - over / q.height).toFixed(5) } };
+  return v;
+}
+
 /** The master in another shape. Compound timelines first, since a
  * compound clip's box is what its timeline draws: one played as a picture
  * refits as one (asPicture), a whole scene nested at rest as a frame of
@@ -1132,10 +1264,24 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
   // group, so a headline is not pushed onto its window.
   const tall = height > width && p.width > p.height;
   const narrower = p.width > p.height && width / height < p.width / p.height - 0.01;
+  // A tall master made square or wide: its captions leave the apps' place
+  // for this frame's, at a landscape caption's size on 16:9 (ADR-118).
+  const place = captionPlace(a, b);
+  // Callouts (ADR-122): rings, spotlights and pinned clips point at a part
+  // of a picture. The crop keeps what they point at, and they are kept on
+  // it (followCallouts, reanchor) instead of laid out with the titles.
+  const callouts = calloutsOf(p);
+  const kept = followed(callouts);
+  const framing: ReframeOptions = { ...frame, targets: (id) => shotTargets(p, callouts, id) };
   // One timeline refit as a frame: each clip on its own, then its overlays placed.
   const asFrame = (m: Project, out: Project): Track[] => {
-    const caption = (c: Clip): c is TextClip => tall && c.type === "text" && !!c.caption;
-    let sets = overlaySets(m).filter((s) => !s.some(caption));
+    const caption = (c: Clip): c is TextClip => !!place && c.type === "text" && !!c.caption;
+    const k = place === "open" ? captionScale(m, out) : 1;
+    const placeOne = (c: TextClip) => (place === "tall" ? placeCaption(m, out, c) : placeOpenCaption(m, out, c, k));
+    let sets = overlaySets(m)
+      .filter((s) => !s.some(caption))
+      .map((s) => s.filter((c) => !kept.has(c.id) && !anchorOf(c)))
+      .filter((s) => s.length);
     const comps = narrower ? sideBySide(m, sets) : [];
     const follows = followersOf(m, sets, comps);
     // A split screen that filled the frame fills the new one (bleedPlans).
@@ -1163,7 +1309,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     }
     // Pixels at a 1080-tall frame that keep their pixels against the short side.
     const px = (a.h / b.h) * (short(b) / short(a));
-    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeCaption(m, out, c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), frame), px)) })) };
+    const fitted = { ...out, tracks: m.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => scaleFrame(caption(c) ? placeOne(c) : refitClip(m, out, c, fit, grouped.has(c.id), pictures, rooms.get(c.id), framing), px)) })) };
     // The captions burned in, where the stacks must leave room for them.
     const shown = fitted.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => caption(c) && !c.disabled)));
     const captions = shown.map((c) => ({ ...spanOf([c]), top: boxOf(fitted, c).top }));
@@ -1174,7 +1320,9 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  const done = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  const settled = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  // Callouts back on what they point at, as this version shows it.
+  const done = reanchor(followCallouts(p, settled, callouts));
   // What rides on each picture, once its size is settled (ADR-110).
   const was = new Map([...p.tracks, ...(p.compounds ?? []).filter((k) => !pictures.has(k.id)).flatMap((k) => k.tracks)].flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
   const ride = (tracks: Track[]) =>
@@ -1319,8 +1467,9 @@ function cardTexts(q: Project, id: Id, scale: number, depth = 0): { c: TextClip;
 function readableCards(p: Project, out: Project, pictures: Set<Id>): Project {
   if (!pictures.size) return out;
   const was = new Map(timelines(p).flatMap(({ tracks }) => tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const))));
-  const tall = out.height > out.width;
-  const captions = tall ? out.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled))).map((c) => ({ ...spanOf([c]), top: boxOf(out, c).top })) : [];
+  // Captions the version placed itself keep their band (ADR-091, ADR-118).
+  const placed = !!captionPlace({ w: p.width, h: p.height }, { w: out.width, h: out.height }) || out.height > out.width;
+  const captions = placed ? out.tracks.flatMap((t) => (t.hidden ? [] : t.clips.filter((c): c is TextClip => c.type === "text" && !!c.caption && !c.disabled))).map((c) => ({ ...spanOf([c]), top: boxOf(out, c).top })) : [];
   let q = out;
   // The cards on the project's timeline and on the scenes nested whole in it.
   for (const { k, tracks } of timelines(out)) {
@@ -1658,7 +1807,14 @@ export interface CaptionCollision {
   /** The visible part of the clip there, canvas pixels. */
   box: Rect;
   note: string;
+  /** What the version did about it: a picture-in-picture moved clear of
+   * the captions (clearCaptions), and how to place it otherwise. */
+  done?: string;
 }
+
+/** A collision with the share of the caption's letters' height it
+ * crosses, and the override that clears it, when one does. */
+type Collision = CaptionCollision & { depth: number; fix?: { y: number; scale: number } };
 
 /** What a layer shows of itself, in pixels: its box, or with a closed
  * mask (a porthole's circle) the mask's part of it. */
@@ -1683,10 +1839,14 @@ function visibleBox(q: Project, c: VisualClip, rel: number): Rect {
  * raises it clear. ADR-116.
  */
 export function captionCollisions(q: Project): CaptionCollision[] {
+  return collide(q).map(({ fix: _, depth: __, ...c }) => c);
+}
+
+function collide(q: Project): Collision[] {
   const captions = seenTexts(q).filter((s) => s.c.caption && !s.via.length);
   if (!captions.length) return [];
   const order = new Map(q.tracks.map((t, i) => [t.id, i]));
-  const out: CaptionCollision[] = [];
+  const out: Collision[] = [];
   const margin = 0.02 * Math.min(q.width, q.height);
   for (const [ti, t] of q.tracks.entries()) {
     // The main track's shots are what captions sit on, framed or not.
@@ -1712,7 +1872,10 @@ export function captionCollisions(q: Project): CaptionCollision[] {
         const k = tall > room ? Math.max(0.1, room / tall) : 1;
         const cy = q.height / 2 + y0 * q.height;
         const y = y0 + (letters.top - margin - (cy + (v.bottom - cy) * k)) / q.height;
-        const fix = room < tall * 0.25 ? "" : `an override {clip_id: "${c.id}", y: ${+y.toFixed(3)}${k < 1 ? `, scale: ${+k.toFixed(2)}` : ""}} puts it above the caption, or `;
+        // A callout (a ring, a pinned clip) points at what is under it:
+        // moving it would take it off that (ADR-122), so the captions move.
+        const pointer = !!anchorOf(c) || (c.type === "color" && c.shape?.fill === false);
+        const fix = pointer ? "it points at what is under it, so " : room < tall * 0.25 ? "" : `an override {clip_id: "${c.id}", y: ${+y.toFixed(3)}${k < 1 ? `, scale: ${+k.toFixed(2)}` : ""}} puts it above the caption, or `;
         const at = +framesToSeconds(f, q.fps).toFixed(2);
         out.push({
           clip_id: c.id,
@@ -1721,6 +1884,8 @@ export function captionCollisions(q: Project): CaptionCollision[] {
           layer,
           box: { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) },
           note: `${c.id} (${c.type === "color" ? "a shape" : c.type === "compound" ? "a compound clip" : "a picture"}) is drawn ${layer} the caption ${s.c.id} at ${at} s in this shape, across ${Math.round(h)} px of its letters: ${fix}move the captions (set_caption_look, or the version's overrides)`,
+          depth: h / Math.max(1, letters.bottom - letters.top),
+          ...(fix && !pointer ? { fix: { y: +y.toFixed(3), scale: +k.toFixed(2) } } : {}),
         });
         break;
       }
@@ -1729,12 +1894,214 @@ export function captionCollisions(q: Project): CaptionCollision[] {
   return out;
 }
 
+/** A picture-in-picture, as a version may move it: a video, a picture (not
+ * a sticker) or a floating window (a compound clip playing footage and no
+ * titles), alone: not part of a group (an ad element) or a layout's cut
+ * cell (a split screen's half), which keep their designed places. */
+function isInset(q: Project, c: Clip): boolean {
+  if (c.group || c.disabled) return false;
+  if (c.type === "video" || c.type === "image") {
+    const k = c.crop;
+    return k.left + k.right + k.top + k.bottom < 0.002 && !(c.type === "image" && getAsset(q, c.assetId)?.sticker);
+  }
+  if (c.type !== "compound") return false;
+  const inside = (id: Id, depth = 0): Clip[] => (depth > 4 ? [] : (findCompound(q, id)?.tracks ?? []).flatMap((t) => t.clips.flatMap((x) => (x.type === "compound" ? [x, ...inside(x.compoundId, depth + 1)] : [x]))));
+  const all = inside(c.compoundId);
+  return all.some((x) => x.type === "video" || (x.type === "image" && !getAsset(q, x.assetId)?.sticker)) && !all.some((x) => x.type === "text");
+}
+
+/**
+ * A version's pictures-in-picture kept clear of its burned captions, as
+ * tall versions keep titles and cards above them (ADR-118): one that
+ * crosses a caption's letters in this shape, where the master kept it
+ * clear (`master`: the master with the captions as the version burns
+ * them), is moved by the override the collision names (up, and smaller
+ * when it would leave the frame), unless the version's overrides place it
+ * (`keep`). Designed layouts (a group, a card, a shape, a split screen's
+ * cell) are left where the layout puts them and only named. Claude film
+ * test 2's porthole sat under the 16:9 version's captions until the
+ * tester moved it by hand. `moved` hears each, with what was done.
+ */
+export function clearCaptions(master: Project, q: Project, keep = new Set<Id>(), moved: CaptionCollision[] = []): Project {
+  // What the master draws across its captions is its design; a touch (a
+  // ring grazing the letters' outline, under a quarter of their height) is
+  // not (the film's porthole grazed its caption by 7 px).
+  const was = new Set(collide(master).filter((x) => x.depth >= 0.25).map((x) => x.clip_id));
+  const done = new Map<Id, { hit: CaptionCollision; y: number; scale: number }>();
+  const root = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  // A fix is measured at one moment; a taller caption later may need a second.
+  for (let i = 0; i < 3; i++) {
+    const hits = collide(q).filter((h) => h.fix && !was.has(h.clip_id) && !keep.has(h.clip_id) && isInset(q, root.get(h.clip_id)!));
+    if (!hits.length) break;
+    q = applyOverrides(q, hits.map((h) => ({ clip_id: h.clip_id, y: h.fix!.y, scale: h.fix!.scale })));
+    for (const { fix, depth: _, ...h } of hits) {
+      const before = done.get(h.clip_id);
+      done.set(h.clip_id, { hit: before?.hit ?? h, y: fix!.y, scale: (before?.scale ?? 1) * fix!.scale });
+    }
+  }
+  const now = new Map(q.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  for (const { hit, y, scale } of done.values()) {
+    const s = +scale.toFixed(2);
+    // Where it shows now, for the check sheet's outline.
+    const c = now.get(hit.clip_id) as VisualClip, v = visibleBox(q, c, secondsToFrames(hit.at, q.fps) - c.start);
+    const box = { left: Math.round(v.left), top: Math.round(v.top), right: Math.round(v.right), bottom: Math.round(v.bottom) };
+    // The note says what it was; done what the version did.
+    const note = `${hit.note.replace(" is drawn ", " was drawn ").replace(/: .*$/, "")}, where the master keeps it clear`;
+    moved.push({ ...hit, box, note, done: `moved clear of the captions in this version: y ${y}${s < 1 ? `, ${s} times its size` : ""}; an override {clip_id: "${hit.clip_id}", y, scale} places it otherwise` });
+  }
+  return q;
+}
+
+// ---- what a version says about itself (ADR-123) ---------------------------------------
+
+export type { OptionNote } from "./reframe";
+
+/** Footage a version shows much smaller in its frame than the master did:
+ * a picture floating in black (ADR-123). */
+export interface CoverageReport {
+  clip_id: Id;
+  /** Version seconds: its worst moment. */
+  at: number;
+  /** The share of the frame footage covers there, in the version and in
+   * the master at the same moment of the clip. */
+  covered: number;
+  master: number;
+  note: string;
+}
+
+/** What a version says besides its subjects, captions and callouts: what
+ * became of the caller's focus, pushes and overrides, and footage that
+ * covers much less of its frame than of the master's. */
+export interface VersionSays {
+  options: OptionNote[];
+  coverage: CoverageReport[];
+}
+
+/** Why a focus named a clip this version did not frame by it. */
+function focusMissed(m: Project, v: VersionSpec, id: Id, reshaped: boolean): string {
+  const c = m.tracks.flatMap((t) => t.clips).find((x) => x.id === id);
+  const inside = !c && timelines(m).some(({ tracks }) => tracks.some((t) => t.clips.some((x) => x.id === id)));
+  if (inside) return `${id} is inside a compound clip: focus frames footage on the project's timeline (the compound clip is the picture there); overrides {clip_id: "${id}", x, y, scale} place it`;
+  if (!c) return `no clip ${id} in this version${v.duration !== undefined ? " (the cut-down may have cut it out)" : ""}: focus takes describe_project's clip ids`;
+  if (!reshaped) return `this version keeps the master's shape, so nothing is cropped and the focus on ${id} changes nothing`;
+  if (c.type !== "video" && c.type !== "image") return `${id} is a ${c.type === "text" ? "title" : c.type === "color" ? "shape or solid" : c.type === "compound" ? "compound clip" : c.type + " clip"}, not footage a version crops: overrides {clip_id: "${id}", x, y} place it`;
+  if ((v.fit ?? "fill") !== "fill" && fillsFrame(m, c)) return `focus frames what fit "fill" crops; with fit "${v.fit}" this version scales ${id} about the master's framing and the focus changes nothing`;
+  return `${id} neither fills the master's frame nor spans it edge to edge (a picture-in-picture or a window), so this version places it as an overlay at its size: overrides {clip_id: "${id}", x, y, scale} place it`;
+}
+
+/**
+ * The share of a frame its footage covers at timeline frame f: videos and
+ * pictures (not stickers) on the visible tracks of the timeline, at least
+ * half opaque, by what they show (a closed mask's part), on a grid of
+ * points; a picture over a blurred copy of itself (fit "blur") covers it
+ * all. ponytail: footage inside compound clips is not counted.
+ */
+function footageCover(p: Project, f: number): number {
+  const boxes: Rect[] = [];
+  for (const t of p.tracks) {
+    if (t.kind !== "video" || t.hidden) continue;
+    for (const c of t.clips) {
+      if (c.disabled || f < c.start || f >= c.start + c.duration) continue;
+      if ((c.type !== "video" && c.type !== "image") || (c.type === "image" && getAsset(p, c.assetId)?.sticker)) continue;
+      if (c.canvas?.type === "blur") return 1;
+      if (paramAt(c, "opacity", f - c.start) < 0.5) continue;
+      boxes.push(visibleBox(p, c, f - c.start));
+    }
+  }
+  const N = 24;
+  let hit = 0;
+  for (let i = 0; i < N; i++)
+    for (let j = 0; j < N; j++) {
+      const x = ((i + 0.5) / N) * p.width, y = ((j + 0.5) / N) * p.height;
+      if (boxes.some((b) => x >= b.left && x <= b.right && y >= b.top && y <= b.bottom)) hit++;
+    }
+  return hit / (N * N);
+}
+
+/** A clip's own box on its frame at its frame rel, clipped to the frame, as
+ * a share of it. */
+function ownShare(p: Project, c: VisualClip, rel: number): number {
+  const b = visibleBox(p, c, rel);
+  const w = Math.max(0, Math.min(b.right, p.width) - Math.max(b.left, 0)), h = Math.max(0, Math.min(b.bottom, p.height) - Math.max(b.top, 0));
+  return (w * h) / (p.width * p.height);
+}
+
+/**
+ * Footage version q shows floating in its frame where master p filled it
+ * (ADR-123): every half second of q, the share of the frame its footage
+ * covers against the master's at the same moment of the largest picture
+ * showing; one report a clip, at its worst moment, where the version's
+ * share is under 0.7 and 0.15 or more under the master's. Claude film test
+ * 4's fitted interface shots came out as small pictures in black on 16:9
+ * and nothing said so.
+ */
+export function coverageReports(p: Project, q: Project, fit: VersionFit = "fill"): CoverageReport[] {
+  const master = new Map(p.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+  const step = Math.max(1, secondsToFrames(0.5, q.fps));
+  const worst = new Map<Id, { f: number; cv: number; cm: number; c: VisualClip; m: VisualClip }>();
+  for (let f = 0; f < projectDuration(q); f += step) {
+    const showing = q.tracks
+      .filter((t) => t.kind === "video" && !t.hidden)
+      .flatMap((t) => t.clips)
+      .filter((c): c is VideoClip | ImageClip => !c.disabled && f >= c.start && f < c.start + c.duration && (c.type === "video" || (c.type === "image" && !getAsset(q, c.assetId)?.sticker)));
+    if (!showing.length) continue;
+    const c = showing.reduce((a, b) => (ownShare(q, b, f - b.start) > ownShare(q, a, f - a.start) ? b : a));
+    const m = master.get(c.id) as VisualClip | undefined;
+    if (!m || f - c.start >= m.duration) continue;
+    const cv = footageCover(q, f), cm = footageCover(p, m.start + f - c.start);
+    if (cv >= 0.7 || cm - cv < 0.15) continue;
+    const was = worst.get(c.id);
+    if (!was || cv < was.cv) worst.set(c.id, { f, cv, cm, c, m });
+  }
+  return [...worst.values()].map(({ f, cv, cm, c, m }) => {
+    const at = +framesToSeconds(f, q.fps).toFixed(2);
+    const own = ownShare(q, c, f - c.start), was = ownShare(p, m, f - c.start);
+    const k = +Math.sqrt(was / Math.max(1e-6, own)).toFixed(2);
+    const shot = fillsFrame(p, m);
+    const fix =
+      shot && fit !== "fill" ? `fit "${fit}" shows it whole; fit "fill" (the default) crops it to cover the frame, "blur" fills around it`
+      : shot ? `an override {clip_id: "${c.id}", scale: ${k}} enlarges it`
+      : `this version places it as a picture-in-picture at its size against the frame's short side: an override {clip_id: "${c.id}", scale: ${k}} gives it the share it had`;
+    return { clip_id: c.id, at, covered: +cv.toFixed(2), master: +cm.toFixed(2), note: `footage covers ${Math.round(cv * 100)}% of this frame at ${at} s (${Math.round(cm * 100)}% of the master's), ${c.id} floating in the empty rest: ${fix}` };
+  });
+}
+
+/**
+ * After the overrides: what points into a picture an override moved or
+ * resized (a ring, a spotlight's hole, anything pinned to it) follows it
+ * there, unless an override placed that too (ADR-123). The overrides came
+ * after the callouts were written, so Claude film test 4's rings stayed
+ * where the picture had been.
+ */
+function carryPinned(master: Project, q: Project, list: VersionOverride[], said: OptionNote[]): Project {
+  const hand = new Set(list.map((o) => o.clip_id));
+  const moved = new Set(list.filter((o) => o.x !== undefined || o.y !== undefined || o.scale !== undefined).map((o) => o.clip_id));
+  const riders = calloutsOf(master).filter((k) => k.follows && k.shot && moved.has(k.shot) && !hand.has(k.id));
+  if (!riders.length) return q;
+  const placed = followCallouts(master, q, riders.filter((k) => !k.anchored));
+  // reanchor writes every pinned clip: those an override placed keep it.
+  const kept = new Map(placed.tracks.flatMap((t) => t.clips).filter((c) => hand.has(c.id) && anchorOf(c)).map((c) => [c.id, c] as const));
+  const out = reanchor(placed);
+  for (const shot of moved) {
+    const ids = riders.filter((k) => k.shot === shot).map((k) => k.id);
+    if (ids.length) said.push({ option: "overrides", clip_id: shot, note: `${ids.join(", ")} (pointing into ${shot}) moved with it, on what ${ids.length > 1 ? "they point" : "it points"} at` });
+  }
+  return kept.size ? { ...out, tracks: out.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => kept.get(c.id) ?? c) })) } : out;
+}
+
 /** One version of the master: cut down, reshaped, textless, as asked.
  * `keepEnd` frames of the end are kept in a cut-down (default: the end
  * card's length when the master has one). `looks` frame cropped footage on
- * its subject; `notes` collects where a framing cuts one. */
-export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[]): Project {
+ * its subject; `notes` collects where a framing cuts one; `moved` the
+ * pictures-in-picture moved clear of the captions (clearCaptions);
+ * `callouts` the rings, spotlights and pinned clips it leaves off the frame
+ * or off what they point at (ADR-122); `says` what became of the focus,
+ * pushes and overrides, and footage left floating (ADR-123). */
+export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, looks?: Looks, notes?: SubjectNote[], moved?: CaptionCollision[], callouts?: CalloutReport[], says?: VersionSays): Project {
   let q = p;
+  // A focus path's times as frames of its clip, before a cut-down moves it.
+  const starts = new Map(p.tracks.flatMap((t) => t.clips.map((c) => [c.id, c.start] as const)));
+  const focus = v.focus?.map((f) => (f.at === undefined || !starts.has(f.clip_id) ? f : { ...f, rel: secondsToFrames(f.at, p.fps) - starts.get(f.clip_id)! }));
   if (v.duration !== undefined) {
     const frames = Math.max(1, secondsToFrames(v.duration, p.fps));
     const card = endCardStart(p);
@@ -1742,10 +2109,21 @@ export function versionProject(p: Project, v: VersionSpec, keepEnd?: number, loo
   }
   const [rw, rh] = v.ratio === "original" ? [p.width, p.height] : v.ratio.split(":").map(Number);
   q = versionCaptions(q, v.captions ?? (rh > rw ? "burn" : "as_project"));
-  q = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus: v.focus, notes, pushes: v.pushes });
+  const master = q;
+  const said: OptionNote[] = [], framed: Id[] = [], eased: Id[] = [];
+  const shaped = reshape(q, v.ratio, v.fit ?? "fill", { looks, reframe: v.reframe, focus, notes, pushes: v.pushes, said, framed, eased });
+  q = shaped === q || v.textless ? shaped : clearCaptions(q, shaped, new Set((v.overrides ?? []).map((o) => o.clip_id)), moved);
   if (v.textless) q = textless(q);
-  // By hand, last: the version's overrides.
-  if (v.overrides?.length) q = applyOverrides(q, v.overrides);
+  // By hand, last: the version's overrides, and what points into a picture they move.
+  if (v.overrides?.length) q = carryPinned(master, applyOverrides(q, v.overrides), v.overrides, said);
+  if (callouts && shaped !== master) callouts.push(...calloutReports(master, q));
+  if (says) {
+    // A focus or a push that changed nothing says why (ADR-123).
+    for (const id of new Set((v.focus ?? []).map((f) => f.clip_id))) if (!framed.includes(id)) said.unshift({ option: "focus", clip_id: id, note: focusMissed(master, v, id, shaped !== master) });
+    if (v.pushes && v.pushes !== "keep" && !eased.length) said.push({ option: "pushes", note: shaped === master ? `this version keeps the master's shape, so pushes "${v.pushes}" changes nothing` : `pushes "${v.pushes}" changed nothing: no shot this version crops or fits has a keyed zoom (frame_region moves, or keys on transform.scale)` });
+    says.options.push(...said);
+    if (shaped !== master) says.coverage.push(...coverageReports(master, q, v.fit ?? "fill"));
+  }
   return { ...q, name: versionName(p.name, v) };
 }
 

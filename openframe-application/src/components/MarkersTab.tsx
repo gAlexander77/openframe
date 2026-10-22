@@ -1,9 +1,10 @@
 import { EmptyState } from "./EmptyState";
 import { useEffect, useRef, useState } from "react";
-import { Bookmark, ChevronLeft, ChevronRight, Download, Plus, Search, Trash2 } from "../icons";
+import { Bookmark, ChevronLeft, ChevronRight, Download, Link2, Plus, Search, Trash2, Unlink2 } from "../icons";
 import { runCommand } from "../lib/commands";
 import { adjacentMarker, filterMarkers } from "../lib/markers";
-import type { Marker } from "../lib/project/types";
+import { allTracks, getAsset } from "../lib/project/ops";
+import type { Id, Marker, Project } from "../lib/project/types";
 import { formatTimecode, framesToSeconds, parseTimecode, type Rational } from "../lib/time";
 import { run, tipFor } from "../state/actions";
 import { openMarkers } from "../state/markers";
@@ -17,8 +18,18 @@ const COLORS = [
 ] as const;
 const colorName = (color: string) => COLORS.find(([v]) => v === color)?.[1] ?? color;
 
+/** The name of the clip a marker follows (ADR-119): its own name, else its
+ * file's; inside a compound clip too, where a song's markers follow it. */
+function clipName(p: Project, id: Id): string | undefined {
+  const c = allTracks(p).flatMap((t) => t.clips).find((x) => x.id === id);
+  if (!c) return undefined;
+  return c.name ?? ("assetId" in c ? getAsset(p, c.assetId)?.name : undefined) ?? "a clip";
+}
+
 export function MarkersTab() {
   const markers = useEditor((s) => s.project.markers);
+  const project = useEditor((s) => s.project);
+  const nameOf = (id: Id) => clipName(project, id);
   const fps = useEditor((s) => s.project.fps);
   const frame = useEditor((s) => s.playhead);
   const selected = useEditor((s) => s.markerEdit);
@@ -28,7 +39,7 @@ export function MarkersTab() {
   const listRef = useRef<HTMLDivElement>(null);
   const colors = [...new Set(markers.map((m) => m.color))];
   const activeColor = colors.includes(color) ? color : "";
-  const list = filterMarkers(markers, fps, query, activeColor);
+  const list = filterMarkers(markers, fps, query, activeColor, nameOf);
   const current = markers.find((m) => m.id === selected);
   const prev = adjacentMarker(markers, frame, -1);
   const next = adjacentMarker(markers, frame, 1);
@@ -71,21 +82,26 @@ export function MarkersTab() {
       </div>
       <div className="marker-list" aria-label="Timeline markers" ref={listRef}>
         {!list.length && <EmptyState icon={<Bookmark size={24} />} title={markers.length ? "No markers match" : "No markers yet"} hint={markers.length ? "Clear the search or color filter." : "Add a marker at the playhead for chapters, beats or editing notes."} />}
-        {list.map((m) => <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
-          <button className="marker-jump" aria-label={`Go to ${m.label || "Untitled marker"} at ${formatTimecode(m.frame, fps)}`} aria-pressed={selected === m.id} onClick={() => openMarkers(m.id)}>
+        {list.map((m) => {
+          // A marker on a clip moves with it; the timeline's own stay put.
+          const on = m.follows ? nameOf(m.follows.clip) : undefined;
+          return <div className={`marker-row${selected === m.id ? " on" : ""}`} key={m.id}>
+          <button className="marker-jump" aria-label={`Go to ${m.label || "Untitled marker"} at ${formatTimecode(m.frame, fps)}${on ? `, on ${on}` : ""}`} aria-pressed={selected === m.id} onClick={() => openMarkers(m.id)}>
             <i className="marker-dot" style={{ background: m.color }} />
-            <span className="marker-note"><span data-cut>{m.label || "Untitled marker"}</span><small className="num">{formatTimecode(m.frame, fps)}</small></span>
+            <span className="marker-note"><span data-cut>{m.label || "Untitled marker"}</span><small className="num">{formatTimecode(m.frame, fps)}{on && <span className="marker-follows"><Link2 size={11} /> {on}</span>}</small></span>
           </button>
+          {m.follows && <button className="icon-btn small" aria-label={`Detach ${m.label || "untitled marker"} from ${on ?? "its clip"}`} data-tip="Detach from its clip: it stays here" onClick={() => store.edit("Detach marker", (p) => runCommand(p, "update_marker", { marker_id: m.id, detach: true }))}><Unlink2 size={13} /></button>}
           <button className="icon-btn small" aria-label={`Delete ${m.label || "untitled marker"}`} data-tip="Delete marker" onClick={() => store.edit("Delete marker", (p) => runCommand(p, "delete_markers", { marker_ids: [m.id] }))}><Trash2 size={13} /></button>
-        </div>)}
+        </div>;
+        })}
       </div>
-      {current && <MarkerEditor key={`${current.id}:${current.frame}:${current.label}:${current.color}`} marker={current} fps={fps} />}
+      {current && <MarkerEditor key={`${current.id}:${current.frame}:${current.label}:${current.color}`} marker={current} fps={fps} on={current.follows ? nameOf(current.follows.clip) : undefined} />}
       {exporting && <MarkerExport markers={list} onClose={() => setExporting(false)} />}
     </div>
   );
 }
 
-function MarkerEditor({ marker, fps }: { marker: Marker; fps: Rational }) {
+function MarkerEditor({ marker, fps, on }: { marker: Marker; fps: Rational; on?: string }) {
   const [label, setLabel] = useState(marker.label);
   const [time, setTime] = useState(formatTimecode(marker.frame, fps));
   const [color, setColor] = useState(marker.color);
@@ -104,7 +120,7 @@ function MarkerEditor({ marker, fps }: { marker: Marker; fps: Rational }) {
     }}>
       <label>Note<input className="field" aria-label="Marker note" value={label} onChange={(e) => setLabel(e.target.value)} /></label>
       <label>Position<input className="field num" aria-label="Marker position" aria-invalid={!valid} aria-describedby="marker-time-hint" value={time} onChange={(e) => setTime(e.target.value)} /></label>
-      <p className="lib-hint" id="marker-time-hint">{valid ? "Timecode or seconds with s, for example 12.5s." : "Enter a valid nonnegative timecode or seconds with s."}</p>
+      <p className="lib-hint" id="marker-time-hint">{valid ? "Timecode or seconds with s, for example 12.5s." : "Enter a valid nonnegative timecode or seconds with s."}{valid && on ? ` It moves with ${on}; a new position detaches it.` : ""}</p>
       <div className="marker-palette" role="group" aria-label="Marker color">
         {COLORS.map(([value, name]) => <button type="button" key={value} aria-label={name} aria-pressed={color === value} data-tip={name} onClick={() => setColor(value)} style={{ background: value }} />)}
       </div>

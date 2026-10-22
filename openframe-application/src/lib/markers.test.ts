@@ -53,6 +53,19 @@ describe("timeline marker management", () => {
     expect(p.markers[0].id).toBe("later");
   });
 
+  it("detaches a marker from its clip where it stands, and finds following markers by their clip's name", () => {
+    const p = { ...project(), markers: [...project().markers, { id: "bar", frame: 60, label: "Bar", color: "amber", follows: { clip: "c_song", at: 2 } }] };
+    const free = updateMarker(p, "bar", { detach: true });
+    expect(free.markers.find((m) => m.id === "bar")).toEqual({ id: "bar", frame: 60, label: "Bar", color: "amber" });
+    // Nothing to detach: no edit.
+    expect(updateMarker(free, "bar", { detach: true })).toBe(free);
+    expect(updateMarker(p, "beat", { detach: true })).toBe(p);
+    expect(runCommand(p, "update_marker", { marker_id: "bar", detach: true }).markers.find((m) => m.id === "bar")?.follows).toBeUndefined();
+    const name = (id: string) => (id === "c_song" ? "Liftoff.wav" : undefined);
+    expect(filterMarkers(p.markers, p.fps, "liftoff", "", name).map((m) => m.id)).toEqual(["bar"]);
+    expect(filterMarkers(free.markers, p.fps, "liftoff", "", name)).toEqual([]);
+  });
+
   it("navigates unsorted and coincident markers without getting stuck", () => {
     const markers = [...project().markers, { id: "duplicate", frame: 30, label: "Other note", color: "red" }];
     expect(adjacentMarker(markers, 0, 1)?.id).toBe("beat");

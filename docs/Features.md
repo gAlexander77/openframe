@@ -119,7 +119,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. **Delete shown** removes what the search and
-  color filter show (a run of beat markers, say) in one undo step.
+  color filter show (a run of beat markers, say) in one undo step. A
+  marker that follows a clip (a song's beats) names its clip and can be
+  detached; search finds it by the clip's name
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
   Double-click a ruler flag to edit it. Markers
   beyond the last clip remain reachable without extending export duration.
 - **Export marker text:** preview and save the displayed notes as exact
@@ -238,6 +241,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   a transition dropped on the join of two audio clips makes the same
   crossfade
   ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
+  A song's clip menu has **Cut bars**: the In to Out range on the song's
+  nearest bar lines, through `cut_music`, named with its count
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Track header**: Solo on audio tracks (while any track is soloed, only
   soloed tracks sound); right-click for Rename (or double-click), Solo,
   Track volume and pan (a dB fader and a pan slider added to each clip's
@@ -309,7 +315,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   picture, rotated and mirrored with it: drag inside to move it, the edge
   handles to size it, the knob to turn it (45° catches; Ctrl turns
   freely), the arrow to feather it and a rectangle's corner dot to round
-  it. Each drag is one undo step and keys animated numbers.
+  it. Each drag is one undo step and keys animated numbers. `set_mask`
+  with `at` keys the values it is given there, from what the mask held at
+  the clip's start ([[ADR-120 Callouts and overlays pinned to footage, and frame_region moves]]).
 - On-canvas handles: move, scale, rotate. A moved picture snaps its edges
   and center to the canvas's and to other visible pictures', and to the
   safe margins and thirds while those viewer guides show, with a guide at
@@ -407,6 +415,20 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   edits them; the timeline names the clip after its shape. The pieces of
   lower thirds, callouts, CTA buttons and end cards (`add_shape`,
   `set_shape`).
+- **Callouts** (ADR-120): a ring, box or rounded box that draws on around
+  a part of a screen recording or shot, the rest of the frame dimmed
+  through a hole the same shape, both pinned to that clip's picture, so
+  they stay on the part through its zooms and pans and glide on to other
+  parts; an optional click as the ring draws on. Two grouped shape
+  layers (the dim under the ring) that edit like any shape. Library >
+  Adjustment > Callout adds one on the video under the playhead; drag the
+  ring onto its part and the hole goes with it (`add_callout`).
+- **Pinned to footage** (ADR-120): a title, shape or sticker pinned to a
+  point of a clip's picture follows that clip's position, scale and keys,
+  frame_region's zooms included, through every later edit; moved by hand
+  it is pinned where it lands. Animation > Tracking shows what a layer is
+  pinned to, with Pin to footage and Unpin (`anchor` on `add_text` and
+  `add_shape`, `set_anchor`).
 - **Soft light** (ADR-069): a shape's **radial gradient** (from the
   center to its rim, an ellipse fitting the box, with a center and
   radius that keyframe) and **feather** (the shape blurred: the edge fades
@@ -634,6 +656,9 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   and `add_captions`' default style, is sized by the short side: a caption
   has the same pixels on 1080x1920 as on 1920x1080, instead of growing
   with the height to a dozen letters a line (a size asked for is kept).
+  The same command moves, sizes and narrows every caption at once (`y`,
+  `x`, `size`, `maxWidth`, and any other style field), over a look or on
+  its own (ADR-124).
 - **Saved styles** (CapCut's Save as preset for text, Premiere's Text
   Styles): Text tab > Saved styles keeps a title's whole look under a
   name, in this viewer's storage so it is there in every project; a chip
@@ -826,6 +851,12 @@ makes a 13 s one). Times are timeline seconds.
   and its parts, kept with the file; every later reading, `mark_beats` and
   `check_project` use it, and its markers are placed at once
   ([[ADR-101 A song's markers follow its clip, its grid can be given, and designed layouts refit as designed]]).
+  A person gives and corrects it in the Audio tab's **Beat grid**:
+  **Detect** keeps the reading as one fitted tempo and downbeat, drawn on
+  the clip as beat dots and bar lines; the tempo typed or tapped, the
+  downbeat nudged 10 ms or set at the playhead, parts added on the bar
+  nearest the playhead, each through `set_music_grid`
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Cut to the beat** (`cut_to_beats`): a list of shots laid end to end on
   the main track, every cut on a beat, bar or phrase (or the agent's own
   times): N beats a shot, a pattern such as 4, 4, 2, 2, 1, 1 that speeds
@@ -1034,7 +1065,13 @@ makes a 13 s one). Times are timeline seconds.
   The versions are built from the master as separate documents, so the
   project in the editor never changes; `check` answers one contact sheet
   of them all first (`check_at` picks the moments). Seven 480p versions of
-  a 5 s ad took 4.4 s headless.
+  a 5 s ad took 4.4 s headless. A shot fitted with bands (a widescreen
+  screen recording in a 9:16 master) is footage a version reframes, at
+  its pixels against the short side and covering the new frame; `focus`
+  points with `at` make a path; every answer says what became of
+  `focus`, `pushes` and `overrides` (`options`), an override on a shot
+  carries its rings, and footage left floating small is named
+  (`coverage`) ([[ADR-123 Fitted shots are footage a version reframes, and framing knobs act or say why]]).
 - **A whole ad through MCP alone**: `scripts/drive/ad-spot.js` makes a
   15 s spot with 27 tool calls (brand, push-in, kinetic headline, title
   behind the roaster, lower third, offer, end card, faded music), checks
@@ -1119,6 +1156,10 @@ makes a 13 s one). Times are timeline seconds.
   marks the check out of date; Export shows the last check's counts and
   leads to it, without blocking the export
   ([[ADR-111 A person checks the project, Space presses what the keyboard reached, and a transition on sound crossfades]]).
+  It hears where audio clips meet (each join on its own track, up to 24):
+  a tick, dropout or click, or a sound cut off, with the clip menu's
+  crossfade as the fix
+  ([[ADR-119 A person corrects a song's grid and cuts its bars, markers say what they follow, and the check hears its joins]]).
 - **Previews drawn by the engine**: filter, effect, transition and text
   cards show the real shaders and text rasterizer on a generated sample
   shot, or on the selected clip's own frame; effects, transitions and
@@ -1174,7 +1215,10 @@ Three doors, one engine ([[Automation]]):
   resources and a full `list_catalog`; [[MCP tools]] is the generated
   reference. Edits answer with only what they changed; `batch` runs
   many as one undo step; `frame_region` zooms a shot onto a rectangle of
-  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]).
+  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
+  through any number of moves in one call (`moves`, ADR-120), each
+  region centered on any canvas point at any zoom with `place_at`
+  (ADR-123).
   Every answer names the tool set it came from, so the stdio bridge tells
   a connected client (`notifications/tools/list_changed`) when a newer
   build brings other tools; over HTTP the client reconnects ([[Automation]]).
@@ -1196,7 +1240,9 @@ Three doors, one engine ([[Automation]]):
   shots on the busiest picture track
   ([[ADR-068 check_project measures the picture and the sound it judges]]);
   an audio clip cut off before the end while it still sounds, with no
-  fade, is a warning (`sound_cut_off`, ADR-100).
+  fade, is a warning (`sound_cut_off`, ADR-100); so is a hole, a click
+  or a sound cut off where two audio clips meet, each join played on its
+  own track (`click_at_join`, `sound_cut_at_join`, ADR-119).
 - Workflow commands: `relink_media`, `remove_media`, `edit_media_folder`, `organize_media`,
   `apply_effect_preset`, `paste_attributes`.
 - Layout commands: `align_clips` (with a `margin`, so titles of any width

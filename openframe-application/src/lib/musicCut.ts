@@ -8,7 +8,7 @@
 // of two audio clips.
 
 import { cutRanges } from "./project/cut";
-import { clipEnd, findClip, updateClip } from "./project/ops";
+import { clipEnd, findClip, splitClip, updateClip } from "./project/ops";
 import type { AudioClip, Clip, Id, Project } from "./project/types";
 import { framesToSeconds } from "./time";
 
@@ -115,4 +115,63 @@ export function cutMusic(p: Project, o: MusicCut): { project: Project; from: num
   if (crossfade > 0) q = setCrossfade(q, a.id, Math.min(crossfade, inB, framesToSeconds(a.duration, p.fps) / 2, framesToSeconds(b.duration, p.fps) / 2));
   const x = (findClip(q, a.id)!.clip as AudioClip).crossfade ?? 0;
   return { project: q, from, to, join: { at: framesToSeconds(clipEnd(a), p.fps), clips: [a.id, b.id], crossfade: x } };
+}
+
+/**
+ * cut_music with repeat: play [from, to) of the song's file `times` more
+ * times right after it plays it, instead of cutting it out, each end on
+ * the nearest bar line as a cut takes them. The song grows by whole bars
+ * (`to - from` a time), its later part playing that much later, and every
+ * clip after it on its track moves with it. Each jump back stops the piece
+ * before on the frame at or before the bar line and starts the next piece
+ * as far before its own downbeat, as a cut's join does, so the beat runs
+ * on exactly; each is crossfaded. The fourth film test built a repeat of
+ * four bars by hand from two clips, cut_music only taking bars out
+ * (ADR-125).
+ */
+export function repeatMusic(p: Project, o: MusicCut & { times: number }): { project: Project; from: number; to: number; joins: { at: number; clips: [Id, Id]; crossfade: number }[]; moved: number } {
+  const loc = findClip(p, o.clip_id);
+  if (!loc) throw new MusicCutError(`no clip with id ${o.clip_id}`);
+  const c = loc.clip;
+  if (c.type !== "audio") throw new MusicCutError(`${c.type} clips are not songs here: give the music's audio clip`);
+  if (loc.track.locked) throw new MusicCutError(`track ${loc.track.name} is locked`);
+  if (c.speed !== 1 || c.speedCurve || c.reverse || c.freeze) throw new MusicCutError("cut_music needs the song at its own speed, forward");
+  if (!(Number.isInteger(o.times) && o.times >= 1 && o.times <= 16)) throw new MusicCutError("repeat is a whole number of times, 1 to 16");
+  const asset = p.assets.find((a) => a.id === c.assetId);
+  const snap = o.snap ?? "bar";
+  if (snap !== "none" && !asset?.musicGrid) throw new MusicCutError("the song has no grid to repeat on: set_music_grid first (bpm and a bar's first beat, in the file's seconds; analyze_music reads them), or snap none");
+  const line = (t: number) => (snap === "none" ? t : nearestLine(asset!.musicGrid!, t, snap));
+  const rate = p.fps.num / p.fps.den;
+  const out = c.in + framesToSeconds(c.duration, p.fps);
+  const from = Math.max(c.in, line(o.from)), to = Math.min(out, line(o.to));
+  if (!(to - from >= 1 / rate)) throw new MusicCutError(`nothing to repeat: ${o.from}-${o.to} s snaps to ${+from.toFixed(3)}-${+to.toFixed(3)} s of the file, which the clip plays ${+c.in.toFixed(3)}-${+out.toFixed(3)}`);
+  if (!((to - c.in) * rate >= 1)) throw new MusicCutError(`the clip must play at least a frame before ${+to.toFixed(3)} s of its file to repeat up to it`);
+  const crossfade = o.crossfade ?? MUSIC_CROSSFADE;
+  if (!(crossfade >= 0 && crossfade <= MAX_CROSSFADE)) throw new MusicCutError(`crossfade is 0 to ${MAX_CROSSFADE} seconds`);
+  const len = to - from;
+  const trackId = loc.track.id;
+  const oldEnd = clipEnd(c);
+  let q = p;
+  let piece: AudioClip = c;
+  const joins: { at: number; clips: [Id, Id]; crossfade: number }[] = [];
+  for (let k = 0; k < o.times; k++) {
+    // The piece playing `to` now: stop it at the frame at or before it.
+    const stopAt = piece.in + Math.floor((to - piece.in) * rate + 1e-6) / rate;
+    const split = piece.start + Math.round((stopAt - piece.in) * rate);
+    const inB = Math.max(0, stopAt - len);
+    const pieceOut = piece.in + framesToSeconds(piece.duration, p.fps);
+    const end = split + Math.round((pieceOut - inB) * rate);
+    const grow = end - clipEnd(piece);
+    // Everything after it on its track moves later by what it grows.
+    const track = q.tracks.find((t) => t.id === trackId)!;
+    for (const x of [...track.clips].filter((x) => x.start >= clipEnd(piece) && x.id !== piece.id).sort((a, b) => b.start - a.start)) q = updateClip(q, x.id, (y) => ({ ...y, start: y.start + grow }) as Clip);
+    q = splitClip(q, piece.id, split);
+    const next = q.tracks.find((t) => t.id === trackId)!.clips.find((x) => x.start === split && x.type === "audio" && x.assetId === c.assetId) as AudioClip;
+    q = updateClip(q, next.id, (y) => ({ ...y, in: +inB.toFixed(6), duration: end - split }) as Clip);
+    const seconds = Math.min(crossfade, inB, framesToSeconds(split - piece.start, p.fps) / 2, framesToSeconds(end - split, p.fps) / 2);
+    if (seconds > 0) q = setCrossfade(q, piece.id, seconds);
+    joins.push({ at: framesToSeconds(split, p.fps), clips: [piece.id, next.id], crossfade: (findClip(q, piece.id)!.clip as AudioClip).crossfade ?? 0 });
+    piece = findClip(q, next.id)!.clip as AudioClip;
+  }
+  return { project: q, from, to, joins, moved: framesToSeconds(clipEnd(piece) - oldEnd, p.fps) };
 }

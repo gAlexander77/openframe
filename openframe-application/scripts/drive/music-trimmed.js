@@ -18,7 +18,7 @@ async (page) => {
       return JSON.parse(res.result.content[0].text);
     };
     // The launch promo's form: intro 0-4, build 4-8, drop 8, breakdown 32-36, drop 36, outro 48-56.
-    const score = await call("generate_music", { style: "launch", bpm: 120, seed: 7, sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", bars: 12 }, { name: "breakdown", bars: 2 }, { name: "drop", bars: 6 }, { name: "outro", bars: 4 }] });
+    const score = await call("generate_music", { style: "launch", bpm: 120, seed: 7, detail: "full", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", bars: 12 }, { name: "breakdown", bars: 2 }, { name: "drop", bars: 6 }, { name: "outro", bars: 4 }] });
     const whole = await call("analyze_music", { clip_id: score.clip_id });
     // Source 0-32 from timeline 0, as the documentary cut it.
     await call("trim_clip", { clip_id: score.clip_id, edge: "end", to: 32 });

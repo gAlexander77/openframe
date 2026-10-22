@@ -1,5 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fromDb, toDb } from "../lib/audio";
+import { gridTicks } from "../lib/beatGrid";
 import { isTimed, setParam, sourceOffset } from "../lib/project/ops";
 import { store } from "../state/store";
 import { editOnCanvas } from "../state/textEdit";
@@ -222,6 +223,12 @@ export const ClipView = memo(function ClipView(p: Props) {
     [v, x0, visW, zoom, c, waveH, p.compound, showWave],
   );
 
+  // A song's beat grid on its clip (ADR-119), CapCut's beat dots: a dot on
+  // each beat, a larger one and a line on each bar's first beat, thinned
+  // as it zooms out.
+  const grid = c.type === "audio" ? p.asset?.musicGrid : undefined;
+  const ticks = useMemo(() => (grid && c.type === "audio" && visW > 0 ? gridTicks(c, grid, p.asset!.duration, p.fps, zoom, x0, x1) : []), [grid, c, p.asset, p.fps, zoom, x0, x1, visW]);
+
   // A clip's own name (Rename) wins over its media's, words or effects.
   const name =
     c.name ?? (c.type === "video" || c.type === "image" || c.type === "audio" ? (p.asset?.name ?? "") : c.type === "compound" ? (p.compound?.name ?? "Compound clip") : describe(c));
@@ -306,6 +313,16 @@ export const ClipView = memo(function ClipView(p: Props) {
           height={Math.ceil(waveH * dpr)}
           style={{ left: x0, width: visW, height: waveH, top: c.type === "audio" ? LABEL_H : height - WAVE_H }}
         />
+      )}
+      {ticks.length > 0 && (
+        <svg className="clip-grid" width={visW} height={bodyH} style={{ left: x0, top: LABEL_H }} aria-hidden>
+          {ticks.map((t) => (
+            <g key={t.x} className={t.bar ? "bar" : undefined}>
+              {t.bar && <line x1={t.x - x0} x2={t.x - x0} y1={0} y2={bodyH} />}
+              <circle cx={t.x - x0} cy={bodyH - 5} r={t.bar ? 2.5 : 1.75} />
+            </g>
+          ))}
+        </svg>
       )}
       {c.type === "audio" && p.selected && !tiny && <AudioHandles clip={c} zoom={zoom} height={bodyH} top={LABEL_H} fps={p.fps} />}
       {/* A video's own sound gets the same line and knobs on its waveform

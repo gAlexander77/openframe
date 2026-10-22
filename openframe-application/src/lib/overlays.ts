@@ -15,7 +15,8 @@ const overlaps = (t: Track, start: number, end: number) => t.clips.some((c) => c
  * B-roll stays a B-roll row, and beat hits go above it (lib/epic.ts). */
 export function isFootage(p: Project, c: Clip, depth = 0): boolean {
   if (c.type === "video") return true;
-  if (c.type === "image") return !p.assets.find((a) => a.id === c.assetId)?.sticker;
+  // The brand's logo is a graphic (an end card's or a lower third's mark).
+  if (c.type === "image") return !p.assets.find((a) => a.id === c.assetId)?.sticker && !Object.values(p.brand?.logos ?? {}).includes(c.assetId);
   if (c.type !== "compound") return false;
   const k = ops.findCompound(p, c.compoundId);
   return !k || depth > 4 || k.tracks.some((t) => t.kind === "video" && t.clips.some((x) => isFootage(p, x, depth + 1)));
@@ -24,7 +25,7 @@ export function isFootage(p: Project, c: Clip, depth = 0): boolean {
 /** A track of adjustment layers only (beat hits, bars, a grade). */
 const effectRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => c.type === "adjustment");
 /** A track of captions only (add_captions, a voiceover's). */
-const captionRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => c.type === "text" && !!c.caption);
+const captionRow = ops.isCaptionTrack;
 
 /** A track an overlay may join: an unlocked video track other than the
  * main one, holding no footage, and neither a row of adjustment layers
@@ -32,13 +33,23 @@ const captionRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => c.ty
 const joinable = (p: Project, t: Track | undefined): t is Track =>
   !!t && t.kind === "video" && !t.main && !t.locked && !effectRow(t) && !captionRow(t) && !t.clips.some((c) => isFootage(p, c));
 
+/** A row of an ad element's own (ADR-121): every clip on it a grouped part
+ * named as the row is ("End card" on "End card"). Only that element, or
+ * another of its name, lands there: the fourth film test's step labels,
+ * hook title and every callout ring and dim went onto an end card's rows
+ * free before it, so its pills sat on a track named "End card" and moving
+ * the card's rows would have carried them (ADR-125). */
+const elementRow = (t: Track) => t.clips.length > 0 && t.clips.every((c) => !!c.group && c.name === t.name);
+
 /** The track overlays over [start, end) go directly above: the topmost
  * video track that shows anything then, holds footage at all or is a row
  * of adjustment layers (the main track when none does), so a title never
  * sits under a B-roll row, or a grade or the beat hits, that is only empty
- * for now. Every track above it is free over the range. */
+ * for now. Every track above it is free over the range, or a row of
+ * captions: captions stay the top layer (ADR-121), so what lands goes
+ * under them. */
 function baseTrack(p: Project, start: number, end: number): number {
-  const top = p.tracks.findIndex((t) => t.kind === "video" && (overlaps(t, start, end) || effectRow(t) || t.clips.some((c) => isFootage(p, c))));
+  const top = p.tracks.findIndex((t) => t.kind === "video" && !captionRow(t) && (overlaps(t, start, end) || effectRow(t) || t.clips.some((c) => isFootage(p, c))));
   return top >= 0 ? top : Math.max(0, p.tracks.findIndex((t) => t.main));
 }
 
@@ -79,9 +90,13 @@ export function placeOnTop(p: Project, clip: Clip, name: string): Project {
  * that follow one another share a row (a countdown's numbers). The rows
  * sit together directly above the base track, reusing free overlay rows
  * there and inserting new ones named `name`, never a footage row. Template
- * and ad element callers group the clips themselves.
+ * and ad element callers group the clips themselves. `own`: the block
+ * shares no row with anything else (an ad element, ADR-121), so moving an
+ * unrelated track never slides between its parts; it may reuse the rows of
+ * an earlier element of the same name (`name` the clips' own), and nothing
+ * placed later lands on its rows (elementRow, ADR-125).
  */
-export function placeStack(p: Project, clips: Clip[], name: string): Project {
+export function placeStack(p: Project, clips: Clip[], name: string, own = false): Project {
   if (!clips.length) return p;
   // Row per clip: one above every earlier layer it overlaps.
   const rows: number[] = [];
@@ -93,7 +108,9 @@ export function placeStack(p: Project, clips: Clip[], name: string): Project {
   for (let row = 0; row <= Math.max(...rows); row++) {
     const above = p.tracks[at - 1];
     let id: string;
-    if (joinable(p, above)) {
+    // own: only a row of the same element's parts (named alike) is shared,
+    // never an empty one made for something else (the tester's Callouts).
+    if (joinable(p, above) && (own ? above.name === name && above.clips.every((c) => c.name === name) : !elementRow(above))) {
       id = above.id;
       at -= 1;
     } else {

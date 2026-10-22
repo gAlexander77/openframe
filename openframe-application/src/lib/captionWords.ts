@@ -134,9 +134,12 @@ export function chunkCaptions(words: Word[], max: number, end: number): Caption[
       parts.push(phrase.slice(at, at + len));
       at += len;
     }
-    // A little word at a chunk's end goes on to start the next.
+    // A little word at a chunk's end goes on to start the next, unless the
+    // word before it is little too ("on your": moving "your" left "on"
+    // alone, and that one-word chunk then joined the one before it as
+    // "and it runs on", four words of three: ADR-121).
     for (let i = 0; i + 1 < parts.length; i++) {
-      while (parts[i].length > 1 && parts[i + 1].length < size && WEAK.has(parts[i].at(-1)!.text.toLowerCase().replace(/[^a-z']/g, ""))) parts[i + 1].unshift(parts[i].pop()!);
+      while (parts[i].length > 1 && parts[i + 1].length < size && weak(parts[i].at(-1)!) && !weak(parts[i].at(-2)!)) parts[i + 1].unshift(parts[i].pop()!);
     }
     groups.push(...parts.filter((p) => p.length));
     phrase = [];
@@ -155,16 +158,54 @@ export function chunkCaptions(words: Word[], max: number, end: number): Caption[
       return { ws, start: ws[0].start, end: stop };
     });
   let chunks = timed(groups);
+  const long = (c: { start: number; end: number }) => c.end - c.start >= MIN_CHUNK;
   for (let i = 0; i < chunks.length && chunks.length > 1; ) {
-    if (chunks[i].end - chunks[i].start >= MIN_CHUNK) {
+    if (long(chunks[i])) {
       i++;
       continue;
     }
-    const into = i > 0 ? i - 1 : i + 1;
-    const merged = into < i ? [...groups[into], ...groups[i]] : [...groups[i], ...groups[into]];
-    groups.splice(Math.min(i, into), 2, merged);
+    // It takes time from a neighbor, holding the word limit (ADR-121):
+    // joined with it when the two hold `size` words or fewer, else their
+    // words shared out again between the two, each at most `size`, where
+    // every chunk then stays up long enough; a chunk ending on a little
+    // word, then a shorter chunk, counts against an option.
+    let best: { groups: Word[][]; at: number; score: number } | undefined;
+    for (const j of [i - 1, i + 1]) {
+      if (j < 0 || j >= groups.length) continue;
+      const lo = Math.min(i, j);
+      const pair = [...groups[lo], ...groups[lo + 1]];
+      const options = pair.length <= size ? [[pair]] : [];
+      for (let k = Math.max(1, pair.length - size); k <= Math.min(size, pair.length - 1); k++) if (k !== groups[lo].length) options.push([pair.slice(0, k), pair.slice(k)]);
+      for (const o of options) {
+        const g = [...groups.slice(0, lo), ...o, ...groups.slice(lo + 2)];
+        const t = timed(g).slice(lo, lo + o.length);
+        if (!t.every(long)) continue;
+        const score = Math.min(...t.map((c) => c.end - c.start)) - (o.length > 1 && weak(o[0].at(-1)!) ? 1 : 0);
+        if (!best || score > best.score) best = { groups: g, at: lo, score };
+      }
+    }
+    if (best) {
+      groups.splice(0, groups.length, ...best.groups);
+      i = best.at;
+    } else {
+      // Nothing within the limit stays up long enough: it joins its
+      // neighbor past the limit (the caller says so, overLimit).
+      const into = i > 0 ? i - 1 : i + 1;
+      const merged = into < i ? [...groups[into], ...groups[i]] : [...groups[i], ...groups[into]];
+      groups.splice(Math.min(i, into), 2, merged);
+      i = Math.max(0, Math.min(i, into));
+    }
     chunks = timed(groups);
-    i = Math.max(0, Math.min(i, into));
   }
   return chunks.map((c) => ({ start: r3(c.start), end: r3(c.end), text: c.ws.map((x) => x.text).join(" "), words: c.ws.map((x) => r3(x.start)) }));
+}
+
+/** A little word ("a", "the", "on"), which never ends a chunk when it can help it. */
+const weak = (w: Word) => WEAK.has(w.text.toLowerCase().replace(/[^a-z']/g, ""));
+
+/** The chunks holding more words than asked (`max`): what chunkCaptions
+ * joined past the limit because its words were spoken too quickly to show
+ * apart, for a note in the answer. */
+export function overLimit(chunks: Caption[], max: number): Caption[] {
+  return chunks.filter((c) => (c.words?.length ?? c.text.split(/\s+/).length) > max);
 }

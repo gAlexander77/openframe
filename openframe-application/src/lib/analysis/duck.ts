@@ -5,7 +5,7 @@
 import { soundingClips, soundSpan } from "../audio";
 import { interpolate } from "../keyframes";
 import { clipEnd } from "../project/ops";
-import type { AudioClip, Clip, DuckRecord, Id, Keyframe, Project, VideoClip } from "../project/types";
+import type { AudioClip, Clip, DuckRecord, Id, Keyframe, MusicGrid, Project, VideoClip } from "../project/types";
 import { framesToSeconds, secondsToFrames, type Rational } from "../time";
 import { voiceClips } from "../voiceLines";
 
@@ -363,4 +363,48 @@ export function staleDuckNote(d: StaleDuck): string {
   return d.edited.length
     ? `${what} was ducked under the voice before this edit (${why}), and its volume keys were edited since (${d.edited.join(", ")}), so it was not dipped again: duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now, keeping the keys made by hand outside the lines and replacing those under a line.`
     : `${what} still dips for the voice as it was before this edit (${why}): duck_under_speech ${JSON.stringify(duckArgs(d))} dips it under the lines as they are now.`;
+}
+
+/** A moment a song is heard on (a drop, the final hit), a timeline frame. */
+export interface CueMoment {
+  frame: number;
+  label: string;
+}
+
+/**
+ * The moments of a song its music should be heard on, from the grid kept
+ * with its file (generate_music's cue sheet, set_music_grid): each drop (a
+ * drop after another part) and the final hit (the first beat of an outro
+ * that ends the song), placed through `toFrame` (a source second to a
+ * timeline frame; null where the clip does not play it).
+ */
+export function cueMoments(grid: MusicGrid | undefined, toFrame: (t: number) => number | null): CueMoment[] {
+  const parts = grid?.sections ?? [];
+  const out: CueMoment[] = [];
+  parts.forEach((s, i) => {
+    const what = s.label === "drop" && i > 0 && parts[i - 1].label !== "drop" ? "the drop" : s.label === "outro" && i === parts.length - 1 && i > 0 ? "the final hit (the outro's first beat)" : undefined;
+    const f = what ? toFrame(s.at) : null;
+    if (what && f !== null) out.push({ frame: f, label: what });
+  });
+  return out;
+}
+
+/**
+ * The moments that fall inside a line, from the dip's attack before it to
+ * its last word, and so play ducked under the voice (ADR-121): the third
+ * film test's final hit at 60.234 s, a line starting at 60.233 s, went 10
+ * dB down and nothing said so. `asked`: frames open_at named, which have
+ * their own note. Each with the index of its line.
+ */
+export function cuesUnderLines(moments: CueMoment[], lines: [number, number][], attack: number, asked: number[]): { moment: CueMoment; line: number }[] {
+  const out: { moment: CueMoment; line: number }[] = [];
+  const seen: number[] = [];
+  for (const m of moments) {
+    if (asked.some((f) => Math.abs(f - m.frame) <= 1) || seen.some((f) => Math.abs(f - m.frame) <= 2)) continue;
+    const line = lines.findIndex(([a, b]) => m.frame >= a - attack && m.frame < b);
+    if (line < 0) continue;
+    seen.push(m.frame);
+    out.push({ moment: m, line });
+  }
+  return out;
 }

@@ -21,6 +21,14 @@ export interface DescribeFilter {
   /** false: the tracks alone, each with how many clips it holds instead of
    * its clips (the cheap way to learn track ids, ADR-115). */
   clips?: boolean;
+  /** The brand kit: true gives it with a narrowed answer, false leaves it
+   * out of the whole one; by default it comes with the whole timeline only
+   * (ADR-121: a model reading one clip at a time read the kit each time). */
+  brand?: boolean;
+  /** Each clip's id, type, start and end, and only these of its other
+   * fields ("text", "transform", "style", "keyframes"...): a captions
+   * track as text and times was 12 KB of repeated styles (ADR-124). */
+  fields?: string[];
 }
 
 interface ClipDesc {
@@ -42,7 +50,22 @@ interface Desc {
   [k: string]: unknown;
 }
 
-export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds", "clips"] as const;
+export const FILTER_KEYS = ["track_ids", "clip_ids", "start", "end", "assets", "markers", "compounds", "clips", "brand", "fields"] as const;
+
+/** What every clip keeps under `fields`: what a list is read by. */
+const ALWAYS = ["id", "type", "start", "end"];
+
+/** Clips with only the fields asked for, and the names no clip shown has. */
+function onlyFields<T extends { tracks: TrackDesc[] }>(timelines: T[], fields: string[]): { timelines: T[]; unknown: string[] } {
+  const keep = new Set([...ALWAYS, ...fields]);
+  const seen = new Set<string>();
+  const pick = (c: ClipDesc) => {
+    for (const k of Object.keys(c)) seen.add(k);
+    return Object.fromEntries(Object.entries(c).filter(([k]) => keep.has(k))) as unknown as ClipDesc;
+  };
+  const out = timelines.map((x) => ({ ...x, tracks: x.tracks.map((t) => (Array.isArray(t.clips) ? { ...t, clips: t.clips.map(pick) } : t)) }));
+  return { timelines: out, unknown: fields.filter((k) => !seen.has(k)) };
+}
 
 /** The description narrowed as `f` asks, with `shown` saying how much of
  * each list is in it ("5 of 43") wherever something was left out, and
@@ -51,7 +74,7 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
   const d = description as Desc;
   // An empty list of ids is no filter: an agent that fills in every
   // optional argument sends [] for "all" (ADR-108).
-  const f = { ...asked, clip_ids: asked.clip_ids?.length ? asked.clip_ids : undefined, track_ids: asked.track_ids?.length ? asked.track_ids : undefined };
+  const f = { ...asked, clip_ids: asked.clip_ids?.length ? asked.clip_ids : undefined, track_ids: asked.track_ids?.length ? asked.track_ids : undefined, fields: asked.fields?.length ? asked.fields : undefined };
   if (!d?.tracks || !FILTER_KEYS.some((k) => f[k] !== undefined)) return description;
   if (f.start !== undefined && f.end !== undefined && f.end < f.start) throw new Error("end must not be before start");
   const lo = f.start ?? -Infinity, hi = f.end ?? Infinity;
@@ -123,9 +146,17 @@ export function filterDescription(description: unknown, asked: DescribeFilter): 
     else delete out[key];
     tell(key, list?.length ?? 0, all?.length ?? 0);
   }
+  if (f.brand === false || (narrow && f.brand !== true)) delete out.brand;
   if (Object.keys(shown).length) out.shown = shown;
   const timelines = [d.tracks, ...nested.map((k) => k.tracks)];
   const missing = [...(f.clip_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.clips.some((c) => c.id === id)))), ...(f.track_ids ?? []).filter((id) => !timelines.some((ts) => ts.some((t) => t.id === id)))];
   if (missing.length) out.not_found = missing;
+  if (f.fields && !bare) {
+    const nestedOut = (out.compounds ?? []) as NonNullable<Desc["compounds"]>;
+    const { timelines, unknown } = onlyFields([{ tracks: out.tracks! }, ...nestedOut], f.fields);
+    out.tracks = timelines[0].tracks;
+    if (out.compounds) out.compounds = timelines.slice(1) as NonNullable<Desc["compounds"]>;
+    if (unknown.length) out.fields_not_found = `${unknown.join(", ")}: no clip shown has ${unknown.length === 1 ? "it" : "them"} (fields are a clip's own keys as listed: text, asset, in, out, speed, transform, style, size, color, keyframes, anchor, effects...)`;
+  }
   return out;
 }

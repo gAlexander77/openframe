@@ -163,6 +163,19 @@ export function musicName(plan: MusicPlan, label: string, name?: string): string
   return `${name ?? `${label} ${Math.round(plan.bpm)} BPM ${plan.key} (seed ${plan.seed})`}`.replace(/[\\/:*?"<>|]/g, "-");
 }
 
+/**
+ * generate_music's and plan_music's answer as the MCP gives it: without
+ * every bar and beat unless `detail` is "full" (ADR-121). A score's grid
+ * is even, so bar n starts at start + n x bar and beat k at start + k x
+ * beat; `counts` say how many. The third film test read 140 beats and 34
+ * bars twice, about a third of each answer, and used neither.
+ */
+export function cueAnswer<T extends { bars: number[]; beats: number[]; start: number; bar: number; beat: number }>(cue: T, detail?: unknown): Omit<T, "bars" | "beats"> | T {
+  if (detail === "full" || !Array.isArray(cue.bars) || !Array.isArray(cue.beats)) return cue;
+  const { bars, beats, ...rest } = cue;
+  return { ...rest, counts: { bars: bars.length, beats: beats.length }, grid: `bar n starts at ${cue.start} + n x ${cue.bar} s, beat k at ${cue.start} + k x ${cue.beat} s (detail full lists them)` };
+}
+
 /** plan_music: the cue sheet a generate_music call with these arguments
  * would answer, without rendering (the seed decides the chords and the
  * hook, not the timing), with the chord of every bar. */

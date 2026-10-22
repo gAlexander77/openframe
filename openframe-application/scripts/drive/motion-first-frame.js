@@ -44,10 +44,10 @@ async (page) => {
       const g = c.getContext("2d");
       g.drawImage(bmp, 0, 0);
       const { data } = g.getImageData(0, 0, bmp.width, bmp.height);
-      const cols = Math.min(columns, count), gap = 6, h = Math.round((360 * tileWidth) / 640);
+      const cols = Math.min(columns, count), gap = 6, strip = 18, h = Math.round((360 * tileWidth) / 640);
       const out = [];
       for (let i = 0; i < count; i++) {
-        const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + gap);
+        const x = gap + (i % cols) * (tileWidth + gap), y = gap + Math.floor(i / cols) * (h + strip + gap);
         out.push(readAt(data, bmp.width, x, y + Math.floor(h / 2), tileWidth));
       }
       bmp.close();

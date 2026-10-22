@@ -83,20 +83,23 @@ export function loudnessRange(shortTerm: number[]): number {
 }
 
 /** What a mix is for, for judging its loudness range. */
-export type ProgramKind = "film" | "ad" | "social" | "podcast" | "any";
-export const PROGRAM_KINDS: ProgramKind[] = ["film", "ad", "social", "podcast", "any"];
+export type ProgramKind = "film" | "ad" | "social" | "podcast" | "explainer" | "any";
+export const PROGRAM_KINDS: ProgramKind[] = ["film", "ad", "social", "podcast", "explainer", "any"];
 
 /**
  * The loudness range (EBU Tech 3342 LRA, LU) a mix of each kind usually
  * spans, as rules of thumb from EBU Tech 3343's guidance and broadcast and
  * streaming practice: a film or documentary breathes (quiet and loud
  * passages, 5-15 LU); an ad is dense by design (3-8); social video and
- * podcasts sit between, played on phones (3-10, 3-8). Not a spec: R128
- * sets no LRA limit for programs.
+ * podcasts sit between, played on phones (3-10, 3-8). An explainer (one
+ * voice leading over a ducked bed: a tutorial, a narrated demo) is the
+ * narrator's own range with the music held under it, 1.5-6 (ADR-121): the
+ * third film test's 2.4 LU was called flat for an ad, and its voice alone
+ * measured 3.3. Not a spec: R128 sets no LRA limit for programs.
  */
-export const RANGE_FOR_KIND: Record<ProgramKind, [number, number]> = { film: [5, 15], ad: [3, 8], social: [3, 10], podcast: [3, 8], any: [3, 15] };
+export const RANGE_FOR_KIND: Record<ProgramKind, [number, number]> = { film: [5, 15], ad: [3, 8], social: [3, 10], podcast: [3, 8], explainer: [1.5, 6], any: [3, 15] };
 
-const KIND_NAMES: Record<ProgramKind, string> = { film: "a film", ad: "an ad", social: "social video", podcast: "a podcast", any: "most video" };
+const KIND_NAMES: Record<ProgramKind, string> = { film: "a film", ad: "an ad", social: "social video", podcast: "a podcast", explainer: "a voice-led explainer", any: "most video" };
 
 /** How a mix's loudness range compares with its kind's, and what to do
  * when it is far off. */

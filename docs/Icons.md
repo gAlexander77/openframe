@@ -15,7 +15,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Automatic tools, captions, adjustment | WandSparkles |
 | Effects | Sparkles |
 | Main track magnet / snapping | Magnet / SeparatorVertical |
-| Linkage / unlink | Link2 / Unlink2 |
+| Linkage / unlink (clips; a marker and the clip it follows) | Link2 / Unlink2 |
 | Sync audio | Merge |
 | Media library, video media and video tracks | Film |
 | Audio media / audio tracks | AudioLines / Music |
@@ -24,6 +24,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Compound layers | Layers |
 | Stabilize / reduce noise | Focus / Funnel |
 | Preview axis / tracking subject | ScanLine / Crosshair |
+| Pin to footage / unpin / callout | Pin / PinOff / Scan |
 | Import / export | Upload / Download |
 | Save frame / export duration | ImageDown / Clock |
 | Home project placeholder | Clapperboard |

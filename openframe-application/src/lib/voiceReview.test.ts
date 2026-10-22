@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advise, bandOf, compareScript, diffWords, judgeHearings, matchShare, respell, tokens, verdict, type LineMeasure } from "./voiceReview";
+import { advise, bandOf, compareScript, diffWords, judgeHearings, matchShare, numberReadings, respell, sameNumber, scriptPace, tokens, verdict, type LineMeasure } from "./voiceReview";
 
 describe("words to compare", () => {
   it("drops case and punctuation, spells numbers and says symbols", () => {
@@ -62,6 +62,48 @@ describe("script against what was heard", () => {
     const r = compareScript("Kokoro speaks. [pause] Done.", "Coco row speaks. Done.", { Kokoro: "Coco row" });
     expect(r.differences).toEqual([]);
     expect(compareScript("Kokoro speaks.", "Coco row speaks.").differences).toHaveLength(1);
+  });
+});
+
+// The fourth film test (ADR-124): "ten-eighty p" was said right, Whisper
+// wrote "1080p", and the line was to fix, with a slower read.
+describe("numbers said one way and written another", () => {
+  const line = "Pick YouTube ten-eighty p, set loudness to minus fourteen, and hit Export.";
+  const heard = "Pick YouTube 1080p, set loudness to minus 14, and hit export.";
+
+  it("reads a recognizer's digits as the script says them", () => {
+    const r = compareScript(line, heard);
+    expect(r.differences).toEqual([]);
+    expect(r.matched).toBe(r.words);
+    // Before: a misheard "ten eighty p" the voice was blamed for.
+    expect(diffWords(tokens(line), tokens(heard)).differences).toHaveLength(1);
+  });
+
+  it("compares with the line's caption too", () => {
+    expect(compareScript("Set loudness to minus fourteen.", "Set loudness to -14.", undefined, "Set loudness to -14.").differences).toEqual([]);
+    expect(compareScript("We cut it in four K.", "We cut it in 4K.", undefined, "We cut it in 4K.").differences).toEqual([]);
+  });
+
+  it("knows the usual readings of a number", () => {
+    const said = (d: string) => numberReadings(d).map((w) => w.join(" "));
+    expect(said("1080")).toEqual(expect.arrayContaining(["one thousand eighty", "ten eighty", "one thousand and eighty", "one oh eight oh"]));
+    expect(said("2026")).toEqual(expect.arrayContaining(["two thousand twenty six", "twenty twenty six"]));
+    expect(said("1905")).toContain("nineteen oh five");
+    expect(said("3.5")[0]).toBe("three point five");
+    expect(tokens("Bring $20, -14 LUFS, the 3rd 1,000.")).toEqual(["bring", "twenty", "dollars", "minus", "fourteen", "lufs", "the", "third", "one", "thousand"]);
+  });
+
+  it("a number written another way is not a difference, another number is", () => {
+    expect(sameNumber({ kind: "misheard", script: "ten eighty", heard: "one thousand eighty" })).toBe(true);
+    expect(sameNumber({ kind: "misheard", script: "nineteen oh five", heard: "one nine zero five" })).toBe(true);
+    expect(sameNumber({ kind: "misheard", script: "fourteen", heard: "forty" })).toBe(false);
+    const r = compareScript("Set it to fourteen.", "Set it to 40.");
+    expect(r.differences).toEqual([expect.objectContaining({ kind: "misheard", script: "fourteen", heard: "forty" })]);
+  });
+
+  it("so the line passes, and no slower read is asked for", () => {
+    const r = compareScript(line, heard);
+    expect(verdict({ ...okLine, text: line, differences: r.differences }, null)).toEqual([]);
   });
 });
 
@@ -191,5 +233,20 @@ describe("verdicts", () => {
     expect(rushed).toMatchObject({ problem: expect.stringMatching(/^fast: 2.7 words a second over the speech, 6 syllables .*long words/), args: { clip_id: "c_1", words_per_second: [1.75, 2.25] } });
     // A band asked moves down for long words too.
     expect(verdict({ ...ok, wps: 2.7, sps: 6, asked: [2.3, 2.8] }, -20)[0]).toMatchObject({ problem: expect.stringMatching(/^fast/) });
+  });
+});
+
+describe("the script's pace (ADR-121)", () => {
+  it("is given only over lines in a row", () => {
+    // The third film test's two retakes, 16 s apart: 1.03 words a second,
+    // eight lines' words between them left out.
+    const retakes = [{ first: 19.97, last: 23.9, words: 11 }, { first: 36.07, last: 40.35, words: 10 }];
+    const between = [{ start: 24.73, end: 30.28 }, { start: 31.58, end: 35.87 }];
+    const r = scriptPace(retakes, between);
+    expect(r.words_per_second).toBeNull();
+    expect(r.window).toMatch(/2 other lines speak between the lines reviewed/);
+    // Lines in a row, or all of them: as before.
+    expect(scriptPace(retakes, [{ start: 50, end: 54 }]).words_per_second).toBe(1.03);
+    expect(scriptPace([{ first: 0.6, last: 4.6, words: 9 }, { first: 5.1, last: 11, words: 15 }], []).words_per_second).toBe(2.31);
   });
 });

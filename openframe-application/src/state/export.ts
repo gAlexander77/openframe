@@ -6,13 +6,14 @@
 import { useSyncExternalStore } from "react";
 import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { exportGif } from "../engine/gif";
-import { captionPlan, defaultExportSettings, outputSize, planExport, renamedNote, RESOLUTIONS, safeFileName, VIDEO_FORMATS, withFormat, type AudioFormat, type ExportPlan, type ExportSettings, type VideoFormat } from "../lib/export";
+import { captionPlan, defaultExportSettings, outputSize, planExport, renamedNote, replacedNote, RESOLUTIONS, safeFileName, VIDEO_FORMATS, withFormat, type AudioFormat, type ExportPlan, type ExportSettings, type VideoFormat } from "../lib/export";
 import { captionsInRange, currentCaptions, toSrt, withoutCaptions } from "../lib/captions";
 import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
-import { captionCollisions, versionProject, versionSound, type CaptionCollision, type VersionSpec } from "../lib/versions";
+import { captionCollisions, versionProject, versionSound, type CaptionCollision, type CoverageReport, type OptionNote, type VersionSpec } from "../lib/versions";
+import { calloutBoxAt, type CalloutReport } from "../lib/versionCallouts";
 import { hiddenNote, titlesInFront, type Hidden } from "../lib/behind";
 import { measureBehind } from "./behind";
 import { copyProject } from "../lib/project/copy";
@@ -145,7 +146,7 @@ export async function startExport(settings: ExportSettings) {
 export type RenderOptions = Partial<Omit<ExportSettings, "format">> & { format?: VideoFormat | AudioFormat; start?: number; end?: number };
 
 /** An agent's export: the options, plus the folder to write into (desktop). */
-export type AgentExportOptions = RenderOptions & { folder?: string };
+export type AgentExportOptions = RenderOptions & { folder?: string; replace?: boolean };
 
 /** Why a folder cannot be honored here, said rather than ignored (ADR-095). */
 const FOLDER_DESKTOP_ONLY = "folder is desktop only: the browser cannot write into a folder of your choosing. Leave folder out, or export from the desktop app.";
@@ -200,7 +201,7 @@ export async function exportForAgent(options: AgentExportOptions = {}): Promise<
   if (job) throw new Error("An export is already running.");
   const s = exportSubject();
   const p = s.project;
-  const { start, end, format, folder, ...rest } = options;
+  const { start, end, format, folder, replace, ...rest } = options;
   const settings: ExportSettings = withFormat({ ...defaultExportSettings(p), ...rest }, format);
   const ranged = start !== undefined || end !== undefined;
   const inOut = ranged
@@ -212,9 +213,9 @@ export async function exportForAgent(options: AgentExportOptions = {}): Promise<
   job = new AbortController();
   const tid = toast("Exporting the video", "progress");
   try {
-    const target = await make.call(platform, safeFileName(settings.name), plan.extension, folder);
+    const target = await make.call(platform, safeFileName(settings.name), plan.extension, folder, replace);
     const path = target.displayName;
-    const renamed = renamedNote(`${safeFileName(settings.name)}.${plan.extension}`, path);
+    const renamed = target.replaced ? replacedNote(path) : renamedNote(`${safeFileName(settings.name)}.${plan.extension}`, path);
     agentExport = { state: "running", path, fraction: 0, eta: null };
     const result = await exportProject(drawn.project, plan, target, (pr) => {
       agentExport = { state: "running", path, fraction: +pr.fraction.toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1) };
@@ -300,6 +301,8 @@ export interface VersionsOptions extends Partial<Pick<ExportSettings, "format" |
   /** Desktop: an absolute folder to write every version into instead of
    * the Videos folder (created if missing). */
   folder?: string;
+  /** Replace a file of a version's name in folder (ADR-125). */
+  replace?: boolean;
   /** Seconds of the end kept in every cut-down; default the end card's. */
   keepEnd?: number;
 }
@@ -327,6 +330,13 @@ export interface VersionFile {
   titles?: TitleReport[];
   /** Pictures and graphics drawn across the burned captions in this shape. */
   caption_overlaps?: CaptionCollision[];
+  /** Rings, spotlights and pinned clips left off the frame or off what
+   * they point at in this shape (ADR-122). */
+  callouts?: CalloutReport[];
+  /** What became of the caller's focus, pushes and overrides (ADR-123). */
+  options?: OptionNote[];
+  /** Footage covering much less of this frame than of the master's. */
+  coverage?: CoverageReport[];
 }
 
 /** A title behind its subject (text_behind_subject) that a version's
@@ -371,7 +381,9 @@ function reportOf(notes: SubjectNote[]): SubjectReport[] {
       subject: { x: +s.left.toFixed(3), y: +s.top.toFixed(3), w: +(s.right - s.left).toFixed(3), h: +(s.bottom - s.top).toFixed(3) },
       note: n.wide
         ? `the subject is wider than this frame (${Math.round(n.kept * 100)}% of it shows): fit "blur" or "fit" shows it whole`
-        : `the subject is cut by the frame (${Math.round(n.kept * 100)}% of it shows): reframe "subject" (the default), or focus {clip_id: "${n.clipId}", x: ${cx}, y: ${cy}}`,
+        : n.push
+          ? `the master's push-in crops the subject in this wider frame (${Math.round(n.kept * 100)}% of it shows): pushes "relax" or "hold" on this version shows more of it`
+          : `the subject is cut by the frame (${Math.round(n.kept * 100)}% of it shows): reframe "subject" (the default), or focus {clip_id: "${n.clipId}", x: ${cx}, y: ${cy}}`,
     };
   });
 }
@@ -386,7 +398,10 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
   const looks = reshaped ? await lookAtShots(master) : undefined;
   const made = o.versions.map((v) => {
     const notes: SubjectNote[] = [];
-    return { spec: v, project: versionProject(master, v, keep, looks, notes), notes };
+    const moved: CaptionCollision[] = [];
+    const callouts: CalloutReport[] = [];
+    const says = { options: [] as OptionNote[], coverage: [] as CoverageReport[] };
+    return { spec: v, project: versionProject(master, v, keep, looks, notes, moved, callouts, says), notes, moved, callouts, says };
   });
   // Titles behind their subject: how much the subject hides in each shape,
   // against the master (ADR-103); one hidden past the limit shows in front
@@ -408,8 +423,9 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
       const f = secondsToFrames(n.at, project.fps);
       return runs.some((r) => r.clipId === n.clipId && f >= r.start && f < r.start + r.duration);
     };
-    // A picture or graphic across the burned captions (ADR-116).
-    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: captionCollisions(project) });
+    // A picture or graphic across the burned captions (ADR-116), and the
+    // pictures-in-picture the version moved clear of them (ADR-118).
+    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: [...m.moved, ...captionCollisions(project)], callouts: m.callouts, options: m.says.options, coverage: m.says.coverage });
   }
   return out;
 }
@@ -451,14 +467,14 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   job = new AbortController();
   const tid = toast(`Exporting ${items.length} versions`, "progress");
   try {
-    for (const [i, { spec, project: q, notes, titles, overlaps }] of items.entries()) {
+    for (const [i, { spec, project: q, notes, titles, overlaps, callouts, options, coverage }] of items.entries()) {
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
       if (!codecs.includes(settings.codec)) settings.codec = codecs[0];
       const plan = planExport(q, settings, { inPoint: null, outPoint: null });
       const name = safeFileName(q.name);
-      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension, o.folder) : await platform.createExportTarget(name, plan.extension);
+      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension, o.folder, o.replace) : await platform.createExportTarget(name, plan.extension);
       if (!target) throw new Error("The save dialog was canceled or could not open (a browser opens it only after a click; the desktop app saves without one).");
       const path = target.displayName;
       const version = `${i + 1} of ${items.length}`;
@@ -471,8 +487,8 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       // The web without a save dialog renders into private storage first.
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
-      const renamed = platform.createAgentExportTarget ? renamedNote(`${name}.${plan.extension}`, path) : undefined;
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
+      const renamed = !platform.createAgentExportTarget ? undefined : target.replaced ? replacedNote(path) : renamedNote(`${name}.${plan.extension}`, path);
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);
@@ -487,31 +503,33 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
 }
 
 /** One PNG with a row per version: the frames at those shares of each
- * version, each stamped with its time, so an agent sees every shape and
- * cut before rendering any. A tile where the framing cuts a shot's
- * subject outlines the subject in orange and says so; the reports list
- * every such shot with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[] }> {
+ * version, each with its time on a strip under it (ADR-121: stamped on
+ * the picture's top left, it hid what sat there), so an agent sees every
+ * shape and cut before rendering any. A tile where the framing cuts a
+ * shot's subject outlines the subject in orange and says so, as it does a
+ * callout off the frame or off what it pointed at (ADR-122); the reports
+ * list every such shot and callout with its worst moment. */
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[]; callouts: { version: string; reports: CalloutReport[] }[]; options: { version: string; reports: OptionNote[] }[]; coverage: { version: string; reports: CoverageReport[] }[] }> {
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
-  const gap = 6, label = 22;
+  const gap = 6, label = 22, strip = 18;
   // Each version's moments wrap into rows inside the sheet's width (ADR-115).
-  const blocks = items.map(({ project: q, notes, titles, overlaps }) => {
+  const blocks = items.map(({ project: q, notes, titles, overlaps, callouts, coverage }) => {
     const { tw, th } = tileSize(q.width, q.height, o.tileWidth);
-    return { q, notes, titles, overlaps, tw, th, ...sheetGrid(tw, at.length, gap) };
+    return { q, notes, titles, overlaps, callouts, coverage, tw, th, ...sheetGrid(tw, at.length, gap) };
   });
   const tops: number[] = [];
   let height = gap;
   for (const b of blocks) {
     tops.push(height);
-    height += label + b.rows * (b.th + gap);
+    height += label + b.rows * (b.th + strip + gap);
   }
   const width = Math.max(...blocks.map((b) => gap + b.columns * (b.tw + gap)), 480);
   const out = new OffscreenCanvas(width, height);
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw, th, columns, notes, titles, overlaps }] of blocks.entries()) {
+  for (const [ri, { q, tw, th, columns, notes, titles, overlaps, callouts, coverage }] of blocks.entries()) {
     const top = tops[ri];
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
@@ -521,17 +539,14 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
       const frame = Math.min(length - 1, Math.max(0, Math.round(share * length)));
       const bmp = await createImageBitmap(await exportStill(q, frame, tw * 2, th * 2));
       const ci = i % columns;
-      // y + label is the tile's top, as before: a wrapped row sits one tile lower.
-      const y = top + Math.floor(i / columns) * (th + gap);
+      // y + label is the tile's top: a wrapped row sits a tile and its strip lower.
+      const y = top + Math.floor(i / columns) * (th + strip + gap);
       const x = gap + ci * (tw + gap);
       g.drawImage(bmp, x, y + label, tw, th);
       bmp.close();
-      const t = `${+framesToSeconds(frame, q.fps).toFixed(2)} s`;
       g.font = "bold 12px sans-serif";
-      g.fillStyle = "rgba(0, 0, 0, 0.75)";
-      g.fillRect(x + 4, y + label + 4, g.measureText(t).width + 10, 18);
       g.fillStyle = "#fff";
-      g.fillText(t, x + 9, y + label + 17);
+      g.fillText(`${+framesToSeconds(frame, q.fps).toFixed(2)} s`, x + 2, y + label + th + 13);
       // A subject this framing cuts near this moment: outlined where it is.
       const sec = framesToSeconds(frame, q.fps);
       const shown = seenShots(q, true).find((r) => frame >= r.start && frame < r.start + r.duration)?.clipId;
@@ -563,7 +578,7 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
           g.fill();
         }
         g.restore();
-        const say = n.wide ? "subject too wide" : "subject cut";
+        const say = n.wide ? "subject too wide" : n.push ? "push cuts subject" : "subject cut";
         g.font = "bold 12px sans-serif";
         g.fillStyle = "rgba(0, 0, 0, 0.75)";
         g.fillRect(x + 4, y + label + th - 24, g.measureText(say).width + 10, 18);
@@ -597,6 +612,9 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
       for (const c of overlaps) {
         const clip = findClip(q, c.clip_id)?.clip;
         if (!clip || frame < clip.start || frame >= clip.start + clip.duration) continue;
+        // Its box is where it met the caption: a layer that moves (a ring
+        // gliding to the next button) is outlined near that moment only.
+        if (Math.abs(framesToSeconds(frame, q.fps) - c.at) > 0.5 && ["transform.x", "transform.y", "mask.x", "mask.y"].some((k) => clip.keyframes?.[k]?.length)) continue;
         const k = tw / q.width, b = c.box;
         g.save();
         g.beginPath();
@@ -607,19 +625,78 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
         g.setLineDash([5, 3]);
         g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
         g.restore();
-        const say = `${c.layer} the captions`;
+        const say = c.done ? "moved clear of the captions" : `${c.layer} the captions`;
         g.font = "bold 12px sans-serif";
         g.fillStyle = "rgba(0, 0, 0, 0.75)";
         g.fillRect(x + 4, y + label + th - 68, g.measureText(say).width + 10, 18);
         g.fillStyle = "#ff9f1a";
         g.fillText(say, x + 9, y + label + th - 55);
       }
+      // A callout off the frame or off what it pointed at, showing now:
+      // outlined where it is, an arrow on the edge it runs past.
+      for (const c of callouts) {
+        const b = calloutBoxAt(q, c.clip_id, frame);
+        // Off the frame: only where it is, at this moment.
+        if (!b || (c.issue === "off_frame" && b.left >= -1 && b.top >= -1 && b.right <= q.width + 1 && b.bottom <= q.height + 1)) continue;
+        const k = tw / q.width;
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = g.fillStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(x + b.left * k, y + label + b.top * k, (b.right - b.left) * k, (b.bottom - b.top) * k);
+        g.setLineDash([]);
+        const cy = Math.max(y + label + 8, Math.min(y + label + th - 8, y + label + ((b.top + b.bottom) / 2) * k));
+        for (const side of [b.left < 0 ? -1 : 0, b.right > q.width ? 1 : 0].filter(Boolean)) {
+          const ex = side > 0 ? x + tw - 2 : x + 2;
+          g.beginPath();
+          g.moveTo(ex, cy);
+          g.lineTo(ex - side * 12, cy - 8);
+          g.lineTo(ex - side * 12, cy + 8);
+          g.fill();
+        }
+        g.restore();
+        const say = c.issue === "off_frame" ? "callout off the frame" : "callout off its target";
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 90, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 77);
+      }
+      // Footage floating small in the frame near this moment (ADR-123):
+      // its picture outlined, the share of the frame covered said.
+      for (const c of coverage) {
+        if (Math.abs(sec - c.at) > 0.6) continue;
+        const clip = findClip(q, c.clip_id)?.clip as VisualClip | undefined;
+        const l = clip && frame >= clip.start && frame < clip.start + clip.duration ? layerAt(q, clip, frame) : undefined;
+        if (!clip || !l) continue;
+        const k = tw / q.width;
+        const a = onCanvas(q, clip, l, 0, 0), b = onCanvas(q, clip, l, 1, 1);
+        g.save();
+        g.beginPath();
+        g.rect(x, y + label, tw, th);
+        g.clip();
+        g.strokeStyle = "#ff9f1a";
+        g.lineWidth = 2;
+        g.setLineDash([5, 3]);
+        g.strokeRect(x + Math.min(a.x, b.x) * k, y + label + Math.min(a.y, b.y) * k, Math.abs(b.x - a.x) * k, Math.abs(b.y - a.y) * k);
+        g.restore();
+        const say = "footage covers " + Math.round(c.covered * 100) + "%";
+        g.font = "bold 12px sans-serif";
+        g.fillStyle = "rgba(0, 0, 0, 0.75)";
+        g.fillRect(x + 4, y + label + th - 112, g.measureText(say).width + 10, 18);
+        g.fillStyle = "#ff9f1a";
+        g.fillText(say, x + 9, y + label + th - 99);
+      }
     }
   }
   // JPEG like the other contact sheets: a PNG sheet of footage can pass the
   // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
   const blob = await out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
-  return { blob, subjects: items.map((it) => ({ version: it.project.name, reports: reportOf(it.notes) })).filter((x) => x.reports.length), titles: items.map((it) => ({ version: it.project.name, reports: it.titles })).filter((x) => x.reports.length), overlaps: items.map((it) => ({ version: it.project.name, reports: it.overlaps })).filter((x) => x.reports.length) };
+  const by = <T,>(get: (it: (typeof items)[number]) => T[]) => items.map((it) => ({ version: it.project.name, reports: get(it) })).filter((x) => x.reports.length);
+  return { blob, subjects: by((it) => reportOf(it.notes)), titles: by((it) => it.titles), overlaps: by((it) => it.overlaps), callouts: by((it) => it.callouts), options: by((it) => it.options), coverage: by((it) => it.coverage) };
 }
 
 /**
@@ -628,13 +705,13 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
  * fine-tune by hand or with tools and export from there; nothing is
  * exported and the master stays open and as it was.
  */
-export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[] }[]> {
+export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[]; callouts?: CalloutReport[]; options?: OptionNote[]; coverage?: CoverageReport[] }[]> {
   const items = await versionProjects(o);
   const saved = [];
-  for (const { project: q, notes, titles, overlaps } of items) {
+  for (const { project: q, notes, titles, overlaps, callouts, options, coverage } of items) {
     const copy = copyProject(q, q.name);
     await platform.saveProject(copy, projectSummary(copy));
-    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}) });
+    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}) });
   }
   toast(`Saved ${saved.length} version${saved.length === 1 ? "" : "s"} as projects`);
   return saved;

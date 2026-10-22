@@ -203,6 +203,8 @@ function moveLeftEdge(c: Clip, d: number, fps: Rational): Clip {
   }
   if (c.type === "image") out = { ...out, imageIn: (c.imageIn ?? 0) + framesToSeconds(d, fps) } as Clip;
   if (c.keyframes) out = { ...out, keyframes: shiftKeys(c.keyframes, -d) };
+  // A pinned clip's glides stay on the timeline too (ADR-120).
+  if ("anchor" in c && c.anchor && c.anchor.keys.length > 1) out = { ...out, anchor: { ...c.anchor, keys: c.anchor.keys.map((k) => ({ ...k, f: k.f - d })) } } as Clip;
   if (c.type === "text" && c.wordTimes) out = { ...out, wordTimes: c.wordTimes.map((f) => f - d) } as Clip;
   return out;
 }
@@ -914,8 +916,23 @@ export function setCutout(p: Project, clipId: Id, cutout: Cutout | undefined): P
 
 // ---- tracks and markers -----------------------------------------------------
 
+/** A track of captions only (add_captions, a voiceover's captions). */
+export const isCaptionTrack = (t: Track) => t.kind === "video" && t.clips.length > 0 && t.clips.every((c) => c.type === "text" && !!c.caption);
+
+/** Where a new top video track goes: under the rows of captions at the
+ * top of the stack, so the captions stay the top layer (ADR-121): the
+ * third film test's spotlights, added on new tracks, dimmed its captions.
+ * A captions row moved down by hand keeps where it was put. */
+export function topIndex(p: Project): number {
+  let i = Math.max(0, p.tracks.findIndex((t) => t.kind === "video"));
+  while (i < p.tracks.length && isCaptionTrack(p.tracks[i])) i++;
+  return i;
+}
+
+/** Add a track at `index`; by default an audio track at the bottom and a
+ * video track on top, under the captions (topIndex). */
 export function addTrack(p: Project, track: Track, index?: number): Project {
-  const i = index ?? (track.kind === "audio" ? p.tracks.length : p.tracks.findIndex((t) => t.kind === "video"));
+  const i = index ?? (track.kind === "audio" ? p.tracks.length : topIndex(p));
   const at = Math.max(0, Math.min(i, p.tracks.length));
   return { ...p, tracks: [...p.tracks.slice(0, at), track, ...p.tracks.slice(at)] };
 }

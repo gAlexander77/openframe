@@ -529,6 +529,36 @@ export interface Visual {
    * rounded border; drawn before the shadow, which it casts too. Absent =
    * none. */
   border?: Border;
+  /** Pinned to a point or a region of another clip's picture (ADR-120):
+   * its position (a callout's ring its size too, a callout's dim its
+   * mask's hole) is written from that clip's transform and keys whenever
+   * they change (lib/anchors.ts). Absent = placed by hand. */
+  anchor?: Anchor;
+}
+
+/** Where on another clip's picture an overlay is pinned (ADR-120). */
+export interface Anchor {
+  /** The clip whose picture it follows, on the same timeline. */
+  clipId: Id;
+  /** The point (x, y) in fractions of that clip's uncropped source, 0,0
+   * its top-left; with w and h, a region of it centered there. One key
+   * holds still; more glide from one to the next, each shaped toward the
+   * next by its ease. Frames relative to the overlay's start. */
+  keys: AnchorKey[];
+  /** Room around a region, pixels at 1080p on every side. */
+  pad?: number;
+  /** The region is written into the overlay's mask (a callout's dim: the
+   * hole) instead of its position and size. */
+  mask?: boolean;
+}
+
+export interface AnchorKey {
+  f: number;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+  ease?: Ease;
 }
 
 /** A border around a picture. Keyframe border.width, border.opacity. */

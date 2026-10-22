@@ -15,10 +15,14 @@ mkdirSync(out, { recursive: true });
 
 const ff = (...args) => execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", ...args], { stdio: "inherit" });
 
+// On Windows drawtext is given a font file: some ffmpeg builds (gyan.dev
+// 8.1) ship fontconfig without a config and crash looking a font up.
+const font = process.platform === "win32" ? `fontfile='${join(process.env.WINDIR ?? "C:\\Windows", "Fonts", "arial.ttf").replace(/\\/g, "/").replace(":", "\\:")}':` : "";
+
 // A frame counter and a timestamp burned in, so a screenshot proves which
 // source frame is on screen.
 const burn = (w, h, rate, extra = "") =>
-  `testsrc2=size=${w}x${h}:rate=${rate},drawtext=text='%{pts\\:hms} f%{n}':fontsize=${Math.round(h / 12)}:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h-th-${Math.round(h / 10)}${extra}`;
+  `testsrc2=size=${w}x${h}:rate=${rate},drawtext=${font}text='%{pts\\:hms} f%{n}':fontsize=${Math.round(h / 12)}:fontcolor=white:box=1:boxcolor=black@0.6:x=(w-tw)/2:y=h-th-${Math.round(h / 10)}${extra}`;
 // Color bars for the grading drive: 75% bars on top (the vectorscope's 75%
 // targets), 100% bars below, and a 256-step gray ramp at the bottom for
 // curves and wheels. Bar order: white, yellow, cyan, green, magenta, red,

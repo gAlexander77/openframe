@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 165 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -18,14 +18,14 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 
 ```text
 You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
-Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they all share once, in added_clips_common or changed_clips_common, and markers that moved with their clip are counted in moved_markers; describe_project has the whole timeline.
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
@@ -46,7 +46,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
-- **Graphics and compositing**: `add_shape`, `set_shape`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
+- **Graphics and compositing**: `add_shape`, `set_shape`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
@@ -74,7 +74,7 @@ Example:
 
 ### describe_project
 
-Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; shown says how much of each list is in the answer. Example: {"clip_ids": ["c_12"]}.
+Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; fields keeps only the clip fields named (fields ["text"]: captions as words and times); shown says how much of each list is in the answer. Example: {"clip_ids": ["c_12"]}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -86,6 +86,8 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 | `markers` | boolean |  | false: no markers; true: all (default: all, or those in the stretch or on the clips shown) |
 | `compounds` | boolean |  | false: no nested timelines (default: all, or those the clips shown play) |
 | `clips` | boolean |  | false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true |
+| `brand` | boolean |  | The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one |
+| `fields` | string[] |  | Each clip's id, type, start and end, and only these of its fields, e.g. ["text"] for captions as words and times, ["transform", "keyframes"] for where things sit |
 
 ### list_catalog
 
@@ -307,7 +309,7 @@ Add an adjustment layer: its color settings, filter and effects apply to every l
 
 ### add_track
 
-Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
+Add an empty video (visual) or audio track. Video tracks stack above existing ones, under a row of captions on top (captions stay the top layer; move_track above_track_id puts a track over them); audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -640,6 +642,7 @@ Run several commands in order as one edit (one undo step), all or nothing: set_a
 | `commands` | { command, args }[] | yes | The steps, in order |
 | `commands[].command` | string | yes | Command name, e.g. set_animation |
 | `commands[].args` | object |  | That command's arguments |
+| `quiet` | boolean |  | Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too) |
 
 Example:
 
@@ -673,7 +676,7 @@ Compose an original score that fits the edit, or read an imported track's struct
 
 ### generate_music
 
-Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: launch (Product launch: modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook; 120 BPM); cinematic (Cinematic: big and swelling: string ostinato, legato strings and horns, choir, taiko and big hits, long hall reverb; 90 BPM); corporate (Upbeat corporate: bright and positive: piano eighths, plucked guitar strums, glockenspiel hook, claps, shaker and an eighth-note bass; 116 BPM); lofi (Lo-fi chill: laid back: swung boom-bap drums, Rhodes sevenths and ninths, round bass, sparse melody, vinyl crackle and tape wow; 80 BPM); ambient (Ambient: calm and spacious: evolving pads, glassy bells, a sub drone and a soft pulse, long hall reverb; 92 BPM). Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.
+Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: launch (Product launch: modern electronic, driving: four on the floor, pumping supersaw pad, sub bass, arp and a bright hook; 120 BPM); cinematic (Cinematic: big and swelling: string ostinato, legato strings and horns, choir, taiko and big hits, long hall reverb; 90 BPM); corporate (Upbeat corporate: bright and positive: piano eighths, plucked guitar strums, glockenspiel hook, claps, shaker and an eighth-note bass; 116 BPM); lofi (Lo-fi chill: laid back: swung boom-bap drums, Rhodes sevenths and ninths, round bass, sparse melody, vinyl crackle and tape wow; 80 BPM); ambient (Ambient: calm and spacious: evolving pads, glassy bells, a sub drone and a soft pulse, long hall reverb; 92 BPM). Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, the beat and bar lengths with counts of each (detail full lists every bar and beat), the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -695,6 +698,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `detail` | "summary" \| "full" |  | summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed |
 | `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 | `loudness` | number |  | Integrated loudness to master to, LUFS (default -14, online video) (-30..-8) |
 | `stems` | boolean |  | Also import the drums, bass, harmony and lead stems (default false) |
@@ -710,7 +714,7 @@ Example:
 
 ### plan_music
 
-The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.
+The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, the bar and beat grid (detail full lists every bar and beat), drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -732,6 +736,7 @@ The cue sheet generate_music would answer for these arguments, at once and witho
 | `fx` | boolean |  | Risers, impacts, reverse cymbals and braams into and on the drops (default true) |
 | `max_nudge` | number |  | How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06) (0..0.2) |
 | `start` | number |  | Timeline seconds the music starts at (default 0); the answer's times include it (0..) |
+| `detail` | "summary" \| "full" |  | summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed |
 | `brightness` | number |  | The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0) (-1..1) |
 
 Example:
@@ -784,7 +789,7 @@ Example:
 
 ### cut_music
 
-Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. Example: {"clip_id": "c_3", "from": 14, "to": 30}.
+Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. repeat n plays the bars from-to n more times right after they play instead of cutting them (a loop: the song grows by whole bars, its later part and every clip after it on its track playing that much later, each jump back joined as a cut's is): to land a final hit later, or to fill a longer cut. Example: {"clip_id": "c_3", "from": 14, "to": 30}; four bars at 120 BPM played twice: {"clip_id": "c_3", "from": 8, "to": 16, "repeat": 1}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -793,6 +798,7 @@ Cut bars out of a song and join it without a click: from and to are the music fi
 | `to` | number | yes | File seconds to cut to (moved to the nearest bar line) (0..) |
 | `snap` | "bar" \| "beat" \| "none" |  | Where from and to land: bar (default), beat, or none (as given) |
 | `crossfade` | number |  | Seconds the pieces crossfade over, ending at the cut (default 0.03; 0 a butt cut) (0..2) |
+| `repeat` | number |  | Play from-to this many more times right after it instead of cutting it (1 plays those bars twice), 1 to 16 (1..16) |
 
 Example:
 
@@ -907,7 +913,7 @@ Drop several markers at once at TIMELINE seconds (beats, scene cuts, chapters). 
 
 ### update_marker
 
-Edit a timeline marker's position, label or color without moving clips. Times are seconds.
+Edit a timeline marker's position, label or color without moving clips. Times are seconds. A marker that follows a clip (describe_project names its clip) stops following it when moved; detach: true stops it where it stands.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -915,6 +921,7 @@ Edit a timeline marker's position, label or color without moving clips. Times ar
 | `at` | number |  | Timeline seconds (0..) |
 | `label` | string |  | Text |
 | `color` | string |  | CSS color |
+| `detach` | boolean |  | Stop following its clip, staying where it is |
 
 ### delete_markers
 
@@ -1020,12 +1027,12 @@ Example:
 
 ### frame_region
 
-Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.
+Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band, which keeps a part at the picture's edge at the canvas's edge; place_at {x, y} instead puts the region's center at that point of the canvas (fractions from its center, as positions are: {x: 0, y: 0} centers it at any zoom, {x: 0, y: -0.15} above the middle, clear of a tall frame's buttons), leaving a band where the picture runs out. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip id |
-| `region` | { x, y, w, h } | yes | The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner |
+| `region` | { x, y, w, h } |  | The part of the picture to show (or to start from when to_region is given): fractions, x and y its top-left corner |
 | `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
 | `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
 | `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
@@ -1038,6 +1045,20 @@ Show one part of a video or picture full screen, as a zoom on a screen recording
 | `mode` | "fill" \| "fit" |  | How the region meets the canvas |
 | `from` | number |  | Timeline seconds the move starts; default the clip's start |
 | `to` | number |  | Timeline seconds the move ends; default the clip's end |
+| `moves` | { region, at, ease, place_at }[] |  | Instead of region, to_region, from and to: the regions in order, each shown at its at, moving there from the one before |
+| `moves[].region` | { x, y, w, h } | yes | The part shown at at |
+| `moves[].region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `moves[].region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `moves[].region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `moves[].region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `moves[].at` | number | yes | Timeline seconds the region fills the frame (0..) |
+| `moves[].ease` | "linear" \| "hold" \| "easeIn" \| "easeOut" \| "easeInOut" \| "smooth" \| "fastIn" \| "overshoot" \| "anticipate" \| "spring" \| "elastic" \| "bounce" |  | How the move into this region goes: linear, hold, easeIn, easeOut, easeInOut, smooth, fastIn, overshoot, anticipate, spring, elastic, bounce; default easeInOut |
+| `moves[].place_at` | { x, y } |  | This move's place_at, instead of the call's |
+| `moves[].place_at.x` | number |  | Across the canvas from its center: -0.5 left edge .. 0.5 right edge; default 0 (-0.5..0.5) |
+| `moves[].place_at.y` | number |  | Down the canvas from its center: -0.5 top .. 0.5 bottom; default 0 (-0.5..0.5) |
+| `place_at` | { x, y } |  | Put the region's center at this point of the canvas (fractions from its center) at any zoom, instead of sliding the picture back from its edges; a band shows where the picture runs out |
+| `place_at.x` | number |  | Across the canvas from its center: -0.5 left edge .. 0.5 right edge; default 0 (-0.5..0.5) |
+| `place_at.y` | number |  | Down the canvas from its center: -0.5 top .. 0.5 bottom; default 0 (-0.5..0.5) |
 
 Example:
 
@@ -1128,7 +1149,7 @@ Crop pictures, as CapCut's Crop does. left, top, right and bottom are fractions 
 
 ### set_mask
 
-CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.
+CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1291,7 +1312,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 
 ## Graphics and compositing
 
-Shapes (bars, boxes, lines that draw on, soft glows), drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.
+Shapes (bars, boxes, lines that draw on, soft glows), callouts that ring a part of a screen recording and follow its zooms, overlays pinned to footage, drop shadows, borders and perspective tilt for floating windows and picture-in-picture, track mattes, motion blur, mirrored edges and camera shake.
 
 ### add_shape
 
@@ -1324,6 +1345,10 @@ Add a shape layer: a rectangle, rounded_rectangle, ellipse or line, with a solid
 | `rotation` | number |  | Degrees, clockwise (turn a line to any angle) |
 | `opacity` | number |  | 0..1, default 1 (0..1) |
 | `track_id` | string |  | Track id; default above everything at that time |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
 
 Example:
 
@@ -1363,6 +1388,55 @@ Example:
 ```json
 {"name":"set_shape","arguments":{"clip_ids":["c_8"],"draw":1,"at":2.6}}
 ```
+
+### add_callout
+
+Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | The footage it points at (a video or picture clip on the same timeline) |
+| `region` | { x, y, w, h } | yes | The part to point at, in fractions of that clip's source picture: x, y its top-left corner |
+| `region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `shape` | "ring" \| "box" \| "rounded" |  | ring (an ellipse around it), box, or rounded (a box with round corners; default) |
+| `dim` | number |  | How dark the rest of the frame goes, 0 (no dim, only the ring) .. 1; default 0.5 (0..1) |
+| `draw_on` | number |  | Seconds the ring takes to draw on around it; 0 shows it whole at once. Default 0.35 (0..5) |
+| `at` | number | yes | Timeline seconds it starts (0..) |
+| `duration` | number |  | Seconds it stays; default 2 (0.1..) |
+| `to` | { region, at, glide, sound }[] |  | Glides, in order: each reaches its region at its at (timeline seconds), moving there from where it was over glide seconds |
+| `to[].region` | { x, y, w, h } | yes | The next part, in the same clip's source fractions |
+| `to[].region.x` | number | yes | Left edge, a fraction of the picture's width (0..1) |
+| `to[].region.y` | number | yes | Top edge, a fraction of its height (0..1) |
+| `to[].region.w` | number | yes | Width, a fraction of the picture's width (0.01..1) |
+| `to[].region.h` | number | yes | Height, a fraction of its height (0.01..1) |
+| `to[].at` | number | yes | Timeline seconds it arrives there (0..) |
+| `to[].glide` | number |  | Seconds the move takes, ending at at; default 0.4 (0.03..10) |
+| `to[].sound` | boolean |  | A soft click as it arrives there; default the callout's sound |
+| `color` | string |  | The ring's color, CSS; default the brand kit's accent |
+| `stroke_width` | number |  | The ring's outline, pixels at 1080p; default 6 (1..40) |
+| `sound` | boolean |  | A soft click as the ring draws on and as it arrives at each to (a to's own sound: false leaves that one silent, true clicks it alone), on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already |
+
+Example:
+
+```json
+{"name":"add_callout","arguments":{"clip_id":"c_rec","region":{"x":0.102,"y":0.542,"w":0.018,"h":0.03},"at":14.2,"duration":4.3,"dim":0.5,"to":[{"region":{"x":0.515,"y":0.825,"w":0.06,"h":0.095},"at":15.83}],"sound":true}}
+```
+
+### set_anchor
+
+Pin titles, shapes or stickers to a point of a clip's picture (anchor {clip_id, x, y}, source fractions as frame_region takes them), so they follow its zooms and pans; or none true to unpin them where they are. A pinned clip moved by hand (a drag, set_param on its position) is pinned again where it lands. describe_project shows each clip's anchor.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | The clips to pin or unpin (a callout's two parts: give both) |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
+| `none` | boolean |  | true: unpin them; they stay where they are now |
 
 ### set_shadow
 
@@ -1623,6 +1697,10 @@ Add a text (title) clip. Position x/y are offsets from the canvas center as frac
 | `style.maxWidth` | number |  | Lines wrap past this fraction of the canvas width; a new title defaults to the safe width where it stands (0.9 centered, 0.62 centered on 9:16, clear of the apps' buttons) (0.1..1) |
 | `role` | "headline" \| "subhead" \| "body" \| "label" \| "cta" \| "badge" |  | Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color) |
 | `track_id` | string |  | Track id; default above everything at that time |
+| `anchor` | { clip_id, x, y } |  | Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits |
+| `anchor.clip_id` | string | yes | The clip whose picture it follows (the screen recording or shot under it), on the same timeline |
+| `anchor.x` | number | yes | The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units) (-1..2) |
+| `anchor.y` | number | yes | The point down it: 0 its top, 1 its bottom (-1..2) |
 
 Example:
 
@@ -1649,7 +1727,7 @@ Example:
 
 ### style_text_range
 
-Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.
+Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. The style is color, gradient, weight, italic, underline and scale, given flat ({match: 'SALE', color: '#ff0'}) or as a style object as set_text takes one ({match: 'SALE', style: {color: '#ff0'}}). Later styles merge fields; a color replaces a gradient; a scaled run wraps at its own size. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1668,6 +1746,16 @@ Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively
 | `italic` | boolean |  | Italic letters |
 | `underline` | boolean |  | Underline letters |
 | `scale` | number |  | Size multiplier relative to the base size (0.25..4) |
+| `style` | { color, gradient, weight, italic, underline, scale } |  | The same fields as one object, as set_text takes its style; the flat ones win |
+| `style.color` | string |  | CSS fill color; replaces the range gradient |
+| `style.gradient` | { from, to, angle } |  | Linear fill gradient |
+| `style.gradient.from` | string | yes | Start CSS color |
+| `style.gradient.to` | string | yes | End CSS color |
+| `style.gradient.angle` | number | yes | Angle in degrees |
+| `style.weight` | number |  | Font weight (100..900) |
+| `style.italic` | boolean |  | Italic letters |
+| `style.underline` | boolean |  | Underline letters |
+| `style.scale` | number |  | Size multiplier relative to the base size (0.25..4) |
 | `clear` | boolean |  | Remove styles from the range, or the entire title without a range |
 
 ### animate_text_style
@@ -1746,16 +1834,21 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 
 ### set_caption_look
 
-Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.
+Restyle every caption at once (CapCut's caption templates, and its caption panel's position and size). look gives them one of the built-in looks: classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal, which sets the whole caption style and its height. y and x move every caption, size and maxWidth size and narrow them, and style sets any other field of their style (add_text's: color, highlight, font, stroke...), over the look when both are given. Words and timings stay. Example: {y: -0.2, size: 52, maxWidth: 0.6} puts a tall video's captions in its upper band, smaller and narrower.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
-| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" | yes | Look |
+| `look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" |  | Look |
+| `y` | number |  | Every caption's vertical offset from the center, a canvas fraction (y down; 0.05 on a tall canvas sits above the apps' own captions and buttons) (-0.5..0.5) |
+| `x` | number |  | Every caption's horizontal offset from the center, a canvas fraction (-0.04 centers them between a tall canvas's app rails) (-0.5..0.5) |
+| `size` | number |  | Every caption's type size, pixels at 1080p (1..) |
+| `maxWidth` | number |  | The width every caption wraps within, a fraction of the canvas width (0.05..1) |
+| `style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The text's look; fields left out keep their value (or the default look for new text); its fields are add_text's style (help add_text) |
 
 Example:
 
 ```json
-{"name":"set_caption_look","arguments":{"look":"pop"}}
+{"name":"set_caption_look","arguments":{"look":"pop","y":-0.2,"size":52,"maxWidth":0.6}}
 ```
 
 ### replace_caption_text
@@ -1820,7 +1913,7 @@ Restyle clips with the brand kit, keeping their words, timing and place. Titles:
 
 ### add_ad_element
 
-Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
+Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -1831,7 +1924,7 @@ Add a finished ad element in the brand kit's colors and fonts (set_brand first; 
 | `subline` | string |  | lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline) |
 | `cta` | string |  | Button words for end_card and cta_button; default 'Shop now' |
 | `url` | string |  | end_card and cta_button: website line; default the brand's url |
-| `logo` | "auto" \| "main" \| "light" \| "dark" \| "icon" \| "none" |  | Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none |
+| `logo` | "auto" \| "main" \| "light" \| "dark" \| "icon" \| "none" |  | Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none. end_card and logo_reveal draw one by default (auto); lower_third only when given, left of the name and title and as tall as both; offer_badge and cta_button draw none and refuse it |
 | `position` | "top-left" \| "top" \| "top-right" \| "left" \| "center" \| "right" \| "bottom-left" \| "bottom" \| "bottom-right" |  | Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered) |
 | `background` | "brand" \| "primary" \| "scrim" \| "none" |  | end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none |
 | `glow` | boolean |  | logo_reveal: a glow that flares as the logo lands |
@@ -2459,7 +2552,7 @@ Example:
 
 ### check_project
 
-Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.
+Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); a title that fades unevenly (measured at the middle of each fade: part of it gone while the rest is still seen, as a see-through box over a bright subject does), with the box or outline that fades as one there; captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), a click, a hole or a sound cut off where one audio clip meets the next (each join measured on its own track as preview_audio's edges measure it, the first 24; click_at_join, sound_cut_at_join, the fix a crossfade), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2480,7 +2573,7 @@ Measure the mix the way export renders it (48 kHz stereo, every clip's effects, 
 |---|---|---|---|
 | `by_track` | boolean |  | Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line |
 | `per_second` | boolean |  | With by_track, each track's three-second loudness every second too (long; default false: summaries only) |
-| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default) |
+| `kind` | "film" \| "ad" \| "social" \| "podcast" \| "explainer" \| "any" |  | What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast, explainer (one voice leading over a ducked bed: a tutorial, a narrated demo or product explainer) or any (default) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | Delivery spec to check; default all three |
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |
@@ -2494,7 +2587,7 @@ Example:
 
 ### export_video
 
-Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Each exported file answers the loudness its mix reached (loudness, info), as export_video does, and titles: a title behind its subject that the subject hides in that shape. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. preview_media with file: the answer's path shows the exported file's own frames. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
+Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so, unless replace is true with folder: then a file of the same name in that folder is replaced (to supersede your own earlier export) and the note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Each exported file answers the loudness its mix reached (loudness, info), as export_video does, and titles: a title behind its subject that the subject hides in that shape. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. preview_media with file: the answer's path shows the exported file's own frames. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2507,6 +2600,7 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `end` | number |  | Export to this second (0..) |
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
+| `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
 
 Example:
 
@@ -2516,7 +2610,7 @@ Example:
 
 ### export_versions
 
-Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
+Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2528,14 +2622,15 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `versions[].captions` | "burn" \| "none" \| "as_project" |  | burn the captions in (default on 9:16 and 4:5), none, or as_project (default on the rest) |
 | `versions[].name` | string |  | File name without extension; default the project's name and the version, e.g. 'Roast 9x16 6s' |
 | `versions[].reframe` | "subject" \| "center" |  | Footage the new shape crops: framed on its subject, following it (default), or center |
-| `versions[].focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
-| `versions[].focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `versions[].focus` | { clip_id, x, y, at }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on what the version frames by itself (the callouts over it, else the region the master frames, else the subject). Several for one clip, each with at, make a path: each point centered at its time, held until the next, panning to it over the 0.4 s before (a ring gliding through several parts stays in frame; callouts already lead the crop this way without a focus). A focus that cannot apply (a picture-in-picture, a title, a clip the shape does not crop) is named in the answer's options with why. On the call, for every version that does not say |
+| `versions[].focus[].clip_id` | string | yes | A video or picture clip that fills the master's frame, or spans it edge to edge with bands |
 | `versions[].focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
 | `versions[].focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
-| `versions[].pushes` | "keep" \| "relax" \| "hold" |  | Full-frame shots' keyed pushes (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed. On the call, for every version that does not say |
+| `versions[].focus[].at` | number |  | Timeline seconds of the master this point is centered at, for a path of several (0..) |
+| `versions[].pushes` | "keep" \| "relax" \| "hold" |  | Keyed pushes of full-frame shots and of shots fitted with bands (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed; when no shot has a keyed zoom the answer's options says so. On the call, for every version that does not say |
 | `versions[].overrides` | { clip_id, x, y, scale, hidden }[] |  | Clips placed by hand in this version, after the automatic adaptation (raise a lower third, enlarge a headline, hide a logo): [{clip_id, x, y, scale, hidden}]. Any clip: a title, a picture, a compound clip, or a clip inside a compound by its own id. A clip in a group (an ad element) moves and resizes with its group; hidden is the clip alone. Kept in a saved version project. On the call, for every version that does not say |
 | `versions[].overrides[].clip_id` | string | yes | The clip, as describe_project names it in the master |
-| `versions[].overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it (-1..1) |
+| `versions[].overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it, and so do the rings and pinned clips pointing into a picture (-1..1) |
 | `versions[].overrides[].y` | number |  | Where it rests down the frame: its transform.y (-0.5 top .. 0.5 bottom; on a tall frame a title's box stays above y 0.15, where the apps' captions and buttons begin) (-1..1) |
 | `versions[].overrides[].scale` | number |  | Times its size as the version adapted it (1.25 a quarter larger: a title's type, any other layer's scale), about its own center (0.1..10) |
 | `versions[].overrides[].hidden` | boolean |  | true: off in this version; false: on, though the master hides it |
@@ -2545,14 +2640,15 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `fit` | "fill" \| "blur" \| "fit" |  | For every version that does not say: fill (default), blur or fit |
 | `captions` | "burn" \| "none" \| "as_project" |  | For every version that does not say: burn, none or as_project; default burn on tall versions, as_project on the rest |
 | `reframe` | "subject" \| "center" |  | For every version that does not say: subject (default) or center |
-| `focus` | { clip_id, x, y }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say |
-| `focus[].clip_id` | string | yes | A full-frame video or picture clip |
+| `focus` | { clip_id, x, y, at }[] |  | Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on what the version frames by itself (the callouts over it, else the region the master frames, else the subject). Several for one clip, each with at, make a path: each point centered at its time, held until the next, panning to it over the 0.4 s before (a ring gliding through several parts stays in frame; callouts already lead the crop this way without a focus). A focus that cannot apply (a picture-in-picture, a title, a clip the shape does not crop) is named in the answer's options with why. On the call, for every version that does not say |
+| `focus[].clip_id` | string | yes | A video or picture clip that fills the master's frame, or spans it edge to edge with bands |
 | `focus[].x` | number |  | Across its picture, 0 left to 1 right (0..1) |
 | `focus[].y` | number |  | Down its picture, 0 top to 1 bottom (0..1) |
-| `pushes` | "keep" \| "relax" \| "hold" |  | Full-frame shots' keyed pushes (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed. On the call, for every version that does not say |
+| `focus[].at` | number |  | Timeline seconds of the master this point is centered at, for a path of several (0..) |
+| `pushes` | "keep" \| "relax" \| "hold" |  | Keyed pushes of full-frame shots and of shots fitted with bands (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed; when no shot has a keyed zoom the answer's options says so. On the call, for every version that does not say |
 | `overrides` | { clip_id, x, y, scale, hidden }[] |  | Clips placed by hand in this version, after the automatic adaptation (raise a lower third, enlarge a headline, hide a logo): [{clip_id, x, y, scale, hidden}]. Any clip: a title, a picture, a compound clip, or a clip inside a compound by its own id. A clip in a group (an ad element) moves and resizes with its group; hidden is the clip alone. Kept in a saved version project. On the call, for every version that does not say |
 | `overrides[].clip_id` | string | yes | The clip, as describe_project names it in the master |
-| `overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it (-1..1) |
+| `overrides[].x` | number |  | Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it, and so do the rings and pinned clips pointing into a picture (-1..1) |
 | `overrides[].y` | number |  | Where it rests down the frame: its transform.y (-0.5 top .. 0.5 bottom; on a tall frame a title's box stays above y 0.15, where the apps' captions and buttons begin) (-1..1) |
 | `overrides[].scale` | number |  | Times its size as the version adapted it (1.25 a quarter larger: a title's type, any other layer's scale), about its own center (0.1..10) |
 | `overrides[].hidden` | boolean |  | true: off in this version; false: on, though the master hides it |
@@ -2566,6 +2662,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `quality` | "lower" \| "recommended" \| "higher" |  | Default recommended |
 | `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
+| `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
 
 Example:
 

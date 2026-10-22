@@ -1,7 +1,8 @@
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
-import { shiftRuns, styleRange } from "./textRuns";
+import { shiftRuns, styleRange, wrappedRange } from "./textRuns";
+import { textLines } from "./render/size";
 // The command registry: every edit an agent can make, by name, with a JSON
 // Schema for its arguments (ADR-006). One surface serves the in-app AI
 // AI assistant (as LLM tool definitions), the automation API, recipes/pipelines,
@@ -26,16 +27,19 @@ import {
 import * as ops from "./project/ops";
 import { assetRole, assetsOf, roleTrack, trackRole } from "./audioRoles";
 import { TRACK_ROLES } from "./project/defaults";
-import type { Adjust, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import type { Adjust, Anchor, Clip, ClipLabel, Crop, Ease, EdgeMode, Effect, Grade, HslBand, Id, Keyframe, Mask, MatteMode, Project, Shape, Sound, TextClip, TextRun, TextStyle, Track, TrackMatte, Transform, VisualClip, WheelName, Wiggle, WiggleTarget } from "./project/types";
+import { anchorOf, anchorProblem, anchorSummary, followAnchors } from "./anchors";
+import { placeSounds } from "./sfx";
+import { addCallout, CALLOUT_SHAPES, CALLOUT_STROKE, CalloutError, type CalloutShape } from "./callouts";
 import { ANIMATIONS, BLEND_MODES, CLIP_LABELS, EFFECTS, FILTERS, TRANSITIONS, effectDefaults } from "./catalog";
 import { copyEffectStack, editEffects, EFFECT_ACTIONS, pasteEffectStack, type EffectAction } from "./effectStack";
-import { paramAt, upsertKey } from "./keyframes";
+import { paramAt, setPath, upsertKey } from "./keyframes";
 import { keyframeProblem, partNeeds } from "./animatable";
 import { CURVE_MAX, CURVE_MIN, PRESETS, cleanPoints, normalizeWindow, speedAt } from "./speed";
 import { cleanCurve, CURVE_CHANNELS, isIdentityCurve, type CurveChannel } from "./curves";
 import { HSL_BANDS, hueToPuck, puckToBalance, WHEELS } from "./grade";
 import { EASE_IDS, easeById, liveRefs, presetOf, removeKeys, retimeKey, setEase, setValues, type KeyRef } from "./keyframeEdit";
-import { replaceText, type Caption } from "./captions";
+import { casedText, replaceText, type Caption } from "./captions";
 import { cutRanges, splitAtSourceTimes, type SourceRange } from "./project/cut";
 import { breakCompound, breakProblem, compoundProblem, compoundView, copyCompound, createCompound, withCompoundView } from "./project/compound";
 import { addStickerClip, findSticker, searchStickers, STICKER_MOTIONS } from "./stickers";
@@ -52,10 +56,10 @@ import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
 import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
-import { alignClips, ALIGNS, distributeClips, frameClips, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
+import { alignClips, ALIGNS, distributeClips, frameClips, frameMoves, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
-import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, setCrossfade, type MusicCut } from "./musicCut";
+import { cutMusic, MAX_CROSSFADE, MUSIC_CROSSFADE, MusicCutError, repeatMusic, setCrossfade, type MusicCut } from "./musicCut";
 import { addBeatHits, addCinematicBars, cutToBeats, EpicError, fitMusic, HIT_KINDS, isEffectTrack, markMusicClip, MAX_FLASHES_PER_SECOND, MUSIC_MARKERS, SECTION_NAMES, setSpeedRamp, type BeatHits, type CinematicBars, type CutToBeats, type FitMusic, type HitKind, type MusicMarkerKind, type SpeedRamp } from "./epic";
 import { gridStructure, readMusicGrid, sourceToTimeline } from "./analysis/musicMap";
 import { isDialog } from "./analysis/balance";
@@ -284,6 +288,63 @@ function landingTrack(p: Project, clip: Clip, trackId?: unknown): [Project, Id] 
   return [ops.addTrack(p, fresh), fresh.id];
 }
 
+/** style_text_range's edit: the ranges it styled go to `took` (text offsets). */
+function styleTextRange(p: Project, a: Record<string, unknown>, took: (ranges: [number, number][]) => void): Project {
+  return commandError(() => ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, (c) => {
+    if (c.type !== "text") throw new Error("not a text clip");
+    if (a.match !== undefined && (a.start !== undefined || a.end !== undefined)) throw new Error("Choose match or start and end");
+    let ranges: [number, number][] = [];
+    if (a.match !== undefined) {
+      const match = String(a.match);
+      if (!match) throw new Error("match cannot be empty");
+      for (let at = c.text.indexOf(match); at >= 0; at = c.text.indexOf(match, at + match.length)) ranges.push([at, at + match.length]);
+      if (!a.all) ranges = ranges.slice(Number(a.occurrence ?? 1) - 1, Number(a.occurrence ?? 1));
+      if (!ranges.length) throw new Error("No matching text occurrence");
+    } else if (a.clear && a.start === undefined && a.end === undefined) return { ...c, style: { ...c.style, runs: [] } };
+    else ranges = [[Number(a.start), Number(a.end)]];
+    took(ranges);
+    let runs = c.style.runs ?? [];
+    // The style flat, or as an object as set_text takes it; flat fields win.
+    const look = { ...((a.style ?? {}) as Partial<TextRun>), ...a } as Partial<TextRun>;
+    for (const [start, end] of ranges) runs = styleRange(c.text, runs, start, end, look, a.clear === true);
+    return { ...c, style: { ...c.style, runs } };
+  }));
+}
+
+/** What a styled run of a title takes (style_text_range), flat or as its style. */
+const RUN_STYLE = {
+  color: S.str("CSS fill color; replaces the range gradient"),
+  gradient: S.obj({ from: S.str("Start CSS color"), to: S.str("End CSS color"), angle: S.num("Angle in degrees") }, ["from", "to", "angle"], "Linear fill gradient"),
+  weight: S.num("Font weight", { minimum: 100, maximum: 900 }),
+  italic: S.bool("Italic letters"),
+  underline: S.bool("Underline letters"),
+  scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }),
+};
+
+/**
+ * A shot added on the main track a frame after the one before it ends
+ * starts where that one ends instead, a frame longer so it still ends
+ * where asked (when its file has the frame), and the answer says so. A
+ * start given to the millisecond rounds to the frame after a clip whose
+ * end a speed change rounded down: the fourth film test's batch set one
+ * clip to 1.4x (ending at 49.500 s) and gave the next 49.521, which landed
+ * at 49.533, a frame of black nobody asked for (ADR-125).
+ */
+function closeFrameGap(p: Project, trackId: Id, clipId: Id, a: Record<string, unknown>, report?: CommandReport): Project {
+  const t = p.tracks.find((x) => x.id === trackId);
+  const clip = t?.clips.find((c) => c.id === clipId);
+  if (!t?.main || !clip || a.mode === "insert") return p;
+  const before = t.clips.filter((c) => c.id !== clipId && ops.clipEnd(c) <= clip.start).reduce((end, c) => Math.max(end, ops.clipEnd(c)), -1);
+  if (before < 0 || clip.start - before !== 1) return p;
+  const s = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(3);
+  // Its head a frame earlier in its file, so it still ends where asked;
+  // a file with no frame before the in-point moves the clip instead.
+  const grown = ops.roomLeft(p, clip) >= 1;
+  const q = grown ? ops.trimClip(p, clipId, "start", before) : ops.updateClip(p, clipId, (c) => ({ ...c, start: before }));
+  if (report) (report.notes ??= []).push(`${clipId} starts at ${s(before)} s, where the clip before it ends: start ${a.start} rounded to ${s(clip.start)} s, a frame of black after it${grown ? "; its end is where asked" : "; it ends a frame earlier"}.`);
+  return q;
+}
+
 export const TEXT_STYLE_SCHEMA = S.obj({
   font: S.str("Font family"),
   size: S.num("Pixels at 1080p canvas height", { minimum: 4 }),
@@ -331,6 +392,42 @@ function regionOf(v: unknown): Region {
   const r = v as Region;
   if (r.x + r.w > 1.0001 || r.y + r.h > 1.0001) throw new CommandError("a region must lie inside the picture: x + w and y + h at most 1");
   return r;
+}
+
+/** frame_region's place_at (ADR-123): where on the canvas a region's
+ * center goes, a band showing where the picture runs out. */
+const PLACE_AT_SCHEMA = S.obj(
+  {
+    x: S.num("Across the canvas from its center: -0.5 left edge .. 0.5 right edge; default 0", { minimum: -0.5, maximum: 0.5 }),
+    y: S.num("Down the canvas from its center: -0.5 top .. 0.5 bottom; default 0", { minimum: -0.5, maximum: 0.5 }),
+  },
+  [],
+  "Put the region's center at this point of the canvas (fractions from its center) at any zoom, instead of sliding the picture back from its edges; a band shows where the picture runs out",
+);
+
+const placeAt = (v: unknown): { x: number; y: number } | undefined => {
+  if (v === undefined) return undefined;
+  const o = v as { x?: number; y?: number };
+  return { x: o.x ?? 0, y: o.y ?? 0 };
+};
+
+/** Pinning an overlay to footage (ADR-120). */
+const ANCHOR_SCHEMA = S.obj(
+  {
+    clip_id: S.str("The clip whose picture it follows (the screen recording or shot under it), on the same timeline"),
+    x: S.num("The point across that clip's source picture: 0 its left edge, 1 its right (frame_region's units)", { minimum: -1, maximum: 2 }),
+    y: S.num("The point down it: 0 its top, 1 its bottom", { minimum: -1, maximum: 2 }),
+  },
+  ["clip_id", "x", "y"],
+  "Pin it to a point of a clip's picture instead of giving x and y: its center goes there and follows that clip's position, scale and keys (frame_region zooms and pans included) through later edits",
+);
+
+/** A point anchor from an agent's `anchor`, for clip `self`. */
+function anchorArg(p: Project, v: unknown, self = ""): Anchor {
+  const a = v as { clip_id: string; x: number; y: number };
+  const problem = anchorProblem(p, self, String(a.clip_id));
+  if (problem) throw new CommandError(problem);
+  return { clipId: String(a.clip_id), keys: [{ f: 0, x: Number(a.x), y: Number(a.y) }] };
 }
 
 /** A style from an agent: the box parts get defaults, and an empty color
@@ -449,7 +546,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "add_track",
-    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones; audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
+    description: "Add an empty video (visual) or audio track. Video tracks stack above existing ones, under a row of captions on top (captions stay the top layer; move_track above_track_id puts a track over them); audio tracks go at the bottom. role makes an audio track a stem: dialog, music, effects or ambience (measure_loudness, preview_audio and new sounds go by it).",
     input: S.obj({ kind: S.str("Track kind", { enum: ["video", "audio"] }), name: S.str("Track name"), role: S.str("Audio tracks: the stem it is", { enum: TRACK_ROLES }) }, ["kind"]),
     run: (p, a) => {
       if (a.role !== undefined && a.kind !== "audio") throw new CommandError("role is for audio tracks");
@@ -509,7 +606,7 @@ export const COMMANDS: Command[] = [
       },
       ["asset_id", "start"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const asset = ops.getAsset(p, String(a.asset_id));
       if (!asset) throw new CommandError(`no asset with id ${a.asset_id}`);
       let clip = clipForAsset(asset, f(p, a.start), p.fps);
@@ -519,7 +616,7 @@ export const COMMANDS: Command[] = [
       const wanted = a.duration !== undefined ? span(p, a.start, a.duration) : clip.duration;
       clip = { ...clip, duration: Math.max(1, Math.min(wanted, room === Infinity ? wanted : room)) } as Clip;
       const [q, trackId] = landingTrack(p, clip, a.track_id);
-      return ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite");
+      return closeFrameGap(ops.addClip(q, trackId, clip, a.mode === "insert" ? "insert" : "overwrite"), trackId, clip.id, a, report);
     },
   },
   {
@@ -535,17 +632,19 @@ export const COMMANDS: Command[] = [
         style: TEXT_STYLE_SCHEMA,
         role: S.str("Style it from the brand kit (set_brand) first, then apply style on top: headline (heading font, about 9% of the frame high, with a shadow), subhead, body, label (small capitals in the accent color), cta (a pill button in the primary color) or badge (a box in the accent color)", { enum: TEXT_ROLES }),
         track_id: S.str("Track id; default above everything at that time"),
+        anchor: ANCHOR_SCHEMA,
       },
       ["text", "start", "duration"],
     ),
     run: (p, a, report) => {
+      if (a.anchor !== undefined && (a.x !== undefined || a.y !== undefined)) throw new CommandError("give x and y, or anchor (which places it), not both");
       const base = a.role ? roleStyle(brandOf(p), a.role as TextRole, typeScale(p.width, p.height), minTextSize(p.width, p.height)) : {};
       const style = styleFrom(base, (a.style ?? {}) as Partial<TextStyle>);
       // A long line wraps inside the safe area where it stands, instead of
       // running off the frame (9:16: off the apps' column).
       style.maxWidth ??= titleWrap(p, Number(a.x ?? 0));
       let clip: Clip = createTextClip(String(a.text), f(p, a.start), span(p, a.start, a.duration), style);
-      clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) } };
+      clip = { ...clip, transform: { ...clip.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0) }, ...(a.anchor !== undefined ? { anchor: anchorArg(p, a.anchor) } : {}) } as Clip;
       // Above everything showing then, as add_shape and stickers land: a
       // text added after its button went under it, on a free track below
       // the grade (Claude film test 2, ADR-116).
@@ -621,7 +720,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions), animated in, its clips grouped and stacked above everything at that time. Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
@@ -631,7 +730,7 @@ export const COMMANDS: Command[] = [
         subline: S.str("lower_third title or role; offer_badge tag; cta_button line under it; logo_reveal line under the wordmark (default the tagline)"),
         cta: S.str("Button words for end_card and cta_button; default 'Shop now'"),
         url: S.str("end_card and cta_button: website line; default the brand's url"),
-        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
+        logo: S.str("Which logo variant: auto (light on dark, dark on light), main, light, dark, icon, or none. end_card and logo_reveal draw one by default (auto); lower_third only when given, left of the name and title and as tall as both; offer_badge and cta_button draw none and refuse it", { enum: ["auto", ...LOGO_VARIANTS, "none"] }),
         position: S.str("Where in the safe area: lower_third default bottom-left, offer_badge top-right, cta_button bottom, logo_reveal center (end_card is always centered)", { enum: SPOTS }),
         background: S.str("end_card (default brand) and logo_reveal (default none): brand background color, primary color, scrim (60% black over the footage) or none", { enum: ["brand", "primary", "scrim", "none"] }),
         glow: S.bool("logo_reveal: a glow that flares as the logo lands"),
@@ -639,10 +738,12 @@ export const COMMANDS: Command[] = [
       },
       ["element", "start"],
     ),
-    run: (p, a) => {
+    run: (p, a, report) => {
       const logo = a.logo as LogoVariant | "auto" | "none" | undefined;
+      // A logo the element would not draw is refused, not dropped (ADR-121).
+      if (logo && logo !== "none" && (a.element === "offer_badge" || a.element === "cta_button")) throw new CommandError(`${a.element} draws no logo: leave logo out (end_card, lower_third and logo_reveal draw one)`);
       if (logo && logo !== "auto" && logo !== "none" && !brandOf(p).logos?.[logo] && !brandOf(p).logos?.main) throw new CommandError("the brand kit has no logo: import one and set_brand logo first, or pass logo none");
-      return addAdElement(p, a.element as AdElement, {
+      const r = addAdElement(p, a.element as AdElement, {
         start: f(p, a.start),
         ...(a.duration !== undefined ? { duration: span(p, a.start, a.duration) } : {}),
         headline: a.headline as string | undefined,
@@ -654,7 +755,9 @@ export const COMMANDS: Command[] = [
         background: a.background as AdBackground | undefined,
         glow: a.glow === true,
         flash: a.flash === true,
-      }).project;
+      });
+      if (report && r.notes.length) (report.notes ??= []).push(...r.notes);
+      return r.project;
     },
   },
   {
@@ -1265,7 +1368,7 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_mask",
-    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs; animated values get a keyframe at `at`.",
+    description: "CapCut's mask on pictures: shape linear (keeps above a line), mirror (a band), circle, rectangle, heart or star; none removes it. x and y move its center from the picture's center, width and height size it, all as fractions of the visible picture's width and height (so on a 16:9 picture width 0.44 with height 0.44 is an oval: aspect 1 makes a round circle or a square, its height following its width, or its width a height given alone); rotation in degrees turns it; feather 0..1 softens the edge; radius 0..1 rounds a rectangle's corners; invert keeps the outside. A new mask starts centered at 0.6 of the picture (hearts and stars square). A circle, rectangle, heart or star reaching past the picture's edge is cut flat there: the answer's notes name the edge and the x, y or size that keeps it whole. Values left out keep theirs. With at (timeline seconds), the values given are keyed there: one with no keys yet first gets a key at the clip's start holding what it was, so two calls (the same values at the moment it leaves, the new ones where it lands) move the mask; on a mask this call makes, at is not used (the answer says so). A spotlight that follows a screen recording's zooms is add_callout.",
     input: S.obj(
       {
         clip_ids: S.ids("Visual clips"),
@@ -1313,9 +1416,14 @@ export const COMMANDS: Command[] = [
           sizes.height = +s.height.toFixed(5);
           for (const k of ["width", "height"] as const) keyedNeedsAt(clip, `mask.${k}`, a.at);
         }
+        // at keys what it is given, from the values the mask had at the
+        // clip's start when they were still: it used to set them for the
+        // whole clip and say nothing (Claude film test 3, ADR-120).
         for (const k of MASK_PARAMS) {
-          if (sizes[k] !== undefined) p = ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
+          if (sizes[k] === undefined) continue;
+          p = now && rel !== undefined ? keyFrom(p, clip.id, `mask.${k}`, Number(sizes[k]), rel) : ops.setParam(p, [clip.id], `mask.${k}`, Number(sizes[k]), rel);
         }
+        if (!now && rel !== undefined && report && MASK_PARAMS.some((k) => sizes[k] !== undefined)) (report.notes ??= []).push(`The mask on ${clip.id} is new, so its values hold from the clip's start; set_mask again with at keys a move from them.`);
         const note = maskEdgeNote(p, clip.id, rel ?? 0, at);
         if (note && report) (report.notes ??= []).push(note);
       }
@@ -1391,10 +1499,13 @@ export const COMMANDS: Command[] = [
         rotation: S.num("Degrees, clockwise (turn a line to any angle)"),
         opacity: S.num("0..1, default 1", { minimum: 0, maximum: 1 }),
         track_id: S.str("Track id; default above everything at that time"),
+        anchor: ANCHOR_SCHEMA,
       },
       ["kind", "start", "duration"],
     ),
     run: (p, a, report) => {
+      if (a.anchor !== undefined && (a.x !== undefined || a.y !== undefined)) throw new CommandError("give x and y, or anchor (which places it), not both");
+      const anchor = a.anchor !== undefined ? anchorArg(p, a.anchor) : undefined;
       const kind = a.kind === "rounded_rectangle" ? "rectangle" : (a.kind as Shape["kind"]);
       const color = colorArg(a.color, "color") ?? "#ffffff";
       const width = a.width !== undefined ? Number(a.width) : kind === "ellipse" ? 0.2 : 0.3;
@@ -1422,11 +1533,93 @@ export const COMMANDS: Command[] = [
         shape,
         opacity: Number(a.opacity ?? 1),
         transform: { ...base.transform, x: Number(a.x ?? 0), y: Number(a.y ?? 0), rotation: Number(a.rotation ?? 0) },
+        ...(anchor ? { anchor } : {}),
       } as Clip;
       if (a.track_id === undefined) return placeOnTop(p, clip, "Graphics");
       const q = ops.addClip(p, trackOrThrow(p, a.track_id).id, clip);
       noteUnderAdjustment(q, clip.id, "a shape", report);
       return q;
+    },
+  },
+  {
+    name: "add_callout",
+    description:
+      "Point at a part of a screen recording or shot, as explainers do: a ring, box or rounded box that draws on around region, with the rest of the frame dimmed through a hole the same shape, both pinned to clip_id's picture, so they stay on the part through that clip's zooms and pans (frame_region, keys) and any later edit of them; to glides them on to other parts. region is in fractions of that clip's source picture, as frame_region takes it (x, y its top-left corner): give the part itself, the ring is drawn a few pixels clear of it. Two shape layers, the dim under the ring, grouped (they move, copy and delete together; each edits like any shape), above everything at that time. Example, the Split button of a 2560x1440 recording, then the clip's edge: {clip_id: 'c_1', region: {x: 0.102, y: 0.542, w: 0.018, h: 0.03}, at: 14.2, duration: 4.3, to: [{region: {x: 0.515, y: 0.825, w: 0.06, h: 0.095}, at: 15.83}], sound: true}.",
+    input: S.obj(
+      {
+        clip_id: S.str("The footage it points at (a video or picture clip on the same timeline)"),
+        region: { ...REGION_SCHEMA, description: "The part to point at, in fractions of that clip's source picture: x, y its top-left corner" },
+        shape: S.str("ring (an ellipse around it), box, or rounded (a box with round corners; default)", { enum: [...CALLOUT_SHAPES] }),
+        dim: S.num("How dark the rest of the frame goes, 0 (no dim, only the ring) .. 1; default 0.5", { minimum: 0, maximum: 1 }),
+        draw_on: S.num("Seconds the ring takes to draw on around it; 0 shows it whole at once. Default 0.35", { minimum: 0, maximum: 5 }),
+        at: S.num("Timeline seconds it starts", { minimum: 0 }),
+        duration: S.num("Seconds it stays; default 2", { minimum: 0.1 }),
+        to: {
+          type: "array",
+          description: "Glides, in order: each reaches its region at its at (timeline seconds), moving there from where it was over glide seconds",
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The next part, in the same clip's source fractions" }, at: S.num("Timeline seconds it arrives there", { minimum: 0 }), glide: S.num("Seconds the move takes, ending at at; default 0.4", { minimum: 0.03, maximum: 10 }), sound: S.bool("A soft click as it arrives there; default the callout's sound") }, ["region", "at"]),
+        },
+        color: S.str("The ring's color, CSS; default the brand kit's accent"),
+        stroke_width: S.num(`The ring's outline, pixels at 1080p; default ${CALLOUT_STROKE}`, { minimum: 1, maximum: 40 }),
+        sound: S.bool("A soft click as the ring draws on and as it arrives at each to (a to's own sound: false leaves that one silent, true clicks it alone), on the effects track (default false). Made on this computer: not inside a batch unless the project has a click already"),
+      },
+      ["clip_id", "region", "at"],
+    ),
+    run: (p, a) => {
+      const { clip } = clipOrThrow(p, a.clip_id);
+      if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to point at`);
+      const start = f(p, a.at), duration = span(p, a.at, a.duration ?? 2);
+      const sec = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(2);
+      if (start >= clip.start + clip.duration || start + duration <= clip.start) throw new CommandError(`the callout (${sec(start)}-${sec(start + duration)} s) does not overlap ${clip.id} (${sec(clip.start)}-${sec(clip.start + clip.duration)} s): point at the clip playing then`);
+      try {
+        const made = addCallout(p, {
+          clipId: clip.id,
+          region: regionOf(a.region),
+          shape: (a.shape as CalloutShape | undefined) ?? "rounded",
+          dim: Number(a.dim ?? 0.5),
+          start,
+          duration,
+          drawOn: f(p, a.draw_on ?? 0.35),
+          to: ((a.to ?? []) as { region: unknown; at: number; glide?: number }[]).map((t) => ({ region: regionOf(t.region), f: f(p, t.at), glide: f(p, t.glide ?? 0.4) })),
+          color: colorArg(a.color, "color"),
+          ...(a.stroke_width !== undefined ? { strokeWidth: Number(a.stroke_width) } : {}),
+        });
+        // A click where it draws on and where it lands on each next part:
+        // the fourth film test placed twelve arrival clicks by hand
+        // (ADR-125). A to's own sound wins over the callout's.
+        const clicks = [...(a.sound === true ? [start] : []), ...((a.to ?? []) as { at: number; sound?: boolean }[]).filter((t) => t.sound ?? a.sound === true).map((t) => f(p, t.at))];
+        if (!clicks.length) return made.project;
+        // The click's file is made outside the registry (automation.exec),
+        // as add_sound_effect's are; here it is placed.
+        const click = p.assets.find((x) => x.kind === "audio" && x.sound?.id === "click");
+        if (!click) throw new CommandError("sound needs the click's file, which add_callout makes when it runs on its own (MCP or window.videoEditor.exec): inside a batch, add the callout without sound and add_sound_effect click at its start (and each to's at) after");
+        return placeSounds(made.project, clicks.map((fr) => ({ name: "click", at: framesToSeconds(fr, p.fps), volume: 0.35 })), new Map([["click", click]]), start).project;
+      } catch (e) {
+        throw e instanceof CalloutError ? new CommandError(e.message) : e;
+      }
+    },
+  },
+  {
+    name: "set_anchor",
+    description:
+      "Pin titles, shapes or stickers to a point of a clip's picture (anchor {clip_id, x, y}, source fractions as frame_region takes them), so they follow its zooms and pans; or none true to unpin them where they are. A pinned clip moved by hand (a drag, set_param on its position) is pinned again where it lands. describe_project shows each clip's anchor.",
+    input: S.obj({ clip_ids: S.ids("The clips to pin or unpin (a callout's two parts: give both)"), anchor: ANCHOR_SCHEMA, none: S.bool("true: unpin them; they stay where they are now") }, ["clip_ids"]),
+    run: (p, a) => {
+      if ((a.anchor === undefined) === (a.none !== true)) throw new CommandError("give anchor (to pin) or none true (to unpin)");
+      for (const id of a.clip_ids as Id[]) {
+        const { clip } = clipOrThrow(p, id);
+        if (!("transform" in clip)) throw new CommandError(`${clip.type} clips have no picture to pin`);
+        if (a.none === true) {
+          p = ops.updateClip(p, clip.id, (c) => omit(c as Clip & { anchor?: unknown }, "anchor") as Clip);
+          continue;
+        }
+        const pin = anchorArg(p, a.anchor, clip.id);
+        // A callout's ring or dim keeps its region's size, its glides go.
+        const was = anchorOf(clip)?.keys[0];
+        const keys = [{ ...pin.keys[0], ...(was?.w !== undefined ? { w: was.w, h: was.h } : {}) }];
+        p = ops.updateClip(p, clip.id, (c) => ({ ...c, anchor: { ...anchorOf(c), ...pin, keys } }) as Clip);
+      }
+      return p;
     },
   },
   {
@@ -1873,32 +2066,28 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "style_text_range",
-    description: "Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. Later styles merge fields; a color replaces a gradient. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.",
+    description: "Style characters within a title. UTF-16 offsets are end-exclusive. Alternatively match a literal word or phrase (case-sensitive), choosing a 1-based occurrence or all matches. The style is color, gradient, weight, italic, underline and scale, given flat ({match: 'SALE', color: '#ff0'}) or as a style object as set_text takes one ({match: 'SALE', style: {color: '#ff0'}}). Later styles merge fields; a color replaces a gradient; a scaled run wraps at its own size. clear removes styling in the range, or all runs if no range is supplied. describe_project reports runs.",
     input: S.obj({
       clip_id: S.str("Text clip id"), match: S.str("Literal word or phrase to find"),
       occurrence: S.num("1-based match occurrence; default 1", { minimum: 1 }), all: S.bool("Style every match"),
       start: S.num("Start UTF-16 character offset, inclusive", { minimum: 0 }), end: S.num("End UTF-16 character offset, exclusive", { minimum: 1 }),
-      color: S.str("CSS fill color; replaces the range gradient"),
-      gradient: S.obj({ from: S.str("Start CSS color"), to: S.str("End CSS color"), angle: S.num("Angle in degrees") }, ["from", "to", "angle"], "Linear fill gradient"),
-      weight: S.num("Font weight", { minimum: 100, maximum: 900 }), italic: S.bool("Italic letters"), underline: S.bool("Underline letters"),
-      scale: S.num("Size multiplier relative to the base size", { minimum: 0.25, maximum: 4 }), clear: S.bool("Remove styles from the range, or the entire title without a range"),
+      ...RUN_STYLE,
+      style: S.obj(RUN_STYLE, [], "The same fields as one object, as set_text takes its style; the flat ones win"),
+      clear: S.bool("Remove styles from the range, or the entire title without a range"),
     }, ["clip_id"]),
-    run: (p, a) => commandError(() => ops.updateClip(p, clipOrThrow(p, a.clip_id).clip.id, c => {
-      if (c.type !== "text") throw new Error("not a text clip");
-      if (a.match !== undefined && (a.start !== undefined || a.end !== undefined)) throw new Error("Choose match or start and end");
+    run: (p, a, report) => {
       let ranges: [number, number][] = [];
-      if (a.match !== undefined) {
-        const match = String(a.match);
-        if (!match) throw new Error("match cannot be empty");
-        for (let at = c.text.indexOf(match); at >= 0; at = c.text.indexOf(match, at + match.length)) ranges.push([at, at + match.length]);
-        if (!a.all) ranges = ranges.slice(Number(a.occurrence ?? 1) - 1, Number(a.occurrence ?? 1));
-        if (!ranges.length) throw new Error("No matching text occurrence");
-      } else if (a.clear && a.start === undefined && a.end === undefined) return { ...c, style: { ...c.style, runs: [] } };
-      else ranges = [[Number(a.start), Number(a.end)]];
-      let runs = c.style.runs ?? [];
-      for (const [start, end] of ranges) runs = styleRange(c.text, runs, start, end, a, a.clear === true);
-      return { ...c, style: { ...c.style, runs } };
-    })),
+      const q = styleTextRange(p, a, (r) => (ranges = r));
+      // A styled stretch the wrap parts: said, with the lines it is drawn on (ADR-124).
+      const c = clipOrThrow(q, a.clip_id).clip as TextClip;
+      const lines = report && !a.clear ? textLines(q, c) : undefined;
+      for (const [start, end] of lines ? ranges : []) {
+        const shown = (x: number) => casedText(c.text.slice(0, x), c.style.case).length;
+        const split = wrappedRange(casedText(c.text, c.style.case), lines!, shown(start), shown(end));
+        if (split) (report!.notes ??= []).push(`"${c.text.slice(start, end)}" is drawn on ${split.length} lines (${split.map((l) => `"${l}"`).join(" / ")}): at its size it is wider than the title wraps at (style.maxWidth ${+c.style.maxWidth.toFixed(3)} of the canvas width); a wider maxWidth, a smaller scale or size, or fewer words keeps it on one.`);
+      }
+      return q;
+    },
   },
   {
     name: "set_text",
@@ -1997,12 +2186,13 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "update_marker",
-    description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds.",
-    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color") }, ["marker_id"]),
+    description: "Edit a timeline marker's position, label or color without moving clips. Times are seconds. A marker that follows a clip (describe_project names its clip) stops following it when moved; detach: true stops it where it stands.",
+    input: S.obj({ marker_id: S.str("Marker id"), at: S.num("Timeline seconds", { minimum: 0 }), label: S.str("Text"), color: S.str("CSS color"), detach: S.bool("Stop following its clip, staying where it is") }, ["marker_id"]),
     run: (p, a) => updateMarker(p, String(a.marker_id), {
       ...(a.at !== undefined ? { frame: f(p, a.at) } : {}),
       ...(a.label !== undefined ? { label: String(a.label) } : {}),
       ...(a.color !== undefined ? { color: String(a.color) } : {}),
+      ...(a.detach === true ? { detach: true } : {}),
     }),
   },
   {
@@ -2032,11 +2222,33 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "set_caption_look",
-    description: "Give every caption one of the built-in looks (CapCut's caption templates): classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal. Sets the whole caption style and its height; words and timings stay.",
-    input: S.obj({ look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }) }, ["look"]),
+    description:
+      "Restyle every caption at once (CapCut's caption templates, and its caption panel's position and size). look gives them one of the built-in looks: classic, yellow (bold yellow capitals), boxed, pop (capitals with the spoken word highlighted), neon or minimal, which sets the whole caption style and its height. y and x move every caption, size and maxWidth size and narrow them, and style sets any other field of their style (add_text's: color, highlight, font, stroke...), over the look when both are given. Words and timings stay. Example: {y: -0.2, size: 52, maxWidth: 0.6} puts a tall video's captions in its upper band, smaller and narrower.",
+    input: S.obj({
+      look: S.str("Look", { enum: Object.keys(CAPTION_LOOKS) }),
+      y: S.num("Every caption's vertical offset from the center, a canvas fraction (y down; 0.05 on a tall canvas sits above the apps' own captions and buttons)", { minimum: -0.5, maximum: 0.5 }),
+      x: S.num("Every caption's horizontal offset from the center, a canvas fraction (-0.04 centers them between a tall canvas's app rails)", { minimum: -0.5, maximum: 0.5 }),
+      size: S.num("Every caption's type size, pixels at 1080p", { minimum: 1 }),
+      maxWidth: S.num("The width every caption wraps within, a fraction of the canvas width", { minimum: 0.05, maximum: 1 }),
+      style: TEXT_STYLE_SCHEMA,
+    }),
     run: (p, a) => {
       if (!p.tracks.some((t) => t.clips.some((c) => c.type === "text" && c.caption))) throw new CommandError("There are no captions yet: add_captions, or generate them in the Captions tab, first");
-      return applyCaptionLook(p, String(a.look));
+      if (![a.look, a.y, a.x, a.size, a.maxWidth, a.style].some((v) => v !== undefined)) throw new CommandError("Give a look, or what to change on every caption: y, x, size, maxWidth or style");
+      const q = a.look === undefined ? p : applyCaptionLook(p, String(a.look));
+      const given = { ...((a.style ?? {}) as Partial<TextStyle>), ...(a.size !== undefined ? { size: Number(a.size) } : {}), ...(a.maxWidth !== undefined ? { maxWidth: Number(a.maxWidth) } : {}) };
+      const restyle = Object.keys(given).length > 0;
+      return {
+        ...q,
+        tracks: q.tracks.map((t) => ({
+          ...t,
+          clips: t.clips.map((c): Clip => {
+            if (c.type !== "text" || !c.caption) return c;
+            const style = restyle ? (styleFrom(c.style, given) as TextStyle) : c.style;
+            return { ...c, style, transform: { ...c.transform, ...(a.x !== undefined ? { x: Number(a.x) } : {}), ...(a.y !== undefined ? { y: Number(a.y) } : {}) } };
+          }),
+        })),
+      };
     },
   },
   {
@@ -2218,7 +2430,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_music",
     description:
-      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}.",
+      "Cut bars out of a song and join it without a click: from and to are the music file's seconds (as cut_ranges takes them), each moved to the song's nearest bar line (snap beat: beat; none: as given) from its grid (set_music_grid; analyze_music reads bpm and the first downbeat to give it), the stretch removed and the gap closed. The piece after plays on exactly whole bars later in the file, so the beat runs on, and the two pieces meet with a short equal-power crossfade that ends on the downbeat (crossfade, default 0.03 s; 0 for a butt cut, which plays a few milliseconds of near-silence at the join). The answer's note says the file seconds cut and where the pieces meet; preview_audio's edges then measure the join. repeat n plays the bars from-to n more times right after they play instead of cutting them (a loop: the song grows by whole bars, its later part and every clip after it on its track playing that much later, each jump back joined as a cut's is): to land a final hit later, or to fill a longer cut. Example: {\"clip_id\": \"c_3\", \"from\": 14, \"to\": 30}; four bars at 120 BPM played twice: {\"clip_id\": \"c_3\", \"from\": 8, \"to\": 16, \"repeat\": 1}.",
     input: S.obj(
       {
         clip_id: S.str("The song's audio clip"),
@@ -2226,18 +2438,27 @@ export const COMMANDS: Command[] = [
         to: S.num("File seconds to cut to (moved to the nearest bar line)", { minimum: 0 }),
         snap: S.str("Where from and to land: bar (default), beat, or none (as given)", { enum: ["bar", "beat", "none"] }),
         crossfade: S.num(`Seconds the pieces crossfade over, ending at the cut (default ${MUSIC_CROSSFADE}; 0 a butt cut)`, { minimum: 0, maximum: MAX_CROSSFADE }),
+        repeat: S.num("Play from-to this many more times right after it instead of cutting it (1 plays those bars twice), 1 to 16", { minimum: 1, maximum: 16 }),
       },
       ["clip_id", "from", "to"],
     ),
     run: (p, a, report) => {
       try {
-        const r = cutMusic(p, a as unknown as MusicCut);
-        const bars = (() => {
+        const barsOf = (from: number, to: number) => {
           const g = p.assets.find((x) => x.id === (ops.findClip(p, String(a.clip_id))?.clip as { assetId?: string } | undefined)?.assetId)?.musicGrid;
           if (!g) return "";
-          const n = +((r.to - r.from) / (240 / g.bpm)).toFixed(2);
+          const n = +((to - from) / (240 / g.bpm)).toFixed(2);
           return `, ${n} ${n === 1 ? "bar" : "bars"} at ${g.bpm} BPM`;
-        })();
+        };
+        if (a.repeat !== undefined) {
+          const r = repeatMusic(p, { ...(a as unknown as MusicCut), times: Number(a.repeat) });
+          const n = Number(a.repeat), s = (x: number) => +x.toFixed(3);
+          const meet = r.joins.map((j) => `${s(j.at)} s`).join(", ");
+          if (report) (report.notes ??= []).push(`Repeated ${s(r.from)}-${s(r.to)} s of the song's file ${n === 1 ? "once" : `${n} times`}${barsOf(r.from, r.to)}: the song plays ${s(r.moved)} s longer, and clips after it on its track moved as much; the pieces meet at ${meet} on the timeline${r.joins[0]?.crossfade ? ` with a ${r.joins[0].crossfade} s crossfade` : ", butt cuts"}. preview_audio's edges measure the joins.`);
+          return r.project;
+        }
+        const r = cutMusic(p, a as unknown as MusicCut);
+        const bars = barsOf(r.from, r.to);
         if (report) (report.notes ??= []).push(`Cut ${+r.from.toFixed(3)}-${+r.to.toFixed(3)} s of the song's file${bars}${r.join ? `; the pieces meet at ${+r.join.at.toFixed(3)} s on the timeline${r.join.crossfade ? ` with a ${r.join.crossfade} s crossfade` : ", a butt cut"}` : ""}.`);
         return r.project;
       } catch (e) {
@@ -2699,7 +2920,7 @@ export const COMMANDS: Command[] = [
   {
     name: "frame_region",
     description:
-      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. Replaces the clip's scale and position keyframes.",
+      "Show one part of a video or picture full screen, as a zoom on a screen recording does: region is a rectangle in fractions of the source picture (x, y its top-left corner; {x:0.5,y:0,w:0.5,h:1} is the right half). fill (default) covers the canvas, fit shows all of the region. The picture slides back where it would leave an empty band, which keeps a part at the picture's edge at the canvas's edge; place_at {x, y} instead puts the region's center at that point of the canvas (fractions from its center, as positions are: {x: 0, y: 0} centers it at any zoom, {x: 0, y: -0.15} above the middle, clear of a tall frame's buttons), leaving a band where the picture runs out. With to_region, it moves from the one to the other between from and to (default the whole clip), easing in and out. moves, instead of region, is any number of moves in one call: each region is shown at its at (timeline seconds), the picture moving there from the move before (ease, default easeInOut); before the first it holds the first, and a hold is the same region again, so a push-in and a later pan is [{region: whole, at: 12.9}, {region: A, at: 13.7}, {region: A, at: 15.4}, {region: B, at: 15.8}]. Replaces the clip's scale and position keyframes; titles, shapes and callouts pinned to the clip (anchor, add_callout) follow.",
     input: S.obj(
       {
         clip_id: S.str("Video or image clip id"),
@@ -2708,18 +2929,42 @@ export const COMMANDS: Command[] = [
         mode: S.str("How the region meets the canvas", { enum: ["fill", "fit"] }),
         from: S.num("Timeline seconds the move starts; default the clip's start"),
         to: S.num("Timeline seconds the move ends; default the clip's end"),
+        moves: {
+          type: "array",
+          description: "Instead of region, to_region, from and to: the regions in order, each shown at its at, moving there from the one before",
+          items: S.obj({ region: { ...REGION_SCHEMA, description: "The part shown at at" }, at: S.num("Timeline seconds the region fills the frame", { minimum: 0 }), ease: { ...EASE_SCHEMA, description: `How the move into this region goes: ${EASE_IDS.join(", ")}; default easeInOut` }, place_at: { ...PLACE_AT_SCHEMA, description: "This move's place_at, instead of the call's" } }, ["region", "at"]),
+        },
+        place_at: PLACE_AT_SCHEMA,
       },
-      ["clip_id", "region"],
+      ["clip_id"],
     ),
     run: (p, a) => {
       const { clip, track } = clipOrThrow(p, a.clip_id);
       if (clip.type !== "video" && clip.type !== "image") throw new CommandError(`${clip.type} clips have no picture to frame`);
       if (track.locked) throw new CommandError(`track ${track.name} is locked`);
       const mode = a.mode === "fit" ? "fit" : "fill";
+      const at = placeAt(a.place_at);
+      if (a.moves !== undefined) {
+        if (a.region !== undefined || a.to_region !== undefined || a.from !== undefined || a.to !== undefined) throw new CommandError("moves replaces region, to_region, from and to: give one or the other");
+        const list = a.moves as { region: unknown; at: number; ease?: string; place_at?: unknown }[];
+        if (!list.length) throw new CommandError("moves needs at least one move");
+        const sec = (fr: number) => +framesToSeconds(fr, p.fps).toFixed(2);
+        const moves = list.map((m, i) => {
+          const rel = f(p, m.at) - clip.start;
+          if (rel < 0 || rel > clip.duration) throw new CommandError(`move ${i + 1} at ${m.at} s is outside ${clip.id} (${sec(clip.start)}-${sec(clip.start + clip.duration)} s)`);
+          const there = placeAt(m.place_at) ?? at;
+          return { region: regionOf(m.region), f: Math.min(rel, clip.duration - 1), ...(m.ease !== undefined ? { ease: easeById(m.ease) } : {}), ...(there ? { at: there } : {}) };
+        });
+        moves.forEach((m, i) => {
+          if (i && m.f <= moves[i - 1].f) throw new CommandError(`move ${i + 1} at ${list[i].at} s is not after move ${i} at ${list[i - 1].at} s: give the moves in order, a frame or more apart`);
+        });
+        return frameMoves(p, clip.id, moves, mode);
+      }
+      if (a.region === undefined) throw new CommandError("give region (with to_region for one move), or moves");
       const rel = (s: unknown, fallback: number) => (s === undefined ? fallback : Math.max(0, Math.min(clip.duration - 1, f(p, s) - clip.start)));
       const from = rel(a.from, 0), to = rel(a.to, clip.duration - 1);
       if (a.to_region && to <= from) throw new CommandError("to must come after from, inside the clip");
-      return frameRegion(p, clip.id, regionOf(a.region), a.to_region ? { region: regionOf(a.to_region), from, to } : undefined, mode);
+      return frameRegion(p, clip.id, regionOf(a.region), a.to_region ? { region: regionOf(a.to_region), from, to } : undefined, mode, at);
     },
   },
   {
@@ -2733,6 +2978,7 @@ export const COMMANDS: Command[] = [
           description: "The steps, in order",
           items: S.obj({ command: S.str("Command name, e.g. set_animation"), args: { type: "object", description: "That command's arguments" } }, ["command"]),
         },
+        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too)"),
       },
       ["commands"],
     ),
@@ -2800,6 +3046,18 @@ function missingPart(clip: Clip, path: string): string | null {
     if (cur === undefined || cur === null) return segs.slice(0, i + 1).join(".");
   }
   return null;
+}
+
+/** A key at clip frame `rel`; a path with no keys first gets one at the
+ * clip's start holding the value it had, so the value moves from there
+ * (at the start itself the value is simply set). */
+function keyFrom(p: Project, id: Id, path: string, value: number, rel: number): Project {
+  return ops.updateClip(p, id, (c) => {
+    const keys = c.keyframes?.[path] ?? [];
+    if (!keys.length && rel <= 0) return setPath(c, path, value);
+    const start = keys.length ? keys : [{ f: 0, v: paramAt(c, path, 0) }];
+    return { ...c, keyframes: { ...c.keyframes, [path]: upsertKey(start, { ...keys.find((k) => k.f === rel), f: rel, v: value }) } };
+  });
 }
 
 /** A keyed value given without `at` would go under its keys, where nothing
@@ -2911,8 +3169,12 @@ export function runCommand(p: Project, name: string, args: unknown = {}, report?
     }
   }
   // A song's markers follow its clip, so the next step (a batch's, a
-  // cut_to_beats after a move) sees them where the beats now play.
-  return followClips(next);
+  // cut_to_beats after a move) sees them where the beats now play; what is
+  // pinned to a clip's picture follows it the same way (ADR-120).
+  const notes: string[] = [];
+  const out = followAnchors(p, followClips(next), notes);
+  if (notes.length && report) (report.notes ??= []).push(...notes);
+  return out;
 }
 
 /**
@@ -3023,6 +3285,7 @@ export function describeProject(p: Project) {
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
         ...((c.type === "video" || c.type === "image") && c.canvas ? { canvas_fill: c.canvas.type } : {}),
         ...graphicsSummary(c),
+        ...anchorSummary(p, c),
         ...(c.type === "text" && c.style.case ? { case: c.style.case } : {}),
         ...(c.type === "text" && (c.style.weight !== undefined || !c.style.bold) ? { weight: c.style.weight ?? 400 } : {}),
         ...(c.type === "text" ? { size: c.style.size, color: c.style.color, ...(c.style.background ? { box: c.style.background.color } : {}), ...(c.style.stroke?.width ? { outline: c.style.stroke.width } : {}), ...(c.style.shadow ? { shadow: c.style.shadow.blur } : {}), ...typeSummary(c.style) } : {}),
@@ -3072,10 +3335,19 @@ function typeSummary(st: TextStyle): { style?: Record<string, unknown> } {
   return Object.keys(out).length ? { style: out } : {};
 }
 
+/** Keys baked a frame or two apart, four or more in a row: a glide or a
+ * pan followed key by key (a callout pinned to a pushed-in shot, ADR-120),
+ * which nobody reads or edits one at a time. */
+export function bakedKeys(ks: Keyframe[]): boolean {
+  for (let i = 1, run = 1; i < ks.length; i++) if ((run = ks[i].f - ks[i - 1].f <= 2 ? run + 1 : 1) >= 4) return true;
+  return false;
+}
+
 /** A clip's keyframes for describeProject, each path's keys as [at, value]
  * or [at, value, ease] in timeline seconds (ease a preset's name or a
  * bezier), so an edit to a key shows in the change answer. A dense path
- * (tracking, ducking) is summed up instead. */
+ * (tracking, ducking) or a baked one (bakedKeys: a callout's glides were
+ * 30 keys each, about 6 KB an add_callout, ADR-124) is summed up instead. */
 function keySummary(c: Clip, s: (frames: number) => number) {
   const paths = Object.entries(c.keyframes ?? {}).filter(([, k]) => k.length);
   if (!paths.length) return {};
@@ -3087,7 +3359,7 @@ function keySummary(c: Clip, s: (frames: number) => number) {
   const MAX = 24;
   return {
     keyframes: Object.fromEntries(
-      paths.map(([path, ks]) => [path, ks.length <= MAX ? ks.map(key) : { count: ks.length, first: key(ks[0]), last: key(ks.at(-1)!), range: [r(Math.min(...ks.map((k) => k.v))), r(Math.max(...ks.map((k) => k.v)))] }]),
+      paths.map(([path, ks]) => [path, ks.length <= MAX && !bakedKeys(ks) ? ks.map(key) : { count: ks.length, first: key(ks[0]), last: key(ks.at(-1)!), range: [r(Math.min(...ks.map((k) => k.v))), r(Math.max(...ks.map((k) => k.v)))] }]),
     ),
   };
 }

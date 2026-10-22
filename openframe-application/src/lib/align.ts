@@ -6,7 +6,7 @@
 
 import { paramAt } from "./keyframes";
 import { findClip, setParam, setUniformScale, updateClip } from "./project/ops";
-import type { Clip, Id, Project, VisualClip } from "./project/types";
+import type { Clip, Ease, Id, Project, VisualClip } from "./project/types";
 import { anchorShift, layerAt, type Layer } from "./render/plan";
 
 export type Align = "left" | "center" | "right" | "top" | "middle" | "bottom";
@@ -325,22 +325,27 @@ export interface Region {
  * The uniform scale and position (canvas fractions from the center) that
  * show `r` of the clip's uncropped source filling the canvas (fit: all of
  * it inside). The picture slides back where it would uncover empty canvas,
- * so a region at the picture's edge zooms without a black band.
+ * so a region at the picture's edge zooms without a black band; with `at`
+ * (a canvas point, fractions from its center) the region's center is put
+ * there instead, a band showing where the picture runs out (ADR-123: on
+ * 9:16 a push past 3x into a widescreen recording slid the timeline at its
+ * bottom edge down into the apps' buttons).
  */
-export function regionTransform(p: Project, c: VisualClip, r: Region, mode: "fill" | "fit" = "fill") {
+export function regionTransform(p: Project, c: VisualClip, r: Region, mode: "fill" | "fit" = "fill", at?: { x: number; y: number }) {
   const src = sourceSize(p, c);
   const fit = src.native ? 1 : Math.min(p.width / src.w, p.height / src.h);
   const kx = p.width / (r.w * src.w * fit), ky = p.height / (r.h * src.h * fit);
   const scale = mode === "fit" ? Math.min(kx, ky) : Math.max(kx, ky);
-  const place = (center: number, shown: number, canvas: number) => {
+  const place = (center: number, shown: number, canvas: number, to?: number) => {
     const v = (-(center - 0.5) * shown) / canvas;
+    if (to !== undefined) return to + v;
     const room = (shown - canvas) / (2 * canvas); // before an edge shows
     return room < 0 ? v : Math.max(-room, Math.min(room, v));
   };
   return {
     scale: tidy(scale),
-    x: tidy(place(r.x + r.w / 2, src.w * fit * scale, p.width)),
-    y: tidy(place(r.y + r.h / 2, src.h * fit * scale, p.height)),
+    x: tidy(place(r.x + r.w / 2, src.w * fit * scale, p.width, at?.x)),
+    y: tidy(place(r.y + r.h / 2, src.h * fit * scale, p.height, at?.y)),
   };
 }
 
@@ -348,19 +353,33 @@ const FRAMED = ["transform.scale", "transform.x", "transform.y"] as const;
 
 /** Frame `r` (frame_region): static, or moving to `move.region` between two
  * clip-relative frames, easing in and out. Replaces those keyframes. */
-export function frameRegion(p: Project, id: Id, r: Region, move: { region: Region; from: number; to: number } | undefined, mode: "fill" | "fit"): Project {
+export function frameRegion(p: Project, id: Id, r: Region, move: { region: Region; from: number; to: number } | undefined, mode: "fill" | "fit", at?: { x: number; y: number }): Project {
+  return frameMoves(p, id, move ? [{ region: r, f: move.from, at }, { region: move.region, f: move.to, at }] : [{ region: r, f: 0, at }], mode);
+}
+
+/** frame_region's moves (ADR-120): the clip shows each region at its
+ * clip-relative frame, in order, moving there from the one before with
+ * that move's ease (default easing in and out); before the first it holds
+ * the first, after the last the last. One move is a still frame. A move's
+ * `at` puts its region's center on that canvas point (regionTransform).
+ * Replaces the scale and position keyframes. */
+export function frameMoves(p: Project, id: Id, moves: { region: Region; f: number; ease?: Ease; at?: { x: number; y: number } }[], mode: "fill" | "fit"): Project {
   p = setUniformScale(p, [id], true);
   const c = findClip(p, id)!.clip as VisualClip;
-  const a = regionTransform(p, c, r, mode);
-  const b = move && regionTransform(p, c, move.region, mode);
+  const shown = moves.map((m) => regionTransform(p, c, m.region, mode, m.at));
   return updateClip(p, id, (clip) => {
     const keys = { ...clip.keyframes };
     FRAMED.forEach((k, i) => {
       delete keys[k];
-      const v = (t: typeof a) => [t.scale, t.x, t.y][i];
-      if (b && move) keys[k] = [{ f: move.from, v: v(a), ease: "easeInOut" }, { f: move.to, v: v(b) }];
+      const v = (t: (typeof shown)[number]) => [t.scale, t.x, t.y][i];
+      if (moves.length > 1) {
+        keys[k] = moves.map((m, j) => {
+          const e = j + 1 < moves.length ? (moves[j + 1].ease ?? "easeInOut") : undefined;
+          return { f: m.f, v: v(shown[j]), ...(e && e !== "linear" ? { ease: e } : {}) };
+        });
+      }
     });
-    const transform = { ...(clip as VisualClip).transform, scale: a.scale, x: a.x, y: a.y };
+    const transform = { ...(clip as VisualClip).transform, scale: shown[0].scale, x: shown[0].x, y: shown[0].y };
     return { ...clip, transform, keyframes: Object.keys(keys).length ? keys : undefined } as Clip;
   });
 }

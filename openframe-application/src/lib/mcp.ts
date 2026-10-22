@@ -11,7 +11,7 @@ import { DEFAULT_VOICE, VOICES } from "./tts";
 import { CHOSEN_MAX_SPS, PACE_BANDS, READ_AS, readBand } from "./voicePace";
 import { STYLE_IDS, STYLES } from "./music/styles";
 import { MODE_IDS } from "./music/theory";
-import { MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
+import { cueAnswer, MUSIC_MARKER_KINDS, planMusicAnswer } from "./music/cues";
 import { coerceNumbers, COMMANDS, PROJECT_FILE_COMMANDS, TEXT_STYLE_SCHEMA, validate, type JsonSchema } from "./commands";
 import { annotations, DESIGN, fullCatalog, helpText, HELP_TOPICS, PLAYBOOKS, PROMPTS, promptMessages } from "./mcpGuide";
 import { filterDescription, type DescribeFilter } from "./describeFilter";
@@ -23,7 +23,7 @@ import { DUCK_MIN_GAP, DUCK_RELEASE } from "./analysis/duck";
 import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
-import { groupFindings, markerMoves, oneDuck, reviewSummary, shareCommon, withShared } from "./answerSize";
+import { groupFindings, markerMoves, oneDuck, quietAnswer, reviewSummary, shareClips, shiftedTogether, wholeClips } from "./answerSize";
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -84,7 +84,7 @@ export interface McpHost {
   exportVersions(options: VersionsRequest): Promise<unknown>;
   /** One JPEG (base64) of every version at a few moments, nothing
    * exported, and where each version's framing cuts a shot's subject. */
-  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown }>;
+  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown; callouts?: unknown; options?: unknown; coverage?: unknown }>;
   /** Each version saved as a project of its own, nothing exported. */
   saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
@@ -136,6 +136,8 @@ export interface VersionsRequest {
   loudness?: number;
   /** Desktop: the absolute folder to write into instead of the Videos folder. */
   folder?: string;
+  /** Replace a file of the same name in folder (ADR-125). */
+  replace?: boolean;
 }
 
 type Desc = Record<string, unknown> & { tracks?: ({ id: string; clips: { id: string }[] } & Record<string, unknown>)[]; assets?: { id: string }[] };
@@ -162,6 +164,16 @@ function markerSummary(items: unknown[]): unknown {
   return { count: list.length, by_label: by, from: at[0], to: at.at(-1), note: "describe_project lists every marker" };
 }
 
+/** A pinned clip's glides in an edit's answer: how many keys, from when
+ * to when. Its regions are the ones the call gave, and a callout's ring
+ * and dim each carried them all (about 1.4 KB a callout of four glides,
+ * ADR-124); describe_project lists every key. */
+function leanAnchor(c: unknown): unknown {
+  const a = (c as { anchor?: { keys?: { at: number }[] } }).anchor;
+  if (!Array.isArray(a?.keys) || a.keys.length <= 2) return c;
+  return { ...(c as object), anchor: { ...a, keys: { count: a.keys.length, from: a.keys[0].at, to: a.keys.at(-1)!.at } } };
+}
+
 /**
  * What an edit changed, from describe_project before and after: clips and
  * tracks added, changed (as they are now) and removed, assets added and
@@ -184,13 +196,14 @@ export function describeChanges(before: unknown, after: unknown): unknown {
       changed = m.listed as unknown as T[];
       if (m.moved.length) out.moved_markers = m.moved;
     }
-    // What a long list of clips shares is given once (ADR-115).
+    // What a long list of clips shares is given once (ADR-115), by track
+    // when that is shorter (ADR-124).
     const many = (x: unknown[], what: string) => {
       if (key === "markers") return markerSummary(x);
       if (key !== "clips") return x;
-      const s = shareCommon(x);
-      if (s.common) out[`${what}_clips_common`] = s.common;
-      return s.items;
+      const { [`${what}_clips`]: items, ...shared } = shareClips(x.map(leanAnchor), what);
+      Object.assign(out, shared);
+      return items;
     };
     if (added.length) out[`added_${key}`] = many(added, "added");
     if (changed.length) out[`changed_${key}`] = many(changed, "changed");
@@ -302,14 +315,17 @@ export function withMoves(r: ToolResult, before: unknown, after: unknown): ToolR
     // Not JSON: the moves go in a part of their own.
   }
   const listed = new Set(((body?.changed_clips ?? []) as { id: string }[]).map((c) => c.id));
-  const extra = moved.filter((c) => !listed.has(c.id));
+  // Clips a ripple carried by one amount are counted, not listed (ADR-121).
+  const { listed: extra, shifted } = shiftedTogether(moved.filter((c) => !listed.has(c.id)), was);
   const notes = gapNotes.filter((n) => !((body?.notes ?? []) as string[]).includes(n));
-  if (!extra.length && !notes.length) return r;
+  if (!extra.length && !shifted.length && !notes.length) return r;
   // The clips the answer lists, whole again, then shared out with the moved ones.
-  const all = shareCommon([...((body?.changed_clips ?? []) as unknown[]).map((c) => withShared(c, body?.changed_clips_common)), ...extra]);
-  const add = { ...(extra.length ? { changed_clips: all.items, changed_clips_common: all.common } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
+  const all = extra.length ? shareClips([...wholeClips(body, "changed"), ...extra.map(leanAnchor)], "changed") : {};
+  const add = { ...all, ...(shifted.length ? { shifted_clips: shifted } : {}), ...(notes.length ? { notes: [...((body?.notes ?? []) as string[]), ...notes] } : {}) };
   if (!body) return { ...r, content: [...r.content, { type: "text", text: JSON.stringify(add) }] };
-  return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...body, ...add }) } : c)) };
+  // The list is shared out anew, so its old shared parts go.
+  const kept = extra.length ? Object.fromEntries(Object.entries(body).filter(([k]) => !k.startsWith("changed_clips_common"))) : body;
+  return { ...r, content: r.content.map((c, j) => (j === i ? { type: "text", text: JSON.stringify({ ...kept, ...add }) } : c)) };
 }
 
 /** A project in a few words, for open_project and new_project: the whole
@@ -337,10 +353,10 @@ const given = (o: Record<string, unknown>) => Object.fromEntries(Object.entries(
  * picture to keep at the frame's center (lib/reframe.ts). */
 const FOCUS_SCHEMA: JsonSchema = {
   type: "array",
-  description: "Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on the subject. On the call, for every version that does not say",
+  description: "Clips framed by hand: [{clip_id, x, y}], the point of the clip's picture (fractions from its top left, as preview_media shows it) to keep at the center of the frame; an axis left out stays on what the version frames by itself (the callouts over it, else the region the master frames, else the subject). Several for one clip, each with at, make a path: each point centered at its time, held until the next, panning to it over the 0.4 s before (a ring gliding through several parts stays in frame; callouts already lead the crop this way without a focus). A focus that cannot apply (a picture-in-picture, a title, a clip the shape does not crop) is named in the answer's options with why. On the call, for every version that does not say",
   items: {
     type: "object",
-    properties: { clip_id: { type: "string", description: "A full-frame video or picture clip" }, x: { type: "number", minimum: 0, maximum: 1, description: "Across its picture, 0 left to 1 right" }, y: { type: "number", minimum: 0, maximum: 1, description: "Down its picture, 0 top to 1 bottom" } },
+    properties: { clip_id: { type: "string", description: "A video or picture clip that fills the master's frame, or spans it edge to edge with bands" }, x: { type: "number", minimum: 0, maximum: 1, description: "Across its picture, 0 left to 1 right" }, y: { type: "number", minimum: 0, maximum: 1, description: "Down its picture, 0 top to 1 bottom" }, at: { type: "number", minimum: 0, description: "Timeline seconds of the master this point is centered at, for a path of several" } },
     required: ["clip_id"],
     additionalProperties: false,
   },
@@ -352,7 +368,7 @@ const PUSHES_SCHEMA: JsonSchema = {
   type: "string",
   enum: VERSION_PUSHES,
   description:
-    "Full-frame shots' keyed pushes (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed. On the call, for every version that does not say",
+    "Keyed pushes of full-frame shots and of shots fitted with bands (a zoom keyed by hand or by frame_region): keep (default), relax (half the zoom) or hold (the shot at its widest throughout). A tall master's push-in frames a narrow column; on a wider version the same zoom crops the picture's top and bottom (a rocket's nose), and relax or hold shows them, the frame still around what the master showed; when no shot has a keyed zoom the answer's options says so. On the call, for every version that does not say",
 };
 
 /** export_versions' overrides: clips placed by hand in a version, after
@@ -365,7 +381,7 @@ const OVERRIDES_SCHEMA: JsonSchema = {
     type: "object",
     properties: {
       clip_id: { type: "string", description: "The clip, as describe_project names it in the master" },
-      x: { type: "number", minimum: -1, maximum: 1, description: "Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it" },
+      x: { type: "number", minimum: -1, maximum: 1, description: "Where it rests across the version's frame: its transform.x, a fraction of the frame from its center (-0.5 left edge .. 0.5 right edge); keyed motion moves with it, and so do the rings and pinned clips pointing into a picture" },
       y: { type: "number", minimum: -1, maximum: 1, description: "Where it rests down the frame: its transform.y (-0.5 top .. 0.5 bottom; on a tall frame a title's box stays above y 0.15, where the apps' captions and buttons begin)" },
       scale: { type: "number", minimum: 0.1, maximum: 10, description: "Times its size as the version adapted it (1.25 a quarter larger: a title's type, any other layer's scale), about its own center" },
       hidden: { type: "boolean", description: "true: off in this version; false: on, though the master hides it" },
@@ -415,6 +431,7 @@ function musicSchema(files: boolean): JsonSchema {
     fx: { type: "boolean", description: "Risers, impacts, reverse cymbals and braams into and on the drops (default true)" },
     max_nudge: { type: "number", minimum: 0, maximum: 0.2, description: "How far the tempo may move to land asked-for times on bar lines, a fraction (default 0.06)" },
     start: { type: "number", minimum: 0, description: "Timeline seconds the music starts at (default 0); the answer's times include it" },
+    detail: { type: "string", enum: ["summary", "full"], description: "summary (default): the bars and beats as counts on the even grid (bar n at start + n x bar); full: every bar and beat listed" },
     brightness: { type: "number", minimum: -1, maximum: 1, description: "The master's tilt about 1 kHz: 1 lifts the highs 6 dB from 3 kHz and lowers the lows 3 dB under 300 Hz, -1 the other way (darker, under a busy voice), loudness and true peak held; default the style's (launch 0.4, the rest 0)" },
   };
   if (files) {
@@ -433,6 +450,9 @@ const obj = (properties: Record<string, JsonSchema> = {}, required: string[] = [
 
 /** Where an agent's export goes instead of the Videos folder (ADR-095). */
 const FOLDER: JsonSchema = { type: "string", description: "An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it)" };
+/** An export that replaces a file of its name in the folder named (ADR-125). */
+const REPLACE: JsonSchema = { type: "boolean", description: "true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched" };
+const REPLACE_NEEDS_FOLDER = "replace needs folder: it replaces a file only in the folder you name (an absolute path).";
 const FOLDER_DESKTOP_ONLY = "folder is desktop only: this build (the browser) cannot write into a folder of your choosing. Leave folder out and ask the user to export from the app, or use the desktop app.";
 
 /** A contact sheet's tiles a row: one limit for every preview tool. */
@@ -449,7 +469,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "describe_project",
     description:
-      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
+      "Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and times in seconds (a media clip's in/out and speed, keyframes, effects and look), markers and compound clips' nested timelines. Call this first and after edits. A long project's timeline runs to thousands of tokens, so ask for less: clip_ids (one clip's in-point and keyframes), track_ids or a stretch (start, end) narrow the clips (a stretch lists every track, those with nothing in it empty), and the media and markers listed follow them; clips false answers the tracks alone (ids, names, kinds, which is main, how many clips each holds) for a few hundred bytes; fields keeps only the clip fields named (fields [\"text\"]: captions as words and times); shown says how much of each list is in the answer. Example: {\"clip_ids\": [\"c_12\"]}.",
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Only these clips, each under its track (or its compound)" },
       track_ids: { type: "array", items: { type: "string" }, description: "Only these tracks, each listed empty or not" },
@@ -459,6 +479,8 @@ export const APP_TOOLS: AppTool[] = [
       markers: { type: "boolean", description: "false: no markers; true: all (default: all, or those in the stretch or on the clips shown)" },
       compounds: { type: "boolean", description: "false: no nested timelines (default: all, or those the clips shown play)" },
       clips: { type: "boolean", description: "false: the tracks alone, each with its clip count instead of its clips (the cheap way to learn track ids); media, markers and nested timelines then only when asked true" },
+      brand: { type: "boolean", description: "The brand kit (set_brand): given with the whole timeline, left out of a narrowed answer unless true; false leaves it out of the whole one" },
+      fields: { type: "array", items: { type: "string" }, description: "Each clip's id, type, start and end, and only these of its fields, e.g. [\"text\"] for captions as words and times, [\"transform\", \"keyframes\"] for where things sit" },
     }),
     call: (h, a) => json(filterDescription(h.describe(), a as DescribeFilter)),
   },
@@ -641,7 +663,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "check_project",
-    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.",
+    description: "Check the edit against professional rules before exporting: text outside the 90% title-safe area or under the vertical apps' buttons; text too small for a phone (its share of the frame's height named, under 4.5% of the short side, 5% on a tall frame or kind social_short) or too short to read; text in low contrast with the picture behind it: every title is measured on the rendered picture at a few moments of its life with its box, shadow and outline counted, and a low one is named with its WCAG ratio, the time, and a box or outline that measures better there (contrast.lowest lists every title's ratio); a title that fades unevenly (measured at the middle of each fade: part of it gone while the rest is still seen, as a see-through box over a bright subject does), with the box or outline that fades as one there; captions over 20 characters a second, more than two fonts, a title its subject hides (text_behind_subject on a shape the subject now fills; rendered), flashes over 3 a second (seizure risk), black gaps on the main track, music that stops dead at the end (its last second measured, so a track that fades out in its own audio passes), a sound cut off before the end with no fade while it still sounds (a song or a bed trimmed mid-phrase, a line cut mid-word), a click, a hole or a sound cut off where one audio clip meets the next (each join measured on its own track as preview_audio's edges measure it, the first 24; click_at_join, sound_cut_at_join, the fix a crossfade), and by kind: an ad's end card, an epic edit's cuts on the beat (the Beat, Bar, Phrase and Drop markers, or the grid set_music_grid gave a song, where its clips play it; cuts counted where the viewer sees them, across tracks). ok is true when there are no errors; warnings and tips can remain beside it, and verdict says so in words. not_checked says what was not measured, and why. Every text rule sees the titles inside compound clips too (an end card built as one), where and as large as the compound clip draws them; such a finding names compound_clip_id. Each finding names the clip, the time and the tool that fixes it; the same finding on three clips or more (the same rule and fix) is given once, with count, every clip_id and every time (at), unless detail is full. Captions shown a few words at a time (runs of captions of up to three words, each within 0.3 s of the one before) are read as the line they make: its characters a second over the run, and each chunk up at least 0.25 s. Run it, fix, run it again.",
     inputSchema: obj({
       kind: { type: "string", enum: ["ad", "epic_edit", "social_short", "any"], description: "What is being made; default any" },
       detail: { type: "string", enum: ["summary", "full"], description: "summary (default): alike findings given once with every clip; full: every finding on its own" },
@@ -654,7 +676,7 @@ export const APP_TOOLS: AppTool[] = [
   {
     name: "export_video",
     description:
-      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Each exported file answers the loudness its mix reached (loudness, info), as export_video does, and titles: a title behind its subject that the subject hides in that shape. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. preview_media with file: the answer's path shows the exported file's own frames. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
+      "Export the open project to a video file in the user's Videos folder (in a folder named after the app), or in folder, with no dialog; an existing file is never replaced: the new one takes a numbered name (Trip (2).mp4) and the answer's note says so, unless replace is true with folder: then a file of the same name in that folder is replaced (to supersede your own earlier export) and the note says so. Returns the file's path when done. loudness brings the mix to an integrated LUFS with its true peak held under -1 dBTP: -14 for YouTube, TikTok and Spotify, -23 for EBU R128 broadcast, -24 for ATSC A/85 US TV (held under -2 dBTP); the answer's loudness says what the mix reached. Each exported file answers the loudness its mix reached (loudness, info), as export_video does, and titles: a title behind its subject that the subject hides in that shape. Exports that take over about four minutes answer state running: follow them with export_status. format mp3, m4a or wav exports the sound alone. preview_media with file: the answer's path shows the exported file's own frames. captions decides what becomes of the captions (add_captions): burn (default) draws them into the picture, srt writes them as a .srt file beside the video (answered as captions_file) and leaves the picture clean, both does both, none leaves them out.",
     inputSchema: obj({
       name: { type: "string", description: "File name without extension; default the project's name" },
       format: { type: "string", enum: ["mp4", "mov", "webm", "mkv", "gif", "mp3", "m4a", "wav"], description: "Default mp4 (H.264 + AAC); mp3, m4a and wav are sound only" },
@@ -665,10 +687,12 @@ export const APP_TOOLS: AppTool[] = [
       end: { type: "number", minimum: 0, description: "Export to this second" },
       captions: { type: "string", enum: ["burn", "srt", "both", "none"], description: "The captions: burn into the picture (default), srt file beside it, both, or none" },
       folder: FOLDER,
+      replace: REPLACE,
     }),
     call: async (h, a) => {
+      if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, folder: a.folder }));
+      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, folder: a.folder, replace: a.replace }));
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
@@ -751,7 +775,7 @@ APP_TOOLS.push(
     inputSchema: obj({
       by_track: { type: "boolean", description: "Each audio track measured alone as mixed (before master normalization), with its role (describe_project names each track's; update_track sets one), and the voice's margin over the music (the dialog and music tracks, by role) by window: program, speech and per_line" },
       per_second: { type: "boolean", description: "With by_track, each track's three-second loudness every second too (long; default false: summaries only)" },
-      kind: { type: "string", enum: PROGRAM_KINDS, description: "What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast or any (default)" },
+      kind: { type: "string", enum: PROGRAM_KINDS, description: "What the mix is for, to judge its loudness range: film (documentary, brand film), ad, social, podcast, explainer (one voice leading over a ducked bed: a tutorial, a narrated demo or product explainer) or any (default)" },
       spec: { type: "string", enum: SPEC_IDS, description: "Delivery spec to check; default all three" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Measure as export_video with this loudness (LUFS) delivers it; default as mixed" },
       start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
@@ -896,15 +920,21 @@ APP_TOOLS.push(
   // ---- music: an original score (lib/music) ----
   {
     name: "generate_music",
-    description: `Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: ${STYLE_IDS.map((id) => `${id} (${STYLES[id].label}: ${STYLES[id].blurb}; ${STYLES[id].bpm} BPM)`).join("; ")}. Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, every bar and beat, the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.`,
+    description: `Compose and render an original, royalty-free score on this computer (no samples, nothing downloaded; about 10-15 s for a minute of music), imported as a WAV and placed on an audio track. The same arguments and seed give the same music. Styles: ${STYLE_IDS.map((id) => `${id} (${STYLES[id].label}: ${STYLES[id].blurb}; ${STYLES[id].bpm} BPM)`).join("; ")}. Give a length, or sections to fit the edit: [{name: "intro", bars: 4}, {name: "build", bars: 4}, {name: "drop", at: 8}, {name: "breakdown", bars: 4}, {name: "drop"}, {name: "outro", end_at: 56}]; names set what plays (intro, verse, build, drop/chorus/climax, breakdown/bridge, outro); times (at, end_at, seconds, length) land on bar lines by nudging the tempo (at most max_nudge), and fit says how close each came. Mastered to loudness (-14 LUFS) with the true peak under -1 dBTP. ending ring lets the final chord ring out over the last section (an outro: the final hit lands on its first beat, the end card's moment); stop ends on a short hit. stems also imports drums, bass, harmony and lead (they add up to the mix); place stems puts those on four grouped tracks instead of the mix. Answers the cue sheet in timeline seconds: bpm, key, chords, the beat and bar lengths with counts of each (detail full lists every bar and beat), the sections, the drops, final_hit, breaths (silences before drops), cut_points (drop, section, phrase, bar), fit, measured loudness and spectrum, the new asset and clip ids. markers adds analyze_music's markers. plan_music answers the same cue sheet without rendering: plan first, then generate with the seed it names. Placing and marking is one undo step (the files stay in the media); it cannot go in batch.`,
     inputSchema: musicSchema(true),
-    call: async (h, a) => json(await h.ai("generateMusic", "", a)),
+    call: async (h, a) => {
+      const { detail, ...rest } = a;
+      return json(cueAnswer((await h.ai("generateMusic", "", rest)) as Parameters<typeof cueAnswer>[0], detail));
+    },
   },
   {
     name: "plan_music",
-    description: "The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, bars, beats, drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.",
+    description: "The cue sheet generate_music would answer for these arguments, at once and without rendering or changing anything: the tempo after fitting, every section's start and end, the bar and beat grid (detail full lists every bar and beat), drops, final_hit, cut_points and how each asked-for time fit, plus the chord of every bar. Use it to try section lengths and times against the edit, then call generate_music with the same arguments and the seed it answers.",
     inputSchema: musicSchema(false),
-    call: (_h, a) => json(planMusicAnswer(a)),
+    call: (_h, a) => {
+      const { detail, ...rest } = a;
+      return json(cueAnswer(planMusicAnswer(rest), detail));
+    },
   },
   // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
   {
@@ -1063,7 +1093,7 @@ APP_TOOLS.push(
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note), the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit); where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop is placed on the shot's subject (what stands out in its pictures, looked at every half second) and follows it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead); titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -1103,11 +1133,12 @@ APP_TOOLS.push(
       quality: { type: "string", enum: ["lower", "recommended", "higher"], description: "Default recommended" },
       loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS for every version's mix, e.g. -14; default as mixed" },
       folder: FOLDER,
+      replace: REPLACE,
     }),
     call: async (h, a) => {
       const master = Number((h.describe() as { duration?: number }).duration ?? 0);
       const versions = expandVersions({ versions: a.versions as VersionSpec[] | undefined, ratios: a.ratios as VersionRatio[] | undefined, durations: a.durations as number[] | undefined, textless: a.textless === true, fit: a.fit as VersionFit | undefined, captions: a.captions as VersionCaptions | undefined, reframe: a.reframe as Reframe | undefined, focus: a.focus as Focus[] | undefined, overrides: a.overrides as VersionOverride[] | undefined, pushes: a.pushes as VersionPushes | undefined }, master);
-      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, folder: a.folder }) } as VersionsRequest;
+      const req = { versions, ...given({ keepEnd: a.keep_end, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, folder: a.folder, replace: a.replace }) } as VersionsRequest;
       if (a.save_projects === true) return json({ projects: await h.saveVersions(req), note: "Nothing exported. Each version is a project of its own: open_project one to fine-tune it (frame_region, set_param, set_text), then export_video; the master is open and unchanged." });
       if (a.check === true) {
         const at = (a.check_at as number[] | undefined)?.slice(0, 8);
@@ -1116,8 +1147,12 @@ APP_TOOLS.push(
         const subjects = Array.isArray(sheet.subjects) && sheet.subjects.length ? { subjects: sheet.subjects } : {};
         const titles = Array.isArray(sheet.titles) && sheet.titles.length ? { titles: sheet.titles } : {};
         const overlaps = Array.isArray(sheet.overlaps) && sheet.overlaps.length ? { caption_overlaps: sheet.overlaps } : {};
-        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), or a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it).`, ...subjects, ...titles, ...overlaps }) }] };
+        const callouts = Array.isArray(sheet.callouts) && sheet.callouts.length ? { callouts: sheet.callouts } : {};
+        const options = Array.isArray(sheet.options) && sheet.options.length ? { options: sheet.options } : {};
+        const coverage = Array.isArray(sheet.coverage) && sheet.coverage.length ? { coverage: sheet.coverage } : {};
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on what its callouts point at, else the region the master frames, else its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it, or done: moved clear by the version), a callout off the frame or off what it points at (listed in callouts), or footage covering much less of the frame than in the master (listed in coverage); options says what became of focus, pushes and overrides where that was not plainly what was asked.`, ...subjects, ...titles, ...overlaps, ...callouts, ...coverage, ...options }) }] };
       }
+      if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure
@@ -1140,14 +1175,14 @@ const INSTRUCTIONS = `You are editing a video in the user's video editor (OpenFr
 
 /** The guide: the moves, in the order a video gets made (help's overview). */
 const GUIDE = `You are editing a video in the user's video editor (OpenFrame); every edit shows live and is undoable (undo).
-Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they all share once, in added_clips_common or changed_clips_common, and markers that moved with their clip are counted in moved_markers; describe_project has the whole timeline.
+Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
 3. Write the script and add_voiceover (help topic voiceover: casting, pace, pauses, pronunciations): the voice and matching captions, timed to the real speech; it answers where each line landed. review_voiceover hears it back line by line; retake_voiceover fixes a line in place.
-4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and can move between two regions; for music-driven edits, Music-synced below.
+4. Lay shots under each line with add_media_clip; frame_region zooms a shot onto the part that matters and moves between regions (moves); on a screen recording add_callout rings the part the voice names and stays on it through the zooms; for music-driven edits, Music-synced below.
 5. Titles: add_text (style.stroke, style.shadow or style.background keep it readable over footage), then set_animation in and out; add_text_template for lower thirds and end cards.
 6. set_transition between shots; one look over everything (set_filter or apply_lut on an adjustment clip); music on an audio track, duck_under_speech under the voice, set_fades at the end; add_sound_effect on reveals, add_ambience for the place's own sound (wind, water, rain, a city, a rocket's rumble, room tone).
 7. Make many small edits at once with batch: one call, one undo step.
@@ -1263,8 +1298,11 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           const meant = didYouMean(name, listTools().map((t) => t.name));
           return fail(req.id, -32602, `unknown tool ${name}${meant ? `; did you mean ${meant}?` : ""}`);
         }
+        // quiet: true on any edit answers the ids alone (ADR-124).
+        const { quiet, ...rest } = args;
         const before = host.describe();
-        return ok(req.id, json(describeChanges(before, await host.exec(name, args))));
+        const changes = describeChanges(before, await host.exec(name, rest));
+        return ok(req.id, json(quiet === true ? quietAnswer(changes) : changes));
       } catch (e) {
         return ok(req.id, { content: [{ type: "text", text: e instanceof Error ? e.message : String(e) }], isError: true });
       }

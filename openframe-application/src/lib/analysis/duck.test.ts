@@ -4,7 +4,7 @@ import { createProject, createTrack } from "../project/defaults";
 import { addTrack, findClip, updateClip } from "../project/ops";
 import type { Asset, AudioClip, Clip, Project } from "../project/types";
 import { retakeLine } from "../voiceLines";
-import { duckArgs, duckKeys, duckMark, duckPlan, duckWrote, mergeKeys, staleDuckNote, staleDucks, trackDuckKeys, voicesUnder, writtenKeys } from "./duck";
+import { cueMoments, cuesUnderLines, duckArgs, duckKeys, duckMark, duckPlan, duckWrote, mergeKeys, staleDuckNote, staleDucks, trackDuckKeys, voicesUnder, writtenKeys } from "./duck";
 
 // A pause under 31 frames stays down (the old hold: 3 + 12 + 15 frames, and one).
 const O = { depthDb: 20, attack: 3, release: 12, gap: 31 };
@@ -291,5 +291,27 @@ describe("a duck a voice line's change leaves behind (film test 3.9)", () => {
     expect(staleDucks(p, runCommand(p, "move_clip", { clip_id: line, start: 3 }))).toHaveLength(1);
     expect(staleDucks(p, runCommand(p, "set_param", { clip_ids: [line], path: "volume", value: 0.9 }))).toEqual([]);
     expect(findClip(p, line)).toBeTruthy();
+  });
+});
+
+describe("a song's moments under a line (ADR-121)", () => {
+  // The third film test's score: a drop at 47.772 s and the outro's final
+  // hit at 60.234 s, a line starting a frame earlier (60.233 s).
+  const grid = { bpm: 115.55, firstDownbeat: 0, sections: [{ at: 0, label: "intro" as const }, { at: 12.462, label: "verse" as const }, { at: 41.54, label: "build" as const }, { at: 47.772, label: "drop" as const }, { at: 60.234, label: "outro" as const }] };
+  const toFrame = (t: number) => Math.round(t * 30);
+  it("finds a score's drops and final hit from the grid kept with it", () => {
+    expect(cueMoments(grid, toFrame)).toEqual([{ frame: 1433, label: "the drop" }, { frame: 1807, label: "the final hit (the outro's first beat)" }]);
+    expect(cueMoments(undefined, toFrame)).toEqual([]);
+    // A drop the clip does not play is left out.
+    expect(cueMoments(grid, (t) => (t < 50 ? null : toFrame(t)))).toHaveLength(1);
+  });
+  it("names the ones a line covers, from the dip before it, unless open_at asked for them", () => {
+    const lines: [number, number][] = [[1431, 1622], [1807, 1905], [1920, 2030]];
+    const hits = cuesUnderLines(cueMoments(grid, toFrame), lines, 3, []);
+    expect(hits.map((h) => [h.moment.frame, h.line])).toEqual([[1433, 0], [1807, 1]]);
+    // A line starting 0.5 s after the hit leaves it in the clear.
+    expect(cuesUnderLines(cueMoments(grid, toFrame), [[1822, 1905]], 3, [])).toEqual([]);
+    // open_at named it: its own note says so.
+    expect(cuesUnderLines(cueMoments(grid, toFrame), lines, 3, [1807, 1433])).toEqual([]);
   });
 });

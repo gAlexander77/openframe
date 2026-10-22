@@ -72,9 +72,17 @@ describe("plan_music and generate_music over MCP", () => {
     const r = JSON.parse(text(await call("plan_music", { style: "cinematic", seed: 9, length: 30, start: 4 })));
     expect(r.start).toBe(4);
     expect(r.sections[0].start).toBe(4);
-    expect(r.chords.length).toBe(r.bars.length);
+    // The bars and beats as counts on the even grid (ADR-121); detail full lists them.
+    expect(r.bars).toBeUndefined();
+    expect(r.beats).toBeUndefined();
+    expect(r.chords.length).toBe(r.counts.bars);
+    expect(r.grid).toMatch(/bar n starts at 4 \+ n x [\d.]+ s/);
     expect(r.note).toMatch(/seed 9/);
-    expect(JSON.stringify(planMusicAnswer({ style: "cinematic", seed: 9, length: 30, start: 4 }))).toBe(JSON.stringify(r));
+    const full = JSON.parse(text(await call("plan_music", { style: "cinematic", seed: 9, length: 30, start: 4, detail: "full" })));
+    expect(JSON.stringify(planMusicAnswer({ style: "cinematic", seed: 9, length: 30, start: 4 }))).toBe(JSON.stringify(full));
+    expect(full.bars.map((b: number, n: number) => Math.abs(b - 4 - n * full.bar) < 0.01)).not.toContain(false);
+    expect(full.beats).toHaveLength(r.counts.beats);
+    expect(text(await call("plan_music", { style: "cinematic", seed: 9, length: 30, start: 4 })).length).toBeLessThan(JSON.stringify(full).length);
   });
 
   it("hands generate_music to the app with its arguments", async () => {

@@ -15,7 +15,8 @@
 
 import { VERTICAL_SAFE } from "./align";
 import { brandOf, LIFT, minTextSize, pickLogo, readableOn, roleStyle, textOn, typeScale, withAlpha, type LogoVariant } from "./brandKit";
-import { placeOnTop } from "./overlays";
+import { seenLetters, seenTexts } from "./designCheck";
+import { placeStack } from "./overlays";
 import { clipForAsset, createColorClip, createTextClip, createTrack, DEFAULT_TEXT_STYLE, uid } from "./project/defaults";
 import { addClip, addTrack, findClip, getAsset } from "./project/ops";
 import type { Adjust, Animation, Asset, Clip, ColorClip, Cutout, Grade, Id, ImageClip, Project, TextClip, TextStyle, VideoClip } from "./project/types";
@@ -130,6 +131,9 @@ type Rect = { left: number; right: number; top: number; bottom: number };
 /** An element shrinks to fit its room no further than this: past it, the
  * logo and gaps would be tiny while the text sits at its floor. */
 const MIN_FIT = 0.5;
+/** How far an end card's or logo reveal's logo gives before its type does
+ * (ADR-125). */
+const MIN_GIVE = 0.5;
 
 /** A spot as its vertical and horizontal sides. */
 function sides(spot: Spot): ["top" | "middle" | "bottom", "left" | "center" | "right"] {
@@ -189,11 +193,16 @@ function place(p: Project, parts: Part[], spot: Spot, room: Rect) {
   }
 }
 
+/** The smallest a pulsing part draws (the catalog's pulse: scale 1 ± 0.06). */
+const PULSE_LOW = 0.94;
+
 /** A text part in a style, wrapping inside `room` (its box's padding
- * included) and never smaller than the readable floor. */
-function textPart(p: Project, words: string, style: Partial<TextStyle>, room: Rect): TextClip {
+ * included) and never smaller than the readable floor, at the bottom of
+ * its pulse for a part that pulses (a button at the floor dipped under it
+ * and check_project named it too small, ADR-125). */
+function textPart(p: Project, words: string, style: Partial<TextStyle>, room: Rect, pulse = false): TextClip {
   const pad = ((style.background?.padding ?? 0) * p.height) / 1080;
-  const size = Math.max(style.size ?? DEFAULT_TEXT_STYLE.size, Math.ceil(minTextSize(p.width, p.height)));
+  const size = Math.max(style.size ?? DEFAULT_TEXT_STYLE.size, Math.ceil(minTextSize(p.width, p.height) / (pulse ? PULSE_LOW : 1)));
   return createTextClip(words, 0, 1, { maxWidth: +Math.max(0.1, (room.right - room.left - 2 * pad) / p.width).toFixed(3), ...style, size });
 }
 
@@ -220,16 +229,17 @@ function backdrop(p: Project, bg: AdBackground): { clip?: ColorClip; fill?: stri
 
 /** The parts of one element, laid out (not yet placed or timed), wrapping
  * inside `room`; `fit` below 1 builds it that much smaller (type, logo,
- * boxes and gaps alike) to fit the room. */
-function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1): Part[] {
+ * boxes and gaps alike) to fit the room; `give` below 1 makes an end
+ * card's or logo reveal's logo smaller alone, its type and spacing kept. */
+function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1, give = 1): Part[] {
   const b = brandOf(p);
   const c = b.colors;
   const k = typeScale(p.width, p.height) * fit;
   const H = (p.height / 1080) * fit;
   const part = (clip: Clip, delay = 0, full = false): Part => ({ clip, delay, dx: 0, dy: 0, full });
   // A text part; its box and letter spacing shrink with the rest.
-  const text = (words: string, st: Partial<TextStyle>) =>
-    textPart(p, words, { ...st, ...(st.letterSpacing ? { letterSpacing: +(st.letterSpacing * fit).toFixed(2) } : {}), ...(st.background ? { background: { ...st.background, padding: +(st.background.padding * fit).toFixed(2) } } : {}) }, room);
+  const text = (words: string, st: Partial<TextStyle>, pulse = false) =>
+    textPart(p, words, { ...st, ...(st.letterSpacing ? { letterSpacing: +(st.letterSpacing * fit).toFixed(2) } : {}), ...(st.background ? { background: { ...st.background, padding: +(st.background.padding * fit).toFixed(2) } } : {}) }, room, pulse);
   const fadeOut = anim(p, "fade", 0.35);
 
   if (element === "lower_third") {
@@ -239,12 +249,21 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     const parts = [part({ ...name, animIn: anim(p, "rise", 0.45), animOut: fadeOut }), part({ ...title, animIn: anim(p, "rise", 0.45), animOut: fadeOut }, 0.15)];
     stack(p, parts, [6 * H]);
     alignLeft(p, parts);
+    // A logo asked for sits left of the name and title, as tall as both
+    // (a broadcast lower third's bug); none unless asked (ADR-121).
+    const logoId = o.logo === undefined || o.logo === "none" ? undefined : pickLogo(b, o.logo, box);
+    const block = bounds(p, parts);
+    const logo = logoId && logoPart(p, logoId, (block.bottom - block.top) / p.height, 0.2 * fit);
+    if (logo) {
+      const z = sizeOf(p, logo);
+      parts.unshift({ ...part({ ...logo, animIn: anim(p, "pop", 0.45), animOut: fadeOut }), dx: block.left - 16 * H - z.w / 2, dy: (block.top + block.bottom) / 2 });
+    }
     return parts;
   }
 
   if (element === "offer_badge") {
     const tilt = -4;
-    const main = text(o.headline ?? "-30%", roleStyle(b, "badge", k));
+    const main = text(o.headline ?? "-30%", roleStyle(b, "badge", k), true);
     const parts = [part({ ...main, transform: { ...main.transform, rotation: tilt }, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.4), animOut: fadeOut })];
     if (o.subline) {
       const sub = text(o.subline, { font: b.fonts.heading, size: Math.round(30 * k), bold: true, letterSpacing: 4, case: "upper", color: readableOn(c.secondary), background: { color: c.secondary, padding: 12, radius: 8 } });
@@ -255,7 +274,7 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
   }
 
   if (element === "cta_button") {
-    const button = text(o.cta ?? "Shop now", roleStyle(b, "cta", k));
+    const button = text(o.cta ?? "Shop now", roleStyle(b, "cta", k), true);
     const parts = [part({ ...button, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2), animOut: fadeOut })];
     const under = o.subline ?? o.url;
     if (under) {
@@ -273,7 +292,7 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     const laid: Part[] = [];
     const gaps: number[] = [];
     const logoId = o.logo === "none" ? undefined : pickLogo(b, o.logo ?? "auto", bg.fill);
-    const logo = logoId && logoPart(p, logoId, 0.16 * fit, 0.45 * fit);
+    const logo = logoId && logoPart(p, logoId, 0.16 * fit * give, 0.45 * fit * give);
     if (logo) {
       laid.push(part({ ...logo, animIn: anim(p, "pop", 0.5) }, 0.1));
       gaps.push(40 * H);
@@ -283,7 +302,7 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     gaps.push(44 * H);
     // A button the color of the card would vanish: it takes the accent then.
     const fillBtn = bg.fill && bg.fill.toLowerCase() === c.primary.toLowerCase() ? c.accent : c.primary;
-    const cta = text(o.cta ?? "Shop now", { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } });
+    const cta = text(o.cta ?? "Shop now", { ...roleStyle(b, "cta", k), color: readableOn(fillBtn), background: { color: fillBtn, padding: 30, radius: 999 } }, true);
     laid.push(part({ ...cta, animIn: anim(p, "pop", 0.45), animLoop: anim(p, "pulse", 1.2) }, 0.55));
     gaps.push(30 * H);
     const url = o.url ?? b.url;
@@ -302,7 +321,7 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
   const laid: Part[] = [];
   const gaps: number[] = [];
   const logoId = o.logo === "none" ? undefined : pickLogo(b, o.logo ?? "auto", bg.fill);
-  const logo = logoId && logoPart(p, logoId, 0.26 * fit, 0.6 * fit);
+  const logo = logoId && logoPart(p, logoId, 0.26 * fit * give, 0.6 * fit * give);
   if (logo) {
     const glow = o.glow
       ? { effects: [{ id: uid("fx"), type: "glow", enabled: true, params: { ...effectDefaults("glow"), amount: 0, threshold: 45 } }] }
@@ -338,37 +357,124 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
  * and lasting to the element's end, stacked above everything showing then,
  * grouped and named after the element. Returns the new clip ids.
  */
-export function addAdElement(p: Project, element: AdElement, o: AdOptions): { project: Project; clipIds: Id[] } {
+export function addAdElement(p: Project, element: AdElement, o: AdOptions): { project: Project; clipIds: Id[]; notes: string[] } {
   const spot = element === "end_card" ? "center" : (o.position ?? DEFAULT_SPOT[element]);
-  const room = roomFor(p, element, spot);
-  // Too big for its room (a long headline on 9:16, whose safe area is half
-  // the frame's height): built again smaller, every part and gap alike, a
-  // few times since rounded sizes, wrapping and the text floor make it
-  // inexact.
-  let fit = 1;
-  let parts = build(p, element, o, room, fit);
-  for (let i = 0; i < 4; i++) {
-    const b = bounds(p, parts);
-    const k = Math.min((room.right - room.left) / Math.max(1, b.right - b.left), (room.bottom - room.top) / Math.max(1, b.bottom - b.top));
-    if (k >= 1 || fit <= MIN_FIT) break;
-    fit = Math.max(MIN_FIT, fit * k * 0.99);
-    parts = build(p, element, o, room, fit);
-  }
-  place(p, parts, spot, room);
   const duration = Math.max(1, o.duration ?? secondsToFrames(AD_SECONDS[element], p.fps));
   const end = o.start + duration;
+  // Too big for its room (a long headline on 9:16, whose safe area is half
+  // the frame's height, or the room left under captions): an end card or a
+  // logo reveal first makes its logo smaller, down to half, then its type
+  // and spacing give together, each as little as fits. (Spacing kept with
+  // the type: a version that holds the type at its readable size closes
+  // tight gaps into overlaps.)
+  // The fourth film test's end card under captions on 9:16 shrank every
+  // part alike by a ratio that overshot (a headline that wraps to fewer
+  // lines when smaller comes out shorter than the ratio says), to headline
+  // 36 and button 31 with room to spare (ADR-125).
+  const shown = { fit: 1, give: 1 };
+  const layout = (room: Rect) => {
+    // Type wraps at its width already: a raster drawn wider than that
+    // (an outline's margin) is no reason to shrink it, which would never
+    // fit. 1% of the frame's height is left above and below: room for the
+    // outline check_project may suggest, which a version keeps (a card as
+    // tall as its room was pushed off its top for it).
+    const fits = (parts: Part[]) => {
+      const b = bounds(p, parts);
+      const over = Math.max(0, ...parts.filter((x) => !x.full && x.clip.type === "text").map((x) => {
+        const t = x.clip as TextClip;
+        return sizeOf(p, t).w - t.style.maxWidth * p.width - (2 * (t.style.background?.padding ?? 0) * p.height) / 1080;
+      }));
+      return b.right - b.left <= room.right - room.left + over + 0.5 && b.bottom - b.top <= room.bottom - room.top - 0.02 * p.height + 0.5;
+    };
+    // The largest t in [lo, 1] at which make(t) fits (a bisection: smaller
+    // type never wraps to more lines), else make(lo).
+    const largest = (lo: number, make: (t: number) => Part[]): [number, Part[]] => {
+      const whole = make(1);
+      if (fits(whole)) return [1, whole];
+      let best = make(lo);
+      if (!fits(best)) return [lo, best];
+      let a = lo, b = 1;
+      for (let i = 0; i < 7; i++) {
+        const m = (a + b) / 2, x = make(m);
+        if (fits(x)) [a, best] = [m, x];
+        else b = m;
+      }
+      return [a, best];
+    };
+    const roomy = element === "end_card" || element === "logo_reveal";
+    let [give, parts]: [number, Part[]] = roomy ? largest(MIN_GIVE, (t) => build(p, element, o, room, 1, t)) : [1, build(p, element, o, room)];
+    let fit = 1;
+    if (!fits(parts)) [fit, parts] = largest(MIN_FIT, (t) => build(p, element, o, room, t, give));
+    place(p, parts, spot, room);
+    Object.assign(shown, { fit, give });
+    return parts;
+  };
+  const room = roomFor(p, element, spot);
+  let parts = layout(room);
+  // Clear of the captions showing then (ADR-121): the third film test's
+  // lower third sat on its voiceover's captions. The room gives up the
+  // captions' side of the frame and the element is laid out again in it.
+  const notes: string[] = [];
+  const band = captionBand(p, o.start, end);
+  const box = placedBox(p, parts);
+  if (band && box && crosses(box, band.box)) {
+    const gap = 0.02 * p.height;
+    const below = (band.box.top + band.box.bottom) / 2 > p.height / 2;
+    const cleared = below ? { ...room, bottom: Math.min(room.bottom, band.box.top - gap) } : { ...room, top: Math.max(room.top, band.box.bottom + gap) };
+    const y = (v: number) => +(v / p.height - 0.5).toFixed(3);
+    const which = band.ids.length === 1 ? `the caption ${band.ids[0]}` : `${band.ids.length} captions`;
+    if (cleared.bottom - cleared.top > 0.15 * p.height) {
+      parts = layout(cleared);
+      notes.push(`Placed ${below ? "above" : "below"} the captions showing then (${which}, ${below ? `from y ${y(band.box.top)}` : `down to y ${y(band.box.bottom)}`}); captions stay the top layer.`);
+    } else notes.push(`The captions showing then (${which}) leave too little room, so the ${AD_LABELS[element].toLowerCase()} crosses them: give another position, or move the captions (set_caption_look y).`);
+  }
+  // What gave to fit, so a smaller card is never a surprise to fix by hand.
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  if (shown.fit < 1) notes.push(`To fit the room there, ${shown.give < 1 ? `its logo was made ${pct(shown.give)} and ` : ""}its type ${pct(shown.fit)} of their size: fewer words, or another position, keep it larger.`);
   const group = parts.length > 1 ? uid("g") : undefined;
-  const ids: Id[] = [];
-  for (const x of parts) {
+  const clips = parts.map((x) => {
     const start = Math.min(end - 1, o.start + secondsToFrames(x.delay, p.fps));
     // A flash is only as long as its fade.
     const len = x.clip.name === "Flash" ? Math.min(end - start, secondsToFrames(0.4, p.fps)) : end - start;
-    const clip = { ...x.clip, id: uid("c"), start, duration: Math.max(1, len), name: x.clip.name ?? AD_LABELS[element], ...(group ? { group } : {}) } as Clip;
-    p = placeOnTop(p, clip, AD_LABELS[element]);
-    ids.push(clip.id);
-  }
-  return { project: p, clipIds: ids };
+    return { ...x.clip, id: uid("c"), start, duration: Math.max(1, len), name: x.clip.name ?? AD_LABELS[element], ...(group ? { group } : {}) } as Clip;
+  });
+  // The element lands as one block on rows of its own (ADR-121). Its parts
+  // used to land one at a time on whatever row was free: the film test's
+  // end card put its card on Titles, its icon on Spotlight and its headline
+  // on Callouts, so moving one of those tracks hid the icon under the card.
+  return { project: placeStack(p, clips, AD_LABELS[element], true), clipIds: clips.map((c) => c.id), notes };
 }
+
+/** The captions shown during [start, end) frames, as one box around their
+ * letters (canvas pixels), with their ids. */
+function captionBand(p: Project, start: number, end: number): { box: Rect; ids: Id[] } | undefined {
+  const seen = seenTexts(p).filter((s) => s.c.caption && s.start < end && s.start + s.duration > start);
+  const boxes = seen.flatMap((s) => {
+    const g = seenLetters(p, s);
+    return g ? [{ box: g.box, id: s.c.id }] : [];
+  });
+  if (!boxes.length) return undefined;
+  return {
+    box: { left: Math.min(...boxes.map((b) => b.box.left)), right: Math.max(...boxes.map((b) => b.box.right)), top: Math.min(...boxes.map((b) => b.box.top)), bottom: Math.max(...boxes.map((b) => b.box.bottom)) },
+    ids: boxes.map((b) => b.id),
+  };
+}
+
+/** The placed parts' box in canvas pixels (a background that fills the
+ * frame left out). */
+function placedBox(p: Project, parts: Part[]): Rect | undefined {
+  const laid = parts.filter((x) => !x.full && "transform" in x.clip);
+  if (!laid.length) return undefined;
+  const boxes = laid.map((x) => {
+    const t = (x.clip as { transform: { x: number; y: number } }).transform;
+    const z = sizeOf(p, x.clip);
+    const cx = (0.5 + t.x) * p.width, cy = (0.5 + t.y) * p.height;
+    return { left: cx - z.w / 2, right: cx + z.w / 2, top: cy - z.h / 2, bottom: cy + z.h / 2 };
+  });
+  return { left: Math.min(...boxes.map((b) => b.left)), right: Math.max(...boxes.map((b) => b.right)), top: Math.min(...boxes.map((b) => b.top)), bottom: Math.max(...boxes.map((b) => b.bottom)) };
+}
+
+const crosses = (a: Rect, b: Rect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
 
 // ---- text behind the subject ------------------------------------------------------
 

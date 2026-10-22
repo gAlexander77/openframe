@@ -1,6 +1,6 @@
 # ADR-116: New titles land on top, masks say where they end, wider versions keep the master's framing
 
-**Date:** 2026-10-20. **Status:** accepted. Builds on
+**Date:** 2026-10-20. **Status:** accepted; a picture-in-picture across the captions is moved, a fade is judged and a push's cut subject is named since [[ADR-118 A version's captions take its frame, pictures keep clear of them, and fades and push-ins are judged]]. Builds on
 [[ADR-073 Templates land as a block and the web keeps what it imports]]
 for where overlays land, [[ADR-097 Checks and versions judge by the picture]]
 and [[ADR-103 Checks see inside compounds, and versions refit cards, scrims and titles as the check judges them]]

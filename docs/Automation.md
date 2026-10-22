@@ -171,7 +171,7 @@ the first time, never in a gap on the voiceover or the music, or on
 `track_id`), `add_ambience` (a natural sound bed under the pictures, see
 Sound by role below), `preview_audio` (hear the mix or one stem: an MP3
 and its measurements, below),
-`set_caption_look` (one of six caption looks for every caption),
+`set_caption_look` (one of six caption looks, and a place, size and wrap width, for every caption),
 `slip_clip` (a later or earlier part of a shot's source, same place and
 length), `roll_edit` (a cut between two touching clips moved in one call,
 nothing else moving: the Roll tool), `move_track` (up or down the stack, so a grade sits under the
@@ -607,13 +607,17 @@ animation with `unit` (`letter`, `word`, `line`), `stagger` (0..1) and
 0.8}`. `duration` covers every unit.
 
 `export_video` (`name`, `format`, `resolution`, `quality`, `loudness`,
-`start`, `end`, `folder`) writes to `<Videos>\OpenFrame\` with no dialog, or
-into `folder` (an absolute path, created if missing), and never replaces a
-file: a name already there gets a number (`Trip (2).mp4`) and the answer's
-note says so. It answers with the path, size and a note (what the loudness
-pass did, and any new name). Past about four minutes it answers `running`;
-follow it with `export_status`. `export_versions` takes the same `folder`
-for every version, and `collect_project` (`{"folder"}`) makes its new
+`start`, `end`, `folder`, `replace`) writes to `<Videos>\OpenFrame\` with no
+dialog, or into `folder` (an absolute path, created if missing), and never
+replaces a file: a name already there gets a number (`Trip (2).mp4`) and the
+answer's note says so. `replace: true`, with `folder` only, replaces a file
+of the same name in that folder when the export finishes, so an agent can
+supersede its own earlier export; the note says so
+([[ADR-125 Elements keep their rows and their room, joins into silence move, callouts click on each part and stay in frame, exports replace when asked]]).
+It answers with the path, size and a note (what the loudness pass did, and
+any new name). Past about four minutes it answers `running`; follow it with
+`export_status`. `export_versions` takes the same `folder` and `replace` for
+every version, and `collect_project` (`{"folder"}`) makes its new
 `OpenFrame-<time>` folder inside the one named instead of asking in a
 dialog. In the browser build `folder` is refused with the reason, not
 ignored. ([[ADR-052 Agents read what changed and export without a dialog]],
@@ -654,7 +658,8 @@ dissolve between the parts" about 2 s. Each answer can be undone as a whole.
 ## In the page
 
 `update_marker` takes `marker_id` plus optional `at` (timeline seconds),
-`label`, and `color`. `delete_markers` takes `marker_ids`; unknown IDs reject
+`label`, `color`, and `detach` (a marker that follows a clip stays where
+it is, the timeline's own; ADR-119). `delete_markers` takes `marker_ids`; unknown IDs reject
 the entire command. Both are undoable and leave clip positions unchanged.
 Marker descriptions now include `id`, integer `frame`, and `color` alongside
 the existing `at` and `label`, so agents can target the note they described.

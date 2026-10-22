@@ -1,4 +1,4 @@
-import { baselineShifts, measureRuns, runBoxes, runSegments } from "../lib/textRuns";
+import { baselineShifts, lineScale, measureRuns, runBoxes, runSegments } from "../lib/textRuns";
 // Text clips rasterized with Canvas2D at render resolution, then drawn by
 // the compositor as a "native" source (already canvas-scale pixels). The
 // raster is cached by content: transform animation moves the quad, so only
@@ -63,6 +63,8 @@ interface Piece {
   style?: TextStyle;
   x: number;
   y: number;
+  /** Its line's height (lines differ when runs are scaled). */
+  h?: number;
   align: CanvasTextAlign;
   /** Unit pieces: the center it moves and scales about, and its state. */
   cx?: number;
@@ -106,7 +108,14 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   const lines = wrap(measure, shownText, wrapWidth);
   let cursor = 0;
   const starts = lines.map(line => { const at = shownText.indexOf(line, cursor); cursor = Math.max(cursor, at) + line.length; return Math.max(0, at); });
-  const lineH = size * s.lineHeight * Math.max(1, ...(s.runs ?? []).map(r => r.scale ?? 1));
+  // Each line is as tall as its tallest piece (After Effects' and
+  // Photoshop's auto leading, ADR-124): a line of letters scaled down is
+  // not spaced as if full size, nor are a big word's neighbors on other
+  // lines. `lineH` is the tallest, for the editor's textarea.
+  const lineHs = lines.map((l, i) => size * s.lineHeight * lineScale(l, starts[i], s));
+  const lineH = Math.max(...lineHs);
+  const blockH = lineHs.reduce((a, b) => a + b, 0);
+  const tops = lineHs.map((_, i) => lineHs.slice(0, i).reduce((a, b) => a + b, 0));
   // Lines are as wide as their letters: the spacing the canvas adds after
   // the last one is left out, so tracked titles center on their letters.
   const ls = s.letterSpacing * k;
@@ -120,7 +129,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   const moving = !!kin && isMoving(kin);
   const pad = Math.ceil(reach.total + 2) + (moving && finestUnit(kin!) ? Math.ceil(size * KINETIC_PAD) : 0) + (hasSweep(clip, ANIMATIONS) ? Math.ceil(size * SWEEP_PAD) : 0);
   const w = Math.ceil(textW + pad * 2);
-  const h = Math.ceil(lineH * lines.length + pad * 2);
+  const h = Math.ceil(blockH + pad * 2);
   // "middle" puts the em box's center on the line's center; CSS puts the
   // center of the font's ascent plus descent there instead.
   const font0 = ctx.measureText("");
@@ -139,7 +148,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // trailing spacing.
   const geo = lines.map((line, i) => {
     const lw = letters(line, starts[i]);
-    return { line, y: pad + lineH * (i + 0.5), lw, left: lineStart(s.align, lw, w, pad) };
+    return { line, y: pad + tops[i] + lineHs[i] / 2, h: lineHs[i], lw, left: lineStart(s.align, lw, w, pad) };
   });
 
   const fine = (kin && finestUnit(kin)) || (s.runs?.length && word !== undefined && s.highlight ? "word" : undefined);
@@ -152,7 +161,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
       const g = geo[a.line];
       const ax = g.left + measure(g.line.slice(0, a.start), starts[a.line]);
       const aw = letters(g.line.slice(a.start, a.end), starts[a.line] + a.start);
-      return { start: starts[a.line] + a.start, text: g.line.slice(a.start, a.end), x: ax, y: g.y, align: "left", cx: ax + aw / 2, width: aw, state: states[i], spoken: word !== undefined && !!s.highlight && a.word === word };
+      return { start: starts[a.line] + a.start, text: g.line.slice(a.start, a.end), x: ax, y: g.y, h: g.h, align: "left", cx: ax + aw / 2, width: aw, state: states[i], spoken: word !== undefined && !!s.highlight && a.word === word };
     });
     const shown = kin && caretAfter(kin, laid.letters, ANIMATIONS);
     if (shown !== undefined) {
@@ -167,7 +176,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
       const j = word !== undefined && s.highlight ? word - firstWord : -1;
       firstWord += lineWords.length;
       const m = j >= 0 && j < lineWords.length ? lineWords[j] : undefined;
-      return { start: starts[i], text: g.line, x: g.left, y: g.y, align: "left", width: g.lw, ...(m ? { word: { text: m[0], x: g.left + measure(g.line.slice(0, m.index), starts[i]) } } : {}) };
+      return { start: starts[i], text: g.line, x: g.left, y: g.y, h: g.h, align: "left", width: g.lw, ...(m ? { word: { text: m[0], x: g.left + measure(g.line.slice(0, m.index), starts[i]) } } : {}) };
     });
   }
 
@@ -206,7 +215,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
     ctx.globalAlpha = pieces.some((p) => p.state) ? Math.min(1, Math.max(0, ...pieces.map((p) => p.state?.opacity ?? 1))) : 1;
     ctx.fillStyle = s.background.color;
     ctx.beginPath();
-    ctx.roundRect(pad - bgPad, pad - bgPad, textW + bgPad * 2, lineH * lines.length + bgPad * 2, r);
+    ctx.roundRect(pad - bgPad, pad - bgPad, textW + bgPad * 2, blockH + bgPad * 2, r);
     ctx.fill();
     ctx.restore();
   }
@@ -237,7 +246,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
     const gradient = style.gradient;
     const run = boxes && s.runs!.find((r) => r.start <= (p.start ?? 0) && (p.start ?? 0) < r.end);
     const box = run?.gradient ? boxes!.get(run) : undefined;
-    const grad = gradient && (box ? gradientLine((box.left + box.right) / 2, (box.top + box.bottom) / 2, box.right - box.left, box.bottom - box.top, gradient.angle) : gradientLine(w / 2, h / 2, textW, lineH * lines.length, gradient.angle));
+    const grad = gradient && (box ? gradientLine((box.left + box.right) / 2, (box.top + box.bottom) / 2, box.right - box.left, box.bottom - box.top, gradient.angle) : gradientLine(w / 2, h / 2, textW, blockH, gradient.angle));
     if (!grad || !gradient) return style.color;
     const m = ctx.getTransform().invertSelf();
     const a = m.transformPoint({ x: grad[0], y: grad[1] }), b = m.transformPoint({ x: grad[2], y: grad[3] });
@@ -354,7 +363,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
     ctx.fillRect(caretAt.x, caretAt.y - size * 0.45, Math.max(2, size * 0.07), size * 0.9);
   }
 
-  const layout = { width: w, height: h, pad, textWidth: textW, wrapWidth, size, lineHeight: lineH, letterSpacing: s.letterSpacing * k, baselineShift };
+  const layout = { width: w, height: h, pad, textWidth: textW, wrapWidth, size, lineHeight: lineH, letterSpacing: s.letterSpacing * k, baselineShift, lines };
   // A kinetic frame, or a title whose size, spacing or color is keyed
   // (ADR-071), is drawn once: unkeyed, the compositor uploads it into a
   // scratch texture instead of keeping one per frame of the animation.
