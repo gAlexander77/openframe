@@ -295,6 +295,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
   const c = { ...raw } as Record<string, unknown>;
   if (type !== "video" && type !== "audio" && type !== "compound") delete c.inserts;
   c.id = typeof c.id === "string" && c.id ? c.id : uid("c");
+  if (!(type === "video" && ["facecam", "gameplay"].includes(String(c.streamLayout))) && !(type === "color" && c.streamLayout === "border")) delete c.streamLayout;
   c.start = Math.max(0, Math.round(num(c.start, 0)));
   c.duration = Math.max(1, Math.round(num(c.duration, 1)));
   if (VISUAL_TYPES.has(type)) {

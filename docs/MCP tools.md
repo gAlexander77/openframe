@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 187 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 190 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -42,7 +42,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `import_timeline`, `export_timeline`, `set_project`
-- **Clips**: `find_highlights`, `add_highlight_markers`
+- **Clips**: `find_highlights`, `add_highlight_markers`, `apply_stream_layout`, `create_clips`, `export_projects`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
@@ -225,7 +225,7 @@ Example:
 
 ## Clips
 
-Find the best moments in a long stream, review them, then make clips.
+Find the best moments in a long stream, then turn them into finished clip projects and export the batch.
 
 ### find_highlights
 
@@ -277,6 +277,83 @@ Example:
 ```json
 {"name":"add_highlight_markers","arguments":{"clip_id":"c_vod","ranges":[{"start":120,"end":150}]}}
 ```
+
+### apply_stream_layout
+
+Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on gameplay alone. Omit facecam for a full-height gameplay crop. Changes a non-tall canvas to 1080x1920 and reports it. Regions are fractions of the source picture. The Stream layout group moves, trims and splits together; ungroup to edit timing separately.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Video clip of the VOD |
+| `facecam` | { x, y, w, h } |  | Source region in fractions; x/y its top-left corner, positive w/h inside the picture |
+| `facecam.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `facecam.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `facecam.w` | number | yes | Fraction of source width (0.0001..1) |
+| `facecam.h` | number | yes | Fraction of source height (0.0001..1) |
+| `gameplay` | { x, y, w, h } |  | Gameplay source region; default the full source picture |
+| `gameplay.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `gameplay.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `gameplay.w` | number | yes | Fraction of source width (0.0001..1) |
+| `gameplay.h` | number | yes | Fraction of source height (0.0001..1) |
+| `split` | number |  | Facecam share of the height excluding the gap; default 0.35 (0.1..0.9) |
+| `facecam_fit` | "fill" \| "fit" |  | Facecam fill (default) crops to its band; fit shows the whole region |
+| `gap` | number |  | Pixels between the bands; default 0 (0..1000) |
+| `border` | "none" \| { color, width } |  | Facecam band border, or none (default) |
+| `border.color` | string | yes | CSS border color |
+| `border.width` | number | yes | Border width in canvas pixels (0..100) |
+| `order` | "facecam_top" \| "gameplay_top" |  | Band order; default facecam_top |
+
+### create_clips
+
+Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Answers IDs, names, total lengths (end card included), caption counts and notes. Up to 100 moments; short batches avoid speech-model timeouts.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Imported video VOD asset ID |
+| `clips` | { start, end, title, name, peak }[] | yes | Moments in source seconds, in desired project order |
+| `clips[].start` | number | yes | Source start seconds (0..) |
+| `clips[].end` | number | yes | Source end seconds, after start (0..) |
+| `clips[].title` | string |  | Hook words and default project name |
+| `clips[].name` | string |  | Project name override |
+| `clips[].peak` | number |  | Optional find_highlights peak; accepted unchanged (0..) |
+| `template` | { layout, facecam, gameplay, split, captions, hook, credit, loudness, lead_in, lead_out } |  | Editing template shared by every moment; defaults add framing, captions and a hook. Credit the streamer when publishing. |
+| `template.layout` | "stream" \| "full" \| "vertical_fill" |  | stream (default): facecam over gameplay; full: 16:9; vertical_fill: whole source cropped to 9:16 |
+| `template.facecam` | { x, y, w, h } |  | Source region in fractions; x/y its top-left corner, positive w/h inside the picture |
+| `template.facecam.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `template.facecam.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `template.facecam.w` | number | yes | Fraction of source width (0.0001..1) |
+| `template.facecam.h` | number | yes | Fraction of source height (0.0001..1) |
+| `template.gameplay` | { x, y, w, h } |  | Gameplay source region; default full source |
+| `template.gameplay.x` | number | yes | Left edge as a fraction of source width (0..1) |
+| `template.gameplay.y` | number | yes | Top edge as a fraction of source height (0..1) |
+| `template.gameplay.w` | number | yes | Fraction of source width (0.0001..1) |
+| `template.gameplay.h` | number | yes | Fraction of source height (0.0001..1) |
+| `template.split` | number |  | Facecam share of height; default 0.35 (0.1..0.9) |
+| `template.captions` | false \| { words, look, y } |  | Default two words at a time in pop look; false disables captions |
+| `template.captions.words` | integer |  | Words per caption; default 2 (1..3) |
+| `template.captions.look` | "classic" \| "yellow" \| "boxed" \| "pop" \| "neon" \| "minimal" |  | Caption look; default pop |
+| `template.captions.y` | number |  | Caption vertical offset from canvas center; default the look's safe position (-0.5..0.5) |
+| `template.hook` | boolean |  | Default true: title as a brand headline for the opening 2.5 seconds |
+| `template.credit` | { name, handle, platform } |  | When given, a small opening credit for 3 seconds and an appended 2-second Follow end card |
+| `template.credit.name` | string | yes | Streamer display name |
+| `template.credit.handle` | string |  | Streamer handle |
+| `template.credit.platform` | "twitch" \| "youtube" \| "kick" | yes | Where to follow the streamer |
+| `template.loudness` | number |  | Dialog normalization target LUFS; default -14 (-40..-5) |
+| `template.lead_in` | number |  | Extra source seconds before each moment, clamped to source start; default 0 (0..60) |
+| `template.lead_out` | number |  | Extra source seconds after each moment, clamped to source end; default 0 (0..60) |
+
+### export_projects
+
+Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `project_ids` | string[] |  | Saved project IDs in order; default all projects create_clips made in this session |
+| `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
+| `loudness` | number |  | Integrated LUFS target; default -14 (-40..-5) |
+| `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Output short side; default project resolution |
+| `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Additional shapes; the original is always exported |
+| `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
 
 ## Media
 
@@ -3088,6 +3165,6 @@ Example:
 
 ### export_status
 
-The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
+The last export_video, export_versions or export_projects: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
 
 No parameters.

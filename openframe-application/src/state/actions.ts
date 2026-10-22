@@ -403,7 +403,9 @@ function targetsAtPlayhead(p: Project) {
   );
   const sel = new Set(store.get().selection);
   const picked = under.filter((x) => sel.has(x.c.id));
-  return picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
+  const targets = picked.length ? picked : under.filter((x) => x.t.main).length ? under.filter((x) => x.t.main) : under;
+  // A stream trim already carries every band; trim its head only once.
+  return targets.filter((x, i) => !x.c.streamLayout || !x.c.group || targets.findIndex(o => o.c.group === x.c.group) === i);
 }
 
 /** Inputs whose keys are not text: a focused slider or swatch must not

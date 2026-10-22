@@ -1,4 +1,6 @@
 import { findAssetHighlights, type HighlightRequest } from "./state/highlights";
+import { createClips } from "./state/clips";
+import { exportProjects } from "./state/export";
 import { createProxies, deleteProxies } from "./state/proxies";
 import { playbackProxyState } from "./engine/playbackProxies";
 // The in-page automation surface: `window.videoEditor`. The same command
@@ -59,6 +61,8 @@ function needProject() {
 }
 
 const automation = {
+  createClips,
+  exportProjects,
   /** Every command with its JSON Schema, for tool listing. */
   commands: () => [...COMMANDS, ...PROJECT_FILE_COMMANDS].map(({ name, description, input }) => ({ name, description, input })),
   /** Run one command as an undoable edit. Throws with every problem named.
@@ -272,6 +276,8 @@ async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 }
 
 const mcpHost: McpHost = {
+  createClips: request => (needProject(), createClips(request)),
+  exportProjects,
   name: APP_NAME,
   version: __APP_VERSION__,
   canExport: () => platform.kind === "desktop",

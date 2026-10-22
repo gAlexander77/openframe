@@ -57,6 +57,10 @@ export function moveEdits(p: Project, edits: EditPoint[], target: { to: number }
     const stop = trimStop(q, e.clipId, e.edge, f, ripple);
     if (stop) reasons.set(e, stop.why);
     q = trimClip(q, e.clipId, e.edge, f, ripple);
+    if (loc.clip.streamLayout && loc.clip.group) for (const mate of unique) {
+      const c = findClip(p, mate.clipId)?.clip;
+      if (mate.edge === e.edge && c?.group === loc.clip.group && c.start === loc.clip.start && c.duration === loc.clip.duration) done.add(mate);
+    }
     done.add(e);
   }
   return { project: q, edges: unique.map((e) => ({ ...e, requested: requested(e), frame: edgeFrame(q, e) ?? 0, ...(reasons.has(e) ? { stopped: reasons.get(e) } : {}) })) };

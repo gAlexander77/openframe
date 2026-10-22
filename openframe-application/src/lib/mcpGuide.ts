@@ -36,7 +36,7 @@ export interface ToolInfo {
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "find_clips", "list_catalog"] },
   { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "import_timeline", "export_timeline", "set_project"] },
-  { name: "Clips", blurb: "Find the best moments in a long stream, review them, then make clips.", tools: ["find_highlights", "add_highlight_markers"] },
+  { name: "Clips", blurb: "Find the best moments in a long stream, then turn them into finished clip projects and export the batch.", tools: ["find_highlights", "add_highlight_markers", "apply_stream_layout", "create_clips", "export_projects"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "create_proxies", "delete_proxies", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
     name: "Timeline",
@@ -82,7 +82,7 @@ const READ_ONLY = new Set(["plan_music", "help", "describe_project", "find_clips
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_proxies", "delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["find_highlights", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["find_highlights", "create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -297,12 +297,15 @@ export const DESIGN_POINTER = "Design rules: help topic design (hook, pacing, wo
 
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
   stream_clips: {
-    title: "Clips from a long stream",
-    text: `Find the moments before cutting a stream VOD (with the streamer's permission):
-1. new_project and import_media the VOD. Keep source-second times: findings refer to the original file, regardless of where its clip is placed.
-2. find_highlights with asset_id (or clip_id when it is on the timeline), count, min_length and max_length. Supply chat_file when a replay exists: sudden chat activity, emotes and clip requests often beat sound alone. Desktop takes an absolute chat path; the web takes a URL. times adds viewer-made clip times or streamer markers in source seconds. Audio streams in bounded memory and reuses per-file features. scenes auto samples one small picture per second only on video up to two hours; ask scenes true explicitly on longer VODs.
-3. preview_media at each candidate's start, peak and end; listen and watch to choose the moments with context and payoff. Scores are signal suggestions, not editorial judgments: game effects and music can resemble a shout. transcribe true hears only candidate windows plus context, adds snippet/title, snaps sentence boundaries and scores keywords (no way, let's go, clip that). It downloads the speech model on first use. markers true with clip_id adds following Highlight N range markers in one undo step; add_highlight_markers marks already reviewed ranges without another analysis.
-4. Then create_clips from the chosen source-second windows, preserving a few seconds of lead-in and the payoff, and export_projects to deliver the resulting projects.`,
+    title: "Stream clips, from a long VOD to a batch of shorts",
+    text: `1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.
+2. Find moments: find_highlights with asset_id (or clip_id when it is on the timeline), count, min_length and max_length. Supply chat_file when a replay exists: sudden chat activity, emotes and clip requests often beat sound alone. Desktop takes an absolute chat path; the web takes a URL. times adds viewer-made clip times or streamer markers in source seconds. Audio streams in bounded memory and reuses per-file features. scenes auto samples one small picture per second only on video up to two hours; ask scenes true explicitly on longer VODs. Keep clips short, usually 15-60 seconds.
+3. Look at the source with preview_media to find the facecam rectangle (x, y, w, h fractions of the source). create_clips takes the moments directly and applies a stream template: facecam over gameplay, one to three words per caption (default two, pop look), an opening hook and -14 LUFS dialog. Give credit {name, handle, platform} for the opening credit and Follow end card. If find_highlights is unavailable, use range markers labeled Highlight N and Media > Make clips from markers.
+4. Open one returned project; preview_frames and check_project kind social_short. Adjust the hook, credit, captions and framing. These are ordinary clips; a stream group moves, trims and splits together.
+5. export_projects with the returned project_ids (or omit for all clips made this session), folder and loudness -14. Poll export_status for a long export. Each file reports length, loudness and quick check findings. ratios adds other shapes through versions; use 16:9 compilations for YouTube long-form.
+Credit the streamer in every clip and work with permission. Add real editing: captions, a hook and deliberate framing; a bare re-upload is not a finished clip. Editing and credit do not guarantee monetization. Review the current channel and platform rules before publishing.
+
+${DESIGN_POINTER}`,
   },
   ad: {
     title: "A professional ad",
@@ -366,7 +369,7 @@ ${DESIGN_POINTER}`,
 export const HELP_TOPICS = ["overview", "design", ...Object.keys(PLAYBOOKS), "catalog", "params"];
 
 const typeOf = (s: JsonSchema): string =>
-  s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
+  s.anyOf ? s.anyOf.map(typeOf).join(" | ") : s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
 
 /** Object parameters several tools share, by their fields, with the tool
  * and parameter whose help lists them: a title's style is 24 rows (about
@@ -388,6 +391,7 @@ export function paramTable(schema: JsonSchema, tool?: string): string {
       const elsewhere = shared && shared.tool !== tool ? `; its fields are ${shared.tool}'s ${shared.param} (help ${shared.tool})` : "";
       rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range}${elsewhere} |`);
       if (elsewhere) continue;
+      for (const choice of p.anyOf ?? []) if (choice.properties) walk(choice, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "object" && p.properties) walk(p, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "array" && p.items?.type === "object" && p.items.properties) walk(p.items, `${prefix}${k}[].`, depth + 1);
     }

@@ -1,3 +1,6 @@
+import { normalizeProject } from "../lib/project/defaults";
+import { planProjectExports, type ExportProjectsRequest } from "../lib/clipProjects";
+import { createdClipProjects } from "./clips";
 // The export job: the dialog's open/progress/done state, and the two ways an
 // export starts — the dialog (writes where the platform says) and
 // automation (`window.videoEditor.render`, writes to memory). One job at a
@@ -187,7 +190,8 @@ export type AgentExport =
   | { state: "running"; path: string; fraction: number; eta: number | null; version?: string }
   | ({ state: "done"; path: string; captions_file?: string } & ExportResult)
   | { state: "done"; path: string; versions: VersionFile[] }
-  | { state: "failed"; message: string; versions?: VersionFile[] };
+  | { state: "done"; path: string; projects: ProjectExportFile[] }
+  | { state: "failed"; message: string; versions?: VersionFile[]; projects?: ProjectExportFile[] };
 
 let agentExport: AgentExport | null = null;
 export const agentExportStatus = () => agentExport;
@@ -394,8 +398,7 @@ function reportOf(notes: SubjectNote[]): SubjectReport[] {
 /** The versions as projects, from the document as it is now: footage a
  * version crops is framed on its subject (state/subjects.ts looks at the
  * shots once, lib/reframe.ts places each crop). */
-async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">) {
-  const master = store.document();
+async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">, master = store.document()) {
   const keep = o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps);
   const reshaped = o.versions.some((v) => v.ratio !== "original");
   const looks = reshaped ? await lookAtShots(master) : undefined;
@@ -729,3 +732,53 @@ export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | 
 }
 
 provide({ export: openExportDialog, saveFrame: () => void saveFrame() });
+
+export interface ProjectExportFile extends VersionFile { project_id: string; findings: Finding[] }
+
+/** Export detached documents under the same encoder lock as every other
+ * export. The editor never navigates; partial results survive a failure. */
+export async function exportProjects(o: ExportProjectsRequest = {}): Promise<AgentExport> {
+  if (o.replace && !o.folder) throw new Error("replace needs folder");
+  if (o.folder !== undefined && !platform.createAgentExportTarget) throw new Error(FOLDER_DESKTOP_ONLY);
+  const sequence = planProjectExports(o.project_ids ?? createdClipProjects(), o.ratios);
+  if (job) throw new Error("An export is already running.");
+  const controller = new AbortController();
+  job = controller;
+  agentExport = { state: "running", path: "", fraction: 0, eta: null };
+  const tid = toast(`Exporting ${sequence.length} project files`, "progress");
+  const made: ProjectExportFile[] = [];
+  try {
+    // Capture each saved document once, and validate all IDs before writing.
+    const projects = new Map<string, Project>();
+    for (const { id } of sequence) if (!projects.has(id)) projects.set(id, normalizeProject(await platform.loadProject(id)));
+    for (const [i, item] of sequence.entries()) {
+      controller.signal.throwIfAborted();
+      const master = projects.get(item.id)!;
+      const q = item.ratio === "original" ? master : (await versionProjects({ versions: [{ ratio: item.ratio }] }, master))[0].project;
+      const settings = { ...defaultExportSettings(q), name: `${q.name} (${q.id})`, loudness: o.loudness ?? -14, ...(o.resolution ? { resolution: o.resolution } : {}) };
+      const plan = planExport(q, settings, { inPoint: null, outPoint: null });
+      const name = safeFileName(settings.name);
+      const target = platform.createAgentExportTarget ? await platform.createAgentExportTarget(name, plan.extension, o.folder, o.replace) : await platform.createExportTarget(name, plan.extension);
+      if (!target) throw new Error("The save dialog was canceled");
+      const path = target.displayName;
+      const version = `${i + 1} of ${sequence.length}`;
+      agentExport = { state: "running", path, fraction: i / sequence.length, eta: null, version };
+      const findings = checkProject(q, "social_short").findings;
+      const result = await exportProject(q, plan, target, pr => {
+        const fraction = (i + pr.fraction) / sequence.length;
+        agentExport = { state: "running", path, fraction, eta: pr.eta, version };
+        updateToast(tid, { text: `Exporting ${version}`, progress: fraction });
+      }, controller.signal);
+      if (target.revealLabel === "Download") await target.reveal();
+      const note = platform.createAgentExportTarget ? target.replaced ? replacedNote(path) : renamedNote(`${name}.${plan.extension}`, path) : undefined;
+      made.push({ project_id: item.id, name: q.name, path, ratio: item.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: plan.seconds, bytes: result.bytes,
+        ...versionSound(result, note), findings });
+    }
+    agentExport = { state: "done", path: made.at(-1)!.path, projects: made };
+    toast(`Exported ${made.length} project files`);
+    return agentExport;
+  } catch (e) {
+    agentExport = { state: "failed", message: e instanceof Error ? e.message : String(e), projects: made };
+    throw e;
+  } finally { job = null; dismiss(tid); }
+}

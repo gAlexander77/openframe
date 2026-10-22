@@ -296,6 +296,8 @@ export interface Keyframe {
 export type ClipLabel = "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "purple" | "pink";
 
 interface ClipBase {
+  /** Ordinary grouped stream bands (ADR-141). Absent: ordinary clip. */
+  streamLayout?: "facecam" | "gameplay" | "border";
   id: Id;
   /** Timeline frame where the clip begins. */
   start: number;

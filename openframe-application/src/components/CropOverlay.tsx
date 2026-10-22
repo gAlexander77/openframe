@@ -68,6 +68,10 @@ export function CropOverlay(props: { project: Project; clip: VisualClip; layer: 
 /** Under the viewer while cropping, in the transport's place, as CapCut's
  * crop dialog puts its ratios and buttons under the picture. */
 export function CropBar({ session }: { session: CropSession }) {
+  if (session.purpose === "stream") return <div className="transport crop-bar stream-crop-bar" role="toolbar" aria-label="Facecam source region">
+    <span>Place the box around the facecam</span>
+    <div className="crop-actions"><button className="btn ghost" onClick={cancelCrop}>Cancel</button><button className="btn primary" onClick={applyCrop}>Apply stream layout</button></div>
+  </div>;
   return (
     <div className="transport crop-bar" role="toolbar" aria-label="Crop">
       <div className="crop-ratios" role="radiogroup" aria-label="Crop ratio">

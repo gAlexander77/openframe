@@ -1,3 +1,5 @@
+import type { CreateClipsRequest, ExportProjectsRequest } from "./clipProjects";
+import { STREAM_REGION_SCHEMA } from "./commands";
 // The Model Context Protocol, transport-agnostic: JSON-RPC 2.0 messages in,
 // responses out. Tools are the command registry (ADR-006) plus app-level
 // tools (import, undo, seek, a frame as an image); resources are the
@@ -66,6 +68,8 @@ export interface JsonRpcResponse {
 export interface McpHost {
   name: string;
   version: string;
+  createClips?(request: CreateClipsRequest): Promise<unknown>;
+  exportProjects?(request: ExportProjectsRequest): Promise<unknown>;
   /** False where export_video and export_versions cannot write files (the
    * browser build), so the instructions say so before a model plans on it. */
   canExport?(): boolean;
@@ -485,6 +489,23 @@ const FOLDER_DESKTOP_ONLY = "folder is desktop only: this build (the browser) ca
 /** A contact sheet's tiles a row: one limit for every preview tool. */
 const columns = (dflt: number): JsonSchema => ({ type: "integer", minimum: 1, maximum: 8, description: `Tiles a row, at most 8; default ${dflt}` });
 
+export const CLIP_TEMPLATE_SCHEMA: JsonSchema = { ...obj({
+  layout: { type: "string", enum: ["stream", "full", "vertical_fill"], description: "stream (default): facecam over gameplay; full: 16:9; vertical_fill: whole source cropped to 9:16" },
+  facecam: STREAM_REGION_SCHEMA,
+  gameplay: { ...STREAM_REGION_SCHEMA, description: "Gameplay source region; default full source" },
+  split: { type: "number", minimum: 0.1, maximum: 0.9, description: "Facecam share of height; default 0.35" },
+  captions: { description: "Default two words at a time in pop look; false disables captions", anyOf: [{ type: "boolean", enum: [false] }, obj({
+    words: { type: "integer", minimum: 1, maximum: 3, description: "Words per caption; default 2" },
+    look: { type: "string", enum: Object.keys(CAPTION_LOOKS), description: "Caption look; default pop" },
+    y: { type: "number", minimum: -0.5, maximum: 0.5, description: "Caption vertical offset from canvas center; default the look's safe position" },
+  })] },
+  hook: { type: "boolean", description: "Default true: title as a brand headline for the opening 2.5 seconds" },
+  credit: { ...obj({ name: { type: "string", description: "Streamer display name" }, handle: { type: "string", description: "Streamer handle" }, platform: { type: "string", enum: ["twitch", "youtube", "kick"], description: "Where to follow the streamer" } }, ["name", "platform"]), description: "When given, a small opening credit for 3 seconds and an appended 2-second Follow end card" },
+  loudness: { type: "number", minimum: -40, maximum: -5, description: "Dialog normalization target LUFS; default -14" },
+  lead_in: { type: "number", minimum: 0, maximum: 60, description: "Extra source seconds before each moment, clamped to source start; default 0" },
+  lead_out: { type: "number", minimum: 0, maximum: 60, description: "Extra source seconds after each moment, clamped to source end; default 0" },
+}), description: "Editing template shared by every moment; defaults add framing, captions and a hook. Credit the streamer when publishing." };
+
 /** Tools that touch the outside world or the session, not just the document. */
 export const APP_TOOLS: AppTool[] = [
   {
@@ -515,6 +536,27 @@ export const APP_TOOLS: AppTool[] = [
       markers: { type: "boolean", description: "Add Highlight N range markers following clip_id (or a covering clip of asset_id), replacing its earlier highlight markers as one undo step (default false)" },
     }),
     call: async (h, a) => appJson(await h.ai("findHighlights", "", a)),
+  },
+  {
+    name: "create_clips",
+    description: "Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Answers IDs, names, total lengths (end card included), caption counts and notes. Up to 100 moments; short batches avoid speech-model timeouts.",
+    inputSchema: obj({ asset_id: { type: "string", description: "Imported video VOD asset ID" }, clips: { type: "array", description: "Moments in source seconds, in desired project order", items: obj({ start: { type: "number", minimum: 0, description: "Source start seconds" }, end: { type: "number", minimum: 0, description: "Source end seconds, after start" }, title: { type: "string", description: "Hook words and default project name" }, name: { type: "string", description: "Project name override" }, peak: { type: "number", minimum: 0, description: "Optional find_highlights peak; accepted unchanged" } }, ["start", "end"]) }, template: CLIP_TEMPLATE_SCHEMA }, ["asset_id", "clips"]),
+    call: async (h, a) => { if (!h.createClips) throw new Error("Clip creation is unavailable in this host"); return appJson(await h.createClips(a as unknown as CreateClipsRequest)); },
+  },
+  {
+    name: "export_projects",
+    description: "Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.",
+    inputSchema: obj({ project_ids: { type: "array", items: { type: "string" }, description: "Saved project IDs in order; default all projects create_clips made in this session" }, folder: FOLDER, loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS target; default -14" }, resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Output short side; default project resolution" }, ratios: { type: "array", items: { type: "string", enum: [...VERSION_RATIOS] }, description: "Additional shapes; the original is always exported" }, replace: REPLACE }),
+    call: async (h, a) => {
+      if (!h.exportProjects) throw new Error("Project batch export is unavailable in this host");
+      if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
+      if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
+      const done = h.exportProjects(a as ExportProjectsRequest);
+      done.catch(() => {});
+      // ponytail: the desktop bridge gives calls 300 s; beyond 240 s poll export_status.
+      const waited = await Promise.race([done, new Promise(r => setTimeout(() => r(null), 240_000))]);
+      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+    },
   },
   {
     name: "help",
@@ -793,7 +835,7 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "export_status",
-    description: "The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).",
+    description: "The last export_video, export_versions or export_projects: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).",
     inputSchema: obj(),
     call: (h) => appJson(h.exportStatus() ?? { state: "none" }),
   },

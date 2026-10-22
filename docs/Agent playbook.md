@@ -23,13 +23,14 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.
 
-## Clips from a long stream
+## Stream clips, from a long VOD to a batch of shorts
 
-Find the moments before cutting a stream VOD (with the streamer's permission):
-1. new_project and import_media the VOD. Keep source-second times: findings refer to the original file, regardless of where its clip is placed.
-2. find_highlights with asset_id (or clip_id when it is on the timeline), count, min_length and max_length. Supply chat_file when a replay exists: sudden chat activity, emotes and clip requests often beat sound alone. Desktop takes an absolute chat path; the web takes a URL. times adds viewer-made clip times or streamer markers in source seconds. Audio streams in bounded memory and reuses per-file features. scenes auto samples one small picture per second only on video up to two hours; ask scenes true explicitly on longer VODs.
-3. preview_media at each candidate's start, peak and end; listen and watch to choose the moments with context and payoff. Scores are signal suggestions, not editorial judgments: game effects and music can resemble a shout. transcribe true hears only candidate windows plus context, adds snippet/title, snaps sentence boundaries and scores keywords (no way, let's go, clip that). It downloads the speech model on first use. markers true with clip_id adds following Highlight N range markers in one undo step; add_highlight_markers marks already reviewed ranges without another analysis.
-4. Then create_clips from the chosen source-second windows, preserving a few seconds of lead-in and the payoff, and export_projects to deliver the resulting projects.
+1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.
+2. Find moments: find_highlights with asset_id (or clip_id when it is on the timeline), count, min_length and max_length. Supply chat_file when a replay exists: sudden chat activity, emotes and clip requests often beat sound alone. Desktop takes an absolute chat path; the web takes a URL. times adds viewer-made clip times or streamer markers in source seconds. Audio streams in bounded memory and reuses per-file features. scenes auto samples one small picture per second only on video up to two hours; ask scenes true explicitly on longer VODs. Keep clips short, usually 15-60 seconds.
+3. Look at the source with preview_media to find the facecam rectangle (x, y, w, h fractions of the source). create_clips takes the moments directly and applies a stream template: facecam over gameplay, one to three words per caption (default two, pop look), an opening hook and -14 LUFS dialog. Give credit {name, handle, platform} for the opening credit and Follow end card. If find_highlights is unavailable, use range markers labeled Highlight N and Media > Make clips from markers.
+4. Open one returned project; preview_frames and check_project kind social_short. Adjust the hook, credit, captions and framing. These are ordinary clips; a stream group moves, trims and splits together.
+5. export_projects with the returned project_ids (or omit for all clips made this session), folder and loudness -14. Poll export_status for a long export. Each file reports length, loudness and quick check findings. ratios adds other shapes through versions; use 16:9 compilations for YouTube long-form.
+Credit the streamer in every clip and work with permission. Add real editing: captions, a hook and deliberate framing; a bare re-upload is not a finished clip. Editing and credit do not guarantee monetization. Review the current channel and platform rules before publishing.
 
 ## A professional ad
 

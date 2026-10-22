@@ -1,3 +1,5 @@
+import { runCommand } from "../lib/commands";
+import { toast } from "./toast";
 // The crop mode: CapCut's Crop, drawn on the viewer (ADR-048). A session
 // edits a copy of one clip's crop while the viewer shows that clip whole,
 // so the project only changes on Done, as one undo step, "Crop". Escape
@@ -23,6 +25,12 @@ export function beginCrop(id: Id) {
   if (s.playhead < c.start || s.playhead >= c.start + c.duration) store.seek(c.start + Math.min(c.animIn?.duration ?? 0, c.duration - 1));
   store.select([id]);
   store.set({ cropEdit: { id, crop: { ...c.crop }, ratio: "free" } });
+}
+
+export function beginStreamCrop(id: Id) {
+  beginCrop(id);
+  const session = store.get().cropEdit;
+  if (session) store.set({ cropEdit: { ...session, purpose: "stream", crop: { left: 0, top: 0, right: 0.75, bottom: 0.65 }, ratio: "free" } });
 }
 
 export function setCropDraft(crop: Crop) {
@@ -51,6 +59,15 @@ export function resetCrop() {
 export function applyCrop() {
   const s = store.get().cropEdit;
   if (!s) return;
+  if (s.purpose === "stream") {
+    const { left, top, right, bottom } = s.crop;
+    const changedCanvas = store.get().project.height <= store.get().project.width;
+    try {
+      store.edit("Apply stream layout", p => runCommand(p, "apply_stream_layout", { clip_id: s.id, facecam: { x: left, y: top, w: 1 - left - right, h: 1 - top - bottom } }), { cropEdit: null });
+      if (changedCanvas) toast("Canvas changed to 1080 × 1920 for the stream layout");
+    } catch (e) { toast(e instanceof Error ? e.message : String(e), "error"); }
+    return;
+  }
   // One change: the session ends with the edit, so no frame shows both.
   store.edit("Crop", (p) => cropClips(p, [s.id], s.crop), { cropEdit: null });
   if (store.get().cropEdit) store.set({ cropEdit: null }); // nothing changed
@@ -82,6 +99,6 @@ store.subscribe(() => {
   if (!loc) return cancelCrop();
   const c = loc.clip;
   const away = s.playing || s.selection.length !== 1 || s.selection[0] !== session.id || s.playhead < c.start || s.playhead >= c.start + c.duration || loc.track.hidden;
-  if (away) applyCrop();
+  if (away) { if (session.purpose === "stream") cancelCrop(); else applyCrop(); }
 });
 

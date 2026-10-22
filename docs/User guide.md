@@ -19,6 +19,41 @@ and [[Roadmap]] for what is still planned.
 
 ## Make your first edit
 
+### Turn a stream into clips
+
+Import the VOD once. On desktop, create a playback proxy from the Media
+card's context menu for smoother previews of a long recording. Every clip
+project shares that file and proxy; keep the originals available.
+
+For one stream layout, select the VOD clip on the timeline and open
+**Library > Layouts > Stream: facecam over gameplay**. Place the box around
+the facecam on the viewer, then choose **Apply stream layout**. A wide
+canvas becomes 1080 x 1920. The facecam appears above gameplay and its
+copy is silent. The bands move, trim and split together; ungroup them
+when they need independent timing.
+
+To make several projects, add range markers labeled **Highlight 1**,
+**Highlight 2**, and so on over moments on the VOD clip. Right-click its
+Media card and choose **Make clips from markers**. Choose a stream,
+vertical-fill or full 16:9 layout, optionally place the facecam box on the
+source preview, and choose captions and an opening hook. Enter the
+streamer's name, handle and platform to add an opening credit and Follow
+end card. Making clips saves separate projects and leaves this project
+open. Each reported length includes the appended two-second credit card.
+Review speech recognition and edit each hook before publishing.
+
+On Home, select projects with their selection boxes and choose **Export
+selected**. Choose a desktop folder (blank uses the usual export folder),
+loudness (default -14 LUFS), and an optional additional shape. Original
+shapes are always included. Browser export uses a save dialog per file;
+it cannot write to a named desktop folder. Agents use `create_clips` and
+`export_projects`; `help` topic `stream_clips` explains the full pipeline.
+Credit the streamer in each clip, keep shorts around 15-60 seconds, and
+add deliberate framing, captions and a hook. Use 16:9 compilations for
+long-form videos. Credit and editing do not guarantee monetization.
+
+### Arrange and finish an edit
+
 On desktop, drag any noninteractive part of the top header to move the
 window, including the logo, save status and spaces between controls.
 Double-click the same areas to maximize the window; double-click again to
