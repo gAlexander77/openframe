@@ -6,8 +6,8 @@ import { chordText } from "../lib/keymap";
 import { isDesktop, isMac } from "../platform/env";
 import { chordFor, run, tipFor } from "../state/actions";
 import { toggleAssistant, useAssistantValue } from "../state/assistant";
-import { saveOtio } from "../state/export";
-import { closeProject, collectProject, openProjectFile } from "../state/project";
+import { saveTimeline, type TimelineFormat } from "../state/interchange";
+import { closeProject, collectProject, importTimeline, openProjectFile } from "../state/project";
 import { store, useEditor } from "../state/store";
 import { toast } from "../state/toast";
 import { openMarkers } from "../state/markers";
@@ -18,6 +18,7 @@ import { MenuBar, type MenuItem } from "./Menu";
 import { VIEWER_GUIDES } from "./ViewerGuides";
 import { SaveCopyDialog } from "./SaveCopyDialog";
 import { AboutDialog } from "./AboutDialog";
+import { Dialog } from "./Dialog";
 
 /** The frameless window's title bar: menus, the project name, export, and
  * (on Windows/Linux desktop) the window buttons. Tauri's deep drag region
@@ -29,6 +30,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const [maximized, setMaximized] = useState(false);
   const [copyDialog, setCopyDialog] = useState(false);
   const [about, setAbout] = useState(false);
+  const [timelineReport, setTimelineReport] = useState<{ title: string; lines: string[] } | null>(null);
   const assistantOpen = useAssistantValue((s) => s.open);
 
   // Read the window, not just our button: caption double-click and the OS
@@ -54,15 +56,22 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
   const s = () => store.get();
   const files = (task: Promise<unknown>) => void task.catch(e => toast(String(e), "error"));
   const openFile = { label: "Open project file…", onSelect: () => files(openProjectFile()) };
+  const importFile = { label: "Import timeline…", onSelect: () => files(importTimeline().then(r => {
+    if (r) setTimelineReport({ title: "Timeline imported", lines: [`${r.project.name}: ${r.project.tracks.length} tracks, ${r.project.assets.length} media files.`, ...r.warnings] });
+  })) };
+  const exportTimeline = (format: TimelineFormat) => files(saveTimeline(format).then(r => {
+    if (r) setTimelineReport({ title: "Timeline exported", lines: [...r.files.map(f => `Saved ${f}`), ...r.warnings] });
+  }));
   const menus: { label: string; items: () => MenuItem[] }[] = [
     {
       label: "File",
-      items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }, openFile] : [
+      items: () => props.home ? [{ action: "newProject" }, { action: "openProject" }, openFile, importFile] : [
         { label: "Back to home", onSelect: () => void closeProject() },
         "-",
         { action: "newProject" },
         { action: "openProject" },
         openFile,
+        importFile,
         { label: "Collect files…", onSelect: () => files(collectProject()) },
         { action: "saveProject" },
         { label: "Save a copy…", onSelect: () => setCopyDialog(true) },
@@ -72,13 +81,12 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         { action: "export" },
         { action: "saveFrame" },
         {
-          label: "Export timeline (OTIO)",
-          hint: "Resolve, Premiere",
-          onSelect: () =>
-            void saveOtio().then(
-              (name) => name && toast(`Saved ${name}`),
-              (e) => toast(e instanceof Error ? e.message : String(e), "error"),
-            ),
+          label: "Export timeline",
+          submenu: [
+            { label: "OpenTimelineIO", onSelect: () => exportTimeline("otio") },
+            { label: "FCPXML", onSelect: () => exportTimeline("fcpxml") },
+            { label: "EDL", onSelect: () => exportTimeline("edl") },
+          ],
         },
       ],
     },
@@ -253,6 +261,10 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
       </div>
     </header>
     {copyDialog && !props.home && <SaveCopyDialog onClose={() => setCopyDialog(false)} />}
-    {about && <AboutDialog onClose={() => setAbout(false)} />}</>
+    {about && <AboutDialog onClose={() => setAbout(false)} />}
+    {timelineReport && <Dialog title={timelineReport.title} onClose={() => setTimelineReport(null)}>
+      <ul className="timeline-report">{timelineReport.lines.map((line, i) => <li key={i}>{line}</li>)}</ul>
+      <footer><button className="btn primary" onClick={() => setTimelineReport(null)}>Close</button></footer>
+    </Dialog>}</>
   );
 }

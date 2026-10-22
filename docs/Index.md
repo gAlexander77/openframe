@@ -561,3 +561,4 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.
+- [[ADR-137 Timeline interchange shares one import boundary]] — OTIO/FCPXML imports, FCPXML and CMX EDL exports, frame clocks, connected lanes and relinkable media.

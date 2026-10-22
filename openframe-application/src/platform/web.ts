@@ -59,6 +59,13 @@ const savePicker = () =>
 
 export const web: Platform = {
   kind: "web",
+  async openTimelineFile(path) {
+    if (path !== undefined) throw new Error("Importing a timeline by path is desktop only; use File > Import timeline to choose a file.");
+    const [file] = await pickFiles(".otio,.fcpxml,.xml");
+    if (!file) return null;
+    if (file.size > 32 * 1024 * 1024) throw new Error("Timeline file exceeds 32 MiB.");
+    return { name: file.name, text: await file.text() };
+  },
   async openProjectFile(path) {
     if (path) throw new Error("Opening a project by path is desktop only; use Open project file.");
     const [file] = await pickFiles(".json,application/json");

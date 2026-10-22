@@ -2,13 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { chordText, type ActionId, ACTION_LABELS } from "../lib/keymap";
 import { isMac } from "../platform/env";
 import { chordFor, run } from "../state/actions";
-import { Check } from "../icons";
+import { Check, ChevronRight } from "../icons";
 
 export type MenuItem =
   | { action: ActionId; label?: string; disabled?: boolean; checked?: boolean }
   /** A row of color swatches (a clip's label); `null` is the "none" swatch. */
   | { swatches: { value: string | null; label: string; color?: string }[]; current?: string | null; title: string; onPick: (v: string | null) => void }
   | { label: string; onSelect: () => void; disabled?: boolean; checked?: boolean; hint?: string }
+  | { label: string; submenu: MenuItem[]; disabled?: boolean }
   | "-";
 
 /** A menubar of dropdowns. Hovering across the bar while one menu is open
@@ -102,8 +103,9 @@ export function MenuList(props: {
   drop?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [sub, setSub] = useState<{ index: number; button: HTMLButtonElement; byKey: boolean } | null>(null);
   const opener = useRef<Element | null>(null);
-  const items = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>(".menu-item:not(:disabled)") ?? [])];
+  const items = () => [...(ref.current?.querySelectorAll<HTMLButtonElement>(".menu-item:not(:disabled)") ?? [])].filter(b => b.closest('[role="menu"]') === ref.current);
   // Keep the menu inside the window. A right-click on the lowest track
   // opened it below the window's edge; open upward from the pointer when
   // there is room above, else slide it up just enough.
@@ -168,6 +170,23 @@ export function MenuList(props: {
               ))}
             </div>
           );
+        if ("submenu" in item) {
+          const opened = sub?.index === i;
+          const rect = opened ? sub.button.getBoundingClientRect() : null;
+          return (
+            <div key={i} className="menu-submenu">
+              <button className="menu-item" role="menuitem" aria-haspopup="menu" aria-expanded={opened} disabled={item.disabled}
+                onPointerEnter={e => setSub({ index: i, button: e.currentTarget, byKey: false })}
+                onClick={e => setSub({ index: i, button: e.currentTarget, byKey: true })}
+                onKeyDown={e => { if (e.key === "ArrowRight") { e.preventDefault(); e.stopPropagation(); setSub({ index: i, button: e.currentTarget, byKey: true }); } }}>
+                <span className="menu-check" /><span className="menu-label">{item.label}</span><ChevronRight size={14} />
+              </button>
+              {opened && rect && <MenuList items={item.submenu} onDone={props.onDone} autoFocus={sub.byKey}
+                onNav={dir => { if (dir === -1) { sub.button.focus(); setSub(null); } }}
+                style={{ position: "fixed", top: rect.top, left: Math.min(rect.right + 4, innerWidth - 252) }} />}
+            </div>
+          );
+        }
         const label = "action" in item ? (item.label ?? ACTION_LABELS[item.action]) : item.label;
         const chord = "action" in item ? chordFor(item.action) : undefined;
         const hint = chord ? chordText(chord, isMac) : "hint" in item ? item.hint : undefined;
@@ -177,6 +196,7 @@ export function MenuList(props: {
             role="menuitem"
             className="menu-item"
             disabled={item.disabled}
+            onPointerEnter={() => setSub(null)}
             onClick={() => {
               props.onDone();
               if ("action" in item) run(item.action);

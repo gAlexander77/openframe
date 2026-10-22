@@ -112,6 +112,10 @@
 .menu-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-hint { color: var(--text-3); font-size: var(--fs-xs); }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+.menu:has(> .menu-submenu) { overflow: visible; animation: none; }
+.menu-submenu > .menu { animation: none; }
+.timeline-report { padding-left: 22px; max-height: 360px; overflow: auto; overflow-wrap: anywhere; }
+.timeline-report li { margin-bottom: 8px; }
 
 /* Wider on a big screen: at 2560 px a 360 px cap cut a long name with
    half the bar empty. */

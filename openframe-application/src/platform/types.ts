@@ -99,6 +99,9 @@ export interface Platform {
   };
 
   openProjectFile(path?: string): Promise<unknown | null>;
+  /** Read an OTIO or FCPXML document. path is accepted only on desktop;
+   * its directory is also the base for relative media references. */
+  openTimelineFile(path?: string): Promise<{ name: string; text: string; path?: string } | null>;
   /** Copy the project and its media into a new folder inside `folder`
    * (desktop: an absolute path an agent named, created if missing), or
    * inside one the user picks when it is absent. Answers the project

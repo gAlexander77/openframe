@@ -8,7 +8,7 @@ import { Channel, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
-import { CustomSource, type StreamTargetChunk } from "mediabunny";
+import { CustomSource, UrlSource, type StreamTargetChunk } from "mediabunny";
 import type { AgentCliResult } from "../lib/agentSetup";
 import type { AgentEndpoint, ImportedFile, Platform, ProjectSummary, RenderJob } from "./types";
 
@@ -118,6 +118,14 @@ export const desktop: Platform = {
   },
 
   kind: "desktop",
+  async openTimelineFile(path) {
+    if (path !== undefined && !/^(?:[a-z]:[\\/]|\/|\\\\)/i.test(path)) throw new Error("Timeline file must be an absolute path.");
+    const picked = path ?? await open({ multiple: false, title: "Import timeline", filters: [{ name: "Timelines", extensions: ["otio", "fcpxml", "xml"] }] });
+    if (!picked) return null;
+    const { size } = await register(picked);
+    if (size > 32 * 1024 * 1024) throw new Error("Timeline file exceeds 32 MiB.");
+    return { path: picked, name: picked.split(/[\\/]/).at(-1)!, text: await (await desktop.blobFor(picked)).text() };
+  },
   async openProjectFile(path) {
     const result = await invoke<{ project: Project; path: string } | null>("project_open_file", { path: path ?? null });
     return result ? rewriteProjectPaths(result.project, src => resolveProjectPath(src, result.path)) : null;
@@ -179,6 +187,7 @@ export const desktop: Platform = {
   },
 
   async sourceFor(src) {
+    if (/^https?:\/\//i.test(src)) return new UrlSource(src);
     const { id, size } = await register(src);
     const url = convertFileSrc(id, "media"); // http://media.localhost/m3 | media://localhost/m3
     return new CustomSource({
@@ -212,6 +221,11 @@ export const desktop: Platform = {
 
   /** For stills only: the whole file lands in memory. */
   async blobFor(src) {
+    if (/^https?:\/\//i.test(src)) {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`The media address answered ${response.status}.`);
+      return response.blob();
+    }
     const { id, size } = await register(src);
     const url = convertFileSrc(id, "media");
     const parts: Uint8Array<ArrayBuffer>[] = [];
