@@ -49,10 +49,13 @@ async (page) => {
     const tile = await createImageBitmap(sheet, 6, 6, W, H);
     const preview = await ink(tile);
     const single = await ink(await bitmapOf((await call("preview_frame", { at: 1, max_width: 640 }))[0].data, "image/png"));
-    // What export writes: the frame at full size, then brought down.
+    // What export writes: the frame at full size, then brought down the
+    // way the file is below (drawImage). createImageBitmap's "high"
+    // resize differs by machine: on one it took 5% of a thin 36 px
+    // title's ink that the file and the previews both kept.
     const still = await ve.still(30, "1080p");
     const full = await createImageBitmap(await (await fetch(still.url)).blob());
-    const exported = await ink(await createImageBitmap(full, { resizeWidth: W, resizeHeight: H, resizeQuality: "high" }));
+    const exported = await ink(full);
     // And the encoded file itself, as a player shows it at that width.
     const out = await ve.render({ start: 0, end: 2, resolution: "1080p" });
     const video = document.createElement("video");

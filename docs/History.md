@@ -1712,3 +1712,39 @@ the end of the fifth branch, then two more blind Claude Code films.
   open browser.
 - **Two lanes can name the same new file.** Both film-4 lanes added
   `film4Fixes.test.ts`; the merge kept both under different names.
+
+## 2026-10-21 — The sixth branch swept on a second machine, and merged (Claude Code)
+
+The work moved to a new computer with none of the first one's notes. The
+handoff's next step was the full drive sweep of `improvements-6`, then a
+merge into `main`.
+
+- **Gates:** tsc, the 1,637 unit tests, Rust fmt, clippy and its 40 tests
+  passed as they had on the first machine.
+- **Drives:** 196 ran (the three desktop-only ones and `music-structure`,
+  which needs the private track, skipped), three at a time; 184 passed.
+  Of the twelve that failed, six were broken mid-step by Vite reloading
+  every page when it first bundled `kokoro-js`, and passed alone. Four
+  were real-time playback and downscale checks on the laptop's
+  integrated GPU, which pass on its discrete one; the runner now asks
+  for the high-performance GPU. `preview-text-weight` measured the
+  scaler: its reference used `createImageBitmap`'s high-quality resize,
+  which here took 5% of a thin title's ink that the previews and the
+  exported file kept; with one downscale for all three they agree within
+  0.7% on both GPUs.
+- **Fixtures:** this machine's ffmpeg (gyan.dev 8.1) crashes in `drawtext`
+  when it has to look a font up; `make-fixtures.mjs` names a font file
+  on Windows.
+- **Merged** into `main` through a pull request, at the owner's
+  direction, with a merge commit.
+
+### Lessons paid for in this round
+
+- **A new machine reruns everything once.** Its first `npm install` has
+  no optimized dependencies yet, its GPU and fonts differ, and its tools
+  are other builds: the drives that measure timing or pixels are the
+  ones that move. Rerun failures alone before reading them as bugs.
+- **When the editor page is gone, the MCP server waits forever.** A blank
+  desktop page left `list_projects` hanging and Claude Code's connection
+  timing out at 30 s; the server should answer that the editor is not
+  responding.

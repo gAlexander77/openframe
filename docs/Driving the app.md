@@ -249,6 +249,28 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
     re-encodes a PNG with a 256-color palette, which bands skies, and a
     JPEG as a JPEG. The images a tool answers are not always what the
     model sees: check their size (ADR-073).
+23. **A laptop with two GPUs gives headless Edge the integrated one.**
+    There `speed`, `frame-blend` and `bg-removal` dropped frames and
+    `contact-sheet-banding` read a different downscale; on the discrete
+    GPU all four pass. `run.mjs` passes `--force_high_performance_gpu`.
+    Check which one a browser got with `WEBGL_debug_renderer_info`.
+24. **A dependency Vite optimizes late reloads every page on its server,
+    the desktop app's included.** After a fresh `npm install`, the first
+    drive to load a lazily imported package (`kokoro-js`) made Vite
+    bundle it and reload everything: drives running beside it died
+    mid-step, and the desktop page came back blank, `window.videoEditor`
+    undefined, with the app's MCP server waiting on it forever. Reload
+    the app's page (or restart it) after such a reload, and rerun what
+    failed alongside it.
+25. **Playwright cannot attach to a page that left a shared worker
+    behind.** Vite's client starts one (a `blob:` URL) to ping a server
+    it lost; afterwards `connectOverCDP` fails an assertion on the
+    `shared_worker` target, and the Playwright MCP over CDP closes.
+    Raw CDP (`/json/list`, `Runtime.evaluate`) still works; restarting
+    the app clears it.
+26. **`createImageBitmap`'s `resizeQuality: "high"` differs by machine.**
+    Compare pictures brought down the same way (`drawImage` to the same
+    size), or the measurement measures the scaler.
 
 ## MCP against the web build
 

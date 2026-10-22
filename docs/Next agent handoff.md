@@ -1,24 +1,22 @@
 # Next agent handoff - OpenFrame
 
-**Updated:** 2026-10-14. This is the current owner direction for the next
+**Updated:** 2026-10-21. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
 ## Current state - 2026-10-21 (read first)
 
-- `main` holds the first five improvements rounds (to ADR-116).
-- Branch `improvements-6` holds the sixth (ADR-117 to ADR-125; History,
-  "The sixth improvements branch"). It passed tsc, the full unit suite
-  (1,637 tests) and Rust fmt; its one Rust change passed clippy and
-  `cargo test`; `export_video replace` was checked in the desktop app.
-  A full drive sweep reached 185 of 197 drives, all passing, before it
-  was stopped for low memory.
-- **Next:** run the full drive sweep on `improvements-6`. Skip the
-  desktop-only `media-relink` and `desktop-session-jobs`, and
-  `window-header`, which needs its own runner. `longgop-cut` needs
-  `node scripts/make-fixtures.mjs longgop-1080p30` (it writes `scratch/`);
-  `music-structure` needs the private promo track, so skip it without it.
-  Fix what fails, merge into `main` with `--no-ff`, and push only when the
-  owner asks.
+- `main` holds all six improvements rounds (to ADR-125): `improvements-6`
+  merged on 2026-10-21 after a full drive sweep on a second machine
+  (History, "The sixth branch swept on a second machine, and merged").
+- **The owner's standing direction (2026-10-21):** keep finding and fixing
+  bugs, add what major editors have that OpenFrame lacks, test the MCP
+  tools with real, voiced edits, and merge finished work into `main`
+  through pull requests (the owner is the only person on the repository).
+  Hand detailed work to Codex (`codex exec`) to spare Claude usage.
+- **Sweeps:** skip the desktop-only `media-relink` and
+  `desktop-session-jobs`, and `window-header`, which needs its own runner;
+  `music-structure` needs the private promo track. Rerun failures alone
+  before reading them as bugs ([[Driving the app]], traps 23 to 26).
 - **Then:** the open items the ADRs record (per-letter border fades, a
   compressor restarting on a split compound, glow sampling at radius 48,
   captions over rings on tall versions, callouts inside compounds, the ad

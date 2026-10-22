@@ -36,10 +36,14 @@ try {
 const repo = resolve(".").replace(/\\/g, "/");
 const drive = (0, eval)(readFileSync(file, "utf8").replaceAll("http://localhost:1420", base).replaceAll("__REPO__", repo).replaceAll("scripts/drive/shots/", "scratch/drive-shots/"));
 // A fake microphone, granted without a prompt, for the voiceover drive.
+// The high-performance GPU on laptops with two: headless Edge otherwise
+// takes the integrated one, and the real-time playback checks (speed,
+// frame-blend, bg-removal) drop frames there that the app does not drop
+// on the discrete GPU.
 const browser = await chromium.launch({
   channel: "msedge",
   headless: true,
-  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+  args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream", "--force_high_performance_gpu"],
 });
 let result;
 try {
