@@ -568,6 +568,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-133 Crop softness, continuous rotation and regional masks]] —
   crop softness follows picture space, the rotation dial preserves turns,
   adjustments mix through masks, and static bezier paths share mask transforms.
+- [[ADR-134 Track inserts and dynamics share one audio graph]] ? ordered
+  track and clip inserts, shared worklet dynamics and parametric EQ,
+  continuous detector history across cuts and offline windows.
 - [[ADR-135 Film tools preserve authored timing and degrade previews gracefully]] —
   playable audio fallbacks, master-second version checks, authored lines and
   frame times, score endings, sound events, concrete duck advice, conservative

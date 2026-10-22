@@ -11,12 +11,14 @@
 // does a tape stop's slowing tail. A clip's sound design (filters, echo,
 // reverb) is built by engine/soundFx.ts into the same chain (ADR-060).
 
+import { insertChain, prepareInserts } from "./audioInserts";
+import { insertTrackKey } from "../lib/audioInserts";
 import { meterLevels } from "../lib/mixer";
 import type { AudioBufferSink } from "mediabunny";
 import { busEnvelope, continuousSoundRuns, EQ_BANDS, panEnvelope, sharedChains, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
-import type { AudioClip, Compressor, Project, Sound, VideoClip } from "../lib/project/types";
+import type { AudioClip, Compressor, CompoundClip, Project, Sound, Track, VideoClip } from "../lib/project/types";
 import { fxCurve, switchAt, tapeStopMap, type TapeStopMap } from "../lib/soundFx";
 import { pitchShift, varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
@@ -78,7 +80,18 @@ async function decodeRange(sink: AudioBufferSink, a: number, b: number, off: num
  * throttled to ~1.5 s ahead so long timelines do not open every decoder at
  * once; offline contexts schedule everything immediately.
  */
-export function scheduleAudio(
+export function scheduleAudio(ctx: BaseAudioContext, dest: AudioNode, p: Project, from: number, to: number, at: number): Schedule {
+  let stopped = false;
+  let active: Schedule | undefined;
+  const done = prepareInserts(ctx, p).then(async () => {
+    if (stopped) return;
+    active = scheduleReady(ctx, dest, p, from, to, at);
+    await active.done;
+  });
+  return { done, stop() { stopped = true; active?.stop(); } };
+}
+
+function scheduleReady(
   ctx: BaseAudioContext,
   dest: AudioNode,
   p: Project,
@@ -145,6 +158,8 @@ export function scheduleAudio(
           tail.connect(comp.input);
           tail = comp.output;
         }
+        const inserts = insertChain(ctx, hop.clip.inserts);
+        if (inserts) { tail.connect(inserts.input); tail = inserts.output; }
         const gain = ctx.createGain();
         tail.connect(gain);
         gain.connect(next);
@@ -180,6 +195,52 @@ export function scheduleAudio(
     return head;
   };
 
+  // Tracks with inserts need a real sum before their fader. Route each
+  // nested timeline separately, keyed by its instance path, so playing a
+  // compound twice never shares detector or delay state between instances.
+  const insertTracks = new Map<string, AudioNode>();
+  const insertCompounds = new Map<string, AudioNode>();
+  const trackInput = (key: string, track: Track, next: AudioNode): AudioNode => {
+    const previous = insertTracks.get(key);
+    if (previous) return previous;
+    const sum = ctx.createGain(), gain = new GainNode(ctx, { gain: track.volume });
+    const fx = insertChain(ctx, track.inserts);
+    if (fx) { sum.connect(fx.input); fx.output.connect(gain); } else sum.connect(gain);
+    const pan = new StereoPannerNode(ctx, { pan: track.pan ?? 0 });
+    gain.connect(pan).connect(next);
+    outs.push(sum, pan);
+    insertTracks.set(key, sum);
+    return sum;
+  };
+  const compoundInput = (key: string, clip: CompoundClip, next: AudioNode): AudioNode => {
+    const previous = insertCompounds.get(key);
+    if (previous) return previous;
+    const sum = ctx.createGain();
+    let tail: AudioNode = sum;
+    for (const fx of [eqChain(ctx, clip.eq), clip.compressor ? compressorNodes(ctx, clip.compressor) : null, insertChain(ctx, clip.inserts)]) {
+      if (fx) { tail.connect(fx.input); tail = fx.output; }
+    }
+    const gain = new GainNode(ctx, { gain: 0 }), pan = new StereoPannerNode(ctx, { pan: clip.pan });
+    tail.connect(gain).connect(pan).connect(next);
+    const lo = Math.max(from, framesToSeconds(clip.start, p.fps)), hi = Math.min(to, framesToSeconds(clip.start + clip.duration, p.fps));
+    const unit = { volume: 1, pan: 0 } as Track;
+    const envAt = Math.max(toCtx(lo), realtime ? ctx.currentTime : 0), envDur = toCtx(hi) - envAt;
+    if (envDur > 0.01) {
+      const env = busEnvelope({ key, clip, gains: [{ clip, track: unit }] }, p.fps, lo, hi);
+      const skip = Math.min(Math.floor((envAt - toCtx(lo)) / (hi - lo) * env.length), env.length - 2);
+      gain.gain.setValueCurveAtTime(env.subarray(skip), envAt, envDur);
+      // The pan reader only needs Sound/timing fields, shared by compounds.
+      const busSound = { clip: clip as unknown as AudioClip, track: unit };
+      pan.pan.value = soundPanAt(busSound, p.fps, lo);
+      const curve = panEnvelope(busSound, p.fps, lo, hi);
+      if (curve) pan.pan.setValueCurveAtTime(curve.subarray(Math.min(Math.floor((envAt - toCtx(lo)) / (hi - lo) * curve.length), curve.length - 2)), envAt, envDur);
+    }
+    outs.push(sum, pan);
+    insertCompounds.set(key, sum);
+    return sum;
+  };
+
+  const trackStages = [...p.tracks, ...(p.compounds ?? []).flatMap(k => k.tracks)].some(t => t.inserts?.some(i => i.on));
   const pumps = all.map(async (sounding) => {
     const { clip } = sounding;
     const clipStart = framesToSeconds(clip.start, p.fps);
@@ -192,7 +253,21 @@ export function scheduleAudio(
     // Its way out, built now (before any wait) so a bus's envelope starts
     // on time: its track, through the compound clips that are buses.
     const route = soundBuses(sounding);
-    const out = busInput(route.buses, output(sounding.via?.at(-1)?.track.id ?? sounding.track.id));
+    const via = sounding.via ?? [];
+    let out: AudioNode;
+    let envelopeSound = sounding;
+    if (trackStages) {
+      // The top-level output owns the meter; track stages own the gain.
+      out = output(via.at(-1)?.track.id ?? sounding.track.id);
+      for (let i = via.length - 1; i >= 0; i--) {
+        const path = via.slice(i + 1).map(v => v.clip.id);
+        out = trackInput(insertTrackKey(via[i].track.id, path), via[i].track, out);
+        out = compoundInput(via.slice(i).map(v => v.clip.id).join("/"), via[i].clip, out);
+      }
+      out = trackInput(insertTrackKey(sounding.track.id, via.map(v => v.clip.id)), sounding.track, out);
+      envelopeSound = { ...sounding, track: { ...sounding.track, volume: 1, pan: 0 }, via: undefined,
+        overlap: sounding.overlap?.joinsNext === undefined ? sounding.overlap : { ...sounding.overlap, joinsNext: sounding.overlap.joinsNext / (sounding.track.volume || 1) } };
+    } else out = busInput(route.buses, output(via.at(-1)?.track.id ?? sounding.track.id));
     // Wait until the clip is near before opening its decoder.
     if (realtime) {
       while (!stopped && toCtx(lo) - ctx.currentTime > 2) await sleep(150);
@@ -207,7 +282,7 @@ export function scheduleAudio(
     // half's sound before it (ADR-117).
     const gain = new GainNode(ctx, { gain: 0 });
     const pan = ctx.createStereoPanner();
-    pan.pan.value = soundPanAt(sounding, p.fps, lo);
+    pan.pan.value = soundPanAt(envelopeSound, p.fps, lo);
     pan.connect(out);
     outs.push(pan);
     gain.gain.setValueAtTime(0, Math.max(0, toCtx(lo) - 0.01));
@@ -224,13 +299,18 @@ export function scheduleAudio(
     // ponytail: playback started after a clip's end misses its tail (the
     // clip is not scheduled); export windows pre-roll (mixdown.ts).
     const post = postFaderFx(ctx, clip, curve, ride);
-    if (post) {
+    const clipInserts = insertChain(ctx, clip.inserts);
+    if (post && !clipInserts) {
       gain.connect(post.input);
       post.output.connect(pan);
     } else gain.connect(pan);
     // EQ, then compressor, then the filters, then the gain (volume, fades,
     // keyframes): sources feed the first band.
     let input: AudioNode = gain;
+    if (clipInserts) {
+      clipInserts.output.connect(gain); input = clipInserts.input;
+      if (post) { post.output.connect(input); input = post.input; }
+    }
     const pre = preFaderFx(ctx, clip, curve, ride, from - at, (node) => nodes.add(node));
     if (pre) {
       pre.output.connect(input);
@@ -270,7 +350,7 @@ export function scheduleAudio(
       merge.connect(input);
       input = up;
     }
-    const env = soundEnvelope(sounding, p.fps, lo, hi, 200, route.through);
+    const env = soundEnvelope(envelopeSound, p.fps, lo, hi, 200, trackStages ? 0 : route.through);
     if (envDur > 0.01) {
       // Trim the envelope's head if we start late (realtime only).
       const skip = Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * env.length);
@@ -284,7 +364,7 @@ export function scheduleAudio(
         }
       }
       // Keyframed pan rides the same span.
-      const panCurve = panEnvelope(sounding, p.fps, lo, hi);
+      const panCurve = panEnvelope(envelopeSound, p.fps, lo, hi);
       if (panCurve) pan.pan.setValueCurveAtTime(panCurve.subarray(Math.min(Math.floor(((envAt - toCtx(lo)) / (hi - lo)) * panCurve.length), panCurve.length - 2)), envAt, envDur);
     }
 

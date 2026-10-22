@@ -456,3 +456,22 @@ Ranges follow their start when `follows` is present. Chapter-enabled MP4
 exports include only explicit chapter markers; these fields do not change
 rendered pictures or project duration. Edit-point selections are session
 state and never enter the project file.
+
+## Ordered audio inserts (ADR-134)
+
+`Track.inserts?` on audio tracks and `Sound.inserts?` on audio, video and
+compound clips are ordered arrays of `{ id, type, on, params }`. Absent
+means no inserts. Types: `eq`, `compressor`, `gate`, `deesser`, `limiter`,
+`reverb`, `echo`; unknown types are dropped. The loader caps a chain at 32
+and an EQ at eight bands, cleans each parameter and makes ids unique.
+
+Gate parameters: `threshold` (-90..0 dBFS), `ratio` (1..100), `attack`
+(0.0001..0.2 s), `hold` (0..1 s), `release` (0.005..2 s), `range` (0..96 dB).
+De-esser: `low` (2000..16000 Hz), `high` (2500..20000 Hz, above low),
+`amount` (0..24 dB). Limiter: `ceiling` (-24..0 dBFS), `release` (0.01..2 s).
+EQ: `bands`, each `{ type, freq, gain, q, on }`; types peaking, lowshelf,
+highshelf, highpass, lowpass, notch; frequency 20..20000 Hz, gain -24..24 dB,
+Q 0.1..30. Shelves use slope 1. Other processors use their legacy settings.
+Track inserts precede track volume/pan. Clip inserts follow the legacy
+chain and precede volume/fades; legacy echo/reverb keep their original
+post-fader position when no clip inserts are present.

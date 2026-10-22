@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 180 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 185 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -51,7 +51,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `auto_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `apply_default_transitions`, `match_color`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
-- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `add_audio_insert`, `update_audio_insert`, `move_audio_insert`, `remove_audio_insert`, `set_dynamics`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
 - **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
 ## Start here
@@ -2572,6 +2572,156 @@ Even out a clip's sound with a compressor after its EQ (CapCut's Enhance voice, 
 | `attack` | number |  | Seconds (0..1) |
 | `release` | number |  | Seconds (0..1) |
 | `makeup` | number |  | Extra dB after the compressor's own makeup gain (presets: 0) (0..24) |
+
+### add_audio_insert
+
+Add an ordered audio insert to an audio track or a sounding clip. Track clips sum before inserts, then volume and pan; detectors keep state across cuts. Give exactly one track_id or clip_id. type eq is up to eight parametric bands, after the legacy three-band EQ. With preset, adds that complete chain (dialog_cleanup, podcast_voice, music_bed, broadcast_limiter); type is then omitted. Example: {track_id: 't_dialog', preset: 'dialog_cleanup'}. index is zero-based; omitted appends. A limiter holds sample peaks before subsequent inserts/faders, with 5 ms lookahead; the export master limiter is separate.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `track_id` | string |  | Audio track id |
+| `clip_id` | string |  | Audio, video or compound clip id |
+| `type` | "eq" \| "compressor" \| "gate" \| "deesser" \| "limiter" \| "reverb" \| "echo" |  | Processor type; required without preset |
+| `params` | { threshold, ratio, attack, hold, release, range, amount, low, high, ceiling, knee, makeup, time, feedback, mix, size, decay, bands } |  | Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1 |
+| `params.threshold` | number |  | threshold, dBFS; processor-specific range (use its controls or defaults) |
+| `params.ratio` | number |  | ratio, :1; processor-specific range (use its controls or defaults) |
+| `params.attack` | number |  | attack, s; processor-specific range (use its controls or defaults) |
+| `params.hold` | number |  | hold, s; processor-specific range (use its controls or defaults) |
+| `params.release` | number |  | release, s; processor-specific range (use its controls or defaults) |
+| `params.range` | number |  | range, dB; processor-specific range (use its controls or defaults) |
+| `params.amount` | number |  | amount, dB; processor-specific range (use its controls or defaults) |
+| `params.low` | number |  | low, Hz; processor-specific range (use its controls or defaults) |
+| `params.high` | number |  | high, Hz; processor-specific range (use its controls or defaults) |
+| `params.ceiling` | number |  | ceiling, dBFS; processor-specific range (use its controls or defaults) |
+| `params.knee` | number |  | knee, dB; processor-specific range (use its controls or defaults) |
+| `params.makeup` | number |  | makeup, dB; processor-specific range (use its controls or defaults) |
+| `params.time` | number |  | time, s; processor-specific range (use its controls or defaults) |
+| `params.feedback` | number |  | feedback, ratio; processor-specific range (use its controls or defaults) |
+| `params.mix` | number |  | mix, ratio; processor-specific range (use its controls or defaults) |
+| `params.size` | number |  | size, ratio; processor-specific range (use its controls or defaults) |
+| `params.decay` | number |  | decay, s; processor-specific range (use its controls or defaults) |
+| `params.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `params.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `params.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `params.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `params.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `params.bands[].on` | boolean |  | Enable this band; default true |
+| `index` | number |  | Zero-based insertion position; omitted appends (0..) |
+| `preset` | "dialog_cleanup" \| "podcast_voice" \| "music_bed" \| "broadcast_limiter" |  | Add a complete cleanup chain |
+
+Example:
+
+```json
+{"name":"add_audio_insert","arguments":{"track_id":"t_dialog","preset":"dialog_cleanup"}}
+```
+
+### update_audio_insert
+
+Change settings or bypass an audio insert by its id from describe_project. Omitted numbers retain their setting; bands replaces the EQ band list. Settings are clamped to each processor's safe ranges.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+| `params` | { threshold, ratio, attack, hold, release, range, amount, low, high, ceiling, knee, makeup, time, feedback, mix, size, decay, bands } |  | Processor settings; omitted numbers retain their values, or use defaults on add. attack, hold, release, time and decay are seconds; frequencies Hz; threshold dBFS; range, amount, gain, makeup and ceiling dB; ratio/Q dimensionless; mix/feedback/size 0..1 |
+| `params.threshold` | number |  | threshold, dBFS; processor-specific range (use its controls or defaults) |
+| `params.ratio` | number |  | ratio, :1; processor-specific range (use its controls or defaults) |
+| `params.attack` | number |  | attack, s; processor-specific range (use its controls or defaults) |
+| `params.hold` | number |  | hold, s; processor-specific range (use its controls or defaults) |
+| `params.release` | number |  | release, s; processor-specific range (use its controls or defaults) |
+| `params.range` | number |  | range, dB; processor-specific range (use its controls or defaults) |
+| `params.amount` | number |  | amount, dB; processor-specific range (use its controls or defaults) |
+| `params.low` | number |  | low, Hz; processor-specific range (use its controls or defaults) |
+| `params.high` | number |  | high, Hz; processor-specific range (use its controls or defaults) |
+| `params.ceiling` | number |  | ceiling, dBFS; processor-specific range (use its controls or defaults) |
+| `params.knee` | number |  | knee, dB; processor-specific range (use its controls or defaults) |
+| `params.makeup` | number |  | makeup, dB; processor-specific range (use its controls or defaults) |
+| `params.time` | number |  | time, s; processor-specific range (use its controls or defaults) |
+| `params.feedback` | number |  | feedback, ratio; processor-specific range (use its controls or defaults) |
+| `params.mix` | number |  | mix, ratio; processor-specific range (use its controls or defaults) |
+| `params.size` | number |  | size, ratio; processor-specific range (use its controls or defaults) |
+| `params.decay` | number |  | decay, s; processor-specific range (use its controls or defaults) |
+| `params.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `params.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `params.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `params.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `params.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `params.bands[].on` | boolean |  | Enable this band; default true |
+| `on` | boolean |  | Enable the insert; false bypasses it without losing settings |
+
+Example:
+
+```json
+{"name":"update_audio_insert","arguments":{"insert_id":"insert_gate","params":{"threshold":-48},"on":true}}
+```
+
+### move_audio_insert
+
+Move an insert within its track or clip's ordered chain. One move is one undo step; order changes the sound.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+| `index` | number | yes | New zero-based position in this chain (0..) |
+
+Example:
+
+```json
+{"name":"move_audio_insert","arguments":{"insert_id":"insert_gate","index":0}}
+```
+
+### remove_audio_insert
+
+Remove an audio insert and its settings from its track or clip. Undo restores it.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `insert_id` | string | yes | Insert id |
+
+Example:
+
+```json
+{"name":"remove_audio_insert","arguments":{"insert_id":"insert_echo"}}
+```
+
+### set_dynamics
+
+Set a clip's gate, split-band de-esser, lookahead limiter and parametric EQ in one undo step. Each object updates the first matching insert or adds one; on false bypasses it. preset replaces the clip's insert chain with editable settings, then supplied objects override it. eq bands replaces up to eight bands. Existing legacy EQ/compressor remain. Tracks use add_audio_insert preset dialog_cleanup so one cleanup chain runs across every dialog cut.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_id` | string | yes | Audio, video or compound clip id |
+| `preset` | "dialog_cleanup" \| "podcast_voice" \| "music_bed" \| "broadcast_limiter" |  | Starting chain |
+| `gate` | { threshold, ratio, attack, hold, release, range, on } |  | Gate settings; omitted values retain their setting |
+| `gate.threshold` | number |  | threshold, dBFS, -90..0 |
+| `gate.ratio` | number |  | ratio, :1, 1..100 |
+| `gate.attack` | number |  | attack, s, 0.0001..0.2 |
+| `gate.hold` | number |  | hold, s, 0..1 |
+| `gate.release` | number |  | release, s, 0.005..2 |
+| `gate.range` | number |  | range, dB, 0..96 |
+| `gate.on` | boolean |  | Enable this processor; false bypasses it |
+| `deesser` | { amount, low, high, on } |  | De-esser settings; omitted values retain their setting |
+| `deesser.amount` | number |  | amount, dB, 0..24 |
+| `deesser.low` | number |  | low, Hz, 2000..16000 |
+| `deesser.high` | number |  | high, Hz, 2500..20000 |
+| `deesser.on` | boolean |  | Enable this processor; false bypasses it |
+| `limiter` | { ceiling, release, on } |  | Limiter settings; omitted values retain their setting |
+| `limiter.ceiling` | number |  | ceiling, dBFS, -24..0 |
+| `limiter.release` | number |  | release, s, 0.01..2 |
+| `limiter.on` | boolean |  | Enable this processor; false bypasses it |
+| `eq` | { bands, on } |  | Parametric EQ settings; omitted values retain their setting |
+| `eq.bands` | { type, freq, gain, q, on }[] |  | Parametric EQ bands in order, up to eight |
+| `eq.bands[].type` | "peaking" \| "lowshelf" \| "highshelf" \| "highpass" \| "lowpass" \| "notch" |  | Biquad shape |
+| `eq.bands[].freq` | number |  | Center or cutoff, Hz, 20..20000 |
+| `eq.bands[].gain` | number |  | Boost or cut, dB, -24..24 (peaking and shelves) |
+| `eq.bands[].q` | number |  | Q ratio, 0.1..30 (shelves use slope 1) |
+| `eq.bands[].on` | boolean |  | Enable this band; default true |
+| `eq.on` | boolean |  | Enable this processor; false bypasses it |
+
+Example:
+
+```json
+{"name":"set_dynamics","arguments":{"clip_id":"c_voice","gate":{"threshold":-50,"range":30},"deesser":{"amount":4},"limiter":{"ceiling":-1}}}
+```
 
 ### set_channel_fill
 

@@ -1,0 +1,92 @@
+import { expect, it } from "vitest";
+import { cleanInserts, cleanInsertParams, DYNAMICS_PRESETS, INSERT_DEFAULTS, insertTrackKey, newInsert, presetInserts } from "./audioInserts";
+import { continuousSoundRuns, normalizationMix, soundingClips, soundPreroll } from "./audio";
+import { describeProject, runAgentCommand, runCommand } from "./commands";
+import { clipForAsset, createProject, createTrack, normalizeProject } from "./project/defaults";
+import { splitAt } from "./project/ops";
+import { copyAttributes, pasteAttributes } from "./attributes";
+import type { AudioClip, Insert } from "./project/types";
+function setup() {
+  const p = createProject(), t = createTrack("audio", "Dialog");
+  p.assets = [{ id: "a", src: "voice.wav", name: "Voice", kind: "audio", duration: 20, hasAudio: true, hasVideo: false }];
+  const c = clipForAsset(p.assets[0], 30, p.fps) as AudioClip;
+  t.clips = [c]; p.tracks.push(t);
+  return { p, t, c };
+}
+it("cleans malformed inserts, nonfinite numbers, band bounds and duplicate ids", () => {
+  const list = cleanInserts([{ id: "x", type: "gate", params: { threshold: -1000, attack: Infinity, hold: -1, range: 400, junk: 7 } }, { id: "x", type: "limiter", on: false, params: { ceiling: NaN, release: 99 } }, { type: "alien" }, { type: "__proto__" }, null])!;
+  expect(list.map(i => i.type)).toEqual(["gate", "limiter"]);
+  expect(list[0].params).toEqual({ ...INSERT_DEFAULTS.gate, threshold: -90, hold: 0, range: 96 });
+  expect(list[1].params).toEqual({ ceiling: -1, release: 2 });
+  expect(list[1].id).not.toBe(list[0].id); expect(list[1].on).toBe(false);
+  const eq = cleanInsertParams("eq", { bands: Array.from({ length: 12 }, () => ({ type: "bogus", freq: -9, q: 100, gain: 88, on: false })) });
+  expect(eq.bands).toHaveLength(8); expect(eq.bands[0]).toEqual({ type: "peaking", freq: 20, q: 30, gain: 24, on: false });
+  expect(cleanInsertParams("deesser", { low: 16000, high: 3000 })).toEqual({ low: 16000, high: 16100, amount: 4 });
+});
+it("validates optional track, clip and nested inserts at the project boundary", () => {
+  const { p, t, c } = setup();
+  t.inserts = [{ type: "gate", params: { threshold: 30 } }] as Insert[];
+  c.inserts = [{ type: "alien" }, { type: "eq", params: { bands: [{ freq: 99999 }] } }] as unknown as Insert[];
+  p.compounds = [{ id: "k", name: "Nested", tracks: [t], markers: [] }];
+  const q = normalizeProject(p), track = q.tracks.find(x => x.id === t.id)!;
+  expect(track.inserts?.[0].params).toHaveProperty("threshold", 0);
+  expect((track.clips[0] as AudioClip).inserts).toHaveLength(1);
+  expect((track.clips[0] as AudioClip).inserts![0].params).toHaveProperty("bands.0.freq", 20000);
+  expect(q.compounds![0].tracks.find(x => x.id === t.id)!.inserts![0].type).toBe("gate");
+  const allIds = [...q.tracks, ...q.compounds!.flatMap(k => k.tracks)].flatMap(t => [...t.inserts ?? [], ...t.clips.flatMap(c => "inserts" in c ? c.inserts ?? [] : [])]).map(i => i.id);
+  expect(new Set(allIds).size).toBe(allIds.length);
+  expect(() => runCommand(q, "set_param", { clip_ids: [c.id], path: "inserts.0.params.gain", value: 999 })).toThrow(/update_audio_insert/);
+});
+it("adds, updates, orders and removes inserts without changing clip timing or gaps", () => {
+  const { p, t, c } = setup();
+  let q = runAgentCommand(p, "add_audio_insert", { track_id: t.id, type: "compressor" });
+  q = runCommand(q, "add_audio_insert", { track_id: t.id, type: "limiter", index: 0, params: { ceiling: -3 } });
+  let list = q.tracks.find(x => x.id === t.id)!.inserts!;
+  expect(list.map(i => i.type)).toEqual(["limiter", "compressor"]);
+  const limiter = list[0].id;
+  q = runCommand(q, "update_audio_insert", { insert_id: limiter, params: { release: 0.5 }, on: false });
+  q = runCommand(q, "move_audio_insert", { insert_id: limiter, index: 1 });
+  list = q.tracks.find(x => x.id === t.id)!.inserts!;
+  expect(list[1]).toMatchObject({ id: limiter, on: false, params: { ceiling: -3, release: 0.5 } });
+  expect(describeProject(q).tracks.find(x => x.id === t.id)!.inserts).toEqual(list);
+  q = runCommand(q, "remove_audio_insert", { insert_id: limiter });
+  expect(q.tracks.find(x => x.id === t.id)!.inserts).toHaveLength(1);
+  expect(q.tracks.find(x => x.id === t.id)!.clips[0]).toEqual(c);
+  expect(() => runCommand(p, "add_audio_insert", { track_id: t.id })).toThrow(/type or preset/);
+  expect(() => runCommand(p, "add_audio_insert", { track_id: t.id, clip_id: c.id, type: "gate" })).toThrow(/exactly one/);
+  t.locked = true;
+  expect(() => runCommand(p, "add_audio_insert", { clip_id: c.id, type: "gate" })).toThrow(/Unlock/);
+});
+it("applies editable presets and changes clip dynamics in one call", () => {
+  const { p, c } = setup();
+  for (const preset of Object.keys(DYNAMICS_PRESETS) as (keyof typeof DYNAMICS_PRESETS)[]) expect(cleanInserts(presetInserts(preset))).toEqual(expect.any(Array));
+  const q = runCommand(p, "set_dynamics", { clip_id: c.id, preset: "dialog_cleanup", gate: { threshold: -45 }, limiter: { on: false }, eq: { bands: [{ type: "highpass", freq: 90 }] } });
+  const dynamics = describeProject(q).tracks.flatMap(x => x.clips).find(x => x.id === c.id)!.dynamics!;
+  expect(dynamics.find(i => i.type === "gate")!.params).toHaveProperty("threshold", -45);
+  expect(dynamics.find(i => i.type === "limiter")!.on).toBe(false);
+  expect(dynamics.find(i => i.type === "eq")!.params).toHaveProperty("bands.0.freq", 90);
+});
+it("shares a track bus across cuts but isolates compound instances and other tracks", () => {
+  expect(insertTrackKey("dialog", [])).toBe(insertTrackKey("dialog", []));
+  expect(insertTrackKey("dialog", ["nest-a"])).not.toBe(insertTrackKey("dialog", ["nest-b"]));
+  expect(insertTrackKey("dialog", [])).not.toBe(insertTrackKey("music", []));
+  const { p, t, c } = setup(); t.inserts = [newInsert("limiter")]; c.inserts = [newInsert("gate")];
+  const q = splitAt(p, c.start + 120, [c.id]);
+  const halves = q.tracks.find(x => x.id === t.id)!.clips as AudioClip[];
+  expect(halves[0].inserts![0].id).not.toBe(halves[1].inserts![0].id);
+  expect(q.tracks.find(x => x.id === t.id)!.inserts).toEqual(t.inserts);
+  const sounds = soundingClips(q, () => true);
+  expect(sounds.map(s => insertTrackKey(s.track.id, []))).toEqual([insertTrackKey(t.id, []), insertTrackKey(t.id, [])]);
+  expect(continuousSoundRuns(sounds, q.fps)).toHaveLength(1);
+  expect(soundPreroll(sounds[0])).toBeGreaterThan(1);
+});
+it("normalizes through track inserts and gives pasted and duplicated inserts fresh identities", () => {
+  const { p, t, c } = setup(); t.inserts = [newInsert("compressor")]; c.inserts = [newInsert("deesser")];
+  const mix = normalizationMix(p, c.id);
+  expect(mix.tracks.find(x => x.id === t.id)!.inserts).toEqual(t.inserts);
+  let q = runCommand(p, "duplicate_clips", { clip_ids: [c.id], at: 25 });
+  const copy = q.tracks.flatMap(t => t.clips).find(x => x.id !== c.id) as AudioClip;
+  expect(copy.inserts![0].id).not.toBe(c.inserts[0].id);
+  q = pasteAttributes(q, [copy.id], copyAttributes(p, c.id), ["audio"]);
+  expect((q.tracks.flatMap(t => t.clips).find(x => x.id === copy.id) as AudioClip).inserts![0].id).not.toBe(c.inserts[0].id);
+});

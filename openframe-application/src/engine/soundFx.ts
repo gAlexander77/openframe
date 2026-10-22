@@ -59,7 +59,7 @@ function wetDry(ctx: BaseAudioContext, effect: FxChain, mix: number, path: strin
   return { input, output };
 }
 
-function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): FxChain {
+export function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): FxChain {
   const delay = new DelayNode(ctx, { delayTime: e.time, maxDelayTime: 2 });
   const feedback = new GainNode(ctx, { gain: e.feedback });
   delay.connect(feedback).connect(delay);
@@ -70,7 +70,7 @@ function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: Ride): 
  * context) make the same room once. */
 const rooms = new Map<string, Float32Array[]>();
 
-function reverbNodes(ctx: BaseAudioContext, r: Reverb, curve: FxCurve, ride: Ride): FxChain {
+export function reverbNodes(ctx: BaseAudioContext, r: Reverb, curve: FxCurve, ride: Ride): FxChain {
   const key = `${ctx.sampleRate}|${r.size}|${r.decay}`;
   let ir = rooms.get(key);
   if (!ir) {

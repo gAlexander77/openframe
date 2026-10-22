@@ -9,6 +9,7 @@ import { cleanRuns } from "../textRuns";
 
 import { normalizeBrand } from "../brandKit";
 import { effectDefaults } from "../catalog";
+import { cleanInserts } from "../audioInserts";
 import { cleanCompressor } from "../compressor";
 import { cleanSoundFx, FX_KEYS, VOICE_PRESETS } from "../soundFx";
 import { cleanGrade } from "../grade";
@@ -292,6 +293,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     throw new ProjectError(`${where}: unknown clip type ${JSON.stringify(type)}`);
   }
   const c = { ...raw } as Record<string, unknown>;
+  if (type !== "video" && type !== "audio" && type !== "compound") delete c.inserts;
   c.id = typeof c.id === "string" && c.id ? c.id : uid("c");
   c.start = Math.max(0, Math.round(num(c.start, 0)));
   c.duration = Math.max(1, Math.round(num(c.duration, 1)));
@@ -348,6 +350,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     else delete c.compressor;
     // Sound design (ADR-060): each effect in range, or dropped.
     cleanSoundFx(c);
+    optional(c, "inserts", cleanInserts(c.inserts));
     for (const k of ["fadeInCurve", "fadeOutCurve", "crossfadeCurve"]) if (typeof c[k] !== "string" || !Object.hasOwn(FADE_CURVES, c[k] as string)) delete c[k];
     if (typeof c.pitch === "number" && Number.isFinite(c.pitch)) c.pitch = Math.max(-12, Math.min(12, c.pitch));
     else delete c.pitch;
@@ -458,6 +461,14 @@ export function normalizeProject(raw: unknown): Project {
       markers: normalizeMarkers(k.markers),
     };
   });
+  // Insert ids are document-wide: editing one must never target a copy.
+  const insertIds = new Set<string>();
+  for (const t of [...tracks, ...compounds.flatMap(k => k.tracks)]) {
+    for (const list of [t.inserts, ...t.clips.map(c => "inserts" in c ? c.inserts : undefined)]) for (const i of list ?? []) {
+      if (insertIds.has(i.id)) i.id = uid("insert");
+      insertIds.add(i.id);
+    }
+  }
   // A compound that plays itself, even through others, would never finish
   // rendering.
   const byId = new Map(compounds.map((k) => [k.id, k]));
@@ -517,6 +528,7 @@ function normalizeTracks(rawTracks: unknown[], at: string, assetIds: Set<string>
     return {
       id: typeof t.id === "string" ? t.id : uid("t"),
       kind,
+      ...(kind === "audio" ? { inserts: cleanInserts(t.inserts) } : {}),
       name: typeof t.name === "string" ? t.name : kind === "audio" ? "Audio" : "Video",
       ...(t.main === true ? { main: true } : {}),
       clips,

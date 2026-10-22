@@ -193,6 +193,8 @@ export type TrackKind = "video" | "audio";
 export type TrackRole = "dialog" | "music" | "effects" | "ambience";
 
 export interface Track {
+  /** Ordered audio inserts, before the track fader (ADR-134). */
+  inserts?: Insert[];
   color?: ClipLabel;
   id: Id;
   kind: TrackKind;
@@ -769,7 +771,42 @@ export type FadeCurve = keyof typeof FADE_CURVES;
 export interface Saturation { /** Drive, 0..1; absent effect is clean. */ drive: number }
 export interface RingMod { /** Carrier frequency in Hz, 20..200. */ frequency: number; /** Wet amount, 0..1. */ mix: number }
 
+export interface Gate {
+  /** dBFS, -90..0. */
+  threshold: number;
+  /** Expansion ratio, 1..100. */
+  ratio: number;
+  /** Seconds. */
+  attack: number;
+  hold: number;
+  release: number;
+  /** Maximum attenuation, dB, 0..96. */
+  range: number;
+}
+export interface Deesser { low: number; high: number; amount: number }
+export interface Limiter { ceiling: number; release: number }
+export interface EqBand {
+  type: "peaking" | "lowshelf" | "highshelf" | "highpass" | "lowpass" | "notch";
+  freq: number;
+  gain: number;
+  q: number;
+  on: boolean;
+}
+export interface InsertParams {
+  eq: { bands: EqBand[] };
+  compressor: Compressor;
+  gate: Gate;
+  deesser: Deesser;
+  limiter: Limiter;
+  reverb: Reverb;
+  echo: Echo;
+}
+export type InsertType = keyof InsertParams;
+export type Insert = { [K in InsertType]: { id: Id; type: K; on: boolean; params: InsertParams[K] } }[InsertType];
+
 export interface Sound {
+  /** Ordered inserts after the legacy chain, before volume and fades. */
+  inserts?: Insert[];
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
   /** -1 (left) .. 1 (right). */

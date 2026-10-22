@@ -6,6 +6,7 @@ import { paramLabel } from "./paramInfo";
 const LABELS: Record<string, string> = {
   create_proxies: "Create playback proxies", delete_proxies: "Delete playback proxies",
   extend_edit: "Extend edit", trim_edits: "Trim edits", edit_from_source: "Edit from source",
+  add_audio_insert: "Add audio insert", update_audio_insert: "Change audio insert", move_audio_insert: "Reorder audio inserts", remove_audio_insert: "Remove audio insert", set_dynamics: "Change dynamics",
   match_color: "Match color",
   apply_default_transitions: "Apply default transitions",
   set_pitch: "Pitch", apply_voice_preset: "Voice changer",

@@ -40,6 +40,7 @@ import { fontWeight, WEIGHT_NAMES } from "../../lib/textLook";
 import { useFontWeights } from "../../state/fontWeights";
 import { BorderSection, CompositingSection, ShadowSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
+import { DynamicsSection } from "./Dynamics";
 import { FadeCurveRow, PitchRow, VoiceChangerSection } from "./SoundShape";
 import { SoundFxSection } from "./SoundFx";
 import { BeatGridSection } from "./BeatGridSection";
@@ -590,6 +591,7 @@ function AudioTab({ clip }: { clip: Clip }) {
         ))}
       </Section>
       <CompressorSection clip={clip} />
+      <DynamicsSection clip={clip} />
       {clip.type !== "compound" && <SoundFxSection clip={clip} />}
       {clip.type === "video" && (
         <Section title="Sound">
