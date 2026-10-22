@@ -6,6 +6,8 @@
 import { AudioBufferSource, BufferTarget, Mp3OutputFormat, Output, Quality } from "mediabunny";
 import { ensureMp3 } from "../engine/export";
 import { hasSound, measureMix, mixPreroll, planesOf, renderMixWindow, WINDOW_SECONDS } from "../engine/mixdown";
+import { audioContext, scheduleAudio } from "../engine/audio";
+import { findClip } from "../lib/project/ops";
 import { decodeMono } from "../engine/analyze";
 import { auditionSummary, type AuditionSummary } from "../lib/analysis/audition";
 import { audioCrossfade } from "../lib/audio";
@@ -271,4 +273,37 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
   } finally {
     dismiss(tid);
   }
+}
+
+
+let voiceAudition: (() => void) | null = null;
+let voiceTimer: ReturnType<typeof setTimeout> | undefined;
+/** Hear a selected clip's first three seconds, in isolation through the
+ * live mixer. A new chip replaces the previous audition immediately. */
+export async function auditionClip(id: Id): Promise<void> {
+  voiceAudition?.();
+  clearTimeout(voiceTimer);
+  const p = store.get().project;
+  const c = findClip(p, id)?.clip;
+  if (!c) return;
+  const ctx = audioContext();
+  await ctx.resume();
+  if (store.get().project !== p) return;
+  const heard = { ...p, tracks: p.tracks.map((t) => ({ ...t, muted: false, solo: false, clips: t.clips.filter((x) => x.id === id) })) };
+  const start = framesToSeconds(c.start, p.fps);
+  const length = Math.min(3, framesToSeconds(c.duration, p.fps));
+  const schedule = scheduleAudio(ctx, ctx.destination, heard, start, start + length, ctx.currentTime + 0.1);
+  const signal = projectWork.signal();
+  let unsubscribe = () => {};
+  const stop = () => {
+    unsubscribe();
+    schedule.stop();
+    if (voiceAudition === stop) voiceAudition = null;
+    signal.removeEventListener("abort", stop);
+  };
+  unsubscribe = store.subscribe(() => { if (store.get().project !== p) stop(); });
+  voiceAudition = stop;
+  signal.addEventListener("abort", stop, { once: true });
+  voiceTimer = setTimeout(stop, (length + 0.15) * 1000);
+  await schedule.done;
 }

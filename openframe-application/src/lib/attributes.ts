@@ -10,7 +10,7 @@ export const ATTRIBUTE_LABELS: Record<AttributeGroup, string> = { transform: "Tr
 // A picture-in-picture's frame (its shadow and border) goes with where it
 // sits, and a voice's compressor with its EQ (ADR-109): a look made once
 // pastes onto the other insets or lines.
-const fields = { transform: ["transform", "crop", "opacity", "blend", "shadow", "border"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"], effects: ["effects"] } as const;
+const fields = { transform: ["transform", "crop", "opacity", "blend", "shadow", "border"], color: ["adjust", "filter"], audio: ["volume", "pan", "muted", "fadeIn", "fadeOut", "fadeInCurve", "fadeOutCurve", "pitch", "voice", "mono", "saturation", "ringMod", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"], effects: ["effects"] } as const;
 export const supportsAttributes = (c: Clip, group: AttributeGroup) => fields[group][0] in c;
 export interface AttributeClipboard { clip: Clip; fps: Rational; luts: LutFile[] }
 export function copyAttributes(p: Project, id: string): AttributeClipboard {
@@ -42,6 +42,7 @@ export function pasteAttributes(p: Project, ids: string[], copied: AttributeClip
     const target = findClip(next, id)!.clip;
     const patch: Record<string, unknown> = {};
     for (const group of nonEffects) for (const field of fields[group]) patch[field] = structuredClone((source as unknown as Record<string, unknown>)[field]);
+    if (target.type === "compound") for (const field of ["pitch", "voice", "mono", "saturation", "ringMod"]) delete patch[field];
     if (groups.includes("audio")) for (const field of ["fadeIn", "fadeOut"]) patch[field] = Math.min(Math.floor(target.duration / 2), Math.max(0, secondsToFrames(framesToSeconds(patch[field] as number, copied.fps), p.fps)));
     const keyframes = Object.fromEntries(Object.entries(target.keyframes ?? {}).filter(([path]) => !nonEffects.some((g) => matches(path, g))));
     for (const [path, keys] of Object.entries(source.keyframes ?? {})) {

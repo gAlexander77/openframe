@@ -1,3 +1,4 @@
+import { FADE_CURVES, type FadeCurve } from "./project/types";
 import { moveMotionPoint } from "./motionPoint";
 import { transformGroup } from "./groupTransform";
 import { applyLayout, LAYOUTS, type Layout, type LayoutOptions } from "./layouts";
@@ -55,7 +56,7 @@ import { editFolder, organizeMedia, removeMedia, unusedMedia } from "./project/m
 import { applyEffectPreset } from "./effectPresets";
 import { ATTRIBUTE_GROUPS, copyAttributes, pasteAttributes, type AttributeGroup } from "./attributes";
 import { cleanCompressor, COMPRESSOR_PRESETS, compressorPreset, type CompressorPreset } from "./compressor";
-import { cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, type FxKey, type ReverbPreset } from "./soundFx";
+import { applyVoicePreset, VOICE_PRESETS, cleanFx, ECHO_DEFAULT, FILTER_DEFAULTS, REVERB_PRESETS, soundFxSummary, TAPE_STOP_DEFAULT, type FilterKind, FX_RANGES, type FxKey, type ReverbPreset } from "./soundFx";
 import { alignClips, ALIGNS, distributeClips, frameClips, frameMoves, frameRegion, pictureAspect, type Align, type Axis, type Frame, type Region } from "./align";
 import { MASK_SHAPES, maskReach, newMask, sizeForAspect, type MaskShape } from "./mask";
 import { cropClips, cropToRatio, CROP_RATIOS, MIN_CROP, validCrop, type CropRatio } from "./crop";
@@ -1041,6 +1042,22 @@ export const COMMANDS: Command[] = [
       return ids.reduce((q, id) => {
         const { clip } = clipOrThrow(q, id);
         const path = paramPath(clip, String(a.path));
+        if (path === "pitch") {
+          if (a.at !== undefined || hold) throw new CommandError("pitch is not keyframeable; omit at and hold");
+          if (Number(a.value) < -12 || Number(a.value) > 12) throw new CommandError("pitch is -12..12 semitones");
+          return fxEdit(q, { clip_ids: [id] }, "pitch shift", (c) => ({ ...c, pitch: Number(a.value) }) as Clip);
+        }
+        const processor = /^(saturation|ringMod)\.(\w+)$/.exec(path);
+        if (processor) {
+          const key = processor[1] as "saturation" | "ringMod";
+          if (a.at !== undefined || hold) throw new CommandError(`${path} is not keyframeable; omit at and hold`);
+          const range = (FX_RANGES[key] as Record<string, [number, number]>)[processor[2]];
+          if (!range) throw new CommandError(`Unknown ${key} parameter ${processor[2]}`);
+          if (clip.type !== "audio" && clip.type !== "video") throw new CommandError(`${key} needs an audio or video clip`);
+          if (!clip[key]) throw new CommandError(`Apply a voice preset with ${key} first`);
+          const value = Number(a.value);
+          if (value < range[0] || value > range[1]) throw new CommandError(`${path} is ${range[0]}..${range[1]}`);
+        }
         // Without at, a keyed value went under its keys, where nothing reads
         // it, and the answer told it as set (ADR-110, as ADR-108's commands).
         keyedNeedsAt(clip, path, a.at);
@@ -1272,17 +1289,29 @@ export const COMMANDS: Command[] = [
       }, p),
   },
   {
+    name: "set_pitch",
+    description: "Shift sound by -12..12 semitones without changing speed, duration or timing. Works with reverse and speed curves. 0 resets it. Pitch is not keyframeable; use set_pitch or set_param pitch without at.",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), semitones: S.num("Semitones relative to the original pitch; 12 is an octave up", { minimum: -12, maximum: 12 }) }, ["clip_ids", "semitones"]),
+    run: (p, a) => fxEdit(p, a, "pitch shift", (c) => ({ ...c, pitch: Number(a.semitones) }) as Clip),
+  },
+  {
+    name: "apply_voice_preset",
+    description: "Apply a voice changer as ordinary editable settings (pitch, EQ, compressor, filters, saturation, ring modulation, mono, echo and reverb). Replaces those settings and their keyframes; none clears them to defaults. Keeps volume, fades, timing and tape stop. The voice label is descriptive only. Fine-tune pitch with set_pitch and processor numbers with set_param (not keyframeable).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), preset: S.str("Voice character, or none to restore the preset's settings to defaults", { enum: ["none", ...Object.keys(VOICE_PRESETS)] }) }, ["clip_ids", "preset"]),
+    run: (p, a) => fxEdit(p, a, "voice changer", (c) => applyVoicePreset(c, String(a.preset))),
+  },
+  {
     name: "set_fades",
-    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
-    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }) }, ["clip_ids"]),
+    description: "Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. curve sets both shapes, curve_in and curve_out override each side. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).",
+    input: S.obj({ clip_ids: S.ids("Audio or video clips"), fade_in: S.num("Seconds", { minimum: 0 }), fade_out: S.num("Seconds", { minimum: 0 }), curve: fadeCurveSchema(), curve_in: fadeCurveSchema(), curve_out: fadeCurveSchema() }, ["clip_ids"]),
     run: (p, a) => {
-      if (a.fade_in === undefined && a.fade_out === undefined) throw new CommandError("give fade_in, fade_out or both, in seconds");
+      if ([a.fade_in, a.fade_out, a.curve, a.curve_in, a.curve_out].every((x) => x === undefined)) throw new CommandError("give fade_in, fade_out (seconds), or a curve");
       return (a.clip_ids as Id[]).reduce((q, id) => {
         const { clip, track } = clipOrThrow(q, id);
         if (!("fadeIn" in clip)) throw new CommandError(`${clip.type} clips have no sound to fade; use set_animation with type fade for pictures`);
         if (track.locked) throw new CommandError(`track ${track.name} is locked`);
         const cap = (v: unknown) => Math.min(Math.floor(clip.duration / 2), Math.max(0, f(q, Number(v))));
-        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}) }) as Clip);
+        return ops.updateClip(q, id, (c) => ({ ...c, ...(a.fade_in !== undefined ? { fadeIn: cap(a.fade_in) } : {}), ...(a.fade_out !== undefined ? { fadeOut: cap(a.fade_out) } : {}), ...((a.curve_in ?? a.curve) !== undefined ? { fadeInCurve: a.curve_in ?? a.curve } : {}), ...((a.curve_out ?? a.curve) !== undefined ? { fadeOutCurve: a.curve_out ?? a.curve } : {}) }) as Clip);
       }, p);
     },
   },
@@ -2491,11 +2520,12 @@ export const COMMANDS: Command[] = [
   {
     name: "set_crossfade",
     description:
-      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
-    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }) }, ["clip_id", "seconds"]),
+      "Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): with the chosen curve (default equalPower) over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {\"clip_id\": \"c_3\", \"seconds\": 0.03}.",
+    input: S.obj({ clip_id: S.str("The audio clip before the join"), seconds: S.num(`Seconds of crossfade (0 removes it; at most ${MAX_CROSSFADE})`, { minimum: 0, maximum: MAX_CROSSFADE }), curve: fadeCurveSchema() }, ["clip_id", "seconds"]),
     run: (p, a) => {
       try {
-        return setCrossfade(p, String(a.clip_id), Number(a.seconds));
+        const q = setCrossfade(p, String(a.clip_id), Number(a.seconds));
+        return a.curve !== undefined && Number(a.seconds) > 0 ? ops.updateClip(q, String(a.clip_id), (c) => ({ ...c, crossfadeCurve: a.curve as FadeCurve }) as Clip) : q;
       } catch (e) {
         throw e instanceof MusicCutError ? new CommandError(e.message) : e;
       }
@@ -3302,6 +3332,12 @@ export function describeProject(p: Project) {
         ...("duck" in c && c.duck ? { ducked: { ...(c.duck.voiceAboveMusicLu !== undefined ? { voice_above_music_lu: c.duck.voiceAboveMusicLu } : {}), ...(c.duck.minLineLu !== undefined ? { min_line_lu: c.duck.minLineLu } : {}), ...(c.duck.maxLineLu !== undefined ? { max_line_lu: c.duck.maxLineLu } : {}), ...(c.duck.depth !== undefined ? { depth: c.duck.depth } : {}), ...(c.duck.openAt?.length ? { open_at: c.duck.openAt } : {}), ...(c.duck.minGap !== undefined ? { min_gap: c.duck.minGap } : {}), ...(c.duck.release !== undefined ? { release: c.duck.release } : {}), ...(c.duck.track ? { track: true } : {}) } } : {}),
         ...(c.type === "audio" && c.crossfade ? { crossfade: c.crossfade } : {}),
         ...soundFxSummary(c),
+        ...("pitch" in c && c.pitch ? { pitch: c.pitch } : {}),
+        ...("voice" in c && c.voice ? { voice: c.voice } : {}),
+        ...("mono" in c && c.mono ? { mono: true } : {}),
+        ...("fadeInCurve" in c && c.fadeInCurve ? { fade_in_curve: c.fadeInCurve } : {}),
+        ...("fadeOutCurve" in c && c.fadeOutCurve ? { fade_out_curve: c.fadeOutCurve } : {}),
+        ...("crossfadeCurve" in c && c.crossfadeCurve ? { crossfade_curve: c.crossfadeCurve } : {}),
         ...(c.type === "video" && c.frameBlend ? { frame_blend: true } : {}),
         ...("blend" in c && c.blend !== "normal" ? { blend: c.blend } : {}),
         ...((c.type === "video" || c.type === "image") && c.chromaKey?.enabled ? { chroma_key: c.chromaKey.color } : {}),
@@ -3505,7 +3541,10 @@ export function addCaptions(p: Project, caps: Caption[], style: Partial<TextStyl
  * without sound of their own (compound clips mix many; edit inside). */
 function fxEdit(p: Project, a: Record<string, unknown>, what: string, fn: (c: Clip) => Clip): Project {
   const ids = a.clip_ids as Id[];
-  ids.forEach((id) => clipOrThrow(p, id));
+  ids.forEach((id) => {
+    const { track } = clipOrThrow(p, id);
+    if (track.locked) throw new CommandError(`track ${track.name} is locked`);
+  });
   return ids.reduce(
     (q, id) =>
       ops.updateClip(q, id, (c) => {
@@ -3542,3 +3581,7 @@ export const PROJECT_FILE_COMMANDS = [
   { name: "collect_project", description: "Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a new folder named after the project (numbered when the name is taken), so it opens on another computer; nothing existing is overwritten. folder (an absolute path, created if missing) is where that new folder goes; without it the native dialog asks. Desktop only (the web downloads the JSON from File > Collect files). Answers the collected project.json's path.", input: S.obj({ folder: S.str("Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog") }) },
   { name: "open_project_file", description: "Open a project JSON as a new project identity. Desktop resolves relative media beside the file; missing media can be relinked. Omit path to use the picker. Answers a summary (name, canvas, fps, duration, counts); describe_project has the timeline.", input: S.obj({ path: S.str("Absolute desktop path to a project JSON file; omit for the native or browser picker") }) },
 ];
+
+function fadeCurveSchema() {
+  return S.str("Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades.", { enum: Object.keys(FADE_CURVES) });
+}

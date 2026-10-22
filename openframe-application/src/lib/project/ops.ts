@@ -217,7 +217,7 @@ export function splitParts(c: Clip, at: number, fps: Rational): [Clip, Clip] {
   const r = at - c.start;
   // A tape stop and a crossfade into the next clip belong to the clip's
   // end, so only the right part keeps them.
-  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop", "crossfade"]);
+  const left = omit({ ...c, duration: r } as Clip, ["transitionOut", "animOut", "tapeStop", "crossfade", "crossfadeCurve"]);
   const right = omit(moveLeftEdge({ ...c, id: uid("c") } as Clip, r, fps), ["animIn"]);
   if ("fadeOut" in left) (left as AudioClip).fadeOut = 0;
   if ("fadeIn" in right) (right as AudioClip).fadeIn = 0;
@@ -796,6 +796,7 @@ export function detachAudio(p: Project, clipId: Id): Project {
     pan: v.pan,
     fadeIn: v.fadeIn,
     fadeOut: v.fadeOut,
+    ...Object.fromEntries((["pitch", "fadeInCurve", "fadeOutCurve", "voice", "saturation", "ringMod", "mono", "eq", "compressor", "fill", "highpass", "lowpass", "echo", "reverb", "tapeStop"] as const).filter((key) => v[key] !== undefined).map((key) => [key, structuredClone(v[key])])),
     muted: false,
     group: v.group ?? uid("g"),
   };

@@ -1,3 +1,4 @@
+import { FADE_CURVES } from "./types";
 import { cleanRuns } from "../textRuns";
 // Factories for every project object, and `normalizeProject`, the trust
 // boundary for project JSON. Whatever comes in — a file saved by an older
@@ -7,7 +8,7 @@ import { cleanRuns } from "../textRuns";
 import { normalizeBrand } from "../brandKit";
 import { effectDefaults } from "../catalog";
 import { cleanCompressor } from "../compressor";
-import { cleanSoundFx, FX_KEYS } from "../soundFx";
+import { cleanSoundFx, FX_KEYS, VOICE_PRESETS } from "../soundFx";
 import { cleanGrade } from "../grade";
 import { cleanPoints } from "../speed";
 import { cleanShape } from "../shapes";
@@ -333,6 +334,12 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     else delete c.compressor;
     // Sound design (ADR-060): each effect in range, or dropped.
     cleanSoundFx(c);
+    for (const k of ["fadeInCurve", "fadeOutCurve", "crossfadeCurve"]) if (typeof c[k] !== "string" || !Object.hasOwn(FADE_CURVES, c[k] as string)) delete c[k];
+    if (typeof c.pitch === "number" && Number.isFinite(c.pitch)) c.pitch = Math.max(-12, Math.min(12, c.pitch));
+    else delete c.pitch;
+    if (typeof c.voice !== "string" || !Object.hasOwn(VOICE_PRESETS, c.voice)) delete c.voice;
+    if (c.mono !== true) delete c.mono;
+    if (isObj(c.keyframes)) c.keyframes = Object.fromEntries(Object.entries(c.keyframes).filter(([path]) => path !== "pitch" && !path.startsWith("saturation.") && !path.startsWith("ringMod.")));
   }
   // Remove BG (ADR-033): a reference to a matte file, or nothing. A broken
   // one is dropped, not refused: the clip still plays, with its background.
@@ -344,7 +351,7 @@ function normalizeClip(raw: unknown, where: string, lutIds: Set<string>): Clip {
     if (typeof c.compoundId !== "string") throw new ProjectError(`${where}: missing compoundId`);
     // Not supported on compound clips yet (ADR-037): dropped, not refused,
     // so a file that has them still opens.
-    for (const k of ["speedCurve", "reverse", "freeze", ...FX_KEYS]) delete c[k];
+    for (const k of ["speedCurve", "reverse", "freeze", "pitch", "voice", "mono", ...FX_KEYS]) delete c[k];
   }
   if (type === "video" || type === "audio" || type === "image") {
     if (typeof c.assetId !== "string") throw new ProjectError(`${where}: missing assetId`);

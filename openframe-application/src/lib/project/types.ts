@@ -734,6 +734,11 @@ export interface TapeStop {
   duration: number;
 }
 
+export const FADE_CURVES = { linear: "Linear", equalPower: "Equal power", logarithmic: "Logarithmic", exponential: "Exponential", sCurve: "S curve" } as const;
+export type FadeCurve = keyof typeof FADE_CURVES;
+export interface Saturation { /** Drive, 0..1; absent effect is clean. */ drive: number }
+export interface RingMod { /** Carrier frequency in Hz, 20..200. */ frequency: number; /** Wet amount, 0..1. */ mix: number }
+
 export interface Sound {
   /** Linear gain, 1 = 0 dB, up to 4 (+12 dB). */
   volume: number;
@@ -742,6 +747,15 @@ export interface Sound {
   /** Frames. */
   fadeIn: number;
   fadeOut: number;
+  /** Absent = linear, the original envelope. */
+  fadeInCurve?: FadeCurve;
+  fadeOutCurve?: FadeCurve;
+  /** Descriptive preset label only; the editable settings are the sound. */
+  voice?: string;
+  saturation?: Saturation;
+  ringMod?: RingMod;
+  /** Fold the channels to mono before processing. */
+  mono?: boolean;
   muted: boolean;
   /** Three-band equalizer, dB per band (-12..12); absent = flat. */
   eq?: { low?: number; mid?: number; high?: number };
@@ -828,6 +842,8 @@ export interface Timed {
   /** CapCut's "Change pitch": absent (off) keeps the pitch at any speed;
    * on lets it rise and fall with the speed, like tape. */
   changePitch?: boolean;
+  /** Independent pitch shift in semitones, -12..12; absent = 0. Not keyframeable. */
+  pitch?: number;
   /** Hold the frame at `in` for the clip's whole length. */
   freeze?: boolean;
 }
@@ -925,6 +941,8 @@ export type AudioClip = ClipBase &
      * before its start (lib/audio.ts soundOverlaps, ADR-104). Absent: a
      * butt cut, each side ramped over the 4 ms click guard. */
     crossfade?: number;
+    /** Absent = equal power, the original crossfade. */
+    crossfadeCurve?: FadeCurve;
   };
 export type ImageClip = ClipBase & Visual & { type: "image"; assetId: Id; imageIn?: number };
 export type TextClip = ClipBase &

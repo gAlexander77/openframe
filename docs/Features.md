@@ -999,6 +999,28 @@ makes a 13 s one). Times are timeline seconds.
 
 ## Sound design and delivery
 
+- **Fade curves** (Audio tab, beside Fade in, Fade out and Crossfade;
+  `set_fades`, `set_crossfade`): Linear, Equal power, Logarithmic (fast
+  rise), Exponential (slow rise) and S curve (smooth at both ends).
+  Timeline fade ramps follow the shape. Older clips stay linear and
+  older crossfades stay at equal power.
+- **Independent pitch** (Audio tab, **Pitch**; `set_pitch`): -12 to +12
+  semitones without changing the clip's length, at constant speed, through
+  speed curves and backward. Double-click the slider to reset. The Speed
+  tab's Change pitch still controls tape-style pitch with speed; this adds
+  a separate shift. Pitch is static, not keyframeable.
+- **Voice changer** (Audio tab; `apply_voice_preset`, `list_catalog`
+  section `voice_presets`): Chipmunk, Deep, Robot, Radio, Telephone,
+  Megaphone, Cave and Monster. A chip applies the preset and auditions the
+  clip's first three seconds. Each expands into ordinary settings: pitch,
+  EQ, filters, compressor, saturation, ring modulation, mono, echo and
+  reverb. The preset label records the starting point; the settings remain
+  editable. None clears those settings and their keys, keeping timing,
+  volume, pan, fades and tape stop. The same mixer builds preview, export
+  and loudness measurement; Normalize loudness measures the processed clip
+  too ([[ADR-128 Sound shaping uses the shared mixer and retimer]]).
+
+
 - **Effects** (Audio tab, under Compressor; `set_audio_filter`,
   `set_reverb`, `set_echo`, `set_tape_stop`): the trailer and epic-edit
   moves on any video or audio clip, built into the clip's one Web Audio

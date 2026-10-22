@@ -555,6 +555,9 @@ Every non-obvious choice gets a short Architecture Decision Record in
   while the editor is unavailable, drain interrupted requests with a
   warning to check the project, and keep the long timeout for exports.
 - [[ADR-127 Timeline conveniences share search and edit paths, monitor mute belongs to preview]] - shared clip search and bulk transition setters, viewer defaults, and a session-only output gain for preview sound.
+- [[ADR-128 Sound shaping uses the shared mixer and retimer]] — fade curves,
+  independent pitch, editable voice presets, continuous split processing,
+  and normalization through the export mixer.
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.

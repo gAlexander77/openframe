@@ -13,12 +13,12 @@
 
 import { meterLevels } from "../lib/mixer";
 import type { AudioBufferSink } from "mediabunny";
-import { busEnvelope, EQ_BANDS, panEnvelope, sharedChains, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
+import { busEnvelope, continuousSoundRuns, EQ_BANDS, panEnvelope, sharedChains, soundBuses, soundEnvelope, soundingClips, soundPanAt, soundSpan, type BusHop } from "../lib/audio";
 import { kWeighting } from "../lib/analysis/loudness";
 import { getAsset, sourceOffset } from "../lib/project/ops";
 import type { AudioClip, Compressor, Project, Sound, VideoClip } from "../lib/project/types";
 import { fxCurve, switchAt, tapeStopMap, type TapeStopMap } from "../lib/soundFx";
-import { varispeed, wsola } from "../lib/stretch";
+import { pitchShift, varispeed, wsola } from "../lib/stretch";
 import { framesToSeconds } from "../lib/time";
 import { DECODE_PREROLL, mediaFor } from "./media";
 import { postFaderFx, preFaderFx } from "./soundFx";
@@ -36,7 +36,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Does this clip's sound need the engine's retiming? Only plain forward
  * playback at 1x, or tape-style constant speed, can use playbackRate. */
 export const needsRetime = (c: VideoClip | AudioClip) =>
-  !!c.speedCurve || !!c.reverse || (c.speed !== 1 && !c.changePitch);
+  !!c.pitch || !!c.speedCurve || !!c.reverse || (c.speed !== 1 && !c.changePitch);
 
 interface Pcm {
   rate: number;
@@ -165,7 +165,7 @@ export function scheduleAudio(
 
   /** A split's halves share one EQ and compressor (ADR-117), so the second
    * goes on from the first's state: each run's chain, by its first clip. */
-  const all = soundingClips(p, hasAudio);
+  const all = continuousSoundRuns(soundingClips(p, hasAudio), p.fps);
   const runs = sharedChains(all);
   const heads = new Map<string, { input: AudioNode; output: AudioNode }>();
   const headFor = (key: string, c: Sound) => {
@@ -231,7 +231,7 @@ export function scheduleAudio(
     // EQ, then compressor, then the filters, then the gain (volume, fades,
     // keyframes): sources feed the first band.
     let input: AudioNode = gain;
-    const pre = preFaderFx(ctx, clip, curve, ride);
+    const pre = preFaderFx(ctx, clip, curve, ride, from - at, (node) => nodes.add(node));
     if (pre) {
       pre.output.connect(input);
       input = pre.input;
@@ -360,14 +360,21 @@ export function scheduleAudio(
     // Pitch kept (WSOLA) only where the clip asks and no tape stop runs:
     // a stopping tape's pitch falls with it.
     const tapeLike = clip.changePitch || !needsRetime(clip);
-    const retimer = tapeLike ? varispeed(pos) : tape ? switchAt(wsola(pos, sr), varispeed(pos), Math.round((clipStart + tape.start) * sr)) : wsola(pos, sr);
+    const base = clip.pitch ? pitchShift(pos, sr, clip.pitch, !!clip.changePitch) : tapeLike ? varispeed(pos) : wsola(pos, sr);
+    const retimer = tape && !tapeLike ? switchAt(base, clip.pitch ? pitchShift(pos, sr, clip.pitch, true) : varispeed(pos), Math.round((clipStart + tape.start) * sr)) : base;
     const nLo = Math.round(lo * sr);
     const nHi = Math.round(hi * sr);
     // ponytail: each block decodes its own source range (overlaps decode
     // twice, ~10%); a rolling PCM cache would save it if profiling cares.
     const block = Math.round((realtime ? 0.5 : 2) * sr);
     const maxSrc = srcDuration > 0 ? srcDuration : Infinity;
-    for (let n = nLo; n < nHi && !stopped; n += block) {
+    // WSOLA chooses grains from its previous grain. Rebuild that history
+    // from the clip's start before a pitched seek/window, discarding its
+    // output, so preview, split runs and every export window meet exactly.
+    // ponytail: long pitched seeks replay earlier grains; retimer state
+    // checkpoints would bound this work without changing the samples.
+    const first = clip.pitch ? Math.min(nLo, Math.round(clipStart * sr)) : nLo;
+    for (let n = first; n < nHi && !stopped; n += block) {
       const len = Math.min(block, nHi - n);
       const [yLo, yHi] = retimer.inputSpan(n, n + len);
       // Source seconds those positions read, low to high.
@@ -389,6 +396,7 @@ export function scheduleAudio(
       }
       const out = Array.from({ length: channels }, () => new Float32Array(len));
       retimer.render(input, yLo, n, out);
+      if (n + len <= nLo) continue;
       if (tape) {
         for (let i = 0; i < len; i++) {
           const g = tape.gain((n + i) / sr - clipStart);
@@ -397,10 +405,10 @@ export function scheduleAudio(
       }
       const buffer = ctx.createBuffer(channels, len, sr);
       out.forEach((ch, c) => buffer.copyToChannel(ch, c));
-      let when = toCtx(n / sr);
-      let offset = 0;
+      let offset = Math.max(0, lo - n / sr);
+      let when = toCtx(n / sr + offset);
       if (realtime && when < ctx.currentTime) {
-        offset = ctx.currentTime - when;
+        offset += ctx.currentTime - when;
         when = ctx.currentTime;
       }
       if (offset >= len / sr) continue;
