@@ -1,8 +1,12 @@
+
 // A voiceover script line, directed (add_voiceover, retake_voiceover):
 // pause marks written in the text, a pronunciation map that respells words
 // for the voice while captions keep them as written, the pause a line's
 // ending calls for, and where the voice model's own pauses fall so a mark
 // can lengthen one instead of cutting the sentence in two (ADR-083).
+
+import type { Clip } from "./project/types";
+import { framesToSeconds, type Rational } from "./time";
 
 /** A pause the script asks for, in seconds. */
 export const PAUSE_DEFAULT = 0.5;
@@ -273,4 +277,9 @@ export function syllables(word: string): number {
   if (w.length <= 3) return 1;
   w = w.replace(/(?:[^laeiouycsxzgh]es|[^laeiouytd]ed|[^laeiouy]e)$/, (m) => m[0]).replace(/^y/, "");
   return Math.max(1, w.match(/[aeiouy]+/g)?.length ?? 0);
+}
+
+/** Placed clip bounds, rather than the synthesizer's unsnapped clock. */
+export function placedLineTimes(c: Pick<Clip, "start" | "duration">, fps: Rational): { start: number; end: number } {
+  return { start: +framesToSeconds(c.start, fps).toFixed(3), end: +framesToSeconds(c.start + c.duration, fps).toFixed(3) };
 }

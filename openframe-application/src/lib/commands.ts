@@ -2444,7 +2444,7 @@ export const COMMANDS: Command[] = [
   {
     name: "cut_to_beats",
     description:
-      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end`; clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
+      "Cut a montage to the music in one call: lay shots end to end on the main track so every cut lands on the beat grid. The grid is the Beat markers (mark_beats or analyze_music), Bar or Phrase markers (grid bars or phrases, from analyze_music with markers [\"bars\"] or [\"phrases\"]), or beats: your own timeline seconds. Each shot lasts `every` grid steps (default 2 beats, or 1 bar or phrase), or the steps in `pattern` in turn ([4, 4, 2, 2, 1, 1] speeds up), or its own `beats`. The first shot starts at `start`; when no grid point is there, the first one after it counts as beat one, so an intro stays inside the first shot. A shot reads its media from `in` (default: where the last shot of the same file ended, so one long clip gives many different shots), slid back inside the file if it would run past the end; media too short for its slot ends on an earlier grid point. Stops when the shots or the grid run out, or at `end` (an explicit end is also the final boundary, so the last shot can cover the score's ring-out); clips already there are overwritten. Video shots are muted (mute false keeps their sound). Example: {\"media\": [{\"asset_id\": \"a_1\"}, {\"asset_id\": \"a_2\", \"in\": 3}, {\"asset_id\": \"a_1\", \"beats\": 4}], \"pattern\": [2, 2, 1, 1]}.",
     input: S.obj(
       {
         media: {
@@ -2465,7 +2465,7 @@ export const COMMANDS: Command[] = [
         every: { type: "integer", minimum: 1, maximum: 64, description: "Grid steps per shot (default 2 for beats, 1 for bars or phrases)" },
         pattern: { type: "array", items: { type: "integer", minimum: 1, maximum: 64 }, description: "Grid steps per shot, cycling: [4, 4, 2, 2, 1, 1]" },
         start: S.num("Timeline seconds the first shot starts (default 0)", { minimum: 0 }),
-        end: S.num("Timeline seconds to stop by: no cut after it", { minimum: 0 }),
+        end: S.num("Timeline seconds to stop by; also the final boundary when the beat grid ends before the score's ring-out", { minimum: 0 }),
         track_id: S.str("A video track instead of the main track"),
         mute: S.bool("Mute the shots' own sound (default true: the music carries a montage)"),
       },

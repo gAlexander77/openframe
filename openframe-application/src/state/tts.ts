@@ -17,7 +17,7 @@ import type { Asset, Id, Project, SpeechInfo, TextStyle } from "../lib/project/t
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { checkVoice, DEFAULT_VOICE, speechFileName, speechText } from "../lib/tts";
 import { retakeLine } from "../lib/voiceLines";
-import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
+import { asksEmphasis, breaksOf, checkPronounce, chunkSentences, EMPHASIS_NOTE, lateLineNotes, layoutLines, placedLineTimes, matchPauses, parseLine, pauseAfter, syllables, writtenWords } from "../lib/voiceScript";
 import { bandSource, CHOSEN_MAX_SPS, landSpeed, readWps, speedBounds, syllableBand, targetBand, type ReadAs, type ReadSpan } from "../lib/voicePace";
 import { finishTake, FINISHES, joinTakes, NATURAL_REVERB, resizePauses, type Finish, type FinishId } from "../lib/voiceTake";
 import { encodeWav } from "../lib/wav";
@@ -386,9 +386,10 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
         const before = ids(q);
         q = runCommand(q, "add_media_clip", { asset_id: asset.id, start: times[i].start, track_id: track.id });
         const t = takes[i];
+        const clip = added(before, q)[0]!;
         placed.push({
           text: t.written,
-          ...times[i],
+          ...placedLineTimes(clip, q.fps),
           seconds: +t.seconds.toFixed(3),
           voice: t.info.voice,
           speed: t.info.speed,
@@ -396,7 +397,7 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
           target_words_per_second: t.band,
           ...(t.speedChosen ? { speed_chosen: true as const, reads: t.reads } : {}),
           ...(t.paceNote ? { pace_note: t.paceNote } : {}),
-          voice_clip: added(before, q)[0]?.id ?? "",
+          voice_clip: clip.id,
           ...(t.pauses.length ? { pauses: t.pauses } : {}),
         });
       });
@@ -491,7 +492,6 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     const shown = take.info.caption ?? take.written;
     const words = chunked ? await takeChunks(asset, shown, text, chunked, signal) : was?.captionWords ? { chunks: [{ start: 0, end: take.seconds, text: shown }], heard: true } : undefined;
     let answer: { shift: number; captionId?: Id; captionIds?: Id[] } = { shift: 0 };
-    let start = 0;
     // The take and the music dipped again under it undo as one step.
     store.beginRun();
     ran = true;
@@ -499,7 +499,6 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
     store.editDocument("Retake voiceover line", (q) => {
       const r = retakeLine(q, { clipId, asset, frames: secondsToFrames(take.seconds, q.fps), caption, ripple: o.ripple, ...(words ? { chunks: words.chunks } : {}) });
       answer = r;
-      start = framesToSeconds(findClip(r.project, clipId)!.clip.start, q.fps);
       const finish = take.info.finish ?? "natural";
       // A new finish brings its clip settings; the line's own stay otherwise.
       return o.finish && o.finish !== was?.finish ? finishClips(r.project, [clipId], finish, undefined) : r.project;
@@ -516,8 +515,7 @@ export async function retakeVoiceover(clipId: Id, o: RetakeOptions = {}) {
       voice_clip: clipId,
       ...(answer.captionIds ? { caption_clips: answer.captionIds } : { caption_clip: answer.captionId }),
       text: take.written,
-      start,
-      end: +(start + take.seconds).toFixed(3),
+      ...placedLineTimes(findClip(store.document(), clipId)!.clip, fps),
       seconds: +take.seconds.toFixed(3),
       voice: take.info.voice,
       speed: take.info.speed,

@@ -178,3 +178,10 @@ export function adjacentMarker(markers: Marker[], frame: number, direction: -1 |
   return markers.filter((m) => direction * (m.frame - frame) > 0)
     .sort((a, b) => direction * (a.frame - b.frame))[0];
 }
+
+/** New marker positions, ignoring replaced IDs and removed old beats. */
+export function addedMarkerCount(before: Project, after: Project): number {
+  const key = (m: Project["markers"][number]) => `${m.follows?.clip ?? ""}|${m.label}|${m.frame}`;
+  const had = new Set(before.markers.map(key));
+  return after.markers.filter((m) => !had.has(key(m))).length;
+}

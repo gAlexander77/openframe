@@ -218,7 +218,7 @@ function outputFormat(c: Container, plan: ExportPlan, chapterOptions?: IsobmffOu
 
 /** AAC encoding where the platform has none (Linux Chromium, Windows N,
  * some WebKitGTK builds): a WASM encoder, loaded only when needed. */
-async function ensureAac(bitrate: number): Promise<string | undefined> {
+export async function ensureAac(bitrate: number): Promise<string | undefined> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
   if (await canEncodeAudio("aac", opts)) return undefined;
   const { registerAacEncoder } = await import("@mediabunny/aac-encoder");
@@ -231,7 +231,6 @@ async function ensureAac(bitrate: number): Promise<string | undefined> {
  * one), so LAME in WebAssembly is loaded on first use. */
 export async function ensureMp3(bitrate: number): Promise<void> {
   const opts = { numberOfChannels: 2, sampleRate: 48000, quality: new Quality({ bitrate }) };
-  if (await canEncodeAudio("mp3", opts)) return;
   const { registerMp3Encoder } = await import("@mediabunny/mp3-encoder");
   registerMp3Encoder();
   if (!(await canEncodeAudio("mp3", opts))) throw new ExportError("This device can't encode MP3 audio. Choose WAV or AAC (M4A).");

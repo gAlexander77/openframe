@@ -22,7 +22,7 @@ import { frameAt, framesToSeconds, secondsToFrames } from "./time";
 import { findCompound, getAsset, mainTrack, projectDuration, sourceTimeAt } from "./project/ops";
 import { gridStructure, sourceToTimeline } from "./analysis/musicMap";
 import { CLICK_DB, DIP_DB, TAIL_DB, type EdgeReport } from "./analysis/edges";
-import { continues } from "./audio";
+import { continues, wholeSoundEffect } from "./audio";
 import { crossfadeJoin } from "./crossfadeJoin";
 import { calloutsOffFrame } from "./versionCallouts";
 import type { Clip, CompoundClip, Id, Project, TextClip, Track, VisualClip } from "./project/types";
@@ -311,7 +311,7 @@ export function joinTargets(p: Project): { trackId: Id; at: number; clips: [Id, 
     const clips = t.clips.filter((c) => c.type === "audio" && !c.disabled && !c.muted).sort((a, b) => a.start - b.start);
     clips.forEach((a, i) => {
       const b = clips[i + 1];
-      if (b && a.start + a.duration === b.start && !continues(a, b, p.fps)) out.push({ trackId: t.id, at: +framesToSeconds(b.start, p.fps).toFixed(3), clips: [a.id, b.id] });
+      if (b && a.start + a.duration === b.start && !continues(a, b, p.fps) && !(wholeSoundEffect(p, a) && wholeSoundEffect(p, b))) out.push({ trackId: t.id, at: +framesToSeconds(b.start, p.fps).toFixed(3), clips: [a.id, b.id] });
     });
   }
   return out.sort((x, y) => x.at - y.at);

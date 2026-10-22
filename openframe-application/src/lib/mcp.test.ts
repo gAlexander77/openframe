@@ -875,3 +875,25 @@ it("routes desktop playback proxy tools with a half-size default and clear brows
   expect(JSON.stringify(await call("create_proxies", { asset_ids: [] }))).toContain("Choose at least one");
   expect(JSON.stringify(await call("delete_proxies", { asset_ids: ["a1"] }))).toContain("none");
 });
+
+it("accepts master seconds for version checks and rejects mixed units and out-of-range times", async () => {
+  const h = host();
+  h.project = runCommand(h.project, "add_color_clip", { color: "#203040", start: 0, duration: 44 });
+  const run = (arguments_: unknown) => call(h, "tools/call", { name: "export_versions", arguments: arguments_ });
+  await run({ ratios: ["9:16"], check: true, check_times: [1, 11.5, 29] });
+  expect(h.versionCalls.at(-1)).toMatchObject({ times: [1, 11.5, 29] });
+  expect((await run({ ratios: ["9:16"], check: true, check_at: [0.5], check_times: [1] }))!.result).toMatchObject({ isError: true });
+  expect((await run({ ratios: ["9:16"], check: true, check_times: [45] }))!.result).toMatchObject({ isError: true });
+});
+
+
+it("passes an explicit preview format and preserves the fallback audio MIME and format", async () => {
+  const h: McpHost & { auditions: unknown[] } = host();
+  h.audition = async (o) => { h.auditions.push(o); return { data: "UklGRg==", mimeType: "audio/wav", summary: { format: "wav", seconds: 1 } }; };
+  const r = await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, format: "m4a" } });
+  expect(h.auditions[0]).toMatchObject({ format: "m4a" });
+  const content = (r!.result as { content: { type: string; mimeType?: string; text?: string }[] }).content;
+  expect(content[0]).toMatchObject({ type: "audio", mimeType: "audio/wav" });
+  expect(JSON.parse(content[1].text!)).toEqual({ format: "wav", seconds: 1 });
+  expect((await call(h, "tools/call", { name: "preview_audio", arguments: { start: 0, format: "flac" } }))!.result).toMatchObject({ isError: true });
+});

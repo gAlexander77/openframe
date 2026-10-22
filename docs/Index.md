@@ -568,4 +568,8 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-133 Crop softness, continuous rotation and regional masks]] —
   crop softness follows picture space, the rotation dial preserves turns,
   adjustments mix through masks, and static bezier paths share mask transforms.
+- [[ADR-135 Film tools preserve authored timing and degrade previews gracefully]] —
+  playable audio fallbacks, master-second version checks, authored lines and
+  frame times, score endings, sound events, concrete duck advice, conservative
+  subject framing and measured version fades.
 - [[ADR-137 Timeline interchange shares one import boundary]] — OTIO/FCPXML imports, FCPXML and CMX EDL exports, frame clocks, connected lanes and relinkable media.

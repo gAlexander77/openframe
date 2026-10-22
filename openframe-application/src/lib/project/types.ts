@@ -820,6 +820,8 @@ export interface DuckRecord {
   openAt?: (number | string)[];
   /** Seconds a pause must last for the music to come up (min_gap). */
   minGap?: number;
+  /** Pauses this duck holds down, in this clip's source-file seconds. */
+  held?: [number, number][];
   /** Seconds the music takes to come back up after a line (release). */
   release?: number;
   /** Ducked with every clip of its track in one call (track_id). */

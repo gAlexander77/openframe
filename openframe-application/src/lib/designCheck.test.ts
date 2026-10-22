@@ -367,3 +367,9 @@ it("counts a cut only where it shows: not under a full-frame card above it (ADR-
   expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "transform.scale", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
   expect(rules(runCommand(black, "set_param", { clip_ids: [id], path: "opacity", value: 0.5 }), "epic_edit")).toContain("cuts_off_beat");
 });
+
+
+it("accepts a portrait hook at size 100 without a size warning", () => {
+  const p = runCommand(createProject({ width: 1080, height: 1920 }), "add_text", { text: "Go now", start: 0, duration: 3, style: { size: 100 } });
+  expect(checkProject(p, "social_short").findings.filter((f) => /size|small|large/.test(f.rule))).toEqual([]);
+});

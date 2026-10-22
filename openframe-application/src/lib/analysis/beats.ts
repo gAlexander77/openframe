@@ -630,7 +630,7 @@ export function musicStructure(pcm: Float32Array, rate: number, options: Partial
   }
   const frameOf = (t: number) => Math.max(0, Math.min(env.length - 1, Math.round((t - offset) * fps)));
   const allFrames = times.map(frameOf);
-  const [ta, tb] = trimSilent((heard ?? times).map(frameOf), peakNear);
+  const [ta, tb] = heard ? trimSilent(heard.map(frameOf), peakNear) : [0, times.length];
   const frames = allFrames.slice(ta, tb);
   const beats = times.slice(ta, tb).map((t) => Math.max(0, round4(t)));
   const n = beats.length;

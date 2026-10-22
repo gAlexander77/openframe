@@ -175,3 +175,14 @@ describe("the loudness range against what a mix is for", () => {
     expect(rangeVerdict(8, "explainer").verdict).toBe("wide");
   });
 });
+
+
+it("names the pauses a duck holds down and gives controls that can actually open them", () => {
+  const ducked = rangeVerdict(2.7, "social", { music: true, heldPauses: 4 });
+  expect(ducked.note).toMatch(/4 pauses/);
+  expect(ducked.note).toMatch(/min_gap.*lower|lower.*min_gap/);
+  expect(ducked.note).toContain("open_at");
+  const voice = rangeVerdict(2.7, "social", { music: false });
+  expect(voice.note).toMatch(/quiet passages stay quiet/);
+  expect(voice.note).not.toContain("duck_under_speech");
+});

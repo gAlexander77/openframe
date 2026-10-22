@@ -58,7 +58,7 @@ export interface Focus {
  * Claude film test 4's focus and pushes changed nothing on its fitted
  * interface shots and the answers said nothing. */
 export interface OptionNote {
-  option: "focus" | "pushes" | "overrides";
+  option: "focus" | "pushes" | "overrides" | "reframe" | "animation";
   clip_id?: Id;
   note: string;
 }
@@ -266,6 +266,7 @@ export function reframeShot(master: Project, q: Project, before: VisualClip, aft
     const have = new Set(samples.map((s) => s.rel));
     for (const x of focus) for (let f = Math.max(0, (x.rel ?? 0) - glide); f <= Math.min(after.duration - 1, x.rel ?? 0); f++) if (!have.has(f)) (samples.push({ rel: f, map: near(f)?.map }), have.add(f));
   }
+  if (aim === "subject" && look && !focus && samples.every((s) => s.map && !subjectBox(s.map))) said?.push({ option: "reframe", clip_id: after.id, note: `${after.id}: no distinct subject stands out in the sampled texture; using center framing. Give focus to choose another region.` });
   samples.sort((a, b) => a.rel - b.rel);
   if (samples[0].rel > 0) samples.unshift({ rel: 0, map: samples[0].map, looked: samples[0].looked });
   if (samples.at(-1)!.rel < after.duration - 1) samples.push({ rel: after.duration - 1, map: samples.at(-1)!.map, looked: samples.at(-1)!.looked });

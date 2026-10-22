@@ -3,6 +3,8 @@
 // automation (`window.videoEditor.render`, writes to memory). One job at a
 // time, so a second export cannot fight the first for the encoder.
 
+import { projectWork } from "./projectWork";
+import { measureForCheck } from "./check";
 import { useSyncExternalStore } from "react";
 import { exportProject as exportVideo, exportStill, memoryTarget, type ExportProgress, type ExportResult } from "../engine/export";
 import { exportGif } from "../engine/gif";
@@ -12,7 +14,7 @@ import type { Project } from "../lib/project/types";
 import { toOtio } from "../lib/interchange/otio";
 import { framesToSeconds, secondsToFrames } from "../lib/time";
 import { projectDuration } from "../lib/project/ops";
-import { captionCollisions, versionProject, versionSound, type CaptionCollision, type CoverageReport, type OptionNote, type VersionSpec } from "../lib/versions";
+import { repairVersionFades, versionCheckFrames, captionCollisions, versionProject, versionSound, type CaptionCollision, type CoverageReport, type OptionNote, type VersionSpec } from "../lib/versions";
 import { calloutBoxAt, type CalloutReport } from "../lib/versionCallouts";
 import { hiddenNote, titlesInFront, type Hidden } from "../lib/behind";
 import { measureBehind } from "./behind";
@@ -418,6 +420,12 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
       titles = titleReports(project, hidden, before, front.off);
       project = front.project;
     }
+    if (project.width !== master.width || project.height !== master.height) {
+      const measured = await measureForCheck(project, { sound: false, signal: projectWork.signal() });
+      const fixed = repairVersionFades(project, measured.fades ?? {});
+      project = fixed.project;
+      for (const id of fixed.changed) m.says.options.push({ option: "animation", clip_id: id, note: `${id}: the adapted title's fade measured unevenly over this picture; replaced that fade with a cut so its letters leave together (check_project's fix).` });
+    }
     // Only where the shot is seen: not under an end card or another shot.
     const runs = m.notes.length ? seenShots(project, true) : [];
     const seen = (n: SubjectNote) => {
@@ -510,14 +518,17 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
  * shot's subject outlines the subject in orange and says so, as it does a
  * callout off the frame or off what it pointed at (ADR-122); the reports
  * list every such shot and callout with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[]; callouts: { version: string; reports: CalloutReport[] }[]; options: { version: string; reports: OptionNote[] }[]; coverage: { version: string; reports: CoverageReport[] }[]; text_overlaps: { version: string; reports: Finding[] }[] }> {
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; times?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[]; callouts: { version: string; reports: CalloutReport[] }[]; options: { version: string; reports: OptionNote[] }[]; coverage: { version: string; reports: CoverageReport[] }[]; text_overlaps: { version: string; reports: Finding[] }[] }> {
+  const master = store.document();
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
   const gap = 6, label = 22, strip = 18;
   // Each version's moments wrap into rows inside the sheet's width (ADR-115).
   const blocks = items.map(({ project: q, notes, titles, overlaps, callouts, coverage }) => {
     const { tw, th } = tileSize(q.width, q.height, o.tileWidth);
-    return { q, notes, titles, overlaps, callouts, coverage, tw, th, ...sheetGrid(tw, at.length, gap) };
+    const picked = o.times?.length ? versionCheckFrames(master, q, o.times, o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps)) : at.map((share) => Math.min(projectDuration(q) - 1, Math.max(0, Math.round(share * projectDuration(q)))));
+    const frames = picked.length ? picked : [0];
+    return { q, notes, titles, overlaps, callouts, coverage, tw, th, frames, ...sheetGrid(tw, frames.length, gap) };
   });
   const tops: number[] = [];
   let height = gap;
@@ -530,14 +541,13 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
   const g = out.getContext("2d")!;
   g.fillStyle = "#1b1d22";
   g.fillRect(0, 0, out.width, out.height);
-  for (const [ri, { q, tw, th, columns, notes, titles, overlaps, callouts, coverage }] of blocks.entries()) {
+  for (const [ri, { q, tw, th, columns, notes, titles, overlaps, callouts, coverage, frames }] of blocks.entries()) {
     const top = tops[ri];
     const length = projectDuration(q);
     g.fillStyle = "#e8eaed";
     g.font = "bold 14px sans-serif";
     g.fillText(`${q.name} · ${q.width}x${q.height} · ${+framesToSeconds(length, q.fps).toFixed(2)} s`, gap + 2, top + 16);
-    for (const [i, share] of at.entries()) {
-      const frame = Math.min(length - 1, Math.max(0, Math.round(share * length)));
+    for (const [i, frame] of frames.entries()) {
       const bmp = await createImageBitmap(await exportStill(q, frame, tw * 2, th * 2));
       const ci = i % columns;
       // y + label is the tile's top: a wrapped row sits a tile and its strip lower.

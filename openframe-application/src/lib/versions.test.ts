@@ -16,7 +16,7 @@ setTextMeasure((c, w, h) => {
   const lines = c.text.split("\n").length * Math.max(1, Math.ceil(widest / (c.style.maxWidth * w)));
   return { width: Math.min(widest, c.style.maxWidth * w) + 4, height: size * c.style.lineHeight * lines + 4 };
 });
-import { cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject, versionSound } from "./versions";
+import { repairVersionFades, versionCheckFrames, cutDown, endCardStart, expandVersions, reshape, textless, versionName, versionProject, versionSound } from "./versions";
 
 /** A 15 s 16:9 master: a wide shot pushing in, a title low on the left,
  * a logo-sized picture, music, and a 3 s end card. */
@@ -370,4 +370,40 @@ describe("what rides on a picture in versions (ADR-110)", () => {
     const s = reshape(p, "1:1", "fill");
     expect([param(by(s, pip), "pixelate", "size"), param(by(s, pip), "blur", "amount")]).toEqual([24, 20]);
   });
+});
+
+
+it("hides and restores an adjustment in a version without pretending to place it", () => {
+  const p = runCommand(createProject(), "add_adjustment_clip", { start: 0, duration: 44 });
+  const c = p.tracks.flatMap((t) => t.clips).find((c) => c.type === "adjustment")!;
+  const q = versionProject(p, { ratio: "9:16", overrides: [{ clip_id: c.id, hidden: true }] });
+  expect(q.tracks.flatMap((t) => t.clips).find((x) => x.id === c.id)!.disabled).toBe(true);
+  const restored = versionProject(q, { ratio: "original", overrides: [{ clip_id: c.id, hidden: false }] });
+  expect(restored.tracks.flatMap((t) => t.clips).find((x) => x.id === c.id)!.disabled).toBeUndefined();
+  expect(() => versionProject(p, { ratio: "9:16", overrides: [{ clip_id: c.id, x: 0.1 }] })).toThrow(/nothing to place/);
+  expect(c.disabled).toBeUndefined();
+});
+
+
+it("converts master check seconds to frames through a cut-down's opening and retained end card", () => {
+  let p = runCommand(createProject(), "add_color_clip", { color: "#111111", start: 0, duration: 44 });
+  const q = cutDown(p, 15 * 30, 3 * 30);
+  expect(versionCheckFrames(p, p, [1, 11.5, 29, 44])).toEqual([30, 345, 870, 1319]);
+  expect(versionCheckFrames(p, q, [1, 11.5, 29, 42], 90)).toEqual([30, 345, 390]);
+});
+
+
+it("replaces only a measured uneven version fade with a cut, leaving the master and the entrance intact", () => {
+  let p = runCommand(createProject(), "add_text", { text: "EARTH\nIN MOTION", start: 16, duration: 4, style: { size: 100 } });
+  const id = p.tracks.flatMap((t) => t.clips)[0].id;
+  p = runCommand(p, "set_animation", { clip_id: id, slot: "in", type: "slideUp", duration: 0.2 });
+  p = runCommand(p, "set_animation", { clip_id: id, slot: "out", type: "fade", duration: 0.4 });
+  const q = versionProject(p, { ratio: "9:16" });
+  const fixed = repairVersionFades(q, { [id]: { frame: 594, opacity: 0.15, faint: 1.31, body: 1.62, backdrop: [0.8, 0.8, 0.7], fixes: [] } });
+  const c = fixed.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id)! as TextClip;
+  expect(c.animOut).toBeUndefined();
+  expect(c.animIn?.type).toBe("slideUp");
+  expect((p.tracks.flatMap((t) => t.clips)[0] as TextClip).animOut?.type).toBe("fade");
+  expect(fixed.changed).toContain(id);
+  expect(repairVersionFades(q, {}).project).toBe(q);
 });

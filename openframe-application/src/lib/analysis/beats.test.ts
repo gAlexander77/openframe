@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectBeats, estimateTempo, fft, onsetEnvelope, tempoOf, trackBeats } from "./beats";
+import { musicStructure, detectBeats, estimateTempo, fft, onsetEnvelope, tempoOf, trackBeats } from "./beats";
 
 const RATE = 22050;
 
@@ -140,4 +140,13 @@ describe("helpers", () => {
     expect(beats).toContain(210);
     expect(beats).toContain(235);
   });
+});
+
+
+it("keeps a supplied score grid through its quiet ringing ending", () => {
+  const { pcm } = clickTrack(120, 44, { start: 0 });
+  pcm.fill(0, 43 * RATE);
+  const m = musicStructure(pcm, RATE, { bpm: 120, firstDownbeat: 0 });
+  expect(m.beats).toHaveLength(88);
+  expect(m.beats.at(-1)).toBe(43.5);
 });

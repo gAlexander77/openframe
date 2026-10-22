@@ -341,7 +341,7 @@ const mcpHost: McpHost = {
   },
   audition: async (options) => {
     const r = await previewAudio(options as AuditionRequest);
-    return { ...(r.mp3 ? { data: await blobToBase64(new Blob([r.mp3 as Uint8Array<ArrayBuffer>])), mimeType: "audio/mpeg" } : {}), summary: r.summary };
+    return { ...(r.audio ? { data: await blobToBase64(new Blob([r.audio.data as Uint8Array<ArrayBuffer>])), mimeType: r.audio.mimeType } : {}), summary: r.summary };
   },
   checkProject: async (kind) => {
     needProject();
@@ -360,7 +360,7 @@ const mcpHost: McpHost = {
   versionsSheet: async (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
     // A sheet of photographs too: sent as JPEG (jpeg above).
-    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[] });
+    const sheet = await versionsSheet(options as VersionsOptions & { at?: number[]; times?: number[] });
     const bmp = await createImageBitmap(sheet.blob);
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);

@@ -7,6 +7,7 @@
 // Everything runs on the user's machine: decode with WebCodecs, analyze in
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
+import { addedMarkerCount } from "../lib/markers";
 import { useSyncExternalStore } from "react";
 import { decodeMono, decodePcm, frameGrays, frameScores } from "../engine/analyze";
 import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
@@ -522,10 +523,10 @@ export async function markBeats(clipId?: Id, opts: Partial<BeatSettings> = {}): 
     finish("beats", "No beat found");
     return { bpm: mapped.bpm, beats: [], markers: 0 };
   }
-  const before = store.get().project.markers.length;
+  const before = store.get().project;
   edit(`Mark ${plural(picked.length, "beat")}`, (p) => markMusicClip(p, song.clip.id, { beats: song.m.beats.map((t) => t + song.from), downbeats: [], phrases: [], sections: [], drops: [] }, ["beats"], every));
   // Added: a second call replaces the clip's Beat markers, never doubles them.
-  const markers = store.get().project.markers.length - before;
+  const markers = addedMarkerCount(before, store.get().project);
   finish("beats", markers > 0 ? `Marked ${plural(markers, "beat")} · ${Math.round(mapped.bpm)} BPM` : `Every beat is already marked · ${Math.round(mapped.bpm)} BPM`);
   return { bpm: mapped.bpm, ...(mapped.file_bpm !== undefined ? { file_bpm: mapped.file_bpm } : {}), beats: picked, markers, ...(song.asset.musicGrid ? { grid: "given" as const } : {}) };
 }
@@ -627,9 +628,9 @@ export async function analyzeMusic(clipId?: Id, opts: { markers?: MusicMarkerKin
     // Following the clip, replacing its earlier markers of these kinds (a
     // second reading never doubles the first).
     const at = (ts: number[]) => ts.map((t) => t + from);
-    const before = store.get().project.markers.length;
+    const before = store.get().project;
     edit(`Mark the music`, (p) => markMusicClip(p, clip.id, { beats: at(m.beats), downbeats: at(m.downbeats), phrases: at(m.phrases), sections: m.sections.map((x) => ({ start: x.start + from, label: x.label })), drops: at(m.drops) }, kinds));
-    out.markers = store.get().project.markers.length - before;
+    out.markers = addedMarkerCount(before, store.get().project);
   }
   finish("beats", `${Math.round(out.bpm)} BPM · ${plural(out.sections.length, "section")}${out.drop !== null ? ` · drop at ${out.drop.toFixed(2)} s` : ""}`);
   return out;
@@ -1047,7 +1048,11 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   const now = store.get().project;
   const done = merged(now, keys);
   // Each clip keeps the keys it wrote, so the next duck knows the hand's.
-  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, ...duckMark(x), written: writtenKeys(x as MediaClip, done.get(id)?.ours ?? [], fps) } }) as Clip), withKeys(p, keys)));
+  edit(opts.label ?? "Duck under speech", (p) => ids.reduce((q, id) => ops.updateClip(q, id, (x) => ({ ...x, duck: { ...record, held: plan.held.flatMap(([a, b]): [number, number][] => {
+      const lo = Math.max(a, x.start), hi = Math.min(b, x.start + x.duration);
+      if (hi <= lo) return [];
+      return [[ops.sourceTimeAt(x as MediaClip, lo, fps), ops.sourceTimeAt(x as MediaClip, hi, fps)]];
+    }), ...duckMark(x), written: writtenKeys(x as MediaClip, done.get(id)?.ours ?? [], fps) } }) as Clip), withKeys(p, keys)));
   const all = [...done.values()];
   const sec = (f: number) => +framesToSeconds(f, fps).toFixed(3);
   const handKept = all.flatMap((m) => m.kept.map((k) => sec(m.c.start + k.f))), handReplaced = all.flatMap((m) => m.replaced.map((k) => sec(m.c.start + k.f)));

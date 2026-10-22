@@ -33,7 +33,7 @@ import { canvasSize } from "./canvas";
 import { EFFECTS } from "./catalog";
 import { CAPTION_WRAP, captionFit, captionMax, captionY } from "./captionLooks";
 import { withoutCaptions } from "./captions";
-import { seenLetters, seenTexts } from "./designCheck";
+import { seenLetters, seenTexts, type Measured as CheckMeasured } from "./designCheck";
 import { paramAt } from "./keyframes";
 import { clipEnd, findCompound, getAsset, liftRange, projectDuration } from "./project/ops";
 import type { Clip, ColorClip, CompoundClip, Id, ImageClip, Keyframe, Project, TextClip, TextStyle, Track, VideoClip, VisualClip } from "./project/types";
@@ -1777,11 +1777,11 @@ export function applyOverrides(q: Project, list: VersionOverride[]): Project {
     if (!where) throw new Error(`overrides: no clip ${o.clip_id} in this version (describe_project's clip ids; a clip inside a compound clip by its own id)`);
     const view: Project = { ...q, tracks: where.tracks };
     const anchor = where.tracks.flatMap((t) => t.clips).find((c) => c.id === o.clip_id)!;
-    if (!("transform" in anchor)) throw new Error(`overrides: ${o.clip_id} is ${anchor.type === "audio" ? "a sound" : "an adjustment layer"}, with nothing to place`);
     const moved = o.x !== undefined || o.y !== undefined || o.scale !== undefined;
-    const members = (moved && anchor.group ? where.tracks.flatMap((t) => t.clips).filter((c) => c.group === anchor.group && "transform" in c) : [anchor]) as VisualClip[];
-    const rest = restOf(view, members);
-    const ax = paramAt(anchor, "transform.x", rest - anchor.start), ay = paramAt(anchor, "transform.y", rest - anchor.start);
+    if (moved && !("transform" in anchor)) throw new Error(`overrides: ${o.clip_id} is ${anchor.type === "audio" ? "a sound" : "an adjustment layer"}, with nothing to place`);
+    const members = (!moved ? [] : anchor.group ? where.tracks.flatMap((t) => t.clips).filter((c) => c.group === anchor.group && "transform" in c) : [anchor]) as VisualClip[];
+    const rest = moved ? restOf(view, members) : 0;
+    const ax = moved ? paramAt(anchor, "transform.x", rest - anchor.start) : 0, ay = moved ? paramAt(anchor, "transform.y", rest - anchor.start) : 0;
     const s = o.scale ?? 1;
     const dx = o.x === undefined ? 0 : o.x - ax, dy = o.y === undefined ? 0 : o.y - ay;
     const changed = new Map<Id, Clip>();
@@ -2223,4 +2223,41 @@ export function expandVersions(a: { versions?: VersionSpec[]; ratios?: VersionRa
   const dup = names.find((n, i) => names.indexOf(n) !== i);
   if (dup !== undefined) throw new Error(`two versions are the same (${dup.trim() || "the master"}); name them apart`);
   return out;
+}
+
+/** Master seconds mapped through the same opening/end-card cut as cutDown.
+ * Removed moments are omitted; the check sheet labels the frames it shows. */
+export function versionCheckFrames(master: Project, version: Project, times: number[], keepEnd?: number): number[] {
+  const total = projectDuration(master), length = projectDuration(version);
+  const card = endCardStart(master);
+  const keep = keepEnd ?? (card === undefined ? 0 : total - card);
+  const tail = Math.max(0, Math.min(keep, length - 1));
+  return times.flatMap((t) => {
+    const f = secondsToFrames(t, master.fps);
+    if (length >= total || f < length - tail) return [Math.min(length - 1, f)];
+    if (tail && f >= total - tail) return [Math.min(length - 1, f - total + length)];
+    return [];
+  });
+}
+
+/** Apply the checker's cut alternative only to a measured uneven fade.
+ * No change to an unmeasured title or the caller's master (ADR-135). */
+export function repairVersionFades(p: Project, fades: NonNullable<CheckMeasured["fades"]>): { project: Project; changed: Id[] } {
+  const slots = new Map<Id, Set<"animIn" | "animOut">>();
+  for (const s of seenTexts(p)) {
+    const fade = fades[s.key];
+    if (!fade) continue;
+    const slot = fade.frame < s.start + s.duration / 2 ? "animIn" : "animOut";
+    if (!s.c[slot]) continue;
+    if (!slots.has(s.c.id)) slots.set(s.c.id, new Set());
+    slots.get(s.c.id)!.add(slot);
+  }
+  if (!slots.size) return { project: p, changed: [] };
+  const tracks = (ts: Track[]) => ts.map((t) => ({ ...t, clips: t.clips.map((c) => {
+    if (c.type !== "text" || !slots.has(c.id)) return c;
+    const q = { ...c };
+    for (const slot of slots.get(c.id)!) delete q[slot];
+    return q;
+  }) }));
+  return { project: { ...p, tracks: tracks(p.tracks), ...(p.compounds ? { compounds: p.compounds.map((k) => ({ ...k, tracks: tracks(k.tracks) })) } : {}) }, changed: [...slots.keys()] };
 }

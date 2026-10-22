@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeProject, runCommand } from "./commands";
-import { adjacentMarker, deleteMarkers, filterMarkers, updateMarker } from "./markers";
+import { addedMarkerCount, adjacentMarker, deleteMarkers, filterMarkers, updateMarker } from "./markers";
 import { createProject, normalizeProject } from "./project/defaults";
 import { projectDuration } from "./project/ops";
 
@@ -111,4 +111,11 @@ it("marker commands snap range seconds and describe duration and chapter for age
   p = runCommand(p, "update_marker", { marker_id: id, duration: 0, chapter: false });
   expect(p.markers[0]).toMatchObject({ duration: 0, chapter: false });
   expect(() => runCommand(p, "update_marker", { marker_id: id, duration: -1 })).toThrow();
+});
+
+it("counts additions separately from removed beats when replacing a shorter grid", () => {
+  const p = project();
+  expect(addedMarkerCount(p, { ...p, markers: p.markers.slice(0, 2) })).toBe(0);
+  expect(addedMarkerCount(p, { ...p, markers: [{ ...p.markers[0], id: "replacement" }] })).toBe(0);
+  expect(addedMarkerCount(p, { ...p, markers: [{ ...p.markers[0], frame: 95 }] })).toBe(1);
 });
