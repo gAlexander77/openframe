@@ -21,9 +21,22 @@ import { analyzeFillers } from "./ai";
 import { runCommand } from "../lib/commands";
 import { autoCaptions } from "./captions";
 import { projectWork } from "./projectWork";
-import { clipTranscript } from "./transcript";
+import { clipTranscript, hearAsset } from "./transcript";
 
 beforeEach(() => { vi.clearAllMocks(); state.edits = 0; projectWork.open(); });
+it("hears only a requested clip window and reuses that window without treating the rest of a VOD as heard", async () => {
+  const p = createProject();
+  const a = { id: "bounded-vod", kind: "video" as const, name: "VOD.mp4", src: "vod.mp4", duration: 7200, hasAudio: true, hasVideo: true };
+  p.assets = [a];
+  await hearAsset(p, a.id, { from: 24, to: 27 });
+  await hearAsset(p, a.id, { from: 24, to: 27 });
+  expect(decodeMono).toHaveBeenCalledTimes(1);
+  expect(decodeMono).toHaveBeenCalledWith(a, 24, 27, 16000, expect.any(Function), expect.any(AbortSignal));
+  expect(transcribePcm).toHaveBeenCalledWith(expect.any(Float32Array), 24, expect.anything(), expect.any(Function), expect.any(AbortSignal));
+  await hearAsset(p, a.id, { from: 60, to: 80 });
+  expect(decodeMono).toHaveBeenCalledTimes(2);
+  expect(decodeMono).toHaveBeenLastCalledWith(a, 60, 80, 16000, expect.any(Function), expect.any(AbortSignal));
+});
 it("get_transcript and filler removal share a whole-asset hearing, including ' um,'", async () => {
   projectWork.open();
   const p = createProject();

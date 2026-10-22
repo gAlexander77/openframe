@@ -36,6 +36,7 @@ export interface ToolInfo {
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "find_clips", "list_catalog"] },
   { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "import_timeline", "export_timeline", "set_project"] },
+  { name: "Clips", blurb: "Turn stream moments into finished clip projects, then export the batch.", tools: ["apply_stream_layout", "create_clips", "export_projects"] },
   { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "create_proxies", "delete_proxies", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
     name: "Timeline",
@@ -81,7 +82,7 @@ const READ_ONLY = new Set(["plan_music", "help", "describe_project", "find_clips
 /** Tools that remove things (all are still undoable, but say so). */
 const DESTRUCTIVE = new Set(["delete_proxies", "delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["create_clips", "export_projects", "create_proxies", "delete_proxies", "import_timeline", "export_timeline", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 
@@ -293,6 +294,17 @@ export const DESIGN = `Design rules (apply them unless the user asks otherwise; 
 export const DESIGN_POINTER = "Design rules: help topic design (hook, pacing, words, type sizes, contrast, color, motion, flashes, sound, loudness, end card), read once for every playbook; check_project measures the result against them.";
 
 export const PLAYBOOKS: Record<string, { title: string; text: string }> = {
+  stream_clips: {
+    title: "Stream clips, from a long VOD to a batch of shorts",
+    text: `1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.
+2. Find moments with find_highlights (include the chat replay when available). Look at candidates with preview_media at their source seconds. Keep clips short, usually 15-60 seconds.
+3. Look at the source with preview_media to find the facecam rectangle (x, y, w, h fractions of the source). create_clips takes the moments directly and applies a stream template: facecam over gameplay, one to three words per caption (default two, pop look), an opening hook and -14 LUFS dialog. Give credit {name, handle, platform} for the opening credit and Follow end card. If find_highlights is unavailable, use range markers labeled Highlight N and Media > Make clips from markers.
+4. Open one returned project; preview_frames and check_project kind social_short. Adjust the hook, credit, captions and framing. These are ordinary clips; a stream group moves, trims and splits together.
+5. export_projects with the returned project_ids (or omit for all clips made this session), folder and loudness -14. Poll export_status for a long export. Each file reports length, loudness and quick check findings. ratios adds other shapes through versions; use 16:9 compilations for YouTube long-form.
+Credit the streamer in every clip and work with permission. Add real editing: captions, a hook and deliberate framing; a bare re-upload is not a finished clip. Editing and credit do not guarantee monetization. Review the current channel and platform rules before publishing.
+
+${DESIGN_POINTER}`,
+  },
   ad: {
     title: "A professional ad",
     text: `Making an ad (15, 30 or 60 s) with these tools:
@@ -355,7 +367,7 @@ ${DESIGN_POINTER}`,
 export const HELP_TOPICS = ["overview", "design", ...Object.keys(PLAYBOOKS), "catalog", "params"];
 
 const typeOf = (s: JsonSchema): string =>
-  s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
+  s.anyOf ? s.anyOf.map(typeOf).join(" | ") : s.enum ? s.enum.map((v) => JSON.stringify(v)).join(" | ") : s.type === "array" ? `${s.items ? typeOf(s.items) : "any"}[]` : s.type === "object" && s.properties ? `{ ${Object.keys(s.properties).join(", ")} }` : (s.type ?? "any");
 
 /** Object parameters several tools share, by their fields, with the tool
  * and parameter whose help lists them: a title's style is 24 rows (about
@@ -377,6 +389,7 @@ export function paramTable(schema: JsonSchema, tool?: string): string {
       const elsewhere = shared && shared.tool !== tool ? `; its fields are ${shared.tool}'s ${shared.param} (help ${shared.tool})` : "";
       rows.push(`| \`${prefix}${k}\` | ${cell(typeOf(p))} | ${(s.required ?? []).includes(k) ? "yes" : ""} | ${cell(p.description ?? "")}${range}${elsewhere} |`);
       if (elsewhere) continue;
+      for (const choice of p.anyOf ?? []) if (choice.properties) walk(choice, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "object" && p.properties) walk(p, `${prefix}${k}.`, depth + 1);
       if (depth < 2 && p.type === "array" && p.items?.type === "object" && p.items.properties) walk(p.items, `${prefix}${k}[].`, depth + 1);
     }

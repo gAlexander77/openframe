@@ -1,3 +1,4 @@
+import { applyStreamLayout, type StreamOptions } from "./streamLayout";
 import { moveEdits, type EditLanding, type EditPoint } from "./editPoints";
 import { placeSourceEdit } from "./drop";
 import { cleanInsertParams, DYNAMICS_PRESETS, editInsert, editInsertOwner, EQ_TYPES, INSERT_NAMES, INSERT_RANGES, newInsert, presetInserts, type DynamicsPreset } from "./audioInserts";
@@ -85,11 +86,12 @@ import { applyDefaultTransitions, type CutsReport, type DefaultTransitionOptions
 import { didYouMean } from "./didYouMean";
 
 export type JsonSchema = {
+  anyOf?: JsonSchema[];
   type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
   description?: string;
   properties?: Record<string, JsonSchema>;
   required?: string[];
-  enum?: (string | number)[];
+  enum?: (string | number | boolean)[];
   items?: JsonSchema;
   minimum?: number;
   maximum?: number;
@@ -170,6 +172,10 @@ const dynamicsSchema = (type: "gate" | "deesser" | "limiter" | "eq") => S.obj({
  * Returns the problems, empty when valid. This is the trust boundary for
  * anything an agent sends. */
 export function validate(value: unknown, schema: JsonSchema, path = "args"): string[] {
+  if (schema.anyOf) {
+    const choices = schema.anyOf.map(s => validate(value, s, path));
+    return choices.some(e => !e.length) ? [] : [`${path} must match one of: ${choices.map(e => e.join("; ")).join(" or ")}`];
+  }
   const errs: string[] = [];
   const t = schema.type;
   if (t === "object") {
@@ -218,6 +224,13 @@ const NUMERIC = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
  * Anything else is left as sent, for validate to refuse.
  */
 export function coerceNumbers(value: unknown, schema: JsonSchema): unknown {
+  if (schema.anyOf) {
+    for (const choice of schema.anyOf) {
+      const v = coerceNumbers(value, choice);
+      if (!validate(v, choice).length) return v;
+    }
+    return value;
+  }
   if ((schema.type === "number" || schema.type === "integer") && typeof value === "string" && NUMERIC.test(value.trim())) return Number(value.trim());
   if (schema.type === "array" && Array.isArray(value) && schema.items) return value.map((v) => coerceNumbers(v, schema.items!));
   if (schema.type === "object" && schema.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
@@ -509,6 +522,13 @@ function runEdits(p: Project, a: Record<string, unknown>, target: { to: number }
   if (report) report.edits = r.edges.map((e) => ({ ...e, seconds: framesToSeconds(e.frame, p.fps) }));
   return r.project;
 }
+
+export const STREAM_REGION_SCHEMA: JsonSchema = { type: "object", description: "Source region in fractions; x/y its top-left corner, positive w/h inside the picture", properties: {
+  x: { type: "number", minimum: 0, maximum: 1, description: "Left edge as a fraction of source width" },
+  y: { type: "number", minimum: 0, maximum: 1, description: "Top edge as a fraction of source height" },
+  w: { type: "number", minimum: 0.0001, maximum: 1, description: "Fraction of source width" },
+  h: { type: "number", minimum: 0.0001, maximum: 1, description: "Fraction of source height" },
+}, required: ["x", "y", "w", "h"], additionalProperties: false };
 
 export const COMMANDS: Command[] = [
   {
@@ -1232,6 +1252,23 @@ export const COMMANDS: Command[] = [
     description: "Rename an imported media file in the project's library; the file on disk keeps its name. Clips without a name of their own show the new name.",
     input: S.obj({ asset_id: S.str("Media id from assets in describe_project"), name: S.str(`The new name, 1 to ${NAME_MAX} characters`) }, ["asset_id", "name"]),
     run: (p, a) => commandError(() => renameMedia(p, String(a.asset_id), String(a.name))),
+  },
+  {
+    name: "apply_stream_layout",
+    description: "Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on gameplay alone. Omit facecam for a full-height gameplay crop. Changes a non-tall canvas to 1080x1920 and reports it. Regions are fractions of the source picture. The Stream layout group moves, trims and splits together; ungroup to edit timing separately.",
+    input: S.obj({ clip_id: S.str("Video clip of the VOD"),
+      facecam: STREAM_REGION_SCHEMA, gameplay: { ...STREAM_REGION_SCHEMA, description: "Gameplay source region; default the full source picture" },
+      split: S.num("Facecam share of the height excluding the gap; default 0.35", { minimum: 0.1, maximum: 0.9 }),
+      facecam_fit: S.str("Facecam fill (default) crops to its band; fit shows the whole region", { enum: ["fill", "fit"] }),
+      gap: S.num("Pixels between the bands; default 0", { minimum: 0, maximum: 1000 }),
+      border: { description: "Facecam band border, or none (default)", anyOf: [S.str("No border", { enum: ["none"] }), S.obj({ color: S.str("CSS border color"), width: S.num("Border width in canvas pixels", { minimum: 0, maximum: 100 }) }, ["color", "width"])] },
+      order: S.str("Band order; default facecam_top", { enum: ["facecam_top", "gameplay_top"] }),
+    }, ["clip_id"]),
+    run: (p, a, report) => commandError(() => {
+      const q = applyStreamLayout(p, String(a.clip_id), a as StreamOptions);
+      if (report && (q.width !== p.width || q.height !== p.height)) (report.notes ??= []).push("Canvas changed to 1080x1920 for the stream layout.");
+      return q;
+    }),
   },
   {
     name: "apply_layout",
@@ -3452,7 +3489,7 @@ export function describeProject(p: Project) {
         // What else departs from the defaults, so an agent can check its work.
         ...(c.disabled ? { disabled: true } : {}),
         ...(c.name ? { name: c.name } : {}),
-        ...(c.group ? { group: c.group } : {}),
+        ...(c.group ? { group: c.group, ...(c.streamLayout ? { group_name: "Stream layout", stream_layout: c.streamLayout } : {}) } : {}),
         ...(c.labelColor ? { label: c.labelColor } : {}),
         ...("pan" in c && c.pan ? { pan: c.pan } : {}),
         ...("fill" in c && c.fill ? { fill: c.fill } : {}),

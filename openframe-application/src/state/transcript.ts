@@ -76,23 +76,24 @@ const models = new Map<Id, string>();
 const languages = new Map<Id, string | null>();
 const listening = new Map<string, Promise<void>>();
 let hearing: Promise<void> = Promise.resolve();
-export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null } = {}, signal = projectWork.signal(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
+export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null; from?: number; to?: number } = {}, signal = projectWork.signal(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
   const asset = ops.getAsset(p, assetId);
   if (!asset?.hasAudio) throw new Error("The media has no speech audio");
+  const from = opts.from ?? 0, to = opts.to ?? asset.duration;
   const model = opts.model ?? models.get(assetId) ?? TRANSCRIPT_MODEL;
   const language = opts.language ?? languages.get(assetId) ?? null;
-  if (!missing(heard.get(assetId), 0, asset.duration) && models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en")) return;
-  const key = `${assetId}:${model}:${language ?? "en"}`;
+  if (!missing(heard.get(assetId), from, to) && models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en")) return;
+  const key = `${assetId}:${model}:${language ?? "en"}:${from}:${to}`;
   const pending = listening.get(key);
   if (pending) return pending;
   // The ASR worker has one model/session. Share simultaneous requests for
   // one source and serialize different hearings, including model changes.
   const task = hearing.catch(() => {}).then(async () => {
     signal.throwIfAborted();
-    const pcm = await decodeMono(asset, 0, asset.duration, 16000, (progress) => onProgress({ stage: "mixing", progress }), signal);
-    const words = await transcribePcm(pcm, 0, { model, language }, onProgress, signal);
+    const pcm = await decodeMono(asset, from, to, 16000, (progress) => onProgress({ stage: "mixing", progress }), signal);
+    const words = await transcribePcm(pcm, from, { model, language }, onProgress, signal);
     signal.throwIfAborted();
-    heard.set(assetId, merge(undefined, 0, asset.duration, assetWords(p, assetId, 0, asset.duration, words)));
+    heard.set(assetId, merge(models.get(assetId) === model && languages.get(assetId) === language ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, words)));
     models.set(assetId, model);
     languages.set(assetId, language);
     changed();

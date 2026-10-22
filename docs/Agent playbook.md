@@ -23,6 +23,15 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.
 
+## Stream clips, from a long VOD to a batch of shorts
+
+1. Import the VOD with import_media. For long files create_proxies for smooth previews; clip projects share the file and playback proxy.
+2. Find moments with find_highlights (include the chat replay when available). Look at candidates with preview_media at their source seconds. Keep clips short, usually 15-60 seconds.
+3. Look at the source with preview_media to find the facecam rectangle (x, y, w, h fractions of the source). create_clips takes the moments directly and applies a stream template: facecam over gameplay, one to three words per caption (default two, pop look), an opening hook and -14 LUFS dialog. Give credit {name, handle, platform} for the opening credit and Follow end card. If find_highlights is unavailable, use range markers labeled Highlight N and Media > Make clips from markers.
+4. Open one returned project; preview_frames and check_project kind social_short. Adjust the hook, credit, captions and framing. These are ordinary clips; a stream group moves, trims and splits together.
+5. export_projects with the returned project_ids (or omit for all clips made this session), folder and loudness -14. Poll export_status for a long export. Each file reports length, loudness and quick check findings. ratios adds other shapes through versions; use 16:9 compilations for YouTube long-form.
+Credit the streamer in every clip and work with permission. Add real editing: captions, a hook and deliberate framing; a bare re-upload is not a finished clip. Editing and credit do not guarantee monetization. Review the current channel and platform rules before publishing.
+
 ## A professional ad
 
 Making an ad (15, 30 or 60 s) with these tools:

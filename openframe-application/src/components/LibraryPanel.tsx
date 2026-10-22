@@ -1,3 +1,4 @@
+import { MakeClipsDialog, StreamLayoutsTab } from "./ClipDialogs";
 import { createProxies, deleteProxies, proxyAction, proxyDetails, proxyStatus, useProxies } from "../state/proxies";
 import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -67,6 +68,7 @@ import { renameMedia } from "../state/rename";
 
 const TABS: { id: LeftTab; label: string; icon: typeof Film }[] = [
   { id: "media", label: "Media", icon: Film },
+  { id: "layouts", label: "Layouts", icon: LayoutGrid },
   { id: "audio", label: "Audio", icon: Music },
   { id: "text", label: "Text", icon: Type },
   { id: "stickers", label: "Stickers", icon: Sticker },
@@ -131,6 +133,7 @@ export function LibraryPanel() {
       </nav>
       <div className="lib-body" key={tab}>
         {tab === "media" && <MediaTab kind="all" />}
+        {tab === "layouts" && <StreamLayoutsTab />}
         {tab === "audio" && <MediaTab kind="audio" />}
         {tab === "text" && <TextTab />}
         {tab === "stickers" && <StickersTab />}
@@ -158,6 +161,7 @@ function useThumbs() {
  * MP3 used to vanish into Audio); Audio shows just the sound files. */
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
   const [selectedMedia, setSelectedMedia] = useState<string[]>([]);
+  const [clipAsset, setClipAsset] = useState<Asset | null>(null);
   useProxies();
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
@@ -248,7 +252,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
               onPreview={() => setSource(a)}
               onMenu={(e) => {
                 e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id), selectedMedia.includes(a.id) ? selectedMedia : [a.id]) });
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id), selectedMedia.includes(a.id) ? selectedMedia : [a.id], () => setClipAsset(a)) });
               }}
               renaming={renaming === a.id}
               onRename={(name) => {
@@ -273,6 +277,7 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
       )}
       {kind === "audio" && <SoundEffects />}
       {kind === "audio" && <AmbienceBeds />}
+      {clipAsset && <MakeClipsDialog asset={clipAsset} onClose={() => setClipAsset(null)} />}
       {managing && <MediaManager onClose={() => setManaging(false)} />}
       {source && <SourceMonitor asset={source} onClose={() => setSource(null)} />}
     </div>
@@ -364,7 +369,7 @@ function RecordButton() {
 
 /** A media card's right-click menu. Removing takes the media out of the
  * project only; a file the timeline uses says so and takes its clips. */
-function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void, assetIds: string[]): MenuItem[] {
+function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void, assetIds: string[], makeClips: () => void): MenuItem[] {
   const remove = (withClips: boolean) => {
     try {
       edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
@@ -375,6 +380,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
   return [
     { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
     { label: "Preview", onSelect: preview },
+    { label: "Make clips from markers", disabled: asset.kind !== "video", onSelect: makeClips },
     { label: assetIds.length > 1 ? `Create proxies (${assetIds.length})` : "Create proxy", disabled: assetIds.some((id) => store.document().assets.find((a) => a.id === id)?.kind !== "video"), children: [
       ...(["half", "quarter", "720p"] as const).map((size) => ({ label: size === "half" ? "Half (default)" : size === "quarter" ? "Quarter" : "720p", onSelect: () => proxyAction(Promise.resolve().then(() => createProxies(assetIds, size))) })),
     ] },

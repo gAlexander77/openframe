@@ -1508,6 +1508,35 @@ In the text inspector, expand **Style range**, choose a word, and set its color 
 
 Select two to four overlapping pictures and open **Layouts** in the inspector. A picture on the main track stays there (in picture in picture it must be the full-frame one), so the timeline never ripples; the others stack above it on Layout tracks. Tiles offer side-by-side, stacked, grid, triptych (three pictures), and picture-in-picture arrangements. **Fill** (the default) crops each picture to its cell; **Fit** shows the whole picture centered in it, for screen recordings (`fit: "contain"`, with `background` filling the cell behind it as an editable shape). The Layout tracks go directly above the highest of the chosen clips' tracks, so labels already above them stay on top. `apply_layout` also accepts gap and margin (fractions of the shorter canvas side), rounded mask radius, editable border shapes, and a slide or scale entrance. Clips are placed in input order, with the first PIP picture full frame. Layout replaces position, scale, rotation, crop, mask and their keys, plus clip animations, canvas fill, edge repetition and wiggle. Other effects remain. The whole layout is one undo step. Borders are separate shapes grouped with their pictures; remove an old border before applying another bordered layout.
 
+## Stream clips
+
+- **Stream clips:** Library > Layouts > **Stream: facecam over gameplay**
+  lets a person place the facecam box on the source in the viewer, then
+  turns one VOD clip into grouped facecam and gameplay bands. A wide or
+  square canvas changes to 1080 x 1920. `apply_stream_layout` also accepts
+  gameplay and facecam source regions, band split, order, fit, gap and an
+  editable border. Sound plays once. Moving, trimming or splitting either
+  band carries the group; split halves get separate groups. Without a
+  facecam, gameplay fills the frame around its region.
+- **Make many clip projects:** `create_clips` takes source-second moments
+  and a shared stream, full 16:9 or vertical-fill template. Defaults add
+  two-word pop captions, an opening brand headline and -14 LUFS dialog;
+  supplied streamer credit adds a small opening line and a two-second
+  Follow end card. Each saved project shares the VOD and playback proxy.
+  Only each moment's source window is transcribed. The original project
+  stays open with its undo history. Media's context menu offers **Make
+  clips from markers** for range markers labeled Highlight N, with a
+  source facecam box, layout, captions, hook and credit controls.
+- **Export selected projects:** Home cards have export selection boxes.
+  **Export selected** asks for a folder, loudness and an optional extra
+  shape. `export_projects` accepts saved project IDs, or defaults to all
+  projects made by `create_clips` this session. It renders sequentially,
+  returns paths, lengths, measured loudness and quick social-short check
+  findings, and reports long jobs through `export_status`. Other shapes
+  use the versions path. The editor stays unchanged; the browser uses one
+  save dialog per file and refuses desktop folders.
+  See [[ADR-141 Stream clips use grouped bands and detached project documents]].
+
 ## Group transforms
 
 A multi-selection has one viewer box: drag it to move, use a corner to scale the arrangement, or the rotation handle to rotate it about its combined center. Each gesture is one undo step. `transform_group` accepts a `group_id` or explicit `clip_ids`, canvas-fraction x/y offsets, a scale multiplier and a rotation offset in degrees. Add `at` in timeline seconds to key every visual member using its own clip-relative time. Existing keys are preserved; audio members remain unchanged. Without `at`, geometry is evaluated at the latest member start and existing keyed paths receive keys there. Times outside a member clamp to that member’s span.
