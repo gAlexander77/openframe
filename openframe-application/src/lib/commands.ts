@@ -1,4 +1,5 @@
 import { moveEdits, type EditLanding, type EditPoint } from "./editPoints";
+import { highlightMarkers } from "./highlightMarkers";
 import { placeSourceEdit } from "./drop";
 import { cleanInsertParams, DYNAMICS_PRESETS, editInsert, editInsertOwner, EQ_TYPES, INSERT_NAMES, INSERT_RANGES, newInsert, presetInserts, type DynamicsPreset } from "./audioInserts";
 import type { Insert, InsertType } from "./project/types";
@@ -89,7 +90,7 @@ export type JsonSchema = {
   description?: string;
   properties?: Record<string, JsonSchema>;
   required?: string[];
-  enum?: (string | number)[];
+  enum?: (string | number | boolean)[];
   items?: JsonSchema;
   minimum?: number;
   maximum?: number;
@@ -202,7 +203,7 @@ export function validate(value: unknown, schema: JsonSchema, path = "args"): str
     if (schema.maximum !== undefined && value > schema.maximum) errs.push(`${path} must be <= ${schema.maximum}`);
   } else if (t === "string" && typeof value !== "string") errs.push(`${path} must be a string`);
   else if (t === "boolean" && typeof value !== "boolean") errs.push(`${path} must be true or false`);
-  if (schema.enum && !schema.enum.includes(value as string | number)) {
+  if (schema.enum && !schema.enum.includes(value as string | number | boolean)) {
     errs.push(`${path} must be one of ${schema.enum.join(", ")}`);
   }
   return errs;
@@ -2482,6 +2483,12 @@ export const COMMANDS: Command[] = [
       if (track.locked) throw new CommandError(`track ${track.name} is locked`);
       return splitAtSourceTimes(p, clip.id, a.times as number[]);
     },
+  },
+  {
+    name: "add_highlight_markers",
+    description: "Add reviewed highlight ranges in SOURCE seconds as Highlight N range markers following a timeline clip. Replaces that clip's previous Highlight N markers, in one undo step. Ranges must be entirely inside the clip.",
+    input: S.obj({ clip_id: S.str("Source video or audio clip on the timeline"), ranges: { type: "array", description: "Ranked highlight windows in source seconds", items: S.obj({ start: S.num("Source start in seconds", { minimum: 0 }), end: S.num("Source end in seconds", { minimum: 0 }) }, ["start", "end"]) } }, ["clip_id", "ranges"]),
+    run: (p, a) => highlightMarkers(p, String(a.clip_id), a.ranges as { start: number; end: number }[]),
   },
   {
     name: "add_markers",

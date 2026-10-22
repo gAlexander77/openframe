@@ -76,6 +76,34 @@ const models = new Map<Id, string>();
 const languages = new Map<Id, string | null>();
 const listening = new Map<string, Promise<void>>();
 let hearing: Promise<void> = Promise.resolve();
+/** Highlight refinement shares the per-asset words and ASR queue, but only
+ * decodes/hears the candidate plus its small context margin. */
+export async function hearWindow(p: Project, assetId: Id, from: number, to: number, signal: AbortSignal, onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void): Promise<Word[]> {
+  const asset = ops.getAsset(p, assetId);
+  if (!asset?.hasAudio) return [];
+  const task = hearing.catch(() => {}).then(async () => {
+    signal.throwIfAborted();
+    const compatible = models.get(assetId) === TRANSCRIPT_MODEL && (languages.get(assetId) ?? "en") === "en";
+    if (!compatible || missing(heard.get(assetId), from, to)) {
+      const pcm = await decodeMono(asset, from, to, 16000, progress => onProgress({ stage: "mixing", progress }), signal);
+      const words = await transcribePcm(pcm, from, { model: TRANSCRIPT_MODEL, language: null }, onProgress, signal);
+      signal.throwIfAborted();
+      const previous = compatible ? heard.get(assetId) : undefined;
+      heard.set(assetId, merge(previous, from, to, assetWords(p, assetId, from, to, words)));
+      models.set(assetId, TRANSCRIPT_MODEL); languages.set(assetId, null); changed();
+    }
+    return wordsIn(heard.get(assetId)!.words, from, to);
+  });
+  hearing = task.then(() => {}, () => {});
+  // Cancel promptly even while another tool owns the ASR queue. The queued
+  // task still checks the signal before it starts and never runs inference.
+  return new Promise<Word[]>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+    task.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
 export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null } = {}, signal = projectWork.signal(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
   const asset = ops.getAsset(p, assetId);
   if (!asset?.hasAudio) throw new Error("The media has no speech audio");

@@ -3,6 +3,23 @@
    color only marks each tool's icon and the running state. */
 
 .ai-tab { display: flex; flex-direction: column; gap: 10px; }
+.highlight-fields { display: grid; gap: 8px; min-width: 0; }
+.highlight-fields label { display: grid; gap: 4px; min-width: 0; font-size: var(--fs-xs); color: var(--text-2); }
+.highlight-fields select, .highlight-fields input[type="number"] { width: 100%; min-width: 0; }
+.highlight-numbers { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.highlight-chat { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; min-width: 0; }
+.highlight-chat span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-xs); color: var(--text-2); }
+.highlight-fields .highlight-transcribe { display: flex; align-items: center; }
+.highlight-status { margin: 0; font-size: var(--fs-xs); color: var(--text-2); overflow-wrap: anywhere; }
+.highlight-results { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; max-height: 360px; overflow: auto; }
+.highlight-results li { min-width: 0; padding: 8px; border-radius: var(--radius-sm); background: var(--bg-inset); }
+.highlight-pick { display: grid; gap: 4px; width: 100%; text-align: left; color: var(--text-1); background: transparent; border: 0; padding: 0; }
+.highlight-pick strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.highlight-pick span, .highlight-results p, .highlight-score { font-size: var(--fs-xs); color: var(--text-2); }
+.highlight-results p { margin: 6px 0 0; overflow-wrap: anywhere; }
+.highlight-score { display: flex; align-items: center; gap: 6px; }
+.highlight-score meter, .ai-highlights progress { flex: 1; min-width: 0; width: 100%; accent-color: var(--accent); }
+.highlight-snippet { font-style: italic; }
 
 /* ---- target banner --------------------------------------------------------- */
 .ai-target {

@@ -23,6 +23,14 @@ How an AI model should make a video with OpenFrame's MCP tools. A model gets the
 - End: logo, product, one call to action and where to go, held 2-3 s.
 - Check: preview_frames across the whole piece, preview_motion around cuts and moves, check_project for the rules above; fix, check again, then export.
 
+## Clips from a long stream
+
+Find the moments before cutting a stream VOD (with the streamer's permission):
+1. new_project and import_media the VOD. Keep source-second times: findings refer to the original file, regardless of where its clip is placed.
+2. find_highlights with asset_id (or clip_id when it is on the timeline), count, min_length and max_length. Supply chat_file when a replay exists: sudden chat activity, emotes and clip requests often beat sound alone. Desktop takes an absolute chat path; the web takes a URL. times adds viewer-made clip times or streamer markers in source seconds. Audio streams in bounded memory and reuses per-file features. scenes auto samples one small picture per second only on video up to two hours; ask scenes true explicitly on longer VODs.
+3. preview_media at each candidate's start, peak and end; listen and watch to choose the moments with context and payoff. Scores are signal suggestions, not editorial judgments: game effects and music can resemble a shout. transcribe true hears only candidate windows plus context, adds snippet/title, snaps sentence boundaries and scores keywords (no way, let's go, clip that). It downloads the speech model on first use. markers true with clip_id adds following Highlight N range markers in one undo step; add_highlight_markers marks already reviewed ranges without another analysis.
+4. Then create_clips from the chosen source-second windows, preserving a few seconds of lead-in and the payoff, and export_projects to deliver the resulting projects.
+
 ## A professional ad
 
 Making an ad (15, 30 or 60 s) with these tools:

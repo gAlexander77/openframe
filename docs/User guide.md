@@ -474,6 +474,22 @@ tools need a separate download or installation; local inference can still
 require network access to obtain model files. The current AI assistant uses a
 local model server such as Ollama or LM Studio.
 
+**Find the moments in a stream:** import the VOD, place it on the timeline,
+then open **AI tools > Find highlights**. Choose the media and optionally
+**Choose chat replay** (TwitchDownloader/Twitch JSON, chat-downloader JSON
+or JSONL, or timestamped text, up to 32 MiB). Set Count and the minimum and
+maximum seconds, then Run. Cancel stops a reading. The first pass streams
+the audio; repeat runs reuse its features. Scores suggest moments to
+review, not guaranteed highlights: music and game sounds can resemble a
+shout. Select a result to seek or use its Play button. **Add markers** adds
+all results as Highlight N ranges following that source clip, one undo step;
+rerunning replaces those ranges. A range follows its start through edits.
+Turn on **Hear candidates** for local Whisper quotes and sentence boundaries;
+only candidates plus five seconds of context are heard, and first use may
+download a speech model. Agents use `find_highlights` (source-second times,
+optional viewer clip times and transcript keywords), `preview_media` to
+review, and `add_highlight_markers` to mark a reviewed reading.
+
 **Remove a background:** select a video clip, open Video > Remove BG and
 turn on Auto removal (or use the AI tools card). The first time downloads
 the model (88 MB, or 0.5 MB on a computer without a capable GPU); after

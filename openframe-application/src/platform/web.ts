@@ -59,6 +59,39 @@ const savePicker = () =>
 
 export const web: Platform = {
   kind: "web",
+  async openChatReplay(path, signal) {
+    // ponytail: JSON replays are parsed whole. Cap input at 32 MiB; a
+    // streaming tokenizer would admit larger, very busy chat replays.
+    let file: Blob, name: string;
+    if (path !== undefined) {
+      if (!/^(https?:|blob:|data:)/i.test(path)) throw new Error("The web build accepts chat replay URLs only.");
+      const response = await fetch(path, { signal });
+      if (!response.ok) throw new Error(`Chat replay address answered ${response.status}`);
+      if (Number(response.headers.get("content-length")) > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB.");
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error("Chat replay address returned no body");
+      const parts: BlobPart[] = [];
+      let bytes = 0;
+      try {
+        for (;;) {
+          signal?.throwIfAborted();
+          const { value, done } = await reader.read();
+          if (done) break;
+          bytes += value.byteLength;
+          if (bytes > 32 * 1024 * 1024) { await reader.cancel(); throw new Error("Chat replay exceeds 32 MiB."); }
+          parts.push(new Uint8Array(value));
+        }
+      } finally { reader.releaseLock(); }
+      file = new Blob(parts); name = "Chat replay";
+    } else {
+      const picked = (await pickFiles(".json,.jsonl,.txt"))[0];
+      if (!picked) return null;
+      file = picked; name = picked.name;
+    }
+    if (file.size > 32 * 1024 * 1024) throw new Error("Chat replay exceeds 32 MiB. Split it before importing.");
+    signal?.throwIfAborted();
+    return { name, text: await file.text() };
+  },
   // ponytail: browser proxy generation awaits mediabunny Conversion (Roadmap).
   async makePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },
   async deletePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },

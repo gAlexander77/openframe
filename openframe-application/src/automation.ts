@@ -1,3 +1,4 @@
+import { findAssetHighlights, type HighlightRequest } from "./state/highlights";
 import { createProxies, deleteProxies } from "./state/proxies";
 import { playbackProxyState } from "./engine/playbackProxies";
 // The in-page automation surface: `window.videoEditor`. The same command
@@ -373,7 +374,8 @@ const mcpHost: McpHost = {
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>
-    tool === "autoCaptions" ? (needProject(), autoCaptions("", options))
+    tool === "findHighlights" ? (needProject(), findAssetHighlights(options as HighlightRequest))
+    : tool === "autoCaptions" ? (needProject(), autoCaptions("", options))
     : tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
     : tool === "addAmbience" ? (needProject(), addAmbience(options as unknown as AmbienceRequest))
     : tool === "generateMusic" ? (needProject(), generateMusic(options))

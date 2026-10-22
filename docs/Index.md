@@ -578,3 +578,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-137 Timeline interchange shares one import boundary]] — OTIO/FCPXML imports, FCPXML and CMX EDL exports, frame clocks, connected lanes and relinkable media.
 
 - [[ADR-136 Split compound sound, wide glow and version details keep their continuity]] — continuous compound compression, smooth wide glows, nested callouts, captions above rings, larger tall end cards and nearby silent joins.
+
+- [[ADR-140 Highlight discovery streams features and refines candidates]] ? bounded mono analysis, rolling context and chat signals, candidate-only speech, shared UI/MCP results and following range markers.

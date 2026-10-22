@@ -11,6 +11,7 @@ import { aiStore, duckUnderSpeech, markBeats, NEEDS, normalizeLoudness, reduceNo
 import { LEVELS, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { store, useEditor } from "../state/store";
 import "./ai-tools.css";
+import { HighlightsCard } from "./HighlightsCard";
 
 type Icon = typeof Film;
 
@@ -37,6 +38,7 @@ export function AiToolsTab() {
     <div className="lib-content ai-tab">
       <TargetBanner />
       <div className="ai-cards">
+        <HighlightsCard />
         <ToolCard tool="silences" icon={AudioWaveform} title="Remove silences" blurb="Cut the pauses out of speech and close the gaps." action="Remove" settings={<SilenceSettings />} />
         <ToolCard tool="fillers" icon={Speech} title="Remove filler words" blurb="Cut the ums out of speech and close the gaps." action="Remove" settings={<FillerSettings />} />
         <ToolCard tool="scenes" icon={Clapperboard} title="Split scenes" blurb="Find every shot change in a video." action={scenesOut === "markers" ? "Mark" : "Split"} settings={<SceneSettings />} />

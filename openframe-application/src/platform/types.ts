@@ -51,6 +51,8 @@ export interface ExportTarget {
 
 export interface Platform {
   kind: "desktop" | "web";
+  /** Chat replay picker (32 MiB maximum); explicit locations are absolute desktop paths or web URLs. */
+  openChatReplay(path?: string, signal?: AbortSignal): Promise<{ name: string; text: string } | null>;
   /** Ask the user for media files. */
   pickMedia(): Promise<ImportedFile[]>;
   /** Take files dropped onto the window (web) into the app's keeping. */
