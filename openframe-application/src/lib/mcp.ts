@@ -1,3 +1,4 @@
+import { createJobRegistry, type JobContext, type JobRegistry } from "./jobs";
 import type { CreateClipsRequest, ExportProjectsRequest } from "./clipProjects";
 import { STREAM_REGION_SCHEMA } from "./commands";
 // The Model Context Protocol, transport-agnostic: JSON-RPC 2.0 messages in,
@@ -68,6 +69,9 @@ export interface JsonRpcResponse {
 export interface McpHost {
   name: string;
   version: string;
+  jobs?: JobRegistry;
+  jobScope?(): { project: string; signal: AbortSignal };
+  runJob?<T>(context: JobContext, work: () => Promise<T>): Promise<T>;
   createClips?(request: CreateClipsRequest): Promise<unknown>;
   exportProjects?(request: ExportProjectsRequest): Promise<unknown>;
   /** False where export_video and export_versions cannot write files (the
@@ -524,7 +528,7 @@ export const APP_TOOLS: AppTool[] = [
       times: { type: "array", items: { type: "number", minimum: 0 }, description: "Viewer clips or streamer markers in source seconds; strong moment hints" },
       keywords: { type: "array", items: { type: "string" }, description: "Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true" },
       transcribe: { type: "boolean", description: "Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false)" },
-      scenes: { enum: [true, false, "auto"], description: "Sample one 96 px frame per second (auto by default: enabled for video up to 2 hours, disabled for longer files)" },
+      scenes: { enum: [true, false, "auto"], description: "Sample 96 px frames every 1 s, or every 4 s past 20 minutes; at most 75 s spent sampling. scene_sampling reports interval, samples, coverage and elapsed time. auto enables video up to 2 hours" },
       weights: { ...obj({
         audio: { type: "number", minimum: 0, maximum: 10, description: "Audio excitement weight (default 0.5)" },
         speech: { type: "number", minimum: 0, maximum: 10, description: "Voice activity preference (default 0.1)" },
@@ -539,23 +543,19 @@ export const APP_TOOLS: AppTool[] = [
   },
   {
     name: "create_clips",
-    description: "Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; short batches avoid speech-model timeouts.",
+    description: "Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; long batches return a job to poll.",
     inputSchema: obj({ asset_id: { type: "string", description: "Imported video VOD asset ID" }, clips: { type: "array", description: "Moments in source seconds, in desired project order", items: obj({ start: { type: "number", minimum: 0, description: "Source start seconds" }, end: { type: "number", minimum: 0, description: "Source end seconds, after start" }, title: { type: "string", description: "Hook words and default project name" }, name: { type: "string", description: "Project name override" }, peak: { type: "number", minimum: 0, description: "Optional find_highlights peak; accepted unchanged" } }, ["start", "end"]) }, template: CLIP_TEMPLATE_SCHEMA }, ["asset_id", "clips"]),
     call: async (h, a) => { if (!h.createClips) throw new Error("Clip creation is unavailable in this host"); return appJson(await h.createClips(a as unknown as CreateClipsRequest)); },
   },
   {
     name: "export_projects",
-    description: "Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.",
+    description: "Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll job_status or export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.",
     inputSchema: obj({ project_ids: { type: "array", items: { type: "string" }, description: "Saved project IDs in order; default all projects create_clips made in this session" }, folder: FOLDER, loudness: { type: "number", minimum: -40, maximum: -5, description: "Integrated LUFS target; default -14" }, resolution: { type: "string", enum: ["480p", "720p", "1080p", "2k", "4k"], description: "Output short side; default project resolution" }, ratios: { type: "array", items: { type: "string", enum: [...VERSION_RATIOS] }, description: "Additional shapes; the original is always exported" }, replace: REPLACE }),
     call: async (h, a) => {
       if (!h.exportProjects) throw new Error("Project batch export is unavailable in this host");
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
-      const done = h.exportProjects(a as ExportProjectsRequest);
-      done.catch(() => {});
-      // ponytail: the desktop bridge gives calls 300 s; beyond 240 s poll export_status.
-      const waited = await Promise.race([done, new Promise(r => setTimeout(() => r(null), 240_000))]);
-      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+      return appJson(await h.exportProjects(a as ExportProjectsRequest));
     },
   },
   {
@@ -826,11 +826,7 @@ export const APP_TOOLS: AppTool[] = [
     call: async (h, a) => {
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
-      const done = h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, chapters: a.chapters, folder: a.folder, replace: a.replace }));
-      done.catch(() => {}); // after the wait below, export_status reports a failure
-      // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
-      const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
-      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+      return appJson(await h.exportVideo(given({ name: a.name, format: a.format, resolution: a.resolution, quality: a.quality, loudness: a.loudness, start: a.start, end: a.end, captions: a.captions, chapters: a.chapters, folder: a.folder, replace: a.replace })));
     },
   },
   {
@@ -865,7 +861,7 @@ APP_TOOLS.push(
   },
   {
     name: "auto_captions",
-    description: "Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Answers count, track_id, first and last captions, seconds covered and words heard; detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.",
+    description: "Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Hears only played source windows plus 3 s context per edge. Answers count, track_id, first and last captions, seconds covered, words heard, audio_seconds actually heard, hearing elapsed_seconds and model (default base.en); detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.",
     inputSchema: obj({
       replace: { type: "boolean", description: "Remove existing captions first (default true)" },
       words_per_caption: { type: "integer", minimum: 1, maximum: 3, description: "Words per caption, with spoken-word times for highlight; omitted makes whole readable lines" },
@@ -883,13 +879,13 @@ APP_TOOLS.push(
   },
   {
     name: "get_transcript",
-    description: "Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).",
+    description: "Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). Delete words by passing their spans to cut_ranges (Premiere's text-based editing).",
     inputSchema: obj({ clip_id: clipId }, ["clip_id"]),
     call: async (h, a) => appJson(await h.ai("clipTranscript", String(a.clip_id), {})),
   },
   {
     name: "remove_filler_words",
-    description: "Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe \"uh\", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's whole-source hearing, so the tools agree.",
+    description: "Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe \"uh\", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's clip-window hearing and cached words. Reports audio_seconds, elapsed_seconds and model.",
     inputSchema: obj({ clip_id: clipId, model: { type: "string", description: "Whisper model id (default onnx-community/whisper-base.en_timestamped)" } }, ["clip_id"]),
     call: async (h, a) => appJson(await h.ai("removeFillers", String(a.clip_id), given({ model: a.model }))),
   },
@@ -1323,13 +1319,36 @@ APP_TOOLS.push(
       }
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
-      const done = h.exportVersions(req);
-      done.catch(() => {}); // after the wait below, export_status reports a failure
-      const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
-      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+      return appJson(await h.exportVersions(req));
     },
   },
 );
+
+const LONG_TOOLS = new Set([
+  "find_highlights", "get_transcript", "auto_captions", "remove_filler_words", "remove_silences", "split_scenes", "mark_beats", "normalize_loudness", "duck_under_speech", "analyze_music", "review_voiceover", "add_voiceover", "text_to_speech", "retake_voiceover", "generate_music", "match_color", "auto_adjust", "create_clips", "remove_background", "text_behind_subject", "reduce_noise", "stabilize_clip", "track_motion", "auto_reframe", "sync_audio", "measure_loudness", "export_projects", "export_video", "export_versions", "add_sound_effect", "add_ambience", "import_media", "create_proxies", "delete_proxies", "preview_audio", "preview_media", "preview_frames", "preview_motion", "preview_frame", "check_project",
+]);
+const fallbackJobs = new WeakMap<McpHost, JobRegistry>();
+const jobsFor = (h: McpHost) => {
+  if (h.jobs) return h.jobs;
+  let jobs = fallbackJobs.get(h);
+  if (!jobs) { jobs = createJobRegistry(); fallbackJobs.set(h, jobs); }
+  return jobs;
+};
+const jobAnswer = (status: ReturnType<JobRegistry["status"]>) => {
+  const result = status.result as ToolResult | undefined;
+  let answer: unknown = result;
+  if (result?.content.length === 1 && result.content[0].type === "text") {
+    try { answer = JSON.parse(result.content[0].text); } catch { answer = result.content[0].text; }
+  }
+  return { ...status, ...(result ? { result: answer } : {}), ...(status.state === "running" ? { note: "call job_status with job_id; cancel_job stops it" } : {}) };
+};
+APP_TOOLS.push(
+  { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Results stay for 30 minutes after completion; switching projects cancels running work. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" } }), call: (h, a) => json(a.job_id ? jobAnswer(jobsFor(h).status(String(a.job_id))) : jobsFor(h).all().map(jobAnswer)) },
+  { name: "cancel_job", description: "Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.", inputSchema: obj({ job_id: { type: "string", description: "Job ID to cancel, from a long tool or job_status" } }, ["job_id"]), call: (h, a) => json(jobAnswer(jobsFor(h).cancel(String(a.job_id)))) },
+);
+for (const tool of APP_TOOLS) if (LONG_TOOLS.has(tool.name)) {
+  tool.inputSchema = { ...tool.inputSchema, properties: { ...tool.inputSchema.properties, wait: { type: "number", minimum: 0, maximum: 45, description: "Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it" } } };
+}
 
 const APP_INDEX = new Map(APP_TOOLS.map((t) => [t.name, t]));
 
@@ -1347,6 +1366,7 @@ const GUIDE = `You are editing a video in the user's video editor (OpenFrame); e
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Finished results stay 30 minutes in this app session; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
@@ -1460,8 +1480,22 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
             }
           };
           const before = annotations(name).readOnlyHint ? undefined : look();
-          const r = await app.call(host, args);
-          return ok(req.id, before ? withMoves(r, before, look()) : r);
+          const invoke = async () => {
+            const r = await app.call(host, args);
+            return before ? withMoves(r, before, look()) : r;
+          };
+          if (!LONG_TOOLS.has(name)) return ok(req.id, await invoke());
+          const jobs = jobsFor(host), scope = host.jobScope?.();
+          const project = scope?.project ?? String((look() as { id?: string })?.id ?? "");
+          const existing = jobs.all().find(j => j.tool === name && j.project_id === project && j.state === "running");
+          if (existing) return ok(req.id, json(jobAnswer(existing)));
+          const { wait, ...options } = args;
+          args = options;
+          const id = jobs.start(name, project, scope?.signal, context => host.runJob ? host.runJob(context, invoke) : invoke());
+          const status = await jobs.wait(id, Number(wait ?? 45));
+          if (status.state === "done") return ok(req.id, status.result);
+          if (status.state === "failed") throw new Error(status.error);
+          return ok(req.id, json(jobAnswer(status)));
         }
         if (!COMMANDS.some((c) => c.name === name)) {
           const meant = didYouMean(name, listTools().map((t) => t.name));

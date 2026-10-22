@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 190 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 192 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -21,6 +21,7 @@ You are editing a video in the user's video editor (OpenFrame); every edit shows
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
+Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Finished results stay 30 minutes in this app session; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
@@ -53,7 +54,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `apply_default_transitions`, `match_color`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
 - **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `add_audio_insert`, `update_audio_insert`, `move_audio_insert`, `remove_audio_insert`, `set_dynamics`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
-- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
+- **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`, `job_status`, `cancel_job`
 
 ## Start here
 
@@ -245,7 +246,7 @@ Rank exciting moments in a long VOD using local audio excitement and speech, opt
 | `times` | number[] |  | Viewer clips or streamer markers in source seconds; strong moment hints |
 | `keywords` | string[] |  | Phrases such as no way or clip that; scored in candidate transcripts when transcribe is true |
 | `transcribe` | boolean |  | Hear candidate windows plus 5 s margin with local Whisper, snap sentences, add snippet/title and keyword scores (default false) |
-| `scenes` | true \| false \| "auto" |  | Sample one 96 px frame per second (auto by default: enabled for video up to 2 hours, disabled for longer files) |
+| `scenes` | true \| false \| "auto" |  | Sample 96 px frames every 1 s, or every 4 s past 20 minutes; at most 75 s spent sampling. scene_sampling reports interval, samples, coverage and elapsed time. auto enables video up to 2 hours |
 | `weights` | { audio, speech, chat, scenes, times, keywords } |  | Relative signal weights; only present signals contribute, score clamped to 0-1 |
 | `weights.audio` | number |  | Audio excitement weight (default 0.5) (0..10) |
 | `weights.speech` | number |  | Voice activity preference (default 0.1) (0..10) |
@@ -254,6 +255,7 @@ Rank exciting moments in a long VOD using local audio excitement and speech, opt
 | `weights.times` | number |  | Given viewer-clip hints (default 0.8) (0..10) |
 | `weights.keywords` | number |  | Candidate transcript keyword bonus (default 0.3) (0..1) |
 | `markers` | boolean |  | Add Highlight N range markers following clip_id (or a covering clip of asset_id), replacing its earlier highlight markers as one undo step (default false) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -305,7 +307,7 @@ Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on game
 
 ### create_clips
 
-Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; short batches avoid speech-model timeouts.
+Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; long batches return a job to poll.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -341,10 +343,11 @@ Make and save one edited project per source moment, sharing the VOD and its play
 | `template.loudness` | number |  | Dialog normalization target LUFS; default -14 (-40..-5) |
 | `template.lead_in` | number |  | Extra source seconds before each moment, clamped to source start; default 0 (0..60) |
 | `template.lead_out` | number |  | Extra source seconds after each moment, clamped to source end; default 0 (0..60) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### export_projects
 
-Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.
+Export saved projects sequentially, plus optional other shapes through the versions path. Default IDs are the projects create_clips made in this session. Default loudness -14 LUFS. Reports each file's path, seconds, measured loudness and quick social_short check findings (including errors). The open project and undo stay unchanged. Long batches answer state running; poll job_status or export_status. Desktop writes into folder or Videos; the web uses one save dialog per file.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -354,6 +357,7 @@ Export saved projects sequentially, plus optional other shapes through the versi
 | `resolution` | "480p" \| "720p" \| "1080p" \| "2k" \| "4k" |  | Output short side; default project resolution |
 | `ratios` | "16:9" \| "9:16" \| "1:1" \| "4:5" \| "original"[] |  | Additional shapes; the original is always exported |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Media
 
@@ -368,6 +372,7 @@ Import media files into the project by absolute path (desktop) or URL. What a fi
 | `files` | { src, name }[] | yes | Files to import |
 | `files[].src` | string | yes | Absolute path or URL |
 | `files[].name` | string |  | The name the library shows (default the file's name); any text, it does not decide the format |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -383,6 +388,7 @@ Desktop only: make smaller playback copies, one asset at a time, as one undoable
 |---|---|---|---|
 | `asset_ids` | string[] | yes | Video asset IDs to make playback proxies for |
 | `size` | "half" \| "quarter" \| "720p" |  | Half or quarter of each dimension, or 720 pixels on the short side; default half |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### delete_proxies
 
@@ -391,6 +397,7 @@ Desktop only: remove playback proxy references and their cached files. Agents ra
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `asset_ids` | string[] | yes | Video asset IDs whose playback proxies to delete |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_media
 
@@ -748,6 +755,7 @@ Find every shot change in a video clip and split there (or drop markers). Return
 | `clip_id` | string | yes | Video or audio clip id |
 | `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
 | `output` | "split" \| "markers" |  | Default split |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### group_clips
 
@@ -950,6 +958,7 @@ Compose and render an original, royalty-free score on this computer (no samples,
 | `place` | "mix" \| "stems" \| "none" |  | mix (default): the mix on an audio track at start; stems: the four stems on four grouped tracks; none: import only |
 | `markers` | "beats" \| "bars" \| "phrases" \| "sections" \| "drop"[] |  | Markers to add, as analyze_music names them: beats (Beat), bars (Bar), phrases (Phrase), sections (each by name), drop (Drop) |
 | `name` | string |  | The media's name (default style, tempo, key and seed) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -1004,6 +1013,7 @@ Read a music clip's structure on this computer, as Final Cut's beat grid shows i
 | `cues[].at` | number | yes | Source seconds the part starts (0..) |
 | `cues[].label` | "intro" \| "verse" \| "build" \| "drop" \| "breakdown" \| "outro" | yes | What the part is |
 | `detail` | "summary" \| "full" |  | summary (default): the grid, bars, phrases, parts and drops with counts; full: also every beat, hit and beat's energy |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -1129,6 +1139,7 @@ Mark a music clip's beats (every Nth) with Beat markers, from the whole song's r
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `every` | 1 \| 2 \| 4 |  | Marker on every Nth beat (default 1) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -1483,6 +1494,7 @@ Remove the background of a video clip of a person or object (CapCut's Remove BG)
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video clip id |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_animation
 
@@ -1536,6 +1548,7 @@ Pin a title, sticker or picture to a moving subject in the video under it (CapCu
 | `box.w` | number | yes | Width, a fraction of the picture's width |
 | `box.h` | number | yes | Height, a fraction of its height |
 | `video_clip_id` | string |  | The video to follow; default the one under the layer (main track first) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### auto_reframe
 
@@ -1550,6 +1563,7 @@ Reframe a wide video into another shape on this computer (CapCut's and Premiere'
 | `box.y` | number | yes | Top edge, a fraction of its height |
 | `box.w` | number | yes | Width, a fraction of the picture's width |
 | `box.h` | number | yes | Height, a fraction of its height |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -1565,6 +1579,7 @@ Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the ca
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `level` | "least-crop" \| "recommended" \| "most-stable" \| "off" |  | How strongly to smooth |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Graphics and compositing
 
@@ -2090,7 +2105,7 @@ Add captions (subtitles) as caption text clips on a Captions track. Times are ti
 
 ### auto_captions
 
-Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Answers count, track_id, first and last captions, seconds covered and words heard; detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.
+Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Hears only played source windows plus 3 s context per edge. Answers count, track_id, first and last captions, seconds covered, words heard, audio_seconds actually heard, hearing elapsed_seconds and model (default base.en); detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2105,6 +2120,7 @@ Caption what the people on the timeline say, using local Whisper and the shared 
 | `model` | "onnx-community/whisper-tiny.en_timestamped" \| "onnx-community/whisper-base.en_timestamped" \| "onnx-community/whisper-small.en_timestamped" \| "onnx-community/whisper-base_timestamped" \| "onnx-community/whisper-small_timestamped" |  | Whisper model offered by the Captions panel; default balanced English (base.en). Accurate English (small.en) is available for consequential word errors; review names and technical vocabulary |
 | `track_ids` | string[] |  | Only speech on these tracks; default audible tracks except music and effects roles |
 | `detail` | "summary" \| "full" |  | full answers every caption's text, start and end; default summary |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_caption_look
 
@@ -2138,11 +2154,12 @@ Find and replace in every caption's text (CapCut's caption Find and replace), e.
 
 ### get_transcript
 
-Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
+Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Hears only the clip's source window plus 3 s context per edge, merging cached windows. Reports audio_seconds actually heard (0 when cached), hearing elapsed_seconds and model (default base.en). Delete words by passing their spans to cut_ranges (Premiere's text-based editing).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Brand and ad elements
 
@@ -2218,6 +2235,7 @@ Put titles (or stickers) behind the person or product in a video or picture clip
 |---|---|---|---|
 | `clip_id` | string | yes | The video or picture clip with the person or product |
 | `text_clip_ids` | string[] | yes | The titles (or stickers) to put behind the subject; they must play while the video does |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2328,6 +2346,7 @@ Match video or picture clips to a reference shot's rendered look. Samples five f
 | `clip_ids` | string[] | yes | One or more target video or picture clip IDs, excluding the reference |
 | `strength` | number |  | Mix the correction toward identity, 0..1 (default 1); zero leaves the project unchanged (0..1) |
 | `match_saturation` | boolean |  | Also match mean chroma using Basic saturation (default true) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_filter
 
@@ -2352,6 +2371,7 @@ Correct a video or picture clip's exposure, white balance and levels from its fr
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### set_hsl
 
@@ -2455,6 +2475,7 @@ Narrate a script, directed: every line is read on this computer (Kokoro), whole,
 | `enhance` | boolean |  | Even out each voice with the Enhance voice compressor (default true; finish raw has none) |
 | `caption_style` | { font, size, color, bold, weight, italic, align, highlight, case, background, stroke, stroke2, shadow, glow, gradient, accent, letterSpacing, lineHeight, maxWidth } |  | The captions' look, as a title's style takes it; its fields are add_text's style (help add_text) |
 | `caption_y` | number |  | Captions' vertical offset from center, canvas fraction (default 0.36, or 0.05 on a tall canvas, above the apps' captions and buttons) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2472,6 +2493,7 @@ Listen back to voiceover lines on this computer: Whisper hears each voice clip a
 | `music` | boolean |  | Measure each line's margin over the music tracks under it (default true) |
 | `recheck` | boolean |  | Hear a line with a difference again with a larger Whisper model (small, 249 MB downloaded once), to say whether the recognizer or the voice is wrong (default true) |
 | `detail` | "summary" \| "full" |  | summary (default): each line's verdict and what decides it; full: every measure of every line |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2498,6 +2520,7 @@ Read one voiceover line again and put it in the line's place, as one undo step: 
 | `pace` | "slow" \| "normal" \| "fast" |  | The pace the line is meant to have; default the line's own |
 | `ripple` | boolean |  | Move the lines and captions after it by the change in length (default false) |
 | `caption_words` | integer |  | Caption the line this many words at a time (1-3), each word timed to the new take, or 0 for one caption for the line; default as the line was captioned (0..3) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2518,6 +2541,7 @@ Read a title aloud in a voice made on this computer (Kokoro), placing the voice 
 | `pronounce` | object |  | Words respelled for the voice only (whole words, case as written), each to the text the voice reads: {"MCP": "M C P", "OpenFrame": "Open Frame"} |
 | `quality` | "best" \| "draft" |  | best: full-precision weights (default; on WebGPU, or on the CPU about as fast as draft); draft: 8-bit weights, a quarter of the download |
 | `finish` | "natural" \| "clean" \| "raw" |  | natural (default): a recorded read's pauses, EQ, one loudness, room tone, the voice compressor and a touch of room; clean: one loudness and faded edges, nothing added; raw: the model's read, trimmed |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### add_sound_effect
 
@@ -2536,6 +2560,7 @@ Add built-in sound effects, made on this computer: whoosh (Whoosh, 0.8 s), swish
 | `sounds[].end_at` | number |  | Timeline seconds it ends instead (0..) |
 | `sounds[].volume` | number |  | Gain, default 1 (0..4) |
 | `sounds[].track_id` | string |  | Its audio track; default the call's track_id, else the SFX track |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2558,6 +2583,7 @@ Lay continuous natural sound under the pictures, made on this computer (no recor
 | `volume` | number |  | Gain, 1 as made (0.5 is about -6 dB); default 1 (0..4) |
 | `seed` | integer |  | Another take of the same bed (default 1) (1..) |
 | `track_id` | string |  | An audio track to put it on; default the Ambience track |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2891,6 +2917,7 @@ Measure clips' loudness (EBU R128) and set their volume to reach a target withou
 | `clip_ids` | string[] | yes | Video or audio clip ids |
 | `target` | number |  | LUFS, default -14 (-40..-5) |
 | `spec` | "online" \| "ebu_r128" \| "atsc_a85" |  | online (-14 LUFS, -1 dBTP), ebu_r128 (-23 LUFS, -1 dBTP) or atsc_a85 (-24 LKFS, -2 dBTP); overrides target |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### duck_under_speech
 
@@ -2907,6 +2934,7 @@ Lower music wherever the other clips with sound under it (inside compound clips 
 | `open_at` | any[] |  | Moments the music comes up at between lines: timeline seconds, or marker labels ("Drop": every marker so labeled); default none |
 | `min_gap` | number |  | Seconds a pause between lines must last for the music to come up (default 1.1: shorter pauses stay down, so the music does not pump) (0.2..10) |
 | `release` | number |  | Seconds the music takes to come back up after a line (default 0.4) (0.05..3) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2922,6 +2950,7 @@ Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound 
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `strength` | number |  | 0.5 gentle, 0.75 default, 1 strong (0..1) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### sync_audio
 
@@ -2932,6 +2961,7 @@ Line up a separately recorded sound (a lav, a recorder) with the camera clip of 
 | `clip_id` | string | yes | The audio clip to move |
 | `video_clip_id` | string |  | The camera clip; default the video with sound that plays with it longest |
 | `mute_camera` | boolean |  | Set the video's volume to 0 (default false) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_silences
 
@@ -2943,15 +2973,17 @@ Find the pauses in a clip's speech and cut them out, closing the gaps (one undo 
 | `sensitivity` | number |  | 0..1, default 0.5 (0..1) |
 | `min_silence` | number |  | Shortest pause to cut, seconds (default 0.4) (0..) |
 | `padding` | number |  | Kept around speech, seconds (default 0.1) (0..) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### remove_filler_words
 
-Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe "uh", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's whole-source hearing, so the tools agree.
+Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe "uh", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's clip-window hearing and cached words. Reports audio_seconds, elapsed_seconds and model.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | Video or audio clip id |
 | `model` | string |  | Whisper model id (default onnx-community/whisper-base.en_timestamped) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ## Check and deliver
 
@@ -2969,6 +3001,7 @@ Look inside imported media before using it: a video's own frames at source secon
 | `count` | integer |  | Frames spread over the file when times is not given; default 12 (2..24) |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Default 320 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -2987,6 +3020,7 @@ See several moments at once: one JPEG contact sheet of the frames at the given t
 | `times` | number[] | yes | Seconds, up to 24 |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3005,6 +3039,7 @@ See movement and timing: consecutive frames of a stretch of the timeline (defaul
 | `fps` | number |  | Frames a second, default 8 (1..30) |
 | `columns` | integer |  | Tiles a row, at most 8; default 6 (1..8) |
 | `tile_width` | integer |  | Default 240 (120..640) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3022,6 +3057,7 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 | `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (at most the canvas width) (64..1920) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 ### preview_audio
 
@@ -3035,6 +3071,7 @@ Hear the sound: a stretch of the mix, or one stem, rendered offline through the 
 | `loudness` | number |  | Hear it as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `audio` | boolean |  | false: the measurements only, no audio file (default true) |
 | `format` | "mp3" \| "m4a" \| "wav" |  | Audio format; default mp3 with M4A then WAV fallback. M4A falls back to WAV; WAV is 16-bit 24 kHz mono. The answer names the actual format |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3050,6 +3087,7 @@ Check the edit against professional rules before exporting: text outside the 90%
 |---|---|---|---|
 | `kind` | "ad" \| "epic_edit" \| "social_short" \| "any" |  | What is being made; default any |
 | `detail` | "summary" \| "full" |  | summary (default): alike findings given once with every clip; full: every finding on its own |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3070,6 +3108,7 @@ Measure the mix the way export renders it (48 kHz stereo, every clip's effects, 
 | `loudness` | number |  | Measure as export_video with this loudness (LUFS) delivers it; default as mixed (-40..-5) |
 | `start` | number |  | Timeline seconds, default 0 (0..) |
 | `end` | number |  | Timeline seconds, default the end (0..) |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3094,6 +3133,7 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3157,6 +3197,7 @@ Export the deliverables of an ad in one call, each a separate file in the user's
 | `loudness` | number |  | Integrated LUFS for every version's mix, e.g. -14; default as mixed (-40..-5) |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |
+| `wait` | number |  | Seconds to wait for the complete answer (default 45); 0 returns a job immediately. If still running, poll job_status with job_id; cancel_job stops it (0..45) |
 
 Example:
 
@@ -3169,3 +3210,19 @@ Example:
 The last export_video, export_versions or export_projects: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).
 
 No parameters.
+
+### job_status
+
+Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Results stay for 30 minutes after completion; switching projects cancels running work. Export jobs also remain visible through export_status.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `job_id` | string |  | Job ID returned by a long tool; omit to list running and recent jobs |
+
+### cancel_job
+
+Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `job_id` | string | yes | Job ID to cancel, from a long tool or job_status |

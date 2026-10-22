@@ -62,7 +62,7 @@ export async function lookAtShots(p: Project, signal?: AbortSignal, shots = shot
     const missing = times.filter((t) => !seen.has(key(t)));
     if (missing.length) {
       try {
-        const pics = await sourceFrames(asset, missing, WIDTH);
+        const pics = await sourceFrames(asset, missing, WIDTH, signal);
         for (const [i, pic] of pics.entries()) {
           if (!pic) continue;
           const w = WIDTH, h = Math.max(8, Math.round((WIDTH * asset.height) / asset.width));

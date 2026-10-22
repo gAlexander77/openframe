@@ -36,7 +36,7 @@ import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analys
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { FILLERS, fillerRanges } from "../lib/fillers";
-import { clipWords, hearAsset } from "./transcript";
+import { hearClip, type Hearing } from "./transcript";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
@@ -270,8 +270,8 @@ function windowOf(clip: MediaClip): [number, number] {
 async function job<T>(tool: ToolId, clip: MediaClip, label: string, work: (progress: (x: number, label?: string) => void, signal: AbortSignal) => Promise<T>): Promise<T> {
   if (state.jobs[tool]) throw new Error("Already running");
   const abort = new AbortController();
-  const signal = AbortSignal.any([abort.signal, projectWork.signal()]);
-  const tid = toast(label, "progress");
+  const signal = AbortSignal.any([abort.signal, projectWork.capture()]);
+  const tid = toast(label, "progress", undefined, { label: "Cancel", run: () => abort.abort() });
   updateToast(tid, { progress: 0 });
   const progress = (x: number, text?: string) => {
     updateToast(tid, { progress: x, ...(text ? { text } : {}) });
@@ -391,7 +391,7 @@ export interface SilenceEdit extends SilenceAnalysis {
 
 /** Remove a clip's silences as one undoable edit. */
 export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings> = {}): Promise<SilenceEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("silences", clipId).clip.id;
   const res = await analyzeSilences(id, opts);
   signal.throwIfAborted();
@@ -415,7 +415,7 @@ export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings>
   return { ...res, removed: spans.length, seconds };
 }
 
-export interface FillerAnalysis {
+export interface FillerAnalysis extends Hearing {
   /** All words heard in this clip, including kept speech. */
   heard: number;
   /** Source seconds. */
@@ -430,13 +430,13 @@ export async function analyzeFillers(clipId?: Id, opts: Partial<FillerSettings> 
   const { clip, asset } = resolve("fillers", clipId);
   return job("fillers", clip, `Listening to ${asset.name}`, async (progress, signal) => {
     const [from, to] = windowOf(clip);
-    await hearAsset(store.get().project, clip.assetId, { model: opts.model ?? (clipWords(store.get().project, clip) === null ? state.settings.fillers.model : undefined) }, signal,
+    const hearing = await hearClip(store.get().project, clip, { model: opts.model ?? state.settings.fillers.model }, signal,
       (s) => progress(s.progress, s.stage === "downloading" ? "Downloading the speech model" : "Finding filler words"));
-    const words = clipWords(store.get().project, clip) ?? [];
+    const { words, ...metrics } = hearing;
     const ranges = fillerRanges(words)
       .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to) }))
       .filter((r) => r.end > r.start);
-    return { ranges, heard: words.length, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
+    return { ...metrics, ranges, heard: words.length, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
   });
 }
 
@@ -449,7 +449,7 @@ export interface FillerEdit extends FillerAnalysis {
 /** Cut a clip's filler words, with the hesitation around each, as one
  * undoable edit. */
 export async function removeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("fillers", clipId).clip.id;
   const res = await analyzeFillers(id, opts);
   signal.throwIfAborted();
@@ -473,7 +473,7 @@ export interface SceneEdit extends SceneAnalysis {
 
 /** Split a clip at its scene cuts (or mark them) as one undoable edit. */
 export async function splitScenes(clipId?: Id, opts: Partial<SceneSettings> = {}): Promise<SceneEdit> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const id = resolve("scenes", clipId).clip.id;
   const o = { ...state.settings.scenes, ...opts };
   const res = await analyzeScenes(id, o);
@@ -568,7 +568,7 @@ const musicReadings = new Map<string, MusicStructure>();
  * (set_music_grid) and the call's own hints, for a clip of it. Times in
  * `m` are seconds from `from` in the file. */
 async function readSong(clipId: Id | undefined, given: StructureHints): Promise<{ m: MusicStructure; clip: MediaClip; asset: Asset; from: number; to: number; whole: boolean; cached: boolean; hints: StructureHints }> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const { clip: c0, asset } = resolve("beats", clipId);
   const hints = gridHints(asset.musicGrid, given);
   const id = c0.id;
@@ -659,7 +659,7 @@ export interface LoudnessResult extends Normalization {
  * "Normalize loudness", measured per ITU-R BS.1770).
  */
 export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSettings> & { spec?: string } = {}): Promise<LoudnessResult[]> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   // A delivery spec names the target and the true-peak ceiling (ADR-061).
   const spec = opts.spec === undefined ? undefined : LOUDNESS_SPECS[opts.spec as SpecId];
   if (opts.spec !== undefined && !spec) throw new Error(`Unknown spec ${opts.spec}: use ${SPEC_IDS.join(", ")}`);
@@ -707,7 +707,7 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
  * then sat under the rest. Answers a note per clip.
  */
 export async function keepFilterLoudness(args: Record<string, unknown>): Promise<string[]> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { keep_loudness: _, ...asked } = args;
   if (asked.off === true) throw new Error("keep_loudness keeps a filter's loudness; off removes the filter and its makeup");
   if (asked.sweep !== undefined) throw new Error("keep_loudness holds a fixed filter's loudness, and a sweep changes it as it moves: give makeup in dB instead");
@@ -864,7 +864,7 @@ function duckTargets(clipId: Id | undefined, trackId: Id | undefined): Target[] 
  * speech/music classifier is the upgrade if mixed beds duck wrongly.
  */
 export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Promise<DuckEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const targets = duckTargets(clipId || undefined, opts.track_id || undefined);
   let depth = opts.depth ?? state.settings.ducking.depth;
   const target = opts.voice_above_music_lu;
@@ -1138,7 +1138,7 @@ export interface DenoiseEdit {
  * copy is a new WAV of exactly the clip's source window.
  */
 export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = {}): Promise<DenoiseEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("denoise", clipId);
   const strength = opts.strength ?? state.settings.denoise.strength;
   const file = await job("denoise", clip, `Reducing noise in ${asset.name}`, async (progress, signal) => {
@@ -1154,7 +1154,7 @@ export async function reduceNoise(clipId?: Id, opts: Partial<DenoiseSettings> = 
     return new File([encodeWav(clean, rate)], `${asset.name.replace(/\.[^.]+$/, "")} (noise reduced).wav`, { type: "audio/wav" });
   });
   scope.throwIfAborted();
-  const [cleaned] = await adoptAndImport([file]);
+  const [cleaned] = await adoptAndImport([file], scope);
   scope.throwIfAborted();
   const c = stillThere(clip.id);
   let target = c.id;
@@ -1182,7 +1182,7 @@ export interface StabilizeEdit {
  * that preview and export apply. Level "off" removes them. One undo step.
  */
 export async function stabilizeClip(clipId?: Id, opts: { level?: StabilizeLevel | "off" } = {}): Promise<StabilizeEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("stabilize", clipId);
   const level = opts.level ?? state.settings.stabilize.level;
   if (level === "off") {
@@ -1269,7 +1269,7 @@ function cameraFor(audio: AudioClip, videoId?: Id): VideoClip {
  * clearly match. muteCamera sets the video's volume to 0.
  */
 export async function syncAudio(clipId?: Id, opts: { videoId?: Id; muteCamera?: boolean } = {}): Promise<SyncEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const t = targetFor("sync", clipId);
   if (typeof t === "string") refuse(t);
   const { clip, asset } = t;
@@ -1323,7 +1323,7 @@ export interface ReframeEdit {
  * centered does the same from a box placed on the viewer.
  */
 export async function reframeClip(clipId?: Id, opts: Partial<ReframeSettings> & { box?: Region } = {}): Promise<ReframeEdit> {
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const { clip, asset } = resolve("reframe", clipId);
   const ratio = opts.ratio ?? state.settings.reframe.ratio;
   const p0 = store.get().project;
@@ -1383,7 +1383,7 @@ export async function matteFor(clipId?: Id): Promise<{ clipId: Id; cutout: Cutou
   const own = (clip as VideoClip).cutout;
   const ready = own && covers(own, from, to) ? { ...own, enabled: true } : findMatte(asset, from, to);
   if (ready) return { clipId: clip.id, cutout: ready, result: { clipId: clip.id, cached: true, model: ready.model, matte: ready.src }, note: "Background removed" };
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const started = performance.now();
   // Starting the model takes a moment even when it is cached.
   const made = await job("cutout", clip, "Starting the background model", async (progress, signal) => {
@@ -1460,7 +1460,7 @@ export async function textBehindSubject(clipId: Id, opts: { textIds?: Id[] } = {
   const ids = opts.textIds ?? [];
   const problem = behindProblem(store.get().project, clipId, ids);
   if (problem) throw new Error(problem);
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   const clip = ops.findClip(store.get().project, clipId)!.clip;
   let cut: SubjectCut, cached: boolean, model: string, note: string;
   if (clip.type === "image") {

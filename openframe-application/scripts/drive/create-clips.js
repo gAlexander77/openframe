@@ -14,7 +14,18 @@ async (page) => {
   const call = (name, args = {}) => page.evaluate(async ([name, args]) => {
     const r = await window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } });
     if (r.result?.isError || r.error) throw new Error(`${name}: ${JSON.stringify(r)}`);
-    return JSON.parse(r.result.content[0].text);
+    const answer = JSON.parse(r.result.content[0].text);
+    if (!answer.job_id) return answer;
+    let job = answer;
+    const deadline = Date.now() + 20 * 60_000;
+    while (job.state === "running" && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const poll = await window.videoEditor.mcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "job_status", arguments: { job_id: answer.job_id } } });
+      if (poll.error || poll.result?.isError) throw new Error(JSON.stringify(poll));
+      job = JSON.parse(poll.result.content[0].text);
+    }
+    if (job.state !== "done") throw new Error(`${name}: ${JSON.stringify(job)}`);
+    return job.result;
   }, [name, args]);
   const origin = await page.evaluate(() => location.origin);
   const [a] = await call("import_media", { files: [{ src: `${origin}/scratch/create-clips/vod.mp4`, name: "Speech VOD.mp4" }] });

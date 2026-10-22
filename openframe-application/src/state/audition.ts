@@ -276,7 +276,7 @@ export async function previewAudio(req: AuditionRequest): Promise<AuditionAnswer
   const ids = solo === "mix" ? p.tracks.map((t) => t.id) : stems[ROLE[solo]];
   if (!ids.length) throw new Error(`No ${ROLE[solo as Exclude<Solo, "mix">]} tracks to hear. describe_project names each audio track's role; update_track role sets one.`);
   const heard = solo === "mix" ? p : isolateTracks(p, ids);
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const tid = toast("Rendering the sound", "progress");
   try {
     const [L, R] = await render(heard, start, end, signal);
@@ -339,7 +339,7 @@ export async function auditionClip(id: Id): Promise<void> {
   const start = framesToSeconds(c.start, p.fps);
   const length = Math.min(3, framesToSeconds(c.duration, p.fps));
   const schedule = scheduleAudio(ctx, ctx.destination, heard, start, start + length, ctx.currentTime + 0.1);
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   let unsubscribe = () => {};
   const stop = () => {
     unsubscribe();

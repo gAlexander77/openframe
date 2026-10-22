@@ -5,6 +5,7 @@ import { createTrack, DEFAULT_ADJUST } from "../lib/project/defaults";
 import { findClip, updateClip } from "../lib/project/ops";
 import type { Clip, ImageClip, Project, VideoClip } from "../lib/project/types";
 import { projectWork } from "./projectWork";
+import { dismiss, toast, updateToast } from "./toast";
 import { store } from "./store";
 
 let running: AbortController | null = null;
@@ -12,7 +13,7 @@ export const cancelColorMatch = () => running?.abort();
 
 export async function matchColor(ids: string | string[], options: { referenceClipId: string; strength?: number; matchSaturation?: boolean }) {
   if (running) throw new Error("A color match is already running");
-  const p = store.get().project, session = projectWork.signal();
+  const p = store.get().project, session = projectWork.capture(), documentSession = projectWork.signal();
   session.throwIfAborted();
   const picture = (id: string): VideoClip | ImageClip => {
     const c = findClip(p, id)?.clip;
@@ -32,6 +33,7 @@ export async function matchColor(ids: string | string[], options: { referenceCli
   session.addEventListener("abort", abort, { once: true });
   store.set({ colorMatchBusy: true });
   const signal = controller.signal;
+  const tid = toast("Sampling color reference\u2026", "progress", undefined, { label: "Cancel", run: () => controller.abort() });
   try {
     const sample = async (c: VideoClip | ImageClip, before: boolean) => {
       // Keep the canvas and placement: the measurement sees the same crop,
@@ -43,7 +45,8 @@ export async function matchColor(ids: string | string[], options: { referenceCli
     };
     const ref = await sample(reference, false);
     const results: ({ clip_id: string } & ReturnType<typeof colorMatch>)[] = [];
-    for (const c of targets) {
+    for (const [i, c] of targets.entries()) {
+      updateToast(tid, { text: `Matching color ${i + 1} of ${targets.length}`, progress: i / targets.length });
       const frames = await sample(c, true);
       results.push({ clip_id: c.id, ...colorMatch(ref, frames, strength, options.matchSaturation !== false, c.adjust.curves?.luma) });
     }
@@ -56,8 +59,9 @@ export async function matchColor(ids: string | string[], options: { referenceCli
     }), q));
     return { targets: results, note: "Mean R/G/B difference in 8-bit levels before and after the sampled match. Clipped extremes are protected; different subjects may retain different means." };
   } finally {
+    dismiss(tid);
     session.removeEventListener("abort", abort);
     if (running === controller) running = null;
-    if (projectWork.signal() === session) store.set({ colorMatchBusy: false });
+    if (projectWork.signal() === documentSession) store.set({ colorMatchBusy: false });
   }
 }

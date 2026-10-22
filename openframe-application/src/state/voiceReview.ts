@@ -45,8 +45,9 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       })
     : voiceClips(p);
   if (!lines.length) throw new Error("No voiceover lines to review: add_voiceover first, or name clip_ids.");
-  const signal = projectWork.signal();
-  const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress");
+  const cancel = new AbortController();
+  const signal = AbortSignal.any([cancel.signal, projectWork.capture()]);
+  const tid = toast(`Listening to ${lines.length === 1 ? "the line" : `${lines.length} lines`}`, "progress", undefined, { label: "Cancel", run: () => cancel.abort() });
   const fps = p.fps;
   try {
     const measured: (LineMeasure & { heard: string; matched: number; words: number; pitchHz: number | null; diffAt: (number | null)[]; clipRate: ReturnType<typeof paceOf>["clip"]; marksOut: number; recheck?: { heard: string; match: number | null } })[] = [];
@@ -58,7 +59,7 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
       const from = c.in, to = sourceTimeAt(c, clipEnd(c), fps);
       const speed = c.speed || 1;
       const pcm = await decodeMono(asset, from, to, RATE, undefined, signal);
-      const heardWords = await transcribePcm(pcm, 0, { model: TRANSCRIPT_MODEL, language: null }, () => undefined, signal);
+      const heardWords = await transcribePcm(pcm, 0, { model: TRANSCRIPT_MODEL, language: null }, s => updateToast(tid, { progress: (k + s.progress) / lines.length, text: `${s.stage}: line ${k + 1} of ${lines.length}` }), signal);
       const heard = heardWords.map((w) => w.text.trim()).join(" ");
       heardPcm.push(pcm);
       const act = speechActivity(pcm, RATE);

@@ -10,7 +10,7 @@ import { trackRole, assetsOf } from "../lib/audioRoles";
 import { timelineWords } from "../lib/transcript";
 import * as ops from "../lib/project/ops";
 import { framesToSeconds } from "../lib/time";
-import { clipWords, hearAsset, speechClips } from "./transcript";
+import { hearClip, speechClips } from "./transcript";
 import { withScripts } from "../lib/scriptWords";
 import type { TextStyle } from "../lib/project/types";
 import { platform } from "../platform";
@@ -35,8 +35,8 @@ const STAGE: Record<TranscribeProgress["stage"], string> = {
 export async function generateCaptions(opts: { model: string; language: string | null; replace: boolean; oneWord?: boolean }, onProgress?: (s: TranscribeProgress) => void) {
   if (running) return;
   running = new AbortController();
-  const signal = AbortSignal.any([running.signal, projectWork.signal()]);
-  const id = toast("Preparing audio…", "progress");
+  const signal = AbortSignal.any([running.signal, projectWork.capture()]);
+  const id = toast("Preparing audio…", "progress", undefined, { label: "Cancel", run: cancelCaptions });
   try {
     const project = store.get().project;
     const heard = await transcribeTimeline(
@@ -80,7 +80,7 @@ function captionsError(e: unknown): string {
 }
 
 export async function importCaptions(file: File) {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const caps = parseSubtitles(await file.text());
   if (signal.aborted) return;
   if (!caps.length) {
@@ -119,46 +119,51 @@ export function styleAllCaptions(style: TextStyle, y: number) {
 /** Agent captions use the same source hearing as transcript editing, then
  * map each piece separately: no caption spans a removed source window. */
 export async function autoCaptions(_target: string, opts: { replace?: boolean; words_per_caption?: number; start?: number; end?: number; style?: Partial<TextStyle>; y?: number; look?: string; model?: string; language?: string; track_ids?: string[]; detail?: string } = {}) {
-  const p = store.get().project, signal = projectWork.signal();
-  const end = opts.end ?? framesToSeconds(ops.projectDuration(p), p.fps), start = opts.start ?? 0;
-  if (opts.end !== undefined && end <= start) throw new Error("end must be after start");
-  for (const id of opts.track_ids ?? []) if (!ops.findTrack(p, id)) throw new Error(`No track with id ${id}`);
-  const tracks = p.tracks.filter((t) => !t.muted && (opts.track_ids ? opts.track_ids.includes(t.id) : !["music", "effects"].includes(trackRole(t, assetsOf(p)) ?? "")));
-  const clips = tracks.flatMap((t) => speechClips(p, t)).filter((c) => !c.disabled && c.volume > 0 && framesToSeconds(c.start, p.fps) < end && framesToSeconds(c.start + c.duration, p.fps) > start);
-  if (!clips.length) throw new Error("Nothing on the selected timeline tracks has speech (muted, reversed and speed-curved clips are excluded)");
-  const language = opts.language === "English" ? "en" : opts.language ?? "en";
-  const model = opts.model ?? (language === "en" || language === "english" ? undefined : "onnx-community/whisper-base_timestamped");
-  // The default English model (base.en) refuses a language: name one only
-  // for a multilingual model.
-  const english = model === undefined || /\.en(_|$)/.test(model);
-  const caps: Caption[] = [];
-  let heard = 0;
-  for (const c of clips) {
-    await hearAsset(p, c.assetId, { model, language: english ? null : language }, signal);
-    const words = timelineWords(p, c, clipWords(p, c) ?? [], start, end);
-    heard += words.length;
-    const limit = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
-    caps.push(...(opts.words_per_caption ? wordsToCaptions(words, { ...DEFAULT_LINES, maxWords: opts.words_per_caption, minDuration: 0.25 }).map(x => ({ ...x, end: Math.min(x.end, limit) })) : readableCaptions(words, DEFAULT_LINES, limit)));
-  }
-  signal.throwIfAborted();
-  if (store.get().project !== p) throw new Error("The project changed while listening; run auto_captions again");
-  if (!caps.length) throw new Error("No speech found on the selected timeline tracks");
-  caps.sort((a, b) => a.start - b.start);
-  const old = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
-  store.edit("Auto captions", (q) => {
-    let next = runCommand(q, "add_captions", { captions: caps, replace: opts.replace !== false });
-    const fresh = { ...next, tracks: next.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !old.has(c.id)) })) };
-    const args = { ...(opts.look ? { look: opts.look } : {}), ...(opts.style ? { style: opts.style } : {}), ...(opts.y !== undefined ? { y: opts.y } : {}) };
-    if (Object.keys(args).length) {
-      const styled = runCommand(fresh, "set_caption_look", args);
-      const made = new Map(styled.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
-      next = { ...next, tracks: next.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => made.get(c.id) ?? c) })) };
+  const p = store.get().project, signal = projectWork.capture();
+  const notice = toast("Listening for captions\u2026", "progress");
+  try {
+    const end = opts.end ?? framesToSeconds(ops.projectDuration(p), p.fps), start = opts.start ?? 0;
+    if (opts.end !== undefined && end <= start) throw new Error("end must be after start");
+    for (const id of opts.track_ids ?? []) if (!ops.findTrack(p, id)) throw new Error(`No track with id ${id}`);
+    const tracks = p.tracks.filter((t) => !t.muted && (opts.track_ids ? opts.track_ids.includes(t.id) : !["music", "effects"].includes(trackRole(t, assetsOf(p)) ?? "")));
+    const clips = tracks.flatMap((t) => speechClips(p, t)).filter((c) => !c.disabled && c.volume > 0 && framesToSeconds(c.start, p.fps) < end && framesToSeconds(c.start + c.duration, p.fps) > start);
+    if (!clips.length) throw new Error("Nothing on the selected timeline tracks has speech (muted, reversed and speed-curved clips are excluded)");
+    const language = opts.language === "English" ? "en" : opts.language ?? "en";
+    const model = opts.model ?? (language === "en" || language === "english" ? undefined : "onnx-community/whisper-base_timestamped");
+    // The default English model (base.en) refuses a language: name one only
+    // for a multilingual model.
+    const english = model === undefined || /\.en(_|$)/.test(model);
+    const caps: Caption[] = [];
+    let heard = 0, audio_seconds = 0, elapsed_seconds = 0;
+    let heardModel = model ?? "onnx-community/whisper-base.en_timestamped";
+    for (const [i, c] of clips.entries()) {
+      const hearing = await hearClip(p, c, { model, language: english ? null : language, start, end }, signal, s => updateToast(notice, { progress: (i + s.progress) / clips.length, text: `${s.stage}: captions for clip ${i + 1} of ${clips.length}` }));
+      audio_seconds += hearing.audio_seconds; elapsed_seconds += hearing.elapsed_seconds; heardModel = hearing.model;
+      const words = timelineWords(p, c, hearing.words, start, end);
+      heard += words.length;
+      const limit = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
+      caps.push(...(opts.words_per_caption ? wordsToCaptions(words, { ...DEFAULT_LINES, maxWords: opts.words_per_caption, minDuration: 0.25 }).map(x => ({ ...x, end: Math.min(x.end, limit) })) : readableCaptions(words, DEFAULT_LINES, limit)));
     }
-    return next;
-  });
-  const made = store.get().project.tracks.flatMap((t) => t.clips.filter((c) => !old.has(c.id) && c.type === "text" && c.caption).map((c) => ({ id: c.id, track_id: t.id, text: c.type === "text" ? c.text : "", start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps) }))).sort((a, b) => a.start - b.start);
-  const brief = ({ text, start, end }: typeof made[number]) => ({ text, start: +start.toFixed(3), end: +end.toFixed(3) });
-  const unreadable = made.filter(c => !captionReading(c).met).map(c => ({ ...brief(c), characters_per_second: +captionReading(c).cps.toFixed(1) }));
-  const readability = opts.words_per_caption ? undefined : { met: !unreadable.length, ...(unreadable.length ? { findings: unreadable, note: "Some cues still miss the reading-time rule; review these cues and shorten the text or extend the available time." } : {}) };
-  return { readability, count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
+    signal.throwIfAborted();
+    if (store.get().project !== p) throw new Error("The project changed while listening; run auto_captions again");
+    if (!caps.length) throw new Error("No speech found on the selected timeline tracks");
+    caps.sort((a, b) => a.start - b.start);
+    const old = new Set(p.tracks.flatMap((t) => t.clips.map((c) => c.id)));
+    store.edit("Auto captions", (q) => {
+      let next = runCommand(q, "add_captions", { captions: caps, replace: opts.replace !== false });
+      const fresh = { ...next, tracks: next.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => !old.has(c.id)) })) };
+      const args = { ...(opts.look ? { look: opts.look } : {}), ...(opts.style ? { style: opts.style } : {}), ...(opts.y !== undefined ? { y: opts.y } : {}) };
+      if (Object.keys(args).length) {
+        const styled = runCommand(fresh, "set_caption_look", args);
+        const made = new Map(styled.tracks.flatMap((t) => t.clips.map((c) => [c.id, c] as const)));
+        next = { ...next, tracks: next.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => made.get(c.id) ?? c) })) };
+      }
+      return next;
+    });
+    const made = store.get().project.tracks.flatMap((t) => t.clips.filter((c) => !old.has(c.id) && c.type === "text" && c.caption).map((c) => ({ id: c.id, track_id: t.id, text: c.type === "text" ? c.text : "", start: framesToSeconds(c.start, p.fps), end: framesToSeconds(c.start + c.duration, p.fps) }))).sort((a, b) => a.start - b.start);
+    const brief = ({ text, start, end }: typeof made[number]) => ({ text, start: +start.toFixed(3), end: +end.toFixed(3) });
+    const unreadable = made.filter(c => !captionReading(c).met).map(c => ({ ...brief(c), characters_per_second: +captionReading(c).cps.toFixed(1) }));
+    const readability = opts.words_per_caption ? undefined : { met: !unreadable.length, ...(unreadable.length ? { findings: unreadable, note: "Some cues still miss the reading-time rule; review these cues and shorten the text or extend the available time." } : {}) };
+    return { audio_seconds, elapsed_seconds, model: heardModel, readability, count: made.length, track_id: made[0].track_id, first: brief(made[0]), last: brief(made.at(-1)!), seconds: +made.reduce((n, c) => n + c.end - c.start, 0).toFixed(3), words: heard, ...(opts.detail === "full" ? { captions: made.map(brief) } : {}) };
+  } finally { dismiss(notice); }
 }

@@ -37,7 +37,7 @@ it("hears only a requested clip window and reuses that window without treating t
   expect(decodeMono).toHaveBeenCalledTimes(2);
   expect(decodeMono).toHaveBeenLastCalledWith(a, 60, 80, 16000, expect.any(Function), expect.any(AbortSignal));
 });
-it("get_transcript and filler removal share a whole-asset hearing, including ' um,'", async () => {
+it("get_transcript and filler removal share a clip-window hearing, including ' um,'", async () => {
   projectWork.open();
   const p = createProject();
   const asset = { id: "source", kind: "audio" as const, name: "interview.wav", src: "interview.wav", duration: 34, hasAudio: true, hasVideo: false };
@@ -48,7 +48,7 @@ it("get_transcript and filler removal share a whole-asset hearing, including ' u
   expect(transcript.words.map((w) => w.text)).toContain(" um,");
   expect(fillers.words).toEqual(["um,"]);
   expect(fillers.heard).toBe(transcript.words.length);
-  expect(decodeMono).toHaveBeenCalledWith(asset, 0, 34, 16000, expect.any(Function), expect.any(AbortSignal));
+  expect(decodeMono).toHaveBeenCalledWith(asset, 21, 30, 16000, expect.any(Function), expect.any(AbortSignal));
   expect(transcribePcm).toHaveBeenCalledTimes(1);
   // A different model still means a deliberate new hearing, as in the UI.
   await analyzeFillers(clip.id, { model: "onnx-community/whisper-small.en_timestamped" });
@@ -127,4 +127,37 @@ it("reports whole-line readability from exact frames before rounding answer time
   const result = await autoCaptions("", { detail: "full" });
   expect(result.last.end).toBe(0.833);
   expect(result.readability?.met).toBe(true);
+});
+
+it("captions a 30-second middle clip by hearing 36 seconds, then reuses it for transcript", async () => {
+  const p = createProject({ fps: { num: 30, den: 1 } });
+  const asset = { id: "six-minute-window", kind: "audio" as const, name: "VOD.wav", src: "six.wav", duration: 360, hasAudio: true, hasVideo: false };
+  const clip = { ...clipForAsset(asset, 0, p.fps), in: 180, duration: 900 };
+  state.project = { ...p, assets: [asset], tracks: [{ ...createTrack("audio", "Dialog"), role: "dialog", clips: [clip] }] };
+  vi.mocked(decodeMono).mockResolvedValueOnce(new Float32Array(36 * 16000));
+  vi.mocked(transcribePcm).mockResolvedValueOnce([{ text: " Hello.", start: 181, end: 182 }]);
+  const result = await autoCaptions("");
+  expect(decodeMono).toHaveBeenCalledWith(asset, 177, 213, 16000, expect.any(Function), expect.any(AbortSignal));
+  expect(result).toMatchObject({ audio_seconds: 36, model: "onnx-community/whisper-base.en_timestamped", words: 1 });
+  const reused = await clipTranscript(clip.id);
+  expect(reused).toMatchObject({ audio_seconds: 0, cached: true });
+  expect(transcribePcm).toHaveBeenCalledTimes(1);
+});
+
+it("a project switch rejects a queued hearing promptly and discards late words", async () => {
+  const p = createProject();
+  const asset = { id: "canceled-source", kind: "audio" as const, name: "VOD.wav", src: "canceled.wav", duration: 360, hasAudio: true, hasVideo: false };
+  const clip = { ...clipForAsset(asset, 0, p.fps), in: 180, duration: 900 };
+  state.project = { ...p, assets: [asset], tracks: [{ ...createTrack("audio", "Dialog"), role: "dialog", clips: [clip] }] };
+  let finish!: (words: { text: string; start: number; end: number }[]) => void;
+  vi.mocked(transcribePcm).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const hearing = clipTranscript(clip.id);
+  const canceled = expect(hearing).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => expect(transcribePcm).toHaveBeenCalledTimes(1));
+  projectWork.close();
+  await canceled;
+  finish([{ text: "late", start: 181, end: 182 }]);
+  projectWork.open();
+  await clipTranscript(clip.id);
+  expect(transcribePcm).toHaveBeenCalledTimes(2);
 });

@@ -16,7 +16,7 @@ import { run } from "./actions";
 export interface HighlightRequest extends HighlightOptions {
   asset_id?: string; clip_id?: string; chat_file?: string; transcribe?: boolean; scenes?: boolean | "auto"; markers?: boolean;
 }
-export interface HighlightAnswer { asset_id: string; clip_id?: string; highlights: Highlight[]; elapsed_seconds: number; signals: string[]; cached: boolean }
+export interface HighlightAnswer { asset_id: string; clip_id?: string; highlights: Highlight[]; elapsed_seconds: number; signals: string[]; cached: boolean; scene_sampling?: { interval_seconds: number; samples: number; covered_seconds: number; complete: boolean; elapsed_seconds: number } }
 interface HighlightState { result?: HighlightAnswer; progress: number; stage: string; busy: boolean; error?: string }
 let state: HighlightState = { progress: 0, stage: "", busy: false };
 const listeners = new Set<() => void>();
@@ -24,7 +24,7 @@ const set = (patch: Partial<HighlightState>) => { state = { ...state, ...patch }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 export const useHighlights = () => useSyncExternalStore(subscribe, () => state);
 let controller: AbortController | undefined, session: AbortSignal | undefined;
-const readings = new Map<string, { features: HighlightFeature[]; cuts?: number[] }>();
+const readings = new Map<string, { features: HighlightFeature[]; cuts?: number[]; sampling?: HighlightAnswer["scene_sampling"] }>();
 export const cancelHighlights = () => controller?.abort();
 
 export function addHighlightMarkers(result: HighlightAnswer) {
@@ -60,15 +60,15 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
   if (options.times?.some(t => !Number.isFinite(t) || t < 0 || t > asset.duration)) throw new Error("Given times must fall inside the source duration");
   const sourceClips = p.tracks.flatMap(t => t.clips).filter(c => (c.type === "audio" || c.type === "video") && c.assetId === asset.id && !c.freeze);
   if (options.markers && !sourceClips.length) throw new Error("Place the source on the timeline before adding markers");
-  const scope = projectWork.signal();
+  const scope = projectWork.capture();
   scope.throwIfAborted();
-  if (session !== scope) {
-    session = scope; readings.clear();
-    scope.addEventListener("abort", () => { readings.clear(); set({ result: undefined, error: undefined }); }, { once: true });
+  if (session !== projectWork.signal()) {
+    session = projectWork.signal(); readings.clear();
+    session.addEventListener("abort", () => { readings.clear(); set({ result: undefined, error: undefined }); }, { once: true });
   }
   controller = new AbortController();
   const signal = AbortSignal.any([controller.signal, scope]);
-  const notice = toast("Finding highlights…", "progress");
+  const notice = toast("Finding highlights…", "progress", undefined, { label: "Cancel", run: cancelHighlights });
   const progress = (stage: string, fraction: number) => { set({ stage, progress: fraction }); updateToast(notice, { text: stage, progress: fraction }); };
   set({ busy: true, error: undefined, result: undefined });
   try {
@@ -85,7 +85,8 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
     }
     const scenes = asset.hasVideo && (options.scenes === true || ((options.scenes ?? "auto") === "auto" && asset.duration <= 7200));
     if (scenes && !reading.cuts) {
-      reading.cuts = await sparseSceneCuts(asset, f => progress("Sampling scene activity…", f), signal);
+      const sampled = await sparseSceneCuts(asset, f => progress("Sampling scene activity…", f), signal);
+      reading.cuts = sampled.cuts; reading.sampling = sampled.sampling;
     }
     let chat;
     if (options.chat_file) chatText = (await platform.openChatReplay(options.chat_file, signal))?.text;
@@ -120,7 +121,7 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
       const [lo, hi] = sourceRange(c, p.fps);
       return highlights.every(h => h.start >= lo && h.end <= hi);
     });
-    const result: HighlightAnswer = { asset_id: asset.id, ...(markerClip ? { clip_id: markerClip.id } : {}), highlights, elapsed_seconds: (performance.now() - started) / 1000, signals, cached };
+    const result: HighlightAnswer = { asset_id: asset.id, ...(markerClip ? { clip_id: markerClip.id } : {}), highlights, elapsed_seconds: (performance.now() - started) / 1000, signals, cached, ...(scenes && reading.sampling ? { scene_sampling: reading.sampling } : {}) };
     const current: Asset | undefined = store.get().project.assets.find(a => a.id === asset.id);
     if (current?.src !== asset.src) throw new Error("The source changed during analysis; run Find highlights again");
     if (options.markers) addHighlightMarkers(result);

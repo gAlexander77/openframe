@@ -34,8 +34,8 @@ it("saves edited clip documents with bounded captions, hook, credit, one audio o
   expect(store.document()).toBe(original); expect(store.get()).toBe(state);
   expect(result.projects.map(p => p.seconds)).toEqual([661 / 30, 961 / 30]);
   expect(result.projects.every(p => p.captions > 0)).toBe(true);
-  expect(hearAsset).toHaveBeenNthCalledWith(1, expect.anything(), asset.id, { from: 20, to: 40 }, expect.any(AbortSignal));
-  expect(hearAsset).toHaveBeenNthCalledWith(2, expect.anything(), asset.id, { from: 60, to: 90 }, expect.any(AbortSignal));
+  expect(hearAsset).toHaveBeenNthCalledWith(1, expect.anything(), asset.id, { from: 20, to: 40 }, expect.any(AbortSignal), expect.any(Function));
+  expect(hearAsset).toHaveBeenNthCalledWith(2, expect.anything(), asset.id, { from: 60, to: 90 }, expect.any(AbortSignal), expect.any(Function));
   expect(measureMix).toHaveBeenCalledTimes(2);
   expect(measureForCheck).toHaveBeenCalledTimes(2);
   expect(result.projects.every(p => Array.isArray(p.findings))).toBe(true);

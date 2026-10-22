@@ -62,7 +62,7 @@ function serial<T>(work: () => Promise<T>): Promise<T> {
 }
 export function createProxies(ids: string[], size: PlaybackProxySize = "half") {
   const assets = chosen(ids);
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   return serial(async () => {
     if (signal.aborted) throw new Error("The project closed before the proxy batch started.");
     const cancel = new AbortController();
@@ -113,7 +113,7 @@ export function createProxies(ids: string[], size: PlaybackProxySize = "half") {
 }
 export function deleteProxies(ids: string[]) {
   chosen(ids);
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   return serial(async () => {
     if (signal.aborted) throw new Error("The project closed before the proxy batch started.");
     const assets = chosen(ids);

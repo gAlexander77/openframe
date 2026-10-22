@@ -217,16 +217,19 @@ export async function exportForAgent(options: AgentExportOptions = {}): Promise<
   const plan = planExport(p, settings, inOut);
   const drawn = captionsFor(p, settings, plan);
   job = new AbortController();
-  const tid = toast("Exporting the video", "progress");
+  const signal = AbortSignal.any([job.signal, projectWork.capture()]);
+  agentExport = { state: "running", path: "", fraction: 0, eta: null };
+  const tid = toast("Exporting the video", "progress", undefined, { label: "Cancel", run: cancelExport });
   try {
     const target = await make.call(platform, safeFileName(settings.name), plan.extension, folder, replace);
+    signal.throwIfAborted();
     const path = target.displayName;
     const renamed = target.replaced ? replacedNote(path) : renamedNote(`${safeFileName(settings.name)}.${plan.extension}`, path);
     agentExport = { state: "running", path, fraction: 0, eta: null };
     const result = await exportProject(drawn.project, plan, target, (pr) => {
       agentExport = { state: "running", path, fraction: +pr.fraction.toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1) };
       updateToast(tid, { progress: pr.fraction });
-    }, job.signal);
+    }, signal);
     const side = await writeSidecar(target, drawn.srt);
     const note = [result.note, side.note, renamed].filter(Boolean).join(" ");
     if (note) result.note = note;
@@ -398,10 +401,11 @@ function reportOf(notes: SubjectNote[]): SubjectReport[] {
 /** The versions as projects, from the document as it is now: footage a
  * version crops is framed on its subject (state/subjects.ts looks at the
  * shots once, lib/reframe.ts places each crop). */
-async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">, master = store.document()) {
+async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">, master = store.document(), signal = projectWork.capture()) {
+  signal.throwIfAborted();
   const keep = o.keepEnd === undefined ? undefined : secondsToFrames(o.keepEnd, master.fps);
   const reshaped = o.versions.some((v) => v.ratio !== "original");
-  const looks = reshaped ? await lookAtShots(master) : undefined;
+  const looks = reshaped ? await lookAtShots(master, signal) : undefined;
   const made = o.versions.map((v) => {
     const notes: SubjectNote[] = [];
     const moved: CaptionCollision[] = [];
@@ -416,6 +420,7 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">,
   const before = reshaped ? await safely(() => measureBehind(master)) : [];
   const out = [];
   for (const m of made) {
+    signal.throwIfAborted();
     let project = m.project, titles: TitleReport[] = [];
     if (before.length) {
       const hidden = await safely(() => measureBehind(project));
@@ -424,7 +429,7 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">,
       project = front.project;
     }
     if (project.width !== master.width || project.height !== master.height) {
-      const measured = await measureForCheck(project, { sound: false, signal: projectWork.signal() });
+      const measured = await measureForCheck(project, { sound: false, signal });
       const fixed = repairVersionFades(project, measured.fades ?? {});
       project = fixed.project;
       for (const id of fixed.changed) m.says.options.push({ option: "animation", clip_id: id, note: `${id}: the adapted title's fade measured unevenly over this picture; replaced that fade with a cut so its letters leave together (check_project's fix).` });
@@ -474,12 +479,16 @@ function titleReports(q: Project, hidden: Hidden[], master: Hidden[], off: strin
 export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   if (o.folder !== undefined && !platform.createAgentExportTarget) throw new Error(FOLDER_DESKTOP_ONLY);
   if (job) throw new Error("An export is already running.");
-  const items = await versionProjects(o);
   const made: VersionFile[] = [];
   job = new AbortController();
-  const tid = toast(`Exporting ${items.length} versions`, "progress");
+  const signal = AbortSignal.any([job.signal, projectWork.capture()]);
+  agentExport = { state: "running", path: "", fraction: 0, eta: null };
+  const tid = toast("Preparing export versions\u2026", "progress", undefined, { label: "Cancel", run: cancelExport });
   try {
+    const items = await versionProjects(o, store.document(), signal);
     for (const [i, { spec, project: q, notes, titles, overlaps, callouts, options, coverage, textOverlaps }] of items.entries()) {
+      signal.throwIfAborted();
+      updateToast(tid, { text: `Exporting version ${i + 1} of ${items.length}` });
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
@@ -495,7 +504,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       const result = await exportProject(q, plan, target, (pr) => {
         agentExport = { state: "running", path, fraction: +step(pr.fraction).toFixed(3), eta: pr.eta === null ? null : +pr.eta.toFixed(1), version };
         updateToast(tid, { progress: step(pr.fraction) });
-      }, job.signal);
+      }, signal);
       // The web without a save dialog renders into private storage first.
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
@@ -720,9 +729,11 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
  * exported and the master stays open and as it was.
  */
 export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[]; callouts?: CalloutReport[]; options?: OptionNote[]; coverage?: CoverageReport[]; text_overlaps?: Finding[] }[]> {
-  const items = await versionProjects(o);
+  const signal = projectWork.capture();
+  const items = await versionProjects(o, store.document(), signal);
   const saved = [];
   for (const { project: q, notes, titles, overlaps, callouts, options, coverage, textOverlaps } of items) {
+    signal.throwIfAborted();
     const copy = copyProject(q, q.name);
     await platform.saveProject(copy, projectSummary(copy));
     saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}), ...(textOverlaps.length ? { text_overlaps: textOverlaps } : {}) });
@@ -744,17 +755,18 @@ export async function exportProjects(o: ExportProjectsRequest = {}): Promise<Age
   if (job) throw new Error("An export is already running.");
   const controller = new AbortController();
   job = controller;
+  const signal = AbortSignal.any([controller.signal, projectWork.capture()]);
   agentExport = { state: "running", path: "", fraction: 0, eta: null };
-  const tid = toast(`Exporting ${sequence.length} project files`, "progress");
+  const tid = toast(`Exporting ${sequence.length} project files`, "progress", undefined, { label: "Cancel", run: cancelExport });
   const made: ProjectExportFile[] = [];
   try {
     // Capture each saved document once, and validate all IDs before writing.
     const projects = new Map<string, Project>();
     for (const { id } of sequence) if (!projects.has(id)) projects.set(id, normalizeProject(await platform.loadProject(id)));
     for (const [i, item] of sequence.entries()) {
-      controller.signal.throwIfAborted();
+      signal.throwIfAborted();
       const master = projects.get(item.id)!;
-      const q = item.ratio === "original" ? master : (await versionProjects({ versions: [{ ratio: item.ratio }] }, master))[0].project;
+      const q = item.ratio === "original" ? master : (await versionProjects({ versions: [{ ratio: item.ratio }] }, master, signal))[0].project;
       const settings = { ...defaultExportSettings(q), name: `${q.name} (${q.id})`, loudness: o.loudness ?? -14, ...(o.resolution ? { resolution: o.resolution } : {}) };
       const plan = planExport(q, settings, { inPoint: null, outPoint: null });
       const name = safeFileName(settings.name);
@@ -768,7 +780,7 @@ export async function exportProjects(o: ExportProjectsRequest = {}): Promise<Age
         const fraction = (i + pr.fraction) / sequence.length;
         agentExport = { state: "running", path, fraction, eta: pr.eta, version };
         updateToast(tid, { text: `Exporting ${version}`, progress: fraction });
-      }, controller.signal);
+      }, signal);
       if (target.revealLabel === "Download") await target.reveal();
       const note = platform.createAgentExportTarget ? target.replaced ? replacedNote(path) : renamedNote(`${name}.${plan.extension}`, path) : undefined;
       made.push({ project_id: item.id, name: q.name, path, ratio: item.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: plan.seconds, bytes: result.bytes,

@@ -581,4 +581,5 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-139 Film finishing reports measured limits and preserves portable elements]] - native FCPXML titles/audio, chapter readback, honest checks and conservative portrait/caption repair.
 - [[ADR-140 Highlight discovery streams features and refines candidates]] ? bounded mono analysis, rolling context and chat signals, candidate-only speech, shared UI/MCP results and following range markers.
 - [[ADR-141 Stream clips use grouped bands and detached project documents]] — grouped source crops, bounded captions, shared-media clip projects and sequential batch export without editor navigation.
+- [[ADR-142 Long tools return retained session jobs and hear source windows]] - retained MCP jobs, progress and cancellation, bounded source hearing and sparse scene sampling.
 - [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]] - subject-safe hooks, clear-column credit, measured template checks and conservative audio roles.

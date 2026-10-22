@@ -35,7 +35,7 @@ export type ImportOutcome = { file: ImportedFile; asset: Asset; audioRole?: Audi
 
 /** Probe and add files as assets. Returns the ones that worked; each
  * failure gets a toast that names the file and the reason. */
-export async function importFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+export async function importFiles(files: ImportedFile[], signal = projectWork.capture()): Promise<Asset[]> {
   return (await importEach(files, signal)).flatMap((o) => ("asset" in o ? [o.asset] : []));
 }
 
@@ -45,7 +45,7 @@ export async function importFiles(files: ImportedFile[], signal = projectWork.si
  * file that fails says why (also in a toast). Empty when the project
  * closed meanwhile.
  */
-export async function importEach(files: ImportedFile[], signal = projectWork.signal()): Promise<ImportOutcome[]> {
+export async function importEach(files: ImportedFile[], signal = projectWork.capture()): Promise<ImportOutcome[]> {
   const out = await probeEach(files, signal);
   if (signal.aborted) return [];
   const added = out.flatMap((o) => ("asset" in o ? [o.asset] : []));
@@ -77,7 +77,7 @@ export async function importEach(files: ImportedFile[], signal = projectWork.sig
  * media as part of an edit (a voiceover's speech) adds them inside that
  * edit, so one undo takes the clips and their media together. Call
  * `prepare` on each once they are in the project. */
-export async function probeFiles(files: ImportedFile[], signal = projectWork.signal()): Promise<Asset[]> {
+export async function probeFiles(files: ImportedFile[], signal = projectWork.capture()): Promise<Asset[]> {
   return (await probeEach(files, signal)).flatMap((o) => ("asset" in o ? [o.asset] : []));
 }
 
@@ -257,21 +257,19 @@ export function editFromSource(asset: Asset, mode: ops.PlaceMode, marks: SourceM
 
 /** Import files from the OS picker; returns the new assets. */
 export async function pickAndImport(): Promise<Asset[]> {
-  const signal = projectWork.signal();
+  const signal = projectWork.capture();
   const files = await platform.pickMedia();
   return files.length ? importFiles(files, signal) : [];
 }
 
 /** Capture ownership before copying/adopting browser files, too. */
-export async function adoptAndImport(files: File[]): Promise<Asset[]> {
-  const signal = projectWork.signal();
+export async function adoptAndImport(files: File[], signal = projectWork.capture()): Promise<Asset[]> {
   return importFiles(await platform.adoptFiles(files), signal);
 }
 
 /** Files made in the app (speech), saved where the project keeps media
  * and probed, for the caller's edit to add (probeFiles). */
-export async function adoptAndProbe(files: File[]): Promise<Asset[]> {
-  const signal = projectWork.signal();
+export async function adoptAndProbe(files: File[], signal = projectWork.capture()): Promise<Asset[]> {
   return probeFiles(await platform.adoptFiles(files), signal);
 }
 

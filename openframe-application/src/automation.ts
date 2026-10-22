@@ -1,3 +1,4 @@
+import { jobs, runJob } from "./state/jobs";
 import { findAssetHighlights, type HighlightRequest } from "./state/highlights";
 import { createClips } from "./state/clips";
 import { exportProjects } from "./state/export";
@@ -38,7 +39,7 @@ import { mediaName, sourceName } from "./lib/mediaKind";
 import { projectWork } from "./state/projectWork";
 import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
-import { agentNotice, asAgent } from "./state/toast";
+import { agentNotice, asAgent, dismiss, toast, updateToast } from "./state/toast";
 import { platform } from "./platform";
 import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy, importTimeline } from "./state/project";
 import { saveTimeline, type TimelineFormat } from "./state/interchange";
@@ -193,7 +194,7 @@ async function grab(seconds: number[], width: number, before = false, beforeClip
   // drawing at the full 4K canvas would change nothing but the time taken.
   const k = Math.min(1, 1080 / Math.min(p.width, p.height));
   const big = { width: Math.max(w, Math.round(p.width * k)), height: Math.max(2, Math.round(p.height * k)) };
-  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big, before ? { clipIds: beforeClipIds } : undefined);
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big, before ? { clipIds: beforeClipIds } : undefined, projectWork.capture());
 }
 
 /** Frames in a grid, each with its label on a strip under it: the contact
@@ -277,6 +278,8 @@ async function agentCall(req: JsonRpcRequest): Promise<JsonRpcResponse | null> {
 }
 
 const mcpHost: McpHost = {
+  jobs, runJob,
+  jobScope: () => (needProject(), { project: store.document().id, signal: projectWork.signal() }),
   createClips: request => (needProject(), createClips(request)),
   exportProjects,
   name: APP_NAME,
@@ -328,10 +331,11 @@ const mcpHost: McpHost = {
       const bmp = await createImageBitmap(await platform.blobFor(a.src));
       return tiles([{ src: bmp, label: `${bmp.width}x${bmp.height}`, w: bmp.width, h: bmp.height }], tileWidth, 1);
     }
-    const pics = await sourceFrames(a, times, tileWidth);
+    const pics = await sourceFrames(a, times, tileWidth, projectWork.capture());
     return tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: a.width || 16, h: a.height || 9 })), tileWidth, columns);
   },
   fileSheet: async (src, given, count, tileWidth, columns) => {
+    const signal = projectWork.capture();
     // A file read where it is, never imported: an export looked at as delivered.
     const name = sourceName(src);
     let info: Awaited<ReturnType<typeof probe>>;
@@ -343,7 +347,7 @@ const mcpHost: McpHost = {
     if (!info.hasVideo) throw new Error(`${name} is sound only; preview_media shows pictures and videos`);
     const asset = { id: "file", kind: info.kind, name, src, duration: info.duration, width: info.width, height: info.height, hasVideo: info.hasVideo, hasAudio: info.hasAudio } as Asset;
     const times = info.kind === "image" ? [0] : given ?? Array.from({ length: count }, (_, i) => +((info.duration * (i + 0.5)) / count).toFixed(2));
-    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth);
+    const pics = info.kind === "image" ? [await createImageBitmap(await platform.blobFor(src))] : await sourceFrames(asset, times, tileWidth, signal);
     const image = await tiles(times.map((t, i) => ({ src: pics[i], label: info.kind === "image" ? `${info.width}x${info.height}` : `${+t.toFixed(2)} s`, w: info.width || 16, h: info.height || 9 })), tileWidth, info.kind === "image" ? 1 : columns);
     let chapters: Awaited<ReturnType<typeof readFileChapters>> = [];
     let chapterNote = "Chapter inspection reads Nero MP4/MOV chapter tables (as OpenFrame writes); other containers and QuickTime chapter tracks are not inspected.";
@@ -358,7 +362,12 @@ const mcpHost: McpHost = {
   checkProject: async (kind) => {
     needProject();
     const p = store.document();
-    return checkProject(p, kind as CheckKind, await measureForCheck(p));
+    const signal = projectWork.capture(), tid = toast("Checking the project", "progress");
+    try {
+      const measured = await measureForCheck(p, { signal, progress: pr => updateToast(tid, { progress: pr.fraction, text: pr.stage }) });
+      signal.throwIfAborted();
+      return checkProject(p, kind as CheckKind, measured);
+    } finally { dismiss(tid); }
   },
   exportVideo: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");

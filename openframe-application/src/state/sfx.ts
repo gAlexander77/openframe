@@ -1,3 +1,4 @@
+import { projectWork } from "./projectWork";
 // The built-in sound effects as an app action: the effect's WAV is made
 // on first use (lib/sfx.ts), saved with the project's media and reused by
 // name after that; the clips land on the effects track (ADR-098), the new
@@ -46,6 +47,7 @@ export async function addSoundEffect(id: string, opts: { at?: number; frame?: nu
 /** Several sound effects in one undoable edit (add_sound_effect's list):
  * every file is made first, so a bad name changes nothing. */
 export async function addSoundEffects(cues: SoundCue[]): Promise<{ clipIds: Id[] }> {
+  const signal = projectWork.capture();
   const bad = cues.find((c) => !SFX[c.name]);
   if (bad) throw new Error(`No sound effect ${bad.name}; there are ${Object.keys(SFX).join(", ")}`);
   const assets = new Map<string, Asset>();
@@ -55,6 +57,7 @@ export async function addSoundEffects(cues: SoundCue[]): Promise<{ clipIds: Id[]
     assets.set(name, r.asset);
     if (r.fresh) fresh.push(r.asset);
   }
+  signal.throwIfAborted();
   let clipIds: Id[] = [];
   edit(cues.length === 1 ? `Add ${SFX[cues[0].name].label}` : `Add ${cues.length} sound effects`, (p) => {
     const r = placeSounds({ ...p, assets: [...p.assets, ...fresh] }, cues, assets, store.get().playhead);
