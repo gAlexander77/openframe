@@ -125,23 +125,42 @@ async (page, base = "http://localhost:1420") => {
   // 4b. Loudness: each clip measured as it plays (mono through the
   //     equal-power panner, -3 dB a side, so each channel counts once), then
   //     set to the target, held back where the peak would clip, in one undo
-  //     step. Reference: ffmpeg -af ebur128=peak=sample.
+  //     step. Check the rendered true peak, including intersample peaks.
   await fresh();
   details.loudness = await run(async () => {
     const ve = window.videoEditor;
     const a = await window.__place("speech-test.wav");
     const b = await window.__place("music-stereo.m4a");
-    const r = await ve.ai.normalizeLoudness([a.clip.id, b.clip.id], { target: -10 });
     const vol = (id) => ve.describe().tracks.flatMap((t) => t.clips).find((c) => c.id === id).volume;
     const db = (g) => +(20 * Math.log10(g)).toFixed(2);
-    return { measured: r.map((x) => x.lufs), limitedBy: r.map((x) => x.limitedBy), gainDb: [db(vol(a.clip.id)), db(vol(b.clip.id))], undoLabel: ve.state().undoLabel };
+    // Check the output too: changing a gain expectation must not hide
+    // clipping or a mismatch between measurement and the audible graph.
+    const url = performance.getEntriesByType('resource').map((e) => e.name).find((u) => new URL(u).pathname.endsWith('/src/engine/mixdown.ts'));
+    const { measureMix } = await import(url);
+    const measure = async () => {
+      const p = ve.project();
+      const readings = [];
+      for (const { clip } of [a, b]) {
+        const alone = { ...p, tracks: p.tracks.map((t) => ({ ...t, clips: t.clips.filter((c) => c.id === clip.id) })) };
+        const m = await measureMix(alone, clip.start, clip.end);
+        // measureMix returns a linear amplitude, not dBTP. Convert before
+        // rounding: 0.89125 linear is -1 dBTP, not +0.89 dBTP.
+        readings.push({ lufs: +m.integrated.toFixed(2), truePeakDbtp: db(m.truePeak) });
+      }
+      return readings;
+    };
+    const input = await measure();
+    const r = await ve.ai.normalizeLoudness([a.clip.id, b.clip.id], { target: -10 });
+    const output = await measure();
+    return { measured: r.map((x) => x.lufs), limitedBy: r.map((x) => x.limitedBy), gainDb: [db(vol(a.clip.id)), db(vol(b.clip.id))], input, output, undoLabel: ve.state().undoLabel };
   });
   {
     const d = details.loudness;
-    // ffmpeg reads -17.2 LUFS (speech, mono, peak -3.5 dBFS) and -14.6
-    // (stereo music, peak -7.7). To reach -10 the speech would need +7.2 dB
-    // and peak at +3.7, so it is held at the -1 dBFS ceiling: +2.5 dB.
-    d.ok = near(d.measured, [-17.2, -14.6], 0.15) && near(d.gainDb, [2.5, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && d.undoLabel === "Normalize loudness of 2 clips";
+    // Normalization now measures the processed stereo output, including
+    // mono's equal-power center pan: the speech peak is -6.53 dBTP per
+    // side, while its integrated loudness stays -17.2 LUFS. The -1 dBTP
+    // ceiling therefore allows +5.53 dB. Stereo music still needs +4.6 dB.
+    d.ok = near(d.measured, [-17.2, -14.6], 0.15) && near(d.measured, d.input.map((m) => m.lufs), 0.02) && near(d.gainDb, [5.53, 4.6], 0.2) && d.limitedBy[0] === "peak" && d.limitedBy[1] === null && near(d.output.map((m) => m.lufs), [-11.65, -10], 0.2) && d.output.every((m, i) => m.truePeakDbtp <= -1 && Math.abs(m.truePeakDbtp - d.input[i].truePeakDbtp - d.gainDb[i]) < 0.03) && Math.abs(d.output[0].truePeakDbtp + 1) < 0.15 && d.undoLabel === "Normalize loudness of 2 clips";
   }
 
   // 4c. Ducking: music under a voice that talks in 1.6 s bursts every 3 s

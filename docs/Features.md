@@ -326,7 +326,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 - **Two-up trim preview:** actual clip-edge frames for trim/ripple/roll/slip/slide,
   clamped source times, one-step Undo and gesture cancellation. In a short
-  player the frames shrink so its header and footnote always show.
+  player the frames and spacing shrink so its header and footnote fit,
+  including the Large timeline layout at the minimum desktop window.
 
 ## Workspace
 
@@ -349,6 +350,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   in a project.
 
 ## Viewer
+
+- **Transport at narrow widths:** both timecodes keep a row of their own
+  when the playback and view controls need the space; those controls wrap
+  again in a narrow player, keeping the play button and every view control
+  reachable when a side panel is widened.
 
 - **Mute playback:** the speaker in the transport and the mixer's master
   strip share a session-only preview switch, also in Keyboard shortcuts.
@@ -1102,7 +1108,8 @@ makes a 13 s one). Times are timeline seconds.
 - **Voice changer** (Audio tab; `apply_voice_preset`, `list_catalog`
   section `voice_presets`): Chipmunk, Deep, Robot, Radio, Telephone,
   Megaphone, Cave and Monster. A chip applies the preset and auditions the
-  clip's first three seconds. Each expands into ordinary settings: pitch,
+  clip's first three seconds; hover a shortened label to read its full name.
+  Each expands into ordinary settings: pitch,
   EQ, filters, compressor, saturation, ring modulation, mono, echo and
   reverb. The preset label records the starting point; the settings remain
   editable. None clears those settings and their keys, keeping timing,

@@ -40,10 +40,16 @@ async (page) => {
   }, ids.plain);
   details.applied = { ok: plain.text === "Plain" && plain.color === "#ffd400" && plain.bold === true && plain.size === 120 && plain.undo === "Text style Yellow punch", plain };
 
+  // Autosave is debounced. Finish saving this project before tearing down
+  // the page, even when the earlier clicks finish in less than 800 ms.
+  await page.evaluate(() => window.videoEditor.action("saveProject"));
+  await page.waitForFunction(() => /^Saved /.test(document.querySelector(".save-state")?.textContent ?? ""));
+  const projectId = await page.evaluate(() => window.videoEditor.project().id);
   await page.reload();
   await page.waitForFunction(() => !!window.videoEditor);
   await page.locator(".project-card").first().click();
   await page.locator(".timeline-panel").waitFor();
+  details.reopened = { ok: await page.evaluate((id) => window.videoEditor.project().id === id, projectId) };
   await page.evaluate((id) => window.videoEditor.select([id]), ids.plain);
   details.kept = { ok: (await section.getByRole("button", { name: "Yellow punch", exact: true }).count()) === 1 };
   await section.getByRole("button", { name: "Delete style Yellow punch" }).click();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyLimiter, blockPeaks, kWeighting, LIMIT_BLOCK, limiterGains, LiveLoudness, LoudnessMeter, normalizeGain } from "./loudness";
+import { toDbtp, TruePeakMeter } from "./truePeak";
 
 /** `seconds` of a 997 Hz sine at `dbfs` peak on the channels in `on`. */
 function measure(rate: number, channels: number, on: number[], dbfs: number, seconds = 5, silenceAfter = 0) {
@@ -67,6 +68,45 @@ describe("normalizeGain", () => {
     const n = normalizeGain(-20, -14, 0.8);
     expect(0.8 * n.gain).toBeCloseTo(Math.pow(10, -1 / 20), 6);
     expect(n.limitedBy).toBe("peak");
+  });
+
+  it.each([1, 2])("agrees with remeasured %i-channel PCM using linear true peaks", (channels) => {
+    const rate = 48000;
+    // Mono as the center panner delivers it; stereo already has two
+    // channels. A brief high-frequency burst makes the mono peak-limited
+    // and exposes intersample peaks; the steady stereo can reach target.
+    const planes = Array.from({ length: 2 }, () => Float32Array.from({ length: rate }, (_, i) => {
+      const taper = Math.min(1, i / 480, (rate - 1 - i) / 480);
+      return taper * (channels === 1
+        ? (i >= 24000 && i < 24480 ? 0.5 : 0.05) * Math.SQRT1_2 * Math.sin(2 * Math.PI * i / 4 + Math.PI / 4)
+        : 0.15 * Math.sin(2 * Math.PI * 997 * i / rate));
+    }));
+    // Same streaming meters and final true-peak flush as measureMix.
+    const read = (pcm: Float32Array[]) => {
+      const meter = new LoudnessMeter(rate, 2), tp = new TruePeakMeter(2);
+      for (let at = 0; at < rate; at += 4096) {
+        const chunk = pcm.map((p) => p.subarray(at, at + 4096));
+        meter.push(chunk, chunk[0].length); tp.push(chunk, chunk[0].length);
+      }
+      tp.flush();
+      return { lufs: meter.integrated(), peak: tp.peak, sample: meter.peak };
+    };
+    const input = read(planes), target = -10, ceilingDb = -1;
+    const n = normalizeGain(input.lufs, target, input.peak, { ceilingDb });
+    const output = read(planes.map((p) => p.map((x) => x * n.gain)));
+    const gainDb = 20 * Math.log10(n.gain);
+    expect(output.lufs).toBeCloseTo(input.lufs + gainDb, 5);
+    expect(toDbtp(output.peak)).toBeCloseTo(toDbtp(input.peak) + gainDb, 5);
+    expect(toDbtp(output.peak)).toBeLessThanOrEqual(ceilingDb + 1e-6);
+    if (channels === 1) {
+      expect(n.limitedBy).toBe("peak");
+      expect(toDbtp(output.peak)).toBeCloseTo(ceilingDb, 5);
+      expect(toDbtp(input.peak) - toDbtp(input.sample)).toBeGreaterThan(2);
+      expect(output.lufs).toBeLessThan(target);
+    } else {
+      expect(n.limitedBy).toBeNull();
+      expect(output.lufs).toBeCloseTo(target, 5);
+    }
   });
 
   it("stays in the inspector's range and leaves silence alone", () => {
