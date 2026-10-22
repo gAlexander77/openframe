@@ -234,6 +234,10 @@ export interface Compound {
 }
 
 export interface Marker {
+  /** Frames after the start; absent or zero is a point. */
+  duration?: number;
+  /** Include this marker in chapter-enabled MP4 exports. */
+  chapter?: boolean;
   id: Id;
   frame: number;
   label: string;

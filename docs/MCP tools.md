@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 175 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 178 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -43,7 +43,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
-- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
+- **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
 - **Graphics and compositing**: `add_shape`, `set_shape`, `add_callout`, `set_anchor`, `set_shadow`, `set_border`, `set_tilt`, `set_track_matte`, `set_motion_blur`, `set_edge_mode`, `set_wiggle`
@@ -423,6 +423,64 @@ Move a clip's start or end edge to a time. Limited by the source media and neigh
 | `edge` | "start" \| "end" | yes | Which edge |
 | `to` | number | yes | Seconds (0..) |
 | `ripple` | boolean |  | Shift later clips |
+
+### extend_edit
+
+Move selected start/end edges to timeline seconds. Both touching sides roll; single sides trim, leaving gaps unless ripple is true. Answers every landed frame and any source, neighbor, length or locked-track limit.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `edits` | { clip_id, edge }[] | yes | Edit points; select both sides of a touching cut for a roll |
+| `edits[].clip_id` | string | yes | Clip id |
+| `edits[].edge` | "start" \| "end" | yes | Selected edge |
+| `to` | number | yes | Timeline seconds to extend to (0..) |
+| `ripple` | boolean |  | Shift later clips for single-edge trims; default false |
+
+Example:
+
+```json
+{"name":"extend_edit","arguments":{"edits":[{"clip_id":"c_123","edge":"end"}],"to":4.5}}
+```
+
+### trim_edits
+
+Nudge selected edit edges together; touching opposite sides roll. by is integer frames by default; unit seconds converts by to timeline frames. Answers each landed edge and stop reason.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `edits` | { clip_id, edge }[] | yes | Edit points; select both sides of a touching cut for a roll |
+| `edits[].clip_id` | string | yes | Clip id |
+| `edits[].edge` | "start" \| "end" | yes | Selected edge |
+| `by` | number | yes | Signed movement in frames (default) or seconds with unit seconds |
+| `unit` | "frames" \| "seconds" |  | Unit of by; default frames |
+| `ripple` | boolean |  | Shift later clips for single-edge trims; default false |
+
+Example:
+
+```json
+{"name":"trim_edits","arguments":{"edits":[{"clip_id":"c_123","edge":"end"}],"by":-1,"unit":"frames"}}
+```
+
+### edit_from_source
+
+Insert or overwrite source media using three/four-point marks (exclusive Outs). Source In/Out plus timeline In places that source range. A timeline range plus source In reads forward, or plus source Out backtimes. Four different-length marks require fit fill (constant speed) or trim (speed 1). Insufficient media rejects the whole edit. Returns sourceEdit with the made clip id and speed.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_id` | string | yes | Source asset id |
+| `source_in` | number |  | Source In seconds (0..) |
+| `source_out` | number |  | Exclusive source Out seconds (0..) |
+| `timeline_in` | number |  | Timeline In seconds; defaults to the playhead when neither timeline mark is given (0..) |
+| `timeline_out` | number |  | Exclusive timeline Out seconds (0..) |
+| `mode` | "insert" \| "overwrite" | yes | Placement operation |
+| `fit` | "fill" \| "trim" |  | Resolve four-point duration mismatch |
+| `track_id` | string |  | Destination track id; default main video or first unlocked audio track |
+
+Example:
+
+```json
+{"name":"edit_from_source","arguments":{"asset_id":"a_123","source_in":2,"source_out":8,"timeline_in":10,"timeline_out":13,"mode":"overwrite","fit":"fill"}}
+```
 
 ### roll_edit
 
@@ -936,6 +994,8 @@ Drop a marker at a time (chapters, beats, notes).
 | `at` | number | yes | Seconds (0..) |
 | `label` | string |  | Text |
 | `color` | string |  | CSS color |
+| `duration` | number |  | Range duration in seconds; zero is a point (0..) |
+| `chapter` | boolean |  | Include this marker in chapter-enabled MP4 exports |
 
 ### add_markers
 
@@ -957,6 +1017,8 @@ Edit a timeline marker's position, label or color without moving clips. Times ar
 | `at` | number |  | Timeline seconds (0..) |
 | `label` | string |  | Text |
 | `color` | string |  | CSS color |
+| `duration` | number |  | Range duration in seconds; zero restores a point (0..) |
+| `chapter` | boolean |  | Include this marker in chapter-enabled MP4 exports |
 | `detach` | boolean |  | Stop following its clip, staying where it is |
 
 ### delete_markers
@@ -2726,6 +2788,7 @@ Export the open project to a video file in the user's Videos folder (in a folder
 | `loudness` | number |  | Integrated LUFS for the mix; default as mixed (-40..-5) |
 | `start` | number |  | Export from this second (0..) |
 | `end` | number |  | Export to this second (0..) |
+| `chapters` | boolean |  | Include only chapter-marked timeline markers as real MP4 chapters; default false, MP4 only |
 | `captions` | "burn" \| "srt" \| "both" \| "none" |  | The captions: burn into the picture (default), srt file beside it, both, or none |
 | `folder` | string |  | An absolute folder to write into instead of the Videos folder, created if missing (desktop only; the browser build refuses it rather than ignore it) |
 | `replace` | boolean |  | true: replace a file of the same name in folder (folder is required) when the export finishes, instead of taking a numbered name; nothing outside folder is touched |

@@ -62,6 +62,12 @@ const automation = {
   /** Run one command as an undoable edit. Throws with every problem named.
    * add_sticker returns a promise: its picture is drawn first. */
   exec(name: string, args: unknown = {}) {
+    // The pure registry has no session playhead; source edits without a
+    // destination mark use the same fallback as the source monitor.
+    if (name === "edit_from_source" && args && typeof args === "object" && !Array.isArray(args)) {
+      const marks = args as Record<string, unknown>;
+      if (marks.timeline_in === undefined && marks.timeline_out === undefined) args = { ...marks, timeline_in: framesToSeconds(store.get().playhead, store.get().project.fps) };
+    }
     const fileCommand = PROJECT_FILE_COMMANDS.find(c => c.name === name);
     if (fileCommand) {
       const problems = validate(args, fileCommand.input);
@@ -92,6 +98,7 @@ const automation = {
     // The timeline's linkage applies, its magnet never does (ADR-102).
     const before = store.document();
     store.editDocument(commandLabel(name, args), (p) => runAgentCommand(p, name, args, report, store.get().linkage));
+    if (report.sourceEdit) store.set({ inPoint: null, outPoint: null });
     // A voice line moved or resized under music ducked for it: the dip
     // stays where the line was, and the answer says so (ADR-104).
     for (const d of staleDucks(before, store.document())) (report.notes ??= []).push(staleDuckNote(d));

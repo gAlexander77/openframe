@@ -477,6 +477,7 @@ function SettingsView() {
 
           {captionClips(project).length > 0 && <CaptionsRow s={s} set={set} />}
 
+          <Row label="Chapters"><label><input type="checkbox" aria-label="Chapters from markers" checked={s.chapters === true} disabled={!s.video || s.format !== "mp4"} onChange={(e) => set({ chapters: e.target.checked })} /> Chapters from markers</label></Row>
           <Row label="Range">
             <div className="export-segmented" role="radiogroup" aria-label="Range">
               <button role="radio" aria-checked={s.range === "all"} className={s.range === "all" ? "on" : ""} onClick={() => set({ range: "all" })}>

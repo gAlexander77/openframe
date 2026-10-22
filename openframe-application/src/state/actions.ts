@@ -5,6 +5,7 @@ import { prefsStore } from "./prefs";
 // file never imports the engine. Menus, shortcuts and toolbar buttons all
 // call run(id) — one path, so they cannot disagree.
 
+import { edgeFrame, moveEdits, nearestEdit } from "../lib/editPoints";
 import { nearestMainCut } from "../lib/defaultTransitions";
 import { clampZoom } from "../lib/timeline";
 import { GESTURE_CHORDS, ACTION_LABELS, buildIndex, chordOf, chordText, focusKeeps, withChanges, type ActionId, type Focused, type KeymapChanges } from "../lib/keymap";
@@ -14,6 +15,7 @@ import { adjacentMarker } from "../lib/markers";
 import { runCommand } from "../lib/commands";
 import { enableToggle } from "../lib/clipEnable";
 import { nudgeClips } from "../lib/project/gaps";
+import { formatTimecode } from "../lib/time";
 import { exportRange } from "../lib/export";
 import { groupClips, regroupCopies, ungroupClips } from "../lib/project/groups";
 import * as ops from "../lib/project/ops";
@@ -91,10 +93,10 @@ export const settleOptions = () => ({ magnet: store.get().magnet, linkage: store
 
 /** An undoable edit that then applies the magnet and linkage, so every path
  * into the timeline (menus, keys, drags, library) behaves the same. */
-export const edit = (label: string, fn: (p: Project) => Project) =>
+export const edit = (label: string, fn: (p: Project) => Project, options: Partial<ReturnType<typeof settleOptions>> = {}) =>
   store.edit(label, (p) => {
     const next = fn(p);
-    return next === p ? p : ops.settle(p, next, settleOptions());
+    return next === p ? p : ops.settle(p, next, { ...settleOptions(), ...options });
   });
 
 /** Premiere's Lift (gap stays) or Extract (closes) of the in/out range on
@@ -111,8 +113,38 @@ function takeRange(ripple: boolean) {
 
 /** Premiere's Alt+arrow: the selected clips by frames, when they fit. */
 function nudge(frames: number) {
-  const ids = store.get().selection;
-  if (ids.length) edit("Nudge", (p) => nudgeClips(p, ids, frames));
+  const s = store.get();
+  if (s.selectedEdits.length) return changeEdits({ by: frames });
+  if (s.selection.length) edit("Nudge", (p) => nudgeClips(p, s.selection, frames));
+}
+
+function editTracks() {
+  const s = store.get();
+  return s.project.tracks.filter((t) => t.clips.some((c) => s.selection.includes(c.id))).map((t) => t.id);
+}
+function selectEdit(direction?: -1 | 1) {
+  const s = store.get();
+  const from = direction && s.selectedEdits.length ? edgeFrame(s.project, s.selectedEdits[0]) ?? s.playhead : s.playhead;
+  const edges = nearestEdit(s.project, from, editTracks(), direction);
+  if (edges.length) store.set({ selectedEdits: edges });
+}
+function changeEdits(target: { to: number } | { by: number }) {
+  const s = store.get();
+  const edits = s.selectedEdits.length ? s.selectedEdits : nearestEdit(s.project, s.playhead, editTracks());
+  if (!edits.length) return toast("No unlocked edit point to extend");
+  let stops: string[] = [];
+  edit("to" in target ? "Extend edit" : "Trim edits", (p) => {
+    const r = moveEdits(p, edits, target);
+    stops = r.edges.filter((e) => e.stopped).map((e) => {
+      const c = ops.findClip(p, e.clipId)?.clip;
+      const name = c?.name ?? (c && "assetId" in c ? ops.getAsset(p, c.assetId)?.name : undefined) ?? "Clip";
+      const why = e.stopped!.startsWith("source") ? "media limit" : e.stopped!.startsWith("length") ? "one frame must remain" : e.stopped === "neighbor" ? "neighboring clip" : e.stopped === "zero" ? "timeline start" : e.stopped;
+      return `${name} ${e.edge} at ${formatTimecode(e.frame, p.fps)} (${why})`;
+    });
+    return r.project;
+  }, { magnet: false });
+  store.set({ selectedEdits: edits });
+  if (stops.length) toast(`Stopped: ${stops.join("; ")}`);
 }
 
 /** Frames to move per arrow press when nothing is playing. */
@@ -231,6 +263,7 @@ provide({
   toggleProxies: () => prefsStore.set({ proxyPlayback: !prefsStore.get().proxyPlayback }),
   toggleLoop: () => store.set({ loop: !store.get().loop }),
   // The source monitor provides these while it is open.
+  fitSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),
   insertSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),
   overwriteSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),
   liftRange: () => takeRange(false),
@@ -251,6 +284,10 @@ provide({
   stepForward10: () => stepBy(10),
   goStart: () => store.seek(0),
   goEnd: () => store.seek(ops.projectDuration(store.get().project)),
+  selectNearestEdit: () => selectEdit(),
+  selectNextEdit: () => selectEdit(1),
+  selectPrevEdit: () => selectEdit(-1),
+  extendEdit: () => changeEdits({ to: store.get().playhead }),
   prevEdit: () => {
     const s = store.get();
     const pts = ops.editPoints(s.project).filter((x) => x < s.playhead);

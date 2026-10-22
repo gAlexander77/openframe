@@ -108,6 +108,11 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   places the range as the timeline would (CapCut); **Insert** (,) splits at
   the playhead and pushes what follows, **Overwrite** (.) covers what is
   there (Premiere's), on the main track or the first audio track.
+  Three-point edits honor timeline In/Out: source In reads forward, source
+  Out backtimes. Four marks with different lengths ask for **Fit to fill**
+  (constant speed) or **Trim source to fit**. Insufficient media refuses the
+  edit; successful Insert/Overwrite clears the timeline marks. Agents use
+  `edit_from_source`; its answer includes the made clip and speed.
 
 ## Timeline
 
@@ -153,6 +158,17 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   so they select, move and delete together; Alt-click takes one side
   alone, each edge trims on its own, and red frame counts (+15 / −15)
   show on both when one is moved out of sync. Ungroup unlinks them.
+- **Selected edit points:** click a clip edge with Select to draw a bracket;
+  add other edges with Shift, or choose both touching sides with Alt or a
+  double-click for a roll. Extend Edit moves them to the playhead, and the
+  existing frame nudges trim selected edges. Media and neighbor limits are
+  reported; gaps remain. Keyboard selection finds the nearest/next/previous
+  edge on selected clips' tracks. Agents use `extend_edit` and `trim_edits`.
+- **Marker ranges and chapters:** set Duration in Markers to draw a ruler
+  band, then drag its end to resize it. Chapter marks explicitly choose
+  which notes become real MP4 chapters when **Chapters from markers** is
+  enabled at export (`export_video chapters: true`). A range follows its
+  start when attached to a song; ordinary notes stay out of the chapter list.
 - **Marker management** in the library and View menu: search notes or
   timecodes, filter by color, jump between notes, edit exact positions and
   labels, and undo deletion. **Delete shown** removes what the search and

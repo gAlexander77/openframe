@@ -51,18 +51,18 @@ export function ShortcutsDialog(props: { open: boolean; onClose: () => void }) {
       "shuttleForward", "toggleLoop", "toggleProxies", "playInToOut", "fullscreenPreview", "toggleCompare",
     ],
     Editing: [
-      "split", "splitAll", "trimStartToPlayhead", "trimEndToPlayhead", "delete",
+      "extendEdit", "split", "splitAll", "trimStartToPlayhead", "trimEndToPlayhead", "delete",
       "rippleDelete", "duplicate", "copy", "cut", "paste", "freeze", "detachAudio",
       "createCompound", "breakCompound", "toggleClipEnabled", "editText", "nudgeLeft", "nudgeRight", "nudgeLeft5", "nudgeRight5", "groupClips", "ungroupClips", "undo", "redo",
     ],
     "Selection & tools": [
-      "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",
+      "selectNearestEdit", "selectNextEdit", "selectPrevEdit", "selectAll", "deselect", "selectLeft", "selectRight", "toolSelect", "toolBlade",
       "toolRipple", "toolRoll", "toolSlip", "toolSlide", "toolStretch",
     ],
     Timeline: [
       "toggleMagnet", "toggleSnapping", "toggleLinkage", "togglePreviewAxis", "toggleKeyframePanel",
       "zoomIn", "zoomOut", "zoomFit", "addMarker", "nextMarker", "prevMarker",
-      "markIn", "markOut", "rangeToClip", "clearInOut", "liftRange", "extractRange", "insertSource", "overwriteSource",
+      "markIn", "markOut", "rangeToClip", "clearInOut", "liftRange", "extractRange", "insertSource", "overwriteSource", "fitSource",
     ],
     Project: [
       "newProject", "openProject", "saveProject", "importMedia", "export", "saveFrame", "showShortcuts", "showPreferences",

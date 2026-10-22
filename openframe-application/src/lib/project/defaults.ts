@@ -539,6 +539,8 @@ function normalizeMarkers(raw: unknown): Marker[] {
     frame: Math.max(0, Math.round(num(m.frame, 0))),
     label: typeof m.label === "string" ? m.label : "",
     color: typeof m.color === "string" ? m.color : "#3be0f0",
+    ...(Number.isSafeInteger(m.duration) && (m.duration as number) >= 0 ? { duration: m.duration as number } : {}),
+    ...(typeof m.chapter === "boolean" ? { chapter: m.chapter } : {}),
     ...(isObj(m.follows) && typeof m.follows.clip === "string" && Number.isFinite(m.follows.at) && (m.follows.at as number) >= 0 ? { follows: { clip: m.follows.clip, at: m.follows.at as number } } : {}),
   }));
 }

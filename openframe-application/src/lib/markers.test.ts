@@ -84,3 +84,31 @@ describe("timeline marker management", () => {
     expect(p.markers.map((m) => m.id)).not.toContain("beat");
   });
 });
+
+it("edits range duration and chapter without detaching a following start", () => {
+  const p = createProject();
+  p.markers = [{ id: "range", frame: 10, label: "Range", color: "red", follows: { clip: "song", at: 1 } }];
+  const q = updateMarker(p, "range", { duration: 30, chapter: true });
+  expect(q.markers[0]).toMatchObject({ duration: 30, chapter: true, follows: { clip: "song", at: 1 } });
+  expect(updateMarker(q, "range", { duration: 30, chapter: true })).toBe(q);
+  expect(() => updateMarker(p, "range", { duration: -1 })).toThrow();
+});
+
+it("range markers follow a moved clip by their start and preserve chapter metadata", () => {
+  let p = createProject();
+  p.assets = [{ id: "song", name: "Song", src: "song.wav", kind: "audio", duration: 10, hasVideo: false, hasAudio: true }];
+  p = runCommand(p, "add_media_clip", { asset_id: "song", start: 0 });
+  const clip = p.tracks.flatMap((t) => t.clips)[0];
+  p.markers = [{ id: "range", frame: 30, label: "Verse", color: "red", duration: 60, chapter: true, follows: { clip: clip.id, at: 1 } }];
+  const q = runCommand(p, "move_clip", { clip_id: clip.id, start: 2 });
+  expect(q.markers[0]).toMatchObject({ frame: 90, duration: 60, chapter: true, follows: { clip: clip.id, at: 1 } });
+});
+
+it("marker commands snap range seconds and describe duration and chapter for agents", () => {
+  let p = runCommand(createProject(), "add_marker", { at: 1, duration: 1.5, chapter: true, label: "Chapter" });
+  const id = p.markers[0].id;
+  expect(describeProject(p).markers[0]).toMatchObject({ duration: 1.5, duration_frames: 45, chapter: true });
+  p = runCommand(p, "update_marker", { marker_id: id, duration: 0, chapter: false });
+  expect(p.markers[0]).toMatchObject({ duration: 0, chapter: false });
+  expect(() => runCommand(p, "update_marker", { marker_id: id, duration: -1 })).toThrow();
+});

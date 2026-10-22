@@ -564,6 +564,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-130 Film tools share speech and preserve readable layouts]]
 - [[ADR-131 Playback proxies are purpose scoped and disposable cache]] — separate preview copies from delivery sources, validate cache
   health on this machine, and make batches as undoable metadata.
+- [[ADR-132 Precise edits resolve marks before placement and chapters extend movie metadata]] - session edge selection, three/four-point placement, range markers and opt-in MP4 chapters.
 - [[ADR-133 Crop softness, continuous rotation and regional masks]] —
   crop softness follows picture space, the rotation dial preserves turns,
   adjustments mix through masks, and static bezier paths share mask transforms.
