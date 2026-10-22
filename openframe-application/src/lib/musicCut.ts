@@ -50,7 +50,7 @@ export function setCrossfade(p: Project, clipId: Id, seconds: number): Project {
 }
 
 function withoutCrossfade(c: AudioClip): Clip {
-  const { crossfade: _, ...rest } = c;
+  const { crossfade: _, crossfadeCurve: _curve, ...rest } = c;
   return rest as Clip;
 }
 

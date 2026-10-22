@@ -61,6 +61,7 @@ export function Section(props: { title: string; id?: string; children: ReactNode
 }
 
 export interface SliderProps {
+  accessory?: ReactNode;
   clip: Clip;
   path: string;
   label: string;
@@ -203,7 +204,7 @@ export function SliderRow(p: SliderProps) {
         />
         {p.unit && <span className="insp-unit">{p.unit}</span>}
       </span>
-      {p.keyframes !== false ? <KeyCluster clip={p.clip} path={p.path} value={value} /> : <span className="insp-keys" />}
+      {p.keyframes !== false ? <KeyCluster clip={p.clip} path={p.path} value={value} /> : <span className="insp-keys">{p.accessory}</span>}
     </div>
   );
 }

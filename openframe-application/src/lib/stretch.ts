@@ -54,14 +54,23 @@ export function varispeed(pos: PositionMap): Retimer {
   };
 }
 
+const sample = (x: Float32Array, p: number) => {
+  if (Number.isInteger(p)) return at(x, p);
+  const k = Math.floor(p), t = p - k;
+  const a = at(x, k - 1), b = at(x, k), c = at(x, k + 1), d = at(x, k + 2);
+  return b + 0.5 * t * (c - a + t * (2 * a - 5 * b + 4 * c - d + t * (3 * (b - c) + d - a)));
+};
+
 export interface WsolaOptions {
   /** Grain length in seconds (default 0.04). */
   grain?: number;
   /** How far a grain may move to match the waveform (default 0.01 s). */
   tolerance?: number;
+  /** Source samples per grain sample; independent of the position map. */
+  rate?: PositionMap;
 }
 
-/** Pitch-preserving retimer (see the file comment). */
+/** WSOLA: native pitch by default; rate resamples the grains for a shift. */
 export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions = {}): Retimer {
   const H = Math.max(16, Math.round(((opts.grain ?? 0.04) * sampleRate) / 2));
   const N = 2 * H;
@@ -71,21 +80,23 @@ export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions =
   /** Latest input start for the grain at output n: its 3/4 point (output
    * n + 3H/2) may read no later than pos() says for that instant. */
   const Q = Math.round(1.5 * H);
-  const latest = (n: number) => pos(n + Q) - Q;
+  const rateAt = opts.rate ?? (() => 1);
+  const latest = (n: number) => pos(n + Q) - Q * rateAt(n);
   /** Ideal input start of the grain laid at output n: centered on its
    * output, capped by latest(). */
-  const ideal = (n: number) => Math.round(Math.min(pos(n + H) - H, latest(n)));
+  const ideal = (n: number) => Math.round(Math.min(pos(n + H) - H * rateAt(n), latest(n)));
 
   let next: number | null = null; // output start of the next grain
   let tailStart = 0;
   let tail: Float32Array[] = [];
+  let prevRate = 1;
   let prev: number | null = null; // input start of the previous grain
 
   /** Offset in [-tol, up] whose first H samples best continue `natural`. */
-  function search(mono: Float32Array, base: number, natural: number, up: number): number {
+  function search(mono: Float32Array, base: number, natural: number, up: number, rate: number): number {
     const power = (from: number, len: number) => {
       let e = 0;
-      for (let j = 0; j < len; j += 4) e += at(mono, from + j) ** 2;
+      for (let j = 0; j < len; j += 4) e += sample(mono, from + rate * j) ** 2;
       return (4 * e) / len;
     };
     const before = power(natural, H);
@@ -100,8 +111,8 @@ export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions =
       let xy = 0;
       let yy = 1e-9;
       for (let j = 0; j < H; j += step) {
-        const y = at(mono, base + d + j);
-        xy += at(mono, natural + j) * y;
+        const y = sample(mono, base + d + rate * j);
+        xy += sample(mono, natural + prevRate * j) * y;
         yy += y * y;
       }
       return xy / Math.sqrt(yy);
@@ -125,7 +136,11 @@ export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions =
   }
 
   return {
-    inputSpan: (n0, n1) => [ideal(n0 - N) - tol - N, ideal(n1 + N) + tol + 2 * N],
+    inputSpan: (n0, n1) => {
+      if (!opts.rate) return [ideal(n0 - N) - tol - N, ideal(n1 + N) + tol + 2 * N];
+      const margin = Math.ceil(N * Math.max(1, rateAt(n0 - N), rateAt(n1 + N)) * 3);
+      return [Math.floor(ideal(n0 - N) - tol - margin), Math.ceil(ideal(n1 + N) + tol + margin)];
+    },
     render(input, inStart, n0, out) {
       const C = out.length;
       const len = out[0].length;
@@ -147,18 +162,20 @@ export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions =
       const mono = new Float32Array(input[0].length);
       for (const ch of input) for (let i = 0; i < mono.length; i++) mono[i] += ch[i];
       while (next < n1) {
+        const rate = rateAt(next);
         let start = ideal(next);
         // Searching later is allowed only as far as the no-read-ahead limit.
         const up = Math.min(tol, Math.max(0, Math.floor(latest(next) - start)));
-        if (prev !== null) start += search(mono, start - inStart, prev + H - inStart, up);
+        if (prev !== null) start += search(mono, start - inStart, prev + prevRate * H - inStart, up, rate);
         const o = next - tailStart;
         const s = start - inStart;
         for (let c = 0; c < C; c++) {
           const x = input[Math.min(c, input.length - 1)];
           const b = buf[c];
-          for (let j = 0; j < N; j++) b[o + j] += win[j] * at(x, s + j);
+          for (let j = 0; j < N; j++) b[o + j] += win[j] * (rate === 1 ? at(x, s + j) : sample(x, s + rate * j));
         }
         prev = start;
+        prevRate = rate;
         next += H;
       }
       for (let c = 0; c < C; c++) {
@@ -168,4 +185,15 @@ export function wsola(pos: PositionMap, sampleRate: number, opts: WsolaOptions =
       tailStart = n1;
     },
   };
+}
+
+
+/** Resample each grain by the pitch ratio and WSOLA its placement against
+ * the original time map, in one retiming pass. Its length is always the
+ * caller's output length. Tape mode adds the map's local speed to pitch.
+ * ponytail: cubic resampling can fold the highest octave on upward shifts;
+ * a polyphase low-pass is the upgrade, as for varispeed. */
+export function pitchShift(pos: PositionMap, sampleRate: number, semitones: number, tape = false): Retimer {
+  const ratio = 2 ** (Math.max(-12, Math.min(12, semitones)) / 12);
+  return wsola(pos, sampleRate, { rate: (n) => ratio * (tape ? Math.max(0.001, (pos(n + 16) - pos(n - 16)) / 32) : 1) });
 }

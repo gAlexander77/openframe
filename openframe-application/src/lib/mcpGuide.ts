@@ -1,3 +1,4 @@
+import { VOICE_PRESETS } from "./soundFx";
 // What an AI model needs beside the tools themselves to make a video well:
 // the catalog of names the tools accept, the tools grouped in the order a
 // video gets made, which tools only read, worked examples, and playbooks
@@ -67,7 +68,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",
-    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "set_crossfade", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
+    tools: ["add_voiceover", "review_voiceover", "retake_voiceover", "text_to_speech", "add_sound_effect", "add_ambience", "set_fades", "set_pitch", "apply_voice_preset", "set_audio_filter", "set_reverb", "set_echo", "set_tape_stop", "set_compressor", "set_channel_fill", "set_crossfade", "normalize_loudness", "duck_under_speech", "reduce_noise", "sync_audio", "remove_silences", "remove_filler_words"],
   },
   { name: "Check and deliver", blurb: "Look at the media and the result, check it against the rules, then export.", tools: ["preview_media", "preview_frames", "preview_motion", "preview_frame", "preview_audio", "check_project", "measure_loudness", "export_video", "export_versions", "export_status"] },
 ];
@@ -121,7 +122,9 @@ export const EXAMPLES: Record<string, Record<string, unknown>> = {
   set_speed_curve: { clip_id: "c_123", preset: "hero" },
   set_blend: { clip_ids: ["c_123"], mode: "screen" },
   set_canvas_fill: { clip_ids: ["c_123"], fill: "blur", amount: 60 },
-  set_fades: { clip_ids: ["c_123"], fade_in: 1, fade_out: 2 },
+  set_fades: { clip_ids: ["c_123"], fade_in: 1, fade_out: 2, curve_out: "sCurve" },
+  set_pitch: { clip_ids: ["c_123"], semitones: 5 },
+  apply_voice_preset: { clip_ids: ["c_123"], preset: "radio" },
   mark_beats: { clip_id: "c_123", every: 1 },
   generate_music: { style: "launch", key: "Am", sections: [{ name: "intro", bars: 2 }, { name: "build", bars: 2 }, { name: "drop", at: 8 }, { name: "breakdown", bars: 4 }, { name: "build", bars: 2 }, { name: "drop", bars: 8 }, { name: "outro", end_at: 56 }], seed: 7, stems: true, markers: ["bars", "drop"] },
   plan_music: { style: "cinematic", length: 45, ending: "stop" },
@@ -228,6 +231,7 @@ export function fullCatalog(section?: string, query?: string): unknown {
     text_templates: Object.entries(TEXT_TEMPLATES).map(([id, t]) => ({ id, label: t.label, category: t.category, seconds: t.seconds, texts: t.layers.filter((l) => l.text !== undefined).length })),
     caption_looks: labels(CAPTION_LOOKS),
     speed_presets: labels(SPEED_PRESETS),
+    voice_presets: Object.entries(VOICE_PRESETS).map(([id, p]) => ({ id, ...p })),
     sound_effects: Object.entries(SFX).map(([id, s]) => ({ id, label: s.label, seconds: s.seconds })),
     ambience: Object.entries(AMBIENCE).map(([id, b]) => ({ id, label: b.label, about: b.blurb, lufs: b.lufs })),
     voices: VOICES.map((v) => ({ id: v.id, name: v.label.split(" (")[0], accent: v.accent, gender: v.gender, grade: v.grade, character: v.character, suited: v.suited, ...(v.id === DEFAULT_VOICE ? { default: true } : {}) })),

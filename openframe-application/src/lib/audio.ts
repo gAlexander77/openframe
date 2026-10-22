@@ -3,9 +3,9 @@
 // so the envelope that Web Audio plays is the one the tests check.
 
 import { paramAt } from "./keyframes";
-import { findCompound, isTimed } from "./project/ops";
+import { findCompound, isTimed, sourceOffset, setLevel } from "./project/ops";
 import { fxTail } from "./soundFx";
-import type { AudioClip, Clip, CompoundClip, Id, Keyframe, Project, Sound, Track, VideoClip } from "./project/types";
+import type { AudioClip, Clip, CompoundClip, FadeCurve, Id, Keyframe, Project, Sound, Track, VideoClip } from "./project/types";
 import { framesToSeconds, type Rational } from "./time";
 
 /** A clip that makes sound, in the frames of the timeline being mixed. */
@@ -113,6 +113,7 @@ export interface Overlap {
    * incoming one (`rise`) rises over the `pre` seconds before its start. */
   fall?: number;
   rise?: boolean;
+  curve?: FadeCurve;
   /** The next clip goes on with the same sound (a split, `continues`):
    * no click guard at the end, which moves to this gain (the next clip's
    * at its start) instead of to silence. */
@@ -120,6 +121,15 @@ export interface Overlap {
   /** This clip goes on from the one before: no click guard at its start. */
   joinsPrev?: boolean;
 }
+/** Gain along a rising fade, with input clamped to its endpoints. */
+export const linearFade = (x: number) => Math.max(0, Math.min(1, x));
+export const equalPowerFade = (x: number) => Math.sin(linearFade(x) * Math.PI / 2);
+export const logarithmicFade = (x: number) => Math.log10(1 + 9 * linearFade(x));
+export const exponentialFade = (x: number) => (10 ** linearFade(x) - 1) / 9;
+export const sCurveFade = (x: number) => { const t = linearFade(x); return t * t * (3 - 2 * t); };
+const FADE_GAIN = { linear: linearFade, equalPower: equalPowerFade, logarithmic: logarithmicFade, exponential: exponentialFade, sCurve: sCurveFade };
+export const fadeGain = (x: number, curve: FadeCurve = "linear") => FADE_GAIN[curve](x);
+
 export const NO_OVERLAP: Overlap = { pre: 0, post: 0 };
 
 /**
@@ -157,8 +167,8 @@ export function soundOverlaps(p: Project): Map<Id, Overlap> {
       if (a.type === "audio" && b.type === "audio" && a.crossfade) {
         const x = audioCrossfade(a, b, p.fps);
         if (x > 0) {
-          out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), fall: x });
-          out.set(b.id, { pre: x, post: out.get(b.id)?.post ?? 0, rise: true });
+          out.set(a.id, { ...(out.get(a.id) ?? NO_OVERLAP), fall: x, curve: a.crossfadeCurve });
+          out.set(b.id, { pre: x, post: out.get(b.id)?.post ?? 0, rise: true, curve: a.crossfadeCurve });
           continue;
         }
       }
@@ -202,8 +212,8 @@ export function audioCrossfade(a: AudioClip, b: AudioClip, fps: Rational): numbe
 type Gained = Sound & { start: number; duration: number; keyframes?: Clip["keyframes"] };
 
 /**
- * Gain of a clip at timeline second `t` (absolute). Fades are linear in
- * amplitude, as CapCut's are; keyframed volume interpolates by its curve.
+ * Gain of a clip at timeline second `t` (absolute). Each fade follows its
+ * selected shape (legacy linear); keyframed volume follows its own curve.
  * A side that overlaps its neighbor (soundOverlaps) crossfades instead of
  * fading: sin over the whole overlap, so the two sides' powers sum to one;
  * an audio crossfade (`fall`, `rise`) does so over the seconds before the
@@ -218,16 +228,16 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
   let g = paramAt(c as Clip, "volume", r) * track.volume;
   if (o.pre > 0 && o.rise) {
     // An audio crossfade: risen by the cut, the clip plays on as it is.
-    if (t < start) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / o.pre));
+    if (t < start) g *= fadeGain((t - start + o.pre) / o.pre, o.curve ?? "equalPower");
   } else if (o.pre > 0) {
     if (t < start + o.pre) g *= Math.sin((Math.PI / 2) * ((t - start + o.pre) / (2 * o.pre)));
   } else if (!o.joinsPrev) {
     const fadeIn = Math.max(framesToSeconds(c.fadeIn, fps), EDGE_RAMP);
-    if (rel < fadeIn) g *= rel / fadeIn;
+    if (rel < fadeIn) g *= fadeGain(rel / fadeIn, c.fadeInCurve);
   }
   if (o.fall) {
     // Falling as the next clip rises, their powers summing to one.
-    if (t > end - o.fall) g *= Math.sin((Math.PI / 2) * ((end - t) / o.fall));
+    if (t > end - o.fall) g *= fadeGain((end - t) / o.fall, o.curve ?? "equalPower");
   } else if (o.post > 0) {
     if (t > end - o.post) g *= Math.sin((Math.PI / 2) * ((end + o.post - t) / (2 * o.post)));
   } else if (o.joinsNext !== undefined) {
@@ -235,7 +245,7 @@ export function clipGainAt(c: Gained, track: Track, fps: Project["fps"], t: numb
     if (end - t < EDGE_RAMP) g += (o.joinsNext - g) * (1 - (end - t) / EDGE_RAMP);
   } else {
     const fadeOut = Math.max(framesToSeconds(c.fadeOut, fps), EDGE_RAMP);
-    if (end - t < fadeOut) g *= (end - t) / fadeOut;
+    if (end - t < fadeOut) g *= fadeGain((end - t) / fadeOut, c.fadeOutCurve);
   }
   return Math.max(0, g);
 }
@@ -296,7 +306,7 @@ export const COMPRESSOR_SETTLE = 1;
  * silence into the sound and its gain stepped. */
 export function soundPreroll(s: SoundingClip): number {
   const compressed = [s.clip, ...(s.via ?? []).map((v) => v.clip)].some((c) => !!c.compressor);
-  return Math.max(fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0);
+  return Math.max(fxTail(s.clip), compressed ? COMPRESSOR_SETTLE : 0, s.clip.pitch ? 0.2 : 0);
 }
 
 /** A clip's EQ and compressor, as the mixer builds them: equal keys play
@@ -412,3 +422,37 @@ export function soundEnvelope(s: SoundingClip, fps: Project["fps"], from: number
 /** Linear gain to decibels for meters and the inspector. */
 export const toDb = (g: number) => (g <= 0 ? -Infinity : 20 * Math.log10(g));
 export const fromDb = (db: number) => 10 ** (db / 20);
+
+
+/** Identical split sound runs enter one retimer and effects graph, so pitch
+ * grains, ring phase and delay/reverb state survive the cut. Only sound is
+ * combined: the document and its selectable clips remain untouched. */
+export function continuousSoundRuns(sounding: SoundingClip[], fps: Rational): SoundingClip[] {
+  const out: SoundingClip[] = [];
+  const signature = (s: SoundingClip) => {
+    const c = s.clip;
+    const keys = Object.entries(c.keyframes ?? {}).filter(([path]) => /^(volume|pan|lowpass\.|highpass\.|echo\.|reverb\.)/.test(path)).map(([path, keys]) => [path, keys.map((k) => ({ ...k, f: k.f + c.start }))]);
+    const speed = c.speedCurve?.points.map((k) => ({ ...k, f: k.f + c.start }));
+    return JSON.stringify([keys, speed, c.type, c.assetId, c.speed, c.changePitch, c.reverse, c.pitch, c.volume, c.pan, c.eq, c.compressor, c.fill, c.mono, c.highpass, c.lowpass, c.saturation, c.ringMod, c.echo, c.reverb, s.via]);
+  };
+  for (const s of [...sounding].sort((a, b) => a.clip.start - b.clip.start)) {
+    const c = s.clip;
+    const prev = out.findLast((x) => x.track === s.track && x.clip.start + x.clip.duration === c.start);
+    const a = prev?.clip;
+    const changed = c.pitch || c.voice || c.saturation || c.ringMod;
+    if (changed && a && !a.tapeStop && !a.freeze && !c.freeze && !a.fadeOut && !c.fadeIn && !(a.type === "audio" && a.crossfade) && !(a.type === "video" && a.transitionOut) && signature(prev!) === signature(s) && Math.abs(a.in + (a.reverse ? -1 : 1) * sourceOffset(a, a.duration, fps) - c.in) < 1e-3) {
+      prev!.clip = { ...a, duration: a.duration + c.duration, fadeOut: c.fadeOut, fadeOutCurve: c.fadeOutCurve, tapeStop: c.tapeStop };
+      prev!.overlap = { ...prev!.overlap, pre: prev!.overlap?.pre ?? 0, post: s.overlap?.post ?? 0, joinsNext: s.overlap?.joinsNext, fall: s.overlap?.fall };
+    } else out.push({ ...s });
+  }
+  return out;
+}
+
+
+/** A clip measured for normalization: its processed sound at unit peak
+ * fader gain, with a duck's relative shape retained. Track/master faders
+ * stay mix decisions rather than being undone by clip normalization. */
+export function normalizationMix(p: Project, clipId: Id): Project {
+  const unit = setLevel(p, clipId, 1);
+  return { ...unit, masterVolume: 1, tracks: unit.tracks.map((t) => ({ ...t, volume: 1, pan: 0, muted: false, solo: false, clips: t.clips.filter((c) => c.id === clipId) })) };
+}

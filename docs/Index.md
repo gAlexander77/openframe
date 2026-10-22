@@ -554,3 +554,6 @@ Every non-obvious choice gets a short Architecture Decision Record in
   a listener flag and the main page's load hook answer requests at once
   while the editor is unavailable, drain interrupted requests with a
   warning to check the project, and keep the long timeout for exports.
+- [[ADR-128 Sound shaping uses the shared mixer and retimer]] — fade curves,
+  independent pitch, editable voice presets, continuous split processing,
+  and normalization through the export mixer.

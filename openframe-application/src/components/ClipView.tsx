@@ -1,3 +1,5 @@
+import { fadeGain } from "../lib/audio";
+import type { Sound } from "../lib/project/types";
 import { memo, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { fromDb, toDb } from "../lib/audio";
 import { gridTicks } from "../lib/beatGrid";
@@ -144,7 +146,7 @@ const dbToY = (db: number, h: number) => {
 };
 
 function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number; fps: Project["fps"]; slim?: boolean }) {
-  const c = p.clip as Clip & { volume: number; fadeIn: number; fadeOut: number };
+  const c = p.clip as Clip & Sound;
   const [drag, setDrag] = useState<null | { kind: "vol" | "in" | "out"; label: string }>(null);
   const h = p.height;
   const w = c.duration * p.zoom;
@@ -152,6 +154,16 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
   const lineY = dbToY(db, h);
   const fi = c.fadeIn * p.zoom;
   const fo = c.fadeOut * p.zoom;
+  const ramp = (out: boolean) => {
+    const length = out ? fo : fi;
+    const points = Array.from({ length: 25 }, (_, i) => {
+      const u = i / 24;
+      const x = out ? w - length + length * u : length * u;
+      const g = fadeGain(out ? 1 - u : u, out ? c.fadeOutCurve : c.fadeInCurve);
+      return `${x},${h - (h - lineY) * g}`;
+    });
+    return `M${out ? w - length : 0},${h} L${points.join(" L")} L${out ? w : length},${h} Z`;
+  };
   const start = (e: React.PointerEvent, kind: "vol" | "in" | "out") => {
     e.stopPropagation();
     e.preventDefault();
@@ -190,8 +202,8 @@ function AudioHandles(p: { clip: Clip; zoom: number; height: number; top: number
   return (
     <div className={`audio-handles${p.slim ? " slim" : ""}`} style={{ top: p.top, height: h }}>
       <svg className="fade-shade" width={w} height={h} aria-hidden>
-        {fi > 0 && <path d={`M0,0 L${fi},${lineY} L0,${h} Z`} />}
-        {fo > 0 && <path d={`M${w},0 L${w - fo},${lineY} L${w},${h} Z`} />}
+        {fi > 0 && <path d={ramp(false)} />}
+        {fo > 0 && <path d={ramp(true)} />}
       </svg>
       <div className={`vol-line${drag?.kind === "vol" ? " on" : ""}`} style={{ top: lineY, left: fi, right: fo }} data-tip="Drag to change volume (Shift for fine)" onPointerDown={(e) => start(e, "vol")} />
       <div className="fade-knob in" style={{ left: Math.max(8, fi - 5) }} data-tip="Drag to fade in" onPointerDown={(e) => start(e, "in")} />

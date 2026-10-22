@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 169 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -51,7 +51,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
 - **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
-- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
+- **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_pitch`, `apply_voice_preset`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
 - **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
 ## Start here
@@ -91,7 +91,7 @@ Read the timeline: canvas, fps, duration, assets, tracks and clips with ids and 
 
 ### list_catalog
 
-Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
+Every name the edit tools accept. With no section: an index of all sections (effects, transitions, animations, filters, text_templates, caption_looks, speed_presets, sound_effects, voice_presets, ambience, voices, blend_modes, mask_shapes, fonts, canvas_ratios, export_presets, sticker_motions, stickers, param_paths). With a section: its details, such as each effect's parameters with ranges and defaults, or each voice's accent, gender, grade, character and what to cast it for. section stickers with a query searches the sticker library.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -2264,18 +2264,51 @@ Example:
 
 ### set_fades
 
-Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).
+Fade a clip's sound in and out, in SECONDS (a music bed: fade_in 1, fade_out 2). Works on audio clips and on video clips' own sound; a value left out keeps its fade, 0 removes it. curve sets both shapes, curve_in and curve_out override each side. Each fade is at most half the clip. Pictures fade with set_animation (slot in or out, type fade).
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_ids` | string[] | yes | Audio or video clips |
 | `fade_in` | number |  | Seconds (0..) |
 | `fade_out` | number |  | Seconds (0..) |
+| `curve` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
+| `curve_in` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
+| `curve_out` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
 
 Example:
 
 ```json
-{"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2}}
+{"name":"set_fades","arguments":{"clip_ids":["c_123"],"fade_in":1,"fade_out":2,"curve_out":"sCurve"}}
+```
+
+### set_pitch
+
+Shift sound by -12..12 semitones without changing speed, duration or timing. Works with reverse and speed curves. 0 resets it. Pitch is not keyframeable; use set_pitch or set_param pitch without at.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Audio or video clips |
+| `semitones` | number | yes | Semitones relative to the original pitch; 12 is an octave up (-12..12) |
+
+Example:
+
+```json
+{"name":"set_pitch","arguments":{"clip_ids":["c_123"],"semitones":5}}
+```
+
+### apply_voice_preset
+
+Apply a voice changer as ordinary editable settings (pitch, EQ, compressor, filters, saturation, ring modulation, mono, echo and reverb). Replaces those settings and their keyframes; none clears them to defaults. Keeps volume, fades, timing and tape stop. The voice label is descriptive only. Fine-tune pitch with set_pitch and processor numbers with set_param (not keyframeable).
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `clip_ids` | string[] | yes | Audio or video clips |
+| `preset` | "none" \| "chipmunk" \| "deep" \| "robot" \| "radio" \| "telephone" \| "megaphone" \| "cave" \| "monster" | yes | Voice character, or none to restore the preset's settings to defaults |
+
+Example:
+
+```json
+{"name":"apply_voice_preset","arguments":{"clip_ids":["c_123"],"preset":"radio"}}
 ```
 
 ### set_audio_filter
@@ -2382,12 +2415,13 @@ Play one channel of a video's or audio clip's sound on both sides (Premiere's Fi
 
 ### set_crossfade
 
-Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): at equal power over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {"clip_id": "c_3", "seconds": 0.03}.
+Crossfade an audio clip into the next clip on its track, which starts where it ends (two pieces of a song, two songs, two takes of a bed): with the chosen curve (default equalPower) over seconds, ending at the cut, the next clip's sound rising over the seconds before its start from its file before its in-point (it needs that much), this one falling over its last. 0 makes it a butt cut again. A butt cut ramps each side over 4 ms to stop a click, which leaves a few milliseconds of near-silence at the join; preview_audio's edges measure it. Both clips play at their own speed. Example: {"clip_id": "c_3", "seconds": 0.03}.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `clip_id` | string | yes | The audio clip before the join |
 | `seconds` | number | yes | Seconds of crossfade (0 removes it; at most 2) (0..2) |
+| `curve` | "linear" \| "equalPower" \| "logarithmic" \| "exponential" \| "sCurve" |  | Fade shape: linear (steady amplitude), equalPower (sine, steady combined power), logarithmic (fast rise), exponential (slow rise), sCurve (smooth at both ends). Omitted keeps today's shape: linear fades, equalPower crossfades. |
 
 Example:
 
@@ -2397,7 +2431,7 @@ Example:
 
 ### normalize_loudness
 
-Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone: measure_loudness checks the mix.
+Measure clips' loudness (EBU R128) and set their volume to reach a target without their true peak passing the ceiling (-1 dBTP; -2 for ATSC). -14 LUFS suits social video, -16 podcasts, -23 European broadcast, -24 US TV. spec names a delivery spec instead (its target and ceiling). A ducked clip keeps its duck: its volume keys scale so the loudest is the new level. Each clip is measured alone through its pitch, filters, saturation, ring modulation, compressor, fades and effect tails, using the export mixer at unit clip gain (track/master faders excluded). measure_loudness checks the mix.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

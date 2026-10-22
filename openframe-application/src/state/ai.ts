@@ -8,7 +8,7 @@
 // TypeScript. Nothing is uploaded and nothing needs a key.
 
 import { useSyncExternalStore } from "react";
-import { decodeMono, decodePcm, frameGrays, frameScores, measureLoudness } from "../engine/analyze";
+import { decodeMono, decodePcm, frameGrays, frameScores } from "../engine/analyze";
 import { AH, AW, shiftBetween, spectrum, stabilization, type StabilizeLevel } from "../lib/analysis/stabilize";
 import { denoise } from "../lib/analysis/denoise";
 import { replaceClip } from "../lib/project/replace";
@@ -25,6 +25,8 @@ import type { StructureHints } from "../lib/analysis/beats";
 import { markMusicClip, MUSIC_MARKERS, type MusicMarkerKind } from "../lib/epic";
 import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
+import { normalizationMix } from "../lib/audio";
+import { fxTail } from "../lib/soundFx";
 import { measureMix } from "../engine/mixdown";
 import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
 import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
@@ -650,7 +652,7 @@ function timelineTimes(clip: MediaClip, times: number[]): number[] {
 
 export interface LoudnessResult extends Normalization {
   clipId: Id;
-  /** Measured integrated loudness of the source, LUFS. */
+  /** Measured integrated loudness of the processed clip at unit gain, LUFS. */
   lufs: number;
 }
 
@@ -670,17 +672,19 @@ export async function normalizeLoudness(clipIds?: Id[], opts: Partial<LoudnessSe
   const targets = ids.map((id) => targetFor("loudness", id)).filter((t): t is Target => typeof t !== "string");
   if (!targets.length) throw new Error(ids.length ? String(targetFor("loudness", ids[0])) : `Select ${NEEDS.loudness} on the timeline`);
   const label = targets.length === 1 ? `Measuring the loudness of ${targets[0].asset.name}` : `Measuring the loudness of ${plural(targets.length, "clip")}`;
+  const before = store.get().project;
   const measured = await job("loudness", targets[0].clip, label, async (progress, signal) => {
     const out: { clipId: Id; lufs: number; peak: number; truePeak: number }[] = [];
-    for (const [i, { clip, asset }] of targets.entries()) {
-      const [from, to] = windowOf(clip);
-      // Measured as it plays: through the clip's compressor, if it has one.
-      const r = await measureLoudness(asset, from, to, (x) => progress((i + x) / targets.length), signal, "compressor" in clip ? clip.compressor : undefined);
-      out.push({ clipId: clip.id, ...r });
+    for (const [i, { clip }] of targets.entries()) {
+      const sec = (f: number) => framesToSeconds(f, before.fps);
+      const tail = "volume" in clip ? Math.min(12, fxTail(clip)) : 0;
+      const r = await measureMix(normalizationMix(before, clip.id), sec(clip.start), sec(clip.start + clip.duration) + tail, { signal, onProgress: (x) => progress((i + x) / targets.length) });
+      out.push({ clipId: clip.id, lufs: r.integrated, peak: r.samplePeak, truePeak: r.truePeak });
     }
     return out;
   });
   scope.throwIfAborted();
+  if (store.get().project !== before) throw new Error("The project changed while measuring; normalize loudness again.");
   const results = measured.map((m) => ({ clipId: m.clipId, lufs: +m.lufs.toFixed(2), ...normalizeGain(m.lufs, target, m.truePeak, { ceilingDb }) }));
   const live = results.filter((r) => Number.isFinite(r.lufs) && ops.findClip(store.get().project, r.clipId));
   if (!live.length) {

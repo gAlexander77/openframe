@@ -39,6 +39,7 @@ import { fontWeight, WEIGHT_NAMES } from "../../lib/textLook";
 import { useFontWeights } from "../../state/fontWeights";
 import { BorderSection, CompositingSection, ShadowSection, ShapeSection } from "./GraphicsSection";
 import { SectionKey } from "./KeyTools";
+import { FadeCurveRow, PitchRow, VoiceChangerSection } from "./SoundShape";
 import { SoundFxSection } from "./SoundFx";
 import { BeatGridSection } from "./BeatGridSection";
 import { CurvesPanel } from "./CurvesPanel";
@@ -542,10 +543,11 @@ function AudioTab({ clip }: { clip: Clip }) {
   const maxFade = framesToSeconds(Math.floor(clip.duration / 2), fps);
   return (
     <>
-      <Section title="Basic" onReset={() => patchClip(clip.id, "Reset audio", (c) => ({ ...c, volume: 1, pan: 0, fadeIn: 0, fadeOut: 0, keyframes: stripKeys(c, "volume") }) as Clip)}>
+      <Section title="Basic" onReset={() => patchClip(clip.id, "Reset audio", (c) => ({ ...c, volume: 1, pan: 0, fadeIn: 0, fadeOut: 0, fadeInCurve: undefined, fadeOutCurve: undefined, keyframes: stripKeys(c, "volume") }) as Clip)}>
         <SliderRow clip={clip} path="volume" label="Volume" min={-60} max={12} step={0.1} digits={1} unit="dB" reset={1} show={(v) => Math.max(-60, toDb(v))} store={(db) => (db <= -60 ? 0 : fromDb(db))} />
-        <SliderRow clip={clip} path="fadeIn" label="Fade in" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
-        <SliderRow clip={clip} path="fadeOut" label="Fade out" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} />
+        <SliderRow clip={clip} path="fadeIn" label="Fade in" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} accessory={<FadeCurveRow clip={clip} side="in" />} />
+        <SliderRow clip={clip} path="fadeOut" label="Fade out" min={0} max={+maxFade.toFixed(1)} step={0.1} digits={1} unit="s" reset={0} keyframes={false} {...secs} accessory={<FadeCurveRow clip={clip} side="out" />} />
+        {clip.type !== "compound" && <PitchRow clip={clip} />}
         {clip.type === "audio" && <CrossfadeRow clip={clip} />}
         <SliderRow clip={clip} path="pan" label="Pan" min={-100} max={100} reset={0} {...pct} />
         {/* Not on a compound clip: its channel fill is not mixed (ADR-100),
@@ -562,6 +564,7 @@ function AudioTab({ clip }: { clip: Clip }) {
           />
         </Row>}
       </Section>
+      {clip.type !== "compound" && <VoiceChangerSection clip={clip} />}
       {clip.type === "audio" && <BeatGridSection clip={clip} />}
       <Section
         title="Equalizer"
@@ -599,7 +602,7 @@ function CrossfadeRow({ clip }: { clip: AudioClip }) {
   const join = crossfadeJoin(project, clip.id);
   if (!join || !join.most) return null;
   const apply = (s: number) => (p: Project) => runCommand(p, "set_crossfade", { clip_id: clip.id, seconds: +Math.min(join.most, Math.max(0, s)).toFixed(4) });
-  return <SliderRow clip={clip} path="crossfade" label="Crossfade" min={0} max={+join.most.toFixed(4)} step={0.01} unit="s" reset={0} keyframes={false} value={join.plays} apply={apply} />;
+  return <SliderRow clip={clip} path="crossfade" label="Crossfade" min={0} max={+join.most.toFixed(4)} step={0.01} unit="s" reset={0} keyframes={false} value={join.plays} apply={apply} accessory={<FadeCurveRow clip={clip} side="crossfade" />} />;
 }
 
 /** CapCut's Enhance voice and Premiere's Dynamics: presets first, the
@@ -688,7 +691,7 @@ function SpeedTab({ clip }: { clip: ops.TimedClip }) {
               <Toggle label="Change pitch" on={!!clip.changePitch} onChange={(v) => edit(v ? "Change pitch with speed" : "Keep pitch", (p) => ops.setChangePitch(p, [clip.id], v))} />
             </Row>
           )}
-          <p className="insp-hint">{clip.changePitch ? "Pitch rises and falls with the speed, like tape." : "Voices keep their pitch at any speed."}</p>
+          <p className="insp-hint">{clip.changePitch ? "Pitch follows speed, like tape. The Audio tab’s Pitch adds a separate shift." : "Voices keep their pitch at any speed. Set a separate Pitch shift in Audio."}</p>
         </Section>
       )}
     </>

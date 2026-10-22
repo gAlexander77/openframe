@@ -373,3 +373,10 @@ button.key-ease:hover, .key-ease.eased { color: var(--accent); }
 .grid-part-at.off { color: var(--text-3); }
 .grid-add { margin-top: 6px; }
 .grid-add .btn { flex: 0 0 auto; }
+
+
+.voice-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 5px; }
+.voice-presets .btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.voice-presets .btn[aria-pressed="true"] { color: var(--accent); border-color: currentColor; }
+
+.insp-keys > select.field { min-width: 0; padding-inline: 3px; font-size: var(--fs-xs); }

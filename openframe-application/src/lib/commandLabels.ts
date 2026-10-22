@@ -4,6 +4,7 @@ import { enableLabel } from "./clipEnable";
 import { paramLabel } from "./paramInfo";
 
 const LABELS: Record<string, string> = {
+  set_pitch: "Pitch", apply_voice_preset: "Voice changer",
   add_media_clip: "Add clip", set_param: "Change parameter", set_text: "Edit text",
   set_project: "Project settings", batch: "Edit clips", edit_compound: "Edit compound clip",
   set_hsl: "Change HSL", apply_lut: "Apply LUT", set_chroma_key: "Change chroma key",
@@ -31,6 +32,7 @@ export function commandLabel(name: string, args: unknown = {}): string {
   const a = record(args);
   if (name === "set_param" && typeof a.path === "string") return `Change ${paramName(a.path)}`;
   if (name === "set_clip_enabled" && typeof a.enabled === "boolean") return enableLabel(a.enabled, Array.isArray(a.clip_ids) ? Math.max(1, a.clip_ids.length) : 1);
+  if (name === "apply_voice_preset" && a.preset === "none") return "Clear voice changer";
   if (name === "set_anchor" && a.none === true) return "Unpin";
   if (REMOVES[name] && (a.off === true || a.seconds === 0 || a.preset === "off")) return REMOVES[name];
   const label = LABELS[name] ?? words(name).replace(/^set /, "change ");

@@ -599,6 +599,29 @@ A multi-selection has one viewer box: drag it to move, use a corner to scale the
 
 Select a picture with position keyframes to see its motion path. Drag a dot to move that key position; the gesture is one undo step. A focused dot can also move one canvas pixel with an arrow key. The `move_motion_point` command takes a clip id, an existing key time in timeline seconds, and x/y positions in canvas fractions from center. Both axes receive a key at that time, with existing easing preserved.
 
+## Shape a clip's sound
+
+Select an audio clip or a video with sound and open **Audio**. Beside each
+fade slider, choose its curve: **Linear** rises steadily, **Equal power**
+uses a sine curve, **Logarithmic** rises quickly, **Exponential** rises
+slowly, and **S curve** eases both ends. The timeline draws that shape.
+The **Crossfade** row has the same choice; its default is Equal power.
+
+**Pitch** moves the sound up or down by as much as an octave (12 semitones)
+without changing its length. It works with speed changes and reverse.
+Double-click the slider to reset to zero. This is separate from the Speed
+tab's **Change pitch**, which lets pitch follow speed like tape. Pitch
+cannot be keyframed.
+
+In **Voice changer**, click Chipmunk, Deep, Robot, Radio, Telephone,
+Megaphone, Cave or Monster to apply it and hear the clip's first three
+seconds alone. Another chip replaces the audition. Fine-tune Pitch and
+the ordinary EQ, compressor, filter, saturation, Robot frequency/mix,
+echo and reverb controls. **None** clears those settings and their keys;
+volume, pan, fades and tape stop stay. Undo restores the previous settings.
+**Normalize loudness** measures the processed sound, including the voice
+changer, so a filtered or distorted voice can be balanced with other lines.
+
 ## Crossfade audio clips
 
 Where one audio clip ends and another starts on the same track, right-click

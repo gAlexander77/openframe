@@ -10,7 +10,7 @@
 // project loader can use it without a cycle through ops.
 
 import { getPath, interpolate } from "./keyframes";
-import type { AudioFilter, Clip, Echo, Reverb, Sound, TapeStop } from "./project/types";
+import type { AudioFilter, Clip, Echo, Reverb, Sound, TapeStop, Saturation, RingMod } from "./project/types";
 import type { Retimer } from "./stretch";
 
 export type FilterKind = "lowpass" | "highpass";
@@ -38,6 +38,8 @@ interface Fx {
   reverb: Reverb;
   echo: Echo;
   tapeStop: TapeStop;
+  saturation: Saturation;
+  ringMod: RingMod;
 }
 export type FxKey = keyof Fx;
 
@@ -49,10 +51,12 @@ export const FX_RANGES: { [K in FxKey]: Record<keyof Fx[K], [number, number]> } 
   reverb: { size: [0, 1], decay: [0.1, 10], mix: [0, 1] },
   echo: { time: [0.01, 2], feedback: [0, 0.9], mix: [0, 1] },
   tapeStop: { duration: [0.05, 10] },
+  saturation: { drive: [0, 1] },
+  ringMod: { frequency: [20, 200], mix: [0, 1] },
 };
 export const FX_KEYS = Object.keys(FX_RANGES) as FxKey[];
 
-const FX_DEFAULTS: Fx = { ...FILTER_DEFAULTS, reverb: REVERB_PRESETS.hall, echo: ECHO_DEFAULT, tapeStop: TAPE_STOP_DEFAULT };
+const FX_DEFAULTS: Fx = { ...FILTER_DEFAULTS, reverb: REVERB_PRESETS.hall, echo: ECHO_DEFAULT, tapeStop: TAPE_STOP_DEFAULT, saturation: { drive: 0.3 }, ringMod: { frequency: 65, mix: 0.6 } };
 
 /** The parameters keyframes can animate (add_keyframe, set_param with at). */
 export const FX_KEYED_PATHS = ["lowpass.cutoff", "highpass.cutoff", "reverb.mix", "echo.mix"] as const;
@@ -190,7 +194,7 @@ export const echoTail = (e: Echo) => e.time * (e.feedback > 0 ? Math.ceil(Math.l
  * tails (in series, they add), a few ms of filter state. A mixdown window
  * starts this early to carry them across its edge. */
 export function fxTail(c: Partial<Sound>): number {
-  return (c.echo ? echoTail(c.echo) : 0) + (c.reverb ? reverbTail(c.reverb) : 0) + (c.lowpass || c.highpass ? 0.05 : 0);
+  return (c.echo ? echoTail(c.echo) : 0) + (c.reverb ? reverbTail(c.reverb) : 0) + (c.lowpass || c.highpass || c.ringMod || c.saturation ? 0.05 : 0);
 }
 
 // ---- tape stop -------------------------------------------------------------------
@@ -247,4 +251,51 @@ export function switchAt(a: Retimer, b: Retimer, at: number): Retimer {
       if (k < len) b.render(input, inStart, n0 + k, out.map((o) => o.subarray(k)));
     },
   };
+}
+
+
+/** Soft clipping with RMS compensation for a voiced reference (-19.5 dBFS).
+ * Distortion changes crest factor, so a fixed gain cannot match every input;
+ * normalize_loudness measures the actual result through this same curve. */
+export function saturationCurve(drive: number, length = 4097): Float32Array<ArrayBuffer> {
+  const d = Math.max(0, Math.min(1, drive));
+  const k = 1 + 15 * d;
+  let energy = 0;
+  for (let i = 0; i < 512; i++) energy += Math.tanh(k * 0.15 * Math.sin(2 * Math.PI * i / 512)) ** 2;
+  const compensation = 0.15 / Math.sqrt(2 * energy / 512);
+  const out = new Float32Array(length);
+  for (let i = 0; i < length; i++) {
+    const x = 2 * i / (length - 1) - 1;
+    out[i] = d ? Math.tanh(k * x) * compensation : x;
+  }
+  return out;
+}
+
+/** Ordinary editable settings, never a hidden processor keyed by a name. */
+export const VOICE_PRESETS: Record<string, { label: string; settings: Partial<Sound> & { pitch?: number } }> = {
+  chipmunk: { label: "Chipmunk", settings: { pitch: 7, highpass: { cutoff: 180, resonance: 0 } } },
+  deep: { label: "Deep", settings: { pitch: -5, eq: { low: 4 } } },
+  robot: { label: "Robot", settings: { ringMod: { frequency: 65, mix: 0.65 }, echo: { time: 0.013, feedback: 0.45, mix: 0.18 } } },
+  radio: { label: "Radio", settings: { highpass: { cutoff: 500, resonance: 0, makeup: 2 }, lowpass: { cutoff: 3000, resonance: 0, makeup: 2 }, saturation: { drive: 0.15 }, compressor: { threshold: -24, ratio: 3, knee: 12, attack: 0.003, release: 0.15, makeup: 0 } } },
+  telephone: { label: "Telephone", settings: { highpass: { cutoff: 300, resonance: 0, makeup: 2 }, lowpass: { cutoff: 3400, resonance: 0, makeup: 2 }, mono: true, saturation: { drive: 0.25 } } },
+  megaphone: { label: "Megaphone", settings: { highpass: { cutoff: 600, resonance: 0, makeup: 3 }, lowpass: { cutoff: 4000, resonance: 0, makeup: 2 }, saturation: { drive: 0.8 }, reverb: { size: 0.2, decay: 0.3, mix: 0.12 } } },
+  cave: { label: "Cave", settings: { reverb: { size: 0.9, decay: 4, mix: 0.4 }, echo: { time: 0.32, feedback: 0.45, mix: 0.25 } } },
+  monster: { label: "Monster", settings: { pitch: -9, saturation: { drive: 0.55 } } },
+};
+const VOICE_FIELDS = ["pitch", "eq", "compressor", "highpass", "lowpass", "saturation", "ringMod", "mono", "echo", "reverb", "voice"] as const;
+/** Replacing/clearing a preset resets its owned settings, leaving timing,
+ * fades, volume, pan, channel fill and tape stop alone. */
+export function applyVoicePreset<T extends Clip>(clip: T, preset: string): T {
+  const out = { ...clip } as T & Record<string, unknown>;
+  for (const k of VOICE_FIELDS) delete out[k];
+  if (out.keyframes) {
+    const keys = Object.fromEntries(Object.entries(out.keyframes).filter(([path]) => !VOICE_FIELDS.some((k) => path === k || path.startsWith(`${k}.`))));
+    if (Object.keys(keys).length) out.keyframes = keys;
+    else delete out.keyframes;
+  }
+  if (preset !== "none") {
+    if (!Object.hasOwn(VOICE_PRESETS, preset)) throw new Error(`Unknown voice preset ${preset}`);
+    Object.assign(out, structuredClone(VOICE_PRESETS[preset].settings), { voice: preset });
+  }
+  return out;
 }
