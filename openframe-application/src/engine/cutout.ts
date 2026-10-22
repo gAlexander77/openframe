@@ -1,3 +1,4 @@
+import { proxySource } from "../lib/proxyPolicy";
 // Remove background, the engine side (ADR-032, ADR-033): decode a clip's
 // source window, run every frame through a segmentation model in a worker,
 // steady the mattes over time (src/lib/matte.ts), and encode them as a
@@ -178,7 +179,7 @@ async function run(asset: Asset, from: number, to: number, model: MatteModel, fo
   signal?.throwIfAborted();
   onProgress({ stage: "processing", progress: 0, model });
 
-  const input = new Input({ source: await platform.sourceFor(asset.proxy ?? asset.src), formats: ALL_FORMATS });
+  const input = new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
   let output: Output | null = null;
   try {
     const track = await input.getPrimaryVideoTrack();

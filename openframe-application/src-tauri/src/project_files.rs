@@ -61,6 +61,15 @@ fn collect(
     if !parent.is_absolute() || !parent.is_dir() {
         return Err("Choose an existing folder".into());
     }
+    // Playback caches are disposable, and can already be missing. Portable
+    // copies collect delivery media only, so a cache cannot block collection.
+    if let Some(assets) = value.get_mut("assets").and_then(Value::as_array_mut) {
+        for asset in assets {
+            if let Some(fields) = asset.as_object_mut() {
+                fields.remove("playbackProxy");
+            }
+        }
+    }
     let mut sources = HashMap::<String, String>::new();
     rewrite(&mut value, &mut |src| {
         if let Some(relative) = sources.get(src) {
@@ -209,14 +218,17 @@ mod tests {
         fs::create_dir(&root).unwrap();
         let src = root.join("source.gif");
         fs::write(&src, b"pixels").unwrap();
-        let value =
-            serde_json::json!({"name":"Trip: day 1","assets":[{"src":src,"proxy":src}],"luts":[]});
+        let value = serde_json::json!({"name":"Trip: day 1","assets":[{"src":src,"proxy":src,"playbackProxy":{"src":root.join("missing-playback.mp4"),"width":960,"height":540,"size":"half","fingerprint":"old-machine"}}],"luts":[]});
         let mut steps = Vec::new();
         let path = collect(&root, value.clone(), |v| steps.push(v)).unwrap();
         assert!(path.parent().unwrap().ends_with("Trip_ day 1"));
         let again = collect(&root, value, |_| {}).unwrap();
         assert!(again.parent().unwrap().ends_with("Trip_ day 1 (2)"));
         let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert!(
+            saved["assets"][0].get("playbackProxy").is_none(),
+            "disposable caches do not travel"
+        );
         assert_eq!(saved["assets"][0]["src"], "media/0001.gif");
         assert_eq!(saved["assets"][0]["src"], saved["assets"][0]["proxy"]);
         let opened = read_project(&path).unwrap();

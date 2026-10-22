@@ -55,7 +55,7 @@ Project { schema: 1, id, name, width, height, canvasFixed?, fps, sampleRate, bac
 Brand   { name?, colors: { primary, secondary, accent, background, text },
           fonts: { heading, body }, logos?: { main?, light?, dark?, icon? } (image asset ids),
           url?, tagline? }   (set_brand; a logo whose asset is gone is dropped on load)
-Asset   { id, kind: video|audio|image, name, src, proxy?, duration,
+Asset   { id, kind: video|audio|image, name, src, proxy?, playbackProxy?, duration,
           width?, height?, fps?, hasVideo, hasAudio, rotation?,
           sticker?, folder?, favorite?, speech?, role?, sound?, musicGrid? }   (sticker: the library sticker an image was drawn from;
           role: dialog|music|effects|ambience, what a file the app made is;
@@ -172,6 +172,30 @@ plays a nested timeline from `compounds` the way a video clip plays a file
   all. A compound nothing plays is dropped when the editor saves an edit.
 - Absent `compounds` means none, so projects from before compound clips
   open unchanged.
+
+## Playback proxies
+
+`Asset.playbackProxy?: { src, width, height, size, fingerprint }` is a
+preview-only cache reference. `size` is `"half"`, `"quarter"` or `"720p"`;
+width and height are positive integer display dimensions (at least 2).
+`src` and `fingerprint` are nonempty strings. Malformed objects are dropped
+at load. Absent means the existing source behavior.
+
+On desktop the fingerprint hashes the original path, byte size and modified
+time. Cache filenames include it and the chosen size. File existence and
+fingerprint checks belong to this machine, not to the saved document: a
+moved/replaced original makes the copy stale, and a missing cache on another
+computer simply falls back to `proxy ?? src`. Relinking keeps the reference
+so its stale badge explains what happened. Undoing creation removes only the
+reference; Delete proxy removes the reference and its cached file, so Undo
+of deletion restores a missing reference until it is recreated.
+
+Only preview pictures and thumbnails/filmstrips may read `playbackProxy`.
+Export, export stills, `preview_frame`/contact sheets, analysis and scopes
+always read the original or the **separate**, full-resolution `Asset.proxy`
+decode fallback. Desktop collected copies omit playback cache references. The global Proxy
+playback preference is never in a project.
+See [[ADR-131 Playback proxies are purpose scoped and disposable cache]].
 
 ## Media organization
 

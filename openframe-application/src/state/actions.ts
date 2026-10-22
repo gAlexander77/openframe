@@ -1,3 +1,4 @@
+import { prefsStore } from "./prefs";
 // What each keymap action does. Edit actions are defined here on top of the
 // store and ops; actions that need the engine or the platform (play, import,
 // export) are filled in by the module that owns them at startup, so this
@@ -227,6 +228,7 @@ provide({
   markOut: () => store.set({ outPoint: store.get().playhead }),
   clearInOut: () => store.set({ inPoint: null, outPoint: null }),
   toggleCompare: () => { const c = store.get().compare; store.set({ compare: { ...c, mode: c.mode === "off" ? "beforeAfter" : "off" } }); },
+  toggleProxies: () => prefsStore.set({ proxyPlayback: !prefsStore.get().proxyPlayback }),
   toggleLoop: () => store.set({ loop: !store.get().loop }),
   // The source monitor provides these while it is open.
   insertSource: () => toast("Open a clip in the source monitor first (double-click it in the library)"),

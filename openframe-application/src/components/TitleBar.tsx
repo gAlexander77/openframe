@@ -1,3 +1,4 @@
+import { prefsStore } from "../state/prefs";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useState } from "react";
 import { PanelsTopLeft, Download, Keyboard, Minus, Settings, Square, Bot, X } from "../icons";
@@ -150,6 +151,7 @@ export function TitleBar(props: { saveState: string; home: boolean; onShortcuts:
         ...VIEWER_GUIDES.map(([value, label]) => ({ label, checked: s().viewerGuides === value, onSelect: () => store.set({ viewerGuides: value }) })),
         "-",
         { label: "Mixer", checked: s().mixer, onSelect: () => store.set({ mixer: !s().mixer }) },
+        { action: "toggleProxies", checked: prefsStore.get().proxyPlayback },
         { label: "Scopes", checked: s().scopes, onSelect: () => store.set({ scopes: !s().scopes }) },
         { label: "Markers", checked: s().leftTab === "markers" && !s().scopes, onSelect: () => openMarkers() },
         { action: "fullscreenPreview" },

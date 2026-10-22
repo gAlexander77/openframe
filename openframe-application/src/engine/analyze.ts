@@ -1,3 +1,4 @@
+import { proxySource } from "../lib/proxyPolicy";
 import { imageFor } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
 // fixed analysis rate, or as per-frame scene scores from small frames.
@@ -21,7 +22,7 @@ import { platform } from "../platform";
 export type Progress = (fraction: number) => void;
 
 async function openInput(asset: Asset): Promise<Input> {
-  return new Input({ source: await platform.sourceFor(asset.proxy ?? asset.src), formats: ALL_FORMATS });
+  return new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
 }
 
 /** Call `onProgress` at most every 100 ms. */
@@ -53,7 +54,7 @@ export async function decodeMono(asset: Asset, from: number, to: number, rate: n
     // or every result lands 21 ms late (measured on the fixtures). A stream
     // that starts late (MPEG-TS) still maps its first timestamp to 0, and
     // an MP3's encoder delay is skipped as ffmpeg skips it (ADR-112).
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     const n = Math.max(0, Math.ceil((to - from) * rate));
     const sum = new Float32Array(n);
     const count = new Uint16Array(n);
@@ -108,7 +109,7 @@ export async function decodePcm(asset: Asset, from: number, to: number, onProgre
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     const rate = track.sampleRate;
     const n = Math.max(0, Math.round((to - from) * rate));
     const channels = Array.from({ length: Math.min(2, track.numberOfChannels) }, () => new Float32Array(n));
@@ -145,7 +146,7 @@ export async function measureLoudness(asset: Asset, from: number, to: number, on
   try {
     const track = await input.getPrimaryAudioTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no sound this app can decode`);
-    const t0 = await soundOrigin(input, asset.proxy ?? asset.src);
+    const t0 = await soundOrigin(input, proxySource(asset, "analysis", false));
     let meter: LoudnessMeter | null = null;
     // And the 4x-oversampled true peak, which broadcast ceilings are in.
     let tp: TruePeakMeter | null = null;

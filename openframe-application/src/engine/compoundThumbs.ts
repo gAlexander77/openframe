@@ -66,7 +66,7 @@ async function render(p: Project, k: Compound, strip: Filmstrip) {
   // Shaders compile off the main thread before the first frame needs them.
   await (warm ??= comp.warm().catch(() => undefined));
   comp.resize(w, h);
-  const pool = new CursorPool({ maxSide: 320 });
+  const pool = new CursorPool({ maxSide: 320 }, "thumbnail");
   const fps = p.fps.num / p.fps.den;
   const end = timelineEnd(k.tracks);
   try {

@@ -80,6 +80,7 @@ export type ActionId =
   | "nudgeLeft5"
   | "nudgeRight5"
   | "toggleLoop"
+  | "toggleProxies"
   | "playInToOut"
   | "showShortcuts"
   | "showPreferences"
@@ -183,6 +184,7 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   // Resolve loops with Ctrl+/ (ours is the shortcut list); Mod+L is free.
   // Play In to Out is Premiere's Ctrl+Shift+Space.
   toggleLoop: ["Mod+L"],
+  toggleProxies: ["Alt+Shift+P"],
   playInToOut: ["Mod+Shift+Space"],
   showShortcuts: ["Mod+/"],
   showPreferences: ["Mod+,"],
@@ -270,6 +272,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   nudgeLeft5: "Nudge clips five frames left",
   nudgeRight5: "Nudge clips five frames right",
   toggleLoop: "Loop playback",
+  toggleProxies: "Proxy playback",
   playInToOut: "Play in to out",
   showShortcuts: "Keyboard shortcuts",
   showPreferences: "Preferences",

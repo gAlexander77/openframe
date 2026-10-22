@@ -31,6 +31,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Fit timeline or viewer | Maximize2 |
 | Compare looks | Columns2 |
 | Scopes | ChartColumnBig |
+| Proxy playback | Files |
 | Maximize / restore window | Square / PanelsTopLeft |
 | Duplicate / rename / delete | Copy / Pencil / Trash2 |
 | Grid view / list view (media library, Home) | LayoutGrid / List |

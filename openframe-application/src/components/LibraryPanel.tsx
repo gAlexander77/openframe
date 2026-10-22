@@ -1,3 +1,4 @@
+import { createProxies, deleteProxies, proxyAction, proxyDetails, proxyStatus, useProxies } from "../state/proxies";
 import { EmptyState } from "./EmptyState";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { thumbs } from "../engine/thumbs";
@@ -156,6 +157,8 @@ function useThumbs() {
 /** Media lists every import, as CapCut's Media › Import does (an imported
  * MP3 used to vanish into Audio); Audio shows just the sound files. */
 function MediaTab({ kind }: { kind: "all" | "audio" }) {
+  const [selectedMedia, setSelectedMedia] = useState<string[]>([]);
+  useProxies();
   const [managing, setManaging] = useState(false);
   const [source, setSource] = useState<Asset | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -240,10 +243,12 @@ function MediaTab({ kind }: { kind: "all" | "audio" }) {
               asset={a}
               uses={usage.get(a.id) ?? []}
               list={options.view === "list"}
+              selected={selectedMedia.includes(a.id)}
+              onSelect={(checked) => setSelectedMedia((ids) => checked ? [...ids, a.id] : ids.filter((id) => id !== a.id))}
               onPreview={() => setSource(a)}
               onMenu={(e) => {
                 e.preventDefault();
-                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id)) });
+                setMenu({ x: e.clientX, y: e.clientY, items: mediaMenu(a, usage.get(a.id)?.length ?? 0, () => setSource(a), () => setRenaming(a.id), selectedMedia.includes(a.id) ? selectedMedia : [a.id]) });
               }}
               renaming={renaming === a.id}
               onRename={(name) => {
@@ -359,7 +364,7 @@ function RecordButton() {
 
 /** A media card's right-click menu. Removing takes the media out of the
  * project only; a file the timeline uses says so and takes its clips. */
-function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void): MenuItem[] {
+function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () => void, assetIds: string[]): MenuItem[] {
   const remove = (withClips: boolean) => {
     try {
       edit(withClips ? `Remove ${asset.name} and its clips` : `Remove ${asset.name}`, (p) => removeMedia(p, [asset.id], withClips));
@@ -370,6 +375,10 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
   return [
     { label: "Add to timeline", onSelect: () => addToTimeline(asset) },
     { label: "Preview", onSelect: preview },
+    { label: assetIds.length > 1 ? `Create proxies (${assetIds.length})` : "Create proxy", disabled: assetIds.some((id) => store.document().assets.find((a) => a.id === id)?.kind !== "video"), children: [
+      ...(["half", "quarter", "720p"] as const).map((size) => ({ label: size === "half" ? "Half (default)" : size === "quarter" ? "Quarter" : "720p", onSelect: () => proxyAction(Promise.resolve().then(() => createProxies(assetIds, size))) })),
+    ] },
+    { label: assetIds.length > 1 ? `Delete proxies (${assetIds.length})` : "Delete proxy", disabled: !assetIds.some((id) => store.document().assets.find((a) => a.id === id)?.playbackProxy), onSelect: () => proxyAction(Promise.resolve().then(() => deleteProxies(assetIds))) },
     { label: "Rename…", onSelect: rename },
     { label: "Favorite", checked: !!asset.favorite, onSelect: () => edit("Favorite media", (p) => organizeMedia(p, [asset.id], { favorite: !asset.favorite })) },
     "-",
@@ -379,7 +388,7 @@ function mediaMenu(asset: Asset, uses: number, preview: () => void, rename: () =
   ];
 }
 
-function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
+function MediaCard({ asset, uses, list, selected, onSelect, onPreview, onMenu, renaming, onRename }: { asset: Asset; uses: MediaUse[]; list: boolean; selected: boolean; onSelect: (checked: boolean) => void; onPreview: () => void; onMenu: (e: React.MouseEvent) => void; renaming: boolean; onRename: (name?: string | null) => void }) {
   const poster = thumbs.poster(asset);
   const Icon = asset.kind === "audio" ? AudioLines : asset.kind === "image" ? Image : Film;
   const metadata = [asset.animated ? `Animated image · ${formatDuration(asset.duration)}` : asset.kind === "image" ? "Still image" : `${asset.kind === "audio" ? "Audio" : "Video"} · ${formatDuration(asset.duration)}`,
@@ -396,11 +405,13 @@ function MediaCard({ asset, uses, list, onPreview, onMenu, renaming, onRename }:
   return (
     <div
       className="card media-card"
-      data-tip={`${asset.name}\n${metadata}`}
+      data-tip={`${asset.name}\n${metadata}\n${proxyDetails(asset)}`}
       onPointerDown={(e) => beginDrag(e, { kind: "asset", asset })}
       onDoubleClick={() => addToTimeline(asset)}
       onContextMenu={onMenu}
     >
+      <label className="media-proxy-select" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}><input type="checkbox" aria-label={`Select ${asset.name}`} checked={selected} onChange={(e) => onSelect(e.target.checked)} /></label>
+      {proxyStatus(asset) && <span className={`proxy-badge ${proxyStatus(asset)}`} data-tip={proxyDetails(asset)} aria-label={proxyDetails(asset)}>P{proxyStatus(asset) === "making" ? "..." : proxyStatus(asset) === "ready" ? "" : "!"}</span>}
       <div className={`card-thumb${asset.kind === "audio" ? " audio" : ""}`}>
         {poster ? <img src={poster} alt="" draggable={false} /> : <Icon size={22} strokeWidth={1.4} />}
         {!list && (asset.kind === "video" || asset.animated) && asset.hasVideo && <HoverScrub asset={asset} />}

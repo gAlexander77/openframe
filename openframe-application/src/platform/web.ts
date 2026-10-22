@@ -59,6 +59,9 @@ const savePicker = () =>
 
 export const web: Platform = {
   kind: "web",
+  // ponytail: browser proxy generation awaits mediabunny Conversion (Roadmap).
+  async makePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },
+  async deletePlaybackProxy() { throw new Error("Playback proxies are not available in the browser build. Use the desktop app."); },
   async openProjectFile(path) {
     if (path) throw new Error("Opening a project by path is desktop only; use Open project file.");
     const [file] = await pickFiles(".json,application/json");

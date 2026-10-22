@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 173 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 175 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -42,7 +42,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
 - **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
-- **Media**: `import_media`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
+- **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
 - **Picture and motion**: `set_param`, `add_keyframe`, `move_keyframe`, `move_motion_point`, `set_keyframe_ease`, `remove_keyframes`, `frame_region`, `frame_clips`, `apply_layout`, `align_clips`, `distribute_clips`, `set_uniform_scale`, `set_flip`, `set_crop`, `set_mask`, `set_blend`, `set_chroma_key`, `set_canvas_fill`, `set_background_removal`, `remove_background`, `set_animation`, `add_cinematic_bars`, `track_motion`, `auto_reframe`, `stabilize_clip`
@@ -224,6 +224,23 @@ Example:
 ```json
 {"name":"import_media","arguments":{"files":[{"src":"C:/Footage/product.mp4","name":"Product hero"},{"src":"C:/Music/track.mp3"}]}}
 ```
+
+### create_proxies
+
+Desktop only: make smaller playback copies, one asset at a time, as one undoable metadata edit. Agents rarely need proxies: exports, review stills and analysis always use the originals or full-resolution decode fallback. Answers each asset's proxy state, size and seconds taken. Unavailable in the browser build.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Video asset IDs to make playback proxies for |
+| `size` | "half" \| "quarter" \| "720p" |  | Half or quarter of each dimension, or 720 pixels on the short side; default half |
+
+### delete_proxies
+
+Desktop only: remove playback proxy references and their cached files. Agents rarely need this; export never uses playback proxies. Undo restores references, which become missing until recreated. Answers each asset's state, size and seconds taken. Unavailable in the browser build.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `asset_ids` | string[] | yes | Video asset IDs whose playback proxies to delete |
 
 ### remove_media
 

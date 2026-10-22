@@ -591,7 +591,7 @@ export async function exportStill(p: Project, frame: number, width: number, heig
 export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }, before?: { clipIds?: readonly string[]; signal?: AbortSignal }): Promise<Blob[]> {
   const big = drawAt && drawAt.width > width ? drawAt : { width, height };
   const comp = new Compositor(new OffscreenCanvas(big.width, big.height));
-  const pool = new CursorPool();
+  const pool = new CursorPool({}, "still");
   const small = big.width > width ? new OffscreenCanvas(width, height) : null;
   try {
     await document.fonts.ready;

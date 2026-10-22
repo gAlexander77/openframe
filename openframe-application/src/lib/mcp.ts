@@ -76,6 +76,8 @@ export interface McpHost {
   catalog(): unknown;
   /** One entry per file, in order: the asset, a LUT ({lut_id}), or
    * {src, name, error}; empty when the project closed meanwhile. */
+  createProxies?(assetIds: string[], size: "half" | "quarter" | "720p"): Promise<unknown>;
+  deleteProxies?(assetIds: string[]): Promise<unknown>;
   importMedia(files: { src: string; name?: string }[]): Promise<unknown>;
   undo(): unknown;
   redo(): unknown;
@@ -545,6 +547,26 @@ export const APP_TOOLS: AppTool[] = [
       if (!got.length) throw new Error("Nothing was imported: the project closed during the import.");
       if (got.every((x) => x.error)) throw new Error(`Nothing was imported. ${got.map((x) => `${x.src}: ${x.error}`).join("; ")}`);
       return appJson(got);
+    },
+  },
+  {
+    name: "create_proxies",
+    description: "Desktop only: make smaller playback copies, one asset at a time, as one undoable metadata edit. Agents rarely need proxies: exports, review stills and analysis always use the originals or full-resolution decode fallback. Answers each asset's proxy state, size and seconds taken. Unavailable in the browser build.",
+    inputSchema: obj({ asset_ids: { type: "array", items: { type: "string" }, description: "Video asset IDs to make playback proxies for" }, size: { type: "string", enum: ["half", "quarter", "720p"], description: "Half or quarter of each dimension, or 720 pixels on the short side; default half" } }, ["asset_ids"]),
+    call: async (h, a) => {
+      if (!(a.asset_ids as string[]).length) throw new Error("Choose at least one media asset.");
+      if (!h.createProxies) throw new Error("Playback proxies are not available in the browser build. Use the desktop app.");
+      return json(await h.createProxies(a.asset_ids as string[], (a.size ?? "half") as "half" | "quarter" | "720p"));
+    },
+  },
+  {
+    name: "delete_proxies",
+    description: "Desktop only: remove playback proxy references and their cached files. Agents rarely need this; export never uses playback proxies. Undo restores references, which become missing until recreated. Answers each asset's state, size and seconds taken. Unavailable in the browser build.",
+    inputSchema: obj({ asset_ids: { type: "array", items: { type: "string" }, description: "Video asset IDs whose playback proxies to delete" } }, ["asset_ids"]),
+    call: async (h, a) => {
+      if (!(a.asset_ids as string[]).length) throw new Error("Choose at least one media asset.");
+      if (!h.deleteProxies) throw new Error("Playback proxies are not available in the browser build. Use the desktop app.");
+      return json(await h.deleteProxies(a.asset_ids as string[]));
     },
   },
   { name: "undo", description: "Undo the last edit; returns what that changed back.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.undo())) },

@@ -19,11 +19,12 @@ export interface Prefs {
   audioCrossfadeSeconds: number;
   /** Short snippets of sound while the playhead is dragged (CapCut, Premiere). */
   audioScrub: boolean;
+  proxyPlayback: boolean;
 }
 
 export type SecondsPref = "stillSeconds" | "layerSeconds" | "transitionSeconds" | "audioCrossfadeSeconds";
 
-export const DEFAULT_PREFS: Prefs = { stillSeconds: 5, layerSeconds: 3, transitionSeconds: 0.5, transitionType: "dissolve", audioCrossfadeSeconds: 0.5, audioScrub: true };
+export const DEFAULT_PREFS: Prefs = { stillSeconds: 5, layerSeconds: 3, transitionSeconds: 0.5, transitionType: "dissolve", audioCrossfadeSeconds: 0.5, audioScrub: true, proxyPlayback: true };
 
 export const PREF_LIMITS: Record<SecondsPref, [number, number]> = {
   stillSeconds: [0.5, 60],
@@ -41,6 +42,7 @@ const clean = (v: Partial<Prefs>): Prefs => {
   }
   if (typeof v.transitionType === "string" && Object.hasOwn(TRANSITIONS, v.transitionType)) out.transitionType = v.transitionType;
   if (typeof v.audioScrub === "boolean") out.audioScrub = v.audioScrub;
+  if (typeof v.proxyPlayback === "boolean") out.proxyPlayback = v.proxyPlayback;
   return out;
 };
 

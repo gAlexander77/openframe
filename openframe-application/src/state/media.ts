@@ -1,3 +1,5 @@
+import { heavyMedia } from "../lib/proxyPolicy";
+import { createProxies, proxyAction } from "./proxies";
 // Getting media into the project: probe, add assets, place clips. Shared by
 // the media panel, OS drag and drop, and the automation API.
 
@@ -50,6 +52,10 @@ export async function importEach(files: ImportedFile[], signal = projectWork.sig
       assets: [...p.assets, ...added],
     }));
     added.forEach(prepare);
+    const heavy = added.filter(heavyMedia);
+    if (heavy.length) toast("This media may play slowly. Create proxies?", "info", 10000, { label: "Create proxies", run: () => {
+      if (!signal.aborted) proxyAction(Promise.resolve().then(() => createProxies(heavy.map((a) => a.id))));
+    } });
   }
   // A .cube is a LUT for the project, not media for the library.
   const cubes = out.flatMap((o) => ("lutFile" in o ? [o.file] : []));

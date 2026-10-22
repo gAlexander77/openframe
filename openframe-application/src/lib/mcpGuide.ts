@@ -36,7 +36,7 @@ export interface ToolInfo {
 export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
   { name: "Start here", blurb: "Read before editing: the guide, the timeline and the names the tools accept.", tools: ["help", "describe_project", "find_clips", "list_catalog"] },
   { name: "Projects", blurb: "Work in a new project so the user's own stay untouched.", tools: ["list_projects", "open_project", "new_project", "save_project_copy", "open_project_file", "collect_project", "set_project"] },
-  { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
+  { name: "Media", blurb: "Bring files in and keep the library tidy.", tools: ["import_media", "create_proxies", "delete_proxies", "remove_media", "relink_media", "replace_clip", "rename_media", "edit_media_folder", "organize_media"] },
   {
     name: "Timeline",
     blurb: "Place, cut, move and arrange clips. batch runs many edits as one undo step.",
@@ -79,9 +79,9 @@ export const groupOf = (name: string) => TOOL_GROUPS.find((g) => g.tools.include
 /** Tools that only read: clients may run them without asking. */
 const READ_ONLY = new Set(["plan_music", "help", "describe_project", "find_clips", "list_catalog", "list_projects", "preview_frame", "preview_frames", "preview_motion", "preview_media", "preview_audio", "check_project", "measure_loudness", "export_status", "get_transcript", "review_voiceover", "seek"]);
 /** Tools that remove things (all are still undoable, but say so). */
-const DESTRUCTIVE = new Set(["delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
+const DESTRUCTIVE = new Set(["delete_proxies", "delete_clips", "delete_track", "delete_markers", "remove_media", "cut_ranges", "cut_music", "lift_range", "remove_silences", "remove_filler_words", "close_gaps"]);
 /** Tools that reach outside the project: files on disk, downloads. */
-const OPEN_WORLD = new Set(["import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
+const OPEN_WORLD = new Set(["create_proxies", "delete_proxies", "import_media", "export_video", "export_versions", "text_behind_subject", "remove_background", "text_to_speech", "add_voiceover", "retake_voiceover", "review_voiceover", "remove_filler_words", "get_transcript"]);
 
 const title = (name: string) => name.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 

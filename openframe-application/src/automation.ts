@@ -1,3 +1,5 @@
+import { createProxies, deleteProxies } from "./state/proxies";
+import { playbackProxyState } from "./engine/playbackProxies";
 // The in-page automation surface: `window.videoEditor`. The same command
 // registry agents use (ADR-006), plus actions, state and frame access, so
 // drive scripts, the future MCP bridge and the headless renderer all speak
@@ -225,7 +227,13 @@ function describe() {
   // On the home screen the store still holds the last project: say so.
   if (currentScreen() === "home") return { screen: "home", note: "No project is open. list_projects and open_project, or new_project." };
   const nest = store.get().nest;
-  return { ...describeProject(store.document()), ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
+  const doc = store.document();
+  const summary = describeProject(doc);
+  const assets = summary.assets.map((a) => {
+    const asset = doc.assets.find((x) => x.id === a.id)!;
+    return asset.playbackProxy ? { ...a, proxy: playbackProxyState(asset) } : a;
+  });
+  return { ...summary, assets, ...(nest.length ? { open_compounds: nest.map((e) => e.id) } : {}) };
 }
 
 declare global {
@@ -260,6 +268,8 @@ const mcpHost: McpHost = {
   describe: () => automation.describe(),
   projectJson: () => store.document(),
   catalog: () => ({ ...catalogNames(), effectParams: Object.fromEntries(Object.entries(EFFECTS).map(([k, d]) => [k, d.params])) }),
+  createProxies: (ids, size) => (needProject(), createProxies(ids, size)),
+  deleteProxies: (ids) => (needProject(), deleteProxies(ids)),
   importMedia: async (files) => {
     needProject();
     // `name` is only the library's label; the file says what it is (ADR-095).

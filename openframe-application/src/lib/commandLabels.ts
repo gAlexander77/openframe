@@ -4,6 +4,7 @@ import { enableLabel } from "./clipEnable";
 import { paramLabel } from "./paramInfo";
 
 const LABELS: Record<string, string> = {
+  create_proxies: "Create playback proxies", delete_proxies: "Delete playback proxies",
   match_color: "Match color",
   apply_default_transitions: "Apply default transitions",
   set_pitch: "Pitch", apply_voice_preset: "Voice changer",

@@ -205,6 +205,33 @@ export const desktop: Platform = {
     }
   },
 
+  async makePlaybackProxy(asset, size, onProgress, signal) {
+    if (signal?.aborted) throw new Error("canceled");
+    const job = crypto.randomUUID();
+    const channel = new Channel<{ fraction: number }>();
+    channel.onmessage = (m) => onProgress(m.fraction);
+    // Abort can arrive while Rust is still probing, before the child is in
+    // its job map. Repeat until invoke settles so that race cannot orphan it.
+    let cancelTimer: ReturnType<typeof setInterval> | undefined;
+    const cancel = () => {
+      const stop = () => void invoke("ffmpeg_cancel", { job });
+      stop();
+      cancelTimer ??= setInterval(stop, 100);
+    };
+    signal?.addEventListener("abort", cancel);
+    try {
+      return await invoke("ffmpeg_playback_proxy", { path: asset.src, size, job, onProgress: channel });
+    } finally { clearInterval(cancelTimer); signal?.removeEventListener("abort", cancel); }
+  },
+  async playbackProxyInfo(asset) {
+    const info = await invoke<{ fingerprint?: string; exists: boolean }>("ffmpeg_playback_proxy_info", { path: asset.src, proxy: asset.playbackProxy?.src ?? null });
+    // Re-register on the next open: Rust detects a file replaced at the same
+    // path. Old inputs retain their registered handles until their owners end.
+    registered.delete(asset.src);
+    return info;
+  },
+  deletePlaybackProxy: (path) => invoke("ffmpeg_delete_playback_proxy", { path }),
+
   async head(src, bytes, at = 0) {
     const { id, size } = await register(src);
     return size > at ? readRange(convertFileSrc(id, "media"), at, Math.min(size, at + bytes)) : new Uint8Array();
