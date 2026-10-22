@@ -78,9 +78,10 @@ async (page) => {
   await page.evaluate(() => window.videoEditor.exec("add_text", { text: "Touched", start: 0, duration: 2 }));
   await page.waitForFunction(() => document.querySelector(".save-state")?.textContent?.startsWith("Saved"));
   details.firstNavigationWins = { ok: await page.locator(".timeline-panel").isVisible() };
+  // Read the id before leaving: Home holds no project (ADR-144).
+  const current = await page.evaluate(() => window.videoEditor.project().id);
   await file("Open project");
   await page.locator(".project-card").first().waitFor();
-  const current = await page.evaluate(() => window.videoEditor.project().id);
   await page.evaluate((id) => { window.__failLoad = `${id}.json`; }, current);
   await page.locator(".project-card").first().click();
   await page.getByText(/Couldn't open the project: Injected read failure/).waitFor();

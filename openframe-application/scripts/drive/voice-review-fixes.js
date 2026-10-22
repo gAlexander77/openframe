@@ -18,7 +18,17 @@ async (page) => {
   const call = async (name, args = {}) => {
     const r = await page.evaluate(([name, args]) => window.videoEditor.mcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }), [name, args]);
     if (r.error || r.result?.isError) throw new Error(`${name}: ${r.error?.message ?? r.result.content[0].text}`);
-    return JSON.parse(r.result.content[0].text);
+    let answer = JSON.parse(r.result.content[0].text);
+    // A call past the 45 s wait budget answers a job to poll (ADR-142).
+    while (answer.state === "running" && answer.job_id) {
+      await page.waitForTimeout(1000);
+      const s = await page.evaluate((job_id) => window.videoEditor.mcp({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "job_status", arguments: { job_id } } }), answer.job_id);
+      const status = JSON.parse(s.result.content[0].text);
+      if (status.state === "running") continue;
+      if (status.state !== "done") throw new Error(`${name}: ${JSON.stringify(status)}`);
+      answer = status.result;
+    }
+    return answer;
   };
   const details = {};
   const vo = await call("add_voiceover", {

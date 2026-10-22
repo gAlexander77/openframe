@@ -12,7 +12,16 @@ async (page) => {
   });
   const dial = page.getByRole("slider", { name: "Rotate", exact: true });
   await dial.waitFor();
-  const box = await dial.boundingBox(), cx = box.x + box.width / 2, cy = box.y + box.height / 2, radius = box.width * 0.35;
+  // The inspector settles for about 0.1 s after a selection; a pixel's
+  // shift moves this 12 px drag radius several degrees.
+  let box = await dial.boundingBox();
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(50);
+    const now = await dial.boundingBox();
+    if (now.x === box.x && now.y === box.y) break;
+    box = now;
+  }
+  const cx = box.x + box.width / 2, cy = box.y + box.height / 2, radius = box.width * 0.35;
   await page.mouse.move(cx + radius, cy);
   await page.mouse.down();
   for (let i = 1; i <= 12; i++) {

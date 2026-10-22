@@ -271,6 +271,20 @@ window.__TAURI_INTERNALS__.invoke("plugin:event|emit_to", {
 26. **`createImageBitmap`'s `resizeQuality: "high"` differs by machine.**
     Compare pictures brought down the same way (`drawImage` to the same
     size), or the measurement measures the scaler.
+27. **A sample point on a border reads a blend.** Color bars change at
+    x 0.5; a viewer one pixel narrower (the transport wrapping a row
+    sooner) sampled 76% magenta there while the export read pure magenta.
+    Sample inside a region, never on its edge.
+28. **Measure a control after the panel settles.** The inspector moves a
+    fraction of a pixel for about 0.1 s after a selection; a dial dragged
+    on a 12 px radius from the first measurement turned 64 to 87 degrees
+    instead of 90. Wait until two bounding boxes agree.
+29. **A long tool answers a job past 45 s** (ADR-142): a drive's `call`
+    helper follows `job_id` through `job_status`, or a slower run (a model
+    reloaded after the memory lane unloads it) reads `undefined`.
+30. **Home holds no project** (ADR-144): read `project().id` before
+    leaving the editor, and give captions real sound, or no model loads
+    for a drive to hold.
 
 ## MCP against the web build
 
