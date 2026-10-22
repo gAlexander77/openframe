@@ -52,6 +52,8 @@ it("auto captions maps cut source words, applies only the new look, and edits on
   state.project = runCommand(state.project, "cut_ranges", { clip_id: clip.id, ranges: [{ start: 25.1, end: 25.6 }], ripple: true });
   const result = await autoCaptions("", { words_per_caption: 2, replace: false, look: "pop", style: { color: "#00ffff" }, y: -0.2, detail: "full" });
   expect(result.words).toBe(3);
+  // The default English model (base.en) refuses a language; the desktop run threw on "en".
+  expect(vi.mocked(transcribePcm).mock.calls.at(-1)![2]).toMatchObject({ language: null });
   expect(result.captions!.map((c) => c.text)).toEqual(["Well,", "we go."]);
   expect(result.captions![1].start).toBeCloseTo(1.2, 2);
   expect(state.edits).toBe(1);

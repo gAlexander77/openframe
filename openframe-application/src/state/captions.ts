@@ -128,10 +128,13 @@ export async function autoCaptions(_target: string, opts: { replace?: boolean; w
   if (!clips.length) throw new Error("Nothing on the selected timeline tracks has speech (muted, reversed and speed-curved clips are excluded)");
   const language = opts.language === "English" ? "en" : opts.language ?? "en";
   const model = opts.model ?? (language === "en" || language === "english" ? undefined : "onnx-community/whisper-base_timestamped");
+  // The default English model (base.en) refuses a language: name one only
+  // for a multilingual model.
+  const english = model === undefined || /\.en(_|$)/.test(model);
   const caps: Caption[] = [];
   let heard = 0;
   for (const c of clips) {
-    await hearAsset(p, c.assetId, { model, language }, signal);
+    await hearAsset(p, c.assetId, { model, language: english ? null : language }, signal);
     const words = timelineWords(p, c, clipWords(p, c) ?? [], start, end);
     heard += words.length;
     const limit = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
