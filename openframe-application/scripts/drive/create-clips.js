@@ -26,7 +26,13 @@ async (page) => {
     }
     if (job.state !== "done") throw new Error(`${name}: ${JSON.stringify(job)}`);
     return job.result;
-  }, [name, args]);
+  }, [name, args]).catch(async error => {
+    // open_project reports that the UI explains the failure. React may
+    // still be committing its error toast when the MCP answer arrives.
+    await page.locator(".toast-error").first().waitFor({ timeout: 1000 }).catch(() => {});
+    const reasons = await page.locator(".toast-error").allTextContents();
+    throw new Error(`${error.message}${reasons.length ? `\nApp: ${reasons.join("; ")}` : ""}`);
+  });
   const origin = await page.evaluate(() => location.origin);
   const [a] = await call("import_media", { files: [{ src: `${origin}/scratch/create-clips/vod.mp4`, name: "Speech VOD.mp4" }] });
   await call("add_media_clip", { asset_id: a.id, start: 0 });

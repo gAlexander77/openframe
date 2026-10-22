@@ -536,7 +536,7 @@ all results as Highlight N ranges following that source clip, one undo step;
 rerunning replaces those ranges. A range follows its start through edits.
 Turn on **Hear candidates** for local Whisper quotes and sentence boundaries;
 only candidates plus five seconds of context are heard, and first use may
-download a speech model. Agents use `find_highlights` (source-second times,
+download a speech model. Results include short quote or phrase titles. Agents use `find_highlights` (source-second times,
 optional viewer clip times and transcript keywords), `preview_media` to
 review, and `add_highlight_markers` to mark a reviewed reading. Long videos
 sample scenes every four seconds after 20 minutes; the answer reports
@@ -548,10 +548,19 @@ sampling coverage if its 75-second scene budget runs out.
 `job_id` until `state` is `done`, then read `result` as the tool's original
 answer; `failed` includes an error, and `canceled` stays canceled. Without
 an ID, `job_status` lists running and recent jobs. `cancel_job` stops a
-specific ID. Results remain for 30 minutes after finishing, in this app
-session; switching projects cancels running jobs. `elapsed_seconds` and
+specific ID. Text results remain up to 30 minutes within a 32 MiB budget
+and 128 recent jobs. Image/audio payloads are released after delivery; ask
+for another preview to receive them again. Switching projects cancels
+running jobs and releases cached answers. `elapsed_seconds` and
 `quiet_seconds` show total time and time since the last progress update.
 The existing `export_status` also keeps following the latest export.
+
+**Long editing sessions:** thumbnails and analysis features are cached within
+byte budgets. Older entries regenerate when needed. Speech and background
+models unload after two idle minutes, so the next use may take a little
+longer to start; downloaded weights remain available offline. Back to home
+or opening another project releases the previous project's working caches
+and undo history. The saved edit and its media remain available to reopen.
 
 **Remove a background:** select a video clip, open Video > Remove BG and
 turn on Auto removal (or use the AI tools card). The first time downloads

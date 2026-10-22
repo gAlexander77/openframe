@@ -1,3 +1,5 @@
+import { ByteLru, retainedBytes } from "../lib/memory";
+import { MiB, trackCache } from "../engine/memory";
 import { useSyncExternalStore } from "react";
 import { sparseSceneCuts, streamMono } from "../engine/analyze";
 import { findHighlights, HighlightAudio, refineHighlight, type Highlight, type HighlightFeature, type HighlightOptions } from "../lib/analysis/highlights";
@@ -24,7 +26,8 @@ const set = (patch: Partial<HighlightState>) => { state = { ...state, ...patch }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l); }; };
 export const useHighlights = () => useSyncExternalStore(subscribe, () => state);
 let controller: AbortController | undefined, session: AbortSignal | undefined;
-const readings = new Map<string, { features: HighlightFeature[]; cuts?: number[]; sampling?: HighlightAnswer["scene_sampling"] }>();
+const readings = new ByteLru<string, { features: HighlightFeature[]; cuts?: number[]; sampling?: HighlightAnswer["scene_sampling"] }>(8 * MiB);
+trackCache("highlight_features", readings);
 export const cancelHighlights = () => controller?.abort();
 
 export function addHighlightMarkers(result: HighlightAnswer) {
@@ -80,13 +83,14 @@ export async function findAssetHighlights(options: HighlightRequest, chatText?: 
       if (asset.hasAudio) await streamMono(asset, pcm => audio.push(pcm), f => progress("Reading audio excitement…", f), signal);
       signal.throwIfAborted();
       reading = { features: asset.hasAudio ? audio.finish() : [] };
-      if (readings.size >= 3) readings.delete(readings.keys().next().value!);
-      readings.set(key, reading);
+      readings.set(key, reading, retainedBytes(reading));
     }
     const scenes = asset.hasVideo && (options.scenes === true || ((options.scenes ?? "auto") === "auto" && asset.duration <= 7200));
     if (scenes && !reading.cuts) {
       const sampled = await sparseSceneCuts(asset, f => progress("Sampling scene activity…", f), signal);
+      signal.throwIfAborted();
       reading.cuts = sampled.cuts; reading.sampling = sampled.sampling;
+      readings.set(key, reading, retainedBytes(reading));
     }
     let chat;
     if (options.chat_file) chatText = (await platform.openChatReplay(options.chat_file, signal))?.text;

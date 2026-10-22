@@ -1,3 +1,4 @@
+import { memoryOwners, MiB } from "./memory";
 // Export: the timeline rendered into a file, entirely on this machine
 // (ADR-003), looking exactly like the preview because it runs the same plan
 // (lib/render/plan.ts), sources (player.ts) and compositor.
@@ -171,25 +172,30 @@ export async function encodableVideoCodecs(format: VideoFormat, width: number, h
   return VIDEO_FORMATS[format].codecs.filter((c) => found.includes(c as MediaCodec));
 }
 
+const memoryExports = new Set<{ bytes: () => number; dispose: () => void }>();
+memoryOwners.register("export_buffers", () => ({ bytes: [...memoryExports].reduce((n, m) => n + m.bytes(), 0), count: memoryExports.size, budget: 128 * MiB }), () => { for (const target of memoryExports) target.dispose(); });
+
 /** An in-memory export target with positional writes (MP4 patches its
- * header at the end). For automation and tests.
- * ponytail: the whole file lives in RAM; past ~1 GB use an OPFS target. */
+ * header at the end). Larger deliveries use the streaming file target. */
 export function memoryTarget() {
-  let buf = new Uint8Array(1 << 20);
-  let size = 0;
+  const budget = 128 * MiB;
+  let buf = new Uint8Array(1 << 20), size = 0, disposed = false;
+  const resource = { bytes: () => buf.byteLength, dispose: () => { disposed = true; buf = new Uint8Array(0); memoryExports.delete(resource); } };
+  memoryExports.add(resource);
   const writable = new WritableStream<StreamTargetChunk>({
     write({ data, position }) {
+      if (disposed) throw new Error("Export buffer was released");
       const end = position + data.byteLength;
+      if (end > budget) throw new Error("In-memory export exceeds 128 MiB. Export to a file instead.");
       if (end > buf.byteLength) {
-        const grown = new Uint8Array(Math.max(end, buf.byteLength * 2));
-        grown.set(buf.subarray(0, size));
-        buf = grown;
+        const grown = new Uint8Array(Math.min(budget, Math.max(end, buf.byteLength * 2)));
+        grown.set(buf.subarray(0, size)); buf = grown;
       }
-      buf.set(data, position);
-      size = Math.max(size, end);
+      buf.set(data, position); size = Math.max(size, end);
     },
+    abort: () => resource.dispose(),
   });
-  return { writable, bytes: () => buf.slice(0, size) };
+  return { writable, bytes: () => buf.slice(0, size), dispose: resource.dispose };
 }
 
 /** The codecs mediabunny encodes (a GIF has its own encoder). */
@@ -588,8 +594,8 @@ function humanize(e: unknown): unknown {
 }
 
 /** One frame as a PNG at the export size: CapCut's "export still frame". */
-export async function exportStill(p: Project, frame: number, width: number, height: number): Promise<Blob> {
-  return (await exportStills(p, [frame], width, height))[0];
+export async function exportStill(p: Project, frame: number, width: number, height: number, signal?: AbortSignal): Promise<Blob> {
+  return (await exportStills(p, [frame], width, height, undefined, undefined, signal))[0];
 }
 
 /** Frames as PNGs at the export size, drawn as the export draws them,

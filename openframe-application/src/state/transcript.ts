@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { retainedBytes } from "../lib/memory";
 // Edit by transcript (Premiere's Text-Based Editing, CapCut's transcript
 // editing): what each clip on a track says, heard on this machine by
 // Whisper, and deleting words as cuts. Words are kept per asset in source
@@ -74,6 +76,9 @@ export const wordFrame = (p: Project, c: SpeechClip, w: Word) => Math.max(c.star
 const models = new Map<Id, string>();
 const languages = new Map<Id, string | null>();
 let hearing: Promise<void> = Promise.resolve();
+memoryOwners.register("transcript_words", () => ({ bytes: retainedBytes([heard, models, languages]), count: heard.size, estimated: true }), () => {
+  heard.clear(); models.clear(); languages.clear(); busy?.abort(); hearing = Promise.resolve(); changed();
+});
 export interface Hearing { audio_seconds: number; elapsed_seconds: number; model: string; cached: boolean }
 
 /** Highlight refinement and clip tools share the same window cache and ASR
@@ -93,12 +98,22 @@ export async function hearAsset(p: Project, assetId: Id, opts: { model?: string;
     signal.throwIfAborted();
     const compatible = models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en");
     if (compatible && !missing(heard.get(assetId), from, to)) return { audio_seconds: 0, elapsed_seconds: (performance.now() - started) / 1000, model, cached: true };
-    const pcm = await decodeMono(asset, from, to, 16000, progress => onProgress({ stage: "mixing", progress }), signal);
-    const words = await transcribePcm(pcm, from, { model, language }, onProgress, signal);
+    const words: Word[] = [];
+    let audioSeconds = 0;
+    // Keep at most 62 s of PCM, even for get_transcript on a multi-hour VOD.
+    // The overlap supplies word context; each word belongs to one window.
+    for (let at = from; at < to; at += 60) {
+      signal.throwIfAborted();
+      const lo = Math.max(from, at - 1), hi = Math.min(to, at + 61);
+      const pcm = await decodeMono(asset, lo, hi, 16000, progress => onProgress({ stage: "mixing", progress }), signal);
+      audioSeconds += pcm.length / 16000;
+      const result = await transcribePcm(pcm, lo, { model, language }, onProgress, signal);
+      words.push(...result.filter(w => w.start >= at && w.start < Math.min(to, at + 60)));
+    }
     signal.throwIfAborted();
     heard.set(assetId, merge(compatible ? heard.get(assetId) : undefined, from, to, assetWords(p, assetId, from, to, words)));
     models.set(assetId, model); languages.set(assetId, language); changed();
-    return { audio_seconds: pcm.length / 16000, elapsed_seconds: (performance.now() - started) / 1000, model, cached: false };
+    return { audio_seconds: audioSeconds, elapsed_seconds: (performance.now() - started) / 1000, model, cached: false };
   });
   hearing = task.then(() => {}, () => {});
   // Cancel promptly while queued; the queued task checks again before ASR.

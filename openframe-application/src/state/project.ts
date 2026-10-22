@@ -203,6 +203,7 @@ export function closeProject(focusSearch = false) {
     leave();
     clearTimeout(timer);
     projectWork.close();
+    store.unload();
     set({ screen: "home", ...(focusSearch ? { openRequest: session.openRequest + 1 } : {}) });
     return true;
   });

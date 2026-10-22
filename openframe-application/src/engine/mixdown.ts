@@ -54,12 +54,15 @@ export async function renderMixWindow(p: Project, t0: number, length: number, ra
   // Nothing sounds before the timeline's start.
   const pre = Math.round(Math.min(preroll, Math.max(0, t0)) * rate);
   const ctx = new OfflineAudioContext({ numberOfChannels: channels, length: length + pre, sampleRate: rate });
-  await scheduleAudio(ctx, ctx.destination, p, t0 - pre / rate, t0 + length / rate, 0).done;
-  const b = await ctx.startRendering();
-  if (!pre) return b;
-  const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
-  for (let c = 0; c < channels; c++) out.copyToChannel(b.getChannelData(c).subarray(pre), c);
-  return out;
+  const schedule = scheduleAudio(ctx, ctx.destination, p, t0 - pre / rate, t0 + length / rate, 0);
+  try {
+    await schedule.done;
+    const b = await ctx.startRendering();
+    if (!pre) return b;
+    const out = new AudioBuffer({ length, numberOfChannels: channels, sampleRate: rate });
+    for (let c = 0; c < channels; c++) out.copyToChannel(b.getChannelData(c).subarray(pre), c);
+    return out;
+  } finally { schedule.stop(); }
 }
 
 export const planesOf = (b: AudioBuffer) => Array.from({ length: b.numberOfChannels }, (_, c) => b.getChannelData(c));

@@ -583,3 +583,4 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-141 Stream clips use grouped bands and detached project documents]] — grouped source crops, bounded captions, shared-media clip projects and sequential batch export without editor navigation.
 - [[ADR-142 Long tools return retained session jobs and hear source windows]] - retained MCP jobs, progress and cancellation, bounded source hearing and sparse scene sampling.
 - [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]] - subject-safe hooks, clear-column credit, measured template checks and conservative audio roles.
+- [[ADR-144 Session resources have byte budgets and explicit owners]] - byte LRU caches, borrowed image lifetimes, idle model teardown, session cleanup and memory diagnostics.

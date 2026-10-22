@@ -1,3 +1,4 @@
+import { memoryOwners } from "./memory";
 import type { SourcePurpose } from "../lib/proxyPolicy";
 import { sourceForPurpose, checkPlaybackProxy, originalFingerprint, missingPlaybackProxy, proxyHealth } from "./playbackProxies";
 import { prefsStore } from "../state/prefs";
@@ -29,12 +30,13 @@ import { audibleTime, audioContext, masterBus, setMonitorMuted, scheduleAudio, t
 import { Compositor, type SourceImage } from "./compositor";
 import { ReverseCursor, VideoCursor, type HeldFrame, type ReverseOptions } from "./cursor";
 import { loadPlanLuts } from "./luts";
-import { imageFor, mediaForSrc, type MediaFile } from "./media";
+import { borrowImage, mediaForSrc, type MediaFile } from "./media";
 import { rasterizeText } from "./text";
 
 interface CursorEntry {
   cursor: Promise<VideoCursor | ReverseCursor | null>;
   used: number;
+  resolved?: VideoCursor | ReverseCursor | null;
 }
 
 /** Resolved pixels for one plan, ready for a synchronous compositor pass.
@@ -45,8 +47,23 @@ export type Resolved = Map<Id, { sample?: VideoSample; frame?: HeldFrame; matte?
 /** Decode cursors keyed by clip, shared shape for preview and export.
  * Reversed clips get a ReverseCursor; `reverse` sets the size it holds
  * frames at (default: full size, exact frames for export). */
+const livePools = new Set<CursorPool>();
+memoryOwners.register("decoder_cursors", () => ({ bytes: [...livePools].reduce((n, p) => n + p.memoryBytes, 0), count: [...livePools].reduce((n, p) => n + p.size, 0), estimated: true, detail: "Held frames only; native decoder queues are additional. Preroll admission remains 512 MiB." }), () => { for (const pool of livePools) pool.clear(); });
 export class CursorPool {
+  get size() { return this.map.size; }
+  get memoryBytes() { return [...this.map.values()].reduce((n, e) => n + (e.resolved?.memoryBytes ?? 0), 0); }
   private map = new Map<string, CursorEntry>();
+  private imageReleases: (() => void)[] = [];
+  private imageGeneration = 0;
+  private generation = 0;
+  releaseImages() { this.imageGeneration++; this.imageReleases.splice(0).forEach(release => release()); }
+  async image(asset: import("../lib/project/types").Asset, time: number) {
+    const generation = this.imageGeneration;
+    const borrowed = await borrowImage(asset, time);
+    if (generation !== this.imageGeneration) { borrowed.release(); return null; }
+    this.imageReleases.push(borrowed.release); livePools.add(this);
+    return borrowed.value;
+  }
 
   constructor(private reverse: ReverseOptions = {}, private purpose: SourcePurpose | (() => SourcePurpose) = "export", private playbackOn: () => boolean = () => true) {}
 
@@ -67,14 +84,16 @@ export class CursorPool {
   }
 
   private async forAsset(p: Project, clipId: Id, assetId: Id, reverse: boolean) {
+    const generation = this.generation;
     const asset = getAsset(p, assetId);
     if (asset) await checkPlaybackProxy(asset);
+    if (generation !== this.generation) return null;
     // Relinking and undo can change a clip's source without changing its ID.
     const purpose = typeof this.purpose === "function" ? this.purpose() : this.purpose;
     const src = asset ? sourceForPurpose(asset, purpose, this.playbackOn()) : undefined;
     const fingerprint = asset && src === asset.src ? originalFingerprint(asset) : undefined;
     return this.open(JSON.stringify([clipId, src, fingerprint, reverse]), () => asset && src ? mediaForSrc(src, fingerprint).catch((e) => {
-      if (src !== asset.playbackProxy?.src) throw e;
+      if (generation !== this.generation || src !== asset.playbackProxy?.src) throw e;
       missingPlaybackProxy(asset);
       return mediaForSrc(asset.proxy ?? asset.src, asset.proxy ? undefined : originalFingerprint(asset));
     }) : null, reverse);
@@ -86,13 +105,16 @@ export class CursorPool {
       const m = media();
       const cursor = m
         ? m.then((f) => {
-            if (!f.videoSink || !f.keySink) return null;
-            if (!reverse) return new VideoCursor(f.videoSink, f.keySink, f.videoStart);
-            return new ReverseCursor(f.videoSink, f.keySink, f.videoStart, { width: f.width, height: f.height }, this.reverse);
+            if (!f.videoSink || !f.keySink) { f.release(); return null; }
+            if (!reverse) return new VideoCursor(f.videoSink, f.keySink, f.videoStart, f.release);
+            return new ReverseCursor(f.videoSink, f.keySink, f.videoStart, { width: f.width, height: f.height }, this.reverse, f.release);
           })
         : Promise.resolve(null);
       e = { cursor: cursor.catch(() => null), used: 0 };
+      const entry = e;
+      void e.cursor.then(c => { entry.resolved = c; });
       this.map.set(key, e);
+      livePools.add(this);
     }
     e.used = performance.now();
     return e.cursor;
@@ -107,9 +129,13 @@ export class CursorPool {
         void e.cursor.then((c) => c?.dispose());
       }
     }
+    if (!this.map.size && !this.imageReleases.length) livePools.delete(this);
   }
 
   clear() {
+    this.generation++;
+    livePools.delete(this);
+    this.releaseImages();
     for (const e of this.map.values()) void e.cursor.then((c) => c?.dispose());
     this.map.clear();
   }
@@ -118,6 +144,7 @@ export class CursorPool {
 /** Fetch every source a plan needs. Video samples are borrowed from their
  * cursors and stay valid until the next call on the same cursor. */
 export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorPool): Promise<Resolved> {
+  pool.releaseImages();
   const out: Resolved = new Map();
   await Promise.all([
     loadPlanLuts(plan),
@@ -144,7 +171,7 @@ export async function resolveSources(p: Project, plan: PlanItem[], pool: CursorP
       } else if (src.kind === "image") {
         const asset = getAsset(p, src.assetId);
         if (asset) {
-          const bitmap = await imageFor(asset, src.time).catch(() => null);
+          const bitmap = await pool.image(asset, src.time ?? 0).catch(() => null);
           if (bitmap) out.set(l.clipId, { bitmap, key: `img:${asset.src}:${asset.animated ? src.time : 0}` });
         }
       }
@@ -348,8 +375,9 @@ export class Player {
   pixels(maxWidth?: number) {
     const c = this.compositor;
     if (!c) return null;
-    if (maxWidth) return c.readPixelsScaled(maxWidth);
-    return { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+    const px = maxWidth ? c.readPixelsScaled(maxWidth) : { width: c.canvas.width, height: c.canvas.height, data: c.readPixels() };
+    // Nothing drawn since the last project's targets were released.
+    return px.data.length ? px : null;
   }
 
   private frameListeners = new Set<(frame: number) => void>();
@@ -420,8 +448,10 @@ export class Player {
     // Motion blur at full quality paused (what preview_frame and export
     // show), with a few samples while playing (ADR-058).
     const plan = planFrame(p, end > 0 ? Math.min(f, end - 1) : f, { motionSamples: this.rate !== 0 ? MOTION_SAMPLES.playing : MOTION_SAMPLES.full });
+    const session = projectWork.signal();
+    if (session.aborted) return;
     const resolved = await resolveSources(p, plan, this.pool);
-    if (comp !== this.compositor) return;
+    if (comp !== this.compositor || session.aborted) return;
     // Above 1080p, play back at half resolution and show full on pause, as
     // Resolve and Premiere do: the biggest single playback lever.
     const scale = this.rate !== 0 && p.height > 1080 ? Math.min(s.previewScale, 0.5) : s.previewScale;
@@ -625,6 +655,13 @@ export class Player {
     this.request();
   }
 
+  releaseSession() {
+    if (this.rate !== 0 || this.schedule) this.stopClock();
+    this.rate = 0; this.wanted = null; this.until = this.loopFrom = null;
+    this.preps.clear(); this.prepTargets.clear(); this.prepFor = null;
+    this.prepared.length = 0; this.clearReference(); this.pool.clear();
+  }
+
   dispose() {
     this.pause();
     this.unsub();
@@ -648,3 +685,4 @@ export function topClipAt(p: Project, f: number): VisualClip | null {
 }
 
 export const player = new Player();
+memoryOwners.register("player_session", () => ({ bytes: 0, count: 0 }), () => player.releaseSession());

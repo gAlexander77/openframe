@@ -5,7 +5,7 @@ import { createCompoundClip, createProject, createTrack, clipForAsset } from "./
 import { splitAt } from "./project/ops";
 import { newInsert } from "./audioInserts";
 import type { AudioClip, CompoundClip, Project } from "./project/types";
-vi.mock("../engine/media", () => ({ DECODE_PREROLL: 0.1, mediaFor: async () => ({ audioStart: 0, audioSink: { async *buffers() { yield { buffer: { duration: 20 }, timestamp: 0 }; } } }) }));
+vi.mock("../engine/media", () => ({ DECODE_PREROLL: 0.1, mediaFor: async () => ({ release: () => {}, audioStart: 0, audioSink: { async *buffers() { yield { buffer: { duration: 20 }, timestamp: 0 }; } } }) }));
 import { scheduleAudio } from "../engine/audio";
 import { insertChain } from "../engine/audioInserts";
 import { mixPreroll } from "../engine/mixdown";

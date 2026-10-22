@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { memoryOwners, MiB, trackCache } from "./memory";
 // Filmstrips and waveforms for compound clips (ADR-037). A strip is the
 // nested timeline itself, rendered by the viewer's plan, sources and
 // compositor on a small offscreen canvas, a frame per step; a waveform is
@@ -21,8 +23,11 @@ import { notifyThumbs, thumbs, type Filmstrip, type Peaks } from "./thumbs";
 const THUMB_H = 96;
 const PEAK_RATE = 100;
 
-const strips = new WeakMap<Compound, Filmstrip>();
-const peaks = new WeakMap<Compound, { version: number; peaks: Peaks }>();
+const strips = new ByteLru<Compound, Filmstrip>(32 * MiB, strip => strip.frames.forEach(f => f?.close()));
+const peaks = new ByteLru<Compound, { version: number; peaks: Peaks }>(8 * MiB);
+trackCache("compound_filmstrips", strips); trackCache("compound_peaks", peaks);
+let generation = 0;
+memoryOwners.register("compound_jobs", () => ({ bytes: 0, count: queue.length + Number(busy) }), () => { generation++; queue.length = 0; });
 
 /** The compound's filmstrip, frames arriving as they render. Inner
  * seconds index it, like a file's. */
@@ -33,9 +38,10 @@ export function compoundStrip(p: Project, k: Compound): Filmstrip {
     // Fewer than a file's: every thumbnail is a full composite.
     const step = Math.max(0.5, seconds / 60);
     s = { step, frames: new Array(Math.max(1, Math.ceil(seconds / step))), aspect: p.width / p.height };
-    strips.set(k, s);
+    strips.set(k, s, s.frames.length * Math.min(512, Math.max(2, Math.round(THUMB_H * s.aspect))) * THUMB_H * 4);
     const strip = s;
-    queue.push(() => render(p, k, strip));
+    const session = generation;
+    queue.push(() => render(p, k, strip, session));
     void pump();
   }
   return s;
@@ -58,10 +64,10 @@ async function pump() {
   }
 }
 
-async function render(p: Project, k: Compound, strip: Filmstrip) {
+async function render(p: Project, k: Compound, strip: Filmstrip, session: number) {
   const view = compoundView(p, k.id);
   const h = THUMB_H;
-  const w = Math.max(2, Math.round(h * strip.aspect));
+  const w = Math.min(512, Math.max(2, Math.round(h * strip.aspect)));
   comp ??= new Compositor(new OffscreenCanvas(w, h));
   // Shaders compile off the main thread before the first frame needs them.
   await (warm ??= comp.warm().catch(() => undefined));
@@ -72,10 +78,14 @@ async function render(p: Project, k: Compound, strip: Filmstrip) {
   try {
     let last = performance.now();
     for (let i = 0; i < strip.frames.length; i++) {
+      if (generation !== session || strips.peek(k) !== strip) return;
       const plan = planFrame(view, Math.min(end - 1, Math.round(i * strip.step * fps)));
       const resolved = await resolveSources(view, plan, pool);
+      if (generation !== session || strips.peek(k) !== strip) return;
       comp.render(plan, sourceImages(resolved, w, h), p.background);
-      strip.frames[i] = await createImageBitmap(comp.canvas);
+      const bitmap = await createImageBitmap(comp.canvas);
+      if (generation !== session || strips.peek(k) !== strip) { bitmap.close(); return; }
+      strip.frames[i] = bitmap;
       if (performance.now() - last > 250) {
         last = performance.now();
         notifyThumbs();
@@ -84,6 +94,7 @@ async function render(p: Project, k: Compound, strip: Filmstrip) {
     }
   } finally {
     pool.clear();
+    comp?.dispose(); comp = null; warm = null;
     notifyThumbs();
   }
 }
@@ -98,7 +109,9 @@ export function compoundPeaks(p: Project, k: Compound): Peaks | undefined {
   const view = compoundView(p, k.id);
   const sounding = soundingClips(view, (id) => getAsset(view, id)?.hasAudio ?? false);
   if (!sounding.length) return undefined;
-  const data = new Float32Array(Math.ceil(framesToSeconds(timelineEnd(k.tracks), p.fps) * PEAK_RATE) + 1);
+  const seconds = framesToSeconds(timelineEnd(k.tracks), p.fps);
+  const rate = Math.min(PEAK_RATE, (MiB / 4 - 1) / Math.max(1, seconds));
+  const data = new Float32Array(Math.ceil(seconds * rate) + 1);
   const fps = p.fps.num / p.fps.den;
   for (const s of sounding) {
     const asset = getAsset(view, s.clip.assetId);
@@ -106,15 +119,15 @@ export function compoundPeaks(p: Project, k: Compound): Peaks | undefined {
     if (!src) continue;
     const t0 = framesToSeconds(s.clip.start, p.fps);
     const t1 = framesToSeconds(s.clip.start + s.clip.duration, p.fps);
-    for (let b = Math.max(0, Math.floor(t0 * PEAK_RATE)); b < Math.min(data.length, Math.ceil(t1 * PEAK_RATE)); b++) {
-      const t = b / PEAK_RATE;
+    for (let b = Math.max(0, Math.floor(t0 * rate)); b < Math.min(data.length, Math.ceil(t1 * rate)); b++) {
+      const t = b / rate;
       const at = s.clip.in + (s.clip.reverse ? -1 : 1) * sourceOffset(s.clip, (t - t0) * fps, p.fps);
       const v = (src.data[Math.floor(at * src.rate)] ?? 0) * soundGainAt(s, p.fps, t);
       data[b] = Math.min(1, data[b] + v);
     }
   }
-  const out = { data, rate: PEAK_RATE };
-  peaks.set(k, { version, peaks: out });
+  const out = { data, rate };
+  peaks.set(k, { version, peaks: out }, data.byteLength);
   return out;
 }
 

@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { memoryOwners, MiB, trackCache } from "./memory";
 // Library card previews drawn by the app's own engine (ADR-026): a sample
 // frame — a generated landscape, or the selected clip's own frame — goes
 // through planFrame and an offscreen Compositor with the card's filter,
@@ -68,6 +70,7 @@ function schedule<T>(alive: () => boolean, work: () => Promise<T>, urgent = fals
 async function pump() {
   if (busy) return;
   busy = true;
+  const session = generation;
   try {
     // Shaders compile before the first card, not inside its render.
     await (warming ??= compositor().warm().catch((e) => console.warn("preview shaders:", e)));
@@ -83,25 +86,41 @@ async function pump() {
     }
   } finally {
     busy = false;
+    if (session !== generation) { comp?.dispose(); comp = null; warming = null; }
   }
 }
 
-const cache = new Map<string, Promise<string | PreviewMotion | null>>();
+const urlBytes = new Map<string, number>();
+const cache = new ByteLru<string, string | PreviewMotion>(32 * MiB, value => {
+  const url = typeof value === "string" ? value : value.sprite;
+  URL.revokeObjectURL(url); urlBytes.delete(url);
+});
+trackCache("library_previews", cache);
+const pending = new Map<string, Promise<string | PreviewMotion | null>>();
+let generation = 0;
+memoryOwners.register("preview_jobs", () => ({ bytes: 0, count: pending.size }), () => {
+  generation++; pending.clear(); queue.splice(0).forEach(job => job.cancel());
+  clearTimeout(timer);
+  void clipScene?.then(closeScene, () => {}); clipScene = null; clipSceneKey = ""; sceneKey = "sample";
+  pool.clear();
+  // The active job owns its context until it returns.
+  if (!busy) { comp?.dispose(); comp = null; warming = null; }
+});
+const closeScene = (scene: Scene) => { if (scene.image instanceof ImageBitmap) scene.image.close(); };
 
 function cached<T extends string | PreviewMotion>(key: string, make: () => Promise<T | null>): Promise<T | null> {
-  let hit = cache.get(key) as Promise<T | null> | undefined;
+  const ready = cache.get(key) as T | undefined;
+  if (ready) return Promise.resolve(ready);
+  let hit = pending.get(key) as Promise<T | null> | undefined;
   if (!hit) {
-    hit = make();
-    cache.set(key, hit);
-    // A canceled job (card scrolled away) or a failure may be asked again.
-    void hit.then((v) => v === null && cache.get(key) === hit && cache.delete(key), () => cache.delete(key));
-    // ponytail: FIFO cap; scene changes are what fill it, and the oldest
-    // entries belong to scenes nobody shows any more.
-    while (cache.size > 320) {
-      const [k, old] = cache.entries().next().value!;
-      cache.delete(k);
-      void old.then((v) => v && URL.revokeObjectURL(typeof v === "string" ? v : v.sprite));
-    }
+    const session = generation;
+    hit = make().then(value => {
+      if (!value) return null;
+      const url = typeof value === "string" ? value : value.sprite;
+      if (session !== generation) { URL.revokeObjectURL(url); urlBytes.delete(url); return null; }
+      return cache.set(key, value, urlBytes.get(url) ?? 0) ? value : null;
+    }).finally(() => { if (pending.get(key) === hit) pending.delete(key); });
+    pending.set(key, hit);
   }
   return hit;
 }
@@ -321,6 +340,7 @@ function sceneA(): Promise<Scene> {
   if (sceneKey === "sample") return Promise.resolve(sample());
   if (clipSceneKey !== sceneKey || !clipScene) {
     clipSceneKey = sceneKey;
+    void clipScene?.then(closeScene, () => {});
     clipScene = grabClip(sceneKey).catch(() => sample());
   }
   return clipScene;
@@ -395,7 +415,8 @@ function draw(p: Project, scenes: Scene[], frames: number[], outW: number, outH:
 }
 
 async function toUrl(c: OffscreenCanvas): Promise<string> {
-  return URL.createObjectURL(await c.convertToBlob({ type: "image/jpeg", quality: 0.86 }));
+  const blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.86 });
+  const url = URL.createObjectURL(blob); urlBytes.set(url, blob.size); return url;
 }
 
 /** Decode before handing a sprite to CSS, so the first hover frame is not blank. */

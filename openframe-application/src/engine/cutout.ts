@@ -1,3 +1,6 @@
+import { modelWorker } from "./modelWorker";
+import { MiB } from "./memory";
+import { workerRequest } from "../lib/workerRequest";
 import { proxySource } from "../lib/proxyPolicy";
 // Remove background, the engine side (ADR-032, ADR-033): decode a clip's
 // source window, run every frame through a segmentation model in a worker,
@@ -57,45 +60,22 @@ export class ModelError extends Error {
   }
 }
 
-let worker: Worker | null = null;
+const managed = modelWorker("model_matte", () => new Worker(new URL("./matte.worker.ts", import.meta.url), { type: "module" }));
 let nextId = 1;
+const resetWorker = () => managed.reset();
 
-/** A fresh worker after a model failure. transformers.js chains session
- * creation and runs as `chain = chain.then(next)`, so one rejection fails
- * every later load and run in that worker with the same error. */
-function resetWorker() {
-  worker?.terminate();
-  worker = null;
+function matteCall(worker: Worker, signal: AbortSignal) {
+  return async function<T>(msg: Record<string, unknown>, opts: { onDownload?: (p: number) => void; transfer?: Transferable[]; signal?: AbortSignal } = {}): Promise<T> {
+    try { return await workerRequest<T>(worker, { ...msg, id: nextId++ }, { ...opts, signal }); }
+    catch (e) { if (signal.aborted) throw e; throw new ModelError(e instanceof Error ? e.message : String(e), msg.type === "load" ? "load" : "run"); }
+  };
 }
 
-/** One request to the matte worker. Aborting stops waiting for the answer;
- * the worker finishes what it started (a download is cached for next time). */
-function call<T>(msg: Record<string, unknown>, opts: { onDownload?: (p: number) => void; transfer?: Transferable[]; signal?: AbortSignal } = {}): Promise<T> {
-  worker ??= new Worker(new URL("./matte.worker.ts", import.meta.url), { type: "module" });
-  const w = worker;
-  const id = nextId++;
-  return new Promise((resolve, reject) => {
-    const done = () => {
-      w.removeEventListener("message", onMsg);
-      opts.signal?.removeEventListener("abort", onAbort);
-    };
-    const onMsg = (e: MessageEvent) => {
-      const m = e.data;
-      if (m.id !== id) return;
-      if (m.type === "download") return opts.onDownload?.(m.progress);
-      done();
-      if (m.type === "error") reject(new ModelError(m.message, m.stage));
-      else resolve(m as T);
-    };
-    const onAbort = () => {
-      done();
-      reject(opts.signal!.reason);
-    };
-    if (opts.signal?.aborted) return reject(opts.signal.reason);
-    w.addEventListener("message", onMsg);
-    opts.signal?.addEventListener("abort", onAbort);
-    w.postMessage({ ...msg, id }, opts.transfer ?? []);
-  });
+/** Keep the lease across frame decode/encode too, so a slow GOP cannot
+ * unload the model between its load request and its next inference. */
+function withMatte<T>(model: MatteModel, device: string | undefined, signal: AbortSignal | undefined, work: (call: ReturnType<typeof matteCall>, signal: AbortSignal) => Promise<T>) {
+  return managed.run(`${model.id}:${device ?? "auto"}`, (model === MATTE_MODELS.fallback ? 16 : 256) * MiB,
+    (worker, active) => work(matteCall(worker, active), active), signal);
 }
 
 export interface CutoutProgress {
@@ -174,95 +154,97 @@ export async function makeMatte(asset: Asset, from: number, to: number, onProgre
 }
 
 async function run(asset: Asset, from: number, to: number, model: MatteModel, force: MatteOptions["device"], onProgress: (p: CutoutProgress) => void, signal?: AbortSignal): Promise<MatteResult> {
-  // Download progress arrives only while weights are fetched (first use).
-  const { device } = await call<{ device: string }>({ type: "load", spec: model, device: force }, { onDownload: (x) => onProgress({ stage: "downloading", progress: x, model }), signal });
-  signal?.throwIfAborted();
-  onProgress({ stage: "processing", progress: 0, model });
-
-  const input = new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
-  let output: Output | null = null;
-  try {
-    const track = await input.getPrimaryVideoTrack();
-    if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
-    const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const [iw, ih] = model.input;
-    const size = matteSize(await track.getDisplayWidth(), await track.getDisplayHeight());
-    const codec = await getFirstEncodableVideoCodec(["avc", "vp9", "vp8"], { width: size.width, height: size.height });
-    if (!codec) throw new Error("This device can't encode the background matte");
-
-    // The model's answer at its own size, drawn scaled into the canvas the
-    // encoder reads. Gray: R = G = B = alpha.
-    const small = new OffscreenCanvas(iw, ih);
-    const smallCtx = small.getContext("2d")!;
-    const img = new ImageData(iw, ih);
-    img.data.fill(255);
-    const canvas = new OffscreenCanvas(size.width, size.height);
-    const ctx = canvas.getContext("2d")!;
-    const target = new BufferTarget();
-    output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
-    // A key frame a second keeps seeks in the matte as cheap as in a source.
-    const source = new CanvasSource(canvas, { codec, quality: QUALITY_HIGH, keyFrameInterval: 1 });
-    output.addVideoTrack(source);
-    await output.start();
-
-    let first: number | null = null;
-    let end = from;
-    let frames = 0;
-    let last: Uint8Array | null = null;
-    let prev: Raw | null = null;
-    let cur: Raw | null = null;
-    /** Stabilize and encode `cur` once its successor is known. */
-    const push = async (next: Raw | null) => {
-      if (cur) {
-        last = stabilize(prev?.alpha ?? null, cur.alpha, next?.alpha ?? null, last);
-        const d = img.data;
-        for (let i = 0, j = 0; i < last.length; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = last[i];
-        smallCtx.putImageData(img, 0, 0);
-        ctx.drawImage(small, 0, 0, size.width, size.height);
-        await source.add(cur.time - first!, cur.duration);
-        end = cur.time + cur.duration;
-        frames++;
-      }
-      prev = cur;
-      cur = next;
-    };
-
-    const started = performance.now();
-    let reported = 0;
-    let inFlight: Promise<Raw> | null = null;
-    const sink = new CanvasSink(track, { width: iw, height: ih, fit: "fill", poolSize: 2 });
-    for await (const wc of sink.canvases(t0 + from, t0 + to)) {
-      signal?.throwIfAborted();
-      const c = wc.canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
-      const rgba = c.getImageData(0, 0, iw, ih).data;
-      const time = wc.timestamp - t0;
-      first ??= time;
-      const job = call<{ alpha: Uint8Array }>({ type: "infer", rgba, width: iw, height: ih }, { transfer: [rgba.buffer], signal }).then((r) => ({ alpha: r.alpha, time, duration: wc.duration }));
-      // Handled where it is awaited; a cancel can leave the last one unread.
-      job.catch(() => undefined);
-      // The worker always has the next frame queued while this one is
-      // stabilized and encoded.
-      if (inFlight) await push(await inFlight);
-      inFlight = job;
-      const now = performance.now();
-      if (now - reported > 100) {
-        reported = now;
-        onProgress({ stage: "processing", progress: Math.min(1, Math.max(0, (time - from) / (to - from))), model });
-      }
-    }
-    if (inFlight) await push(await inFlight);
-    await push(null);
+  return withMatte(model, force, signal, async (call, signal) => {
+    // Download progress arrives only while weights are fetched (first use).
+    const { device } = await call<{ device: string }>({ type: "load", spec: model, device: force }, { onDownload: (x) => onProgress({ stage: "downloading", progress: x, model }), signal });
     signal?.throwIfAborted();
-    if (!frames || first === null) throw new Error(`${asset.name} has no frames in that range`);
-    await output.finalize();
-    const seconds = (performance.now() - started) / 1000;
-    return { bytes: new Uint8Array(target.buffer!), from: first, to: end, frames, model: model.id, device, ...size, fps: frames / seconds };
-  } catch (e) {
-    await output?.cancel().catch(() => undefined);
-    throw e;
-  } finally {
-    input.dispose();
-  }
+    onProgress({ stage: "processing", progress: 0, model });
+
+    const input = new Input({ source: await platform.sourceFor(proxySource(asset, "analysis", false)), formats: ALL_FORMATS });
+    let output: Output | null = null;
+    try {
+      const track = await input.getPrimaryVideoTrack();
+      if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
+      const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
+      const [iw, ih] = model.input;
+      const size = matteSize(await track.getDisplayWidth(), await track.getDisplayHeight());
+      const codec = await getFirstEncodableVideoCodec(["avc", "vp9", "vp8"], { width: size.width, height: size.height });
+      if (!codec) throw new Error("This device can't encode the background matte");
+
+      // The model's answer at its own size, drawn scaled into the canvas the
+      // encoder reads. Gray: R = G = B = alpha.
+      const small = new OffscreenCanvas(iw, ih);
+      const smallCtx = small.getContext("2d")!;
+      const img = new ImageData(iw, ih);
+      img.data.fill(255);
+      const canvas = new OffscreenCanvas(size.width, size.height);
+      const ctx = canvas.getContext("2d")!;
+      const target = new BufferTarget();
+      output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
+      // A key frame a second keeps seeks in the matte as cheap as in a source.
+      const source = new CanvasSource(canvas, { codec, quality: QUALITY_HIGH, keyFrameInterval: 1 });
+      output.addVideoTrack(source);
+      await output.start();
+
+      let first: number | null = null;
+      let end = from;
+      let frames = 0;
+      let last: Uint8Array | null = null;
+      let prev: Raw | null = null;
+      let cur: Raw | null = null;
+      /** Stabilize and encode `cur` once its successor is known. */
+      const push = async (next: Raw | null) => {
+        if (cur) {
+          last = stabilize(prev?.alpha ?? null, cur.alpha, next?.alpha ?? null, last);
+          const d = img.data;
+          for (let i = 0, j = 0; i < last.length; i++, j += 4) d[j] = d[j + 1] = d[j + 2] = last[i];
+          smallCtx.putImageData(img, 0, 0);
+          ctx.drawImage(small, 0, 0, size.width, size.height);
+          await source.add(cur.time - first!, cur.duration);
+          end = cur.time + cur.duration;
+          frames++;
+        }
+        prev = cur;
+        cur = next;
+      };
+
+      const started = performance.now();
+      let reported = 0;
+      let inFlight: Promise<Raw> | null = null;
+      const sink = new CanvasSink(track, { width: iw, height: ih, fit: "fill", poolSize: 2 });
+      for await (const wc of sink.canvases(t0 + from, t0 + to)) {
+        signal?.throwIfAborted();
+        const c = wc.canvas.getContext("2d") as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+        const rgba = c.getImageData(0, 0, iw, ih).data;
+        const time = wc.timestamp - t0;
+        first ??= time;
+        const job = call<{ alpha: Uint8Array }>({ type: "infer", rgba, width: iw, height: ih }, { transfer: [rgba.buffer], signal }).then((r) => ({ alpha: r.alpha, time, duration: wc.duration }));
+        // Handled where it is awaited; a cancel can leave the last one unread.
+        job.catch(() => undefined);
+        // The worker always has the next frame queued while this one is
+        // stabilized and encoded.
+        if (inFlight) await push(await inFlight);
+        inFlight = job;
+        const now = performance.now();
+        if (now - reported > 100) {
+          reported = now;
+          onProgress({ stage: "processing", progress: Math.min(1, Math.max(0, (time - from) / (to - from))), model });
+        }
+      }
+      if (inFlight) await push(await inFlight);
+      await push(null);
+      signal?.throwIfAborted();
+      if (!frames || first === null) throw new Error(`${asset.name} has no frames in that range`);
+      await output.finalize();
+      const seconds = (performance.now() - started) / 1000;
+      return { bytes: new Uint8Array(target.buffer!), from: first, to: end, frames, model: model.id, device, ...size, fps: frames / seconds };
+    } catch (e) {
+      await output?.cancel().catch(() => undefined);
+      throw e;
+    } finally {
+      input.dispose();
+    }
+  });
 }
 
 export interface CutoutImage {
@@ -282,7 +264,7 @@ export interface CutoutImage {
  */
 export async function cutOutImage(asset: Asset, onProgress: (p: CutoutProgress) => void, signal?: AbortSignal): Promise<CutoutImage> {
   const bitmap = await createImageBitmap(await platform.blobFor(asset.src));
-  const go = async (model: MatteModel, device?: "webgpu" | "wasm") => {
+  const go = (model: MatteModel, device?: "webgpu" | "wasm") => withMatte(model, device, signal, async (call, signal) => {
     await call<{ device: string }>({ type: "load", spec: model, device }, { onDownload: (x) => onProgress({ stage: "downloading", progress: x, model }), signal });
     signal?.throwIfAborted();
     onProgress({ stage: "processing", progress: 0, model });
@@ -313,7 +295,7 @@ export async function cutOutImage(asset: Asset, onProgress: (p: CutoutProgress) 
     bctx.putImageData(pic, 0, 0);
     onProgress({ stage: "processing", progress: 1, model });
     return { blob: await big.convertToBlob({ type: "image/png" }), width: w, height: h, model: model.id };
-  };
+  });
   const model = await matteModel();
   try {
     return await go(model);

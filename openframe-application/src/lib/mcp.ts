@@ -1343,7 +1343,15 @@ const jobAnswer = (status: ReturnType<JobRegistry["status"]>) => {
   return { ...status, ...(result ? { result: answer } : {}), ...(status.state === "running" ? { note: "call job_status with job_id; cancel_job stops it" } : {}) };
 };
 APP_TOOLS.push(
-  { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Results stay for 30 minutes after completion; switching projects cancels running work. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" } }), call: (h, a) => json(a.job_id ? jobAnswer(jobsFor(h).status(String(a.job_id))) : jobsFor(h).all().map(jobAnswer)) },
+  { name: "job_status", description: "Progress, stage, elapsed seconds, quiet_seconds since the last progress callback and complete finished answer of a long tool. Without an ID lists every running and recent job. Text results stay up to 30 minutes within a 32 MiB budget (128 recent jobs); delivered image/audio payloads are released. Switching projects cancels running work and releases answers. Export jobs also remain visible through export_status.", inputSchema: obj({ job_id: { type: "string", description: "Job ID returned by a long tool; omit to list running and recent jobs" } }), call: (h, a) => {
+    const jobs = jobsFor(h);
+    if (!a.job_id) {
+      const all = jobs.all(), answer = json(all.map(jobAnswer));
+      all.forEach(job => jobs.delivered(job.job_id)); return answer;
+    }
+    const id = String(a.job_id), answer = json(jobAnswer(jobs.status(id)));
+    jobs.delivered(id); return answer;
+  } },
   { name: "cancel_job", description: "Cancel a running job by ID. Stops its work; completed jobs keep their result. Partial files or completed projects in a batch remain available.", inputSchema: obj({ job_id: { type: "string", description: "Job ID to cancel, from a long tool or job_status" } }, ["job_id"]), call: (h, a) => json(jobAnswer(jobsFor(h).cancel(String(a.job_id)))) },
 );
 for (const tool of APP_TOOLS) if (LONG_TOOLS.has(tool.name)) {
@@ -1366,7 +1374,7 @@ const GUIDE = `You are editing a video in the user's video editor (OpenFrame); e
 Conventions: times are seconds; positions are fractions of the canvas from its center (x right, y down; 0.35 is near the bottom), but rectangles (box, region) are a top-left corner and a size, fractions of the picture; scale 1 fits a picture inside the canvas; ids come from describe_project and stay stable (new_project answers its tracks' ids; describe_project clips false lists the tracks alone). Edits answer with only what they changed; four or more clips in a list give what they share once, in added_clips_common or changed_clips_common (or per track, in *_clips_common_by_track), markers that moved with their clip are counted in moved_markers, and quiet: true on batch or any command it takes answers the ids alone; describe_project has the whole timeline, and its fields option only the parts asked for.
 The main track (the bottom video track) and what sits on it: a gap on it stays until a call closes it (ripple: true, close_gaps, lift_range); a black pause is safest as a color clip in it (add_color_clip color #000000, track_id the main track's). A clip on another track that sits on a main-track shot (over more than half of the clip: a title, a picture-in-picture, a sound effect) moves with that shot whenever an edit moves it: a ripple trim, an insert, a ripple delete, a closed gap, a speed change, a move; a clip across several shots (a voice line, a caption, a grade) moves when everything under it moved by one amount, as through an insert or a freeze before it, and stays when they moved apart; a music track's clips stay, the song being the grid the picture is cut to. Every clip an edit moves is in its answer's changed_clips, and a gap that closes is named in its notes.
 Before you start: help (the tools by step), help with topic ad, epic_edit, voiceover or social_short (playbooks), help with topic design (the design rules they all follow), list_catalog (every effect, transition, animation, template, look, sound effect, voice and font by name), help with a tool's name (its parameters and an example).
-Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Finished results stay 30 minutes in this app session; export_status also follows the latest export.
+Long tools answer their result or a running job_id within 45 s (wait: 0 returns immediately). Poll job_status with job_id until done, then read result; cancel_job stops it. Text results stay up to 30 minutes within a 32 MiB budget; delivered image/audio payloads are released; export_status also follows the latest export.
 To make a video:
 1. new_project, so the user's projects stay untouched (open_project returns to one; list_projects finds them); set_project for the canvas shape.
 2. import_media the footage, music, logo and pictures by absolute path; preview_media shows what is inside each video, to choose the moments worth using.
@@ -1493,7 +1501,10 @@ export async function handleMcp(req: JsonRpcRequest, host: McpHost): Promise<Jso
           args = options;
           const id = jobs.start(name, project, scope?.signal, context => host.runJob ? host.runJob(context, invoke) : invoke());
           const status = await jobs.wait(id, Number(wait ?? 45));
-          if (status.state === "done") return ok(req.id, status.result);
+          if (status.state === "done") {
+            if (status.result_released) throw new Error("The answer exceeded the retained-result budget. Request a smaller range or less detail.");
+            jobs.delivered(id); return ok(req.id, status.result);
+          }
           if (status.state === "failed") throw new Error(status.error);
           return ok(req.id, json(jobAnswer(status)));
         }

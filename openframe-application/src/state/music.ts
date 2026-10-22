@@ -1,3 +1,4 @@
+import { memoryOwners } from "../engine/memory";
 import { dismiss, toast, updateToast } from "./toast";
 // Generate music (ADR-085): an original score rendered on this computer in
 // a worker, imported like a dropped file (the mix, and the four stems when
@@ -134,6 +135,7 @@ export async function generateMusic(args: Record<string, unknown>, onProgress?: 
 // ---- preview (the Generate music card) -------------------------------------------------
 
 let playing: AudioBufferSourceNode | null = null;
+memoryOwners.register("music_preview_pcm", () => ({ bytes: playing?.buffer ? playing.buffer.length * playing.buffer.numberOfChannels * 4 : 0, count: playing ? 1 : 0 }), stopPreview);
 
 /** Stop a preview that is playing. */
 export function stopPreview() {
@@ -142,6 +144,8 @@ export function stopPreview() {
   } catch {
     /* already stopped */
   }
+  playing?.disconnect();
+  if (playing) playing.buffer = null;
   playing = null;
 }
 
@@ -158,6 +162,7 @@ export async function previewMusic(args: Record<string, unknown>, onProgress?: (
   src.buffer = buf;
   src.connect(masterBus().input);
   src.onended = () => {
+    src.disconnect(); src.buffer = null;
     if (playing === src) playing = null;
     onEnded?.();
   };

@@ -1,8 +1,10 @@
+import { memoryOwners } from "../engine/memory";
 import { createJobRegistry, type JobContext } from "../lib/jobs";
 import { projectWork } from "./projectWork";
 import { dismiss, observeProgress, toast } from "./toast";
 
 export const jobs = createJobRegistry();
+memoryOwners.register("job_answers", jobs.memory, jobs.releaseResults);
 
 /** Existing engine callbacks update their own toast. Observe those by ID
  * for the lifetime of the job, including callbacks after an await. */

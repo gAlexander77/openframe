@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { retainedBytes } from "../lib/memory";
 // The project check (lib/designCheck.ts) run for a person: the library's
 // Check tab, File > Check project and the export dialog's Check row
 // (ADR-111). The same measuring an agent's check_project runs (it calls
@@ -172,6 +174,8 @@ const set = (patch: Partial<CheckState>) => {
   state = { ...state, ...patch };
   listeners.forEach((l) => l());
 };
+
+memoryOwners.register("project_check", () => ({ bytes: retainedBytes(state.last), count: state.last ? 1 : 0, estimated: true }), () => { state.job?.abort.abort(); set({ last: null, error: null }); });
 
 export const checkStore = {
   get: () => state,

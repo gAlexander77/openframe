@@ -1,3 +1,5 @@
+import { releaseAnswerUrl } from "./engine/answerUrls";
+import { memorySnapshot } from "./engine/memory";
 import { jobs, runJob } from "./state/jobs";
 import { findAssetHighlights, type HighlightRequest } from "./state/highlights";
 import { createClips } from "./state/clips";
@@ -63,6 +65,9 @@ function needProject() {
 }
 
 const automation = {
+  /** Developer diagnostics; no project edit or GC side effect. */
+  memory: memorySnapshot,
+  releaseUrl: releaseAnswerUrl,
   createClips,
   exportProjects,
   /** Every command with its JSON Schema, for tool listing. */
@@ -241,7 +246,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 /** describeProject of the whole document, plus the compound clips the user
  * has open, outermost first. */
 function describe() {
-  // On the home screen the store still holds the last project: say so.
+  // Home has no open document.
   if (currentScreen() === "home") return { screen: "home", note: "No project is open. list_projects and open_project, or new_project." };
   const nest = store.get().nest;
   const doc = store.document();

@@ -1031,6 +1031,22 @@ makes a 13 s one). Times are timeline seconds.
   `add_sound_effect`'s `end_at`, so a riser or reverse cymbal peaks on the
   drop.
 
+## Long-session memory
+
+Working through a long VOD releases decoded sound after analysis and keeps
+only reusable features and transcript words. Whole-source transcription
+hears at most 62 seconds at a time. Filmstrips, waveforms, text rasters,
+library previews, images and animation loops have byte budgets and evict
+older entries; borrowed images stay alive until their renderer finishes.
+Whisper, Kokoro and background-removal workers unload after two idle minutes
+and before changing model size. Closing or switching projects releases
+workers, queued thumbnail work, media inputs, GPU targets, cached readings
+and undo history. Saved projects and source files stay on disk.
+
+Developers can call `window.videoEditor.memory()` to see retained bytes,
+counts, cache budgets and explicit estimates for models, input caches and
+GPU resources. See [[ADR-144 Session resources have byte budgets and explicit owners]].
+
 ## AI tools (all on this machine)
 
 - **Long jobs an agent can follow** (`job_status`, `cancel_job`): analysis,
@@ -1039,8 +1055,9 @@ makes a 13 s one). Times are timeline seconds.
   A running answer gives a job ID, progress and stage; retries return that
   job instead of starting another. `wait: 0` returns immediately. Poll the
   ID for the finished tool's complete answer, or omit it to list running
-  and recent jobs. Finished results remain for 30 minutes in this app
-  session; closing or switching projects cancels unfinished work. Elapsed
+  and recent jobs. Text results remain up to 30 minutes within a 32 MiB
+  budget and 128 recent jobs; delivered image/audio payloads are released.
+  Closing or switching projects cancels unfinished work and releases answers. Elapsed
   time and `quiet_seconds` since the last progress callback help an agent
   judge a slow stage. A progress toast names the stage and offers Cancel.
   `export_status` continues to follow the latest export alongside jobs
@@ -1052,7 +1069,9 @@ makes a 13 s one). Times are timeline seconds.
   select one to seek, Play to hear it, or Add markers for following
   Highlight N ranges in one undo step. `find_highlights` gives agents the
   same source-second windows, with viewer-clip times, keywords, signal
-  weights and candidate-only Whisper refinement. Audio streams at 16 kHz
+  weights and candidate-only Whisper refinement. Every refined result has a
+  short title: a complete quote up to 60 characters, preferring exclamations
+  or keywords, otherwise a phrase cut at a word boundary. Audio streams at 16 kHz
   into compact features: a three-minute median discounts sustained loud
   gameplay; chat spikes, emotes and clip requests add evidence. Scene
   sampling is one small frame per second, or every four seconds past

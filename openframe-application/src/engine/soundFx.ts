@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { MiB, trackCache } from "./memory";
 // A clip's sound design as Web Audio nodes (lib/soundFx.ts, ADR-060),
 // built in one place for playback, export and loudness measurement, so
 // what is measured is what plays. The filters go before the clip's
@@ -68,15 +70,15 @@ export function echoNodes(ctx: BaseAudioContext, e: Echo, curve: FxCurve, ride: 
 
 /** Impulse responses by room, so a long export's windows (each its own
  * context) make the same room once. */
-const rooms = new Map<string, Float32Array[]>();
+const rooms = new ByteLru<string, Float32Array[]>(16 * MiB);
+trackCache("reverb_impulses", rooms);
 
 export function reverbNodes(ctx: BaseAudioContext, r: Reverb, curve: FxCurve, ride: Ride): FxChain {
   const key = `${ctx.sampleRate}|${r.size}|${r.decay}`;
   let ir = rooms.get(key);
   if (!ir) {
     ir = reverbImpulse(ctx.sampleRate, r);
-    rooms.set(key, ir);
-    if (rooms.size > 8) rooms.delete(rooms.keys().next().value!);
+    rooms.set(key, ir, ir.reduce((n, ch) => n + ch.byteLength, 0));
   }
   const buffer = new AudioBuffer({ numberOfChannels: 2, length: ir[0].length, sampleRate: ctx.sampleRate });
   ir.forEach((ch, c) => buffer.copyToChannel(ch as Float32Array<ArrayBuffer>, c));

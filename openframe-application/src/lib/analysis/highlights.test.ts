@@ -1,4 +1,4 @@
-import { sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
+import { highlightTitle, sceneSampling, SCENE_BUDGET_SECONDS } from "./highlights";
 import { describe, expect, it } from "vitest";
 import { findHighlights, HighlightAudio, highlightWindow, refineHighlight, rollingBaseline, type HighlightFeature } from "./highlights";
 
@@ -121,4 +121,15 @@ it("samples long files sparsely within a bounded scene-reading budget", () => {
   expect(sceneSampling(1201)).toEqual({ interval_seconds: 4 });
   expect(sceneSampling(45 * 60)).toEqual({ interval_seconds: 4 });
   expect(SCENE_BUDGET_SECONDS).toBe(75);
+});
+
+it("gives ordinary and unfinished lead-test transcripts a short title without keywords", () => {
+  expect(highlightTitle("You ready to have this good? Touch on confirmed. First of all, safely on the surface...")).toBe("Touch on confirmed.");
+  const snippet = "The navigation has confirmed that the parachute has deployed and we are seeing...";
+  const title = highlightTitle(snippet);
+  expect(title).toBe("The navigation has confirmed that the parachute has deployed");
+  expect(title.length).toBeLessThanOrEqual(60);
+  expect(highlightTitle("A much longer sentence that simply continues on and on, landing confirmed!", ["landing"])).toBe("landing confirmed!");
+  expect(highlightTitle("We have landed. This is an astonishingly long excited sentence that continues for far more than sixty characters!")).toBe("We have landed.");
+  expect(highlightTitle("   ")).toBe("Highlight");
 });

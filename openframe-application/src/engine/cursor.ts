@@ -22,7 +22,10 @@ export class VideoCursor {
     private keys: EncodedPacketSink,
     /** Container start time; source time 0 is this timestamp. */
     private offset: number,
+    private release: () => void = () => {},
   ) {}
+
+  get memoryBytes() { return this.head ? this.head.displayWidth * this.head.displayHeight * 4 : 0; }
 
   /** The frame showing at source time `t` (seconds). Calls are serialized;
    * the returned sample is borrowed. */
@@ -90,6 +93,7 @@ export class VideoCursor {
   }
 
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
     this.queue = this.queue.then(async () => {
       const it = this.it;
@@ -97,6 +101,7 @@ export class VideoCursor {
       await it?.return().catch(() => undefined);
       this.head?.close();
       this.head = null;
+      this.release();
     });
   }
 }
@@ -123,6 +128,7 @@ interface Ahead {
   to: number;
   abort: boolean;
   done: Promise<Held[] | null>;
+  bytes?: number;
 }
 
 export interface ReverseOptions {
@@ -165,6 +171,7 @@ export class ReverseCursor {
     /** Source display size, for the memory budget. */
     size: { width: number; height: number },
     opts: ReverseOptions = {},
+    private release: () => void = () => {},
   ) {
     const side = Math.max(size.width, size.height, 1);
     this.scale = opts.maxSide ? Math.min(1, opts.maxSide / side) : 1;
@@ -174,6 +181,8 @@ export class ReverseCursor {
     // (every frame a key frame) makes every window start at its own frame.
     this.perWindow = Math.max(4, Math.min(150, Math.floor((opts.budget ?? DEFAULT_BUDGET) / bytes)));
   }
+
+  get memoryBytes() { return this.windows.reduce((sum, window) => sum + window.reduce((n, f) => n + f.image.width * f.image.height * 4, 0), 0) + (this.ahead?.bytes ?? 0); }
 
   /** The frame showing at source time `t` (seconds). Calls are serialized;
    * the returned frame is borrowed until the next call. */
@@ -201,9 +210,10 @@ export class ReverseCursor {
       this.ahead = null;
       if (t >= a.from && t < a.to) {
         const w = await a.done;
+        if (this.disposed) { w?.forEach(f => f.image.close()); return null; }
         if (w) this.keep(w);
         hit = this.lookup(t);
-      } else a.abort = true;
+      } else void this.dropAhead(a);
     }
     if (!hit) {
       const span = this.perWindow * this.frameDur;
@@ -220,7 +230,7 @@ export class ReverseCursor {
         to = t + span;
       }
       const w = await this.decode(Math.max(0, from), to, { abort: false });
-      if (this.disposed) return null;
+      if (this.disposed) { w?.forEach(f => f.image.close()); return null; }
       if (w?.length) {
         this.keep(w);
         hit = this.lookup(t) ?? (t < w[0].ts ? w[0] : w[w.length - 1]);
@@ -244,8 +254,13 @@ export class ReverseCursor {
       .then((key) => {
         if (key && key.timestamp > ahead.from) ahead.from = key.timestamp;
         return this.decode(ahead.from, to - 1e-6, ahead);
-      });
+      }).then(frames => { ahead.bytes = frames?.reduce((n, f) => n + f.image.width * f.image.height * 4, 0) ?? 0; return frames; });
     this.ahead = ahead;
+  }
+
+  private dropAhead(ahead: Ahead) {
+    ahead.abort = true;
+    return ahead.done.then(frames => frames?.forEach(f => f.image.close()));
   }
 
   private keep(w: Held[]) {
@@ -304,12 +319,16 @@ export class ReverseCursor {
   }
 
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
-    if (this.ahead) this.ahead.abort = true;
+    const ahead = this.ahead;
+    if (ahead) ahead.abort = true;
     this.ahead = null;
-    this.queue = this.queue.then(() => {
+    this.queue = this.queue.then(async () => {
+      if (ahead) await this.dropAhead(ahead);
       for (const fs of this.windows) for (const f of fs) f.image.close();
       this.windows = [];
+      this.release();
     });
   }
 }

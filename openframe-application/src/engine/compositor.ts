@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { memoryOwners, MiB } from "./memory";
 import { rasterMaskPath } from "./maskPath";
 // WebGL2 compositor: draws a frame plan (src/lib/render/plan.ts) into a
 // canvas. One GL context, a small pool of canvas-sized framebuffers, and a
@@ -170,6 +172,8 @@ function hexToRgb(hex: string): [number, number, number] {
   return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
 }
 
+const liveCompositors = new Set<Compositor>();
+memoryOwners.register("compositor_textures", () => ({ bytes: [...liveCompositors].reduce((n, c) => n + c.memoryBytes, 0), count: liveCompositors.size, estimated: true, detail: "RGBA targets, source textures, curve/LUT tables; driver overhead excluded" }), () => { for (const compositor of liveCompositors) compositor.releaseProject(); });
 export class Compositor {
   private disposed = false;
   private usedPathMasks = new Set<string>();
@@ -198,7 +202,8 @@ export class Compositor {
   private width = 0;
   private height = 0;
   /** Textures for sources, by key (stable sources) or by slot. */
-  private sourceTextures = new Map<string, WebGLTexture>();
+  private sourceTextures = new ByteLru<string, WebGLTexture>(64 * MiB, tex => this.gl.deleteTexture(tex));
+  private slotBytes: number[] = [];
   private slotTextures: WebGLTexture[] = [];
   private matteTextures: WebGLTexture[] = [];
   /** Baked curve tables by their points (JSON), and a neutral 1x1 bound
@@ -223,6 +228,7 @@ export class Compositor {
     }) as WebGL2RenderingContext | null;
     if (!gl) throw new Error("WebGL2 is not available, so video cannot be drawn");
     this.gl = gl;
+    liveCompositors.add(this);
     this.quad = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
@@ -232,6 +238,15 @@ export class Compositor {
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  }
+
+  get memoryBytes() {
+    const fullTargets = [...this.levels, ...this.baked, ...this.matteTargets].reduce((n, level) => n + level.length, 0) + (this.flood ? 2 : 0);
+    const targets = (fullTargets * 4 + (this.accum ? 8 : 0)) * this.width * this.height;
+    const pyramid = this.pyramid.reduce((n, lv) => n + lv.w * lv.h * 8, 0);
+    const luts = [...this.lutTextures.values()].reduce((n, l) => n + (l.lut.size ** 3) * 6, 0);
+    return targets + pyramid + luts + this.sourceTextures.bytes + this.slotBytes.reduce((n, b) => n + b, 0) + this.curveTextures.size * 1024
+      + (this.small ? this.small.w * this.small.h * 4 : 0) + (this.compareBitmap ? this.compareBitmap.width * this.compareBitmap.height * 4 : 0);
   }
 
   // ---- GL plumbing ---------------------------------------------------------------
@@ -782,13 +797,13 @@ export class Compositor {
     // Full texImage2D re-spec (not texSubImage2D) keeps Chrome's zero-copy
     // VideoFrame upload path (docs/research/Web media engine.md §3.1).
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src.image);
-    if (src.key) {
-      this.sourceTextures.set(src.key, tex);
-      if (this.sourceTextures.size > 256) {
-        const [oldKey, oldTex] = this.sourceTextures.entries().next().value!;
-        gl.deleteTexture(oldTex);
-        this.sourceTextures.delete(oldKey);
-      }
+    const bytes = src.width * src.height * 4;
+    if (src.key && bytes <= this.sourceTextures.budget) this.sourceTextures.set(src.key, tex, bytes);
+    else {
+      // Oversized sources use a live slot; caching must not delete the
+      // texture before this draw uses it.
+      if (src.key) { const old = this.slotTextures[slot]; if (old) gl.deleteTexture(old); this.slotTextures[slot] = tex; }
+      this.slotBytes[slot] = bytes;
     }
     return tex;
   }
@@ -1330,10 +1345,21 @@ export class Compositor {
     return { width: w, height: h, data: flipRows(out, w, h) };
   }
 
+  /** Drop a document's textures while keeping the canvas and compiled
+   * programs usable for the next project. */
+  releaseProject() {
+    this.freeTargets(); this.clearCompare(); this.sourceTextures.clear();
+    for (const tex of [...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) this.gl.deleteTexture(tex);
+    for (const { tex } of this.lutTextures.values()) this.gl.deleteTexture(tex);
+    for (const { tex } of this.pathMasks.values()) this.gl.deleteTexture(tex);
+    this.pathMasks.clear(); this.curveTextures.clear(); this.lutTextures.clear();
+    this.slotTextures = []; this.slotBytes = []; this.matteTextures = [];
+    if (this.small) { this.gl.deleteFramebuffer(this.small.fb); this.gl.deleteRenderbuffer(this.small.rb); this.small = null; }
+    this.width = this.height = 0;
+  }
+
   /** Forget a cached source texture (text changed, image removed). */
   forget(key: string) {
-    const tex = this.sourceTextures.get(key);
-    if (tex) this.gl.deleteTexture(tex);
     this.sourceTextures.delete(key);
   }
 
@@ -1341,11 +1367,13 @@ export class Compositor {
    * same context back on the next getContext, so losing it here would leave
    * a re-mounted viewer (React StrictMode mounts twice) with a dead one. */
   dispose() {
+    if (this.disposed) return;
     this.disposed = true;
+    liveCompositors.delete(this);
     const gl = this.gl;
     this.freeTargets();
     this.clearCompare();
-    for (const tex of [...this.sourceTextures.values(), ...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
+    for (const tex of [...this.slotTextures, ...this.matteTextures, ...this.curveTextures.values()]) gl.deleteTexture(tex);
     for (const { tex } of this.lutTextures.values()) gl.deleteTexture(tex);
     for (const { tex } of this.pathMasks.values()) gl.deleteTexture(tex);
     this.pathMasks.clear();
@@ -1362,8 +1390,10 @@ export class Compositor {
     for (const p of this.programs.values()) gl.deleteProgram(p.prog);
     this.sourceTextures.clear();
     this.slotTextures = [];
+    this.slotBytes = [];
     this.matteTextures = [];
     this.programs.clear();
+    gl.deleteBuffer(this.quad); gl.deleteVertexArray(this.vao);
     this.width = this.height = 0;
   }
 }

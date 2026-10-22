@@ -1,5 +1,7 @@
-/** Session jobs keep their complete tool answer until the retention window
- * expires. Cancellation wins even when an underlying worker settles later. */
+import { retainedBytes } from "./memory";
+
+/** Session jobs retain bounded answers; delivered media is released.
+ * Cancellation wins even when an underlying worker settles later. */
 export interface JobContext {
   tool: string;
   signal: AbortSignal;
@@ -18,12 +20,22 @@ export interface JobStatus<T = unknown> {
   elapsed_seconds: number;
   quiet_seconds: number;
   result?: T;
+  result_released?: boolean;
   error?: string;
 }
-export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 60_000) {
+export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 60_000, resultBudget = 32 * 2 ** 20) {
   let next = 0;
   const jobs = new Map<string, { status: JobStatus<T>; controller: AbortController; finished?: number; done: Promise<void> }>();
-  const prune = () => { for (const [id, j] of jobs) if (j.finished !== undefined && now() - j.finished >= retention) jobs.delete(id); };
+  const releaseResult = (status: JobStatus<T>) => { if (status.result !== undefined) { delete status.result; status.result_released = true; } };
+  const prune = () => {
+    for (const [id, j] of jobs) if (j.finished !== undefined && now() - j.finished >= retention) jobs.delete(id);
+    let bytes = [...jobs.values()].reduce((n, j) => n + retainedBytes(j.status.result), 0);
+    for (const [id, j] of jobs) {
+      if (j.status.state === "running") continue;
+      if (bytes > resultBudget) { bytes -= retainedBytes(j.status.result); releaseResult(j.status); }
+      if (jobs.size > 128) jobs.delete(id);
+    }
+  };
   const status = (id: string): JobStatus<T> => {
     prune();
     const j = jobs.get(id);
@@ -41,6 +53,17 @@ export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 
   };
   return {
     status,
+    memory: () => ({ bytes: [...jobs.values()].reduce((n, j) => n + retainedBytes(j.status.result), 0), count: jobs.size, budget: resultBudget, estimated: true }),
+    releaseResults: () => { for (const j of jobs.values()) releaseResult(j.status); },
+    /** Return values already handed to the caller keep their payload; only
+     * the registry's copy loses image/audio data after delivery. */
+    delivered(id: string) {
+      const j = jobs.get(id);
+      const result = j?.status.result as { content?: { type: string; [key: string]: unknown }[] } | undefined;
+      if (j && result?.content?.some(c => c.type === "image" || c.type === "audio")) {
+        j.status.result = { ...result, content: [...result.content.filter(c => c.type !== "image" && c.type !== "audio"), { type: "text", text: "Media payload released after delivery. Call the preview tool again for another copy." }] } as T;
+      }
+    },
     all: () => { prune(); return [...jobs.keys()].map(status); },
     cancel,
     start(tool: string, project: string, scope: AbortSignal | undefined, work: (context: JobContext) => Promise<T>) {
@@ -67,7 +90,7 @@ export function createJobRegistry<T = unknown>(now = Date.now, retention = 30 * 
       }).catch(e => {
         if (j.status.state !== "running") return;
         j.status.state = "failed"; j.status.stage = "Failed"; j.status.error = e instanceof Error ? e.message : String(e);
-      }).finally(() => { j.finished ??= now(); scope?.removeEventListener("abort", abort); });
+      }).finally(() => { j.finished ??= now(); scope?.removeEventListener("abort", abort); prune(); });
       return id;
     },
     async wait(id: string, seconds: number): Promise<JobStatus<T>> {
