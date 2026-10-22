@@ -1,3 +1,5 @@
+import { memoryOwners } from "../engine/memory";
+import { retainedBytes } from "../lib/memory";
 // The one app store. The project document plus the editor state around it
 // (selection, playhead, tools, panels) and undo history. Components subscribe
 // to a slice with `useEditor(selector)`; React re-renders only when that
@@ -409,6 +411,12 @@ export const store = {
     });
   },
 
+  /** The saved document is on disk. Home keeps no project or undo graph. */
+  unload() {
+    gestureBase = gestureDoc = null; run = null; past = []; future = []; docCache = null;
+    set({ project: createProject(), nest: [], selection: [], selectedEdits: [], playing: false, playhead: 0, ...labels() });
+  },
+
   /** Replace the document wholesale (open, new). History starts over. */
   load(project: Project) {
     projectWork.open();
@@ -473,3 +481,5 @@ function restore(doc: Project) {
 export function useEditor<T>(selector: (s: EditorState) => T): T {
   return useSyncExternalStore(store.subscribe, () => selector(state));
 }
+
+memoryOwners.register("undo_documents", () => ({ bytes: retainedBytes([past, future, gestureDoc]), count: past.length + future.length, estimated: true, detail: "Structurally shared document payload, no media bytes; at most 200 undo steps" }), () => { past = []; future = []; gestureBase = gestureDoc = null; run = null; docCache = null; });

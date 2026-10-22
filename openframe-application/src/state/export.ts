@@ -1,3 +1,4 @@
+import { answerUrl } from "../engine/answerUrls";
 import { normalizeProject } from "../lib/project/defaults";
 import { planProjectExports, type ExportProjectsRequest } from "../lib/clipProjects";
 import { createdClipProjects } from "./clips";
@@ -176,11 +177,14 @@ export async function renderToUrl(options: RenderOptions = {}) {
   const mem = memoryTarget();
   job = new AbortController();
   try {
-    const result = await exportProject(drawn.project, plan, mem, undefined, job.signal);
+    const signal = AbortSignal.any([job.signal, projectWork.capture()]);
+    const result = await exportProject(drawn.project, plan, mem, undefined, signal);
+    signal.throwIfAborted();
     const blob = new Blob([mem.bytes()], { type: plan.mime });
     // The SRT a file export writes beside it, for the drives.
-    return { url: URL.createObjectURL(blob), size: blob.size, type: plan.mime, fileName: plan.fileName, plan, ...result, ...(drawn.srt ? { srt: drawn.srt } : {}) };
+    return { url: answerUrl(blob), size: blob.size, type: plan.mime, fileName: plan.fileName, plan, ...result, ...(drawn.srt ? { srt: drawn.srt } : {}) };
   } finally {
+    mem.dispose();
     job = null;
   }
 }
@@ -286,8 +290,10 @@ export async function stillToUrl(frame?: number, resolution: ExportSettings["res
   const s = store.get();
   const short = RESOLUTIONS.find((r) => r.id === resolution)?.short ?? 1080;
   const { width, height } = outputSize(s.project, short);
-  const blob = await exportStill(s.project, frame ?? s.playhead, width, height);
-  return { url: URL.createObjectURL(blob), size: blob.size, width, height };
+  const signal = projectWork.capture();
+  const blob = await exportStill(s.project, frame ?? s.playhead, width, height, signal);
+  signal.throwIfAborted();
+  return { url: answerUrl(blob), size: blob.size, width, height };
 }
 
 /** The player's camera button and Mod+Shift+E: the frame under the

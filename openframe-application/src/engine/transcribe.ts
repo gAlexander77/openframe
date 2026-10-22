@@ -1,3 +1,5 @@
+import { modelWorker } from "./modelWorker";
+import { MiB } from "./memory";
 // Auto captions: mix the timeline's sound to 16 kHz mono (the same
 // scheduler export uses, so captions match what you hear), cut it at quiet
 // moments into ~28 s windows, and run each through the Whisper worker.
@@ -31,44 +33,29 @@ export const ASR_MODELS: AsrModel[] = [
 
 const RATE = 16000;
 
-/** The timeline's audible mix as 16 kHz mono, rendered in 5-minute windows so
+/** The timeline's audible mix as 16 kHz mono, rendered in 10-second windows so
  * a long timeline never allocates one huge OfflineAudioContext. */
 export async function timelineAudio16k(p: Project, from = 0, to?: number, signal?: AbortSignal): Promise<Float32Array> {
   const end = to ?? framesToSeconds(projectDuration(p), p.fps);
   const out = new Float32Array(Math.ceil((end - from) * RATE));
-  const WINDOW = 300;
+  const WINDOW = 10;
   for (let t = from; t < end; t += WINDOW) {
     if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
     const len = Math.min(WINDOW, end - t);
     const ctx = new OfflineAudioContext({ numberOfChannels: 1, length: Math.ceil(len * RATE), sampleRate: RATE });
     const sched = scheduleAudio(ctx, ctx.destination, p, t, t + len, 0);
-    await sched.done;
-    const buf = await ctx.startRendering();
-    out.set(buf.getChannelData(0), Math.round((t - from) * RATE));
+    try {
+      await sched.done;
+      signal?.throwIfAborted();
+      const buf = await ctx.startRendering();
+      out.set(buf.getChannelData(0), Math.round((t - from) * RATE));
+    } finally { sched.stop(); }
   }
   return out;
 }
 
-let worker: Worker | null = null;
+const asrWorker = modelWorker("model_whisper", () => new Worker(new URL("./asr.worker.ts", import.meta.url), { type: "module" }));
 let nextId = 1;
-
-function getWorker(): Worker {
-  worker ??= new Worker(new URL("./asr.worker.ts", import.meta.url), { type: "module" });
-  return worker;
-}
-
-async function call<T>(msg: Record<string, unknown>, onDownload?: (p: number) => void, transfer: Transferable[] = [], signal?: AbortSignal): Promise<T> {
-  const w = getWorker();
-  const id = nextId++;
-  try {
-    return await workerRequest<T>(w, { ...msg, id }, { onDownload, transfer, signal });
-  } catch (e) {
-    // Failed imports and canceled inference cannot keep a reusable worker.
-    w.terminate();
-    if (worker === w) worker = null;
-    throw e;
-  }
-}
 
 export interface TranscribeProgress {
   stage: "mixing" | "downloading" | "transcribing";
@@ -84,7 +71,15 @@ export async function transcribeTimeline(
   signal?: AbortSignal,
 ): Promise<Word[]> {
   onProgress({ stage: "mixing", progress: 0 });
-  return transcribePcm(await timelineAudio16k(p, 0, undefined, signal), 0, opts, onProgress, signal);
+  const end = framesToSeconds(projectDuration(p), p.fps), words: Word[] = [];
+  for (let at = 0; at < end; at += 60) {
+    signal?.throwIfAborted();
+    const lo = Math.max(0, at - 1), hi = Math.min(end, at + 61);
+    const pcm = await timelineAudio16k(p, lo, hi, signal);
+    const result = await transcribePcm(pcm, lo, opts, s => onProgress({ ...s, progress: (at + s.progress * (hi - at)) / end }), signal);
+    words.push(...result.filter(w => w.start >= at && w.start < Math.min(end, at + 60)));
+  }
+  return monotonicWords(words);
 }
 
 /** Recognize speech in 16 kHz mono `pcm`; words come back in seconds from
@@ -96,24 +91,29 @@ export async function transcribePcm(
   onProgress: (s: TranscribeProgress) => void,
   signal?: AbortSignal,
 ): Promise<Word[]> {
-  onProgress({ stage: "downloading", progress: 0 });
-  await call({ type: "load", model: opts.model }, (x) => onProgress({ stage: "downloading", progress: x }), [], signal);
-  const total = pcm.length / RATE;
-  const bounds = [0, ...quietCuts(rms10ms(pcm, RATE), total), total];
-  const words: Word[] = [];
-  for (let i = 0; i < bounds.length - 1; i++) {
-    if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
-    onProgress({ stage: "transcribing", progress: i / (bounds.length - 1) });
-    const a = Math.round(bounds[i] * RATE);
-    const b = Math.round(bounds[i + 1] * RATE);
-    const slice = pcm.slice(a, b);
-    // Skip silent windows: Whisper hallucinates text ("Thank you.") on silence.
-    let peak = 0;
-    for (let j = 0; j < slice.length; j += 32) peak = Math.max(peak, Math.abs(slice[j]));
-    if (peak < 0.01) continue;
-    const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: offset + bounds[i] }, undefined, [slice.buffer], signal);
-    words.push(...r.words);
-  }
-  onProgress({ stage: "transcribing", progress: 1 });
-  return monotonicWords(words);
+  const estimate = (opts.model.includes("small") ? 1024 : opts.model.includes("base") ? 384 : 192) * MiB;
+  return asrWorker.run(opts.model, estimate, async (worker, active) => {
+    const call = <T>(msg: Record<string, unknown>, onDownload?: (p: number) => void, transfer: Transferable[] = []) =>
+      workerRequest<T>(worker, { ...msg, id: nextId++ }, { onDownload, transfer, signal: active });
+    onProgress({ stage: "downloading", progress: 0 });
+    await call({ type: "load", model: opts.model }, (x) => onProgress({ stage: "downloading", progress: x }), []);
+    const total = pcm.length / RATE;
+    const bounds = [0, ...quietCuts(rms10ms(pcm, RATE), total), total];
+    const words: Word[] = [];
+    for (let i = 0; i < bounds.length - 1; i++) {
+      if (signal?.aborted) throw new DOMException("Canceled", "AbortError");
+      onProgress({ stage: "transcribing", progress: i / (bounds.length - 1) });
+      const a = Math.round(bounds[i] * RATE);
+      const b = Math.round(bounds[i + 1] * RATE);
+      const slice = pcm.slice(a, b);
+      // Skip silent windows: Whisper hallucinates text ("Thank you.") on silence.
+      let peak = 0;
+      for (let j = 0; j < slice.length; j += 32) peak = Math.max(peak, Math.abs(slice[j]));
+      if (peak < 0.01) continue;
+      const r = await call<{ words: Word[] }>({ type: "transcribe", audio: slice, language: opts.language, offset: offset + bounds[i] }, undefined, [slice.buffer]);
+      words.push(...r.words);
+    }
+    onProgress({ stage: "transcribing", progress: 1 });
+    return monotonicWords(words);
+  }, signal);
 }

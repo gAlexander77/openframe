@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { MiB, trackCache } from "../engine/memory";
 // The app's look at a project's shots before export_versions frames them
 // (ADR-097): every full-frame video or picture on the timeline, sampled
 // every half second (at most 24 times a shot), decoded 128 pixels wide and
@@ -18,11 +20,10 @@ const WIDTH = 128;
 const PER_SHOT = 24;
 
 /** Maps by media and source second, oldest first. */
-const seen = new Map<string, SaliencyMap>();
+const seen = new ByteLru<string, SaliencyMap>(32 * MiB);
+trackCache("subject_features", seen);
 const remember = (key: string, map: SaliencyMap) => {
-  seen.set(key, map);
-  // About 37 KB each: keep the last two thousand.
-  if (seen.size > 2000) seen.delete(seen.keys().next().value!);
+  seen.set(key, map, map.v.byteLength);
 };
 
 /** The source seconds a shot is looked at: every half second of what it
@@ -64,6 +65,7 @@ export async function lookAtShots(p: Project, signal?: AbortSignal, shots = shot
       try {
         const pics = await sourceFrames(asset, missing, WIDTH, signal);
         for (const [i, pic] of pics.entries()) {
+          signal?.throwIfAborted();
           if (!pic) continue;
           const w = WIDTH, h = Math.max(8, Math.round((WIDTH * asset.height) / asset.width));
           canvas.width = w;

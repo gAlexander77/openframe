@@ -1,3 +1,5 @@
+import { ByteLru, retainedBytes } from "../lib/memory";
+import { memoryOwners, MiB, trackCache } from "../engine/memory";
 // The local AI tools as app actions: analyze a clip's source (engine), turn
 // the result into edits with registry commands (cut_ranges, split_at_times,
 // add_markers), and apply them as ONE undoable edit with a clear label
@@ -552,7 +554,8 @@ const WINDOW_PAD = 60;
 
 /** Readings of music files, by asset, its length and the hints: a second
  * clip of the same score, or a second call, reads nothing again. */
-const musicReadings = new Map<string, MusicStructure>();
+const musicReadings = new ByteLru<string, MusicStructure>(8 * MiB);
+trackCache("music_features", musicReadings);
 
 /**
  * A music clip's beat grid and parts (Final Cut's beat grid: song parts,
@@ -581,8 +584,8 @@ async function readSong(clipId: Id | undefined, given: StructureHints): Promise<
   const cached = !!m;
   if (!m) {
     m = await job("beats", c0, `Reading the music in ${asset.name}`, async (progress, sig) => musicStructure(await decodeMono(asset, from, to, BEAT_RATE, progress, sig), BEAT_RATE, hints));
-    if (musicReadings.size >= 8) musicReadings.delete(musicReadings.keys().next().value!);
-    musicReadings.set(key, m);
+    signal.throwIfAborted();
+    musicReadings.set(key, m, retainedBytes(m));
   }
   signal.throwIfAborted();
   return { m, clip: stillThere(id), asset, from, to, whole, cached, hints };
@@ -1430,6 +1433,7 @@ export async function removeBackground(clipId?: Id): Promise<CutoutResult> {
 
 /** Pictures cut out this session, by source, so asking again is instant. */
 const cutPictures = new Map<string, Asset>();
+memoryOwners.register("matte_references", () => ({ bytes: retainedBytes([madeMattes, cutPictures]), count: madeMattes.length + cutPictures.size, estimated: true }), () => { madeMattes.length = 0; cutPictures.clear(); });
 
 /** A picture clip's subject as a new picture with its background
  * transparent (engine/cutout.ts cutOutImage), made once a session. */

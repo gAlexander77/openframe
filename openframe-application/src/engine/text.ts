@@ -1,3 +1,5 @@
+import { ByteLru } from "../lib/memory";
+import { MiB, trackCache } from "./memory";
 import { baselineShifts, lineScale, measureRuns, runBoxes, runSegments } from "../lib/textRuns";
 // Text clips rasterized with Canvas2D at render resolution, then drawn by
 // the compositor as a "native" source (already canvas-scale pixels). The
@@ -49,7 +51,8 @@ function wrap(measure: (text: string, start: number) => number, text: string, ma
  * sits on it, ADR-030). */
 export type TextRaster = SourceImage & { layout: TextLayout };
 
-const cache = new Map<string, TextRaster>();
+const cache = new ByteLru<string, TextRaster>(32 * MiB);
+trackCache("text_rasters", cache);
 
 /** The marker sweep's warm yellow when the style names no accent. */
 const MARKER = "#ffd84d";
@@ -368,9 +371,7 @@ export function rasterizeText(clip: TextClip, width: number, height: number, wor
   // (ADR-071), is drawn once: unkeyed, the compositor uploads it into a
   // scratch texture instead of keeping one per frame of the animation.
   const out: TextRaster = { image: canvas, width: w, height: h, rotation: 0, native: true, ...(moving || styleKeyed(clip) ? {} : { key }), layout };
-  cache.set(key, out);
-  // ponytail: FIFO cap; an LRU only matters with hundreds of live titles.
-  if (cache.size > 200) cache.delete(cache.keys().next().value!);
+  cache.set(key, out, w * h * 4);
   return out;
 }
 

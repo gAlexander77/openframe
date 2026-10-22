@@ -1,9 +1,12 @@
+import { memoryOwners } from "./memory";
 import type { Asset } from "../lib/project/types";
 import { proxySource, proxyState, type ProxyHealth, type SourcePurpose } from "../lib/proxyPolicy";
 import { platform } from "../platform";
 
 const health = new Map<string, ProxyHealth>();
 const checking = new Map<string, Promise<void>>();
+let generation = 0;
+memoryOwners.register("proxy_health", () => ({ bytes: 0, count: health.size }), () => { generation++; health.clear(); checking.clear(); });
 const key = (a: Asset) => JSON.stringify([a.src, a.playbackProxy]);
 let version = 0;
 const listeners = new Set<() => void>();
@@ -24,9 +27,10 @@ export function checkPlaybackProxy(a: Asset, force = false): Promise<void> {
   const pending = checking.get(k);
   if (pending) return pending;
   if (!force && health.has(k)) return Promise.resolve();
-  const work = platform.playbackProxyInfo(a).then((h) => { health.set(k, h); })
-    .catch(() => { health.set(k, { exists: false }); })
-    .finally(() => { checking.delete(k); notify(); });
+  const session = generation;
+  const work = platform.playbackProxyInfo(a).then((h) => { if (session === generation) health.set(k, h); })
+    .catch(() => { if (session === generation) health.set(k, { exists: false }); })
+    .finally(() => { if (session === generation) { checking.delete(k); notify(); } });
   checking.set(k, work);
   return work;
 }

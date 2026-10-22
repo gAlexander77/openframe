@@ -23,7 +23,6 @@ async function fileFor(src: string): Promise<File> {
   if (hit) return hit;
   const handle = await (await dir("media")).getFileHandle(src);
   const file = await handle.getFile();
-  live.set(src, file);
   return file;
 }
 
@@ -35,6 +34,7 @@ async function copyToOpfs(key: string, file: File) {
     const handle = await (await dir("media")).getFileHandle(key, { create: true });
     const w = await handle.createWritable();
     await file.stream().pipeTo(w);
+    if (live.get(key) === file) live.delete(key);
   } catch (e) {
     // Out of quota or private mode: the project still works this session.
     console.warn(`could not keep ${file.name} for next time:`, e);
@@ -152,7 +152,6 @@ export const web: Platform = {
       throw e;
     }
     const file = await handle.getFile();
-    live.set(key, file);
     return { name, src: key, size: file.size };
   },
 
@@ -162,7 +161,7 @@ export const web: Platform = {
 
   async sourceFor(src) {
     if (/^https?:/.test(src)) {
-      return new UrlSource(src);
+      return new UrlSource(src, { maxCacheSize: 8 << 20 });
     }
     return new BlobSource(await fileFor(src));
   },

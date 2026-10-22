@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { createProject } from "../lib/project/defaults";
+import { createProject, normalizeProject } from "../lib/project/defaults";
 import type { Asset, Project, VideoClip } from "../lib/project/types";
 import { projectDuration } from "../lib/project/ops";
 import { seenLetters, seenTexts } from "../lib/designCheck";
@@ -40,6 +40,7 @@ it("saves edited clip documents with bounded captions, hook, credit, one audio o
   expect(measureForCheck).toHaveBeenCalledTimes(2);
   expect(result.projects.every(p => Array.isArray(p.findings))).toBe(true);
   const p = vi.mocked(platform.saveProject).mock.calls[0][0];
+  expect(() => normalizeProject(JSON.parse(JSON.stringify(p)))).not.toThrow();
   expect(p.assets[0]).toBe(asset); expect(p.assets[0].playbackProxy).toBe(asset.playbackProxy);
   expect(projectDuration(p)).toBe(661);
   const all = p.tracks.flatMap(t => t.clips);

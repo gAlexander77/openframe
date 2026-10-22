@@ -161,3 +161,19 @@ it("a project switch rejects a queued hearing promptly and discards late words",
   await clipTranscript(clip.id);
   expect(transcribePcm).toHaveBeenCalledTimes(2);
 });
+
+it("hears a long source in bounded overlapping windows and drops words on session end", async () => {
+  const p = createProject();
+  const asset = { id: "long-bounded-source", kind: "audio" as const, name: "long.wav", src: "long.wav", duration: 181, hasAudio: true, hasVideo: false };
+  p.assets = [asset];
+  vi.mocked(transcribePcm).mockImplementation(async (_pcm, offset) => [{ text: "spoken", start: offset + 2, end: offset + 3 }]);
+  const result = await hearAsset(p, asset.id);
+  expect(result.cached).toBe(false);
+  expect(vi.mocked(decodeMono).mock.calls.map(c => [c[1], c[2]])).toEqual([[0, 61], [59, 121], [119, 181], [179, 181]]);
+  expect(vi.mocked(decodeMono).mock.calls.every(c => c[2] - c[1] <= 62)).toBe(true);
+  const count = vi.mocked(decodeMono).mock.calls.length;
+  expect((await hearAsset(p, asset.id)).cached).toBe(true);
+  projectWork.close(); projectWork.open();
+  expect((await hearAsset(p, asset.id)).cached).toBe(false);
+  expect(decodeMono).toHaveBeenCalledTimes(count * 2);
+});

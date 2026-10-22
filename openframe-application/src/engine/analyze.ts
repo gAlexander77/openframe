@@ -1,6 +1,6 @@
 import { sceneSampling, SCENE_BUDGET_SECONDS } from "../lib/analysis/highlights";
 import { proxySource } from "../lib/proxyPolicy";
-import { imageFor } from "./media";
+import { borrowImage } from "./media";
 // Decoding for the local AI tools: a clip's source range as mono PCM at a
 // fixed analysis rate, or as per-frame scene scores from small frames.
 // Each call opens its own mediabunny Input (like thumbs.ts), so analysis
@@ -73,7 +73,7 @@ export async function sparseSceneCuts(asset: Asset, onProgress?: Progress, signa
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const origin = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const sink = new CanvasSink(track, { width: 96 });
+    const sink = new CanvasSink(track, { width: 96, poolSize: 1 });
     let previous: Uint8Array | undefined;
     const cuts: number[] = [], report = throttle(onProgress);
     const started = performance.now(), { interval_seconds } = sceneSampling(asset.duration);
@@ -325,7 +325,7 @@ export async function frameGrays(
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const sink = new CanvasSink(track, { width, height, fit: "fill" });
+    const sink = new CanvasSink(track, { width, height, fit: "fill", poolSize: 1 });
     const report = throttle(onProgress);
     for await (const wrapped of sink.canvases(t0 + from, t0 + to)) {
       signal?.throwIfAborted();
@@ -354,7 +354,7 @@ export async function frameScores(
     const track = await input.getPrimaryVideoTrack();
     if (!track || !(await track.canDecode())) throw new Error(`${asset.name} has no picture this app can decode`);
     const t0 = await mediaOrigin(track, await input.getPrimaryAudioTrack());
-    const sink = new CanvasSink(track, { width: opts.width ?? 128 });
+    const sink = new CanvasSink(track, { width: opts.width ?? 128, poolSize: 1 });
     const weights = opts.lumaOnly ? LUMA_WEIGHTS : DEFAULT_WEIGHTS;
     const times: number[] = [];
     const scores: number[] = [];
@@ -384,7 +384,15 @@ export async function frameScores(
  * the end gives the last frame; a file without picture gives nulls.
  */
 export async function sourceFrames(asset: Asset, times: number[], width: number, signal?: AbortSignal): Promise<(CanvasImageSource | null)[]> {
-  if (asset.kind === "image") return Promise.all(times.map(t => imageFor(asset, t)));
+  if (asset.kind === "image") return Promise.all(times.map(async t => {
+    const borrowed = await borrowImage(asset, t);
+    try {
+      const bitmap = borrowed.value;
+      const canvas = new OffscreenCanvas(width, Math.max(1, Math.round(width * bitmap.height / bitmap.width)));
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    } finally { borrowed.release(); }
+  }));
   const input = await openInput(asset);
   try {
     const track = await input.getPrimaryVideoTrack();

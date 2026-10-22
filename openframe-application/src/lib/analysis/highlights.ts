@@ -174,7 +174,24 @@ export function refineHighlight(h: Highlight, words: Word[], duration: number, o
   const window = { start: local.start + bounds[0], end: local.end + bounds[0] };
   const snippet = words.filter(w => w.start >= window.start && w.end <= window.end).map(w => w.text.trim()).join(" ");
   const hits = [...new Set((options.keywords ?? []).map(k => k.trim()).filter(k => k && snippet.toLowerCase().includes(k.toLowerCase())))];
-  const sentences = snippet.match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) ?? [];
-  const title = sentences.filter(s => s.includes("!") || hits.some(k => s.toLowerCase().includes(k.toLowerCase()))).sort((a, b) => a.length - b.length)[0];
-  return { ...h, ...window, score: clamp(h.score + Math.min(1, hits.length) * (options.weights?.keywords ?? HIGHLIGHT_WEIGHTS.keywords)), reasons: [...h.reasons, ...hits.map(k => `said '${k}'`)], snippet, ...(title ? { title } : {}) };
+  const title = highlightTitle(snippet, hits);
+  return { ...h, ...window, score: clamp(h.score + Math.min(1, hits.length) * (options.weights?.keywords ?? HIGHLIGHT_WEIGHTS.keywords)), reasons: [...h.reasons, ...hits.map(k => `said '${k}'`)], snippet, title };
+}
+
+/** Prefer a short complete quote; an unpunctuated ASR run still gets a
+ * useful phrase, cut at a word boundary rather than in the middle of one. */
+export function highlightTitle(snippet: string, keywords: string[] = []): string {
+  const text = snippet.replace(/\s+/g, " ").trim();
+  if (!text) return "Highlight";
+  const sentences = text.match(/[^.!?]+[.!?]+/g)?.map(s => s.trim()) ?? [];
+  const favored = (s: string) => s.includes("!") || keywords.some(k => k.trim() && s.toLowerCase().includes(k.trim().toLowerCase()));
+  const shortest = (items: string[]) => [...items].sort((a, b) => a.length - b.length)[0];
+  const short = sentences.filter(s => s.length <= 60);
+  const complete = shortest(short.filter(favored)) ?? shortest(short);
+  if (complete) return complete;
+  const phrases = text.split(/[,;:\u2014]+/).map(s => s.trim()).filter(Boolean);
+  const phrase = shortest(phrases.filter(favored)) ?? shortest(sentences.filter(favored)) ?? phrases[0] ?? text;
+  if (phrase.length <= 60) return phrase;
+  const cut = phrase.slice(0, 61).replace(/\s+\S*$/, "").replace(/[,;:]+$/, "").trim();
+  return cut || phrase.slice(0, 60);
 }

@@ -200,7 +200,7 @@ export const desktop: Platform = {
   },
 
   async sourceFor(src) {
-    if (/^https?:\/\//i.test(src)) return new UrlSource(src);
+    if (/^https?:\/\//i.test(src)) return new UrlSource(src, { maxCacheSize: 8 << 20 });
     const { id, size } = await register(src);
     const url = convertFileSrc(id, "media"); // http://media.localhost/m3 | media://localhost/m3
     return new CustomSource({
@@ -209,7 +209,7 @@ export const desktop: Platform = {
       // Grows sequential read-ahead toward the protocol's cap: few requests,
       // each one IPC round trip (research §1.3).
       prefetchProfile: "network",
-      maxCacheSize: 64 << 20,
+      maxCacheSize: 8 << 20,
     });
   },
 

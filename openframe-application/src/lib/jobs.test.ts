@@ -68,3 +68,29 @@ it("ends a waiting call promptly on cancellation even if its worker has not stop
   jobs.cancel(id);
   expect(await waiting).toMatchObject({ state: "canceled" });
 });
+
+it("releases delivered media without changing the answer already handed to a caller", async () => {
+  const jobs = createJobRegistry();
+  const image = { content: [{ type: "image", data: "x".repeat(100000), mimeType: "image/png" }, { type: "text", text: "measurements" }] };
+  const id = jobs.start("preview_frame", "p", undefined, async () => image);
+  const answer = await jobs.wait(id, 1);
+  const before = jobs.memory().bytes;
+  jobs.delivered(id);
+  expect(answer.result).toEqual(image);
+  expect(jobs.memory().bytes).toBeLessThan(before / 10);
+  expect(JSON.stringify(jobs.status(id))).not.toContain("xxxxx");
+  expect(JSON.stringify(jobs.status(id))).toContain("measurements");
+});
+
+it("bounds retained answers by bytes and releases them when a project closes", async () => {
+  const jobs = createJobRegistry(Date.now, 60_000, 600);
+  const first = jobs.start("one", "p", undefined, async () => "x".repeat(200));
+  await jobs.wait(first, 1);
+  const second = jobs.start("two", "p", undefined, async () => "y".repeat(200));
+  await jobs.wait(second, 1);
+  expect(jobs.memory().bytes).toBeLessThanOrEqual(600);
+  expect(jobs.status(first)).toMatchObject({ state: "done", result_released: true });
+  expect(jobs.status(second).result).toHaveLength(200);
+  jobs.releaseResults();
+  expect(jobs.memory().bytes).toBe(0);
+});
