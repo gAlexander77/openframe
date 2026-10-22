@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 178 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 180 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -41,7 +41,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 ## Contents
 
 - **Start here**: `help`, `describe_project`, `find_clips`, `list_catalog`
-- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `set_project`
+- **Projects**: `list_projects`, `open_project`, `new_project`, `save_project_copy`, `open_project_file`, `collect_project`, `import_timeline`, `export_timeline`, `set_project`
 - **Media**: `import_media`, `create_proxies`, `delete_proxies`, `remove_media`, `relink_media`, `replace_clip`, `rename_media`, `edit_media_folder`, `organize_media`
 - **Timeline**: `add_media_clip`, `add_color_clip`, `add_adjustment_clip`, `add_track`, `update_track`, `move_track`, `delete_track`, `split`, `split_at_times`, `trim_clip`, `extend_edit`, `trim_edits`, `edit_from_source`, `roll_edit`, `slip_clip`, `move_clip`, `nudge_clips`, `duplicate_clips`, `delete_clips`, `lift_range`, `close_gaps`, `cut_ranges`, `split_scenes`, `group_clips`, `ungroup_clips`, `transform_group`, `set_clip_enabled`, `set_clip_label`, `rename_clip`, `freeze_frame`, `detach_audio`, `sync_to_clip`, `create_compound_clip`, `break_compound_clip`, `edit_compound`, `rename_compound`, `batch`, `undo`, `redo`, `seek`
 - **Music, beats and markers**: `generate_music`, `plan_music`, `analyze_music`, `set_music_grid`, `cut_music`, `cut_to_beats`, `add_beat_hits`, `fit_music`, `mark_beats`, `add_marker`, `add_markers`, `update_marker`, `delete_markers`
@@ -185,6 +185,23 @@ Copy the project JSON and its local media (proxies, LUTs and cutouts too) into a
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
 | `folder` | string |  | Absolute folder the collected project's new folder goes in, created if missing (desktop only); default: ask in the native dialog |
+
+### import_timeline
+
+Import an OpenTimelineIO (.otio) or FCPXML (.fcpxml/.xml) timeline as a new project, preserving the open project. Desktop resolves media paths beside the timeline; missing media stays as relinkable placeholders. Answers what was imported and warnings for unsupported items. The web picker accepts a file and resolves HTTP(S) media URLs only.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `file` | string |  | Absolute desktop path to the timeline file; omit to choose a file in the desktop or web picker |
+
+### export_timeline
+
+Save the timeline as OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL through the platform save path. Desktop writes into folder (or its usual exports folder), with numbered names when taken. Web uses a save dialog or download. EDL writes the main video track plus one file per audio track. Answers file paths and format limitations; does not copy media.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `format` | "otio" \| "fcpxml" \| "edl" | yes | Timeline interchange format |
+| `folder` | string |  | Absolute destination folder, created if missing (desktop only); omit for the usual exports folder |
 
 ### set_project
 

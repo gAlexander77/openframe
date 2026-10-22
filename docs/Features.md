@@ -1276,10 +1276,21 @@ A quiet recording need not leave the music nearly silent.
   fps with delays that add up to the real duration, silent, up to 720p
   and 60 seconds (it is built in memory). The GIF drive reads every frame
   back against the framecode fixture.
-- **Timeline as OpenTimelineIO** (File > Export timeline): tracks, gaps,
-  transitions, speed, titles, compound clips (nested stacks) and markers
-  for DaVinci Resolve, Premiere's OTIO plugin and other editors
-  ([[ADR-034 Timelines leave as OpenTimelineIO]]).
+- **Timelines between editors** (File > Import timeline / Export timeline):
+  import OpenTimelineIO and FCPXML as a new saved project; export
+  OpenTimelineIO, FCPXML 1.10 or CMX 3600 EDL. OTIO and FCPXML carry cuts,
+  gaps, connected overlays, audio tracks, dissolves, markers and nested
+  compound clips. OTIO exports speed effects and generator metadata;
+  FCPXML keeps basic OpenFrame text/color as metadata over gap placeholders.
+  EDL carries the main picture track and a separate list for each audio
+  track, with reel names, source/record timecodes and dissolve durations;
+  NTSC rates use drop-frame labels. Imports report unsupported effects,
+  retiming and schemas, keeping unresolved media available to relink.
+  Desktop resolves relative media beside the timeline file; the web picker
+  resolves HTTP(S) URLs only. Exports reference media without copying it.
+  Agents use `import_timeline` and `export_timeline` in Projects
+  ([[ADR-034 Timelines leave as OpenTimelineIO]],
+  [[ADR-137 Timeline interchange shares one import boundary]]).
 ## Library
 
 - **Sound effects** in the Audio tab (CapCut's is a cloud library;

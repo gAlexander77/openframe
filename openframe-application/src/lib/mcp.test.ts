@@ -116,6 +116,21 @@ describe("MCP projects", () => {
 });
 
 describe("MCP", () => {
+  it("routes timeline interchange to the app host, validates format and returns import warnings with a project summary", async () => {
+    const h = host(), received: unknown[] = [];
+    h.exec = ((name: string, args: unknown) => {
+      received.push([name, args]);
+      return name === "import_timeline" ? { opened: true, project: describeProject(h.project), warnings: ["Speed ramp could not be mapped."] } : { files: ["D:/edits/cut.fcpxml"], warnings: [] };
+    }) as unknown as typeof h.exec;
+    const imported = JSON.parse(text(await call(h, "tools/call", { name: "import_timeline", arguments: { file: "D:/edits/cut.otio" } })));
+    expect(imported).toMatchObject({ opened: true, project: { counts: { tracks: 1 } }, warnings: ["Speed ramp could not be mapped."] });
+    const exported = JSON.parse(text(await call(h, "tools/call", { name: "export_timeline", arguments: { format: "fcpxml", folder: "D:/edits" } })));
+    expect(exported.files).toEqual(["D:/edits/cut.fcpxml"]);
+    expect(received).toEqual([["import_timeline", { file: "D:/edits/cut.otio" }], ["export_timeline", { format: "fcpxml", folder: "D:/edits" }]]);
+    const bad = await call(h, "tools/call", { name: "export_timeline", arguments: { format: "avi" } });
+    expect(text(bad)).toMatch(/otio, fcpxml, edl/);
+    expect(received).toHaveLength(2);
+  });
   it("initializes with tools and resources", async () => {
     const r = await call(host(), "initialize", { protocolVersion: "2025-06-18" });
     expect(r?.result).toMatchObject({ capabilities: { tools: {}, resources: {} }, serverInfo: { name: "OpenFrame" } });

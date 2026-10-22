@@ -845,3 +845,30 @@ second export of the same name is saved as "Name (2)", and the agent is told.
 Only when it names the folder and asks to replace (to supersede its own
 earlier export there) does a new file take the old one's place, once the
 export has finished.
+
+## Move a timeline between editors
+
+Choose **File > Import timeline…** and pick an `.otio`, `.fcpxml` or FCPXML
+`.xml` file. It opens as a new saved project. The result lists the imported
+tracks and media, plus anything that could not be mapped. Cuts, gaps,
+overlays, audio tracks, dissolves, markers and compound sequences are
+supported. Effects and speed changes need rebuilding after import.
+On desktop, relative media paths are resolved beside the timeline file.
+For missing sources, open **Media > Manage media** and relink the files.
+The web build accepts the timeline file but can resolve only HTTP(S) media
+URLs; local paths need relinking through its media picker.
+
+Choose **File > Export timeline > OpenTimelineIO, FCPXML or EDL** to save
+an editable timeline for another editor. FCPXML is version 1.10; EDL is
+CMX 3600 and writes the main video track plus one file per audio track.
+EDL omits overlays and markers and represents compounds as black.
+OpenFrame titles and color clips become gaps in FCPXML in other editors;
+OpenFrame can recover their basic text and color from its metadata.
+The export result names each saved file and any format limitations.
+Keep the original source files available: these exports do not collect
+or render media. Other editors' interpretation still needs checking.
+
+Agents use `import_timeline` with an absolute desktop `file` path (omit it
+for the picker), and `export_timeline` with `format` (`otio`, `fcpxml`,
+`edl`) and an optional absolute desktop `folder`. Each answer includes the
+import or export report. On the web, export uses the save picker or download.

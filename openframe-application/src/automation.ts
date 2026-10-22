@@ -37,7 +37,8 @@ import { execAddSticker } from "./state/stickers";
 import { store } from "./state/store";
 import { agentNotice, asAgent } from "./state/toast";
 import { platform } from "./platform";
-import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy } from "./state/project";
+import { currentScreen, listSaved, newProject, openProject, openProjectFile, collectProject, saveProjectCopy, importTimeline } from "./state/project";
+import { saveTimeline, type TimelineFormat } from "./state/interchange";
 import { APP_NAME } from "./lib/brand";
 import { catalogNames, EFFECTS } from "./lib/catalog";
 import { toOtio } from "./lib/interchange/otio";
@@ -72,6 +73,8 @@ const automation = {
     if (fileCommand) {
       const problems = validate(args, fileCommand.input);
       if (problems.length) throw new Error(problems.join("; "));
+      if (name === "export_timeline") { needProject(); const a = args as { format: TimelineFormat; folder?: string }; return saveTimeline(a.format, a.folder, true); }
+      if (name === "import_timeline") return importTimeline((args as { file?: string }).file).then(r => r ? { ...r, project: describe() } : { opened: false });
       if (name === "collect_project") { needProject(); return collectProject(true, (args as { folder?: string }).folder); }
       return openProjectFile((args as { path?: string }).path).then(opened => ({ opened, project: opened ? describe() : null }));
     }

@@ -25,6 +25,7 @@ const range = (start: number, duration: number, rate: number): Json => ({ OTIO_S
 /** An absolute path as a file:// URL; URLs and bare names pass through. */
 export function fileUrl(src: string): string {
   if (/^[a-z][a-z0-9+.-]+:\/\//i.test(src)) return src;
+  if (/^(?:\\\\|\/\/)/.test(src)) return "file:" + encodeURI(src.replace(/\\/g, "/")).replace(/#/g, "%23").replace(/\?/g, "%3F");
   const win = /^[a-z]:[\\/]/i.test(src);
   if (!win && !src.startsWith("/")) return src;
   const path = src.replace(/\\/g, "/");
@@ -36,7 +37,7 @@ function mediaRef(a: Asset, rate: number): Json {
     OTIO_SCHEMA: "ExternalReference.1",
     target_url: fileUrl(a.src),
     available_range: a.kind === "image" ? null : range(0, a.duration * rate, rate),
-    metadata: {},
+    metadata: { openframe: { name: a.name, kind: a.kind, hasAudio: a.hasAudio } },
   };
 }
 
@@ -54,9 +55,9 @@ function clip(c: Clip, p: Project, rate: number, sound: boolean, depth: number):
       source_range: range(start, c.duration, rate),
       children: k && depth < 16 ? layers(k.tracks, p, rate, depth + 1) : [],
       effects,
-      markers: [],
+      markers: (k?.markers ?? []).map(m => ({ OTIO_SCHEMA: "Marker.2", name: m.label, marked_range: range(m.frame, 0, rate), color: "RED", metadata: {} })),
       enabled: !c.disabled,
-      metadata: { video_editor: c },
+      metadata: { video_editor: c, openframe: { compoundName: k?.name } },
     };
   }
   return {
@@ -97,7 +98,7 @@ function track(t: Track, clips: Clip[], kind: "Video" | "Audio", p: Project, rat
       });
     }
   });
-  return { OTIO_SCHEMA: "Track.1", name: kind === "Audio" && t.kind === "video" ? `${t.name} audio` : t.name, kind, children, source_range: null, effects: [], markers: [], enabled: kind === "Audio" ? !t.muted : !t.hidden, metadata: {} };
+  return { OTIO_SCHEMA: "Track.1", name: kind === "Audio" && t.kind === "video" ? `${t.name} audio` : t.name, kind, children, source_range: null, effects: [], markers: [], enabled: kind === "Audio" ? !t.muted : !t.hidden, metadata: { openframe: { main: !!t.main, companion: kind === "Audio" && t.kind === "video" } } };
 }
 
 /** One timeline's tracks as a Stack's children: video bottom to top, the
