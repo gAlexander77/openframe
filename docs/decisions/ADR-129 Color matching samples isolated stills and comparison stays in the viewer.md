@@ -35,3 +35,7 @@ No new persisted fields or dependencies. Different subjects, clipped
 sources and an extreme retained master curve can limit the match; report
 sampled mean differences so agents can judge it. Comparison can reduce the
 viewer frame rate, while the audio clock continues independently.
+
+**2026-10-22 sweep:** Match strength stages the next job in local UI state;
+it does not edit a clip. The undo drive now requires no document change
+or undo step for that control. Pressing Match still commits one edit.

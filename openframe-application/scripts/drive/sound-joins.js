@@ -4,7 +4,8 @@
 // piece after before its downbeat; an interview kept in a compound clip
 // ducks the music; cutting bars out of ducked music says its dips moved;
 // a ceiling under the speech target is refused; and the lines together
-// stay on the target while the ceiling holds a line over a quiet passage.
+// stay on the speech target while an infeasible per-line ceiling is
+// reported honestly over a quiet passage (ADR-139).
 async (page) => {
   page.setDefaultTimeout(300000);
   await page.reload();
@@ -64,11 +65,12 @@ async (page) => {
     const both = await call("duck_under_speech", { track_id: mu, voice_above_music_lu: 12, max_line_lu: 8 });
     details.contradiction = { ok: /max_line_lu \(8\) is under voice_above_music_lu \(12\)/.test(both.error ?? ""), both };
 
-    // The quiet first piece puts its line over the 15 LU ceiling: held
-    // there, it lifted the lines together over the target (met false).
+    // The quiet first piece exceeds the 15 LU ceiling even at zero dip.
+    // Speech can meet 12 LU while the combined verdict fails the ceiling;
+    // the answer must say why instead of claiming every target was met.
     const duck = await call("duck_under_speech", { track_id: mu, voice_above_music_lu: 12, min_line_lu: 10 });
     const each = duck.balance?.per_line?.each ?? [];
-    details.target = { ok: duck.balance?.met === true && Math.abs(duck.balance.voice_above_music_lu - 12) <= 0.5 && each.every((l) => l.voice_above_music_lu === null || (l.voice_above_music_lu >= 9.95 && (l.voice_above_music_lu <= 15.05 || l.depth_db === 0))), speech: duck.balance?.voice_above_music_lu, each: each.map((l) => [l.start, l.voice_above_music_lu, l.depth_db]) };
+    details.target = { ok: duck.balance?.met === false && duck.balance.per_line.met === false && duck.balance.per_line.max_target_lu === 15 && Math.abs(duck.balance.voice_above_music_lu - 12) <= 0.5 && each.length === 4 && each.every((l) => Number.isFinite(l.voice_above_music_lu) && l.voice_above_music_lu !== null && l.voice_above_music_lu >= 9.95 && (l.voice_above_music_lu <= 15.05 || l.depth_db === 0)) && each.some((l) => l.voice_above_music_lu > 15.05 && l.depth_db === 0) && (duck.notes ?? []).some((n) => /per-line ceiling is not met.*base volume/.test(n)), met: duck.balance?.met, speech: duck.balance?.voice_above_music_lu, each: each.map((l) => [l.start, l.voice_above_music_lu, l.depth_db]), notes: duck.notes };
 
     // Bars cut out of the ducked song: the piece after plays earlier and
     // its dips with it, away from the lines; the answer says so.

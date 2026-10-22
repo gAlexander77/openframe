@@ -693,7 +693,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
     3D textures]]).
 - **Match color** (Adjust > Match color; also in a multi-selection): pick a
   reference clip on the timeline, set Strength and Match saturation, then
-  Match. Five frames across each shot match its rendered reference look
+  Match. Strength stages the next match without changing the clip or undo
+  history. Five frames across each shot match its rendered reference look
   with editable RGB curves and Basic saturation, all targets in one Undo
   step (`match_color`). Replaces the targets' other look settings, keeps
   the master curve and placement, and protects black, white and detail.
@@ -853,7 +854,9 @@ element rows stay private, and captions stay on top.
   Each line can have its own voice (several speakers in one call; blends
   such as `af_heart:70,af_bella:30`), speed, time (`at`, on a beat or a
   cut) and pause after; the gap after a line otherwise follows its ending
-  (a comma runs on, a sentence rests, a paragraph rests longer). Pauses
+  (a comma runs on, a sentence rests, a paragraph rests longer). Gaps start
+  at the placed audio clip's end: at 30 fps a sentence gets 12 frames and
+  a comma gets three, even when the speech ends between frames. Pauses
   inside a line are written in it (`[pause 0.4]`, `[beat]`,
   `<break time="0.4s"/>`) and lengthen the voice's own pause there, so
   the sentence keeps its intonation; captions never show them.

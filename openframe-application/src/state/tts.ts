@@ -372,6 +372,8 @@ export async function voiceover(lines: VoiceLine[], opts: VoiceoverOptions = {})
     const times = layoutLines(
       lines.map((l, i) => ({ at: l.at, seconds: takes[i].seconds, before: takes[i].before, gap: (l.pauseAfter ?? opts.gap ?? pauseAfter(l.text, l.paragraph)) + takes[i].after })),
       opts.start ?? 0,
+      0.4,
+      store.document().fps,
     );
     const finish = opts.finish ?? "natural";
     type Placed = { text: string; start: number; end: number; seconds: number; voice: string; speed: number; words_per_second: number; target_words_per_second: [number, number]; speed_chosen?: true; reads?: number; pace_note?: string; voice_clip: string; caption_clip?: string; caption_clips?: string[]; pauses?: Take["pauses"] };
