@@ -3,6 +3,34 @@
 **Updated:** 2026-10-14. This is the current owner direction for the next
 Claude Code or Codex pickup. Read it before resuming previous tasks.
 
+## Current state - 2026-10-21 (read first)
+
+- `main` holds the first five improvements rounds (to ADR-116).
+- Branch `improvements-6` holds the sixth (ADR-117 to ADR-125; History,
+  "The sixth improvements branch"). It passed tsc, the full unit suite
+  (1,637 tests) and Rust fmt; its one Rust change passed clippy and
+  `cargo test`; `export_video replace` was checked in the desktop app.
+  A full drive sweep reached 185 of 197 drives, all passing, before it
+  was stopped for low memory.
+- **Next:** run the full drive sweep on `improvements-6`. Skip the
+  desktop-only `media-relink` and `desktop-session-jobs`, and
+  `window-header`, which needs its own runner. `longgop-cut` needs
+  `node scripts/make-fixtures.mjs longgop-1080p30` (it writes `scratch/`);
+  `music-structure` needs the private promo track, so skip it without it.
+  Fix what fails, merge into `main` with `--no-ff`, and push only when the
+  owner asks.
+- **Then:** the open items the ADRs record (per-letter border fades, a
+  compressor restarting on a split compound, glow sampling at radius 48,
+  captions over rings on tall versions, callouts inside compounds, the ad
+  spot's small 9:16 end card, the on-canvas editor's single line spacing,
+  the silent-join hint without a beat grid).
+- **Blind MCP tests** found most of rounds 5 and 6: run `claude -p` from a
+  folder outside the repo, so only the user-scope OpenFrame MCP server is
+  registered. Allow only the OpenFrame tools plus Read, Write, Edit and
+  Glob, with no shell or web. Give it a brief and its media, and fix what
+  its report and calls show. Run one tester per app, because the tools act
+  on the app's one open project.
+
 ## Decisions and scope
 
 - The chosen product name is **OpenFrame**, spelled as one word with capital

@@ -1706,7 +1706,7 @@ the end of the fifth branch, then two more blind Claude Code films.
   editor's intent first and saliency last.
 - **A knob that does nothing must say so.** Three version options were
   silent no-ops on fitted shots; every one now acts or answers why not.
-- **Memory is a shared budget.** With the owner's browser holding 21 GB,
+- **Memory is a shared budget.** With most of the machine's memory already in use,
   three agents plus a two-shard sweep ran the PC out of memory; agents
   now wait under 5 GB free, and the full test suite never runs beside an
   open browser.
