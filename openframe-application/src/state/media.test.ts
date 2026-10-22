@@ -6,10 +6,15 @@ import { planFrame } from "../lib/render/plan";
 import type { ImportedFile } from "../platform";
 import { platform } from "../platform";
 import { store } from "./store";
-import { importFiles } from "./media";
+import { importFiles, importEach } from "./media";
+import { probe } from "../engine/media";
+import { decodeMono } from "../engine/analyze";
+import { classifyAudioRole } from "../lib/analysis/audioRole";
 
 vi.mock("../platform", () => ({ platform: { kind: "web", adoptUrl: vi.fn() } }));
 vi.mock("../engine/media", () => ({ probe: vi.fn(async () => ({ kind: "image", duration: 0, width: 1920, height: 1080, hasVideo: true, hasAudio: false, decodable: true })) }));
+vi.mock("../engine/analyze", () => ({ decodeMono: vi.fn() }));
+vi.mock("../lib/analysis/audioRole", () => ({ classifyAudioRole: vi.fn() }));
 vi.mock("../engine/thumbs", () => ({ prepare: vi.fn() }));
 vi.mock("./actions", () => ({ edit: vi.fn(), provide: vi.fn() }));
 vi.mock("./proxies", () => ({ createProxies: vi.fn(), proxyAction: vi.fn() }));
@@ -46,4 +51,26 @@ it("film5-layout: imports the nameless color-bars URL and renders its library en
 it("keeps an explicit display name after copying a URL into browser storage", async () => {
   const [pic] = await importFiles([{ name: "Launch still", src: "http://localhost:1420/fixtures/media/color-bars.png", size: 0 }]);
   expect(pic.name).toBe("Launch still");
+});
+
+it("classifies unknown imports from bounded PCM and answers the role evidence", async () => {
+  const info = { kind: "audio" as const, duration: 120, hasAudio: true, hasVideo: false, decodable: true };
+  vi.mocked(probe).mockResolvedValue(info);
+  const pcm = new Float32Array(8000);
+  vi.mocked(decodeMono).mockResolvedValue(pcm);
+  const guess = { reason: "Measured test envelope", seconds: 60, pauses: 0.2, modulation: 0.6, periodicity: 0.3 };
+  vi.mocked(classifyAudioRole).mockReturnValueOnce({ ...guess, role: "dialog" }).mockReturnValueOnce({ ...guess, role: "music" }).mockReturnValueOnce(guess);
+  const outcomes = await importEach(["one.wav", "two.mp3", "three.wav"].map(name => ({ src: `http://localhost:1449/${name}`, name: "Unlabeled", size: 0 })));
+  expect(outcomes.map(o => "asset" in o ? o.asset.role : "failed")).toEqual(["dialog", "music", undefined]);
+  expect(outcomes.every(o => "asset" in o && o.audioRole?.reason === guess.reason)).toBe(true);
+  expect(decodeMono).toHaveBeenCalledWith(expect.objectContaining({ kind: "audio" }), 0, 60, 8000, undefined, expect.any(AbortSignal));
+  expect(classifyAudioRole).toHaveBeenCalledWith(pcm, 8000);
+});
+
+it("keeps a decodable import when role analysis is unavailable", async () => {
+  vi.mocked(probe).mockResolvedValue({ kind: "audio", duration: 5, hasAudio: true, hasVideo: false, decodable: true });
+  vi.mocked(decodeMono).mockRejectedValueOnce(new Error("Analysis decoder unavailable"));
+  const [o] = await importEach([{ src: "http://localhost:1449/unknown.wav", name: "Unknown", size: 0 }]);
+  expect(o).toMatchObject({ asset: { kind: "audio" }, audioRole: { reason: "Audio analysis unavailable; role left unset" } });
+  expect("asset" in o && o.asset.role).toBeUndefined();
 });

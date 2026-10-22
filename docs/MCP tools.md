@@ -305,7 +305,7 @@ Frame one VOD as ordinary grouped facecam and gameplay bands, with sound on game
 
 ### create_clips
 
-Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Answers IDs, names, total lengths (end card included), caption counts and notes. Up to 100 moments; short batches avoid speech-model timeouts.
+Make and save one edited project per source moment, sharing the VOD and its playback proxy. Defaults: vertical stream framing, two-word pop captions, title hook for 2.5 seconds and -14 LUFS dialog. Give credit for an opening credit and appended 2-second Follow card. No facecam fills the canvas with gameplay. Source start/end are seconds; ranked find_highlights moments can be passed directly, including peak. The original stays open and unchanged. Hooks clear the facecam or detected subject; text stays inside the apps' safe column with opaque boxes. Captions default to two words, merging when reading time needs it. Runs the measured social_short check before saving and answers IDs, names, total lengths (end card included), caption counts, notes and remaining findings. End cards extend when their words need more reading time. Up to 100 moments; short batches avoid speech-model timeouts.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
@@ -361,7 +361,7 @@ Bring files in and keep the library tidy.
 
 ### import_media
 
-Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
+Import media files into the project by absolute path (desktop) or URL. What a file is comes from the file (its path's or address's extension, else its contents), never from name, which is only the label the library shows. Answers one entry per file, in the order given: the new asset (id, name, kind, duration, width, height) for add_media_clip; audio also answers role (dialog, music, or null) and audio_role with the first-minute energy analysis and reason, leaving uncertain audio unset, a .cube LUT as {lut_id, name, kind: lut} for apply_lut, or {src, name, error} saying why that file failed; when every file fails, the call is an error naming each reason.
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|

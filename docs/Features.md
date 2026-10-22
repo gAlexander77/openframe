@@ -1117,6 +1117,14 @@ makes a 13 s one). Times are timeline seconds.
 
 ## Sound design and delivery
 
+- **Imported audio roles:** audio files without a known origin are analyzed
+  over their first minute. Irregular syllable energy and pauses suggest
+  dialog; sustained or regularly pulsing energy suggests music. Ambiguous
+  or unreadable audio stays unset, including its track, so it does not
+  silently join the music stem. The import toast and `import_media` answer
+  explain the result; `update_track role` overrides it. Generated speech,
+  music and effects keep their explicit roles. See
+  [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]].
 - **Fade curves** (Audio tab, beside Fade in, Fade out and Crossfade;
   `set_fades`, `set_crossfade`): Linear, Equal power, Logarithmic (fast
   rise), Exponential (slow rise) and S curve (smooth at both ends).
@@ -1583,8 +1591,15 @@ Select two to four overlapping pictures and open **Layouts** in the inspector. A
 - **Make many clip projects:** `create_clips` takes source-second moments
   and a shared stream, full 16:9 or vertical-fill template. Defaults add
   two-word pop captions, an opening brand headline and -14 LUFS dialog;
-  supplied streamer credit adds a small opening line and a two-second
-  Follow end card. Each saved project shares the VOD and playback proxy.
+  supplied streamer credit adds a small opening line and a Follow end
+  card held at least two seconds, longer when its words need it. Hooks
+  sit below the facecam or clear of the detected full-frame subject;
+  without a subject, they use a boxed upper third. Credits, captions and
+  card parts keep inside the apps' clear column. Solid text boxes protect
+  contrast; rapid caption chunks join rather than flash. Creation runs
+  the measured social-short check before saving and returns remaining
+  findings, including an omitted hook when no clear room exists. Each saved
+  project shares the VOD and playback proxy.
   Only each moment's source window is transcribed. The original project
   stays open with its undo history. Media's context menu offers **Make
   clips from markers** for range markers labeled Highlight N, with a
@@ -1597,7 +1612,8 @@ Select two to four overlapping pictures and open **Layouts** in the inspector. A
   findings, and reports long jobs through `export_status`. Other shapes
   use the versions path. The editor stays unchanged; the browser uses one
   save dialog per file and refuses desktop folders.
-  See [[ADR-141 Stream clips use grouped bands and detached project documents]].
+  See [[ADR-141 Stream clips use grouped bands and detached project documents]]
+  and [[ADR-143 Clip templates repair their checks and imports classify audio conservatively]].
 
 ## Group transforms
 
