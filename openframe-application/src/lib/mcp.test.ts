@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { describeProject, runCommand } from "./commands";
+import { describeProject, runCommand, type CommandReport } from "./commands";
 import { describeChanges, handleMcp, listTools, type McpHost, TOOLS_META, toolsFingerprint } from "./mcp";
 import { createProject } from "./project/defaults";
 import type { Project } from "./project/types";
@@ -11,8 +11,9 @@ function host() {
     name: "OpenFrame",
     version: "0.1.0",
     exec(name: string, args: unknown) {
-      h.project = runCommand(h.project, name, args);
-      return describeProject(h.project);
+      const report: CommandReport = {};
+      h.project = runCommand(h.project, name, args, report);
+      return { ...describeProject(h.project), ...report };
     },
     describe: () => describeProject(h.project),
     projectJson: () => h.project,
@@ -674,7 +675,7 @@ describe("what the Claude film test found (2026-10-20)", () => {
     }) as unknown as typeof h.ai;
     const r = await call(h, "tools/call", { name: "normalize_loudness", arguments: { clip_ids: ["c_music"] } });
     const parts = (r!.result as { content: { text: string }[] }).content;
-    expect(JSON.parse(parts[0].text)).toEqual([{ clipId: "c_music", gain: 0.7 }]);
+    expect(JSON.parse(parts[0].text)).toEqual([{ clip_id: "c_music", gain: 0.7, gain_db: -3.1 }]);
     const moved = JSON.parse(parts[1].text);
     expect(moved.changed_clips.map((c: { start: number }) => c.start)).toEqual([2.267, 2]);
     expect(moved.notes).toEqual(["The main track closed the 0.233 s gap at 2 s: the clip after it moved 0.233 s earlier."]);
@@ -728,4 +729,58 @@ describe("what the third Claude film found (ADR-121)", () => {
     expect(answer.changed_clips).toHaveLength(1);
     expect(JSON.stringify(answer)).not.toMatch(/word 3/);
   });
+});
+
+
+it("keeps quiet batch additions in step order and names each adding step", async () => {
+  const h = host();
+  const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "batch", arguments: { quiet: true, commands: [
+    { command: "add_media_clip", args: { asset_id: "a1", start: 0, duration: 3 } },
+    { command: "add_text", args: { text: "Headline", start: 0, duration: 3 } },
+    { command: "set_text", args: { clip_id: "$2", text: "Changed" } },
+    { command: "add_text", args: { text: "Subhead", start: 0, duration: 3 } },
+  ] } } }, h);
+  const out = JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  expect(out.added_clips).toEqual([out.added_by_step["1"][0], out.added_by_step["2"][0], out.added_by_step["4"][0]]);
+  expect(Object.keys(out.added_by_step)).toEqual(["1", "2", "4"]);
+  expect(out.added_clips.map((id: string) => h.project.tracks.flatMap((t) => t.clips).find((c) => c.id === id)!.type)).toEqual(["video", "text", "text"]);
+});
+
+it("formats internal AI answers only at the MCP boundary", async () => {
+  const h: McpHost = host();
+  h.ai = async (tool) => tool === "clipTranscript" ? { clipId: "c1", words: [{ text: " to", start: 26.099999999999998, end: 26.23456 }] } : [{ clipId: "c1", lufs: -20.123456, gain: 1.6158931678266677, limitedBy: "peak" }];
+  const call = async (name: string, args: unknown) => {
+    const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+    return JSON.parse((r!.result as { content: { text: string }[] }).content[0].text);
+  };
+  expect(await call("get_transcript", { clip_id: "c1" })).toEqual({ clip_id: "c1", words: [{ text: "to", start: 26.1, end: 26.235 }] });
+  expect(await call("normalize_loudness", { clip_ids: ["c1"] })).toEqual([{ clip_id: "c1", lufs: -20.123, gain: 1.616, gain_db: 4.2, limited_by: "peak" }]);
+});
+
+
+it("includes remaining text-overlap findings in a version check", async () => {
+  const h: McpHost = host();
+  const reports = [{ version: "Film 9x16", reports: [{ rule: "text_overlaps_text", clip_ids: ["head", "sub"], at: 1 }] }];
+  h.versionsSheet = async () => ({ image: "iVBOR", text_overlaps: reports });
+  const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "export_versions", arguments: { ratios: ["9:16"], check: true } } }, h);
+  const result = r!.result as { content: { type: string; text?: string }[] };
+  expect(JSON.parse(result.content.find((c) => c.type === "text")!.text!).text_overlaps).toEqual(reports);
+});
+
+
+it("rounds raw app measurements and imported media at the response boundary", async () => {
+  const h: McpHost = host();
+  h.importMedia = async () => [{ id: "asset", duration: 8.12345678 }];
+  h.seek = () => ({ playhead: 1.23456789 });
+  h.fileSheet = async () => ({ image: "jpeg", file: { fps: 29.97002997, frames: [1.23456789] } });
+  h.audition = async () => ({ summary: { integrated_lufs: -16.12345678, start: 1.23456789 } });
+  const run = async (name: string, args: unknown) => {
+    const r = await handleMcp({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, h);
+    const content = (r!.result as { content: { type: string; text?: string }[] }).content;
+    return JSON.parse(content.find((c) => c.type === "text")!.text!);
+  };
+  expect(await run("import_media", { files: [{ src: "speech.wav" }] })).toEqual([{ id: "asset", duration: 8.123 }]);
+  expect(await run("seek", { at: 1.23456789 })).toEqual({ playhead: 1.235 });
+  expect(await run("preview_media", { file: "film.mp4" })).toEqual({ fps: 29.97, frames: [1.235] });
+  expect(await run("preview_audio", { start: 1, audio: false })).toEqual({ integrated_lufs: -16.123, start: 1.235 });
 });

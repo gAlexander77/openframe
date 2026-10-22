@@ -329,3 +329,14 @@ describe("text behind the subject of a picture", () => {
     expect(() => putBehindSubject(p, photo.id, [title], { cutout: { enabled: true, src: "m", from: 0, to: 1, model: "m" } })).toThrow(/cut-out picture/);
   });
 });
+
+
+it("puts a brand wordmark on an end card without a logo, unless none is asked", () => {
+  for (const [logo, expected] of [[undefined, true], ["none", false]] as const) {
+    const p = runCommand(createProject(), "set_brand", { name: "Lumen Trails" });
+    const out = addAdElement(p, "end_card", { start: 0, headline: "Explore", logo }).project;
+    expect(out.tracks.flatMap((t) => t.clips).some((c) => c.type === "text" && c.text === "Lumen Trails")).toBe(expected);
+  }
+  const out = addAdElement(branded(), "end_card", { start: 0, headline: "Explore" }).project;
+  expect(out.tracks.flatMap((t) => t.clips).some((c) => c.type === "text" && c.text === "Roast")).toBe(false);
+});

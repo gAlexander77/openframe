@@ -5,6 +5,7 @@
 // window API all hand messages to handleMcp, so agents see one surface
 // however they connect (ADR-008).
 
+import { CAPTION_LOOKS } from "./captionLooks";
 import { SFX } from "./sfx";
 import { AMBIENCE, AMBIENCE_IDS, BED_MAX_SECONDS } from "./ambience";
 import { DEFAULT_VOICE, VOICES } from "./tts";
@@ -24,6 +25,20 @@ import { didYouMean } from "./didYouMean";
 import { expandVersions, VERSION_CAPTIONS, VERSION_FITS, VERSION_PUSHES, VERSION_RATIOS, type VersionCaptions, type VersionFit, type VersionOverride, type VersionPushes, type VersionRatio, type VersionSpec } from "./versions";
 import { REFRAMES, type Focus, type Reframe } from "./reframe";
 import { groupFindings, markerMoves, oneDuck, quietAnswer, reviewSummary, shareClips, shiftedTogether, wholeClips } from "./answerSize";
+
+/** Internal app results stay intact for the UI. MCP uses one spelling and
+ * precision; dynamic script/pronunciation keys are never renamed. */
+function appAnswer(value: unknown): unknown {
+  if (typeof value === "number") return Number.isFinite(value) ? +value.toFixed(3) : null;
+  if (Array.isArray(value)) return value.map(appAnswer);
+  if (!value || typeof value !== "object") return value;
+  const names: Record<string, string> = { clipId: "clip_id", assetId: "asset_id", videoId: "video_id", clipIds: "clip_ids", limitedBy: "limited_by", subjectClipId: "subject_clip_id", textClipIds: "text_clip_ids", trackId: "track_id", firstFrame: "first_frame", lastFrame: "last_frame", truePeak: "true_peak", maxReduction: "max_reduction", thresholdDb: "threshold_db", floorDb: "floor_db", fellBack: "fell_back" };
+  const obj = value as Record<string, unknown>;
+  const out = Object.fromEntries(Object.entries(obj).map(([k, v]) => [names[k] ?? k, k === "text" && typeof v === "string" ? v.trim() : appAnswer(v)]));
+  if (typeof obj.gain === "number") out.gain_db = +(20 * Math.log10(obj.gain)).toFixed(1);
+  return out;
+}
+const appJson = (value: unknown) => json(appAnswer(value));
 
 export const MCP_PROTOCOL_VERSION = "2025-06-18";
 
@@ -84,7 +99,7 @@ export interface McpHost {
   exportVersions(options: VersionsRequest): Promise<unknown>;
   /** One JPEG (base64) of every version at a few moments, nothing
    * exported, and where each version's framing cuts a shot's subject. */
-  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown; callouts?: unknown; options?: unknown; coverage?: unknown }>;
+  versionsSheet(options: VersionsRequest & { at?: number[]; tileWidth?: number }): Promise<{ image: string; subjects?: unknown; titles?: unknown; overlaps?: unknown; callouts?: unknown; options?: unknown; coverage?: unknown; text_overlaps?: unknown }>;
   /** Each version saved as a project of its own, nothing exported. */
   saveVersions(options: VersionsRequest): Promise<unknown>;
   /** Speak a script's lines and place them with captions (add_voiceover). */
@@ -123,7 +138,7 @@ export function findProject(all: SavedProject[], key: string): SavedProject {
   throw new Error(`No project "${key}". ${names ? `Recent: ${names}.` : "There are no saved projects."} list_projects has them all with ids.`);
 }
 
-export type AiTool = "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
+export type AiTool = "autoCaptions" | "generateMusic" | "removeSilences" | "removeFillers" | "clipTranscript" | "splitScenes" | "markBeats" | "normalizeLoudness" | "duckUnderSpeech" | "reduceNoise" | "stabilizeClip" | "removeBackground" | "textToSpeech" | "autoAdjustClip" | "trackMotion" | "syncAudio" | "reframeClip" | "addSoundEffects" | "addAmbience" | "analyzeMusic" | "loudnessReport" | "textBehindSubject" | "retakeVoiceover" | "reviewVoiceover";
 
 /** What export_versions hands the host: the versions spelled out, and the
  * export settings they share. */
@@ -212,6 +227,10 @@ export function describeChanges(before: unknown, after: unknown): unknown {
   const clips = (d: Desc) => new Map(d.tracks!.flatMap((t) => t.clips.map((c) => [c.id, { ...c, track: t.id }] as const)));
   const tracks = (d: Desc) => new Map(d.tracks!.map(({ clips: _, ...t }) => [t.id, t] as const));
   diff(clips(b), clips(a), "clips");
+  if (a.added_by_step && Array.isArray(out.added_clips)) {
+    const order = Object.values(a.added_by_step as Record<string, string[]>).flat();
+    out.added_clips.sort((x, y) => order.indexOf(x.id) - order.indexOf(y.id));
+  }
   diff(tracks(b), tracks(a), "tracks");
   const marks = (d: Desc) => new Map(((d.markers ?? []) as { id: string }[]).map((m) => [m.id, m] as const));
   diff(marks(b), marks(a), "markers");
@@ -506,7 +525,7 @@ export const APP_TOOLS: AppTool[] = [
       // Every file failed: an error that says why, never an empty answer.
       if (!got.length) throw new Error("Nothing was imported: the project closed during the import.");
       if (got.every((x) => x.error)) throw new Error(`Nothing was imported. ${got.map((x) => `${x.src}: ${x.error}`).join("; ")}`);
-      return json(got);
+      return appJson(got);
     },
   },
   { name: "undo", description: "Undo the last edit; returns what that changed back.", inputSchema: obj(), call: (h) => json(describeChanges(h.describe(), h.undo())) },
@@ -515,7 +534,7 @@ export const APP_TOOLS: AppTool[] = [
     name: "seek",
     description: "Move the playhead to a time in seconds: what the viewer shows and where tools that act at the playhead (the Tracking box) start.",
     inputSchema: obj({ at: { type: "number", minimum: 0, description: "Seconds" } }, ["at"]),
-    call: (h, a) => json(h.seek(Number(a.at))),
+    call: (h, a) => appJson(h.seek(Number(a.at))),
   },
   {
     name: "list_projects",
@@ -606,7 +625,7 @@ export const APP_TOOLS: AppTool[] = [
       return {
         content: [
           { type: "image", data: image, mimeType: "image/jpeg" },
-          { type: "text", text: JSON.stringify({ frames: times, cuts, markers }) },
+          { type: "text", text: JSON.stringify(appAnswer({ frames: times, cuts, markers })) },
         ],
       };
     },
@@ -631,7 +650,7 @@ export const APP_TOOLS: AppTool[] = [
         if (a.asset_id !== undefined) throw new Error("give asset_id or file, not both");
         if (!h.fileSheet) throw new Error("This app cannot read files that are not imported.");
         const r = await h.fileSheet(String(a.file), a.times ? (a.times as number[]).slice(0, 24) : undefined, Number(a.count ?? 12), Number(a.tile_width ?? 320), Number(a.columns ?? 4));
-        return { content: [{ type: "image", data: r.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify(r.file) }] };
+        return { content: [{ type: "image", data: r.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify(appAnswer(r.file)) }] };
       }
       if (a.asset_id === undefined) throw new Error("give asset_id (an imported video or picture) or file (a path or URL)");
       const d = h.describe() as { assets: { id: string; kind: string; duration: number }[] };
@@ -658,7 +677,7 @@ export const APP_TOOLS: AppTool[] = [
     ),
     call: async (h, a) => {
       const r = await h.audition(given({ start: Number(a.start), end: a.end === undefined ? undefined : Number(a.end), solo: a.solo, loudness: a.loudness, audio: a.audio }) as { start: number });
-      return { content: [...(r.data ? [{ type: "audio" as const, data: r.data, mimeType: r.mimeType ?? "audio/mpeg" }] : []), { type: "text", text: JSON.stringify(r.summary) }] };
+      return { content: [...(r.data ? [{ type: "audio" as const, data: r.data, mimeType: r.mimeType ?? "audio/mpeg" }] : []), { type: "text", text: JSON.stringify(appAnswer(r.summary)) }] };
     },
   },
   {
@@ -696,14 +715,14 @@ export const APP_TOOLS: AppTool[] = [
       done.catch(() => {}); // after the wait below, export_status reports a failure
       // ponytail: the desktop bridge gives a call 300 s; past 240 s the agent polls export_status.
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
-      return json(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
     },
   },
   {
     name: "export_status",
     description: "The last export_video: running (fraction done, eta seconds), done (path, bytes, seconds) or failed (message).",
     inputSchema: obj(),
-    call: (h) => json(h.exportStatus() ?? { state: "none" }),
+    call: (h) => appJson(h.exportStatus() ?? { state: "none" }),
   },
 ];
 
@@ -727,31 +746,49 @@ APP_TOOLS.push(
     name: "remove_silences",
     description: "Find the pauses in a clip's speech and cut them out, closing the gaps (one undo step). Returns the silent source ranges and seconds saved.",
     inputSchema: obj({ clip_id: clipId, sensitivity, min_silence: { type: "number", minimum: 0, description: "Shortest pause to cut, seconds (default 0.4)" }, padding: { type: "number", minimum: 0, description: "Kept around speech, seconds (default 0.1)" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("removeSilences", String(a.clip_id), given({ sensitivity: a.sensitivity, minSilence: a.min_silence, padding: a.padding }))),
+    call: async (h, a) => appJson(await h.ai("removeSilences", String(a.clip_id), given({ sensitivity: a.sensitivity, minSilence: a.min_silence, padding: a.padding }))),
+  },
+  {
+    name: "auto_captions",
+    description: "Caption what the people on the timeline say, using local Whisper and the shared source transcript. Cut clips map their words onto the cut timeline. Spoken voiceovers keep their script spelling. One undo step; refuses when no project or no speech is present. Answers count, track_id, first and last captions, seconds covered and words heard; detail full includes every caption. Reversed and speed-curved speech is currently excluded; flatten it first.",
+    inputSchema: obj({
+      replace: { type: "boolean", description: "Remove existing captions first (default true)" },
+      words_per_caption: { type: "integer", minimum: 1, maximum: 3, description: "Words per caption, with spoken-word times for highlight; omitted makes whole readable lines" },
+      start: { type: "number", minimum: 0, description: "Start of the timeline stretch in seconds (default 0)" },
+      end: { type: "number", minimum: 0, description: "End of the timeline stretch in seconds (default timeline end)" },
+      style: TEXT_STYLE_SCHEMA,
+      y: { type: "number", description: "Vertical offset from canvas center, as add_captions takes it" },
+      look: { type: "string", enum: Object.keys(CAPTION_LOOKS), description: "Caption look, as set_caption_look takes it; style and y override it" },
+      language: { type: "string", description: "Speech language (default en, English); choose a multilingual model for other languages" },
+      model: { type: "string", enum: ["onnx-community/whisper-tiny.en_timestamped", "onnx-community/whisper-base.en_timestamped", "onnx-community/whisper-small.en_timestamped", "onnx-community/whisper-base_timestamped", "onnx-community/whisper-small_timestamped"], description: "Whisper model offered by the Captions panel; default balanced English (base.en)" },
+      track_ids: { type: "array", items: { type: "string" }, description: "Only speech on these tracks; default audible tracks except music and effects roles" },
+      detail: { type: "string", enum: ["summary", "full"], description: "full answers every caption's text, start and end; default summary" },
+    }),
+    call: async (h, a) => appJson(await h.ai("autoCaptions", "", a)),
   },
   {
     name: "get_transcript",
     description: "Hear a video or audio clip's speech on this machine (Whisper) and return its words with source-second times. Delete words by passing their spans to cut_ranges (Premiere's text-based editing).",
     inputSchema: obj({ clip_id: clipId }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("clipTranscript", String(a.clip_id), {})),
+    call: async (h, a) => appJson(await h.ai("clipTranscript", String(a.clip_id), {})),
   },
   {
     name: "remove_filler_words",
-    description: "Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe \"uh\", so those stay. Returns the source ranges cut and the words heard.",
+    description: "Transcribe a clip's speech on this machine (Whisper) and cut its filler words (um, hmm, ah) with the hesitation around each, closing the gaps (one undo step). Whisper does not transcribe \"uh\", so those stay. Returns the source ranges cut, filler words, and heard (all words heard in the clip); it shares get_transcript's whole-source hearing, so the tools agree.",
     inputSchema: obj({ clip_id: clipId, model: { type: "string", description: "Whisper model id (default onnx-community/whisper-base.en_timestamped)" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("removeFillers", String(a.clip_id), given({ model: a.model }))),
+    call: async (h, a) => appJson(await h.ai("removeFillers", String(a.clip_id), given({ model: a.model }))),
   },
   {
     name: "split_scenes",
     description: "Find every shot change in a video clip and split there (or drop markers). Returns the cut times in source seconds.",
     inputSchema: obj({ clip_id: clipId, sensitivity, output: { type: "string", enum: ["split", "markers"], description: "Default split" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("splitScenes", String(a.clip_id), given({ sensitivity: a.sensitivity, output: a.output }))),
+    call: async (h, a) => appJson(await h.ai("splitScenes", String(a.clip_id), given({ sensitivity: a.sensitivity, output: a.output }))),
   },
   {
     name: "mark_beats",
     description: "Mark a music clip's beats (every Nth) with Beat markers, from the whole song's reading (analyze_music's beats, read through the grid set_music_grid gave the file), placed where the clip plays them: trimmed, moved or sped up, the markers stand on the song's beats, and they follow the clip through later edits, replacing its earlier Beat markers. Answers bpm as the clip plays it (file_bpm, the file's own, when it is sped up or slowed), the beats marked in timeline seconds and how many markers it added (0 when they were there already: a second call replaces them, never doubles them).",
     inputSchema: obj({ clip_id: clipId, every: { type: "integer", enum: [1, 2, 4], description: "Marker on every Nth beat (default 1)" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("markBeats", String(a.clip_id), given({ every: a.every }))),
+    call: async (h, a) => appJson(await h.ai("markBeats", String(a.clip_id), given({ every: a.every }))),
   },
   {
     name: "normalize_loudness",
@@ -765,7 +802,7 @@ APP_TOOLS.push(
       },
       ["clip_ids"],
     ),
-    call: async (h, a) => json(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target, spec: a.spec }))),
+    call: async (h, a) => appJson(await h.ai("normalizeLoudness", (a.clip_ids as unknown[]).map(String), given({ target: a.target, spec: a.spec }))),
   },
   // ---- delivery (ADR-061) --------------------------------------------------------
   {
@@ -781,12 +818,12 @@ APP_TOOLS.push(
       start: { type: "number", minimum: 0, description: "Timeline seconds, default 0" },
       end: { type: "number", minimum: 0, description: "Timeline seconds, default the end" },
     }),
-    call: async (h, a) => json(await h.ai("loudnessReport", a.spec === undefined ? "" : String(a.spec), given({ loudness: a.loudness, start: a.start, end: a.end, by_track: a.by_track, per_second: a.per_second, kind: a.kind }))),
+    call: async (h, a) => appJson(await h.ai("loudnessReport", a.spec === undefined ? "" : String(a.spec), given({ loudness: a.loudness, start: a.start, end: a.end, by_track: a.by_track, per_second: a.per_second, kind: a.kind }))),
   },
   {
     name: "duck_under_speech",
     description:
-      `Lower music wherever the other clips with sound under it (inside compound clips too) have speech, as editable volume keyframes: one clip (clip_id), or every clip of a music track as one bed (track_id: a song cut into pieces is ducked in one call, a line across a cut dipping on both sides). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the usual dip); max_line_lu holds every line to at most that many, a line over a quiet passage dipping less (never raised over its volume), so a quiet intro or a last hit is not emptied: by default ${LINE_CEILING_LU} LU (or 3 over voice_above_music_lu or min_line_lu, when higher) whenever any of the three is given, and never under voice_above_music_lu (lines each under it cannot sit over it together); a line held under the ceiling moves the others so the lines together stay on voice_above_music_lu. All are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins, the minimum and ceiling held to, and each line with its own dip. Plain depth lowers by that many dB without measuring. Between lines: a pause shorter than min_gap (default ${DUCK_MIN_GAP} s) stays down so the music does not pump, and so does the music before a first line or after a last one that close to its start or end (no blip); a longer pause comes back up over release (default ${DUCK_RELEASE} s) and dips again 0.1 s before the next line. open_at brings the music up on chosen moments whatever their pause: timeline seconds, or marker labels ("Drop": every marker so labeled, as analyze_music and set_music_grid mark a song's drops), so a drop between lines plays at the music's level; a moment inside a line stays down under the voice. The answer lists the pauses held down (held, seconds), each open_at moment with where the music is up around it (up) or the line it falls in (inside_line), and notes a drop marker the music stays down through. Volume keys made by hand (added or changed since the last duck: a lift on a drop, a hold before a hit) are kept wherever no line speaks, in place of the duck's own in that pause, the duck's level held at the lines either side; one under a line is replaced, and hand_keys lists both. The music keeps how it was ducked: a voice line that changes later (retake_voiceover) dips it again the same way, and an edit that moves a line under it, or moves the music and its dips (cut_music, move_clip), says so.`,
+      `Lower music wherever the other clips with sound under it (inside compound clips too) have speech, as editable volume keyframes: one clip (clip_id), or every clip of a music track as one bed (track_id: a song cut into pieces is ducked in one call, a line across a cut dipping on both sides). A voice's balance over music depends on the window it is measured in, and the answer names it: speech (while the voice speaks, every line from its first word to its last, together) and line (each line alone); measure_loudness by_track also gives program (the whole stretch, music between lines included, which reads lower). voice_above_music_lu aims the voice that many LU over the music in the speech window; min_line_lu holds every line to at least that many LU over the music, each line's dip as deep as it needs (with voice_above_music_lu, or depth, as the usual dip); max_line_lu holds every line to at most that many, a line over a quiet passage dipping less (never raised over its volume), so a quiet intro or a last hit is not emptied: by default ${LINE_CEILING_LU} LU (or 3 over voice_above_music_lu or min_line_lu, when higher) whenever any of the three is given, and never under voice_above_music_lu (lines each under it cannot sit over it together); a line held under the ceiling moves the others so the lines together stay on voice_above_music_lu. All are measured on the rendered stems and met by measuring again; balance answers the speech window's numbers, target and met, and per_line the lines' lowest, median and highest margins, the minimum and ceiling held to, and each line with its own dip. When the speech-window voice is under -23 LUFS or the dip exceeds 20 dB, a note names the quiet dialog clips and suggests normalize_loudness target -16 before ducking. Plain depth lowers by that many dB without measuring. Between lines: a pause shorter than min_gap (default ${DUCK_MIN_GAP} s) stays down so the music does not pump, and so does the music before a first line or after a last one that close to its start or end (no blip); a longer pause comes back up over release (default ${DUCK_RELEASE} s) and dips again 0.1 s before the next line. open_at brings the music up on chosen moments whatever their pause: timeline seconds, or marker labels ("Drop": every marker so labeled, as analyze_music and set_music_grid mark a song's drops), so a drop between lines plays at the music's level; a moment inside a line stays down under the voice. The answer lists the pauses held down (held, seconds), each open_at moment with where the music is up around it (up) or the line it falls in (inside_line), and notes a drop marker the music stays down through. Volume keys made by hand (added or changed since the last duck: a lift on a drop, a hold before a hit) are kept wherever no line speaks, in place of the duck's own in that pause, the duck's level held at the lines either side; one under a line is replaced, and hand_keys lists both. The music keeps how it was ducked: a voice line that changes later (retake_voiceover) dips it again the same way, and an edit that moves a line under it, or moves the music and its dips (cut_music, move_clip), says so.`,
     inputSchema: obj({
       clip_id: { type: "string", description: "The music clip (or give track_id)" },
       track_id: { type: "string", description: "A music track: every clip with sound on it ducked as one bed, instead of clip_id" },
@@ -800,14 +837,14 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       if ((a.clip_id === undefined) === (a.track_id === undefined)) throw new Error("Give clip_id (one music clip) or track_id (every clip on a music track).");
-      return json(await h.ai("duckUnderSpeech", a.clip_id === undefined ? "" : String(a.clip_id), given({ depth: a.depth, voice_above_music_lu: a.voice_above_music_lu, min_line_lu: a.min_line_lu, max_line_lu: a.max_line_lu, track_id: a.track_id, open_at: a.open_at, min_gap: a.min_gap, release: a.release })));
+      return appJson(await h.ai("duckUnderSpeech", a.clip_id === undefined ? "" : String(a.clip_id), given({ depth: a.depth, voice_above_music_lu: a.voice_above_music_lu, min_line_lu: a.min_line_lu, max_line_lu: a.max_line_lu, track_id: a.track_id, open_at: a.open_at, min_gap: a.min_gap, release: a.release })));
     },
   },
   {
     name: "reduce_noise",
     description: "Take steady background noise (hiss, hum, fans, room tone) out of a clip's sound on this computer; the clip then plays a cleaned copy (a video's sound is extracted to an audio clip first).",
     inputSchema: obj({ clip_id: clipId, strength: { type: "number", minimum: 0, maximum: 1, description: "0.5 gentle, 0.75 default, 1 strong" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("reduceNoise", String(a.clip_id), given({ strength: a.strength }))),
+    call: async (h, a) => appJson(await h.ai("reduceNoise", String(a.clip_id), given({ strength: a.strength }))),
   },
   {
     name: "sync_audio",
@@ -821,13 +858,13 @@ APP_TOOLS.push(
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("syncAudio", String(a.clip_id), given({ videoId: a.video_clip_id, muteCamera: a.mute_camera }))),
+    call: async (h, a) => appJson(await h.ai("syncAudio", String(a.clip_id), given({ videoId: a.video_clip_id, muteCamera: a.mute_camera }))),
   },
   {
     name: "stabilize_clip",
     description: "Smooth a shaky video clip on this computer (CapCut's Stabilize): measures the camera's shake and moves each frame onto a smooth path, zooming slightly to hide the edges. level: least-crop, recommended (default), most-stable, or off to remove it.",
     inputSchema: obj({ clip_id: clipId, level: { type: "string", enum: ["least-crop", "recommended", "most-stable", "off"], description: "How strongly to smooth" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("stabilizeClip", String(a.clip_id), given({ level: a.level }))),
+    call: async (h, a) => appJson(await h.ai("stabilizeClip", String(a.clip_id), given({ level: a.level }))),
   },
   {
     name: "track_motion",
@@ -842,7 +879,7 @@ APP_TOOLS.push(
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("trackMotion", String(a.clip_id), given({ at: a.at, box: a.box, videoId: a.video_clip_id }))),
+    call: async (h, a) => appJson(await h.ai("trackMotion", String(a.clip_id), given({ at: a.at, box: a.box, videoId: a.video_clip_id }))),
   },
   {
     name: "add_sound_effect",
@@ -900,7 +937,7 @@ APP_TOOLS.push(
       if (a.end !== undefined && a.length !== undefined) throw new Error("give end or length, not both");
       const before = h.describe();
       const r = (await h.ai("addAmbience", "", given({ name: a.name, start: a.start, end: a.end, length: a.length, fadeIn: a.fade_in, fadeOut: a.fade_out, volume: a.volume, seed: a.seed, trackId: a.track_id }))) as object;
-      return json({ ...r, ...(describeChanges(before, h.describe()) as object) });
+      return json({ ...(appAnswer(r) as object), ...(describeChanges(before, h.describe()) as object) });
     },
   },
   {
@@ -915,7 +952,7 @@ APP_TOOLS.push(
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("reframeClip", String(a.clip_id), given({ ratio: a.ratio, box: a.box }))),
+    call: async (h, a) => appJson(await h.ai("reframeClip", String(a.clip_id), given({ ratio: a.ratio, box: a.box }))),
   },
   // ---- music: an original score (lib/music) ----
   {
@@ -924,7 +961,7 @@ APP_TOOLS.push(
     inputSchema: musicSchema(true),
     call: async (h, a) => {
       const { detail, ...rest } = a;
-      return json(cueAnswer((await h.ai("generateMusic", "", rest)) as Parameters<typeof cueAnswer>[0], detail));
+      return appJson(cueAnswer((await h.ai("generateMusic", "", rest)) as Parameters<typeof cueAnswer>[0], detail));
     },
   },
   {
@@ -933,7 +970,7 @@ APP_TOOLS.push(
     inputSchema: musicSchema(false),
     call: (_h, a) => {
       const { detail, ...rest } = a;
-      return json(cueAnswer(planMusicAnswer(rest), detail));
+      return appJson(cueAnswer(planMusicAnswer(rest), detail));
     },
   },
   // ---- epic edits: the music's structure (lib/analysis/beats.ts musicStructure) ----
@@ -958,7 +995,7 @@ APP_TOOLS.push(
     ),
     call: async (h, a) => {
       const full = (await h.ai("analyzeMusic", String(a.clip_id), given({ markers: a.markers, bpm: a.bpm, first_downbeat: a.first_downbeat, cues: a.cues }))) as MappedMusic;
-      return json(a.detail === "full" || !Array.isArray(full?.beats) ? full : musicSummary(full));
+      return appJson(a.detail === "full" || !Array.isArray(full?.beats) ? full : musicSummary(full));
     },
   },
   {
@@ -966,13 +1003,13 @@ APP_TOOLS.push(
     description:
       "Remove the background of a video clip of a person or object (CapCut's Remove BG): a segmentation model on this machine makes a matte for every frame (seconds to minutes; the first run downloads the model), then the subject plays over whatever is on the tracks below. One undoable edit; set_background_removal turns it off and on again instantly.",
     inputSchema: obj({ clip_id: { type: "string", description: "Video clip id" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("removeBackground", String(a.clip_id), {})),
+    call: async (h, a) => appJson(await h.ai("removeBackground", String(a.clip_id), {})),
   },
   {
     name: "text_to_speech",
     description: `Read a title aloud in a voice made on this computer (Kokoro), placing the voice on an audio track at the title's start, as one undo step with its speech file. With no speed given it lands on a narrator's words a second (2.3-2.8; pace slow or fast moves it half a word), its speed chosen by reading and measuring. Voices (list_catalog section voices describes each): ${VOICE_IDS}. The first use downloads the speech model.`,
     inputSchema: obj({ clip_id: { type: "string", description: "The title (text clip)" }, voice: VOICE, pace: PACE, speed: SPEED, pronounce: PRONOUNCE, quality: QUALITY, finish: FINISH }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, pace: a.pace, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish }))),
+    call: async (h, a) => appJson(await h.ai("textToSpeech", String(a.clip_id), given({ voice: a.voice, pace: a.pace, speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish }))),
   },
   {
     name: "add_voiceover",
@@ -1023,13 +1060,13 @@ APP_TOOLS.push(
           throw new Error(`lines[${i}]: ${(e as Error).message}`);
         }
       });
-      return json(await h.voiceover(lines, given({ voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionWords: a.caption_words, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
+      return appJson(await h.voiceover(lines, given({ voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, start: a.start, gap: a.gap, quality: a.quality, finish: a.finish, captions: a.captions, captionWords: a.caption_words, captionStyle: a.caption_style, captionY: a.caption_y, enhance: a.enhance })));
     },
   },
   {
     name: "review_voiceover",
     description:
-      `Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given; any band moves down for long words, as the speed was chosen, so its top says at most ${CHOSEN_MAX_SPS} syllables a second), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears \"you\" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Lines short of their margin over a music track get one fix in summary.fixes: duck_under_speech on that track (track_id, every piece of the song as one bed), each line pointing at it. detail summary (the default) gives each line its verdict (ok, or to fix: the problems are in its fixes), fixes, advice, words a second against its band, loudness and margin over the music, and what was heard only where it differs from the script; detail full adds every measure (syllables, the clip window, silences, true peak, pitch). Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.`,
+      `Listen back to voiceover lines on this computer: Whisper hears each voice clip and compares it with its script word by word (a misread name or a skipped word shows, with where), and each line is measured: its pace (sign-offs of up to three words are not paced; otherwise words and syllables a second over its speech, first word to last with its pause marks out, as it was read: pause_marks_out says how many seconds; and over its clip) against the words a second it was read to (narration 2.3-2.8 unless add_voiceover was given read_as or words_per_second; pace slow or fast moves a kind's band, never a words_per_second given; any band moves down for long words, as the speed was chosen, so its top says at most ${CHOSEN_MAX_SPS} syllables a second), the silence before and after it and its longest pause, its loudness and true peak as mixed, its pitch (median and range in semitones; under 3 sounds flat) and how far it sits over the music under it in the line window (this line alone, its first word to its last; at least 8, 10-15 for a promo). Each line ends with a verdict: ok when nothing fails, otherwise what to fix, with fixes: the tool and arguments for each problem (retake_voiceover with a pronunciation or words_per_second, set_param volume, duck_under_speech min_line_lu, trim_clip). advice holds notes that do not fail the line: a pace within a tenth of its band, a speed already chosen that the voice could not bring nearer, short words drawn out. A line that differs from its script is heard again by a larger Whisper (small, downloaded once, about 250 MB) before the voice is blamed, a word heard that is not in the script too (Whisper hears \"you\" in a breath): each difference says likely recognizer (heard right the second time: no retake, a note says so) or voice, and heard_again has what it heard; minor marks a short word a letter off, which passes. match is the share of words heard as written, a word heard that is not in the script counting against it, so it is under 1 whenever a difference is listed. A misread word gets a respelling as it sounds (does as duz, home as hohm, MCP as M C P); one already respelled, or with nothing that reads differently, gets a slower read and the advice to reword. The summary counts lines ok, to fix and with advice; gives the lines' words a second (lowest, median, highest), the script's words a second with the gaps between lines in (lower than the lines'), the lines' margins over the music and the loudness spread across lines. Lines short of their margin over a music track get one fix in summary.fixes: duck_under_speech on that track (track_id, every piece of the song as one bed), each line pointing at it. detail summary (the default) gives each line its verdict (ok, or to fix: the problems are in its fixes), fixes, advice, words a second against its band, loudness and margin over the music, and what was heard only where it differs from the script; detail full adds every measure (syllables, the clip window, silences, true peak, pitch). Nothing is edited. The first use downloads Whisper (about 80 MB); each line takes a second or two.`,
     inputSchema: obj({
       clip_ids: { type: "array", items: { type: "string" }, description: "Voice clips to hear (add_voiceover's voice_clip ids); default every voiceover line" },
       music: { type: "boolean", description: "Measure each line's margin over the music tracks under it (default true)" },
@@ -1038,12 +1075,12 @@ APP_TOOLS.push(
     }),
     call: async (h, a) => {
       const r = (await h.ai("reviewVoiceover", ((a.clip_ids as unknown[] | undefined) ?? []).map(String), given({ music: a.music, recheck: a.recheck }))) as Parameters<typeof oneDuck>[0];
-      if (!Array.isArray(r?.lines)) return json(r);
+      if (!Array.isArray(r?.lines)) return appJson(r);
       // A music clip's track, from the timeline: one duck for the whole song.
       const d = h.describe() as Desc;
       const tracks = new Map(d.tracks?.flatMap((t) => t.clips.map((c) => [c.id, t.id] as const)) ?? []);
       const ducked = oneDuck(r, (id) => tracks.get(id));
-      return json(a.detail === "full" ? ducked : reviewSummary(ducked));
+      return appJson(a.detail === "full" ? ducked : reviewSummary(ducked));
     },
   },
   {
@@ -1068,19 +1105,19 @@ APP_TOOLS.push(
       },
       ["clip_id"],
     ),
-    call: async (h, a) => json(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple, captionWords: a.caption_words }))),
+    call: async (h, a) => appJson(await h.ai("retakeVoiceover", String(a.clip_id), given({ text: a.text, caption: a.caption, voice: a.voice, readAs: a.read_as, wps: readBand(a.words_per_second), speed: a.speed, pronounce: a.pronounce, quality: a.quality, finish: a.finish, pace: a.pace, ripple: a.ripple, captionWords: a.caption_words }))),
   },
   {
     name: "auto_adjust",
     description: "Correct a video or picture clip's exposure, white balance and levels from its frame at the playhead (CapCut's Auto adjust), setting its Basic adjustment sliders.",
     inputSchema: obj({ clip_id: { type: "string", description: "Video or image clip" } }, ["clip_id"]),
-    call: async (h, a) => json(await h.ai("autoAdjustClip", String(a.clip_id), {})),
+    call: async (h, a) => appJson(await h.ai("autoAdjustClip", String(a.clip_id), {})),
   },
   // ---- ads: text behind the subject, deliverables ----
   {
     name: "text_behind_subject",
     description:
-      "Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track right above the titles' track, silent and grouped with the original so they move together; an adjustment layer between the copy and the clip (a grade kept under the titles) would not reach the copy, so the copy takes its grade (look, sliders, LUT, effects) as its own. The answer says where the copy went (placed) and what grade it took (graded, note). Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subjectClipId).",
+      "Put titles (or stickers) behind the person or product in a video or picture clip, the 'text behind the subject' look: the clip's background is removed on this computer (a video's matte as Remove background makes it; a picture is cut out once into a new picture; the first run downloads the model), and a copy showing only the subject goes on a new track right above the titles' track, silent and grouped with the original so they move together; an adjustment layer between the copy and the clip (a grade kept under the titles) would not reach the copy, so the copy takes its grade (look, sliders, LUT, effects) as its own. The answer says where the copy went (placed) and what grade it took (graded, note). Titles below the clip are lifted above it first. Works best when a large title overlaps the subject. One undoable edit; answers the copy's id (subject_clip_id).",
     inputSchema: obj(
       {
         clip_id: { type: "string", description: "The video or picture clip with the person or product" },
@@ -1088,12 +1125,12 @@ APP_TOOLS.push(
       },
       ["clip_id", "text_clip_ids"],
     ),
-    call: async (h, a) => json(await h.ai("textBehindSubject", String(a.clip_id), { textIds: (a.text_clip_ids as unknown[]).map(String) })),
+    call: async (h, a) => appJson(await h.ai("textBehindSubject", String(a.clip_id), { textIds: (a.text_clip_ids as unknown[]).map(String) })),
   },
   {
     name: "export_versions",
     description:
-      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
+      "Export the deliverables of an ad in one call, each a separate file in the user's Videos folder (in a folder named after the app), or in folder (on the web, a save dialog per file), never replacing a file (a numbered name instead, with a note) unless replace is true with folder, the project left exactly as it is. A version is a ratio (16:9, 9:16, 1:1, 4:5, or original), optionally a duration in seconds (a cut-down: the opening and the end card are kept, the middle cut out, the music fading at the new end) and textless (titles and captions off: the master that other languages are cut from). Footage that fills the frame keeps filling it (fit fill), or fits over a blurred copy of itself (blur) or over the background (fit), and so does a shot fitted with bands (one spanning the frame edge to edge one way and covering its middle: a widescreen recording in a 9:16 master, pushed in with frame_region fit), which keeps its pixels against the short side and grows where that would not cover the new frame; where fill crops it (a 16:9 shot on 9:16 keeps a third of its width), the crop keeps what the editor chose: what the callouts over the shot point at (rings, a spotlight's hole, add_callout or anything pinned with an anchor), else the region the master frames (frame_region, a zoom past 1.1x: centered on it), else the shot's subject (what stands out in its pictures, looked at every half second), following it as it moves, inside what the master showed (a version wider than the master, 16:9 from 9:16, holds all of it, centered on it), keyed pushes and pans kept (pushes relax or hold eases them; reframe center keeps the old centered crop; focus [{clip_id, x, y}] puts a point of a clip's picture at the frame's center instead, and several with at make a path: each point centered at its time, held, panned to the next over 0.4 s); rings and spotlights over footage (and anything pinned with an anchor) stay on what they point at, moved and sized with the picture under them, a spotlight's hole with them, and a ring around a title stays around it; titles, logos and badges keep their size against the frame's short side and are moved inside its title-safe area (on 9:16 clear of the apps' buttons and captions); a long title wraps to the new frame's safe width, or shrinks to it; nearby titles stacked under it retain their order and gap, moving apart when it wraps, and any remaining collision is answered in text_overlaps (text_overlaps_text); an effect's pixel sizes (a blur's radius, a pixelate's blocks) and a position wiggle keep their size against the picture they are on. A compound clip that draws only part of the frame (a title card built as a compound: a box, a headline, a subhead) refits as one picture, its parts keeping their layout; when its smallest type would fall under the readable size the whole card grows to meet it, and a card that then does not fit is restacked, its rows in order with their spacing, type held at the readable size, a panel behind them keeping its margins, nothing overlapping. A shape that spans the frame (a gradient scrim, a band) keeps its share of the new frame, as footage does. On a tall version (9:16, 4:5) of a wide film, what stood side by side is stacked in the safe column: a picture (a floating window, a split screen's half, cut again wider) above the title or picture beside it, each as wide as the column, what sat on one (a label, a glow) moving with it; a split screen whose halves filled the frame edge to edge fills the new frame instead (stacked full width on a tall version, side by side full height on a square), its labels inside the safe area. Text never ends under the frame's readable size, and on 4:5 overlays keep clear of the apps' buttons as on 9:16; every title is kept inside the area check_project judges it by, measured as it measures it, with room for the outline it may suggest. overrides [{clip_id, x, y, scale, hidden}] place a clip by hand in a version after all that (a lower third raised, a headline larger, a logo hidden), kept in a saved version project; keyed motion moves with it, and the rings, spotlights and pinned clips pointing into a picture moved so move with it. Every answer's options says what became of focus, pushes and overrides where that was not plainly what was asked (a focus on a clip the version does not crop, and why; a point held back by the picture's edge; pushes that found no keyed zoom; what moved with an override), and coverage names footage covering much less of a version's frame than of the master's (a picture floating in black), with what enlarges it. captions: burn (the default on tall versions, even from a hidden caption track: they sit in the column above the apps' captions, sized by the short side), none, or as_project (the default on the rest). A tall short's captions on a 16:9 or 1:1 version move to that frame's caption place (centered near the bottom, all at one height), and on 16:9 come down to a landscape caption's size (the typical caption at most size 72, 6.7% of the height; one made larger, a countdown, stays as much larger), never under the readable size; overlays keep above them, and a picture-in-picture that would cross them where the master kept it clear is moved above them (caption_overlaps says so in done), unless overrides place it. Ask with versions, or with ratios and durations (every ratio at every duration) plus textless for one textless master. check: true answers one contact sheet of every version (three moments each) and exports nothing: look at it first; an orange outline marks a subject a version's framing still cuts, and subjects lists each (with the focus that keeps it), and one the master's own push-in crops in a wider version (with pushes relax or hold, which show it); a title behind its subject (text_behind_subject) that the subject hides in a shape is outlined too and listed in titles, with the master's share to compare; a picture or graphic drawn across the burned captions in a shape (a picture-in-picture under them, measured by its mask) is outlined and listed in caption_overlaps, with the override that puts it above them; a ring, spotlight or pinned clip that runs off the frame or sits over other content than in the master is outlined and listed in callouts, with what keeps it (each exported version and saved project lists them too). save_projects: true saves each version as a project of its own instead (named as its file, sharing the media): open_project one to fine-tune it, then export_video. Exports that take over about four minutes answer state running: follow them with export_status. Example: {ratios: ['16:9', '9:16', '1:1'], durations: [15, 6], textless: true, loudness: -14}.",
     inputSchema: obj({
       versions: {
         type: "array",
@@ -1149,15 +1186,16 @@ APP_TOOLS.push(
         const overlaps = Array.isArray(sheet.overlaps) && sheet.overlaps.length ? { caption_overlaps: sheet.overlaps } : {};
         const callouts = Array.isArray(sheet.callouts) && sheet.callouts.length ? { callouts: sheet.callouts } : {};
         const options = Array.isArray(sheet.options) && sheet.options.length ? { options: sheet.options } : {};
+        const textOverlaps = Array.isArray(sheet.text_overlaps) && sheet.text_overlaps.length ? { text_overlaps: sheet.text_overlaps } : {};
         const coverage = Array.isArray(sheet.coverage) && sheet.coverage.length ? { coverage: sheet.coverage } : {};
-        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on what its callouts point at, else the region the master frames, else its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it, or done: moved clear by the version), a callout off the frame or off what it points at (listed in callouts), or footage covering much less of the frame than in the master (listed in coverage); options says what became of focus, pushes and overrides where that was not plainly what was asked.`, ...subjects, ...titles, ...overlaps, ...callouts, ...coverage, ...options }) }] };
+        return { content: [{ type: "image", data: sheet.image, mimeType: "image/jpeg" }, { type: "text", text: JSON.stringify({ versions: versions.length, note: `Nothing exported. Each version is a block under its name, its frames left to right (wrapping into rows) at ${shares.map((x) => `${+(x * 100).toFixed(1)}%`).join(", ")} of its length; footage a version crops is framed on what its callouts point at, else the region the master frames, else its subject, and an orange outline marks a subject a framing still cuts (listed in subjects), a title behind its subject that the subject hides (listed in titles), a picture or graphic drawn across the burned captions (listed in caption_overlaps, with the override that clears it, or done: moved clear by the version), a callout off the frame or off what it points at (listed in callouts), or footage covering much less of the frame than in the master (listed in coverage); options says what became of focus, pushes and overrides where that was not plainly what was asked.`, ...subjects, ...titles, ...overlaps, ...callouts, ...coverage, ...options, ...textOverlaps }) }] };
       }
       if (a.replace === true && a.folder === undefined) throw new Error(REPLACE_NEEDS_FOLDER);
       if (a.folder !== undefined && h.canExport?.() === false) throw new Error(FOLDER_DESKTOP_ONLY);
       const done = h.exportVersions(req);
       done.catch(() => {}); // after the wait below, export_status reports a failure
       const waited = await Promise.race([done, new Promise((r) => setTimeout(() => r(null), 240_000))]);
-      return json(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
+      return appJson(waited ?? { ...(h.exportStatus() as object), note: "Still exporting: call export_status." });
     },
   },
 );

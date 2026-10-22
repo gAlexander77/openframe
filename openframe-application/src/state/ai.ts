@@ -27,13 +27,13 @@ import { findLag, MIN_CONFIDENCE, SYNC_RATE } from "../lib/analysis/sync";
 import { syncProblem } from "../lib/project/sync";
 import { measureMix } from "../engine/mixdown";
 import { activeSpan, aimDepths, BALANCE_WINDOWS, duckDepth, duckTargetsError, isDialog, lineBalances, lineCeiling, loudnessDifference, marginSummary, speechWindows, windowLoudness, type LineBalance } from "../lib/analysis/balance";
-import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
+import { cueMoments, cuesUnderLines, DUCK_ATTACK, DUCK_MIN_GAP, DUCK_RELEASE, duckMark, duckWrote, mergeKeys, quietVoiceNote, trackDuckKeys, voicesUnder as voicesUnderMusic, writtenKeys, type VoiceUnder } from "../lib/analysis/duck";
 import { normalizeGain, type Normalization } from "../lib/analysis/loudness";
 import { ceilingFor, LOUDNESS_SPECS, SPEC_IDS, type SpecId } from "../lib/analysis/delivery";
 import { sceneCuts } from "../lib/analysis/scenes";
 import { findSilences, totalLength, type Range } from "../lib/analysis/silence";
 import { FILLERS, fillerRanges } from "../lib/fillers";
-import { transcribePcm } from "../engine/transcribe";
+import { clipWords, hearAsset } from "./transcript";
 import { runCommand } from "../lib/commands";
 import { clipWindow, covers } from "../lib/matte";
 import { behindProblem, putBehindSubject, type SubjectCut, type BehindPlace, type GradeCopied } from "../lib/ads";
@@ -413,6 +413,8 @@ export async function removeSilences(clipId?: Id, opts: Partial<SilenceSettings>
 }
 
 export interface FillerAnalysis {
+  /** All words heard in this clip, including kept speech. */
+  heard: number;
   /** Source seconds. */
   ranges: Range[];
   /** The filler words heard, as transcribed. */
@@ -423,21 +425,15 @@ export interface FillerAnalysis {
  * ranges to cut. */
 export async function analyzeFillers(clipId?: Id, opts: Partial<FillerSettings> = {}): Promise<FillerAnalysis> {
   const { clip, asset } = resolve("fillers", clipId);
-  const o = { ...state.settings.fillers, ...opts };
   return job("fillers", clip, `Listening to ${asset.name}`, async (progress, signal) => {
     const [from, to] = windowOf(clip);
-    const pcm = await decodeMono(asset, from, to, SILENCE_RATE, (x) => progress(x * 0.2), signal);
-    const words = await transcribePcm(
-      pcm,
-      from,
-      { model: o.model, language: null },
-      (s) => (s.stage === "downloading" ? progress(0.2 + s.progress * 0.2, "Downloading the speech model") : progress(0.4 + s.progress * 0.6, "Finding filler words")),
-      signal,
-    );
+    await hearAsset(store.get().project, clip.assetId, { model: opts.model ?? (clipWords(store.get().project, clip) === null ? state.settings.fillers.model : undefined) }, signal,
+      (s) => progress(s.progress, s.stage === "downloading" ? "Downloading the speech model" : "Finding filler words"));
+    const words = clipWords(store.get().project, clip) ?? [];
     const ranges = fillerRanges(words)
       .map((r) => ({ start: Math.max(r.start, from), end: Math.min(r.end, to) }))
       .filter((r) => r.end > r.start);
-    return { ranges, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
+    return { ranges, heard: words.length, words: words.filter((w) => FILLERS.has(w.text.toLowerCase().replace(/[^a-z]/g, ""))).map((w) => w.text.trim()) };
   });
 }
 
@@ -745,6 +741,7 @@ export async function keepFilterLoudness(args: Record<string, unknown>): Promise
 // ---- ducking ---------------------------------------------------------------------
 
 export interface DuckEdit {
+  note?: string;
   /** Clips listened to for speech. */
   voices: number;
   /** Stretches of speech the music dips under. */
@@ -1081,11 +1078,13 @@ export async function duckUnderSpeech(clipId?: Id, opts: DuckRequest = {}): Prom
   const home = opts.track_id ? undefined : ops.findClip(store.get().project, ids[0])?.track;
   const more = home ? home.clips.filter((x) => x.id !== ids[0] && (x.type === "audio" || x.type === "video")).length : 0;
   if (home && more) notes.unshift(`Only ${ids[0]} was ducked; its track ${home.id} plays ${more} more ${more === 1 ? "clip" : "clips"}: duck_under_speech track_id ${home.id} ducks them all as one bed.`);
+  const note = quietVoiceNote(balance?.dialog_lufs, deepest, voices.map((v) => v.clip.id));
   return {
     voices: voices.length,
     dips,
     keys: all.reduce((n, m) => n + m.keys.length, 0),
     depth_db: depth,
+    ...(note ? { note } : {}),
     ...(opts.track_id ? { clips: ids } : {}),
     ...(held.length ? { held } : {}),
     ...(open.length ? { open } : {}),

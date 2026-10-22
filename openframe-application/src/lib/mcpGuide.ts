@@ -57,7 +57,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     tools: ["add_shape", "set_shape", "add_callout", "set_anchor", "set_shadow", "set_border", "set_tilt", "set_track_matte", "set_motion_blur", "set_edge_mode", "set_wiggle"],
   },
   { name: "Speed", blurb: "Constant speed, ramps, reverse and smoother slow motion.", tools: ["set_speed", "set_speed_curve", "set_speed_ramp", "set_reverse", "set_preserve_pitch", "set_frame_blending"] },
-  { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
+  { name: "Text and captions", blurb: "Titles, templates, stickers, captions and the transcript.", tools: ["add_text", "set_text", "style_text_range", "animate_text_style", "add_text_template", "apply_word_art", "add_sticker", "add_captions", "auto_captions", "set_caption_look", "replace_caption_text", "get_transcript"] },
   {
     name: "Brand and ad elements",
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
@@ -327,7 +327,7 @@ ${DESIGN_POINTER}`,
 1. new_project; set_project 1080x1920; import_media.
 2. add_media_clip the clip; remove_silences and remove_filler_words tighten the talk.
 3. auto_reframe the clip to 9:16 (or frame_region onto the speaker or the part of the screen that matters); set_canvas_fill blur for anything that does not fill the frame.
-4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, get_transcript (words with times) and add_captions with a few words per caption and their word times; then set_caption_look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once.
+4. Captions a few words at a time (the pop look): a voiceover made here captions itself so, add_voiceover caption_words 2 or 3 (each word timed to the voice; a caption of one word keeps its color, the highlight lights the word being spoken among several); for recorded speech, auto_captions captions what the people on the timeline say: words_per_caption 2 or 3 and look pop. check_project reads such captions as the line they make. On a tall canvas captions sit at y 0.05, clear of the apps' captions and buttons; set_caption_look y, size and maxWidth move, size and narrow every caption at once.
 5. Hook title in the first second (add_text, size 120-160, with a box or outline), a few stickers or sound effects on punchlines (add_sticker, add_sound_effect).
 6. Music low under the voice (duck_under_speech), set_fades, normalize_loudness.
 7. preview_frames, then export_video with the social preset sizes (1080p).
@@ -384,7 +384,7 @@ export function helpText(topic: string | undefined, tools: ToolInfo[], instructi
   if (t === "overview") {
     const groups = TOOL_GROUPS.map((g) => `- ${g.name}: ${g.blurb} ${g.tools.filter((n) => tools.some((x) => x.name === n)).join(", ")}`);
     const more = tools.filter((x) => groupOf(x.name) === "More").map((x) => x.name);
-    return [instructions, "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
+    return [instructions, "", "For an interview or vlog, auto_captions captions what the people on the timeline say.", "", "Tools by step:", ...groups, ...(more.length ? [`- More: ${more.join(", ")}`] : []), "", `Help topics: ${HELP_TOPICS.join(", ")}, or any tool's name for its parameters and an example.`].join("\n");
   }
   if (t === "design") return DESIGN;
   if (t === "catalog") return `list_catalog returns every name the tools accept. Sections: ${Object.keys(fullCatalog() as object).filter((k) => k !== "sections" && k !== "note").join(", ")}. Call it with a section for details (effect parameter ranges, template text counts) and with section "stickers" and a query to search stickers.`;

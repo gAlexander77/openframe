@@ -9,6 +9,12 @@ import type { AudioClip, Clip, DuckRecord, Id, Keyframe, MusicGrid, Project, Vid
 import { framesToSeconds, secondsToFrames, type Rational } from "../time";
 import { voiceClips } from "../voiceLines";
 
+/** A deep dip often hides a quiet recording; normalize the voice first. */
+export function quietVoiceNote(lufs: number | null | undefined, depth: number, clipIds: Id[]): string | undefined {
+  if (!(typeof lufs === "number" && lufs < -23) && depth <= 20) return undefined;
+  return `The voice is quiet${typeof lufs === "number" ? ` (${+lufs.toFixed(1)} LUFS in the speech window)` : ""}; the music had to dip ${+depth.toFixed(1)} dB. Run normalize_loudness clip_ids ${JSON.stringify([...new Set(clipIds)])} target -16 on the dialog first to let the music dip less.`;
+}
+
 /** A sound that plays under ducked music: the clip as it plays on the
  * timeline (moved out through any compound clips it is in), the top-level
  * clip that plays it (a stem keeps that one) and the frames it is heard. */

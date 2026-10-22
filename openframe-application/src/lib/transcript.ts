@@ -3,6 +3,16 @@
 
 import type { Range } from "./analysis/silence";
 import type { Word } from "./captions";
+import { frameOfSource } from "./project/cut";
+import type { AudioClip, Project, VideoClip } from "./project/types";
+import { framesToSeconds } from "./time";
+
+/** Source words on a plain-speed clip's cut timeline, clipped to its edges
+ * and the requested timeline window. Never carries a word across a cut. */
+export function timelineWords(p: Project, c: AudioClip | VideoClip, words: Word[], start = 0, end = Infinity): Word[] {
+  const from = Math.max(start, framesToSeconds(c.start, p.fps)), to = Math.min(end, framesToSeconds(c.start + c.duration, p.fps));
+  return words.map((w) => ({ text: w.text.trim(), start: Math.max(from, framesToSeconds(frameOfSource(c, w.start, p.fps), p.fps)), end: Math.min(to, framesToSeconds(frameOfSource(c, w.end, p.fps), p.fps)) })).filter((w) => w.text && w.end > w.start);
+}
 
 /** The ranges to cut for the words `cut` picks (runs merged). Each run's
  * cut reaches from the previous kept word's end to the next kept word's

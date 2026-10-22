@@ -79,7 +79,9 @@ describe("plan_music and generate_music over MCP", () => {
     expect(r.grid).toMatch(/bar n starts at 4 \+ n x [\d.]+ s/);
     expect(r.note).toMatch(/seed 9/);
     const full = JSON.parse(text(await call("plan_music", { style: "cinematic", seed: 9, length: 30, start: 4, detail: "full" })));
-    expect(JSON.stringify(planMusicAnswer({ style: "cinematic", seed: 9, length: 30, start: 4 }))).toBe(JSON.stringify(full));
+    const planned = planMusicAnswer({ style: "cinematic", seed: 9, length: 30, start: 4 });
+    // The MCP boundary rounds measured values and times to milliseconds.
+    expect(full).toEqual(JSON.parse(JSON.stringify(planned, (_key, value) => typeof value === "number" ? +value.toFixed(3) : value)));
     expect(full.bars.map((b: number, n: number) => Math.abs(b - 4 - n * full.bar) < 0.01)).not.toContain(false);
     expect(full.beats).toHaveLength(r.counts.beats);
     expect(text(await call("plan_music", { style: "cinematic", seed: 9, length: 30, start: 4 })).length).toBeLessThan(JSON.stringify(full).length);

@@ -620,6 +620,10 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
 
 ## Text and captions
 
+New titles reuse a free overlay row above everything showing during their
+range, even across empty private rows of an earlier lower third. Private
+element rows stay private, and captions stay on top.
+
 - Text presets (title, lower third, outline, neon, caption, quote, label)
   with font, size, color, bold/italic/underline, alignment, spacing,
   stroke, shadow, background box, in/out/loop animations. **A new title
@@ -765,6 +769,8 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   speed or a pronunciation, read and put in the line's place; its caption
   follows, the old take leaves the library, and `ripple` moves the lines
   after it; one undo step.
+  Sign-offs of up to three words are not judged against a words-per-second
+  band. A longer slow line's advice never asks for the slow pace it has.
 - **Voices to cast** (`list_catalog` section `voices`): each voice's
   accent, gender, its author's grade, character (measured pitch, melody
   and pace) and what it suits, the most natural first.
@@ -776,6 +782,16 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   script's words, timed by what Whisper heard, so a synthetic voice's "All
   of it, home" is no longer "Olivet Helmed"; the transcript of a whole take
   says its script too ([[ADR-092 A voice's known script decides its words, a second hearing decides who misheard]]).
+  Agents use **auto_captions** after cutting an interview or vlog: whole
+  readable lines, or `words_per_caption` 1-3 with each word's highlight
+  time kept, `look`, `style` and `y` applied in the same undo step.
+  `start`/`end` limit the timeline stretch and `track_ids` the speech;
+  music and effects roles are excluded by default. It shares the source
+  transcript, so words after a cut shift with their clip and a voiceover
+  keeps its script's spelling, such as "20% off." The compact answer gives
+  the count, track, first and last caption, seconds covered and words heard;
+  `detail: "full"` lists every caption. Existing captions are replaced
+  unless `replace: false` ([[ADR-130 Film tools share speech and preserve readable layouts]]).
 - **Find and replace** in captions (Captions tab; CapCut's;
   `replace_caption_text`): fix a misheard name everywhere, whole words
   and case as chosen, with a live match count; titles are left alone.
@@ -924,7 +940,11 @@ makes a 13 s one). Times are timeline seconds.
   `remove_filler_words`): Whisper base or small on this computer
   transcribes the clip and its "um", "hmm" and "ah" are cut with the
   hesitation around each, the gaps closed. Whisper does not transcribe
-  "uh" or "er", so those stay ([[Filler words]]).
+  "uh" or "er", so those stay ([[Filler words]]). It uses the same cached
+  whole-source hearing as `get_transcript`, selecting the words inside
+  each clip rather than re-hearing a short window with less context. Its
+  `heard` count distinguishes no fillers from no recognized speech; an
+  explicit model change still hears the source with that model.
 - **Remove background** (CapCut's Video > Remove BG > Auto removal, also an
   AI tools card): a segmentation model on this computer cuts the person or
   main subject out of every frame, once, with progress and cancel; the
@@ -954,6 +974,11 @@ makes a 13 s one). Times are timeline seconds.
   [[Automation]]).
 
 ## Sound design and delivery
+
+When ducking finds dialog below -23 LUFS in its speech window, or needs a
+dip over 20 dB, its note gives the voice loudness and dip, names the dialog
+clips, and suggests normalizing them to -16 LUFS before ducking again.
+A quiet recording need not leave the music nearly silent.
 
 - **Effects** (Audio tab, under Compressor; `set_audio_filter`,
   `set_reverb`, `set_echo`, `set_tape_stop`): the trailer and epic-edit
@@ -1024,8 +1049,9 @@ makes a 13 s one). Times are timeline seconds.
 - **Ad elements** (`add_ad_element`), each one call, built from ordinary
   clips in the brand's colors, grouped, inside the 90% title-safe area
   (on 9:16 clear of the apps' buttons and captions): an **end card**
-  (logo, headline typed in by word, a pulsing call-to-action button, the
-  website), a **lower third** (name in a box over the title in the primary
+  (logo, or the brand name as a wordmark when there is no logo unless
+  `logo: "none"` is asked, headline typed in by word, a pulsing
+  call-to-action button, the website), a **lower third** (name in a box over the title in the primary
   color), an **offer badge** (tilted, pulsing, with a small tag), a
   **call-to-action button**, and a **logo reveal** (the logo pops in, with
   an optional glow flare and white flash, and the tagline).
@@ -1043,8 +1069,11 @@ makes a 13 s one). Times are timeline seconds.
   each its own file: 16:9, 9:16, 1:1 and 4:5, 30/15/6 s cut-downs (the
   opening and the end card kept, the middle cut, the music fading at the
   new end) and a textless master (titles and captions off). Footage that
-  fills the frame keeps filling it, or fits over a blurred copy of itself;
-  titles, logos and badges keep their size against the short side and
+  fills the frame keeps filling it, or fits over a blurred copy of itself.
+  Nearby titles stacked vertically keep their order and the master's gap
+  when a headline wraps taller; remaining title collisions appear in
+  `text_overlaps`, using `check_project`'s `text_overlaps_text` finding.
+  Titles, logos and badges keep their size against the short side and
   move inside the new frame's safe area. Hand-animated films adapt too:
   layers are placed where they rest and their keyed motion is laid out
   again around it, a window compound sliding in from off the edge still
@@ -1214,8 +1243,11 @@ Three doors, one engine ([[Automation]]):
   prompts (make an ad, an epic edit, a short) with design rules, guide
   resources and a full `list_catalog`; [[MCP tools]] is the generated
   reference. Edits answer with only what they changed; `batch` runs
-  many as one undo step; `frame_region` zooms a shot onto a rectangle of
-  its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
+  many as one undo step. Its quiet answer lists added clips in step order,
+  with `added_by_step` naming the steps that added them. AI answers use
+  snake_case keys and numbers rounded to three decimals; normalization
+  also answers `gain_db` to a tenth of a decibel. `frame_region` zooms a
+  shot onto a rectangle of its picture, still or moving ([[ADR-052 Agents read what changed and export without a dialog]]),
   through any number of moves in one call (`moves`, ADR-120), each
   region centered on any canvas point at any zoom with `place_at`
   (ADR-123).

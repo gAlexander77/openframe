@@ -24,7 +24,7 @@ import { layerAt } from "../lib/render/plan";
 import type { SubjectNote } from "../lib/reframe";
 import type { VisualClip } from "../lib/project/types";
 import { lookAtShots } from "./subjects";
-import { seenLetters, seenShots, seenTexts } from "../lib/designCheck";
+import { checkProject, type Finding, seenLetters, seenShots, seenTexts } from "../lib/designCheck";
 import { sheetGrid, tileSize } from "../lib/sheetGrid";
 import { platform } from "../platform";
 import { provide } from "./actions";
@@ -330,6 +330,7 @@ export interface VersionFile {
   titles?: TitleReport[];
   /** Pictures and graphics drawn across the burned captions in this shape. */
   caption_overlaps?: CaptionCollision[];
+  text_overlaps?: Finding[];
   /** Rings, spotlights and pinned clips left off the frame or off what
    * they point at in this shape (ADR-122). */
   callouts?: CalloutReport[];
@@ -425,7 +426,7 @@ async function versionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">)
     };
     // A picture or graphic across the burned captions (ADR-116), and the
     // pictures-in-picture the version moved clear of them (ADR-118).
-    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: [...m.moved, ...captionCollisions(project)], callouts: m.callouts, options: m.says.options, coverage: m.says.coverage });
+    out.push({ spec: m.spec, project, notes: m.notes.filter(seen), titles, overlaps: [...m.moved, ...captionCollisions(project)], callouts: m.callouts, options: m.says.options, coverage: m.says.coverage, textOverlaps: checkProject(project).findings.filter((f) => f.rule === "text_overlaps_text") });
   }
   return out;
 }
@@ -467,7 +468,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
   job = new AbortController();
   const tid = toast(`Exporting ${items.length} versions`, "progress");
   try {
-    for (const [i, { spec, project: q, notes, titles, overlaps, callouts, options, coverage }] of items.entries()) {
+    for (const [i, { spec, project: q, notes, titles, overlaps, callouts, options, coverage, textOverlaps }] of items.entries()) {
       const chosen = Object.fromEntries(Object.entries({ format: o.format, resolution: o.resolution, quality: o.quality, loudness: o.loudness }).filter(([, v]) => v !== undefined));
       const settings: ExportSettings = { ...defaultExportSettings(q), name: q.name, ...chosen };
       const codecs = VIDEO_FORMATS[settings.format].codecs;
@@ -488,7 +489,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
       if (target.revealLabel === "Download") await target.reveal();
       // The web's dialog names the file as the person chooses: no note there.
       const renamed = !platform.createAgentExportTarget ? undefined : target.replaced ? replacedNote(path) : renamedNote(`${name}.${plan.extension}`, path);
-      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}) });
+      made.push({ name: q.name, path, ratio: spec.ratio, width: plan.video?.width ?? 0, height: plan.video?.height ?? 0, seconds: +plan.seconds.toFixed(3), bytes: result.bytes, ...(spec.textless ? { textless: true as const } : {}), ...versionSound(result, renamed), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}), ...(textOverlaps.length ? { text_overlaps: textOverlaps } : {}) });
     }
     agentExport = { state: "done", path: made.at(-1)!.path, versions: made };
     toast(`Exported ${made.length} versions`);
@@ -509,7 +510,7 @@ export async function exportVersions(o: VersionsOptions): Promise<AgentExport> {
  * shot's subject outlines the subject in orange and says so, as it does a
  * callout off the frame or off what it pointed at (ADR-122); the reports
  * list every such shot and callout with its worst moment. */
-export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[]; callouts: { version: string; reports: CalloutReport[] }[]; options: { version: string; reports: OptionNote[] }[]; coverage: { version: string; reports: CoverageReport[] }[] }> {
+export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepEnd"> & { at?: number[]; tileWidth?: number }): Promise<{ blob: Blob; subjects: { version: string; reports: SubjectReport[] }[]; titles: { version: string; reports: TitleReport[] }[]; overlaps: { version: string; reports: CaptionCollision[] }[]; callouts: { version: string; reports: CalloutReport[] }[]; options: { version: string; reports: OptionNote[] }[]; coverage: { version: string; reports: CoverageReport[] }[]; text_overlaps: { version: string; reports: Finding[] }[] }> {
   const items = await versionProjects(o);
   const at = o.at?.length ? o.at : [0.15, 0.5, 0.92];
   const gap = 6, label = 22, strip = 18;
@@ -696,7 +697,7 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
   // 3.75 MB a client may hand a model, which then posterizes it (ADR-073).
   const blob = await out.convertToBlob({ type: "image/jpeg", quality: 0.98 });
   const by = <T,>(get: (it: (typeof items)[number]) => T[]) => items.map((it) => ({ version: it.project.name, reports: get(it) })).filter((x) => x.reports.length);
-  return { blob, subjects: by((it) => reportOf(it.notes)), titles: by((it) => it.titles), overlaps: by((it) => it.overlaps), callouts: by((it) => it.callouts), options: by((it) => it.options), coverage: by((it) => it.coverage) };
+  return { blob, subjects: by((it) => reportOf(it.notes)), titles: by((it) => it.titles), overlaps: by((it) => it.overlaps), callouts: by((it) => it.callouts), options: by((it) => it.options), coverage: by((it) => it.coverage), text_overlaps: by((it) => it.textOverlaps) };
 }
 
 /**
@@ -705,13 +706,13 @@ export async function versionsSheet(o: Pick<VersionsOptions, "versions" | "keepE
  * fine-tune by hand or with tools and export from there; nothing is
  * exported and the master stays open and as it was.
  */
-export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[]; callouts?: CalloutReport[]; options?: OptionNote[]; coverage?: CoverageReport[] }[]> {
+export async function saveVersionProjects(o: Pick<VersionsOptions, "versions" | "keepEnd">): Promise<{ id: string; name: string; width: number; height: number; seconds: number; subjects?: SubjectReport[]; titles?: TitleReport[]; caption_overlaps?: CaptionCollision[]; callouts?: CalloutReport[]; options?: OptionNote[]; coverage?: CoverageReport[]; text_overlaps?: Finding[] }[]> {
   const items = await versionProjects(o);
   const saved = [];
-  for (const { project: q, notes, titles, overlaps, callouts, options, coverage } of items) {
+  for (const { project: q, notes, titles, overlaps, callouts, options, coverage, textOverlaps } of items) {
     const copy = copyProject(q, q.name);
     await platform.saveProject(copy, projectSummary(copy));
-    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}) });
+    saved.push({ id: copy.id, name: copy.name, width: copy.width, height: copy.height, seconds: +framesToSeconds(projectDuration(copy), copy.fps).toFixed(3), ...(notes.length ? { subjects: reportOf(notes) } : {}), ...(titles.length ? { titles } : {}), ...(overlaps.length ? { caption_overlaps: overlaps } : {}), ...(callouts.length ? { callouts } : {}), ...(options.length ? { options } : {}), ...(coverage.length ? { coverage } : {}), ...(textOverlaps.length ? { text_overlaps: textOverlaps } : {}) });
   }
   toast(`Saved ${saved.length} version${saved.length === 1 ? "" : "s"} as projects`);
   return saved;

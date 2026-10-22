@@ -106,13 +106,16 @@ export function placeStack(p: Project, clips: Clip[], name: string, own = false)
   });
   let at = baseTrack(p, Math.min(...clips.map((c) => c.start)), Math.max(...clips.map((c) => c.start + c.duration)));
   for (let row = 0; row <= Math.max(...rows); row++) {
-    const above = p.tracks[at - 1];
+    // Private element rows may be empty now. Search past them for a free
+    // overlay row, still above everything showing and below captions.
+    const free = p.tracks.findLastIndex((t, i) => i < at && joinable(p, t) && (own ? t.name === name && t.clips.every((c) => c.name === name) : !elementRow(t)));
+    const above = p.tracks[free];
     let id: string;
     // own: only a row of the same element's parts (named alike) is shared,
     // never an empty one made for something else (the tester's Callouts).
     if (joinable(p, above) && (own ? above.name === name && above.clips.every((c) => c.name === name) : !elementRow(above))) {
       id = above.id;
-      at -= 1;
+      at = free;
     } else {
       const track = createTrack("video", name);
       p = ops.addTrack(p, track, at);
