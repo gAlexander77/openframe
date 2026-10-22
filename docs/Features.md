@@ -398,6 +398,13 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   meet on a small picture.
 - **Canvas** fill behind letterboxed clips: blur or color (CapCut's
   Canvas).
+- **Compare** (Player header): before/after bypasses the selected clips'
+  look on the left, keeping geometry, masks and chroma key. Capture
+  reference holds the viewer's live frame while seeking or playing another
+  shot. The menu chooses vertical or horizontal; drag the divider, or
+  double-click its handle to center it. Session only, never saved or
+  exported. Agents use `before` and optional `before_clip_ids` in
+  `preview_frame` or `preview_frames` for the ungraded view.
 - **Scopes** (Player header or View menu): luma waveform, RGB parade,
   vectorscope with 75% targets and the skin-tone line, and histogram, of
   the graded output; live while paused, 8 updates a second while playing
@@ -583,6 +590,14 @@ mechanically true to the code; "planned" items live in [[Roadmap]].
   - **LUT**: import a 1D or 3D .cube (or drop one on the window), pick it,
     set its intensity ([[ADR-021 LUTs are files by reference, sampled as
     3D textures]]).
+- **Match color** (Adjust > Match color; also in a multi-selection): pick a
+  reference clip on the timeline, set Strength and Match saturation, then
+  Match. Five frames across each shot match its rendered reference look
+  with editable RGB curves and Basic saturation, all targets in one Undo
+  step (`match_color`). Replaces the targets' other look settings, keeps
+  the master curve and placement, and protects black, white and detail.
+  Cancel stops sampling; switching projects discards the result
+  ([[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]]).
 - **Auto adjust** (Adjust > Basic, CapCut's): corrects exposure, levels
   and white balance from the clip's own frame at the playhead, measured
   with its adjustments off. Exposure only moves a median outside

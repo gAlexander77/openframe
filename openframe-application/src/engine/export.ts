@@ -10,6 +10,7 @@
 // captureStream, so a slow machine takes longer but never drops a frame
 // (research pitfall 23).
 
+import { beforePlan } from "../lib/viewerCompare";
 import {
   ALL_FORMATS,
   AudioBufferSink,
@@ -587,7 +588,7 @@ export async function exportStill(p: Project, frame: number, width: number, heig
  * bilinearly, as a player scales video and as the compositor scaled
  * footage before: a smoother filter took a dark sky's grain away and its
  * JPEG sheet banded (ADR-073). */
-export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }): Promise<Blob[]> {
+export async function exportStills(p: Project, frames: number[], width: number, height: number, drawAt?: { width: number; height: number }, before?: { clipIds?: readonly string[]; signal?: AbortSignal }): Promise<Blob[]> {
   const big = drawAt && drawAt.width > width ? drawAt : { width, height };
   const comp = new Compositor(new OffscreenCanvas(big.width, big.height));
   const pool = new CursorPool();
@@ -597,8 +598,11 @@ export async function exportStills(p: Project, frames: number[], width: number, 
     comp.resize(big.width, big.height);
     const out: Blob[] = [];
     for (const frame of frames) {
-      const items = planFrame(p, frame);
+      before?.signal?.throwIfAborted();
+      const plan = planFrame(p, frame);
+      const items = before ? beforePlan(plan, before.clipIds) : plan;
       const resolved = await resolveSources(p, items, pool);
+      before?.signal?.throwIfAborted();
       comp.render(items, sourceImages(resolved, big.width, big.height), p.background);
       if (small) {
         const bmp = await createImageBitmap(comp.canvas as OffscreenCanvas, { resizeWidth: width, resizeHeight: height, resizeQuality: "low" });

@@ -4,6 +4,7 @@
 // lets a custom-drawn icon replace one without touching its callers.
 export {
   Video,
+  Columns2,
   Focus,
   FoldHorizontal,
   ArrowLeftRight,

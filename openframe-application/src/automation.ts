@@ -3,6 +3,7 @@
 // drive scripts, the future MCP bridge and the headless renderer all speak
 // to the app one way. Every edit made here is undoable like a user's.
 
+import { matchColor } from "./state/colorMatch";
 import { exportStills } from "./engine/export";
 import { player } from "./engine/player";
 import { COMMANDS, PROJECT_FILE_COMMANDS, validate, describeProject, runAgentCommand, type CommandReport } from "./lib/commands";
@@ -144,7 +145,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
+  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, matchColor, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -161,7 +162,7 @@ const automation = {
  * title weighs what it weighs in the exported file (drawn at 640 wide it
  * looked heavier: ADR-098). The viewer seeks to the last one, so the user
  * sees where the agent is looking. */
-async function grab(seconds: number[], width: number): Promise<Blob[]> {
+async function grab(seconds: number[], width: number, before = false, beforeClipIds?: string[]): Promise<Blob[]> {
   if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
   const p = store.get().project;
   const end = projectDuration(p);
@@ -173,7 +174,7 @@ async function grab(seconds: number[], width: number): Promise<Blob[]> {
   // drawing at the full 4K canvas would change nothing but the time taken.
   const k = Math.min(1, 1080 / Math.min(p.width, p.height));
   const big = { width: Math.max(w, Math.round(p.width * k)), height: Math.max(2, Math.round(p.height * k)) };
-  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big);
+  return exportStills(p, frames, w, Math.max(2, Math.round((w * p.height) / p.width)), big, before ? { clipIds: beforeClipIds } : undefined);
 }
 
 /** Frames in a grid, each with its label on a strip under it: the contact
@@ -280,9 +281,9 @@ const mcpHost: McpHost = {
     store.seek(secondsToFrames(seconds, store.get().project.fps));
     return { playhead: seconds };
   },
-  frame: async (seconds, maxWidth) => blobToBase64((await grab([seconds], maxWidth))[0]),
-  sheet: async (times, tileWidth, columns) => {
-    const pics = await Promise.all((await grab(times, tileWidth)).map((b) => createImageBitmap(b)));
+  frame: async (seconds, maxWidth, before, beforeClipIds) => blobToBase64((await grab([seconds], maxWidth, before, beforeClipIds))[0]),
+  sheet: async (times, tileWidth, columns, before, beforeClipIds) => {
+    const pics = await Promise.all((await grab(times, tileWidth, before, beforeClipIds)).map((b) => createImageBitmap(b)));
     try {
       return await tiles(times.map((t, i) => ({ src: pics[i], label: `${+t.toFixed(2)} s`, w: pics[i].width, h: pics[i].height })), tileWidth, columns);
     } finally {

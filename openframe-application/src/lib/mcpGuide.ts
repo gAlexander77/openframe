@@ -63,7 +63,7 @@ export const TOOL_GROUPS: { name: string; blurb: string; tools: string[] }[] = [
     blurb: "A brand kit every part of an ad draws from, built ad elements, and titles behind the subject.",
     tools: ["set_brand", "apply_brand", "add_ad_element", "text_behind_subject"],
   },
-  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
+  { name: "Effects, transitions and color", blurb: "Effects stacks, transitions at cuts, looks and the color grade.", tools: ["add_effect", "edit_effects", "copy_effects", "apply_effect_preset", "paste_attributes", "set_transition", "set_filter", "auto_adjust", "match_color", "set_hsl", "set_curve", "set_color_wheel", "apply_lut", "set_colorize"] },
   {
     name: "Sound",
     blurb: "Voice, music, effects and the mix.",

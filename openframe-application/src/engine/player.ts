@@ -9,6 +9,8 @@
 // - Shuttle (J/K/L): forward rates play with sound at 1x and speed up as
 //   silent frame playback at 2x/4x/8x; reverse is silent frame playback.
 
+import { beforePlan } from "../lib/viewerCompare";
+import { projectWork } from "../state/projectWork";
 import type { VideoSample } from "mediabunny";
 import { cropClips, NO_CROP } from "../lib/crop";
 import { exportRange } from "../lib/export";
@@ -185,6 +187,59 @@ export interface PrepRecord {
 
 export class Player {
   private compositor: Compositor | null = null;
+  private reference: ImageBitmap | null = null;
+  private capture = 0;
+  private captureNext: { take: (canvas: HTMLCanvasElement | OffscreenCanvas) => void; cancel: () => void } | null = null;
+  private referenceAbort: (() => void) | null = null;
+
+  private clearReference() {
+    this.capture++;
+    this.captureNext?.cancel();
+    this.captureNext = null;
+    this.referenceAbort?.();
+    this.referenceAbort = null;
+    this.reference?.close();
+    this.reference = null;
+    this.compositor?.clearCompare();
+  }
+
+  async showReference() {
+    if (this.reference) store.set({ compare: { ...store.get().compare, mode: "reference" } });
+    else await this.captureReference();
+  }
+
+  async captureReference() {
+    if (!this.compositor) throw new Error("The viewer is not available");
+    const session = projectWork.signal();
+    session.throwIfAborted();
+    this.captureNext?.cancel();
+    const token = ++this.capture;
+    // Snapshot immediately after the live presentation, before the wipe is
+    // drawn. This is the viewer's actual raster, including its crop mode
+    // and playback quality; it never captures the comparison itself.
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => { if (token === this.capture) this.clearReference(); resolve(); };
+      session.addEventListener("abort", abort, { once: true });
+      const done = () => { session.removeEventListener("abort", abort); resolve(); };
+      this.captureNext = {
+        cancel: done,
+        take: canvas => {
+          void createImageBitmap(canvas).then(bitmap => {
+            if (token !== this.capture || session.aborted) { bitmap.close(); done(); return; }
+            this.clearReference();
+            this.reference = bitmap;
+            const clear = () => this.clearReference();
+            session.addEventListener("abort", clear, { once: true });
+            this.referenceAbort = () => session.removeEventListener("abort", clear);
+            store.set({ compare: { ...store.get().compare, mode: "reference" } });
+            this.request();
+            done();
+          }, e => { session.removeEventListener("abort", abort); reject(e); });
+        },
+      };
+      this.request();
+    });
+  }
   // Reversed clips hold their decoded windows at about screen size.
   private pool = new CursorPool({ maxSide: 1280 });
   private wanted: number | null = null;
@@ -242,7 +297,7 @@ export class Player {
     this.compositor?.dispose();
     this.compositor = canvas ? new Compositor(canvas) : null;
     this.pool.clear();
-    if (!canvas) return;
+    if (!canvas) { this.clearReference(); return; }
     this.request();
     // Compile every pass's program in the background: a transition's first
     // use otherwise compiled inside a playback frame (about 0.4 s on
@@ -297,6 +352,8 @@ export class Player {
     const s = store.get();
     const prev = this.last;
     this.last = s;
+    if (s.compare.mode === "off" && (this.reference || prev.compare?.mode !== "off")) this.clearReference();
+    if (prev.compare !== s.compare || (s.compare.mode === "beforeAfter" && prev.selection !== s.selection)) this.request();
     if (this.rate !== 0) {
       // An edit during playback restarts it from the current frame so sound
       // matches what is now on the timeline.
@@ -349,7 +406,13 @@ export class Player {
     const { w, h } = this.renderSize(p, scale);
     comp.resize(w, h);
     try {
-      comp.render(plan, sourceImages(resolved, w, h), p.background);
+      const sources = sourceImages(resolved, w, h);
+      comp.render(plan, sources, p.background);
+      const capture = this.captureNext;
+      this.captureNext = null;
+      capture?.take(comp.canvas);
+      if (s.compare.mode !== "off") comp.compare(s.compare.mode === "beforeAfter" ? beforePlan(plan, s.selection) : null,
+        s.compare.mode === "reference" ? this.reference : null, sources, p.background, s.compare.split, s.compare.orientation === "horizontal");
     } catch (e) {
       console.error("render failed", e);
     }
@@ -543,6 +606,7 @@ export class Player {
   dispose() {
     this.pause();
     this.unsub();
+    this.clearReference();
     this.pool.clear();
     this.compositor?.dispose();
   }

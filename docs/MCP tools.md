@@ -4,7 +4,7 @@
      `UPDATE_MCP_DOCS=1 npx vitest run src/lib/mcpGuide.test.ts` in openframe-application/;
      npm test fails when this file is out of date. Do not edit by hand. -->
 
-Every tool the editor offers an AI model over MCP, 167 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
+Every tool the editor offers an AI model over MCP, 168 in all, in the order a video gets made. How to connect is in [[Automation]]; the playbooks are in [[Agent playbook]]. Every edit is undoable; times are seconds; ids come from describe_project.
 
 ## What the server tells a model first
 
@@ -50,7 +50,7 @@ For an ad: set_brand first (colors, two fonts, logo), then add_text with a role,
 - **Speed**: `set_speed`, `set_speed_curve`, `set_speed_ramp`, `set_reverse`, `set_preserve_pitch`, `set_frame_blending`
 - **Text and captions**: `add_text`, `set_text`, `style_text_range`, `animate_text_style`, `add_text_template`, `apply_word_art`, `add_sticker`, `add_captions`, `set_caption_look`, `replace_caption_text`, `get_transcript`
 - **Brand and ad elements**: `set_brand`, `apply_brand`, `add_ad_element`, `text_behind_subject`
-- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
+- **Effects, transitions and color**: `add_effect`, `edit_effects`, `copy_effects`, `apply_effect_preset`, `paste_attributes`, `set_transition`, `set_filter`, `auto_adjust`, `match_color`, `set_hsl`, `set_curve`, `set_color_wheel`, `apply_lut`, `set_colorize`
 - **Sound**: `add_voiceover`, `review_voiceover`, `retake_voiceover`, `text_to_speech`, `add_sound_effect`, `add_ambience`, `set_fades`, `set_audio_filter`, `set_reverb`, `set_echo`, `set_tape_stop`, `set_compressor`, `set_channel_fill`, `set_crossfade`, `normalize_loudness`, `duck_under_speech`, `reduce_noise`, `sync_audio`, `remove_silences`, `remove_filler_words`
 - **Check and deliver**: `preview_media`, `preview_frames`, `preview_motion`, `preview_frame`, `preview_audio`, `check_project`, `measure_loudness`, `export_video`, `export_versions`, `export_status`
 
@@ -2050,6 +2050,17 @@ Correct a video or picture clip's exposure, white balance and levels from its fr
 |---|---|---|---|
 | `clip_id` | string | yes | Video or image clip |
 
+### match_color
+
+Match video or picture clips to a reference shot's rendered look. Samples five frames per clip, replaces the targets' look with editable RGB curves and saturation, preserves the master curve, and applies all targets in one undo step. Reports mean channel differences in levels before and after. Re-running samples targets without their look, so the match does not compound.
+
+| Parameter | Type | Required | Meaning |
+|---|---|---|---|
+| `reference_clip_id` | string | yes | Video or picture clip whose rendered look to match |
+| `clip_ids` | string[] | yes | One or more target video or picture clip IDs, excluding the reference |
+| `strength` | number |  | Mix the correction toward identity, 0..1 (default 1); zero leaves the project unchanged (0..1) |
+| `match_saturation` | boolean |  | Also match mean chroma using Basic saturation (default true) |
+
 ### set_hsl
 
 Adjust one of CapCut's eight HSL color ranges on a visual or adjustment clip; only pixels of that color change. hue turns the range up to 30° toward its neighbors, saturation -100 makes it gray, lightness darkens or lightens it; each -100..100, omitted values stay. band 'all' sets every range. reset=true zeroes the band(s) first. Animate with add_keyframe on adjust.hsl.<band>.hue|saturation|lightness. Hue -100..100 is a turn of -30..30 degrees, so -30 is only 9 degrees: use 60 to 100 for a shift that shows.
@@ -2495,6 +2506,8 @@ See several moments at once: one JPEG contact sheet of the frames at the given t
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
+| `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
+| `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
 | `times` | number[] | yes | Seconds, up to 24 |
 | `columns` | integer |  | Tiles a row, at most 8; default 4 (1..8) |
 | `tile_width` | integer |  | Width of each frame, default 320 (120..640) |
@@ -2529,6 +2542,8 @@ See the composited picture at a time: returns a PNG image of the frame exactly a
 
 | Parameter | Type | Required | Meaning |
 |---|---|---|---|
+| `before` | boolean |  | Bypass the look for an ungraded comparison, without editing the project (default false) |
+| `before_clip_ids` | string[] |  | Clip IDs whose look to bypass when before is true; default all visible clips, including adjustment layers |
 | `at` | number | yes | Seconds (0..) |
 | `max_width` | integer |  | Image width, default 640 (at most the canvas width) (64..1920) |
 

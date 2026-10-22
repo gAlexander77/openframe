@@ -212,6 +212,33 @@ A title an AI agent gave a drop shadow, a border or a colorize shows them
 in its **Text** tab (as **Drop shadow**, **Border** and **Colorize**), where
 you can change them or switch them off.
 
+## Match and compare color
+
+Select a video or picture and open **Adjust > Match color**. Choose
+**Pick reference**, then click the timeline clip whose look you want. The
+selection stays on your targets; Escape cancels picking. Adjust Strength
+and **Match saturation**, then choose **Match**. Select several targets to
+match them together in one Undo step. **Cancel match** discards the work.
+Matching replaces the targets' other look settings with editable red,
+green and blue curves and Basic saturation; it preserves the master curve,
+placement, crop, opacity and chroma key. Strength zero leaves everything
+unchanged. Similar subjects match best; clipped tones cannot be recovered.
+
+Turn on **Compare** in the Player header to see the selected clips before
+and after their look. Open **Comparison options** to choose **Reference
+frame** or **Capture reference**: the captured picture stays on the left
+while the live viewer follows the playhead on the right. Choose a vertical
+or horizontal split, drag its handle to move it, and double-click the
+handle to center it. Arrow keys move a focused handle, and Home/End put it
+at an edge. Turn Compare off to release the captured picture. Compare is
+only for this session and has no effect on exports or Undo.
+
+Agents can call `match_color` with `reference_clip_id`, target `clip_ids`,
+`strength` and `match_saturation`. For an ungraded preview without an edit,
+use `preview_frame` or `preview_frames` with `before: true`; optional
+`before_clip_ids` limits the bypass to those clips, otherwise every visible
+look, including adjustment layers, is bypassed.
+
 ## Compose with viewer guides
 
 Choose **Safe margins**, **Rule of thirds**, or **Safe margins + thirds**

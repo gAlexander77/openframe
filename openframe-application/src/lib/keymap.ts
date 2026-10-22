@@ -83,6 +83,7 @@ export type ActionId =
   | "playInToOut"
   | "showShortcuts"
   | "showPreferences"
+  | "toggleCompare"
   | "saveFrame";
 
 export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
@@ -177,6 +178,7 @@ export const DEFAULT_KEYMAP: Record<ActionId, string[]> = {
   showPreferences: ["Mod+,"],
   // Premiere's Export Frame.
   saveFrame: ["Mod+Shift+E"],
+  toggleCompare: ["Alt+Shift+C"],
 };
 
 export const ACTION_LABELS: Record<ActionId, string> = {
@@ -257,6 +259,7 @@ export const ACTION_LABELS: Record<ActionId, string> = {
   showShortcuts: "Keyboard shortcuts",
   showPreferences: "Preferences",
   saveFrame: "Save frame as PNG",
+  toggleCompare: "Toggle compare",
 };
 
 /** Canonical chord for a keyboard event: modifiers in a fixed order, then

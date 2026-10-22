@@ -29,6 +29,7 @@ not icons. Keep their SVG geometry with the feature that owns it.
 | Save frame / export duration | ImageDown / Clock |
 | Home project placeholder | Clapperboard |
 | Fit timeline or viewer | Maximize2 |
+| Compare looks | Columns2 |
 | Scopes | ChartColumnBig |
 | Maximize / restore window | Square / PanelsTopLeft |
 | Duplicate / rename / delete | Copy / Pencil / Trash2 |
