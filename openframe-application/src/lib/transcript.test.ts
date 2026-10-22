@@ -1,3 +1,6 @@
+import type { AudioClip } from "./project/types";
+import { timelineWords } from "./transcript";
+import { createProject, clipForAsset } from "./project/defaults";
 import { expect, it } from "vitest";
 import { merge, missing, wordRanges, wordsIn } from "./transcript";
 
@@ -22,4 +25,12 @@ it("remembers what was heard, so pieces of a cut clip reuse it", () => {
   h = merge(h, 0, 2, words.slice(0, 5));
   expect(h.words.length).toBe(6);
   expect(wordsIn(h.words, 0.9, 2).map((x) => x.text)).toEqual(["goes", "away"]);
+});
+
+
+it("maps source words after a middle cut and clips them to timeline bounds", () => {
+  const p = createProject();
+  const c = { ...(clipForAsset({ id: "a", kind: "audio", name: "speech", src: "speech", duration: 10, hasAudio: true, hasVideo: false }, 60, p.fps) as AudioClip), duration: 90, in: 4 };
+  const words = [{ text: " gone", start: 2, end: 3 }, { text: " after", start: 4, end: 4.5 }, { text: " last", start: 6.5, end: 8 }];
+  expect(timelineWords(p, c, words, 2.1, 4.8)).toEqual([{ text: "after", start: 2.1, end: 2.5 }, { text: "last", start: 4.5, end: 4.8 }]);
 });

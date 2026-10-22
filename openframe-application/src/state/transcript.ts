@@ -57,7 +57,7 @@ export function skippedClips(p: Project, track: Track): number {
 
 /** A clip's source window [from, to) in seconds. */
 function windowOf(c: SpeechClip, p: Project): [number, number] {
-  return [c.in, ops.sourceTimeAt(c, c.start + c.duration, p.fps)];
+  return [c.in, Math.min(ops.getAsset(p, c.assetId)?.duration ?? Infinity, ops.sourceTimeAt(c, c.start + c.duration, p.fps))];
 }
 
 /** The words a clip plays, or null when it has not been heard yet. */
@@ -69,6 +69,39 @@ export function clipWords(p: Project, c: SpeechClip): Word[] | null {
 
 /** The timeline frame a word of `c` starts at. */
 export const wordFrame = (p: Project, c: SpeechClip, w: Word) => Math.max(c.start, frameOfSource(c, w.start, p.fps));
+
+/** Hear the whole source once, so trimmed clips keep the same context and
+ * filler words as get_transcript. An explicit different model re-hears it. */
+const models = new Map<Id, string>();
+const languages = new Map<Id, string | null>();
+const listening = new Map<string, Promise<void>>();
+let hearing: Promise<void> = Promise.resolve();
+export async function hearAsset(p: Project, assetId: Id, opts: { model?: string; language?: string | null } = {}, signal = projectWork.signal(), onProgress: (s: import("../engine/transcribe").TranscribeProgress) => void = () => {}) {
+  const asset = ops.getAsset(p, assetId);
+  if (!asset?.hasAudio) throw new Error("The media has no speech audio");
+  const model = opts.model ?? models.get(assetId) ?? TRANSCRIPT_MODEL;
+  const language = opts.language ?? languages.get(assetId) ?? null;
+  if (!missing(heard.get(assetId), 0, asset.duration) && models.get(assetId) === model && (languages.get(assetId) ?? "en") === (language ?? "en")) return;
+  const key = `${assetId}:${model}:${language ?? "en"}`;
+  const pending = listening.get(key);
+  if (pending) return pending;
+  // The ASR worker has one model/session. Share simultaneous requests for
+  // one source and serialize different hearings, including model changes.
+  const task = hearing.catch(() => {}).then(async () => {
+    signal.throwIfAborted();
+    const pcm = await decodeMono(asset, 0, asset.duration, 16000, (progress) => onProgress({ stage: "mixing", progress }), signal);
+    const words = await transcribePcm(pcm, 0, { model, language }, onProgress, signal);
+    signal.throwIfAborted();
+    heard.set(assetId, merge(undefined, 0, asset.duration, assetWords(p, assetId, 0, asset.duration, words)));
+    models.set(assetId, model);
+    languages.set(assetId, language);
+    changed();
+  });
+  listening.set(key, task);
+  hearing = task;
+  try { await task; }
+  finally { if (listening.get(key) === task) listening.delete(key); }
+}
 
 /** Hear every clip of `track` not heard yet. */
 export async function transcribeTrack(trackId: Id) {
@@ -83,24 +116,9 @@ export async function transcribeTrack(trackId: Id) {
     const todo = track ? speechClips(p, track).filter((c) => !clipWords(p, c)) : [];
     for (const [k, c] of todo.entries()) {
       const asset = ops.getAsset(p, c.assetId)!;
-      const [from, to] = windowOf(c, p);
-      const gap = missing(heard.get(c.assetId), from, to);
-      if (!gap) continue;
-      const step = (x: number) => updateToast(id, { progress: (k + x) / todo.length });
-      const pcm = await decodeMono(asset, gap.start, gap.end, 16000, (x) => step(x * 0.2), signal);
-      const words = await transcribePcm(
-        pcm,
-        gap.start,
-        { model: TRANSCRIPT_MODEL, language: null },
-        (s) => {
-          updateToast(id, { text: s.stage === "downloading" ? "Downloading the speech model…" : `Listening to ${asset.name}…` });
-          step(0.2 + 0.8 * (s.stage === "transcribing" ? s.progress : 0));
-        },
-        signal,
-      );
-      // A whole take read from a script says its script, timed by Whisper (ADR-092).
-      heard.set(c.assetId, merge(heard.get(c.assetId), gap.start, gap.end, assetWords(p, c.assetId, gap.start, gap.end, words)));
-      changed();
+      await hearAsset(p, c.assetId, {}, signal, (s) => {
+        updateToast(id, { text: s.stage === "downloading" ? "Downloading the speech model\u2026" : `Listening to ${asset.name}\u2026`, progress: (k + s.progress) / todo.length });
+      });
     }
   } catch (e) {
     if (!signal.aborted) toast(e instanceof Error ? e.message : String(e), "error");
@@ -115,10 +133,10 @@ export const cancelTranscript = () => busy?.abort();
 
 /** For agents: hear the clip's track if needed and return the clip's words
  * in source seconds, ready for cut_ranges. */
-export async function clipTranscript(clipId: Id): Promise<{ clipId: Id; words: Word[] }> {
+export async function clipTranscript(clipId: Id, opts: { model?: string } = {}): Promise<{ clipId: Id; words: Word[] }> {
   const loc = ops.findClip(store.get().project, clipId);
   if (!loc || (loc.clip.type !== "video" && loc.clip.type !== "audio")) throw new Error("Select a video or audio clip with speech");
-  await transcribeTrack(loc.track.id);
+  await hearAsset(store.get().project, loc.clip.assetId, opts);
   const p = store.get().project;
   const c = ops.findClip(p, clipId)?.clip as SpeechClip | undefined;
   return { clipId, words: (c && clipWords(p, c)) ?? [] };

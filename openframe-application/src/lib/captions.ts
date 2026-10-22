@@ -34,6 +34,8 @@ export function spokenWord(text: string, times: number[] | undefined, r: number)
 }
 
 export interface LineOptions {
+  /** Short-form captions: at most this many words, keeping word timings. */
+  maxWords?: number;
   /** Longest line in characters (Netflix's guideline is 42; short-form
    * video reads better around 32). */
   maxChars: number;
@@ -75,7 +77,7 @@ export function wordsToCaptions(words: Word[], o: LineOptions = DEFAULT_LINES): 
     if (cur.length) {
       const prev = cur[cur.length - 1];
       const len = chars(cur) + t.length;
-      if (w.start - prev.end >= o.pauseBreak || w.end - cur[0].start > o.maxDuration) flush();
+      if (cur.length >= (o.maxWords ?? Infinity) || w.start - prev.end >= o.pauseBreak || w.end - cur[0].start > o.maxDuration) flush();
       else if (len > o.maxChars) {
         // Never strand a little word at the end of a line ("spoken by a /
         // computer"): carry it over to start the next one.

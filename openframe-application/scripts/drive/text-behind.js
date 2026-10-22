@@ -49,7 +49,7 @@ async (page) => {
       grouped: !!sub.group && sub.group === vid.group,
       undo: window.videoEditor.state().undoLabel,
     };
-  }, [ids, res.subjectClipId]);
+  }, [ids, res.subject_clip_id]);
   details.structure = { ok: s.order[0] < s.order[1] && s.order[1] < s.order[2] && s.track === "Subject" && s.cutout && s.muted && !s.originalCut && s.grouped && s.undo === "Text behind subject", ...s };
 
   // Yellow in a region of the frame at frame 30.
@@ -73,7 +73,7 @@ async (page) => {
   const PERSON = [0.4, 0.42, 0.52, 0.72], BESIDE = [0.21, 0.4, 0.29, 0.62];
   const front = { person: await yellow(PERSON), beside: await yellow(BESIDE) };
   await page.locator(".player-frame").screenshot({ path: "__REPO__/scratch/text-behind.png" });
-  const subjectTrack = await page.evaluate((id) => window.videoEditor.project().tracks.find((t) => t.clips.some((c) => c.id === id)).id, res.subjectClipId);
+  const subjectTrack = await page.evaluate((id) => window.videoEditor.project().tracks.find((t) => t.clips.some((c) => c.id === id)).id, res.subject_clip_id);
   await mcp("update_track", { track_id: subjectTrack, hidden: true });
   const hidden = { person: await yellow(PERSON), beside: await yellow(BESIDE) };
   details.covered = { ok: hidden.person > 0.15 && front.person < hidden.person * 0.5 && front.beside > 0.9 * hidden.beside && front.beside > 0.1, front, hidden };
@@ -103,13 +103,13 @@ async (page) => {
     const sub = clip(subject);
     const asset = p.assets.find((a) => a.id === sub?.assetId);
     return { order: [index(subject), index(still.text), index(still.photo)], type: sub?.type, asset: asset?.name, size: asset && [asset.width, asset.height] };
-  }, [still, res2.subjectClipId]);
+  }, [still, res2.subject_clip_id]);
   details.stillStructure = { ok: !r2.result.isError && s2.order[0] < s2.order[1] && s2.order[1] < s2.order[2] && s2.type === "image" && /\(cut out\)\.png$/.test(s2.asset ?? ""), ...s2 };
   // The photo is 3:2, fitted: the jacket sits a little right of center.
   const JACKET = [0.48, 0.55, 0.6, 0.72];
   const shownStill = await yellow(JACKET, 150);
   await page.locator(".player-frame").screenshot({ path: "__REPO__/scratch/text-behind-still.png" });
-  const stillTrack = await page.evaluate((id) => window.videoEditor.project().tracks.find((t) => t.clips.some((c) => c.id === id)).id, res2.subjectClipId);
+  const stillTrack = await page.evaluate((id) => window.videoEditor.project().tracks.find((t) => t.clips.some((c) => c.id === id)).id, res2.subject_clip_id);
   await mcp("update_track", { track_id: stillTrack, hidden: true });
   const hiddenStill = await yellow(JACKET, 150);
   details.stillCovered = { ok: hiddenStill > 0.15 && shownStill < hiddenStill * 0.5, shownStill, hiddenStill };

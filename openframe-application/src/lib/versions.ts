@@ -1320,7 +1320,7 @@ export function reshape(p: Project, ratio: VersionRatio, fit: VersionFit, frame:
     out = { ...q, compounds: p.compounds.map((k) => (pictures.has(k.id) ? { ...k, tracks: k.tracks.map((t) => ({ ...t, clips: t.clips.map((c) => asPicture(p, a, b, c)) })) } : k)) };
     out = { ...out, compounds: out.compounds!.map((k) => (pictures.has(k.id) ? k : { ...k, tracks: asFrame({ ...p, tracks: k.tracks }, { ...out, tracks: k.tracks }) })) };
   }
-  const settled = settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures);
+  const settled = separateTitles(p, settleTitles(keepReadable(p, { ...out, tracks: asFrame(p, out) }, pictures), pictures), pictures);
   // Callouts back on what they point at, as this version shows it.
   const done = reanchor(followCallouts(p, settled, callouts));
   // What rides on each picture, once its size is settled (ADR-110).
@@ -1401,6 +1401,72 @@ function settleTitles(q: Project, pictures: Set<Id>): Project {
   }
   if (!changed.size) return q;
   return { ...q, tracks: q.tracks.map((t) => (t.clips.some((c) => changed.has(c.id)) ? { ...t, clips: t.clips.map((c) => changed.get(c.id) ?? c) } : t)) };
+}
+
+/** Nearby independent titles form a vertical stack too. Wrapping one must
+ * make room for the others, retaining the master's order and pixel gap.
+ * Explicit groups and compound cards already keep their layout together. */
+function separateTitles(master: Project, q: Project, pictures: Set<Id>): Project {
+  const run = (before: Track[], after: Track[]) => {
+    const m = { ...master, tracks: before }, view = { ...q, tracks: after };
+    // Use the check's rendered lines, box padding and outline, excluding
+    // empty shadow/glow margins. Raster boxes can overlap in the master
+    // while its letters and background boxes still have a positive gap.
+    const measured = (p: Project) => seenTexts(p).filter((s) => !s.via.length && !s.c.caption && !s.c.group).flatMap((s) => {
+      const g = seenLetters(p, s);
+      return g ? [{ c: s.c, box: g.box }] : [];
+    });
+    const original = measured(m), current = measured(view);
+    const titles = original.map(({ c }) => c);
+    const now = new Map(current.map(({ c }) => [c.id, c]));
+    const boxes = new Map(original.map(({ c, box }) => [c.id, box]));
+    const fittedBoxes = new Map(current.map(({ c, box }) => [c.id, box]));
+    const neighbors = new Map(titles.map((c) => [c.id, new Set<Id>()]));
+    for (const a of titles) for (const b of titles) {
+      if (a === b || a.start >= clipEnd(b) || b.start >= clipEnd(a)) continue;
+      const x = boxes.get(a.id)!, y = boxes.get(b.id)!;
+      const gap = y.top - x.bottom;
+      if (gap >= -0.5 && gap <= master.height * 0.1 && Math.min(x.right, y.right) > Math.max(x.left, y.left)) {
+        neighbors.get(a.id)!.add(b.id);
+        neighbors.get(b.id)!.add(a.id);
+      }
+    }
+    const visited = new Set<Id>(), moved = new Map<Id, Clip>();
+    for (const c of titles) {
+      if (visited.has(c.id)) continue;
+      const ids: Id[] = [], todo = [c.id];
+      while (todo.length) {
+        const id = todo.pop()!;
+        if (visited.has(id)) continue;
+        visited.add(id); ids.push(id); todo.push(...neighbors.get(id)!);
+      }
+      if (ids.length < 2 || ids.some((id) => !now.has(id))) continue;
+      ids.sort((a, b) => boxes.get(a)!.top - boxes.get(b)!.top);
+      const list = ids.map((id) => now.get(id)!);
+      const fitted = list.map((v) => fittedBoxes.get(v.id)!);
+      const k = Math.min(q.width, q.height) / Math.min(master.width, master.height);
+      const gaps = ids.slice(1).map((id, i) => Math.max(0, boxes.get(id)!.top - boxes.get(ids[i])!.bottom) * k);
+      // Nothing grew into the next title: preserve the version's placement.
+      if (fitted.every((b, i) => !i || b.top >= fitted[i - 1].bottom + gaps[i - 1] - 0.5)) continue;
+      const heights = fitted.map((b) => b.bottom - b.top), total = heights.reduce((a, b) => a + b, 0) + gaps.reduce((a, b) => a + b, 0);
+      const z = titleZone(q), low = z.top * q.height, high = (1 - z.bottom) * q.height;
+      const first = fitted[0], last = fitted.at(-1)!;
+      const oldFirst = boxes.get(ids[0])!, oldLast = boxes.get(ids.at(-1)!)!;
+      const correction = ((oldFirst.top + oldLast.bottom) / 2 - (oldFirst.top + oldFirst.bottom + oldLast.top + oldLast.bottom) / 4) * k;
+      const center = (first.top + first.bottom + last.top + last.bottom) / 4 + correction;
+      let top = Math.max(low, Math.min(high - total, center - total / 2));
+      list.forEach((v, i) => {
+        const dy = (top - fitted[i].top) / q.height;
+        moved.set(v.id, mapPath(v, "transform.y", (y) => +(y + dy).toFixed(6)));
+        top += heights[i] + (gaps[i] ?? 0);
+      });
+    }
+    return after.map((t) => ({ ...t, clips: t.clips.map((c) => moved.get(c.id) ?? c) }));
+  };
+  return { ...q, tracks: run(master.tracks, q.tracks), ...(q.compounds ? { compounds: q.compounds.map((c) => {
+    const old = master.compounds?.find((x) => x.id === c.id);
+    return old && !pictures.has(c.id) ? { ...c, tracks: run(old.tracks, c.tracks) } : c;
+  }) } : {}) };
 }
 
 /** Every timeline's clips: the project's and each compound's, with the

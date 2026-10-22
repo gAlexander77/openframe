@@ -296,6 +296,10 @@ function build(p: Project, element: AdElement, o: AdOptions, room: Rect, fit = 1
     if (logo) {
       laid.push(part({ ...logo, animIn: anim(p, "pop", 0.5) }, 0.1));
       gaps.push(40 * H);
+    } else if (b.name && o.logo !== "none") {
+      const mark = text(b.name, { font: b.fonts.heading, size: Math.round(90 * k), bold: true, letterSpacing: 6, color: ink });
+      laid.push(part({ ...mark, animIn: anim(p, "pop", 0.5) }, 0.1));
+      gaps.push(40 * H);
     }
     const headline = text(o.headline ?? b.tagline ?? b.name ?? "Your headline here", { ...roleStyle(b, "headline", k), color: ink, ...(bg.fill ? { shadow: undefined } : OVER_FOOTAGE) });
     laid.push(part({ ...headline, animIn: anim(p, "wordRise", 0.7) }, 0.25));

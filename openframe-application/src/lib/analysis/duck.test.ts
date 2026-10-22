@@ -1,3 +1,4 @@
+import { quietVoiceNote } from "./duck";
 import { describe, expect, it } from "vitest";
 import { runCommand } from "../commands";
 import { createProject, createTrack } from "../project/defaults";
@@ -314,4 +315,12 @@ describe("a song's moments under a line (ADR-121)", () => {
     // open_at named it: its own note says so.
     expect(cuesUnderLines(cueMoments(grid, toFrame), lines, 3, [1807, 1433])).toEqual([]);
   });
+});
+
+
+it("explains quiet dialog or a dip over 20 dB with the dialog ids", () => {
+  expect(quietVoiceNote(-27, 29, ["dialog1", "dialog2", "dialog1"])).toMatch(/-27 LUFS.*29 dB.*normalize_loudness clip_ids \["dialog1","dialog2"\] target -16/);
+  expect(quietVoiceNote(-16, 21, ["dialog1"])).toMatch(/21 dB/);
+  expect(quietVoiceNote(-24, 12, ["dialog1"])).toMatch(/-24 LUFS/);
+  expect(quietVoiceNote(-16, 16.6, ["dialog1"])).toBeUndefined();
 });

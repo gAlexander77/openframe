@@ -134,3 +134,11 @@ describe("captions on export", () => {
     expect(q.tracks[0].clips.find((c) => c.id === title.id)!.disabled).toBeUndefined();
   });
 });
+
+
+it("groups short captions by word count, keeping every word start", () => {
+  const words = ["Save", "20%", "off", "today"].map((text, i) => ({ text, start: i * 0.4, end: i * 0.4 + 0.3 }));
+  const caps = wordsToCaptions(words, { ...DEFAULT_LINES, maxWords: 2, minDuration: 0.25 });
+  expect(caps.map((c) => c.text)).toEqual(["Save 20%", "off today"]);
+  expect(caps.map((c) => c.words)).toEqual([[0, 0.4], [0.8, 1.2000000000000002]]);
+});

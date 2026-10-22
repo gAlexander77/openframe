@@ -105,3 +105,17 @@ describe("placeOnTop with footage", () => {
     expect(trackOf(p, "title")).toBeLessThan(p.tracks.findIndex((t) => t.id === broll.id));
   });
 });
+
+
+it("reuses Titles above empty private lower-third rows at a later time", () => {
+  let p = placeOnTop(createProject(), text(12, 96, "head"), "Titles");
+  p = placeOnTop(p, text(12, 96, "sub"), "Titles");
+  const privateRows = ["Name", "Role"].map((id) => ({ ...createTrack("video", "Lower third"), clips: [{ ...text(120, 120, id), group: "lower", name: "Lower third" }] }));
+  p = { ...p, tracks: [...p.tracks.slice(0, 2), ...privateRows, ...p.tracks.slice(2)] };
+  const old = p.tracks.length;
+  p = placeOnTop(p, text(900, 120, "late-head"), "Titles");
+  p = placeOnTop(p, text(900, 120, "late-sub"), "Titles");
+  expect(p.tracks).toHaveLength(old);
+  expect(findClip(p, "late-head")!.track.id).toBe(findClip(p, "head")!.track.id);
+  expect(findClip(p, "late-sub")!.track.id).toBe(findClip(p, "sub")!.track.id);
+});

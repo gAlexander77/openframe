@@ -561,6 +561,7 @@ Every non-obvious choice gets a short Architecture Decision Record in
 - [[ADR-129 Color matching samples isolated stills and comparison stays in the viewer]] —
   match sampled shots through editable RGB curves and saturation; bypass
   looks on derived plans, and own reference captures only in the player.
+- [[ADR-130 Film tools share speech and preserve readable layouts]]
 - [[ADR-133 Crop softness, continuous rotation and regional masks]] —
   crop softness follows picture space, the rotation dial preserves turns,
   adjustments mix through masks, and static bezier paths share mask transforms.

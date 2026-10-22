@@ -100,6 +100,7 @@ export interface Command {
 
 export interface CommandReport {
   cuts?: CutsReport;
+  added_by_step?: Record<string, Id[]>;
   overwritten?: { id: Id; kind: Clip["type"]; what: "removed" | "trimmed" }[];
   notes?: string[];
 }
@@ -724,7 +725,7 @@ export const COMMANDS: Command[] = [
   {
     name: "add_ad_element",
     description:
-      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo, headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
+      "Add a finished ad element in the brand kit's colors and fonts (set_brand first; neutral defaults otherwise), laid out inside the title-safe area (on 9:16, clear of the apps' buttons and captions) and clear of the captions showing then, animated in, its clips grouped on rows of their own above everything at that time and under the captions (no other clip shares them, so moving another track never reorders its parts). Elements: end_card (a solid card, background brand/primary/scrim/none, with the logo (or the brand name as a wordmark without a logo, unless logo none is asked), headline, a call-to-action button and the url; always centered; put it last), lower_third (a name in a box over a title or role in the primary color; hold it 3 to 6 s), offer_badge (headline is the offer, e.g. '-30%' or '$49', in an accent box, tilted, pulsing; subline a small tag under it, e.g. 'Today only'), cta_button (a pill button, e.g. 'Shop now', pulsing; subline or url a line under it), logo_reveal (the logo pops in, optional glow flare and white flash, with headline or the brand name as a wordmark and the tagline). Centered elements sit on the frame's center line, a badge stays in its half, an element too big for its space is built smaller as a whole, and no text goes under the readable floor (4.5% of the frame's short side, 5% on a tall frame: size 49 on 16:9, 31 on 9:16). Every part is an ordinary clip to edit afterwards. Example: {element: 'end_card', start: 12, headline: 'Fresh roast, every morning', cta: 'Order now'}.",
     input: S.obj(
       {
         element: S.str("Which element", { enum: AD_ELEMENTS }),
@@ -3048,7 +3049,7 @@ export const COMMANDS: Command[] = [
           description: "The steps, in order",
           items: S.obj({ command: S.str("Command name, e.g. set_animation"), args: { type: "object", description: "That command's arguments" } }, ["command"]),
         },
-        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes (every command a batch takes accepts it on its own too)"),
+        quiet: S.bool("Answer only the ids of the clips added, changed and removed, with any notes; additions follow step order and added_by_step maps adding step numbers to their ids (every command a batch takes accepts it on its own too)"),
       },
       ["commands"],
     ),
@@ -3074,6 +3075,7 @@ export const COMMANDS: Command[] = [
           const before = new Set(ids(q)), tracksBefore = new Set(q.tracks.map((t) => t.id));
           const next = runNested(q, step.command, ref(step.args ?? {}), report);
           added.push(ids(next).filter((id) => !before.has(id)));
+          if (report && added[i].length) (report.added_by_step ??= {})[String(i + 1)] = added[i];
           addedTracks.push(next.tracks.map((t) => t.id).filter((id) => !tracksBefore.has(id)));
           return next;
         } catch (e) {

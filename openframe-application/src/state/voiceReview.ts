@@ -18,7 +18,7 @@ import { clipEnd, findClip, getAsset, sourceTimeAt } from "../lib/project/ops";
 import type { Id } from "../lib/project/types";
 import { framesToSeconds } from "../lib/time";
 import { voiceClips, type VoiceClip } from "../lib/voiceLines";
-import { advise, bandOf, compareScript, judgeHearings, matchShare, scriptPace, verdict, type LineMeasure } from "../lib/voiceReview";
+import { advise, bandOf, isSignoff, paceOnTarget, compareScript, judgeHearings, matchShare, scriptPace, verdict, type LineMeasure } from "../lib/voiceReview";
 import { bandSource, paceOf } from "../lib/voicePace";
 import { parseLine } from "../lib/voiceScript";
 import { currentScreen } from "./project";
@@ -173,10 +173,11 @@ export async function reviewVoiceover(clipIds?: Id[], opts: { music?: boolean; r
         // Over the speech (what the band is held to) and over the clip.
         pace: {
           ...(m.pace && m.pace !== "normal" ? { meant: m.pace } : {}),
-          target_words_per_second: band,
+          target_words_per_second: isSignoff(m) ? null : band,
+          ...(isSignoff(m) ? { note: "A sign-off of up to three words is not paced." } : {}),
           over_speech: m.wps === null ? null : { words_per_second: m.wps, syllables_per_second: m.sps, ...(m.marksOut ? { pause_marks_out: m.marksOut } : {}) },
           over_clip: m.clipRate ? { words_per_second: m.clipRate.words_per_second, syllables_per_second: m.clipRate.syllables_per_second } : null,
-          on_target: m.wps !== null && m.wps >= band[0] && m.wps <= band[1],
+          on_target: paceOnTarget(m),
         },
         lead_silence: m.lead,
         tail_silence: m.tail,

@@ -99,7 +99,7 @@ async (page) => {
   details.shapes = { ok: Object.values(shapes).every(Boolean), ...shapes };
   // Each file answers the loudness its mix reached, as export_video does (ADR-103).
   const levels = (done.versions ?? []).map((v) => ({ name: v.name, loudness: v.loudness, info: v.info }));
-  details.loudness = { ok: levels.length === 7 && levels.every((v) => v.loudness && Math.abs(v.loudness.integrated + 16) < 1.5 && v.loudness.truePeak <= -0.9), levels };
+  details.loudness = { ok: levels.length === 7 && levels.every((v) => v.loudness && Math.abs(v.loudness.integrated + 16) < 1.5 && v.loudness.true_peak <= -0.9), levels };
   details.names = { ok: (done.versions ?? []).map((v) => v.name.replace(/^.*? (?=\d+x\d+)/, "")).join(", ") === "16x9, 16x9 3s, 9x16, 9x16 3s, 1x1, 1x1 3s, 16x9 textless", names: (done.versions ?? []).map((v) => v.name) };
   const after = await page.evaluate(() => ({ project: JSON.stringify(window.videoEditor.project()), undo: window.videoEditor.state().undoLabel }));
   details.untouched = { ok: after.project === before.project && after.undo === before.undo };

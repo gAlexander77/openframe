@@ -24,6 +24,7 @@ import { previewAudio, type AuditionRequest } from "./state/audition";
 import { generateMusic } from "./state/music";
 import type { SoundCue } from "./lib/sfx";
 import { loudnessReport } from "./state/delivery";
+import { autoCaptions } from "./state/captions";
 import { clipTranscript } from "./state/transcript";
 import { analyzeBeats, analyzeFillers, analyzeMusic, analyzeScenes, analyzeSilences, duckUnderSpeech, keepFilterLoudness, markBeats, normalizeLoudness, reduceNoise, removeBackground, removeFillers, removeSilences, splitScenes, stabilizeClip, syncAudio, reframeClip, textBehindSubject } from "./state/ai";
 import { importLuts } from "./state/luts";
@@ -145,7 +146,7 @@ const automation = {
   /** The AI tools: analyze, then apply as one undoable edit.
    * removeBackground(clipId?) makes the clip's matte and turns it on; the
    * set_background_removal command toggles it afterwards. */
-  ai: { generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, matchColor, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
+  ai: { autoCaptions, generateMusic, removeSilences, removeFillers, analyzeFillers, clipTranscript, splitScenes, markBeats, normalizeLoudness, duckUnderSpeech, reduceNoise, stabilizeClip, removeBackground, textToSpeech, autoAdjustClip, matchColor, voiceover, trackMotion, syncAudio, reframeClip, addSoundEffect, addSoundEffects, addAmbience, analyzeMusic, loudnessReport, textBehindSubject, retakeVoiceover, reviewVoiceover },
   /** export_versions: one file per version (lib/versions.ts), the project
    * left as it is; versionsSheet draws them all without exporting. */
   exportVersions: (o: VersionsOptions) => (needProject(), exportVersions(o)),
@@ -344,7 +345,7 @@ const mcpHost: McpHost = {
     const c = new OffscreenCanvas(bmp.width, bmp.height);
     c.getContext("2d")!.drawImage(bmp, 0, 0);
     bmp.close();
-    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts, options: sheet.options, coverage: sheet.coverage };
+    return { image: await jpeg(c), subjects: sheet.subjects, titles: sheet.titles, overlaps: sheet.overlaps, callouts: sheet.callouts, options: sheet.options, coverage: sheet.coverage, text_overlaps: sheet.text_overlaps };
   },
   saveVersions: (options) => {
     if (currentScreen() === "home") throw new Error("No project is open: open_project or new_project first.");
@@ -352,7 +353,8 @@ const mcpHost: McpHost = {
   },
   voiceover: (lines, options) => (needProject(), voiceover(lines as unknown as VoiceLine[], options as VoiceoverOptions)),
   ai: (tool, target, options) =>
-    tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
+    tool === "autoCaptions" ? (needProject(), autoCaptions("", options))
+    : tool === "addSoundEffects" ? addSoundEffects(options.sounds as SoundCue[])
     : tool === "addAmbience" ? (needProject(), addAmbience(options as unknown as AmbienceRequest))
     : tool === "generateMusic" ? (needProject(), generateMusic(options))
     : (automation.ai[tool] as (t: unknown, o: unknown) => Promise<unknown>)(target, options),

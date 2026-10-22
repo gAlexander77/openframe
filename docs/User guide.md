@@ -463,7 +463,12 @@ with natural pauses, one level, and a quiet room under the silences.
 timeline on this computer. A voice made by the app (Text to speech, or an
 agent's voiceover) is captioned in the words it was given to read, at the
 times it says them, so a word the recognizer mishears never reaches the
-captions.
+captions. An agent can call `auto_captions` after the cuts: whole lines by
+default, or `words_per_caption: 2` and `look: "pop"` for a short. Set
+`start`/`end` to caption a stretch, `track_ids` to choose the speech tracks,
+and `replace: false` to keep earlier captions. Imported audio intended as
+speech should have the Dialog role; music and effects roles are skipped.
+`detail: "full"` lists the caption times. This is one undoable edit.
 
 **Ask the AI assistant for an edit:** click **AI assistant** in the title
 bar. It opens as a column at the right of the editor, which makes room for
