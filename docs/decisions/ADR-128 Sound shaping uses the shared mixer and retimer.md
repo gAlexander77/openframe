@@ -35,3 +35,29 @@ compensation cannot match every input; normalization measures the result.
 Long pitched seeks/windows replay earlier grains; cached retimer state
 checkpoints are the upgrade. Browser/desktop sound drives still require
 execution where the sandbox permits launching a browser.
+
+## Normalization measurement check (2026-10-22)
+
+The Lane S `ai-tools` output assertion compared `measureMix.truePeak`
+(linear amplitude) directly to a negative dBTP ceiling. Its reported 0.89
+for speech and 0.70 for music are approximately -1.01 and -3.10 dBTP,
+respectively, not positive dBTP readings. Convert with `20 * log10(peak)`
+before rounding, as `normalizeGain` already does. Normalization already
+calls `measureMix(normalizationMix(...))`; no separate peak meter, cached
+measurement or different processing chain caused this failure.
+
+The correct fixture gains remain +5.53 dB for speech (peak-limited, about
+-11.65 LUFS at -1 dBTP) and +4.63 dB for music (-10 LUFS with headroom).
+The centered mono speech's rendered peak is about -6.53 dBTP per speaker;
+the older +2.5 dB expectation constrained its source peak before the
+equal-power pan's 3.01 dB attenuation. The drive now labels the converted
+peak `truePeakDbtp`, measures each isolated clip before and after, checks
+normalization's loudness against that input, and checks the output peak
+against both the ceiling and the measured input plus the applied gain.
+
+Pure PCM regression tests exercise the same streaming loudness and
+true-peak meters as `measureMix`, apply normalization, then remeasure:
+mono with intersample peaks reaches the ceiling, and stereo with headroom
+reaches the target. Actual Web Audio scheduling remains covered by the
+drive; this sandbox refused the headless Edge launch (`spawn EPERM`), so
+the corrected drive must be rerun where browser execution is allowed.

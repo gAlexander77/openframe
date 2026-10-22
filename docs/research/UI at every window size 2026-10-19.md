@@ -58,6 +58,15 @@ The fixes, from the outside in:
 - **What is left, the transport absorbs:** below about 470 px, the play
   controls and the view controls wrap onto separate centered rows.
 
+The 2026-10-22 merge sweep found that monitor mute and proxy playback had
+outgrown the old transport breakpoint. With six playback controls (204 px)
+and about 300 px of view controls, the centered grid needs about 824 px
+including padding. At 840 px and below the times now get their own row;
+the two control groups wrap again when their combined widths do not fit.
+Both grid side columns retain their content minimum. A short trim preview
+also tightens its padding and gaps by querying the stage, so its header,
+two pictures, source labels and footnote fit a 151 px player stage.
+
 ### Fixed sizes in a fluid shell
 
 - The mixer was a fixed 720 px, even at 2560.
@@ -191,6 +200,12 @@ in balanced rows and drops to icons when the labels would not fit.
   cut" works.
 - **Turning off animations inside a drive** cut a sweep of about 2,000
   states to about 3 minutes.
+- **Audit what is painted.** The 2026-10-22 sweep's Manage media overlap
+  was a select inside closed Organize folders content: Chromium still
+  reports its layout rectangle. Use the style sweep's closed-details
+  visibility check. Mixer track strips deliberately scroll under the
+  opaque sticky master; clip their measured visible rectangles at the
+  master's left edge, just as the timeline audit clips under its headers.
 
 ## Left as it is
 

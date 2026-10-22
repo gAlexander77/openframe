@@ -16,7 +16,7 @@ async (page) => {
   });
   const described = () => page.evaluate((cid) => window.openFrame.describe().tracks.flatMap((t) => t.clips).find((c) => c.id === cid).compressor ?? "none", id);
   await page.getByRole("region", { name: "Inspector" }).getByRole("tab", { name: "Audio" }).click();
-  const section = page.locator(".insp-section", { hasText: "Compressor" });
+  const section = page.locator(".insp-section").filter({ has: page.getByRole("button", { name: "Compressor", exact: true }) });
   // Closed while the clip has none.
   const toggle = section.locator(".insp-section-toggle");
   if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();

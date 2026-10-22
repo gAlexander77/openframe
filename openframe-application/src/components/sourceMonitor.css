@@ -36,6 +36,14 @@
   .trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(40px, calc(100cqh - 124px)); }
 }
 
+/* Query the stage to tighten the preview itself: its own size container
+   can only change its descendants. Leave room for two 40 px pictures,
+   the header, source labels and footnote in a 151 px stage. */
+@container player-stage (max-height: 200px) {
+  .trim-preview { padding: 6px; gap: 4px; }
+  .trim-pair .frame-preview, .trim-pair .trim-audio { max-height: max(0px, calc(100cqh - 100px)); }
+}
+
 .source-monitor footer { flex-wrap: wrap; }
 .source-fit { display: flex; flex-wrap: wrap; gap: 8px; }
 .source-fit p { flex-basis: 100%; margin: 0; }

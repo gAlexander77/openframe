@@ -29,7 +29,7 @@ export function VoiceChangerSection({ clip }: { clip: SoundClip }) {
   };
   return <Section title="Voice changer" onReset={() => apply("none")}>
     <div className="voice-presets" role="group" aria-label="Voice changer presets">
-      {[{ id: "none", label: "None" }, ...Object.entries(VOICE_PRESETS).map(([id, p]) => ({ id, label: p.label }))].map(({ id, label }) => <button key={id} className={`btn${(clip.voice ?? "none") === id ? " active" : " ghost"}`} aria-pressed={(clip.voice ?? "none") === id} onClick={() => apply(id)}>{label}</button>)}
+      {[{ id: "none", label: "None" }, ...Object.entries(VOICE_PRESETS).map(([id, p]) => ({ id, label: p.label }))].map(({ id, label }) => <button key={id} className={`btn${(clip.voice ?? "none") === id ? " active" : " ghost"}`} data-tip={label} aria-pressed={(clip.voice ?? "none") === id} onClick={() => apply(id)}>{label}</button>)}
     </div>
     <p className="insp-hint">Applies and auditions the first three seconds. Fine-tune Pitch, Equalizer, Compressor and Effects below.</p>
     {clip.voice && <p className="insp-hint">Based on {VOICE_PRESETS[clip.voice]?.label ?? clip.voice}; the settings remain editable.</p>}
